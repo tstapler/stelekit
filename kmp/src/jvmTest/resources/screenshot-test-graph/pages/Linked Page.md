@@ -1,0 +1,5 @@
+- This page is linked from [[Welcome]].
+- Navigation
+	- Click any [[wiki link]] to navigate to that page
+	- The References Panel shows pages that link here
+- SteleKit uses **bidirectional linking** automatically.

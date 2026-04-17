@@ -1,0 +1,28 @@
+- tags:: #reference #keyboard-shortcuts
+- This page is a quick reference for block editing interactions. See [[Block Editing]] for step-by-step guidance.
+- **Keyboard Shortcuts**
+	- Block creation and deletion
+		- `Enter` — create a new block below the current block
+		- `Backspace` on an empty block — delete the block, move cursor to block above
+		- `Shift+Enter` — insert a line break within the current block (soft newline)
+	- Indentation
+		- `Tab` — indent the current block (makes it a child of the block above)
+		- `Shift+Tab` — unindent the current block (promotes it to the parent's level)
+	- Navigation
+		- `Arrow Up` / `Arrow Down` — move cursor between blocks
+		- `Ctrl+Home` — jump to the first block on the page
+		- `Ctrl+End` — jump to the last block on the page
+- **Block States**
+	- Focused — the block the cursor is in; shows an edit cursor
+	- Editing — actively receiving keyboard input
+	- Read-only — blocks rendered outside the editor (e.g. in the sidebar references panel)
+	- Collapsed — a parent block whose children are hidden; click the triangle bullet to expand
+- **Block Selection**
+	- Click a bullet point to select a block for drag-and-drop reordering.
+	- Selected blocks highlight with a subtle background color.
+- **Inline Formatting Shortcuts**
+	- `**text**` — bold
+	- `*text*` — italic
+	- `` `text` `` — inline code
+	- `~~text~~` — strikethrough
+- See [[Markdown Formatting]] for the complete inline markup reference.

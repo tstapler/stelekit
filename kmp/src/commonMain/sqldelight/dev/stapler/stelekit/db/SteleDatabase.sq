@@ -1,0 +1,690 @@
+-- Logseq Database Schema
+-- Core entities for note-taking application
+
+CREATE TABLE pages (
+    uuid TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    namespace TEXT,
+    file_path TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    properties TEXT, -- JSON string for page properties
+    version INTEGER NOT NULL DEFAULT 0,
+    is_favorite INTEGER DEFAULT 0,
+    is_journal INTEGER DEFAULT 0,
+    journal_date TEXT,
+    is_content_loaded INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE blocks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, -- Hidden numeric ID for FTS5 internal use
+    uuid TEXT NOT NULL UNIQUE,
+    page_uuid TEXT NOT NULL,
+    parent_uuid TEXT,
+    left_uuid TEXT,
+    content TEXT NOT NULL,
+    level INTEGER NOT NULL DEFAULT 0,
+    position INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    properties TEXT, -- JSON string for block properties
+    version INTEGER NOT NULL DEFAULT 0,
+    content_hash TEXT, -- SHA-256 hex digest of normalised content (used for deduplication)
+    block_type TEXT NOT NULL DEFAULT 'bullet', -- Structural discriminator (bullet, paragraph, heading, etc.) — excluded from FTS intentionally
+    FOREIGN KEY (page_uuid) REFERENCES pages(uuid) ON DELETE CASCADE,
+    FOREIGN KEY (parent_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE,
+    FOREIGN KEY (left_uuid) REFERENCES blocks(uuid) ON DELETE SET NULL
+);
+
+CREATE TABLE properties (
+    uuid TEXT NOT NULL PRIMARY KEY,
+    block_uuid TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (block_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE
+);
+
+CREATE TABLE plugin_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plugin_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_uuid TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER,
+    UNIQUE(plugin_id, entity_type, entity_uuid, key)
+);
+
+CREATE TABLE block_references (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_block_uuid TEXT NOT NULL,
+    to_block_uuid TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(from_block_uuid, to_block_uuid),
+    FOREIGN KEY (from_block_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE,
+    FOREIGN KEY (to_block_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_pages_uuid ON pages(uuid);
+CREATE INDEX idx_pages_name ON pages(name);
+CREATE INDEX idx_pages_namespace ON pages(namespace);
+CREATE INDEX idx_blocks_uuid ON blocks(uuid);
+CREATE INDEX idx_blocks_page_uuid ON blocks(page_uuid);
+CREATE INDEX idx_blocks_parent_uuid ON blocks(parent_uuid);
+CREATE INDEX idx_blocks_left_uuid ON blocks(left_uuid);
+CREATE INDEX idx_blocks_level ON blocks(level);
+CREATE INDEX idx_blocks_content_hash ON blocks(content_hash);
+CREATE INDEX idx_properties_block_uuid ON properties(block_uuid);
+CREATE INDEX idx_properties_key ON properties(key);
+CREATE INDEX idx_plugin_data_plugin_id ON plugin_data(plugin_id);
+CREATE INDEX idx_plugin_data_entity ON plugin_data(entity_type, entity_uuid);
+CREATE INDEX idx_plugin_data_key ON plugin_data(key);
+CREATE INDEX idx_references_from ON block_references(from_block_uuid);
+CREATE INDEX idx_references_to ON block_references(to_block_uuid);
+
+-- Migration Framework Changelog
+CREATE TABLE migration_changelog (
+    id              TEXT NOT NULL,
+    graph_id        TEXT NOT NULL,
+    description     TEXT NOT NULL,
+    checksum        TEXT NOT NULL,
+    applied_at      INTEGER NOT NULL,
+    execution_ms    INTEGER NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'APPLIED',
+    applied_by      TEXT NOT NULL DEFAULT '',
+    execution_order INTEGER NOT NULL DEFAULT 0,
+    changes_applied INTEGER NOT NULL DEFAULT 0,
+    error_message   TEXT,
+    PRIMARY KEY (id, graph_id)
+);
+
+CREATE INDEX idx_changelog_graph_status ON migration_changelog(graph_id, status);
+CREATE INDEX idx_changelog_applied_at ON migration_changelog(graph_id, applied_at);
+
+-- FTS5 Full-Text Search virtual table for blocks
+CREATE VIRTUAL TABLE blocks_fts USING fts5(
+    content,
+    content=blocks,
+    content_rowid=id,
+    tokenize='porter unicode61'
+);
+
+-- FTS5 Full-Text Search virtual table for page names
+CREATE VIRTUAL TABLE pages_fts USING fts5(
+    name,
+    content=pages,
+    content_rowid=rowid,
+    tokenize='porter unicode61'
+);
+
+-- FTS5 triggers for automatic index synchronization
+-- Insert trigger
+CREATE TRIGGER blocks_ai AFTER INSERT ON blocks BEGIN
+    INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content);
+END;
+
+-- Delete trigger
+CREATE TRIGGER blocks_ad AFTER DELETE ON blocks BEGIN
+    INSERT INTO blocks_fts(blocks_fts, rowid, content)
+    VALUES('delete', old.id, old.content);
+END;
+
+-- Update trigger
+CREATE TRIGGER blocks_au AFTER UPDATE ON blocks BEGIN
+    INSERT INTO blocks_fts(blocks_fts, rowid, content)
+    VALUES('delete', old.id, old.content);
+    INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content);
+END;
+
+-- FTS5 triggers for pages_fts automatic index synchronization
+CREATE TRIGGER pages_ai AFTER INSERT ON pages BEGIN
+    INSERT INTO pages_fts(rowid, name) VALUES (last_insert_rowid(), new.name);
+END;
+
+CREATE TRIGGER pages_ad AFTER DELETE ON pages BEGIN
+    INSERT INTO pages_fts(pages_fts, rowid, name) VALUES('delete', old.rowid, old.name);
+END;
+
+CREATE TRIGGER pages_au AFTER UPDATE OF name ON pages BEGIN
+    INSERT INTO pages_fts(pages_fts, rowid, name) VALUES('delete', old.rowid, old.name);
+    INSERT INTO pages_fts(rowid, name) VALUES (new.rowid, new.name);
+END;
+
+-- Repository queries
+
+-- Block queries
+selectBlockByUuid:
+SELECT * FROM blocks WHERE uuid = ?;
+
+existsBlockByUuid:
+SELECT COUNT(*) FROM blocks WHERE uuid = ?;
+
+selectAllBlocks:
+SELECT * FROM blocks ORDER BY uuid;
+
+selectAllBlocksPaginated:
+SELECT * FROM blocks ORDER BY uuid LIMIT ? OFFSET ?;
+
+selectBlockChildren:
+SELECT * FROM blocks WHERE parent_uuid = ? ORDER BY position LIMIT ? OFFSET ?;
+
+countBlockChildren:
+SELECT COUNT(*) FROM blocks WHERE parent_uuid = ?;
+
+selectBlockSiblings:
+SELECT * FROM blocks 
+WHERE parent_uuid IS (SELECT parent_uuid FROM blocks WHERE uuid = ?) 
+AND page_uuid = (SELECT page_uuid FROM blocks WHERE uuid = ?)
+AND uuid != ? 
+ORDER BY position;
+
+selectRootBlocks:
+SELECT * FROM blocks WHERE parent_uuid IS NULL AND page_uuid = ? ORDER BY position LIMIT ? OFFSET ?;
+
+countRootBlocks:
+SELECT COUNT(*) FROM blocks WHERE parent_uuid IS NULL AND page_uuid = ?;
+
+selectBlocksByPageUuid:
+SELECT * FROM blocks WHERE page_uuid = ? ORDER BY position LIMIT ? OFFSET ?;
+
+selectBlocksByPageUuidUnpaginated:
+SELECT * FROM blocks WHERE page_uuid = ? ORDER BY position;
+
+selectBlocksWithContentLike:
+SELECT * FROM blocks WHERE content LIKE ?;
+
+selectBlocksWithContentLikePaginated:
+SELECT * FROM blocks WHERE content LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?;
+
+countBlocksByPageUuid:
+SELECT COUNT(*) FROM blocks WHERE page_uuid = ?;
+
+updateBlockParent:
+UPDATE blocks SET parent_uuid = ? WHERE uuid = ?;
+
+selectBlocksByParentUuidOrdered:
+SELECT * FROM blocks WHERE parent_uuid = ? ORDER BY position;
+
+selectBlocksByParentUuids:
+SELECT * FROM blocks WHERE parent_uuid IN ? ORDER BY parent_uuid, position;
+
+selectRootBlocksByPageUuidOrdered:
+SELECT * FROM blocks WHERE parent_uuid IS NULL AND page_uuid = ? ORDER BY position;
+
+updateBlockParentPositionAndLevel:
+UPDATE blocks SET parent_uuid = ?, position = ?, level = ? WHERE uuid = ?;
+
+updateBlockHierarchy:
+UPDATE blocks SET parent_uuid = ?, left_uuid = ?, position = ?, level = ? WHERE uuid = ?;
+
+updateBlockPositionOnly:
+UPDATE blocks SET position = ? WHERE uuid = ?;
+
+updateBlockContent:
+UPDATE blocks SET content = ?, updated_at = ?, version = version + 1 WHERE uuid = ?;
+
+updateBlockLevelOnly:
+UPDATE blocks SET level = ? WHERE uuid = ?;
+
+updateBlockLeftUuid:
+UPDATE blocks SET left_uuid = ? WHERE uuid = ?;
+
+selectBlockByLeftUuid:
+SELECT * FROM blocks WHERE left_uuid = ?;
+
+selectLastChild:
+SELECT * FROM blocks WHERE parent_uuid = ? ORDER BY position DESC LIMIT 1;
+
+updateBlockProperties:
+UPDATE blocks SET properties = ? WHERE uuid = ?;
+
+countBlocks:
+SELECT COUNT(*) FROM blocks;
+
+deleteBlockByUuid:
+DELETE FROM blocks WHERE uuid = ?;
+
+deleteBlockChildren:
+DELETE FROM blocks WHERE parent_uuid = ?;
+
+deleteAllBlocks:
+DELETE FROM blocks;
+
+deleteBlocksByPageUuid:
+DELETE FROM blocks WHERE page_uuid = ?;
+
+insertBlock:
+INSERT OR REPLACE INTO blocks (uuid, page_uuid, parent_uuid, left_uuid, content, level, position, created_at, updated_at, properties, version, content_hash, block_type)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectBlocksHashByPageUuid:
+SELECT uuid, content_hash FROM blocks WHERE page_uuid = ?;
+
+-- Deduplication queries
+selectBlocksByContentHash:
+SELECT * FROM blocks WHERE content_hash = ? ORDER BY created_at;
+
+selectDuplicateBlockHashes:
+SELECT content_hash, COUNT(*) AS cnt
+FROM blocks
+WHERE content_hash IS NOT NULL
+GROUP BY content_hash
+HAVING COUNT(*) > 1
+ORDER BY cnt DESC
+LIMIT ?;
+
+-- Page queries
+selectPageByUuid:
+SELECT * FROM pages WHERE uuid = ?;
+
+selectPageByName:
+SELECT * FROM pages WHERE name = ? LIMIT 1;
+
+existsPageByUuid:
+SELECT COUNT(*) FROM pages WHERE uuid = ?;
+
+existsPageByName:
+SELECT COUNT(*) FROM pages WHERE name = ?;
+
+selectAllPages:
+SELECT * FROM pages ORDER BY name;
+
+selectAllPagesPaginated:
+SELECT * FROM pages ORDER BY name LIMIT ? OFFSET ?;
+
+selectUnloadedPages:
+SELECT * FROM pages WHERE is_content_loaded = 0;
+
+selectPagesByNamespace:
+SELECT * FROM pages WHERE namespace = ? ORDER BY name LIMIT ? OFFSET ?;
+
+selectPagesByNamespaceUnpaginated:
+SELECT * FROM pages WHERE namespace = ? ORDER BY name;
+
+countPagesByNamespace:
+SELECT COUNT(*) FROM pages WHERE namespace = ?;
+
+selectRecentlyUpdatedPages:
+SELECT * FROM pages ORDER BY updated_at DESC LIMIT ?;
+
+selectRecentlyCreatedPages:
+SELECT * FROM pages ORDER BY created_at DESC LIMIT ?;
+
+updatePageProperties:
+UPDATE pages SET properties = ? WHERE uuid = ?;
+
+updatePageName:
+UPDATE pages SET name = ? WHERE uuid = ?;
+
+updatePage:
+UPDATE pages SET
+    namespace = ?,
+    file_path = ?,
+    updated_at = ?,
+    properties = ?,
+    version = ?,
+    is_favorite = ?,
+    is_journal = ?,
+    journal_date = ?,
+    is_content_loaded = ?
+WHERE uuid = ?;
+
+countPages:
+SELECT COUNT(*) FROM pages;
+
+deletePageByUuid:
+DELETE FROM pages WHERE uuid = ?;
+
+insertPage:
+INSERT OR IGNORE INTO pages (uuid, name, namespace, file_path, created_at, updated_at, properties, version, is_favorite, is_journal, journal_date, is_content_loaded)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+selectJournalPages:
+SELECT * FROM pages WHERE is_journal = 1 ORDER BY COALESCE(journal_date, name) DESC LIMIT ? OFFSET ?;
+
+selectJournalPageByDate:
+SELECT * FROM pages WHERE is_journal = 1 AND journal_date = ? LIMIT 1;
+
+updatePageFavorite:
+UPDATE pages SET is_favorite = ? WHERE uuid = ?;
+
+deleteAllPages:
+DELETE FROM pages;
+
+-- Reference queries
+selectOutgoingReferences:
+SELECT b.* FROM blocks b
+INNER JOIN block_references br ON b.uuid = br.to_block_uuid
+WHERE br.from_block_uuid = ?;
+
+selectIncomingReferences:
+SELECT b.* FROM blocks b
+INNER JOIN block_references br ON b.uuid = br.from_block_uuid
+WHERE br.to_block_uuid = ?;
+
+insertBlockReference:
+INSERT OR REPLACE INTO block_references (from_block_uuid, to_block_uuid, created_at)
+VALUES (?, ?, ?);
+
+deleteBlockReference:
+DELETE FROM block_references WHERE from_block_uuid = ? AND to_block_uuid = ?;
+
+selectOrphanedBlocks:
+SELECT b.* FROM blocks b
+LEFT JOIN block_references br ON b.uuid = br.to_block_uuid
+WHERE br.id IS NULL;
+
+selectMostConnectedBlocks:
+SELECT b.*, COUNT(br.id) AS reference_count
+FROM blocks b
+LEFT JOIN block_references br ON b.uuid = br.to_block_uuid OR b.uuid = br.from_block_uuid
+GROUP BY b.uuid
+ORDER BY reference_count DESC
+LIMIT ?;
+
+-- Search queries
+selectPagesByNameLike:
+SELECT * FROM pages WHERE name LIKE ?;
+
+selectPagesByNameLikePaginated:
+SELECT * FROM pages WHERE name LIKE ? ORDER BY name LIMIT ? OFFSET ?;
+
+selectBlocksReferencing:
+SELECT DISTINCT b.* FROM blocks b
+INNER JOIN block_references br ON b.uuid = br.from_block_uuid
+WHERE br.to_block_uuid = ?;
+
+-- Plugin data queries
+selectPluginDataById:
+SELECT * FROM plugin_data WHERE id = ?;
+
+selectPluginDataByPlugin:
+SELECT * FROM plugin_data WHERE plugin_id = ? ORDER BY created_at;
+
+selectPluginDataByEntity:
+SELECT * FROM plugin_data WHERE entity_type = ? AND entity_uuid = ? ORDER BY key;
+
+selectPluginDataByKey:
+SELECT * FROM plugin_data WHERE plugin_id = ? AND key = ? ORDER BY entity_type, entity_uuid;
+
+selectPluginDataByPluginAndEntity:
+SELECT * FROM plugin_data WHERE plugin_id = ? AND entity_type = ? AND entity_uuid = ? ORDER BY key;
+
+countPluginDataByPlugin:
+SELECT COUNT(*) FROM plugin_data WHERE plugin_id = ?;
+
+countPluginDataByEntity:
+SELECT COUNT(*) FROM plugin_data WHERE entity_type = ? AND entity_uuid = ?;
+
+insertPluginData:
+INSERT INTO plugin_data (plugin_id, entity_type, entity_uuid, key, value, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+updatePluginData:
+UPDATE plugin_data SET value = ?, updated_at = ? WHERE plugin_id = ? AND entity_type = ? AND entity_uuid = ? AND key = ?;
+
+upsertPluginData:
+INSERT OR REPLACE INTO plugin_data (plugin_id, entity_type, entity_uuid, key, value, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+deletePluginData:
+DELETE FROM plugin_data WHERE plugin_id = ? AND entity_type = ? AND entity_uuid = ? AND key = ?;
+
+deletePluginDataByPlugin:
+DELETE FROM plugin_data WHERE plugin_id = ?;
+
+deletePluginDataByEntity:
+DELETE FROM plugin_data WHERE entity_type = ? AND entity_uuid = ?;
+
+existsPluginData:
+SELECT COUNT(*) FROM plugin_data WHERE plugin_id = ? AND entity_type = ? AND entity_uuid = ? AND key = ?;
+
+-- FTS5 Full-Text Search queries
+searchBlocksByContentFts:
+SELECT
+    b.uuid,
+    b.page_uuid,
+    b.parent_uuid,
+    b.left_uuid,
+    b.content,
+    b.level,
+    b.position,
+    b.created_at,
+    b.updated_at,
+    b.properties,
+    b.version,
+    highlight(blocks_fts, 0, '<em>', '</em>') AS highlight
+FROM blocks_fts bm
+JOIN blocks b ON b.id = bm.rowid
+WHERE blocks_fts MATCH :query
+ORDER BY bm25(blocks_fts)
+LIMIT :limit OFFSET :offset;
+
+searchBlocksByContentFtsInPage:
+SELECT
+    b.uuid,
+    b.page_uuid,
+    b.parent_uuid,
+    b.left_uuid,
+    b.content,
+    b.level,
+    b.position,
+    b.created_at,
+    b.updated_at,
+    b.properties,
+    b.version,
+    highlight(blocks_fts, 0, '<em>', '</em>') AS highlight
+FROM blocks_fts bm
+JOIN blocks b ON b.id = bm.rowid
+WHERE blocks_fts MATCH :query
+AND b.page_uuid = :pageUuid
+ORDER BY bm25(blocks_fts)
+LIMIT :limit OFFSET :offset;
+
+searchBlocksCountFts:
+SELECT COUNT(*) AS result_count
+FROM blocks_fts bm
+WHERE blocks_fts MATCH :query;
+
+-- FTS5 search for page names with BM25 ranking
+searchPagesByNameFts:
+SELECT
+    p.uuid,
+    p.name,
+    p.namespace,
+    p.file_path,
+    p.created_at,
+    p.updated_at,
+    p.properties,
+    p.version,
+    p.is_favorite,
+    p.is_journal,
+    p.journal_date,
+    p.is_content_loaded,
+    highlight(pages_fts, 0, '<em>', '</em>') AS highlight
+FROM pages_fts pf
+JOIN pages p ON p.rowid = pf.rowid
+WHERE pages_fts MATCH :query
+ORDER BY bm25(pages_fts)
+LIMIT :limit;
+
+-- Performance histogram storage
+-- Bucketed counters; bucket_ms is the upper bound of the bucket in milliseconds.
+-- Boundaries: 0, 16, 33, 50, 100, 500, 1000, 5000 ms (plus an overflow ">5000" bucket represented as 9999).
+CREATE TABLE IF NOT EXISTS perf_histogram_buckets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    operation_name TEXT NOT NULL,
+    bucket_ms INTEGER NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    recorded_at INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_perf_hist_op_bucket
+    ON perf_histogram_buckets(operation_name, bucket_ms);
+
+CREATE TABLE IF NOT EXISTS debug_flags (
+    key TEXT NOT NULL PRIMARY KEY,
+    value INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+);
+
+-- Histogram queries
+-- Two-step upsert: first ensure the row exists (no-op on conflict), then increment.
+insertHistogramBucketIfAbsent:
+INSERT OR IGNORE INTO perf_histogram_buckets (operation_name, bucket_ms, count, recorded_at)
+VALUES (?, ?, 0, ?);
+
+incrementHistogramBucketCount:
+UPDATE perf_histogram_buckets
+SET count = count + 1, recorded_at = ?
+WHERE operation_name = ? AND bucket_ms = ?;
+
+selectHistogramForOperation:
+SELECT bucket_ms, count FROM perf_histogram_buckets WHERE operation_name = ? ORDER BY bucket_ms;
+
+selectAllHistogramOperations:
+SELECT DISTINCT operation_name FROM perf_histogram_buckets ORDER BY operation_name;
+
+deleteOldHistogramRows:
+DELETE FROM perf_histogram_buckets WHERE recorded_at < ?;
+
+-- Debug flag queries
+upsertDebugFlag:
+INSERT OR REPLACE INTO debug_flags (key, value, updated_at)
+VALUES (?, ?, ?);
+
+selectDebugFlag:
+SELECT value FROM debug_flags WHERE key = ?;
+
+selectAllDebugFlags:
+SELECT key, value FROM debug_flags ORDER BY key;
+
+-- Count blocks that contain a [[pageName]] wikilink (for rename preview)
+countBlocksWithWikilink:
+SELECT COUNT(*) FROM blocks WHERE content LIKE '%[[' || :pageName || ']]%';
+
+-- Select all blocks that contain a [[pageName]] wikilink (for rename backlink rewriting)
+selectBlocksWithWikilink:
+SELECT * FROM blocks WHERE content LIKE '%[[' || :pageName || ']]%' ORDER BY page_uuid, position;
+
+-- Count blocks that contain a [[pageName]] wikilink (for All Pages backlink count)
+countLinkedReferencesForPage:
+SELECT COUNT(*) FROM blocks WHERE content LIKE '%[[' || :pageName || ']]%';
+
+-- Metadata table for schema versioning and graph-level facts
+CREATE TABLE metadata (
+    key TEXT NOT NULL PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+-- Named queries for metadata
+upsertMetadata:
+INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?);
+
+selectMetadata:
+SELECT value FROM metadata WHERE key = ?;
+
+selectAllMetadata:
+SELECT key, value FROM metadata;
+
+-- UUID migration queries (one-shot, run once per graph)
+updateBlockUuidForMigration:
+UPDATE blocks SET uuid = ? WHERE uuid = ?;
+
+updateParentUuidForMigration:
+UPDATE blocks SET parent_uuid = ? WHERE parent_uuid = ?;
+
+updateLeftUuidForMigration:
+UPDATE blocks SET left_uuid = ? WHERE left_uuid = ?;
+
+updateBlockReferencesFromForMigration:
+UPDATE block_references SET from_block_uuid = ? WHERE from_block_uuid = ?;
+
+updateBlockReferencesToForMigration:
+UPDATE block_references SET to_block_uuid = ? WHERE to_block_uuid = ?;
+
+updatePropertiesBlockUuidForMigration:
+UPDATE properties SET block_uuid = ? WHERE block_uuid = ?;
+
+selectAllBlocksWithPagePath:
+SELECT b.uuid, b.parent_uuid, b.position, b.content, p.file_path
+FROM blocks b
+JOIN pages p ON b.page_uuid = p.uuid
+WHERE p.file_path IS NOT NULL;
+
+-- Operation log for persistent undo/redo and git-sync merge
+CREATE TABLE operations (
+    op_id       TEXT NOT NULL PRIMARY KEY,  -- UUID v7 (time-ordered for efficient range scans)
+    session_id  TEXT NOT NULL,
+    seq         INTEGER NOT NULL,            -- Lamport clock value (monotonically increasing per session)
+    op_type     TEXT NOT NULL,               -- INSERT_BLOCK | UPDATE_BLOCK | DELETE_BLOCK | MOVE_BLOCK | BATCH_START | BATCH_END | SYNC_BARRIER
+    entity_uuid TEXT,                        -- block UUID affected (NULL for BATCH_START/END and SYNC_BARRIER)
+    page_uuid   TEXT,                        -- page context (NULL for BATCH_START/END and SYNC_BARRIER)
+    payload     TEXT NOT NULL DEFAULT '{}',  -- JSON: {"before": {...}, "after": {...}}
+    created_at  INTEGER NOT NULL
+);
+
+CREATE TABLE logical_clock (
+    session_id  TEXT NOT NULL PRIMARY KEY,
+    seq         INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_operations_session_seq ON operations(session_id, seq);
+CREATE INDEX idx_operations_page ON operations(page_uuid);
+CREATE INDEX idx_operations_entity ON operations(entity_uuid);
+
+-- Operation log queries
+insertOperation:
+INSERT INTO operations (op_id, session_id, seq, op_type, entity_uuid, page_uuid, payload, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+selectOperationsBySessionDesc:
+SELECT * FROM operations WHERE session_id = ? ORDER BY seq DESC LIMIT ?;
+
+selectOperationsByPageUuid:
+SELECT * FROM operations WHERE page_uuid = ? ORDER BY seq ASC;
+
+selectOperationsSince:
+SELECT * FROM operations WHERE session_id = ? AND seq > ? ORDER BY seq ASC;
+
+deleteOperationsBefore:
+DELETE FROM operations WHERE session_id = ? AND seq < ?;
+
+countOperationPayloadSize:
+SELECT SUM(LENGTH(payload)) FROM operations WHERE session_id = ?;
+
+-- Logical clock queries
+upsertLogicalClock:
+INSERT OR REPLACE INTO logical_clock (session_id, seq) VALUES (?, ?);
+
+selectLogicalClock:
+SELECT seq FROM logical_clock WHERE session_id = ?;
+
+-- Migration changelog queries
+insertMigrationRecord:
+INSERT INTO migration_changelog
+    (id, graph_id, description, checksum, applied_at, execution_ms, status, applied_by, execution_order, changes_applied, error_message)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectAppliedMigrations:
+SELECT id, checksum, status FROM migration_changelog WHERE graph_id = ? AND status = 'APPLIED' ORDER BY execution_order;
+
+selectMigrationById:
+SELECT * FROM migration_changelog WHERE id = ? AND graph_id = ?;
+
+updateMigrationStatus:
+UPDATE migration_changelog SET status = ?, error_message = ?, execution_ms = ?, changes_applied = ?
+WHERE id = ? AND graph_id = ?;
+
+selectRunningMigrations:
+SELECT * FROM migration_changelog WHERE graph_id = ? AND status = 'RUNNING';
+
+deleteMigrationRecord:
+DELETE FROM migration_changelog WHERE id = ? AND graph_id = ?;
+
+selectAllMigrationsForGraph:
+SELECT * FROM migration_changelog WHERE graph_id = ? ORDER BY execution_order;
+
+updateMigrationChecksum:
+UPDATE migration_changelog SET checksum = ? WHERE id = ? AND graph_id = ?;

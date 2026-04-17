@@ -1,0 +1,33 @@
+- type:: how-to
+- tags:: #how-to #reference #properties
+- Properties attach structured `key:: value` metadata to pages and blocks.
+	- They are plain text in the Markdown file — no special syntax or frontmatter.
+	- Any tool that reads Markdown can see them.
+- **Page-level properties**
+	- A page property is written as the first block (or first few blocks) of the page.
+	- Format: `key:: value` on its own line, as a top-level bullet.
+	- Example — this very page has `type:: how-to` at the top.
+	- Common page properties:
+		- `type:: how-to` or `type:: reference` — document type
+		- `status:: draft` or `status:: published` — workflow state
+		- `author:: Your Name` — attribution
+		- `date:: 2026-04-13` — creation or modification date
+- **Block-level properties**
+	- A block property is a child bullet directly below the block it annotates.
+	- Format: indented line with `key:: value` syntax.
+	- The property belongs to the parent block above it, not to the page.
+- **Example: a book note with block properties**
+	- Atomic Habits by James Clear
+		- author:: James Clear
+		- rating:: 5
+		- status:: finished
+		- genre:: self-improvement
+	- The Power of Habit by Charles Duhigg
+		- author:: Charles Duhigg
+		- rating:: 4
+		- status:: reading
+- **Tips**
+	- Property keys are case-sensitive: `Author::` and `author::` are different keys.
+	- Values are always treated as strings unless a plugin or query interprets them otherwise.
+	- Use consistent key names across pages to enable graph-wide queries in the future.
+- See [[Block Editing]] for how to work with blocks, and [[Start Here]] for navigation.

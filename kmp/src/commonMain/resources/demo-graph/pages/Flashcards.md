@@ -1,0 +1,23 @@
+- tags:: #how-to #flashcards
+- SteleKit's flashcard feature turns any block into a spaced-repetition review card.
+	- Spaced repetition is a learning technique that schedules reviews at increasing intervals.
+	- Cards you know well are shown less often; cards you struggle with appear more frequently.
+- **Marking a block as a flashcard**
+	- Add the block property `card:: true` as an indented child of any block.
+	- Example:
+		- The mitochondria is the powerhouse of the cell.
+			- card:: true
+	- Any block with `card:: true` enters the review queue.
+- **Opening the review queue**
+	- Tap the Flashcards icon in the sidebar (or navigate via Screen > Flashcards).
+	- Cards due for review are shown one at a time.
+	- Read the front of the card, recall your answer, then reveal the back.
+- **Rating your recall**
+	- After revealing the answer, rate how well you remembered it.
+	- The scheduler adjusts the next review date based on your rating.
+	- Cards rated "Again" return to the queue soon; cards rated "Easy" are deferred longer.
+- **Tips**
+	- Keep flashcard blocks short — one fact per card works best for recall.
+	- Use block nesting: put the question as the parent block and the answer as a child with `card:: true`.
+	- Review your queue daily for best results.
+- See [[Properties]] for more about the `key:: value` block property syntax.

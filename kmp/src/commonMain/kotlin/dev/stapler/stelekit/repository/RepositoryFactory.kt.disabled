@@ -1,0 +1,273 @@
+package dev.stapler.stelekit.repository
+
+/**
+ * Configuration for repository backends
+ */
+data class RepositoryConfig(
+    val backend: GraphBackend,
+    val connectionString: String? = null,
+    val databaseName: String? = null,
+    val host: String? = null,
+    val port: Int? = null,
+    val username: String? = null,
+    val password: String? = null,
+    val sqlDelightDatabase: dev.stapler.stelekit.db.SteleDatabase? = null
+)
+
+/**
+ * Factory implementation for creating repository instances.
+ * Supports dependency injection and backend switching for performance evaluation.
+ */
+class RepositoryFactoryImpl(
+    private val sqlDelightDatabase: dev.stapler.stelekit.db.SteleDatabase? = null
+) : RepositoryFactory {
+
+    private val instances = mutableMapOf<String, Any>()
+
+    /**
+     * Create a BlockRepository instance for the specified backend
+     */
+    override fun createBlockRepository(backend: GraphBackend): BlockRepository {
+        return when (backend) {
+            GraphBackend.IN_MEMORY -> getOrCreateInstance("block_in_memory") {
+                InMemoryBlockRepository()
+            }
+            GraphBackend.SQLDELIGHT -> getOrCreateInstance("block_sqldelight") {
+                sqlDelightDatabase?.let { SqlDelightBlockRepository(it) }
+                    ?: throw IllegalStateException("SQLDelight database not provided")
+            }
+            GraphBackend.KUZU -> getOrCreateInstance("block_kuzu") {
+                TODO("Kuzu backend not implemented")
+            }
+            GraphBackend.NEO4J -> getOrCreateInstance("block_neo4j") {
+                TODO("Neo4j backend not implemented")
+            }
+        }
+    }
+
+    /**
+     * Create a PageRepository instance for the specified backend
+     */
+    override fun createPageRepository(backend: GraphBackend): PageRepository {
+        return when (backend) {
+            GraphBackend.IN_MEMORY -> getOrCreateInstance("page_in_memory") {
+                InMemoryPageRepository()
+            }
+            GraphBackend.SQLDELIGHT -> getOrCreateInstance("page_sqldelight") {
+                sqlDelightDatabase?.let { SqlDelightPageRepository(it) }
+                    ?: throw IllegalStateException("SQLDelight database not provided")
+            }
+            GraphBackend.KUZU -> getOrCreateInstance("page_kuzu") {
+                TODO("Kuzu backend not implemented")
+            }
+            GraphBackend.NEO4J -> getOrCreateInstance("page_neo4j") {
+                TODO("Neo4j backend not implemented")
+            }
+        }
+    }
+
+    /**
+     * Create a PropertyRepository instance for the specified backend
+     */
+    override fun createPropertyRepository(backend: GraphBackend): PropertyRepository {
+        return when (backend) {
+            GraphBackend.IN_MEMORY -> getOrCreateInstance("property_in_memory") {
+                InMemoryPropertyRepository()
+            }
+            GraphBackend.SQLDELIGHT -> getOrCreateInstance("property_sqldelight") {
+                sqlDelightDatabase?.let { SqlDelightPropertyRepository(it) }
+                    ?: throw IllegalStateException("SQLDelight database not provided")
+            }
+            GraphBackend.KUZU -> getOrCreateInstance("property_kuzu") {
+                TODO("Kuzu backend not implemented")
+            }
+            GraphBackend.NEO4J -> getOrCreateInstance("property_neo4j") {
+                TODO("Neo4j backend not implemented")
+            }
+            GraphBackend.KUZU -> getOrCreateInstance("block_kuzu") {
+                TODO("Kuzu backend not implemented")
+            }
+            GraphBackend.NEO4J -> getOrCreateInstance("block_neo4j") {
+                TODO("Neo4j backend not implemented")
+            }
+            GraphBackend.KUZU -> getOrCreateInstance("property_kuzu") {
+                TODO("Kuzu backend not implemented")
+            }
+            GraphBackend.NEO4J -> getOrCreateInstance("property_neo4j") {
+                TODO("Neo4j backend not implemented")
+            }
+        }
+    }
+
+    /**
+     * Create a ReferenceRepository instance for the specified backend
+     */
+    override fun createReferenceRepository(backend: GraphBackend): ReferenceRepository {
+        return when (backend) {
+            GraphBackend.IN_MEMORY -> getOrCreateInstance("reference_in_memory") {
+                InMemoryReferenceRepository()
+            }
+            GraphBackend.SQLDELIGHT -> getOrCreateInstance("reference_sqldelight") {
+                sqlDelightDatabase?.let { SqlDelightReferenceRepository(it) }
+                    ?: throw IllegalStateException("SQLDelight database not provided")
+            }
+            GraphBackend.KUZU -> getOrCreateInstance("page_kuzu") {
+                TODO("Kuzu backend not implemented")
+            }
+            GraphBackend.NEO4J -> getOrCreateInstance("page_neo4j") {
+                TODO("Neo4j backend not implemented")
+            }
+            GraphBackend.KUZU -> getOrCreateInstance("reference_kuzu") {
+                TODO("Kuzu backend not implemented")
+            }
+            GraphBackend.NEO4J -> getOrCreateInstance("reference_neo4j") {
+                TODO("Neo4j backend not implemented")
+            }
+        }
+    }
+
+    /**
+     * Create a SearchRepository instance for the specified backend
+     */
+    override fun createSearchRepository(backend: GraphBackend): SearchRepository {
+        return when (backend) {
+            GraphBackend.IN_MEMORY -> getOrCreateInstance("search_in_memory") {
+                InMemorySearchRepository()
+            }
+            GraphBackend.SQLDELIGHT -> getOrCreateInstance("search_sqldelight") {
+                sqlDelightDatabase?.let { SqlDelightSearchRepository(it) }
+                    ?: throw IllegalStateException("SQLDelight database not provided")
+            }
+            GraphBackend.KUZU -> getOrCreateInstance("search_kuzu") {
+                TODO("Kuzu backend not implemented")
+            }
+            GraphBackend.NEO4J -> getOrCreateInstance("search_neo4j") {
+                TODO("Neo4j backend not implemented")
+            }
+        }
+    }
+
+    /**
+     * Create a complete repository set for a backend
+     */
+    fun createRepositorySet(backend: GraphBackend): RepositorySet {
+        return RepositorySet(
+            blockRepository = createBlockRepository(backend),
+            pageRepository = createPageRepository(backend),
+            propertyRepository = createPropertyRepository(backend),
+            referenceRepository = createReferenceRepository(backend),
+            searchRepository = createSearchRepository(backend)
+        )
+    }
+
+    /**
+     * Create repository set with custom configuration
+     */
+    fun createRepositorySet(config: RepositoryConfig): RepositorySet {
+        // TODO: Pass configuration to repository constructors
+        return createRepositorySet(config.backend)
+    }
+
+    /**
+     * Clear all cached instances (useful for testing)
+     */
+    fun clearCache() {
+        instances.clear()
+    }
+
+    /**
+     * Get cached instance or create new one
+     */
+    private inline fun <T> getOrCreateInstance(key: String, factory: () -> T): T {
+        @Suppress("UNCHECKED_CAST")
+        return instances.getOrPut(key) { factory() } as T
+    }
+}
+
+/**
+ * Convenience data class holding all repositories for a backend
+ */
+data class RepositorySet(
+    val blockRepository: BlockRepository,
+    val pageRepository: PageRepository,
+    val propertyRepository: PropertyRepository,
+    val referenceRepository: ReferenceRepository,
+    val searchRepository: SearchRepository
+)
+
+// ===== COMPANION OBJECT FOR EASY ACCESS =====
+
+/**
+ * Global factory instance for convenience
+ */
+object Repositories {
+    private var defaultFactory: RepositoryFactoryImpl = RepositoryFactoryImpl()
+
+    /**
+     * Configure the default factory with a SQLDelight database
+     */
+    fun configure(sqlDelightDatabase: dev.stapler.stelekit.db.SteleDatabase) {
+        defaultFactory = RepositoryFactoryImpl(sqlDelightDatabase)
+    }
+
+    /**
+     * Configure the default factory with a custom config
+     */
+    fun configure(config: RepositoryConfig) {
+        defaultFactory = RepositoryFactoryImpl(config.sqlDelightDatabase)
+    }
+
+    fun block(backend: GraphBackend = GraphBackend.SQLDELIGHT): BlockRepository =
+        defaultFactory.createBlockRepository(backend)
+
+    fun page(backend: GraphBackend = GraphBackend.SQLDELIGHT): PageRepository =
+        defaultFactory.createPageRepository(backend)
+
+    fun property(backend: GraphBackend = GraphBackend.SQLDELIGHT): PropertyRepository =
+        defaultFactory.createPropertyRepository(backend)
+
+    fun reference(backend: GraphBackend = GraphBackend.SQLDELIGHT): ReferenceRepository =
+        defaultFactory.createReferenceRepository(backend)
+
+    fun search(backend: GraphBackend = GraphBackend.SQLDELIGHT): SearchRepository =
+        defaultFactory.createSearchRepository(backend)
+
+    fun set(backend: GraphBackend = GraphBackend.SQLDELIGHT): RepositorySet =
+        defaultFactory.createRepositorySet(backend)
+
+    fun set(config: RepositoryConfig): RepositorySet =
+        defaultFactory.createRepositorySet(config)
+
+    fun clearCache() = defaultFactory.clearCache()
+}
+
+// ===== UTILITY FUNCTIONS =====
+
+/**
+ * Execute an operation across multiple backends for comparison
+ */
+suspend fun <T> compareBackends(
+    operation: suspend (RepositorySet) -> T,
+    backends: List<GraphBackend> = listOf(GraphBackend.IN_MEMORY, GraphBackend.SQLDELIGHT)
+): Map<GraphBackend, Result<T>> {
+    val factory = RepositoryFactoryImpl()
+    return backends.associateWith { backend ->
+        try {
+            val repoSet = factory.createRepositorySet(backend)
+            Result.success(operation(repoSet))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+}
+
+/**
+ * Measure execution time of repository operations
+ */
+suspend fun <T> measureTime(operation: suspend () -> T): Pair<T, Long> {
+    val startTime = System.currentTimeMillis()
+    val result = operation()
+    val endTime = System.currentTimeMillis()
+    return result to (endTime - startTime)
+}</content>
+<parameter name="filePath">kmp/src/commonMain/kotlin/com/logseq/kmp/repository/RepositoryFactory.kt

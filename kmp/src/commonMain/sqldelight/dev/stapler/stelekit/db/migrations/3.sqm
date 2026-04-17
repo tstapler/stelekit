@@ -1,0 +1,18 @@
+-- Schema version 3: Add migration_changelog table for the migration framework.
+CREATE TABLE IF NOT EXISTS migration_changelog (
+    id              TEXT NOT NULL,
+    graph_id        TEXT NOT NULL,
+    description     TEXT NOT NULL,
+    checksum        TEXT NOT NULL,
+    applied_at      INTEGER NOT NULL,
+    execution_ms    INTEGER NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'APPLIED',
+    applied_by      TEXT NOT NULL DEFAULT '',
+    execution_order INTEGER NOT NULL DEFAULT 0,
+    changes_applied INTEGER NOT NULL DEFAULT 0,
+    error_message   TEXT,
+    PRIMARY KEY (id, graph_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_changelog_graph_status ON migration_changelog(graph_id, status);
+CREATE INDEX IF NOT EXISTS idx_changelog_applied_at ON migration_changelog(graph_id, applied_at);

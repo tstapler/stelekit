@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+
+  <g id="icon">
+
+    <!-- Shared plinth -->
+    <rect x="60" y="444" width="394" height="22" rx="3" fill="#504945"/>
+
+    <!-- Back-left stele -->
+    <polygon
+      points="80,450 190,450 187,268 172,112 96,116 82,272"
+      fill="#B8AFA0"
+    />
+    <rect x="104" y="152" width="65" height="11" fill="#6B6058"/>
+    <rect x="106" y="168" width="38" height="11" fill="#6B6058"/>
+    <rect x="104" y="184" width="58" height="11" fill="#6B6058"/>
+
+    <rect x="105" y="212" width="44" height="11" fill="#6B6058"/>
+    <rect x="107" y="228" width="70" height="11" fill="#6B6058"/>
+
+    <rect x="104" y="256" width="52" height="11" fill="#6B6058"/>
+    <rect x="106" y="272" width="34" height="11" fill="#6B6058"/>
+    <rect x="105" y="288" width="66" height="11" fill="#6B6058"/>
+
+    <rect x="104" y="318" width="41" height="11" fill="#6B6058"/>
+    <rect x="107" y="334" width="62" height="11" fill="#6B6058"/>
+
+    <rect x="105" y="364" width="55" height="11" fill="#6B6058"/>
+    <rect x="106" y="380" width="29" height="11" fill="#6B6058"/>
+
+    <!-- Back-right stele -->
+    <polygon
+      points="298,450 434,450 437,280 420,168 312,164 295,286"
+      fill="#B8AFA0"
+    />
+    <rect x="314" y="202" width="72" height="11" fill="#6B6058"/>
+    <rect x="316" y="218" width="44" height="11" fill="#6B6058"/>
+    <rect x="314" y="234" width="64" height="11" fill="#6B6058"/>
+
+    <rect x="315" y="262" width="36" height="11" fill="#6B6058"/>
+    <rect x="317" y="278" width="74" height="11" fill="#6B6058"/>
+
+    <rect x="314" y="308" width="58" height="11" fill="#6B6058"/>
+    <rect x="316" y="324" width="27" height="11" fill="#6B6058"/>
+    <rect x="315" y="340" width="68" height="11" fill="#6B6058"/>
+
+    <rect x="314" y="370" width="46" height="11" fill="#6B6058"/>
+    <rect x="317" y="386" width="70" height="11" fill="#6B6058"/>
+
+    <rect x="315" y="414" width="33" height="11" fill="#6B6058"/>
+
+    <!-- Front stele -->
+    <polygon
+      points="172,452 340,452 325,250 309,58 200,62 183,254"
+      fill="#928374"
+    />
+    <rect x="211" y="102" width="92" height="16" fill="#1D2021"/>
+    <rect x="213" y="124" width="51" height="16" fill="#1D2021"/>
+    <rect x="211" y="146" width="78" height="16" fill="#1D2021"/>
+
+    <rect x="212" y="180" width="42" height="16" fill="#1D2021"/>
+    <rect x="214" y="202" width="88" height="16" fill="#1D2021"/>
+
+    <rect x="212" y="236" width="64" height="16" fill="#1D2021"/>
+    <rect x="214" y="258" width="90" height="16" fill="#1D2021"/>
+    <rect x="213" y="280" width="36" height="16" fill="#1D2021"/>
+
+    <rect x="213" y="314" width="82" height="16" fill="#1D2021"/>
+    <rect x="215" y="336" width="47" height="16" fill="#1D2021"/>
+
+    <rect x="213" y="372" width="70" height="16" fill="#1D2021"/>
+    <rect x="215" y="394" width="38" height="16" fill="#1D2021"/>
+    <rect x="214" y="416" width="84" height="16" fill="#1D2021"/>
+
+  </g>
+
+</svg>

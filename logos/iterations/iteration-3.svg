@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 512">
+
+  <g id="icon">
+
+    <!-- Back-left stele (receding, lighter stone) -->
+    <polygon
+      points="108,415 200,415 188,182 120,182"
+      fill="#B8AFA0"
+    />
+    <!-- Back-left: 1 inscription mark -->
+    <rect x="128" y="228" width="52" height="11" fill="#6B6058"/>
+    <rect x="128" y="252" width="40" height="11" fill="#6B6058"/>
+
+    <!-- Back-right stele (receding, lighter stone) -->
+    <polygon
+      points="268,415 358,415 344,182 282,182"
+      fill="#B8AFA0"
+    />
+    <!-- Back-right: 1 inscription mark -->
+    <rect x="288" y="228" width="50" height="11" fill="#6B6058"/>
+    <rect x="288" y="252" width="38" height="11" fill="#6B6058"/>
+
+    <!-- Front stele (main, richest stone tone) -->
+    <polygon
+      points="168,432 306,432 288,98 186,98"
+      fill="#928374"
+    />
+    <!-- Carved inscription bands — tall and prominent -->
+    <rect x="198" y="152" width="96" height="15" fill="#1D2021"/>
+    <rect x="198" y="182" width="78" height="15" fill="#1D2021"/>
+    <!-- gap — paragraph break -->
+    <rect x="198" y="218" width="88" height="15" fill="#1D2021"/>
+    <rect x="198" y="248" width="62" height="15" fill="#1D2021"/>
+
+    <!-- Base plinth — grounds all three steles -->
+    <rect x="90" y="430" width="278" height="14" rx="2" fill="#504945"/>
+
+  </g>
+
+  <g id="wordmark">
+    <text
+      x="428"
+      y="256"
+      dominant-baseline="central"
+      font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+      font-size="90"
+      font-weight="300"
+      letter-spacing="-2"
+      fill="#3C3836"
+    >stelekit</text>
+  </g>
+
+</svg>

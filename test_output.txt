@@ -1,0 +1,47 @@
+> Task :kmp:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :kmp:convertXmlValueResourcesForCommonMain NO-SOURCE
+> Task :kmp:copyNonXmlValueResourcesForCommonMain NO-SOURCE
+> Task :kmp:prepareComposeResourcesTaskForCommonMain NO-SOURCE
+> Task :kmp:generateResourceAccessorsForCommonMain NO-SOURCE
+> Task :kmp:convertXmlValueResourcesForJvmMain NO-SOURCE
+> Task :kmp:copyNonXmlValueResourcesForJvmMain NO-SOURCE
+> Task :kmp:prepareComposeResourcesTaskForJvmMain NO-SOURCE
+> Task :kmp:generateResourceAccessorsForJvmMain NO-SOURCE
+> Task :kmp:generateActualResourceCollectorsForJvmMain UP-TO-DATE
+> Task :kmp:generateCommonMainSteleDatabaseInterface UP-TO-DATE
+> Task :kmp:generateComposeResClass UP-TO-DATE
+> Task :kmp:generateExpectResourceCollectorsForCommonMain UP-TO-DATE
+> Task :kmp:compileKotlinJvm UP-TO-DATE
+> Task :kmp:convertXmlValueResourcesForBusinessTest NO-SOURCE
+> Task :kmp:copyNonXmlValueResourcesForBusinessTest NO-SOURCE
+> Task :kmp:prepareComposeResourcesTaskForBusinessTest NO-SOURCE
+> Task :kmp:generateResourceAccessorsForBusinessTest NO-SOURCE
+> Task :kmp:convertXmlValueResourcesForCommonTest NO-SOURCE
+> Task :kmp:copyNonXmlValueResourcesForCommonTest NO-SOURCE
+> Task :kmp:prepareComposeResourcesTaskForCommonTest NO-SOURCE
+> Task :kmp:generateResourceAccessorsForCommonTest NO-SOURCE
+> Task :kmp:convertXmlValueResourcesForJvmTest NO-SOURCE
+> Task :kmp:copyNonXmlValueResourcesForJvmTest NO-SOURCE
+> Task :kmp:prepareComposeResourcesTaskForJvmTest NO-SOURCE
+> Task :kmp:generateResourceAccessorsForJvmTest NO-SOURCE
+> Task :kmp:assembleJvmMainResources UP-TO-DATE
+> Task :kmp:jvmProcessResources UP-TO-DATE
+> Task :kmp:jvmMainClasses UP-TO-DATE
+> Task :kmp:jvmJar UP-TO-DATE
+> Task :kmp:assembleJvmTestResources UP-TO-DATE
+> Task :kmp:jvmTestProcessResources UP-TO-DATE
+
+> Task :kmp:compileTestKotlinJvm
+w: file:///home/tstapler/Programming/logseq-kmp/kmp/src/jvmTest/kotlin/com/logseq/kmp/benchmark/RepositoryBenchmark.kt:165:29 Unchecked cast of 'kotlinx.coroutines.flow.Flow<*>' to 'kotlinx.coroutines.flow.Flow<kotlin.Any>'.
+
+> Task :kmp:jvmTestClasses
+> Task :kmp:jvmTest
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.10.2/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 2s
+12 actionable tasks: 2 executed, 10 up-to-date

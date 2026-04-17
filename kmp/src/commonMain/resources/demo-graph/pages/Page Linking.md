@@ -1,0 +1,26 @@
+- tags:: #how-to #linking
+- Wiki links connect pages together and form the knowledge graph at the heart of SteleKit.
+- **Syntax**
+	- Wrap any page name in double square brackets: `[[Page Name]]`
+	- The link becomes clickable and navigates to that page.
+	- If the target page does not exist yet, clicking the link creates it.
+- **Creating a link**
+	- Type `[[` anywhere in a block.
+	- A suggestion dropdown appears with matching page names.
+	- Select a suggestion with arrow keys and Enter, or keep typing to narrow the list.
+	- Press `]]` or Enter to confirm the link.
+- **Automatic backlinks**
+	- Every time you link to a page, SteleKit records that link automatically.
+	- The linked page gains a "Referenced in" entry in its sidebar.
+	- This means backlinks require zero extra effort — they are a side effect of linking.
+	- See [[Backlinks]] for how to read the References Panel.
+- **Example links in this graph**
+	- [[Start Here]] — the index page and navigation hub
+	- [[Block Editing]] — how to work with blocks
+	- [[Properties]] — structured metadata with `key:: value` syntax
+	- [[Keyboard Shortcuts]] — all shortcuts in one place
+- **Tips**
+	- Link generously. The graph becomes more useful as pages connect.
+	- Use links instead of copy-pasting content — link to the source page.
+	- You can link to a page from a journal entry to connect daily notes to reference material.
+- See [[Backlinks]] to understand what happens on the receiving end of a link.

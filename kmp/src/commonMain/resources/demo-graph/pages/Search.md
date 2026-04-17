@@ -1,0 +1,19 @@
+- tags:: #how-to #search
+- SteleKit's search dialog lets you find any page or block across your entire graph instantly.
+- **Opening search**
+	- Press `Cmd+K` on macOS or `Ctrl+K` on Windows and Linux.
+	- The search dialog opens with a text field and a list of recent pages.
+	- Start typing immediately — results update with each keystroke.
+- **How search works**
+	- Search scans page titles and block content across all loaded graphs.
+	- Results are ranked by relevance: exact matches rank above partial matches.
+	- Page title matches rank above block-content matches.
+- **Finding pages vs. blocks**
+	- Results show the page title and, for block matches, a snippet of the matching block.
+	- Click any result to navigate directly to that page or block.
+	- If the match is a block deep in a long page, the page opens with the matched block highlighted.
+- **Tips**
+	- Search for a page name to jump to it without using the sidebar.
+	- Use search to discover pages you forgot you created.
+	- Searching for a tag like `#reference` surfaces all pages with that tag in their content.
+- See [[All Pages]] for browsing pages alphabetically without a search query.

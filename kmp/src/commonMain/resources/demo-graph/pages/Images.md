@@ -1,0 +1,23 @@
+- tags:: #how-to #images
+- SteleKit renders images embedded in blocks using standard Markdown image syntax.
+- **Syntax**
+	- `![alt text](path/to/image.png)`
+	- The alt text is shown if the image cannot load; it also aids accessibility.
+	- The path is relative to the page file or an absolute URL.
+- **Embedded image example**
+	- The block below embeds an image from the `assets/` directory bundled with this demo graph:
+	- ![SteleKit block hierarchy diagram](../assets/stelekit-diagram.png)
+- **Image paths**
+	- For images in the same graph, use a relative path from the page to the asset:
+		- Pages are in `pages/` → use `../assets/filename.png`
+		- Journal entries are in `journals/` → use `../assets/filename.png`
+	- For external images, use a full URL: `![alt](https://example.com/image.png)`
+- **Assets directory**
+	- Store image files in the `assets/` folder inside your graph directory.
+	- Images in `assets/` are bundled with the demo graph and available on all platforms.
+	- Supported formats: PNG, JPEG, GIF, WebP, and SVG.
+- **Tips**
+	- Always write descriptive alt text — it describes the image for screen readers and search.
+	- Keep image files small (under 1 MB ideally) for fast loading on mobile.
+	- Use PNG for diagrams and screenshots; JPEG for photographs.
+- See [[Markdown Formatting]] for other inline markup supported in SteleKit.

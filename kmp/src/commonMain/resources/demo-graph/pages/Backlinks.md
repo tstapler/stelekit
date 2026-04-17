@@ -1,0 +1,18 @@
+- tags:: #reference #backlinks
+- Backlinks are automatic reverse references. When page A links to page B, page B automatically knows about it.
+- **The References Panel**
+	- The sidebar shows a "Referenced in" section for the current page.
+	- Each entry shows the page that contains a link to here, along with the block that contains the link.
+	- You can read the context of the reference without navigating away.
+- **Pages that link here**
+	- [[Block Editing]] links to this page via the See Also mention at the bottom.
+	- [[Page Linking]] links here to explain the receiving side of a wiki link.
+	- Any journal entry that mentions `[[Backlinks]]` will also appear here.
+- **Bidirectional linking model**
+	- Linking is a two-way relationship. You write a link in one direction; the reverse appears automatically.
+	- This means you never need a separate "Related pages" section — the graph computes it for you.
+	- The result is a web of connected ideas rather than a hierarchy of folders.
+- **Tips**
+	- Use the References Panel to discover unexpected connections between notes.
+	- A page with many backlinks is a hub — a high-value concept worth refining.
+- See [[Page Linking]] to learn how to create links, and [[Block Editing]] for general editing.

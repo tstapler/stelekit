@@ -1,0 +1,30 @@
+- tags:: #reference #tasks
+- Task marker rendering is under active development. The syntax below is recorded for reference.
+- **Logseq-style task markers**
+	- TODO and DONE markers prefix a block to indicate its state.
+	- Syntax examples:
+		- TODO Write the introduction section
+		- DONE Set up the project repository
+		- DOING Review pull request comments
+		- LATER Follow up with the design team
+		- CANCELLED Migrate old notes from Evernote
+- **GFM checkbox syntax**
+	- GitHub Flavored Markdown checkboxes use `[ ]` for unchecked and `[x]` for checked.
+	- Examples:
+		- [ ] Review the architecture document
+		- [x] Create the demo graph pages
+		- [ ] Write integration tests for the graph loader
+		- [x] Set up Roborazzi screenshot tests
+- **SCHEDULED and DEADLINE timestamps**
+	- Add a timestamp property to a block to schedule it.
+	- `scheduled:: 2026-04-15` — the block is scheduled for that date
+	- `deadline:: 2026-04-20` — the block has a hard deadline
+	- Example:
+		- Prepare release notes
+			- scheduled:: 2026-04-14
+			- deadline:: 2026-04-15
+- **Tips**
+	- Use TODO/DONE for Logseq-compatible task tracking.
+	- Use `[ ]` / `[x]` for GitHub-compatible checklists.
+	- Both styles will render with visual indicators once task support is complete.
+- See [[Properties]] for `key:: value` syntax, and [[Markdown Formatting]] for other inline markup.

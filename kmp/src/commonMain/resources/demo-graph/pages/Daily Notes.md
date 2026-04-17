@@ -1,0 +1,20 @@
+- tags:: #how-to #journal
+- Daily Notes (also called Journals) give you a dedicated page for each calendar day.
+	- Think of it as a captain's log — a running record of thoughts, tasks, and events.
+	- Each day's entry is a separate Markdown file in the `journals/` directory.
+- **Opening the Journals view**
+	- Tap or click the Journals icon in the sidebar.
+	- The view shows entries in reverse-chronological order (newest at the top).
+	- Scroll down to see older entries.
+- **Navigating to today's note**
+	- The top of the Journals view always shows today's entry.
+	- If no entry exists for today, the view shows an empty block ready to receive your first note.
+	- Start typing to create your first block for the day.
+- **Navigating to past dates**
+	- Scroll down in the Journals view to reach earlier dates.
+	- Each date header is a link — tap it to open that date as a full page.
+	- You can also create a wiki link like `[[2026-04-12]]` from any page to jump directly to that entry.
+- **Example journal entry** — see [[2026-04-12]] for a sample weekly-review entry.
+- **Tips**
+	- Use the daily note as an inbox: capture ideas quickly, then move them to dedicated pages later.
+	- Link from your daily note to reference pages using `[[Page Name]]` to create a trail of context.

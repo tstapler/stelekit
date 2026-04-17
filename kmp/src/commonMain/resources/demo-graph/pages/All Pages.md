@@ -1,0 +1,13 @@
+- tags:: #reference
+- The All Pages view lists every non-journal page in your graph.
+- **What is shown**
+	- All pages in the `pages/` directory of the graph, sorted alphabetically by title.
+	- Journal entries (stored in `journals/`) are not listed here — use the Journals view for those.
+	- Newly created pages appear in the list immediately after they are saved.
+- **Navigating to a page**
+	- Tap or click any page name in the list to open it.
+	- The page opens in the main content area; the sidebar stays visible on desktop.
+- **Tips**
+	- Use All Pages to audit your graph — look for pages that have no links (orphans).
+	- An alphabetical list is useful for quickly jumping to a known page name without searching.
+	- Combine with [[Search]] for finding pages when you only remember a word from the content.

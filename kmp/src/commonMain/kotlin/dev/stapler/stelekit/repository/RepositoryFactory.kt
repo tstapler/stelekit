@@ -1,0 +1,235 @@
+package dev.stapler.stelekit.repository
+
+import dev.stapler.stelekit.db.DatabaseWriteActor
+import dev.stapler.stelekit.db.DriverFactory
+import dev.stapler.stelekit.db.OperationLogger
+import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.db.UndoManager
+import dev.stapler.stelekit.db.createDatabase
+import dev.stapler.stelekit.performance.InstrumentedPageRepository
+import dev.stapler.stelekit.performance.InstrumentedSearchRepository
+import dev.stapler.stelekit.performance.OtelProvider
+import kotlinx.coroutines.CoroutineScope
+
+/**
+ * Factory implementation for creating repository instances.
+ * Supports cross-platform database initialization and backend switching.
+ */
+class RepositoryFactoryImpl(
+    private val driverFactory: DriverFactory,
+    private val jdbcUrl: String = "jdbc:sqlite:stelekit.db"
+) : RepositoryFactory {
+
+    private var activeDriver: app.cash.sqldelight.db.SqlDriver? = null
+
+    private val database: SteleDatabase by lazy {
+        val driver = driverFactory.createDriver(jdbcUrl)
+        activeDriver = driver
+        SteleDatabase(driver)
+    }
+
+    private val instances = mutableMapOf<String, Any>()
+
+    override fun createBlockRepository(backend: GraphBackend): BlockRepository {
+        return when (backend) {
+            GraphBackend.IN_MEMORY -> getOrCreateInstance("block_in_memory") {
+                InMemoryBlockRepository()
+            }
+            GraphBackend.DATASCRIPT -> getOrCreateInstance("block_datascript") {
+                DatascriptBlockRepository()
+            }
+            GraphBackend.SQLDELIGHT -> getOrCreateInstance("block_sqldelight") {
+                SqlDelightBlockRepository(database)
+            }
+            else -> throw NotImplementedError("Backend $backend not implemented")
+        }
+    }
+
+    override fun createPageRepository(backend: GraphBackend): PageRepository {
+        return when (backend) {
+            GraphBackend.IN_MEMORY -> getOrCreateInstance("page_in_memory") {
+                InMemoryPageRepository()
+            }
+            GraphBackend.DATASCRIPT -> getOrCreateInstance("page_datascript") {
+                DatascriptPageRepository()
+            }
+            GraphBackend.SQLDELIGHT -> getOrCreateInstance("page_sqldelight") {
+                val repo = SqlDelightPageRepository(database)
+                if (OtelProvider.isInitialized) {
+                    InstrumentedPageRepository(repo, OtelProvider.getTracer("dev.stapler.stelekit.page"))
+                } else {
+                    repo
+                }
+            }
+            else -> throw NotImplementedError("Backend $backend not implemented")
+        }
+    }
+
+    override fun createPropertyRepository(backend: GraphBackend): PropertyRepository {
+        return when (backend) {
+            GraphBackend.IN_MEMORY -> getOrCreateInstance("property_in_memory") {
+                InMemoryPropertyRepository()
+            }
+            GraphBackend.DATASCRIPT -> getOrCreateInstance("property_datascript") {
+                DatascriptPropertyRepository()
+            }
+            GraphBackend.SQLDELIGHT -> getOrCreateInstance("property_sqldelight") {
+                SqlDelightPropertyRepository(database)
+            }
+            else -> throw NotImplementedError("Backend $backend not implemented")
+        }
+    }
+
+    override fun createReferenceRepository(backend: GraphBackend): ReferenceRepository {
+        return when (backend) {
+            GraphBackend.IN_MEMORY -> getOrCreateInstance("reference_in_memory") {
+                InMemoryReferenceRepository()
+            }
+            GraphBackend.DATASCRIPT -> getOrCreateInstance("reference_datascript") {
+                DatascriptReferenceRepository()
+            }
+            GraphBackend.SQLDELIGHT -> getOrCreateInstance("reference_sqldelight") {
+                SqlDelightReferenceRepository(database)
+            }
+            else -> throw NotImplementedError("Backend $backend not implemented")
+        }
+    }
+
+    override fun createSearchRepository(backend: GraphBackend): SearchRepository {
+        return when (backend) {
+            GraphBackend.IN_MEMORY -> getOrCreateInstance("search_in_memory") {
+                InMemorySearchRepository(
+                    createPageRepository(backend),
+                    createBlockRepository(backend)
+                )
+            }
+            GraphBackend.DATASCRIPT -> getOrCreateInstance("search_datascript") {
+                InMemorySearchRepository(
+                    createPageRepository(backend),
+                    createBlockRepository(backend)
+                )
+            }
+            GraphBackend.SQLDELIGHT -> getOrCreateInstance("search_sqldelight") {
+                val repo = SqlDelightSearchRepository(database)
+                if (OtelProvider.isInitialized) {
+                    InstrumentedSearchRepository(repo, OtelProvider.getTracer("dev.stapler.stelekit.search"))
+                } else {
+                    repo
+                }
+            }
+            else -> throw NotImplementedError("Backend $backend not implemented")
+        }
+    }
+
+    fun createJournalService(backend: GraphBackend, writeActor: DatabaseWriteActor? = null): JournalService =
+        JournalService(
+            pageRepository = createPageRepository(backend),
+            blockRepository = createBlockRepository(backend),
+            writeActor = writeActor
+        )
+
+    fun createRepositorySet(backend: GraphBackend, scope: CoroutineScope? = null): RepositorySet {
+        val blockRepo = createBlockRepository(backend)
+        val pageRepo = createPageRepository(backend)
+        val (actor, undoManager) = if (scope != null) {
+            val sessionId = java.util.UUID.randomUUID().toString()
+            val opLogger = if (backend == GraphBackend.SQLDELIGHT) OperationLogger(database, sessionId) else null
+            val writeActor = DatabaseWriteActor(blockRepo, pageRepo, scope, opLogger)
+            val undo = if (opLogger != null) UndoManager(database, writeActor, sessionId) else null
+            writeActor to undo
+        } else {
+            null to null
+        }
+
+        // Wire performance objects only for SQLDelight + a live scope (i.e. production graphs)
+        val histogramWriter = if (backend == GraphBackend.SQLDELIGHT && scope != null) {
+            dev.stapler.stelekit.performance.HistogramWriter(database, scope)
+        } else null
+
+        val debugFlagRepo = if (backend == GraphBackend.SQLDELIGHT) {
+            dev.stapler.stelekit.performance.DebugFlagRepository(database)
+        } else null
+
+        val ringBuffer = if (histogramWriter != null) {
+            dev.stapler.stelekit.performance.RingBufferSpanExporter()
+        } else null
+
+        val bugReportBuilder = if (histogramWriter != null && ringBuffer != null) {
+            dev.stapler.stelekit.performance.BugReportBuilder(ringBuffer, histogramWriter)
+        } else null
+
+        return RepositorySet(
+            blockRepository = blockRepo,
+            pageRepository = pageRepo,
+            propertyRepository = createPropertyRepository(backend),
+            referenceRepository = createReferenceRepository(backend),
+            searchRepository = createSearchRepository(backend),
+            journalService = createJournalService(backend, actor),
+            writeActor = actor,
+            undoManager = undoManager,
+            histogramWriter = histogramWriter,
+            debugFlagRepository = debugFlagRepo,
+            bugReportBuilder = bugReportBuilder
+        )
+    }
+
+    /**
+     * Exposes the underlying [SteleDatabase] instance for operations that need direct
+     * SQL access (e.g. one-shot migrations). Only valid after the first repository has
+     * been created (the database is initialised lazily on first use).
+     */
+    fun steleDatabase(): SteleDatabase = database
+
+    override fun close() {
+        // SQLDelight driver must be closed
+        try {
+            activeDriver?.close()
+        } catch (e: Exception) {
+            // Driver might not be initialized or already closed
+        }
+        instances.clear()
+    }
+
+    private inline fun <reified T : Any> getOrCreateInstance(key: String, factory: () -> T): T {
+        val existing = instances[key]
+        if (existing != null) return existing as T
+        val newInstance = factory()
+        instances[key] = newInstance
+        return newInstance
+    }
+}
+
+/**
+ * Global access to repositories.
+ * 
+ * Note: For multi-graph support, use GraphManager instead.
+ */
+object Repositories {
+    private lateinit var factory: RepositoryFactoryImpl
+    private var isInitialized = false
+
+    fun initialize(driverFactory: DriverFactory, jdbcUrl: String = "jdbc:sqlite:stelekit.db") {
+        factory = RepositoryFactoryImpl(driverFactory, jdbcUrl)
+        isInitialized = true
+    }
+
+    fun getFactory(): RepositoryFactory = factory
+
+    fun block(backend: GraphBackend = GraphBackend.SQLDELIGHT): BlockRepository =
+        factory.createBlockRepository(backend)
+
+    fun page(backend: GraphBackend = GraphBackend.SQLDELIGHT): PageRepository =
+        factory.createPageRepository(backend)
+
+    fun property(backend: GraphBackend = GraphBackend.SQLDELIGHT): PropertyRepository =
+        factory.createPropertyRepository(backend)
+
+    fun reference(backend: GraphBackend = GraphBackend.SQLDELIGHT): ReferenceRepository =
+        factory.createReferenceRepository(backend)
+
+    fun search(backend: GraphBackend = GraphBackend.SQLDELIGHT): SearchRepository =
+        factory.createSearchRepository(backend)
+
+    fun journal(backend: GraphBackend = GraphBackend.SQLDELIGHT): JournalService =
+        factory.createJournalService(backend)
+}

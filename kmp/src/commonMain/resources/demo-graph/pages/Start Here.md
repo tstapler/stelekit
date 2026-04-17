@@ -1,0 +1,27 @@
+- type:: index
+- tags:: #welcome #getting-started
+- Welcome to SteleKit — your Logseq-compatible outliner for Desktop, Android, and iOS.
+	- This graph is both a working demo and a built-in help reference.
+	- Every feature has a dedicated page. Read it, edit it, link from it.
+- This graph is portable. The same `.md` files open in Logseq unchanged.
+- **Feature Pages** — explore SteleKit's capabilities:
+	- [[Block Editing]] — create, indent, and reorder blocks; the primary unit of content
+	- [[Block Editor Reference]] — keyboard shortcuts and block states at a glance
+	- [[Page Linking]] — connect pages with `[[double bracket]]` wiki links
+	- [[Backlinks]] — the References Panel and bidirectional linking model
+	- [[Properties]] — add structured `key:: value` metadata to pages and blocks
+	- [[Daily Notes]] — the Journals view and navigating between dates
+	- [[Search]] — full-text search with Cmd+K / Ctrl+K
+	- [[All Pages]] — browse every non-journal page alphabetically
+	- [[Flashcards]] — mark blocks for spaced-repetition review
+	- [[Markdown Formatting]] — bold, italic, code, headings, and more
+	- [[Tables]] — GFM pipe-table syntax (planned feature)
+	- [[Tasks]] — TODO/DONE markers and checkbox syntax
+	- [[Images]] — embed images with `![alt](path)` syntax
+	- [[Keyboard Shortcuts]] — full shortcut reference organized by category
+	- [[About SteleKit]] — what SteleKit is and how it relates to Logseq
+- **Getting Started**
+	- Open [[Block Editing]] to learn the fundamentals.
+	- Then visit [[Page Linking]] to see how the graph grows as you connect ideas.
+	- Check [[Daily Notes]] to start a daily journaling habit.
+- This page is your home base. Bookmark it or link to it from your own pages.

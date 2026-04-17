@@ -1,0 +1,72 @@
+package dev.stapler.stelekit
+
+import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.repository.InMemoryPageRepository
+import dev.stapler.stelekit.ui.AppViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.Clock
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class AppViewModelTest {
+
+    private val testDispatcher = StandardTestDispatcher()
+    private val testScope = TestScope(testDispatcher)
+
+    private fun createTestPage(id: Long, uuid: String, name: String): Page {
+        return Page(
+            id = id,
+            uuid = uuid,
+            name = name,
+            createdAt = Clock.System.now(),
+            updatedAt = Clock.System.now()
+        )
+    }
+
+    @Test
+    fun testSelectPage() = runTest(testDispatcher) {
+        val repository = InMemoryPageRepository()
+        val viewModel = AppViewModel(repository, testScope)
+
+        val testPage = createTestPage(1L, "550e8400-e29b-41d4-a716-446655440000", "Test Page")
+
+        viewModel.selectPage(testPage)
+
+        val state = viewModel.state.value
+        assertEquals(testPage, state.selectedPage)
+    }
+
+    @Test
+    fun testOnError() = runTest(testDispatcher) {
+        val repository = InMemoryPageRepository()
+        val viewModel = AppViewModel(repository, testScope)
+
+        val testError = RuntimeException("Test error")
+        viewModel.onError(testError)
+
+        val state = viewModel.state.value
+        assertEquals("Test error", state.error)
+        assertFalse(state.isLoading)
+    }
+
+    @Test
+    fun testMultiplePageSelection() = runTest(testDispatcher) {
+        val repository = InMemoryPageRepository()
+        val viewModel = AppViewModel(repository, testScope)
+
+        val page1 = createTestPage(1L, "550e8400-e29b-41d4-a716-446655440001", "Page 1")
+        val page2 = createTestPage(2L, "550e8400-e29b-41d4-a716-446655440002", "Page 2")
+
+        viewModel.selectPage(page1)
+        assertEquals(page1, viewModel.state.value.selectedPage)
+
+        viewModel.selectPage(page2)
+        assertEquals(page2, viewModel.state.value.selectedPage)
+    }
+}

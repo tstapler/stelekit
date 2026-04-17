@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 512">
+
+  <g id="icon">
+    <!-- Stele body: pentagon with slightly arched top -->
+    <path d="M180,420 L340,420 L320,110 Q256,96 192,110 Z" fill="#928374"/>
+
+    <!-- Base/plinth -->
+    <rect x="168" y="420" width="185" height="16" fill="#504945"/>
+
+    <!-- Inscription bands -->
+    <rect x="205" y="155" width="105" height="10" fill="#282828"/>
+    <rect x="205" y="178" width="85" height="10" fill="#282828"/>
+    <rect x="205" y="210" width="95" height="10" fill="#282828"/>
+  </g>
+
+  <g id="wordmark">
+    <text
+      x="400"
+      y="270"
+      font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+      font-weight="300"
+      font-size="92"
+      letter-spacing="-2"
+      fill="#3C3836"
+      dominant-baseline="middle"
+    >stelekit</text>
+  </g>
+
+</svg>

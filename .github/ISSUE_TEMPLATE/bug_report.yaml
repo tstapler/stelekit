@@ -1,0 +1,57 @@
+name: Bug Report
+description: Report a bug encountered while using SteleKit
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill out as much detail as you can — screenshots and steps to reproduce are especially helpful.
+
+        Please search [existing issues](../../issues) before opening a new one.
+
+  - type: checkboxes
+    id: confirm-search
+    attributes:
+      label: Search first
+      options:
+        - label: I searched existing issues and none match this bug
+          required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: "e.g. Android 14, macOS 14 Sonoma, Linux (Ubuntu 24.04), Windows 11"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots (optional)
+      description: Paste any relevant log output or attach screenshots.

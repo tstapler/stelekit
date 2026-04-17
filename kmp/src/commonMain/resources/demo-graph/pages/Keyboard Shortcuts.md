@@ -1,0 +1,37 @@
+- tags:: #reference #keyboard-shortcuts
+- All keyboard shortcuts available in SteleKit, organized by category.
+- **Navigation**
+	- `Cmd+K` / `Ctrl+K` — open the search dialog
+	- `Arrow Up` / `Arrow Down` — move between blocks
+	- `Ctrl+Home` — jump to the first block on the page
+	- `Ctrl+End` — jump to the last block on the page
+	- Click a wiki link — navigate to the linked page
+	- Browser Back / `Alt+Left` — return to the previous page
+- **Block editing**
+	- `Enter` — create a new block below the current block
+	- `Backspace` on an empty block — delete the block
+	- `Shift+Enter` — insert a soft line break within the current block
+	- `Tab` — indent (make child of the block above)
+	- `Shift+Tab` — unindent (promote to parent's level)
+- **Inline formatting**
+	- `**text**` — bold
+	- `*text*` — italic
+	- `~~text~~` — strikethrough
+	- `` `text` `` — inline code
+	- `[[` — begin a wiki link (shows suggestion dropdown)
+- **Sidebar**
+	- Click the sidebar toggle button — show or hide the left sidebar
+	- On desktop, the sidebar opens automatically at startup
+	- On mobile, the sidebar is hidden by default; tap the menu icon to open it
+- **Search dialog**
+	- `Escape` — close the search dialog
+	- `Arrow Up` / `Arrow Down` — move through search results
+	- `Enter` — open the selected result
+- **Flashcards**
+	- Navigate to the Flashcards screen via the sidebar icon
+	- Space or `Enter` — reveal the answer for the current card
+	- Number keys `1`–`4` — rate your recall (Again / Hard / Good / Easy)
+- **Tips**
+	- On macOS, use `Cmd` where Windows/Linux uses `Ctrl`.
+	- Most shortcuts work the same across Desktop, Android (hardware keyboard), and Web.
+- See [[Block Editor Reference]] for block-specific shortcuts, and [[Search]] for search tips.

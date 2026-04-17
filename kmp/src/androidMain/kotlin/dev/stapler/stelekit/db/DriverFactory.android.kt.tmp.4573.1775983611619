@@ -1,0 +1,68 @@
+package dev.stapler.stelekit.db
+
+import android.content.Context
+import app.cash.sqldelight.db.SqlDriver
+import app.cash.sqldelight.driver.android.AndroidSqliteDriver
+import io.requery.android.database.sqlite.RequerySQLiteOpenHelperFactory
+
+actual class DriverFactory actual constructor() {
+    companion object {
+        internal var staticContext: Context? = null
+
+        fun setContext(context: Context) {
+            staticContext = context.applicationContext
+        }
+    }
+
+    actual fun init(context: Any) {
+        if (context is Context) {
+            setContext(context)
+        }
+    }
+
+    actual fun createDriver(jdbcUrl: String): SqlDriver {
+        val dbName = jdbcUrl.substringAfter("jdbc:sqlite:")
+
+        val context = staticContext ?: throw IllegalStateException("DriverFactory must be initialized with a Context before creating a driver. Call DriverFactory().init(context) first.")
+
+        // Ensure parent directory exists for absolute paths
+        if (dbName.startsWith("/")) {
+            java.io.File(dbName).parentFile?.mkdirs()
+        }
+
+        val driver = AndroidSqliteDriver(
+            schema = SteleDatabase.Schema,
+            context = context,
+            name = dbName,
+            factory = RequerySQLiteOpenHelperFactory()
+        )
+
+        // Incremental migrations
+        try {
+            driver.execute(null, "ALTER TABLE blocks ADD COLUMN content_hash TEXT;", 0)
+        } catch (_: Exception) { }
+        try {
+            driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_blocks_content_hash ON blocks(content_hash);", 0)
+        } catch (_: Exception) { }
+        try {
+            driver.execute(null, "ALTER TABLE pages ADD COLUMN is_content_loaded INTEGER NOT NULL DEFAULT 1;", 0)
+        } catch (_: Exception) { }
+
+        return driver
+    }
+
+    actual fun getDatabaseUrl(graphId: String): String {
+        val basePath = getDatabaseDirectory()
+        return "jdbc:sqlite:$basePath/logseq-graph-$graphId.db"
+    }
+
+    actual fun getDatabaseDirectory(): String {
+        val context = staticContext ?: throw IllegalStateException("DriverFactory not initialized with a Context.")
+        return context.filesDir.absolutePath
+    }
+}
+
+actual val defaultDatabaseUrl: String
+    get() {
+        return "jdbc:sqlite:logseq.db"
+    }

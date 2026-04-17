@@ -1,0 +1,220 @@
+package dev.stapler.stelekit.repository
+
+import dev.stapler.stelekit.db.*
+import dev.stapler.stelekit.model.*
+import kotlinx.datetime.Instant
+import kotlinx.serialization.json.Json
+
+/**
+ * Extension functions to convert between SQLDelight entities and domain models.
+ * Handles JSON serialization/deserialization for complex fields.
+ */
+
+private val json = Json { ignoreUnknownKeys = true }
+
+// ===== PAGE CONVERSIONS =====
+
+fun PageEntity.toPage(): Page {
+    return Page(
+        id = this.id,
+        uuid = this.uuid,
+        name = this.name,
+        namespace = this.namespace_,
+        filePath = this.file_path,
+        createdAt = Instant.fromEpochMilliseconds(this.created_at),
+        updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
+        properties = try {
+            json.decodeFromString(this.properties_)
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    )
+}
+
+fun Page.toPageEntity(): PageEntity {
+    return PageEntity(
+        id = this.id,
+        uuid = this.uuid,
+        name = this.name,
+        namespace_ = this.namespace,
+        file_path = this.filePath,
+        created_at = this.createdAt.toEpochMilliseconds(),
+        updated_at = this.updatedAt.toEpochMilliseconds(),
+        properties_ = json.encodeToString(this.properties)
+    )
+}
+
+// ===== BLOCK CONVERSIONS =====
+
+fun BlockEntity.toBlock(): Block {
+    return Block(
+        id = this.id,
+        uuid = this.uuid,
+        pageId = this.page_id,
+        parentId = this.parent_id,
+        leftId = this.left_id,
+        content = this.content,
+        level = this.level_.toInt(),
+        position = this.position_.toInt(),
+        createdAt = Instant.fromEpochMilliseconds(this.created_at),
+        updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
+        properties = try {
+            this.properties_?.let { json.decodeFromString<Map<String, String>>(it) } ?: emptyMap()
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    )
+}
+
+fun Block.toBlockEntity(): BlockEntity {
+    return BlockEntity(
+        id = this.id,
+        uuid = this.uuid,
+        page_id = this.pageId,
+        parent_id = this.parentId,
+        left_id = this.leftId,
+        content = this.content,
+        level_ = this.level.toLong(),
+        position_ = this.position.toLong(),
+        created_at = this.createdAt.toEpochMilliseconds(),
+        updated_at = this.updatedAt.toEpochMilliseconds(),
+        properties_ = json.encodeToString(this.properties)
+    )
+}
+
+// ===== PROPERTY CONVERSIONS =====
+
+fun PropertyEntity.toProperty(): Property {
+    return Property(
+        id = this.id,
+        blockId = this.block_id,
+        key = this.key,
+        value = this.value,
+        createdAt = Instant.fromEpochMilliseconds(this.created_at)
+    )
+}
+
+fun Property.toPropertyEntity(): PropertyEntity {
+    return PropertyEntity(
+        id = this.id,
+        block_id = this.blockId,
+        key = this.key,
+        value = this.value,
+        created_at = this.createdAt.toEpochMilliseconds()
+    )
+}
+
+// ===== REFERENCE CONVERSIONS =====
+
+fun BlockReferenceEntity.toBlock(): Block {
+    return Block(
+        id = this.id,
+        uuid = this.uuid,
+        pageId = this.page_id,
+        parentId = this.parent_id,
+        leftId = this.left_id,
+        content = this.content,
+        level = this.level_.toInt(),
+        position = this.position_.toInt(),
+        createdAt = Instant.fromEpochMilliseconds(this.created_at),
+        updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
+        properties = try {
+            this.properties_?.let { json.decodeFromString<Map<String, String>>(it) } ?: emptyMap()
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    )
+}
+
+// ===== HIERARCHY VIEW CONVERSIONS =====
+
+fun BlockHierarchyEntity.toBlock(): Block {
+    return Block(
+        id = 0L, // Not available in view
+        uuid = this.uuid,
+        pageId = 0L, // Not available in view
+        parentId = null, // Would need to resolve from parent_uuid
+        leftId = null,
+        content = this.content,
+        level = this.level_.toInt(),
+        position = 0, // Not available in view
+        createdAt = Instant.fromEpochMilliseconds(0), // Not available in view
+        updatedAt = Instant.fromEpochMilliseconds(0), // Not available in view
+        properties = emptyMap()
+    )
+}
+
+fun BlockAncestryEntity.toBlock(): Block {
+    return Block(
+        id = 0L, // Not available in view
+        uuid = this.uuid,
+        pageId = 0L, // Not available in view
+        parentId = this.parent_id,
+        leftId = null,
+        content = this.content,
+        level = 0, // Not available in view
+        position = 0, // Not available in view
+        createdAt = Instant.fromEpochMilliseconds(0), // Not available in view
+        updatedAt = Instant.fromEpochMilliseconds(0), // Not available in view
+        properties = emptyMap()
+    )
+}
+
+// ===== SEARCH RESULT CONVERSIONS =====
+
+fun BlockSearchEntity.toBlock(): Block {
+    return Block(
+        id = this.id,
+        uuid = this.uuid,
+        pageId = this.page_id,
+        parentId = this.parent_id,
+        leftId = this.left_id,
+        content = this.content,
+        level = this.level_.toInt(),
+        position = this.position_.toInt(),
+        createdAt = Instant.fromEpochMilliseconds(this.created_at),
+        updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
+        properties = try {
+            this.properties_?.let { json.decodeFromString<Map<String, String>>(it) } ?: emptyMap()
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    )
+}
+
+fun PageSearchEntity.toPage(): Page {
+    return Page(
+        id = this.id,
+        uuid = this.uuid,
+        name = this.name,
+        namespace = this.namespace_,
+        filePath = this.file_path,
+        createdAt = Instant.fromEpochMilliseconds(this.created_at),
+        updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
+        properties = try {
+            json.decodeFromString(this.properties_)
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    )
+}
+
+fun ReferenceCountEntity.toBlock(): Block {
+    return Block(
+        id = this.id,
+        uuid = this.uuid,
+        pageId = this.page_id,
+        parentId = this.parent_id,
+        leftId = this.left_id,
+        content = this.content,
+        level = this.level_.toInt(),
+        position = this.position_.toInt(),
+        createdAt = Instant.fromEpochMilliseconds(this.created_at),
+        updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
+        properties = try {
+            this.properties_?.let { json.decodeFromString<Map<String, String>>(it) } ?: emptyMap()
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    )
+}

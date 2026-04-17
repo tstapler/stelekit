@@ -1,0 +1,28 @@
+- tags:: #how-to #editing
+- Blocks are the primary unit of content in SteleKit. Every line of text is a block.
+	- Blocks can be nested to any depth, creating an outline hierarchy.
+	- A page is simply a named list of blocks.
+- **Creating blocks**
+	- Click anywhere on the page to focus the editor.
+	- Type your content and press **Enter** to create a new block below.
+	- Press **Backspace** on an empty block to delete it and move focus up.
+- **Indenting and nesting**
+	- Press **Tab** to indent a block — it becomes a child of the block above it.
+	- Press **Shift+Tab** to unindent — the block moves up one level in the hierarchy.
+	- Children collapse under their parent when you click the bullet triangle.
+- **Example: a nested block structure**
+	- Project Alpha
+		- Research phase
+			- Read background papers
+			- Interview stakeholders
+		- Implementation phase
+			- Write first draft
+			- Review with team
+	- Project Beta
+		- Planning
+		- Execution
+- **Tips**
+	- Use deep nesting to capture sub-tasks, sub-ideas, or supporting evidence.
+	- Keep top-level blocks as main ideas; nest the details beneath them.
+	- A flat structure with many blocks works just as well — choose what feels natural.
+- See [[Block Editor Reference]] for the full list of keyboard shortcuts and block states.

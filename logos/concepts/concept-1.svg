@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 512">
+
+  <!-- Icon: upright stone stele (trapezoid, wider at base) -->
+  <g id="icon">
+    <!-- Stone slab: trapezoid centered in left half (x: 0–512, y: 0–512) -->
+    <!-- Base width: 160, top width: 120, height: 300 -->
+    <!-- Centered at x=256, y=256 -->
+    <!-- Corners: bottom-left (176,406), bottom-right (336,406), top-right (316,106), top-left (196,106) -->
+    <polygon
+      points="196,106 316,106 336,406 176,406"
+      fill="#928374"
+    />
+    <!-- Carved inscription band 1 (near top of slab) -->
+    <rect x="210" y="156" width="92" height="12" fill="#282828" />
+    <!-- Carved inscription band 2 -->
+    <rect x="210" y="186" width="92" height="12" fill="#282828" />
+  </g>
+
+  <!-- Wordmark: lowercase "stelekit" centered vertically in right half -->
+  <g id="wordmark">
+    <text
+      x="568"
+      y="256"
+      dominant-baseline="central"
+      font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+      font-size="96"
+      font-weight="300"
+      letter-spacing="-2"
+      fill="#3C3836"
+    >stelekit</text>
+  </g>
+
+</svg>

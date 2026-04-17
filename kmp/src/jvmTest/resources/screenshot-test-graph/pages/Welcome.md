@@ -1,0 +1,11 @@
+- type:: index
+- Welcome to **SteleKit** — your local-first knowledge graph.
+	- This is the demo graph showing SteleKit features.
+- Getting started
+	- Create a new block by pressing Enter
+	- Indent with Tab, unindent with Shift+Tab
+	- Link pages with [[double brackets]]
+- Explore the demo
+	- [[Properties Example]] — page and block properties
+	- [[Linked Page]] — wiki link navigation
+- SteleKit stores everything as plain Markdown files on your device.

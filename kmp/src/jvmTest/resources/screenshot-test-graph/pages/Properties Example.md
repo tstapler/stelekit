@@ -1,0 +1,11 @@
+- type:: reference
+- author:: Jane Doe
+- status:: published
+- This page demonstrates properties in SteleKit.
+	- Properties use the `key:: value` syntax.
+	- They can be placed on pages (as above) or on individual blocks.
+- Block with properties
+	- rating:: 5
+	- tags:: kotlin, multiplatform
+	- This block has properties nested beneath it.
+- Link back to [[Welcome]]

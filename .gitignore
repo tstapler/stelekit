@@ -1,0 +1,138 @@
+# ===========================================
+# Based on GitHub gitignore templates
+# ===========================================
+
+# --------------------
+# Gradle
+# --------------------
+.gradle
+**/build/
+!**/src/**/build/
+
+# Gradle wrapper
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# Gradle cache
+.gradletasknamecache
+
+# --------------------
+# Kotlin
+# --------------------
+.kotlin/
+
+# --------------------
+# Java
+# --------------------
+*.class
+*.jar
+*.war
+*.ear
+*.log
+hs_err_pid*
+replay_pid*
+
+# --------------------
+# Android
+# --------------------
+local.properties
+/.gradle
+build/
+.idea/
+*.iml
+*.ipr
+*.iws
+captures/
+.externalNativeBuild
+.cxx
+local.properties
+
+# --------------------
+# iOS
+# --------------------
+Pods/
+build/
+*.xcworkspace
+!default.xcworkspace
+*.xcuserstate
+xcuserdata
+*.moved-aside
+DerivedData
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata
+*.xccheckout
+*.moved-aside
+
+# --------------------
+# Node/npm
+# --------------------
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn.lock
+package-lock.json
+
+
+# --------------------
+# IDE
+# --------------------
+.idea/
+.vscode/
+.lsp/
+
+# --------------------
+# Kotlin
+# --------------------
+.kotlin/
+*.swp
+*.swo
+*~
+.DS_Store
+.projectile
+.emacs*
+
+# --------------------
+# Build outputs
+# --------------------
+out/
+dist/
+build-dir/
+static/js/
+static/css/
+static/fonts/
+public/js/
+public/css/
+resources/public/
+
+# --------------------
+# Claude Code
+# --------------------
+.claude/
+
+# --------------------
+# ClojureScript
+# --------------------
+.cpcache/
+
+# --------------------
+# Legacy Capacitor app (replaced by KMP androidApp/)
+# --------------------
+android/
+
+# --------------------
+# Misc
+# --------------------
+*.hprof
+*.dump
+*.orig
+*.rej
+*.bak
+*.tmp
+*.temp

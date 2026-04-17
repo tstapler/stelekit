@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 512">
+  <g id="icon">
+    <rect x="60" y="444" width="394" height="22" rx="3" fill="#504945"/>
+    <polygon points="80,450 190,450 187,268 172,112 96,116 82,272" fill="#B8AFA0"/>
+    <rect x="104" y="162" width="68" height="13" fill="#6B6058"/>
+    <rect x="106" y="189" width="50" height="13" fill="#6B6058"/>
+    <polygon points="298,450 434,450 437,280 420,168 312,164 295,286" fill="#B8AFA0"/>
+    <rect x="314" y="216" width="72" height="13" fill="#6B6058"/>
+    <rect x="317" y="243" width="54" height="13" fill="#6B6058"/>
+    <rect x="315" y="270" width="44" height="13" fill="#6B6058"/>
+    <polygon points="172,452 340,452 325,250 309,58 200,62 183,254" fill="#928374"/>
+    <rect x="211" y="120" width="95" height="18" fill="#1D2021"/>
+    <rect x="213" y="152" width="73" height="18" fill="#1D2021"/>
+    <rect x="212" y="204" width="87" height="18" fill="#1D2021"/>
+    <rect x="215" y="236" width="61" height="18" fill="#1D2021"/>
+  </g>
+  <g id="wordmark">
+    <text x="476" y="278" dominant-baseline="central"
+      font-family="'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif"
+      font-size="88" font-weight="400" letter-spacing="2" fill="#3C3836">stelekit</text>
+  </g>
+</svg>

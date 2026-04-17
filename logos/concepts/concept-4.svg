@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 512">
+
+  <!-- Icon: stele pillar with inscription lines -->
+  <g id="icon">
+    <!-- Pillar -->
+    <rect x="160" y="96" width="80" height="320" fill="#504945"/>
+    <!-- Inscription line 1 -->
+    <rect x="240" y="152" width="40" height="20" fill="#83A598"/>
+    <!-- Inscription line 2 -->
+    <rect x="240" y="246" width="40" height="20" fill="#83A598"/>
+    <!-- Inscription line 3 -->
+    <rect x="240" y="340" width="40" height="20" fill="#83A598"/>
+  </g>
+
+  <!-- Wordmark -->
+  <g id="wordmark">
+    <text
+      x="336"
+      y="284"
+      font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+      font-size="112"
+      font-weight="700"
+      fill="#3C3836"
+      dominant-baseline="middle"
+      text-anchor="start"
+      letter-spacing="-2"
+    >stelekit</text>
+  </g>
+
+</svg>

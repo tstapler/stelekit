@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Feature request
+    url: ../../discussions/new?category=ideas
+    about: Suggest an idea or improvement for SteleKit
+  - name: Questions & Help
+    url: ../../discussions/new?category=q-a
+    about: Ask a question about using SteleKit

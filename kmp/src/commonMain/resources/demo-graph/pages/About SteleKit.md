@@ -1,0 +1,23 @@
+- tags:: #explanation #about
+- SteleKit is a Kotlin Multiplatform reimplementation of the core concepts behind Logseq — a local-first, Markdown-based outliner and knowledge graph tool.
+- **What SteleKit is**
+	- A block-based outliner: every piece of content is a bullet block, nestable to any depth.
+	- A knowledge graph: pages connect to each other via `[[wiki links]]`, forming a web of ideas.
+	- A daily journal: a dedicated page for each calendar day captures your running log.
+	- A Markdown-native app: all data is stored as plain `.md` files you can read with any editor.
+- **Kotlin Multiplatform**
+	- SteleKit is built with Kotlin Multiplatform (KMP) and Compose Multiplatform.
+	- A single shared codebase targets Desktop (JVM), Android, and iOS.
+	- The same UI, the same graph logic, and the same parser run on every platform.
+	- Web is enabled as an optional build target.
+- **Logseq compatibility**
+	- SteleKit uses the same `pages/` + `journals/` directory layout as Logseq.
+	- The Markdown format is compatible: a graph opened in SteleKit can be opened in Logseq and vice versa.
+	- This means your notes are not locked in — you own the files, and any Markdown-aware tool can read them.
+- **Local-first philosophy**
+	- All data lives in files on your device. No server, no account, no sync service required.
+	- You choose where to store your graph (local folder, iCloud, Dropbox, etc.).
+	- SteleKit reads and writes your files directly.
+- **Open source**
+	- The project is open source. Contributions, bug reports, and feature requests are welcome.
+- Return to [[Start Here]] to explore all feature pages in this demo graph.

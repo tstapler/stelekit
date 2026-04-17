@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#282828"/>
+
+  <!-- Stele trio, centered and scaled up (~1.4x from 512x512) -->
+  <g transform="translate(286, 42) scale(1.07)">
+    <rect x="60" y="444" width="394" height="22" rx="3" fill="#504945"/>
+    <polygon points="80,450 190,450 187,268 172,112 96,116 82,272" fill="#7C7369"/>
+    <rect x="104" y="162" width="68" height="13" fill="#504945"/>
+    <rect x="106" y="189" width="50" height="13" fill="#504945"/>
+    <polygon points="298,450 434,450 437,280 420,168 312,164 295,286" fill="#7C7369"/>
+    <rect x="314" y="216" width="72" height="13" fill="#504945"/>
+    <rect x="317" y="243" width="54" height="13" fill="#504945"/>
+    <rect x="315" y="270" width="44" height="13" fill="#504945"/>
+    <polygon points="172,452 340,452 325,250 309,58 200,62 183,254" fill="#928374"/>
+    <rect x="211" y="120" width="95" height="18" fill="#504945"/>
+    <rect x="213" y="152" width="73" height="18" fill="#504945"/>
+    <rect x="212" y="204" width="87" height="18" fill="#504945"/>
+    <rect x="215" y="236" width="61" height="18" fill="#504945"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text
+    x="600"
+    y="540"
+    text-anchor="middle"
+    font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+    font-size="72"
+    font-weight="300"
+    letter-spacing="4"
+    fill="#EBDBB2"
+  >stelekit</text>
+
+  <!-- Tagline -->
+  <text
+    x="600"
+    y="590"
+    text-anchor="middle"
+    font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+    font-size="22"
+    font-weight="300"
+    letter-spacing="2"
+    fill="#928374"
+  >your knowledge, carved in stone.</text>
+
+</svg>

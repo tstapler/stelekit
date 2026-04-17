@@ -1,0 +1,2 @@
+- [[new page]]
+- [[some page]]

@@ -1,0 +1,187 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v1.0.0)'
+        required: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── Android release APK ────────────────────────────────────────────────────
+  android-release:
+    name: Android Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-cleanup: true
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Build release APK
+        run: ./gradlew :androidApp:assembleRelease --no-daemon --build-cache
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stelekit-android-release
+          path: androidApp/build/outputs/apk/release/*.apk
+          retention-days: 30
+
+  # ── Desktop: Linux ─────────────────────────────────────────────────────────
+  desktop-linux:
+    name: Desktop (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-cleanup: true
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Package desktop distributable
+        run: ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stelekit-linux
+          path: kmp/build/compose/binaries/main/**
+          retention-days: 30
+
+  # ── Desktop: macOS ─────────────────────────────────────────────────────────
+  desktop-macos:
+    name: Desktop (macOS)
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-cleanup: true
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Package desktop distributable
+        run: ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stelekit-macos
+          path: kmp/build/compose/binaries/main/**
+          retention-days: 30
+
+  # ── Desktop: Windows ───────────────────────────────────────────────────────
+  desktop-windows:
+    name: Desktop (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-cleanup: true
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Package desktop distributable
+        run: ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stelekit-windows
+          path: kmp/build/compose/binaries/main/**
+          retention-days: 30
+
+  # ── iOS XCFramework ────────────────────────────────────────────────────────
+  ios-xcframework:
+    name: iOS XCFramework
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.konan/cache
+            ~/.konan/dependencies
+            ~/.konan/kotlin-native-prebuilt-*
+          key: ${{ runner.os }}-konan-v1-${{ hashFiles('**/build.gradle.kts', '**/settings.gradle.kts') }}
+          restore-keys: |
+            ${{ runner.os }}-konan-v1-
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-cleanup: true
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Assemble XCFramework
+        run: |
+          ./gradlew :kmp:assembleXCFramework \
+            --no-daemon \
+            --build-cache \
+            -Pkotlin.native.ignoreDisabledTargets=true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stelekit-xcframework
+          path: kmp/build/XCFrameworks/**
+          retention-days: 30
+
+  # ── Create GitHub Release ──────────────────────────────────────────────────
+  github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [android-release, desktop-linux, desktop-macos, desktop-windows, ios-xcframework]
+    if: startsWith(github.ref, 'refs/tags/')
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/**/*
+          generate_release_notes: true
+          draft: true

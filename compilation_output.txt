@@ -1,0 +1,741 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.10.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :kmp:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :kmp:convertXmlValueResourcesForAndroidMain NO-SOURCE
+> Task :kmp:copyNonXmlValueResourcesForAndroidMain NO-SOURCE
+> Task :kmp:prepareComposeResourcesTaskForAndroidMain NO-SOURCE
+> Task :kmp:generateResourceAccessorsForAndroidMain NO-SOURCE
+> Task :kmp:convertXmlValueResourcesForCommonMain NO-SOURCE
+> Task :kmp:copyNonXmlValueResourcesForCommonMain NO-SOURCE
+> Task :kmp:prepareComposeResourcesTaskForCommonMain NO-SOURCE
+> Task :kmp:generateResourceAccessorsForCommonMain NO-SOURCE
+> Task :kmp:generateActualResourceCollectorsForAndroidMain UP-TO-DATE
+> Task :kmp:generateCommonMainSteleDatabaseInterface UP-TO-DATE
+> Task :kmp:generateComposeResClass UP-TO-DATE
+> Task :kmp:preBuild UP-TO-DATE
+> Task :kmp:preDebugBuild UP-TO-DATE
+> Task :kmp:generateDebugResValues UP-TO-DATE
+> Task :kmp:generateDebugResources UP-TO-DATE
+> Task :kmp:packageDebugResources UP-TO-DATE
+> Task :kmp:parseDebugLocalResources UP-TO-DATE
+> Task :kmp:generateDebugRFile UP-TO-DATE
+> Task :kmp:generateExpectResourceCollectorsForCommonMain UP-TO-DATE
+> Task :kmp:convertXmlValueResourcesForAndroidDebug NO-SOURCE
+> Task :kmp:copyNonXmlValueResourcesForAndroidDebug NO-SOURCE
+> Task :kmp:prepareComposeResourcesTaskForAndroidDebug NO-SOURCE
+> Task :kmp:generateResourceAccessorsForAndroidDebug NO-SOURCE
+
+> Task :kmp:compileDebugKotlinAndroid FAILED
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:130:30 Assignment type mismatch: actual type is 'dev.stapler.stelekit.editor.CursorState', but 'dev.stapler.stelekit.model.CursorState' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:169:69 Unresolved reference 'COMMAND'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:279:77 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.text.TextRange', but 'dev.stapler.stelekit.editor.format.TextRange' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:428:68 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.text.TextRange', but 'dev.stapler.stelekit.editor.format.TextRange' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:432:53 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.text.TextRange', but 'dev.stapler.stelekit.editor.format.TextRange' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:478:25 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.text.TextRange', but 'dev.stapler.stelekit.editor.format.TextRange' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:481:74 Unresolved reference 'text'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:488:25 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.text.TextRange', but 'dev.stapler.stelekit.editor.format.TextRange' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:491:74 Unresolved reference 'text'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:498:25 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.text.TextRange', but 'dev.stapler.stelekit.editor.format.TextRange' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:501:74 Unresolved reference 'text'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:508:25 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.text.TextRange', but 'dev.stapler.stelekit.editor.format.TextRange' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:511:74 Unresolved reference 'text'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:519:25 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.format.TextFormatting', but 'dev.stapler.stelekit.editor.format.TextRange' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:520:25 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.text.TextRange', but 'dev.stapler.stelekit.editor.format.TextFormatting' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:522:74 Unresolved reference 'text'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:530:25 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.format.TextFormatting', but 'dev.stapler.stelekit.editor.format.TextRange' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:531:25 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.text.TextRange', but 'dev.stapler.stelekit.editor.format.TextFormatting' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:533:74 Unresolved reference 'text'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:541:64 Unresolved reference 'formatted'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:560:64 Unresolved reference 'formatted'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:576:25 Argument type mismatch: actual type is 'kotlin.collections.Set<dev.stapler.stelekit.editor.format.FormatType>', but 'dev.stapler.stelekit.editor.format.TextRange?' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:577:25 Too many arguments for 'suspend fun removeFormatting(text: String, range: TextRange? = ...): Result<String>'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:579:74 Unresolved reference 'text'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:613:66 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.text.TextRange', but 'dev.stapler.stelekit.editor.format.TextRange' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:646:51 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.text.TextRange', but 'dev.stapler.stelekit.editor.format.TextRange' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:652:57 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.text.TextRange', but 'dev.stapler.stelekit.editor.format.TextRange' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:726:46 Assignment type mismatch: actual type is 'dev.stapler.stelekit.editor.CursorState', but 'dev.stapler.stelekit.model.CursorState' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:727:29 No parameter with name 'blockId' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:827:59 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.text.TextRange', but 'dev.stapler.stelekit.editor.format.TextRange' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:837:46 Assignment type mismatch: actual type is 'dev.stapler.stelekit.editor.CursorState', but 'dev.stapler.stelekit.model.CursorState' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:838:29 No parameter with name 'blockId' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:901:34 Assignment type mismatch: actual type is 'dev.stapler.stelekit.editor.CursorState', but 'dev.stapler.stelekit.model.CursorState' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:902:17 No parameter with name 'blockId' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:916:38 Assignment type mismatch: actual type is 'dev.stapler.stelekit.editor.CursorState', but 'dev.stapler.stelekit.model.CursorState' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:917:21 No parameter with name 'blockId' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:967:40 Cannot access 'constructor(): FormatOperation': it is private in 'com/logseq/kmp/editor/formatting/FormatOperation'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:967:40 Enum types cannot be instantiated.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:974:39 Unresolved reference 'listType'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:975:40 Cannot access 'constructor(): FormatOperation': it is private in 'com/logseq/kmp/editor/formatting/FormatOperation'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:975:40 Enum types cannot be instantiated.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:978:53 No parameter with name 'listType' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:978:82 Unresolved reference 'listType'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:982:39 Unresolved reference 'quote'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:983:40 Cannot access 'constructor(): FormatOperation': it is private in 'com/logseq/kmp/editor/formatting/FormatOperation'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:983:40 Enum types cannot be instantiated.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:986:53 No parameter with name 'quote' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:1014:77 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.text.TextRange', but 'dev.stapler.stelekit.editor.format.TextRange' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/Editor.kt:1072:78 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.format.ValidationError', but 'dev.stapler.stelekit.editor.ValidationError' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/commands/FormattingCommandDemo.kt:245:13 'when' expression must be exhaustive. Add the 'Nothing', 'is Partial' branches or an 'else' branch.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/commands/FormattingCommands.kt:465:48 Unresolved reference 'formattedText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/commands/FormattingCommands.kt:518:48 Unresolved reference 'formattedText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/commands/FormattingCommands.kt:669:48 Unresolved reference 'formattedText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/commands/FormattingCommands.kt:774:22 Unresolved reference 'preview'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/commands/FormattingCommands.kt:814:26 Unresolved reference 'preview'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:127:40 Unresolved reference 'now'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:148:37 One type argument expected for class 'BackgroundTask'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:148:64 Argument type mismatch: actual type is 'kotlin.Int', but 'kotlin.Int' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:149:31 Interface 'interface MutableMap<K, V> : Map<K, V>' does not have constructors.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:150:41 Type checking has run into a recursive problem. Easiest workaround: specify the types of your declarations explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:172:53 Argument type mismatch: actual type is 'kotlinx.coroutines.CompletableDeferred<kotlin.Any>', but 'kotlinx.coroutines.CompletableDeferred<T>?' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:212:29 Overload resolution ambiguity between candidates:
+fun <T> MutableCollection<out T>.remove(element: T): Boolean
+fun <K, V> MutableMap<out K, V>.remove(key: K): V?
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:225:43 Unresolved reference 'size'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:244:25 Unresolved reference 'values'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:244:40 Overload resolution ambiguity between candidates:
+fun CoroutineContext.cancel(cause: CancellationException? = ...): Unit
+fun CoroutineScope.cancel(cause: CancellationException? = ...): Unit
+fun FlowCollector<*>.cancel(cause: CancellationException? = ...): Unit
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:244:42 Unresolved reference 'it'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:262:37 Unresolved reference 'ChannelClosedException'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:300:13 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:300:36 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:301:29 Overload resolution ambiguity between candidates:
+fun <T> MutableCollection<out T>.remove(element: T): Boolean
+fun <K, V> MutableMap<out K, V>.remove(key: K): V?
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:375:24 Unresolved reference 'FormattedText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:378:8 Unresolved reference 'FormattedText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:378:24 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:378:24 Not enough information to infer type argument for 'T'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:378:57 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:381:9 Not enough information to infer type argument for 'K'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:389:31 Unresolved reference 'copy'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:391:46 Unresolved reference 'metadata'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:420:36 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:421:36 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:430:36 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:431:36 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:442:78 Too many arguments for 'fun indexOf(element: String): Int'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:443:78 Too many arguments for 'fun indexOf(element: String): Int'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:450:44 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:451:44 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:459:44 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:460:44 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:469:44 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:470:44 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:499:24 Unresolved reference 'FormattedText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:501:8 Unresolved reference 'FormattedText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:501:24 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:501:57 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:503:48 Unresolved reference 'formatting'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:503:59 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:503:65 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:505:11 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:505:11 Not enough information to infer type argument for 'T'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:505:18 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:505:20 Unresolved reference 'range'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:505:46 Unresolved reference 'range'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:505:58 Unresolved reference 'end'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:507:23 Unresolved reference 'copy'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:510:55 Unresolved reference 'FormattedRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:510:92 Unresolved reference 'FormattedRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:511:39 Function invocation 'range()' expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:516:55 Unresolved reference 'start'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:518:32 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:520:40 Unresolved reference 'end'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:525:51 Unresolved reference 'start'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:526:49 Unresolved reference 'end'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:527:60 Overload resolution ambiguity between candidates:
+fun String?.plus(other: Any?): String
+fun <T> Array<T>.plus(element: T): Array<T>
+fun ByteArray.plus(element: Byte): ByteArray
+fun IntArray.plus(element: Int): IntArray
+fun LongArray.plus(element: Long): LongArray
+fun ShortArray.plus(element: Short): ShortArray
+fun <T> Collection<T>.plus(element: T): List<T>
+fun <T> Iterable<T>.plus(element: T): List<T>
+fun <T> Set<T>.plus(element: T): Set<T>
+fun <T> Sequence<T>.plus(element: T): Sequence<T>
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:530:30 Unresolved reference 'end'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:534:36 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:536:44 Unresolved reference 'end'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:541:36 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:546:52 Unresolved reference 'start'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:547:50 Unresolved reference 'end'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:548:59 Overload resolution ambiguity between candidates:
+fun String?.plus(other: Any?): String
+fun <T> Array<T>.plus(element: T): Array<T>
+fun ByteArray.plus(element: Byte): ByteArray
+fun IntArray.plus(element: Int): IntArray
+fun LongArray.plus(element: Long): LongArray
+fun ShortArray.plus(element: Short): ShortArray
+fun <T> Collection<T>.plus(element: T): List<T>
+fun <T> Iterable<T>.plus(element: T): List<T>
+fun <T> Set<T>.plus(element: T): Set<T>
+fun <T> Sequence<T>.plus(element: T): Sequence<T>
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:552:30 Unresolved reference 'end'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:554:40 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:555:68 Overload resolution ambiguity between candidates:
+fun String?.plus(other: Any?): String
+fun <T> Array<T>.plus(element: T): Array<T>
+fun IntArray.plus(element: Int): IntArray
+fun <T> Collection<T>.plus(element: T): List<T>
+fun <T> Iterable<T>.plus(element: T): List<T>
+fun <T> Set<T>.plus(element: T): Set<T>
+fun <T> Sequence<T>.plus(element: T): Sequence<T>
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:556:48 Unresolved reference 'end'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:556:64 Overload resolution ambiguity between candidates:
+fun String?.plus(other: Any?): String
+fun <T> Array<T>.plus(element: T): Array<T>
+fun IntArray.plus(element: Int): IntArray
+fun <T> Collection<T>.plus(element: T): List<T>
+fun <T> Iterable<T>.plus(element: T): List<T>
+fun <T> Set<T>.plus(element: T): Set<T>
+fun <T> Sequence<T>.plus(element: T): Sequence<T>
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:562:36 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:568:31 Unresolved reference 'copy'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:589:37 Unresolved reference 'compareTo'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:590:40 Unresolved reference 'compareTo'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:596:32 Argument type mismatch: actual type is 'kotlin.time.TimeMark', but 'kotlin.time.Duration' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:596:47 Unresolved reference 'compareTo'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:602:32 Argument type mismatch: actual type is 'kotlin.time.TimeMark', but 'kotlin.time.Duration' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:602:47 Unresolved reference 'compareTo'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:607:37 Unresolved reference 'now'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:607:65 'operator' modifier is required on 'FirNamedFunctionSymbol kotlin/compareTo' in 'compareTo'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:658:19 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/DebounceBackgroundProcessor.kt:659:19 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatState.kt:73:64 Unresolved reference 'listType'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatState.kt:80:35 Unresolved reference 'listType'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatState.kt:81:27 Unresolved reference 'listType'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatState.kt:87:65 Unresolved reference 'quote'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatState.kt:102:35 Unresolved reference 'listType'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatState.kt:103:35 Unresolved reference 'quote'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatState.kt:401:44 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatState.kt:401:56 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatState.kt:402:21 Argument type mismatch: actual type is 'kotlin.time.TimeMark', but 'kotlin.Comparable<R>' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatState.kt:485:58 Unresolved reference 'listType'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatState.kt:486:60 Unresolved reference 'listType'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatState.kt:489:67 Unresolved reference 'listType'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatState.kt:491:19 Unresolved reference 'listType'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatState.kt:492:19 Unresolved reference 'quote'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatState.kt:492:59 Unresolved reference 'listType'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatToolbarExample.kt:29:21 Argument type mismatch: actual type is 'kotlin.Long', but 'kotlinx.datetime.Instant' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatToolbarExample.kt:30:9 No value passed for parameter 'id'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatToolbarExample.kt:30:9 No value passed for parameter 'pageId'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatToolbarExample.kt:30:9 No value passed for parameter 'position'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/FormatToolbarExample.kt:30:21 Argument type mismatch: actual type is 'kotlin.Long', but 'kotlinx.datetime.Instant' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:6:27 Unresolved reference 'concurrent'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:21:33 Interface 'interface MutableMap<K, V> : Map<K, V>' does not have constructors.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:22:31 Interface 'interface MutableMap<K, V> : Map<K, V>' does not have constructors.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:37:28 Unresolved reference 'FormattedText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:44:38 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:44:38 Unresolved reference. None of the following candidates is applicable because of a receiver type mismatch:
+fun <T, R> T.let(block: (T) -> R): R
+    [R|Contract description]
+     <
+        CallsInPlace(block, EXACTLY_ONCE)
+    >
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:44:44 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:47:17 'return' is prohibited here.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:51:39 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:51:39 Unresolved reference. None of the following candidates is applicable because of a receiver type mismatch:
+fun <T, R> T.let(block: (T) -> R): R
+    [R|Contract description]
+     <
+        CallsInPlace(block, EXACTLY_ONCE)
+    >
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:51:45 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:56:17 'return' is prohibited here.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:60:39 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:60:39 Unresolved reference. None of the following candidates is applicable because of a receiver type mismatch:
+fun <T, R> T.let(block: (T) -> R): R
+    [R|Contract description]
+     <
+        CallsInPlace(block, EXACTLY_ONCE)
+    >
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:60:45 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:65:17 'return' is prohibited here.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:79:42 Unresolved reference 'FormattedText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:122:25 Overload resolution ambiguity between candidates:
+fun <T> Iterable<T>.forEach(action: (T) -> Unit): Unit
+fun <K, V> Map<out K, V>.forEach(action: (Map.Entry<K, V>) -> Unit): Unit
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:122:35 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:122:35 Function 'component1()' is ambiguous for this expression: 
+fun <T> Array<out T>.component1(): T
+fun BooleanArray.component1(): Boolean
+fun ByteArray.component1(): Byte
+fun CharArray.component1(): Char
+fun DoubleArray.component1(): Double
+fun FloatArray.component1(): Float
+fun IntArray.component1(): Int
+fun LongArray.component1(): Long
+fun ShortArray.component1(): Short
+fun <T> List<T>.component1(): T
+fun <K, V> Map.Entry<K, V>.component1(): K
+fun UByteArray.component1(): UByte
+fun UIntArray.component1(): UInt
+fun ULongArray.component1(): ULong
+fun UShortArray.component1(): UShort.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:122:35 Function 'component2()' is ambiguous for this expression: 
+fun <T> Array<out T>.component2(): T
+fun BooleanArray.component2(): Boolean
+fun ByteArray.component2(): Byte
+fun CharArray.component2(): Char
+fun DoubleArray.component2(): Double
+fun FloatArray.component2(): Float
+fun IntArray.component2(): Int
+fun LongArray.component2(): Long
+fun ShortArray.component2(): Short
+fun <T> List<T>.component2(): T
+fun <K, V> Map.Entry<K, V>.component2(): V
+fun UByteArray.component2(): UByte
+fun UIntArray.component2(): UInt
+fun ULongArray.component2(): ULong
+fun UShortArray.component2(): UShort.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:123:33 'operator' modifier is required on 'FirNamedFunctionSymbol kotlin/compareTo' in 'compareTo'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:123:63 'operator' modifier is required on 'FirNamedFunctionSymbol kotlin/compareTo' in 'compareTo'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:137:29 Unresolved reference 'values'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:137:44 Overload resolution ambiguity between candidates:
+fun <T> MutableCollection<out T>.remove(element: T): Boolean
+fun <K, V> MutableMap<out K, V>.remove(key: K): V?
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:137:46 Unresolved reference 'it'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:154:44 Unresolved reference 'now'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:181:13 No parameter with name 'hitRate' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:182:13 No parameter with name 'memoryUsage' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:183:13 No parameter with name 'invalidations' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:184:13 No parameter with name 'hotSize' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:185:13 No parameter with name 'warmSize' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:186:13 No parameter with name 'coldSize' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:186:13 No value passed for parameter 'expiredEntries'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:186:13 No value passed for parameter 'maxSize'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:196:40 Unresolved reference 'now'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:205:21 Unresolved reference 'frequency'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:205:47 Unresolved reference 'recencyScore'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:206:21 Unresolved reference 'frequency'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:206:46 Unresolved reference 'recencyScore'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:211:52 Unresolved reference 'FormattedText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:213:38 Unresolved reference 'text'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:214:44 Unresolved reference 'formatting'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:215:42 Unresolved reference 'metadata'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:217:16 Return type mismatch: expected 'kotlin.Long', actual 'kotlinx.coroutines.CoroutineScope'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:227:58 Argument type mismatch: actual type is 'kotlin.Any', but 'dev.stapler.stelekit.editor.formatting.AccessPattern' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:232:58 Argument type mismatch: actual type is 'kotlin.Any', but 'dev.stapler.stelekit.editor.formatting.AccessPattern' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:237:58 Argument type mismatch: actual type is 'kotlin.Any', but 'dev.stapler.stelekit.editor.formatting.AccessPattern' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:261:63 Unresolved reference 'FormattedText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:264:40 Unresolved reference 'text'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:268:41 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:268:41 Not enough information to infer type argument for 'V'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:268:61 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:268:63 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:268:63 Not enough information to infer type argument for 'T'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:269:23 Unresolved reference 'add'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:275:23 Unresolved reference 'values'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:275:30 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:275:40 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:275:45 Unresolved reference 'lastAccess'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:290:41 Unresolved reference 'FormattedText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:303:41 Unresolved reference 'FormattedText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:311:41 Unresolved reference 'text'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:312:46 Unresolved reference 'now'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:322:54 Unresolved reference 'compareTo'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:327:52 Unresolved reference 'FormattedText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:328:52 Argument type mismatch: actual type is 'kotlin.Pair<A, B>', but 'kotlin.Pair<kotlin.String, ERROR CLASS: Symbol not found for FormattedText>' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:328:56 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:332:28 Unresolved reference 'FormattedText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:385:36 Unresolved reference 'compareTo'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:394:40 Unresolved reference 'now'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:395:36 Overload resolution ambiguity between candidates:
+fun <T> Iterable<T>.sumOf(selector: (T) -> BigDecimal): BigDecimal
+fun <T> Iterable<T>.sumOf(selector: (T) -> BigInteger): BigInteger
+fun <T> Iterable<T>.sumOf(selector: (T) -> Double): Double
+fun <T> Iterable<T>.sumOf(selector: (T) -> Int): Int
+fun <T> Iterable<T>.sumOf(selector: (T) -> Long): Long
+fun <T> Iterable<T>.sumOf(selector: (T) -> UInt): UInt
+fun <T> Iterable<T>.sumOf(selector: (T) -> ULong): ULong
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:395:42 Unresolved reference 'inWholeMilliseconds'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:395:55 Unresolved reference 'inWholeMilliseconds'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:396:35 None of the following candidates is applicable:
+fun BigDecimal.div(other: BigDecimal): BigDecimal
+fun BigInteger.div(other: BigInteger): BigInteger
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:399:45 None of the following candidates is applicable:
+fun BigDecimal.div(other: BigDecimal): BigDecimal
+fun BigInteger.div(other: BigInteger): BigInteger
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:408:16 Unresolved reference 'FormattedText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/IntelligentTextCache.kt:430:12 Redeclaration:
+data class CacheStats : Any
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:12:1 Class 'PerformanceEnhancedTextFormatter' is not abstract and does not implement abstract member 'processText'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:20:5 'processText' overrides nothing.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:24:5 'parseFormattedText' overrides nothing.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:28:5 'applyFormatting' overrides nothing.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:36:5 'removeFormatting' overrides nothing.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:66:17 Suspension functions can only be called within coroutine body.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:81:34 Unresolved reference 'text'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:82:44 Unresolved reference 'range'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:85:41 Unresolved reference 'type'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:86:45 Unresolved reference 'range'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:86:70 Unresolved reference 'range'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:182:26 Unresolved reference 'minutes'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:191:35 Unresolved reference 'milliseconds'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:199:34 Unresolved reference 'milliseconds'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:231:62 Unresolved reference 'milliseconds'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:268:29 Unresolved reference 'TimeSource'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:283:91 None of the following candidates is applicable:
+fun BigDecimal.times(other: BigDecimal): BigDecimal
+fun BigInteger.times(other: BigInteger): BigInteger
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:301:17 Cannot access 'constructor(): FormatOperation': it is private in 'com/logseq/kmp/editor/formatting/FormatOperation'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:301:17 Enum types cannot be instantiated.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:311:29 Unresolved reference 'TimeSource'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:315:13 Unresolved reference 'assertTrue'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceEnhancedTextFormatter.kt:322:97 None of the following candidates is applicable:
+fun BigDecimal.times(other: BigDecimal): BigDecimal
+fun BigInteger.times(other: BigInteger): BigInteger
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceMetrics.kt:8:27 Unresolved reference 'concurrent'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceMetrics.kt:192:60 None of the following candidates is applicable:
+fun milliseconds(value: Double): Duration
+fun milliseconds(value: Int): Duration
+fun milliseconds(value: Long): Duration
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceMetrics.kt:225:25 Argument type mismatch: actual type is 'kotlin.Long', but 'kotlin.Int' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceMetrics.kt:297:21 Argument type mismatch: actual type is 'it(kotlin.Number & kotlin.Comparable<CapturedType(*)>)', but 'kotlin.Double' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceMetrics.kt:298:21 Argument type mismatch: actual type is 'it(kotlin.Number & kotlin.Comparable<CapturedType(*)>)', but 'kotlin.Double' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceMetrics.kt:299:21 Argument type mismatch: actual type is 'kotlin.Long', but 'kotlin.Double' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceMetrics.kt:341:17 Unresolved reference 'errorRate'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceMetrics.kt:482:40 None of the following candidates is applicable:
+val Double.milliseconds: Duration
+val Int.milliseconds: Duration
+val Long.milliseconds: Duration
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceMetrics.kt:483:43 None of the following candidates is applicable:
+val Double.milliseconds: Duration
+val Int.milliseconds: Duration
+val Long.milliseconds: Duration
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceMetrics.kt:484:40 None of the following candidates is applicable:
+val Double.milliseconds: Duration
+val Int.milliseconds: Duration
+val Long.milliseconds: Duration
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceMetrics.kt:485:44 None of the following candidates is applicable:
+val Double.milliseconds: Duration
+val Int.milliseconds: Duration
+val Long.milliseconds: Duration
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:9:27 Unresolved reference 'concurrent'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:35:36 Interface 'interface MutableMap<K, V> : Map<K, V>' does not have constructors.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:65:38 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:65:38 Unresolved reference. None of the following candidates is applicable because of a receiver type mismatch:
+fun <T, R> T.let(block: (T) -> R): R
+    [R|Contract description]
+     <
+        CallsInPlace(block, EXACTLY_ONCE)
+    >
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:65:44 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:67:21 'return' is prohibited here.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:116:22 Unresolved reference 'parseTextDirectly'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:119:17 Unresolved reference 'parseTextDirectly'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:225:30 Unresolved reference 'values'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:225:45 Overload resolution ambiguity between candidates:
+fun CoroutineContext.cancel(cause: CancellationException? = ...): Unit
+fun CoroutineScope.cancel(cause: CancellationException? = ...): Unit
+fun FlowCollector<*>.cancel(cause: CancellationException? = ...): Unit
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:225:47 Unresolved reference 'it'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:273:36 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:273:40 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:274:13 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:274:13 Unresolved reference. None of the following candidates is applicable because of a receiver type mismatch:
+fun <T> CoroutineScope.async(context: CoroutineContext = ..., start: CoroutineStart = ..., block: suspend CoroutineScope.() -> T): Deferred<T>
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:274:13 Argument type mismatch: actual type is 'kotlinx.coroutines.CoroutineScope', but 'dev.stapler.stelekit.editor.formatting.PerformanceOptimizer' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:274:21 Suspension functions can only be called within coroutine body.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:275:11 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:275:11 Not enough information to infer type argument for 'T'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:327:56 Unresolved reference 'now'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:363:40 None of the following candidates is applicable:
+val Double.milliseconds: Duration
+val Int.milliseconds: Duration
+val Long.milliseconds: Duration
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:369:45 None of the following candidates is applicable:
+val Double.minutes: Duration
+val Int.minutes: Duration
+val Long.minutes: Duration
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:370:49 None of the following candidates is applicable:
+val Double.minutes: Duration
+val Int.minutes: Duration
+val Long.minutes: Duration
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:379:28 None of the following candidates is applicable:
+val Double.minutes: Duration
+val Int.minutes: Duration
+val Long.minutes: Duration
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:380:39 None of the following candidates is applicable:
+val Double.minutes: Duration
+val Int.minutes: Duration
+val Long.minutes: Duration
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:398:37 None of the following candidates is applicable:
+val Double.milliseconds: Duration
+val Int.milliseconds: Duration
+val Long.milliseconds: Duration
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:399:34 None of the following candidates is applicable:
+val Double.milliseconds: Duration
+val Int.milliseconds: Duration
+val Long.milliseconds: Duration
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/PerformanceOptimizer.kt:420:41 None of the following candidates is applicable:
+val Double.minutes: Duration
+val Int.minutes: Duration
+val Long.minutes: Duration
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/RichTextFormatter.kt:85:23 Unresolved reference 'validateRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/RichTextFormatter.kt:85:50 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/RichTextFormatter.kt:98:62 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.format.TextFormatting', but 'dev.stapler.stelekit.editor.format.TextRange' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/RichTextFormatter.kt:98:74 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.format.TextRange', but 'dev.stapler.stelekit.editor.format.TextFormatting' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/RichTextFormatter.kt:106:50 Unresolved reference 'text'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/RichTextFormatter.kt:152:63 Argument type mismatch: actual type is 'kotlin.collections.Set<dev.stapler.stelekit.editor.format.FormatType>', but 'dev.stapler.stelekit.editor.format.TextRange?' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/RichTextFormatter.kt:152:76 Too many arguments for 'suspend fun removeFormatting(text: String, range: TextRange? = ...): Result<String>'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/RichTextFormatter.kt:153:50 Unresolved reference 'text'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/RichTextFormatter.kt:307:40 Unresolved reference 'textState'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/RichTextFormatter.kt:307:60 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/RichTextFormatter.kt:308:57 Unresolved reference 'text'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/RichTextFormatter.kt:362:31 Unresolved reference 'detectFormattingInternal'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/RichTextFormatter.kt:382:64 Unresolved reference 'default'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/RichTextFormatter.kt:387:47 Unresolved reference 'create'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:14:38 Unresolved reference 'TextFormat'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:24:22 Unresolved reference 'TextFormat'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:32:20 Unresolved reference 'initialize'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:40:21 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:41:26 Unresolved reference 'TextFormatting'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:43:33 Unresolved reference 'applyFormatting'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:44:16 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:44:28 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:45:56 Unresolved reference 'after'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:48:43 Unresolved reference 'editorActiveModel'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:66:24 Unresolved reference 'formatRealtime'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:66:71 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:67:53 Unresolved reference 'after'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:80:37 Unresolved reference 'undo'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:81:21 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:81:33 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:82:39 Unresolved reference 'after'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:86:37 Unresolved reference 'redo'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:87:21 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:87:33 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:88:39 Unresolved reference 'after'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:96:28 Unresolved reference 'TextFormat'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:101:25 Unresolved reference 'TextFormat'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:111:9 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:111:21 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:122:33 Unresolved reference 'validateMarkdown'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:126:37 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:127:38 Unresolved reference 'message'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:127:67 Unresolved reference 'position'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:133:39 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:134:40 Unresolved reference 'message'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:134:71 Unresolved reference 'position'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:146:25 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:147:30 Unresolved reference 'TextFormatting'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:148:24 Unresolved reference 'applyFormatting'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:151:34 Unresolved reference 'getMetrics'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:168:21 Unresolved reference 'TextRange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:169:26 Unresolved reference 'TextFormatting'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:175:33 Unresolved reference 'handleCollaborativeChange'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:176:16 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:176:26 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:178:11 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:178:11 Not enough information to infer type argument for 'T'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:205:30 Unresolved reference 'TextFormat'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatExample.kt:215:20 Unresolved reference 'cleanup'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:86:5 'processText' overrides nothing.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:90:5 'parseFormattedText' overrides nothing.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:111:5 'applyFormatting' overrides nothing.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:129:5 'removeFormatting' overrides nothing.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:182:13 Argument type mismatch: actual type is 'it(R & Any & kotlin.Result<kotlin.collections.List<kotlin.Unit>> & kotlin.Result<T>)', but 'kotlin.Result<kotlin.collections.List<dev.stapler.stelekit.editor.format.FormattedText>>' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:184:37 Unresolved reference 'type'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:186:39 Unresolved reference 'text'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:187:39 Unresolved reference 'format'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:188:39 Unresolved reference 'range'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:191:39 Unresolved reference 'text'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:192:39 Unresolved reference 'formatTypes'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:193:39 Unresolved reference 'range'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:329:30 Argument type mismatch: actual type is 'kotlin.collections.List<R>', but 'kotlin.collections.List<kotlin.String>' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:330:32 Argument type mismatch: actual type is 'kotlin.collections.List<R>', but 'kotlin.collections.List<kotlin.String>' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:431:49 No parameter with name 'listType' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:431:70 No parameter with name 'listItem' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:443:49 No parameter with name 'quote' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:454:68 Unresolved reference 'now'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:515:47 Unresolved reference 'listType'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:516:38 'when' expression must be exhaustive. Add an 'else' branch.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:516:70 Unresolved reference 'listType'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:528:47 Unresolved reference 'quote'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:562:20 Unresolved reference 'quote'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:565:20 Unresolved reference 'listType'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:566:29 'when' expression must be exhaustive. Add an 'else' branch.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:566:42 Unresolved reference 'listType'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:613:17 'else' entry must be the last one in a 'when' expression.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:640:47 No parameter with name 'listType' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:640:75 No parameter with name 'listItem' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:641:48 No parameter with name 'quote' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextFormatter.kt:696:12 Redeclaration:
+enum class FormatOperation : Enum<FormatOperation>
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:6:27 Unresolved reference 'concurrent'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:15:30 Interface 'interface MutableMap<K, V> : Map<K, V>' does not have constructors.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:48:24 Return type mismatch: expected 'kotlin.String', actual 'kotlin.text.MatchGroup'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:62:28 Unresolved reference 'size'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:81:20 Function invocation 'capacity()' expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:130:28 Unresolved reference 'size'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:133:49 Unresolved reference 'size'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:136:28 Unresolved reference 'entries'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:136:57 Overload resolution ambiguity between candidates:
+fun <T> Iterable<T>.forEach(action: (T) -> Unit): Unit
+fun <K, V> Map<out K, V>.forEach(action: (Map.Entry<K, V>) -> Unit): Unit
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:136:67 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:136:67 Function 'component1()' is ambiguous for this expression: 
+fun <T> Array<out T>.component1(): T
+fun BooleanArray.component1(): Boolean
+fun ByteArray.component1(): Byte
+fun CharArray.component1(): Char
+fun DoubleArray.component1(): Double
+fun FloatArray.component1(): Float
+fun IntArray.component1(): Int
+fun LongArray.component1(): Long
+fun ShortArray.component1(): Short
+fun <T> List<T>.component1(): T
+fun <K, V> Map.Entry<K, V>.component1(): K
+fun UByteArray.component1(): UByte
+fun UIntArray.component1(): UInt
+fun ULongArray.component1(): ULong
+fun UShortArray.component1(): UShort.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:136:67 Function 'component2()' is ambiguous for this expression: 
+fun <T> Array<out T>.component2(): T
+fun BooleanArray.component2(): Boolean
+fun ByteArray.component2(): Byte
+fun CharArray.component2(): Char
+fun DoubleArray.component2(): Double
+fun FloatArray.component2(): Float
+fun IntArray.component2(): Int
+fun LongArray.component2(): Long
+fun ShortArray.component2(): Short
+fun <T> List<T>.component2(): T
+fun <K, V> Map.Entry<K, V>.component2(): V
+fun UByteArray.component2(): UByte
+fun UIntArray.component2(): UInt
+fun ULongArray.component2(): ULong
+fun UShortArray.component2(): UShort.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:141:47 Overload resolution ambiguity between candidates:
+fun <T> MutableCollection<out T>.remove(element: T): Boolean
+fun <K, V> MutableMap<out K, V>.remove(key: K): V?
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:151:57 Unresolved reference 'repeat'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:165:41 Unresolved reference 'size'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:177:41 Unresolved reference 'size'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:254:5 Conflicting overloads:
+suspend fun toString(): String
+fun toString(): String
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:435:14 'val' cannot be reassigned.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:456:15 'val' cannot be reassigned.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:485:53 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.formatting.RopeTextStorage.RopeNode', but 'kotlin.String' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/formatting/TextMemoryPool.kt:486:42 Argument type mismatch: actual type is 'dev.stapler.stelekit.editor.formatting.RopeTextStorage.RopeNode', but 'kotlin.String' was expected.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/state/EditorActiveModel.kt:69:65 Unresolved reference 'getFormatState'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/state/EditorActiveModel.kt:77:28 Unresolved reference 'setFormatState'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/state/EditorActiveModel.kt:104:28 Unresolved reference 'removeFormatState'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/state/EditorActiveModel.kt:147:61 Unresolved reference 'getAllBlockIds'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/state/EditorActiveModel.kt:147:79 Overload resolution ambiguity between candidates:
+fun <T> Array<out T>.toSet(): Set<T>
+fun BooleanArray.toSet(): Set<Boolean>
+fun ByteArray.toSet(): Set<Byte>
+fun CharArray.toSet(): Set<Char>
+fun DoubleArray.toSet(): Set<Double>
+fun FloatArray.toSet(): Set<Float>
+fun IntArray.toSet(): Set<Int>
+fun LongArray.toSet(): Set<Long>
+fun ShortArray.toSet(): Set<Short>
+fun <T> Iterable<T>.toSet(): Set<T>
+fun <T> Sequence<T>.toSet(): Set<T>
+fun CharSequence.toSet(): Set<Char>
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/state/EditorActiveModel.kt:168:36 Unresolved reference 'removeFormatState'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/state/EditorState.kt:236:12 Redeclaration:
+enum class EditorMode : Enum<EditorMode>
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/text/DefaultTextOperations.kt:14:1 Class 'DefaultTextOperations' is not abstract and does not implement abstract member 'insertTextWithFormat'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/text/FormatAwareTypes.kt:5:41 Unresolved reference 'TextFormatting'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/text/FormatAwareTypes.kt:117:25 Unresolved reference 'TextFormatting'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/text/FormatAwareTypes.kt:307:38 Unresolved reference 'TextFormatting'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/text/FormatAwareTypes.kt:307:56 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/text/ITextOperations.kt:207:21 Unresolved reference 'TextFormatting'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/text/ITextOperations.kt:218:26 Unresolved reference 'FormatType'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/text/OptimizedTextOperations.kt:20:1 Class 'OptimizedTextOperations' is not abstract and does not implement abstract member 'insertTextWithFormat'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/editor/text/TextOperations.kt:19:1 Class 'TextOperations' is not abstract and does not implement abstract member 'insertTextWithFormat'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/performance/TraceEvent.kt:3:12 Redeclaration:
+data class TraceEvent : Any
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:204:17 No parameter with name 'blocks' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:205:17 No parameter with name 'journalMode' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:206:17 No parameter with name 'journalEntries' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:206:34 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:207:17 No parameter with name 'config' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:215:17 No parameter with name 'activeModel' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:215:31 Unresolved reference 'viewModel'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:216:17 No parameter with name 'onBlockClick' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:216:34 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:218:49 Unresolved reference 'uuid'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:219:46 Unresolved reference 'uuid'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:222:17 No parameter with name 'onBlockLongClick' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:222:38 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:224:44 Unresolved reference 'uuid'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:226:17 No parameter with name 'onContentChange' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:226:37 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:226:46 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:229:17 No parameter with name 'onNewBlock' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:229:32 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:229:41 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:232:17 No parameter with name 'onSplitBlock' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:232:34 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:232:43 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:232:53 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:233:53 Too many arguments for 'fun invoke(p1: String, p2: Int): Unit'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:235:17 No parameter with name 'onMergeBlock' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:235:34 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:235:43 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:236:43 Too many arguments for 'fun invoke(p1: String): Unit'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:238:17 No parameter with name 'onIndent' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:238:30 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:241:17 No parameter with name 'onOutdent' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:241:31 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:244:17 No parameter with name 'onMoveUp' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:244:30 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:247:17 No parameter with name 'onMoveDown' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:247:32 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:250:17 No parameter with name 'onLoadContent' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:250:35 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:250:44 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:251:44 Too many arguments for 'fun invoke(p1: Long): Unit'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:253:17 No parameter with name 'onBackspace' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:253:33 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:253:42 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:254:42 Too many arguments for 'fun invoke(p1: String): Unit'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:256:17 No parameter with name 'onToggleCollapse' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:256:38 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:259:17 No parameter with name 'onFocusUp' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:259:31 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:262:17 No parameter with name 'onFocusDown' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:262:33 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:265:17 No parameter with name 'onLinkClick' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:265:17 No value passed for parameter 'blockRepository'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:265:17 No value passed for parameter 'graphWriter'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:265:17 No value passed for parameter 'textOperations'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:265:17 No value passed for parameter 'blockOperations'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:265:17 No value passed for parameter 'commandSystem'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:265:17 No value passed for parameter 'formatProcessor'.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsView.kt:265:33 Cannot infer type for this parameter. Please specify it explicitly.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsViewModel.kt:38:9 No parameter with name 'blockRepository' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsViewModel.kt:39:9 No parameter with name 'undoManager' found.
+e: file:///home/tstapler/Programming/logseq-kmp/kmp/src/commonMain/kotlin/com/logseq/kmp/ui/screens/JournalsViewModel.kt:40:9 No parameter with name 'scope' found.
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':kmp:compileDebugKotlinAndroid'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights.
+> Get more help at https://help.gradle.org.
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.10.2/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 6s
+10 actionable tasks: 1 executed, 9 up-to-date

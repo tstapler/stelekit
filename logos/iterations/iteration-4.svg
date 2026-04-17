@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+
+  <g id="icon">
+
+    <!-- Back-left stele (receding, lighter stone) -->
+    <polygon
+      points="80,435 225,435 212,138 95,138"
+      fill="#B8AFA0"
+    />
+    <rect x="108" y="188" width="72" height="14" fill="#6B6058"/>
+    <rect x="108" y="216" width="55" height="14" fill="#6B6058"/>
+
+    <!-- Back-right stele (receding, lighter stone) -->
+    <polygon
+      points="287,435 432,435 419,138 300,138"
+      fill="#B8AFA0"
+    />
+    <rect x="310" y="188" width="72" height="14" fill="#6B6058"/>
+    <rect x="310" y="216" width="55" height="14" fill="#6B6058"/>
+
+    <!-- Front stele (main stone) -->
+    <polygon
+      points="176,452 336,452 313,58 199,58"
+      fill="#928374"
+    />
+    <!-- Carved inscription bands — group 1 -->
+    <rect x="213" y="118" width="96" height="18" fill="#1D2021"/>
+    <rect x="213" y="150" width="76" height="18" fill="#1D2021"/>
+    <!-- gap — paragraph break -->
+    <rect x="213" y="200" width="88" height="18" fill="#1D2021"/>
+    <rect x="213" y="232" width="62" height="18" fill="#1D2021"/>
+
+    <!-- Shared plinth -->
+    <rect x="62" y="452" width="388" height="16" rx="3" fill="#504945"/>
+
+  </g>
+
+</svg>

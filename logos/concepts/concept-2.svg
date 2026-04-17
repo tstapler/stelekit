@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 512">
+  <g id="icon">
+    <!-- Bottom block: widest, darkest -->
+    <rect x="120" y="336" width="240" height="72" fill="#504945"/>
+    <!-- Middle block: ~80% width -->
+    <rect x="144" y="252" width="192" height="72" fill="#928374"/>
+    <!-- Top block: ~60% width -->
+    <rect x="168" y="168" width="144" height="72" fill="#83A598"/>
+  </g>
+  <g id="wordmark">
+    <text
+      x="430"
+      y="280"
+      font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+      font-size="112"
+      font-weight="300"
+      fill="#3C3836"
+      dominant-baseline="middle"
+      text-anchor="start"
+      letter-spacing="-2"
+    >stelekit</text>
+  </g>
+</svg>

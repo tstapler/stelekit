@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 512">
+
+  <!-- Geometric "S" Lettermark built from 5 rectangular segments -->
+  <g id="icon">
+
+    <!-- S constructed on a ~200x240 grid, centered in a 280x280 square at (116,116) -->
+    <!-- Grid: x from 116 to 316, y from 136 to 376 -->
+    <!-- Segment dimensions: bar height=44, bar width=164, column width=44 -->
+
+    <!-- Top horizontal bar -->
+    <rect x="116" y="136" width="164" height="44" fill="#83A598"/>
+
+    <!-- Upper-left vertical bar (left side, upper half) -->
+    <rect x="116" y="136" width="44" height="128" fill="#83A598"/>
+
+    <!-- Middle horizontal bar -->
+    <rect x="116" y="220" width="164" height="44" fill="#83A598"/>
+
+    <!-- Lower-right vertical bar (right side, lower half) -->
+    <rect x="236" y="220" width="44" height="132" fill="#83A598"/>
+
+    <!-- Bottom horizontal bar -->
+    <rect x="116" y="308" width="164" height="44" fill="#83A598"/>
+
+  </g>
+
+  <!-- Wordmark: lowercase "stelekit" -->
+  <g id="wordmark">
+    <text
+      x="360"
+      y="276"
+      font-family="'Helvetica Neue', Helvetica, Arial, sans-serif"
+      font-size="120"
+      font-weight="700"
+      letter-spacing="-2"
+      fill="#3C3836"
+      dominant-baseline="middle"
+      text-anchor="start"
+    >stelekit</text>
+  </g>
+
+</svg>

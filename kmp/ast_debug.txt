@@ -1,0 +1,21 @@
+Normalized:
+- Parent
+    - Child (2 spaces)
+AST Structure:
+Markdown:MARKDOWN_FILE
+  Markdown:UNORDERED_LIST
+    Markdown:LIST_ITEM
+      Markdown:LIST_BULLET
+      Markdown:PARAGRAPH -> 'Parent'
+        Markdown:TEXT -> 'Parent'
+      Markdown:EOL
+      WHITE_SPACE
+      Markdown:UNORDERED_LIST
+        Markdown:LIST_ITEM
+          Markdown:LIST_BULLET
+          Markdown:PARAGRAPH -> 'Child (2 spaces)'
+            Markdown:TEXT -> 'Child'
+            WHITE_SPACE
+            Markdown:(
+            Markdown:TEXT -> '2 spaces'
+            Markdown:)

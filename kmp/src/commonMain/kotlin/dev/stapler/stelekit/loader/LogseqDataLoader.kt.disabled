@@ -1,0 +1,324 @@
+package dev.stapler.stelekit.loader
+
+import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.Property
+import dev.stapler.stelekit.repository.BlockRepository
+import dev.stapler.stelekit.repository.PageRepository
+import dev.stapler.stelekit.repository.PropertyRepository
+import dev.stapler.stelekit.repository.ReferenceRepository
+import kotlinx.datetime.Instant
+import java.io.File
+import java.util.UUID
+import kotlin.Result.Companion.success
+import kotlin.Result.Companion.failure
+
+/**
+ * Data loader for Logseq markdown files.
+ * Parses pages, journals, and block hierarchies from Logseq's file format.
+ */
+class LogseqDataLoader(
+    private val blockRepo: BlockRepository,
+    private val pageRepo: PageRepository,
+    private val propertyRepo: PropertyRepository,
+    private val referenceRepo: ReferenceRepository
+) {
+
+    data class LoadStats(
+        val pagesLoaded: Int = 0,
+        val blocksLoaded: Int = 0,
+        val referencesFound: Int = 0,
+        val propertiesFound: Int = 0,
+        val errors: List<String> = emptyList()
+    )
+
+    /**
+     * Load all data from a Logseq graph directory
+     */
+    suspend fun loadGraph(graphPath: String): Result<LoadStats> {
+        return try {
+            val graphDir = File(graphPath)
+            if (!graphDir.exists() || !graphDir.isDirectory) {
+                return failure(Exception("Graph directory does not exist: $graphPath"))
+            }
+
+            var stats = LoadStats()
+
+            // Load pages
+            val pagesDir = File(graphDir, "pages")
+            if (pagesDir.exists()) {
+                val pageStats = loadPages(pagesDir)
+                stats = stats.copy(
+                    pagesLoaded = pageStats.getOrDefault(0),
+                    errors = stats.errors + pageStats.exceptionOrNull()?.message.orEmpty()
+                )
+            }
+
+            // Load journals
+            val journalsDir = File(graphDir, "journals")
+            if (journalsDir.exists()) {
+                val journalStats = loadJournals(journalsDir)
+                stats = stats.copy(
+                    pagesLoaded = stats.pagesLoaded + journalStats.getOrDefault(0),
+                    errors = stats.errors + journalStats.exceptionOrNull()?.message.orEmpty()
+                )
+            }
+
+            success(stats)
+        } catch (e: Exception) {
+            failure(e)
+        }
+    }
+
+    /**
+     * Load all pages from the pages directory
+     */
+    private suspend fun loadPages(pagesDir: File): Result<Int> {
+        return try {
+            var count = 0
+            pagesDir.listFiles { file -> file.isFile && file.name.endsWith(".md") }
+                ?.forEach { file ->
+                    try {
+                        val page = parsePageFile(file)
+                        pageRepo.savePage(page).getOrThrow()
+                        count++
+                    } catch (e: Exception) {
+                        println("Error loading page ${file.name}: ${e.message}")
+                    }
+                }
+            success(count)
+        } catch (e: Exception) {
+            failure(e)
+        }
+    }
+
+    /**
+     * Load all journals from the journals directory
+     */
+    private suspend fun loadJournals(journalsDir: File): Result<Int> {
+        return try {
+            var count = 0
+            journalsDir.listFiles { file -> file.isFile && file.name.endsWith(".md") }
+                ?.forEach { file ->
+                    try {
+                        val page = parseJournalFile(file)
+                        pageRepo.savePage(page).getOrThrow()
+                        count++
+                    } catch (e: Exception) {
+                        println("Error loading journal ${file.name}: ${e.message}")
+                    }
+                }
+            success(count)
+        } catch (e: Exception) {
+            failure(e)
+        }
+    }
+
+    /**
+     * Parse a Logseq page file into domain objects
+     */
+    private suspend fun parsePageFile(file: File): Page {
+        val content = file.readText()
+        val (frontmatter, body) = parseFrontmatter(content)
+
+        val pageName = file.nameWithoutExtension
+        val uuid = UUID.nameUUIDFromBytes(pageName.toByteArray()).toString()
+
+        // Create the page
+        val page = Page(
+            id = generateId(),
+            uuid = uuid,
+            name = pageName,
+            namespace = extractNamespace(pageName),
+            filePath = file.absolutePath,
+            createdAt = frontmatter["date"]?.let { parseDate(it) } ?: Instant.fromEpochMilliseconds(file.lastModified()),
+            updatedAt = Instant.fromEpochMilliseconds(file.lastModified()),
+            properties = frontmatter.filterKeys { it != "date" }
+        )
+
+        // Parse blocks from the content
+        val blocks = parseBlocks(body, page)
+        for (block in blocks) {
+            blockRepo.saveBlock(block).getOrThrow()
+        }
+
+        return page
+    }
+
+    /**
+     * Parse a Logseq journal file
+     */
+    private suspend fun parseJournalFile(file: File): Page {
+        val content = file.readText()
+        val (frontmatter, body) = parseFrontmatter(content)
+
+        // Journal filename is typically YYYY_MM_DD.md
+        val pageName = file.nameWithoutExtension.replace("_", "-")
+        val uuid = UUID.nameUUIDFromBytes(pageName.toByteArray()).toString()
+
+        val page = Page(
+            id = generateId(),
+            uuid = uuid,
+            name = pageName,
+            namespace = null,
+            filePath = file.absolutePath,
+            createdAt = frontmatter["date"]?.let { parseDate(it) } ?: Instant.fromEpochMilliseconds(file.lastModified()),
+            updatedAt = Instant.fromEpochMilliseconds(file.lastModified()),
+            properties = frontmatter.filterKeys { it != "date" }
+        )
+
+        val blocks = parseBlocks(body, page)
+        for (block in blocks) {
+            blockRepo.saveBlock(block).getOrThrow()
+        }
+
+        return page
+    }
+
+    /**
+     * Parse frontmatter from markdown content
+     */
+    private fun parseFrontmatter(content: String): Pair<Map<String, String>, String> {
+        val lines = content.lines()
+        if (lines.size < 3 || !lines[0].startsWith("---")) {
+            return emptyMap<String, String>() to content
+        }
+
+        val frontmatterEnd = lines.drop(1).indexOfFirst { it.startsWith("---") } + 1
+        if (frontmatterEnd <= 1) {
+            return emptyMap<String, String>() to content
+        }
+
+        val frontmatterLines = lines.subList(1, frontmatterEnd)
+        val bodyStart = frontmatterEnd + 1
+
+        val frontmatter = frontmatterLines.associate { line ->
+            val parts = line.split(":", limit = 2)
+            if (parts.size == 2) {
+                parts[0].trim() to parts[1].trim().removeSurrounding("\"")
+            } else {
+                line to ""
+            }
+        }
+
+        val body = lines.drop(bodyStart).joinToString("\n")
+        return frontmatter to body
+    }
+
+    /**
+     * Parse blocks from markdown content
+     */
+    private suspend fun parseBlocks(content: String, page: Page): List<Block> {
+        val blocks = mutableListOf<Block>()
+        val lines = content.lines()
+
+        var currentBlock: Block? = null
+        var currentLevel = 0
+        var blockId = 1
+
+        for (line in lines) {
+            if (line.isBlank()) continue
+
+            val (level, content) = parseBlockHeader(line)
+
+            if (level > 0) {
+                // Save previous block if exists
+                currentBlock?.let { blocks.add(it) }
+
+                // Start new block
+                currentBlock = Block(
+                    id = generateId(),
+                    uuid = UUID.randomUUID().toString(),
+                    pageId = page.id,
+                    parentId = findParentId(blocks, level),
+                    leftId = findLeftSiblingId(blocks, level),
+                    content = content,
+                    level = level,
+                    position = blockId++,
+                    createdAt = page.createdAt,
+                    updatedAt = page.updatedAt,
+                    properties = emptyMap()
+                )
+                currentLevel = level
+            } else if (currentBlock != null && line.isNotBlank()) {
+                // Continue current block
+                currentBlock = currentBlock.copy(
+                    content = currentBlock.content + "\n" + line
+                )
+            }
+        }
+
+        // Save final block
+        currentBlock?.let { blocks.add(it) }
+
+        return blocks
+    }
+
+    /**
+     * Parse block header to extract level and content
+     */
+    private fun parseBlockHeader(line: String): Pair<Int, String> {
+        var level = 0
+        var content = line
+
+        // Count leading # for header level
+        while (content.startsWith("#") && level < 6) {
+            level++
+            content = content.substring(1)
+        }
+
+        // If it's a header, remove leading spaces and dashes
+        if (level > 0) {
+            content = content.trim().removePrefix("-").trim()
+        } else {
+            // Regular content, might be a bullet point
+            if (content.trim().startsWith("- ")) {
+                level = 1
+                content = content.trim().removePrefix("- ").trim()
+            } else {
+                level = 1 // Default level for content
+            }
+        }
+
+        return level to content
+    }
+
+    /**
+     * Find parent block ID for a given level
+     */
+    private fun findParentId(blocks: List<Block>, level: Int): Long? {
+        return blocks.asReversed().find { it.level == level - 1 }?.id
+    }
+
+    /**
+     * Find left sibling ID for positioning
+     */
+    private fun findLeftSiblingId(blocks: List<Block>, level: Int): Long? {
+        return blocks.asReversed().find { it.level == level }?.id
+    }
+
+    /**
+     * Extract namespace from page name (e.g., "foo/bar" -> "foo")
+     */
+    private fun extractNamespace(pageName: String): String? {
+        return pageName.substringBefore("/", "").takeIf { it != pageName }
+    }
+
+    /**
+     * Parse date string to Instant
+     */
+    private fun parseDate(dateStr: String): Instant {
+        return try {
+            // Try ISO format first
+            Instant.parse(dateStr)
+        } catch (e: Exception) {
+            // Fallback to current time
+            Instant.fromEpochMilliseconds(System.currentTimeMillis())
+        }
+    }
+
+    /**
+     * Generate a unique ID (simplified for demo)
+     */
+    private fun generateId(): Long = System.currentTimeMillis() + (0..999).random()
+}
