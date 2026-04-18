@@ -74,7 +74,6 @@ fun VoiceCaptureButton(
             val label = if (state == VoiceCaptureState.Transcribing) "Transcribing…" else "Formatting…"
             FloatingActionButton(
                 onClick = {},
-                enabled = false,
                 modifier = Modifier.semantics { contentDescription = label },
             ) {
                 CircularProgressIndicator(
