@@ -94,6 +94,20 @@ class WhisperSpeechToTextProviderTest {
     }
 
     @Test
+    fun `500 response returns ApiError with code 500`() = runTest {
+        val engine = MockEngine {
+            respond(
+                content = """{"error":{"message":"Internal server error"}}""",
+                status = HttpStatusCode.InternalServerError,
+                headers = headersOf("Content-Type", "application/json"),
+            )
+        }
+        val result = buildProvider(engine).transcribe(ByteArray(100))
+        assertIs<TranscriptResult.Failure.ApiError>(result)
+        assertEquals(500, result.code)
+    }
+
+    @Test
     fun `request targets correct URL with Authorization header`() = runTest {
         var capturedUrl = ""
         var capturedAuth = ""

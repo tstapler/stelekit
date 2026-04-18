@@ -13,6 +13,8 @@ import kotlin.time.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
+private const val MAX_TRANSCRIPT_CHARS = 10_000
+
 class VoiceCaptureViewModel(
     private val pipeline: VoicePipelineConfig,
     private val journalService: JournalService,
@@ -40,6 +42,10 @@ class VoiceCaptureViewModel(
     }
 
     fun dismissError() {
+        _state.value = VoiceCaptureState.Idle
+    }
+
+    fun resetToIdle() {
         _state.value = VoiceCaptureState.Idle
     }
 
@@ -86,7 +92,9 @@ class VoiceCaptureViewModel(
                         return@launch
                     }
                     is TranscriptResult.Success -> {
-                        val rawTranscript = sttResult.text.trim()
+                        val fullTranscript = sttResult.text.trim()
+                        val inputTruncated = fullTranscript.length > MAX_TRANSCRIPT_CHARS
+                        val rawTranscript = if (inputTruncated) fullTranscript.take(MAX_TRANSCRIPT_CHARS) else fullTranscript
                         val wordCount = rawTranscript.split(Regex("\\s+")).count { it.isNotBlank() }
                         if (wordCount < pipeline.minWordCount) {
                             _state.value = VoiceCaptureState.Error(
@@ -98,10 +106,10 @@ class VoiceCaptureViewModel(
 
                         _state.value = VoiceCaptureState.Formatting
                         val prompt = pipeline.systemPrompt.replace("{{TRANSCRIPT}}", rawTranscript)
-                        var isLikelyTruncated = false
+                        var isLikelyTruncated = inputTruncated
                         val formattedText = when (val llmResult = pipeline.llmProvider.format(rawTranscript, prompt)) {
                             is LlmResult.Success -> {
-                                isLikelyTruncated = llmResult.isLikelyTruncated
+                                isLikelyTruncated = isLikelyTruncated || llmResult.isLikelyTruncated
                                 llmResult.formattedText
                             }
                             is LlmResult.Failure -> rawTranscript

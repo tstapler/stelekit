@@ -14,7 +14,7 @@ Rules:
 Transcript:
 {{TRANSCRIPT}}"""
 
-data class VoicePipelineConfig(
+class VoicePipelineConfig(
     val audioRecorder: AudioRecorder = NoOpAudioRecorder(),
     val sttProvider: SpeechToTextProvider = NoOpSpeechToTextProvider(),
     val llmProvider: LlmFormatterProvider = NoOpLlmFormatterProvider(),

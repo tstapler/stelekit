@@ -559,7 +559,7 @@ private fun GraphContent(
                                         state = voiceCaptureState,
                                         onTap = { voiceCaptureViewModel.onMicTapped() },
                                         onDismissError = { voiceCaptureViewModel.dismissError() },
-                                        onAutoReset = { voiceCaptureViewModel.dismissError() },
+                                        onAutoReset = { voiceCaptureViewModel.resetToIdle() },
                                     )
                                 },
                             )

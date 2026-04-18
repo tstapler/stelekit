@@ -72,7 +72,7 @@ actual fun PlatformBottomBar(
                             BottomNavItem.NOTIFICATIONS -> onNavigate(Screen.Notifications)
                         }
                     },
-                    icon = { Icon(item.icon, contentDescription = null) },
+                    icon = { Icon(item.icon, contentDescription = item.label) },
                     label = { Text(item.label) },
                 )
             }
@@ -89,7 +89,7 @@ actual fun PlatformBottomBar(
                             BottomNavItem.NOTIFICATIONS -> onNavigate(Screen.Notifications)
                         }
                     },
-                    icon = { Icon(item.icon, contentDescription = null) },
+                    icon = { Icon(item.icon, contentDescription = item.label) },
                     label = { Text(item.label) },
                 )
             }

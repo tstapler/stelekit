@@ -273,6 +273,101 @@ class VoiceCaptureViewModelTest {
     }
 
     @Test
+    fun `success path passes through Formatting state`() = runTest {
+        val transcript = "this is a test transcript with more than ten words total here"
+        var formattingObserved = false
+        val fakeRecorder = object : AudioRecorder {
+            override suspend fun startRecording(): PlatformAudioFile = PlatformAudioFile("/tmp/test.m4a")
+            override suspend fun stopRecording() = Unit
+            override suspend fun readBytes(file: PlatformAudioFile) = ByteArray(100)
+        }
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success(transcript) }
+        val fakeLlm = LlmFormatterProvider { _, _ ->
+            delay(1) // yield so we can observe Formatting state
+            LlmResult.Success("- formatted", false)
+        }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt, llmProvider = fakeLlm),
+            makeJournalService(), this,
+        )
+
+        val collectionJob = launch {
+            vm.state.collect { if (it == VoiceCaptureState.Formatting) formattingObserved = true }
+        }
+        vm.onMicTapped()
+        advanceUntilIdle()
+        collectionJob.cancel()
+
+        assert(formattingObserved) { "Formatting state was never observed" }
+        assertIs<VoiceCaptureState.Done>(vm.state.first())
+    }
+
+    @Test
+    fun `LLM failure falls back to raw transcript in Done state`() = runTest {
+        val transcript = "this is a test transcript with more than ten words total here"
+        val fakeRecorder = object : AudioRecorder {
+            override suspend fun startRecording(): PlatformAudioFile = PlatformAudioFile("/tmp/test.m4a")
+            override suspend fun stopRecording() = Unit
+            override suspend fun readBytes(file: PlatformAudioFile) = ByteArray(100)
+        }
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success(transcript) }
+        val fakeLlm = LlmFormatterProvider { _, _ -> LlmResult.Failure.NetworkError }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt, llmProvider = fakeLlm),
+            makeJournalService(), this,
+        )
+
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        val state = vm.state.first()
+        assertIs<VoiceCaptureState.Done>(state)
+        assert(state.insertedText.contains(transcript.trim())) {
+            "Expected Done.insertedText to contain raw transcript but got: ${state.insertedText}"
+        }
+    }
+
+    @Test
+    fun `9-word transcript emits Error at TRANSCRIBING`() = runTest {
+        val fakeRecorder = object : AudioRecorder {
+            override suspend fun startRecording(): PlatformAudioFile = PlatformAudioFile("/tmp/test.m4a")
+            override suspend fun stopRecording() = Unit
+            override suspend fun readBytes(file: PlatformAudioFile) = ByteArray(100)
+        }
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success("one two three four five six seven eight nine") }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
+            makeJournalService(), this,
+        )
+
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        val state = vm.state.first()
+        assertIs<VoiceCaptureState.Error>(state)
+        assertEquals(PipelineStage.TRANSCRIBING, state.stage)
+    }
+
+    @Test
+    fun `10-word transcript reaches Done state`() = runTest {
+        val fakeRecorder = object : AudioRecorder {
+            override suspend fun startRecording(): PlatformAudioFile = PlatformAudioFile("/tmp/test.m4a")
+            override suspend fun stopRecording() = Unit
+            override suspend fun readBytes(file: PlatformAudioFile) = ByteArray(100)
+        }
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success("one two three four five six seven eight nine ten") }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
+            makeJournalService(), this,
+        )
+
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        assertIs<VoiceCaptureState.Done>(vm.state.first())
+    }
+
+    @Test
     fun `onMicTapped while Recording calls stopRecording and reaches Transcribing`() = runTest {
         var stopCalled = false
         val fakeRecorder = object : AudioRecorder {
