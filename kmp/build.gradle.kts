@@ -295,6 +295,7 @@ compose.desktop {
             val parts = rawVersion.split(".")
             packageVersion = if ((parts.firstOrNull()?.toIntOrNull() ?: 1) == 0)
                 "1.${parts.drop(1).joinToString(".")}" else rawVersion
+            modules("java.sql")
             linux {
                 iconFile.set(project.file("src/jvmMain/resources/icons/icon.png"))
             }
