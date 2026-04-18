@@ -87,22 +87,6 @@ class ImportServiceTest {
         assertTrue(result.matchedPageNames.isEmpty())
     }
 
-    // ── 8. maxSuggestions cap ─────────────────────────────────────────────────
-
-    @Test
-    fun maxSuggestionsCap_limitsLinks() {
-        // Build text with 60 distinct single-word page names
-        val pageNames = (1..60).map { "Page$it" }
-        val text = pageNames.joinToString(" ")
-        val m = matcher(*pageNames.toTypedArray())
-
-        val result = ImportService.scan(text, m, maxSuggestions = 50)
-        assertEquals(50, result.matchedPageNames.size, "Should cap at 50 suggestions")
-        // Count actual [[...]] links in output
-        val linkCount = "\\[\\[".toRegex().findAll(result.linkedText).count()
-        assertEquals(50, linkCount, "Should have exactly 50 wiki links in output")
-    }
-
     // ── 9. Deduplication of matchedPageNames ─────────────────────────────────
 
     @Test

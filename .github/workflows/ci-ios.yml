@@ -53,11 +53,11 @@ jobs:
           gradle-home-cache-cleanup: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
-      # Link the simulator framework — fast enough for PR validation without
-      # requiring all slices (assembleXCFramework is reserved for releases).
-      - name: Link iOS Simulator framework
+      # Compile Kotlin sources for the iOS Simulator target — fast validation
+      # that commonMain + iosMain compile correctly without needing a framework block.
+      - name: Compile iOS Simulator sources
         run: |
-          ./gradlew :kmp:linkDebugFrameworkIosSimulatorArm64 \
+          ./gradlew :kmp:compileKotlinIosSimulatorArm64 \
             --no-daemon \
             --build-cache \
             -Pkotlin.native.ignoreDisabledTargets=true

@@ -11,6 +11,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  checks: write
+  contents: read
+
 jobs:
   # ── JVM tests (shared + desktop logic) ────────────────────────────────────
   jvm-test:
