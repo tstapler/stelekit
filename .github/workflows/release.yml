@@ -167,6 +167,7 @@ jobs:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Package desktop distributable
+        shell: bash
         run: |
           APP_VERSION="${{ env.VERSION }}"
           ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache \
