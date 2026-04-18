@@ -14,8 +14,28 @@ package dev.stapler.stelekit.migration
  */
 fun registerAllMigrations() {
     MigrationRegistry.registerAll(
-        V20260414001_baseline
+        V20260414001_baseline,
+        V20260418001_normalizeJournalNames,
     )
+}
+
+val V20260418001_normalizeJournalNames = migration("V20260418001__normalize-journal-names") {
+    description = "Rename hyphen-dated journal pages to underscore format and merge duplicates"
+    checksumBody = "V20260418001__normalize-journal-names: rename YYYY-MM-DD journal pages to YYYY_MM_DD, merging any duplicates"
+    allowDestructive = true
+    requires("V20260414001__baseline")
+    apply {
+        val migrationScope = this
+        forPages({ it.isJournal && it.name.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) }) {
+            val underscoreName = page.name.replace('-', '_')
+            val target = migrationScope.findPage(underscoreName)
+            if (target == null) {
+                renamePage(underscoreName)
+            } else {
+                mergeIntoPage(target.uuid)
+            }
+        }
+    }
 }
 
 /**

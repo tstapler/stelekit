@@ -45,4 +45,5 @@ class MigrationBuilder(val id: String) {
 private class NoOpMigrationScope : MigrationScope {
     override fun forBlocks(where: (Block) -> Boolean, transform: BlockScope.() -> Unit) {}
     override fun forPages(where: (Page) -> Boolean, transform: PageScope.() -> Unit) {}
+    override fun findPage(name: String): Page? = null
 }
