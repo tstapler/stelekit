@@ -132,7 +132,7 @@ jobs:
             'Exec=stelekit' \
             'Icon=stelekit' \
             'Type=Application' \
-            'Categories=Utility;Office;' \
+            'Categories=Office;' \
             'Comment=Markdown-based outliner and note-taking app' \
             > "$APPDIR/stelekit.desktop"
           cp "$APPDIR/stelekit.desktop" "$APPDIR/usr/share/applications/stelekit.desktop"
@@ -146,8 +146,8 @@ jobs:
             > "$APPDIR/AppRun"
           chmod +x "$APPDIR/AppRun"
 
-          # Build AppImage (extract-and-run avoids FUSE in CI)
-          APPIMAGE_EXTRACT_AND_RUN=1 /tmp/appimagetool "$APPDIR" \
+          # Build AppImage (extract-and-run avoids FUSE in CI; ARCH required when JRE contains multi-arch libs)
+          APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 /tmp/appimagetool "$APPDIR" \
             "kmp/build/compose/binaries/main/SteleKit-${APP_VERSION}-linux.AppImage"
 
       - uses: actions/upload-artifact@v4
