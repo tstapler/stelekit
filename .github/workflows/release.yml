@@ -14,7 +14,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
-# Resolve version from tag push or manual input
+# Resolve version from tag push or manual input (strip leading 'v' for Gradle/package tools)
 env:
   VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
 
@@ -50,7 +50,10 @@ jobs:
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew :androidApp:assembleRelease --no-daemon --build-cache
+        run: |
+          APP_VERSION="${{ env.VERSION }}"
+          ./gradlew :androidApp:assembleRelease --no-daemon --build-cache \
+            -PappVersion="${APP_VERSION#v}"
 
       - name: Rename APK with version
         run: |
@@ -84,7 +87,10 @@ jobs:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Package desktop distributable
-        run: ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache
+        run: |
+          APP_VERSION="${{ env.VERSION }}"
+          ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache \
+            -PappVersion="${APP_VERSION#v}"
 
       - name: Rename distributable with version
         run: |
@@ -121,7 +127,10 @@ jobs:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Package desktop distributable
-        run: ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache
+        run: |
+          APP_VERSION="${{ env.VERSION }}"
+          ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache \
+            -PappVersion="${APP_VERSION#v}"
 
       - name: Rename distributable with version
         run: |
@@ -155,7 +164,10 @@ jobs:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Package desktop distributable
-        run: ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache
+        run: |
+          APP_VERSION="${{ env.VERSION }}"
+          ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache \
+            -PappVersion="${APP_VERSION#v}"
 
       - name: Rename distributable with version
         shell: bash

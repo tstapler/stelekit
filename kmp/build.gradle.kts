@@ -289,7 +289,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb)
             packageName = "stelekit"
-            packageVersion = "1.0.0"
+            packageVersion = (findProperty("appVersion") as? String ?: "0.1.0")
             linux {
                 iconFile.set(project.file("src/jvmMain/resources/icons/icon.png"))
             }
