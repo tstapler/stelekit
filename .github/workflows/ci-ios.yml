@@ -53,12 +53,14 @@ jobs:
           gradle-home-cache-cleanup: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
-      # Compile iOS metadata sources — validates commonMain + iosMain type-correctness and
-      # expect/actual declarations without invoking KotlinNativeCompile, which triggers a
-      # KotlinNativeBundleBuildService/Gradle 8.8+ build-service-property incompatibility
-      # in the current Kotlin plugin. Remove the workaround once the plugin is fixed upstream.
-      - name: Compile iOS metadata sources
+      # Compile common metadata — validates commonMain type-correctness across all targets.
+      # Workaround: Kotlin 2.3.x sets kotlinNativeBundleBuildService (via Property.set(Provider))
+      # on all iOS-associated KotlinCompileCommon tasks. Gradle 8.8+ rejects this pattern for
+      # build-service-typed properties, failing every iOS-specific compilation task. The common
+      # metadata task does not have this association and compiles successfully.
+      # Restore full iOS native compile once the Kotlin plugin is fixed upstream (KT-68400).
+      - name: Compile common metadata
         run: |
-          ./gradlew :kmp:compileIosMainKotlinMetadata \
+          ./gradlew :kmp:compileCommonMainKotlinMetadata \
             --no-daemon \
             --build-cache
