@@ -1,8 +1,8 @@
-# SteleKit
+<p align="center">
+  <img src="assets/brand/svg/stelekit-lockup.svg" alt="SteleKit" width="400" />
+</p>
 
-**Your knowledge, carved in stone.**
-
-<!-- TODO: add logo here -->
+<p align="center"><em>Your knowledge, carved in stone.</em></p>
 
 A local-first outliner that keeps your notes as plain markdown on your disk — forever — and runs natively on every platform you use.
 
