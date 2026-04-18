@@ -289,7 +289,12 @@ compose.desktop {
         nativeDistributions {
             targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb)
             packageName = "stelekit"
-            packageVersion = (findProperty("appVersion") as? String ?: "0.1.0")
+            // Compose Desktop requires MAJOR > 0. Map 0.x.y → 1.x.y for package metadata;
+            // the public version (tag, APK, release title) remains 0.x.y.
+            val rawVersion = (findProperty("appVersion") as? String ?: "0.1.0")
+            val parts = rawVersion.split(".")
+            packageVersion = if ((parts.firstOrNull()?.toIntOrNull() ?: 1) == 0)
+                "1.${parts.drop(1).joinToString(".")}" else rawVersion
             linux {
                 iconFile.set(project.file("src/jvmMain/resources/icons/icon.png"))
             }
