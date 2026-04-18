@@ -128,7 +128,7 @@ class VoiceCaptureViewModel(
         }
     }
 
-    private fun buildVoiceNoteBlock(formattedText: String, rawTranscript: String): String {
+    internal fun buildVoiceNoteBlock(formattedText: String, rawTranscript: String): String {
         val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
         val timeLabel = "${now.hour.toString().padStart(2, '0')}:${now.minute.toString().padStart(2, '0')}"
         return buildString {

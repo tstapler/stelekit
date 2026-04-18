@@ -17,6 +17,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.ui.i18n.Language
+import dev.stapler.stelekit.voice.VoiceSettings
 
 @Composable
 fun SettingsDialog(
@@ -28,7 +29,9 @@ fun SettingsDialog(
     onLanguageChange: (Language) -> Unit,
     onReindex: () -> Unit,
     isLeftHanded: Boolean = false,
-    onLeftHandedChange: (Boolean) -> Unit = {}
+    onLeftHandedChange: (Boolean) -> Unit = {},
+    voiceSettings: VoiceSettings? = null,
+    onRebuildVoicePipeline: (() -> Unit)? = null,
 ) {
     if (visible) {
         Dialog(
@@ -111,6 +114,12 @@ fun SettingsDialog(
                                 SettingsCategory.EDITOR -> EditorSettings()
                                 SettingsCategory.PLUGINS -> PluginsSettings()
                                 SettingsCategory.ADVANCED -> AdvancedSettings(onReindex)
+                                SettingsCategory.VOICE -> if (voiceSettings != null && onRebuildVoicePipeline != null) {
+                                    VoiceCaptureSettings(
+                                        voiceSettings = voiceSettings,
+                                        onRebuildPipeline = onRebuildVoicePipeline,
+                                    )
+                                }
                             }
                         }
                     }
@@ -156,5 +165,6 @@ enum class SettingsCategory(val label: String, val icon: ImageVector) {
     GENERAL("General", Icons.Default.Settings),
     EDITOR("Editor", Icons.Default.Edit),
     PLUGINS("Plugins", Icons.Default.Extension),
-    ADVANCED("Advanced", Icons.Default.Build)
+    ADVANCED("Advanced", Icons.Default.Build),
+    VOICE("Voice Capture", Icons.Default.Mic),
 }

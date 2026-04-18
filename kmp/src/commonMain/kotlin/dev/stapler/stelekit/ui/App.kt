@@ -77,6 +77,7 @@ import dev.stapler.stelekit.domain.UrlFetcher
 import dev.stapler.stelekit.voice.VoiceCaptureState
 import dev.stapler.stelekit.voice.VoiceCaptureViewModel
 import dev.stapler.stelekit.voice.VoicePipelineConfig
+import dev.stapler.stelekit.voice.VoiceSettings
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import kotlin.math.roundToInt
@@ -100,6 +101,8 @@ fun StelekitApp(
     encryptionManager: EncryptionManager = remember { DefaultEncryptionManager() },
     urlFetcher: UrlFetcher = remember { NoOpUrlFetcher() },
     voicePipeline: VoicePipelineConfig = remember { VoicePipelineConfig() },
+    voiceSettings: VoiceSettings? = null,
+    onRebuildVoicePipeline: (() -> Unit)? = null,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -214,6 +217,8 @@ fun StelekitApp(
             notificationManager = notificationManager,
             urlFetcher = urlFetcher,
             voicePipeline = voicePipeline,
+            voiceSettings = voiceSettings,
+            onRebuildVoicePipeline = onRebuildVoicePipeline,
         )
     }
 }
@@ -236,6 +241,8 @@ private fun GraphContent(
     notificationManager: NotificationManager,
     urlFetcher: UrlFetcher = NoOpUrlFetcher(),
     voicePipeline: VoicePipelineConfig = VoicePipelineConfig(),
+    voiceSettings: VoiceSettings? = null,
+    onRebuildVoicePipeline: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val composeClipboard = LocalClipboardManager.current
@@ -571,7 +578,9 @@ private fun GraphContent(
                         searchViewModel = searchViewModel,
                         viewModel = viewModel,
                         notificationManager = notificationManager,
-                        fileSystem = fileSystem
+                        fileSystem = fileSystem,
+                        voiceSettings = voiceSettings,
+                        onRebuildVoicePipeline = onRebuildVoicePipeline,
                     )
 
                     } // CompositionLocalProvider(LocalWindowSizeClass)
@@ -744,7 +753,9 @@ private fun GraphDialogLayer(
     searchViewModel: SearchViewModel,
     viewModel: StelekitViewModel,
     notificationManager: NotificationManager,
-    fileSystem: PlatformFileSystem
+    fileSystem: PlatformFileSystem,
+    voiceSettings: VoiceSettings? = null,
+    onRebuildVoicePipeline: (() -> Unit)? = null,
 ) {
     // Hoist debug state so FrameTimeOverlay persists when the dialog is closed.
     var debugState by remember { mutableStateOf(DebugMenuState()) }
@@ -778,7 +789,9 @@ private fun GraphDialogLayer(
             viewModel.setSettingsVisible(false)
         },
         isLeftHanded = appState.isLeftHanded,
-        onLeftHandedChange = { viewModel.setLeftHanded(it) }
+        onLeftHandedChange = { viewModel.setLeftHanded(it) },
+        voiceSettings = voiceSettings,
+        onRebuildVoicePipeline = onRebuildVoicePipeline,
     )
 
     appState.diskConflict?.let { conflict ->
