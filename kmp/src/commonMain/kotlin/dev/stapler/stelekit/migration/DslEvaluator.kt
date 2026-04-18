@@ -6,6 +6,7 @@ package dev.stapler.stelekit.migration
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.repository.RepositorySet
+import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.flow.first
 
 /**
@@ -71,13 +72,15 @@ class DslEvaluator(private val repoSet: RepositorySet) {
         override fun forPages(where: (Page) -> Boolean, transform: PageScope.() -> Unit) {
             for (page in allPages) {
                 if (!where(page)) continue
-                val pageScope = PageScopeImpl(page)
+                val pageScope = PageScopeImpl(page, blocksByPage)
                 transform.invoke(pageScope)
                 for (change in pageScope.changes) {
                     appendChange(change)
                 }
             }
         }
+
+        override fun findPage(name: String): Page? = allPages.firstOrNull { it.name == name }
 
         private fun appendChange(change: BlockChange) {
             if (!migration.allowDestructive) {
@@ -122,7 +125,10 @@ class DslEvaluator(private val repoSet: RepositorySet) {
         }
     }
 
-    private inner class PageScopeImpl(override val page: Page) : PageScope {
+    private inner class PageScopeImpl(
+        override val page: Page,
+        private val blocksByPage: Map<String, List<Block>>,
+    ) : PageScope {
 
         val changes = mutableListOf<BlockChange>()
 
@@ -145,6 +151,20 @@ class DslEvaluator(private val repoSet: RepositorySet) {
         }
 
         override fun deletePage() {
+            changes.add(BlockChange.DeletePage(page.uuid))
+        }
+
+        override fun mergeIntoPage(targetPageUuid: String) {
+            val blocks = blocksByPage[page.uuid] ?: emptyList()
+            for (block in blocks) {
+                if (block.content.isNotBlank()) {
+                    changes.add(BlockChange.InsertBlock(block.copy(
+                        uuid = UuidGenerator.generateV7(),
+                        pageUuid = targetPageUuid,
+                    )))
+                }
+                changes.add(BlockChange.DeleteBlock(block.uuid))
+            }
             changes.add(BlockChange.DeletePage(page.uuid))
         }
     }
