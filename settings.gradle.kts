@@ -31,11 +31,16 @@ dependencyResolutionManagement {
         maven("https://jitpack.io")
         maven("https://oss.sonatype.org/content/repositories/snapshots/")
         maven("https://repo.clojars.org/")
-        // Required for Kotlin/JS: Node.js binary downloads (PREFER_SETTINGS blocks the
-        // project-level ivy repo that the Kotlin/JS plugin registers automatically)
+        // Required for Kotlin/JS: Node.js and Yarn binary downloads (PREFER_SETTINGS blocks
+        // the project-level ivy repos that the Kotlin/JS plugin registers automatically)
         ivy("https://nodejs.org/dist/") {
             content { includeModule("org.nodejs", "node") }
             patternLayout { artifact("v[revision]/[artifact](-v[revision]-[classifier]).[ext]") }
+            metadataSources { artifact() }
+        }
+        ivy("https://github.com/yarnpkg/yarn/releases/download/") {
+            content { includeModule("com.yarnpkg", "yarn") }
+            patternLayout { artifact("v[revision]/[artifact](-v[revision]).[ext]") }
             metadataSources { artifact() }
         }
     }
