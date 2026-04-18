@@ -14,9 +14,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
-# Resolve version from tag push or manual input (strip leading 'v' for Gradle/package tools)
+# Resolve version: workflow_dispatch input takes precedence, falls back to the pushed tag name
 env:
-  VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+  VERSION: ${{ github.event.inputs.version || github.ref_name }}
 
 jobs:
   # ── Android release APK ────────────────────────────────────────────────────
@@ -40,13 +40,16 @@ jobs:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Decode keystore
-        if: ${{ secrets.ANDROID_KEYSTORE != '' }}
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
         run: |
-          echo "${{ secrets.ANDROID_KEYSTORE }}" | base64 --decode > /tmp/release.keystore
+          if [ -n "$ANDROID_KEYSTORE" ]; then
+            echo "$ANDROID_KEYSTORE" | base64 --decode > /tmp/release.keystore
+            echo "ANDROID_KEYSTORE_PATH=/tmp/release.keystore" >> $GITHUB_ENV
+          fi
 
       - name: Build and sign release APK
         env:
-          ANDROID_KEYSTORE_PATH: ${{ secrets.ANDROID_KEYSTORE != '' && '/tmp/release.keystore' || '' }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
