@@ -53,11 +53,12 @@ jobs:
           gradle-home-cache-cleanup: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
-      # Compile Kotlin sources for the iOS Simulator target — fast validation
-      # that commonMain + iosMain compile correctly without needing a framework block.
-      - name: Compile iOS Simulator sources
+      # Compile iOS metadata sources — validates commonMain + iosMain type-correctness and
+      # expect/actual declarations without invoking KotlinNativeCompile, which triggers a
+      # KotlinNativeBundleBuildService/Gradle 8.8+ build-service-property incompatibility
+      # in the current Kotlin plugin. Remove the workaround once the plugin is fixed upstream.
+      - name: Compile iOS metadata sources
         run: |
-          ./gradlew :kmp:compileKotlinIosSimulatorArm64 \
+          ./gradlew :kmp:compileIosMainKotlinMetadata \
             --no-daemon \
-            --build-cache \
-            -Pkotlin.native.ignoreDisabledTargets=true
+            --build-cache
