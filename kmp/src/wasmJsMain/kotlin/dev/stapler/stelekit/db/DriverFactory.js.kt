@@ -1,23 +1,15 @@
 package dev.stapler.stelekit.db
 
 import app.cash.sqldelight.db.SqlDriver
-import app.cash.sqldelight.driver.worker.WebWorkerDriver
-import org.w3c.dom.Worker
-
-@JsName("Worker")
-external fun createWorker(url: dynamic): Worker
 
 actual class DriverFactory actual constructor() {
-    actual fun init(context: Any) {
-        // No-op on JS
-    }
-
+    actual fun init(context: Any) {}
     actual fun createDriver(jdbcUrl: String): SqlDriver {
-        val dbName = jdbcUrl.substringAfter("jdbc:sqlite:")
-        val url = js("new URL(\"@cashapp/sqldelight-sqljs-worker/sqljs.worker.js\", import.meta.url)")
-        val worker = createWorker(url)
-        return WebWorkerDriver(worker)
+        // Phase B: replace with @sqlite.org/sqlite-wasm driver
+        throw UnsupportedOperationException("Use RepositoryBackend.IN_MEMORY for browser demo")
     }
+    actual fun getDatabaseUrl(graphId: String): String = "jdbc:sqlite:stelekit-graph-$graphId"
+    actual fun getDatabaseDirectory(): String = "/stelekit"
 }
 
 actual val defaultDatabaseUrl: String

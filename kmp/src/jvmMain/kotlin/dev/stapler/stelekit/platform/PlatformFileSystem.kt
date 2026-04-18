@@ -27,6 +27,8 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
 
     actual override fun getLastModifiedTime(path: String): Long? = super.getLastModifiedTime(path)
 
+    override fun renameFile(from: String, to: String): Boolean = super<JvmFileSystemBase>.renameFile(from, to)
+
     actual override fun pickDirectory(): String? {
         var selectedPath: String? = null
         val task = Runnable {

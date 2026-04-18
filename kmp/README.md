@@ -10,7 +10,7 @@ The module targets four platforms from a single shared codebase:
 |--------|-------------|
 | **JVM** | Desktop application (primary) |
 | **Android** | Native Android app |
-| **JS (IR)** | Web application via Compose/Wasm + SQL.js |
+| **Web (wasmJs)** | Web application via Compose CanvasBasedWindow + Skia |
 | **iOS** | Planned — currently disabled |
 
 ## Key Technologies
@@ -44,7 +44,7 @@ kmp/
     │       └── ui/            # Compose components, screens, theme, i18n
     ├── jvmMain/               # Desktop implementations (DriverFactory, FileSystem)
     ├── androidMain/           # Android implementations
-    ├── jsMain/                # JS/browser implementations
+    ├── wasmJsMain/            # wasmJs/browser implementations
     └── iosMain/               # iOS implementations (disabled)
 ```
 
@@ -65,8 +65,8 @@ kmp/
 # Android debug build
 ./gradlew :kmp:assembleDebug
 
-# JS browser bundle
-./gradlew :kmp:jsBrowserProductionWebpack
+# wasmJs browser bundle
+./gradlew :kmp:wasmJsBrowserProductionWebpack
 ```
 
 ## Testing

@@ -1,9 +1,8 @@
 package dev.stapler.stelekit.performance
 
 import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -26,7 +25,7 @@ class HistogramRetentionJob(
     private val cleanupIntervalMs: Long = CLEANUP_INTERVAL_MS
 ) {
     fun start(scope: CoroutineScope) {
-        scope.launch(Dispatchers.IO) {
+        scope.launch(PlatformDispatcher.IO) {
             while (true) {
                 val cutoff = HistogramWriter.epochMs() - retentionWindowMs
                 database.steleDatabaseQueries.deleteOldHistogramRows(cutoff)

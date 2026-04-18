@@ -3,99 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Logseq - Privacy-First Knowledge Management</title>
+    <title>SteleKit — Try in Browser</title>
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1e1e1e; }
+        #loading {
+            position: fixed; inset: 0;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            background: #1e1e1e; color: #ccc;
+            font-family: system-ui, sans-serif; z-index: 10;
         }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background-color: #f5f5f5;
-        }
-        #compose-root {
-            min-height: 100vh;
-        }
-        .loading {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            font-size: 18px;
-            color: #666;
-        }
-        .error {
-            color: #d32f2f;
-            background-color: #ffebee;
-            padding: 16px;
-            border-radius: 8px;
-            margin: 20px;
-            text-align: center;
-        }
+        #loading.hidden { display: none; }
+        canvas#ComposeTarget { display: block; width: 100vw; height: 100vh; }
     </style>
+    <!-- Required: patches COOP/COEP headers for SharedArrayBuffer on GitHub Pages -->
+    <script src="coi-serviceworker.min.js"></script>
 </head>
 <body>
-    <div id="compose-root">
-        <div class="loading">Loading Logseq...</div>
+    <div id="loading">
+        <p style="font-size: 18px; margin-bottom: 8px;">Loading SteleKit…</p>
+        <p style="font-size: 13px; color: #888; margin-bottom: 4px;">Requires Chrome 119+, Firefox 120+, or Safari 18.2+</p>
+        <p style="font-size: 12px; color: #666;">This page may refresh once on first load — this is expected.</p>
     </div>
+    <canvas id="ComposeTarget"></canvas>
+    <script src="skiko.js"></script>
+    <script src="kmp.js"></script>
     <script>
-        // Simple test to verify JS files are being generated
         document.addEventListener('DOMContentLoaded', function() {
-            const root = document.getElementById('compose-root');
-            
-            // Test if we can load the module
-            try {
-                // Try to load the module
-                import('./logseq-kmp.js').then(module => {
-                    console.log('Module loaded successfully:', module);
-                    // Call main function if it exists
-                    if (module.main) {
-                        module.main();
-                    }
-                }).catch(error => {
-                    console.error('Failed to load module:', error);
-                    root.innerHTML = `
-                        <div class="error">
-                            <h2>Failed to load Logseq KMP module</h2>
-                            <p>Error: ${error.message}</p>
-                            <p>The JavaScript bundle may not be available yet.</p>
-                            <p>This is expected behavior with the current Kotlin/JS IR compilation.</p>
-                        </div>
-                    `;
-                });
-            } catch (e) {
-                // Show a fallback message
-                root.innerHTML = `
-                    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; max-width: 800px; margin: 0 auto;">
-                        <h1 style="font-size: 28px; font-weight: bold; margin-bottom: 8px;">Logseq</h1>
-                        <p style="color: #666; margin-bottom: 24px;">Privacy-first knowledge management platform</p>
-                        <hr style="border: none; border-top: 1px solid #e0e0e0; margin: 16px 0;">
-                        <div style="background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px;">
-                            <h2 style="font-size: 16px; font-weight: bold; margin-bottom: 12px;">Status</h2>
-                            <ul style="list-style: none; padding: 0;">
-                                <li style="padding: 4px 0; font-size: 14px; color: #444;">✅ Kotlin Multiplatform Project Configured</li>
-                                <li style="padding: 4px 0; font-size: 14px; color: #444;">✅ Cross-platform PlatformFileSystem</li>
-                                <li style="padding: 4px 0; font-size: 14px; color: #444;">✅ Coroutine Dispatchers</li>
-                                <li style="padding: 4px 0; font-size: 14px; color: #444;">✅ Repository Layer</li>
-                                <li style="padding: 4px 0; font-size: 14px; color: #ff9800;">⚠️  JS Target: Kotlin IR compilation (not linked to JS yet)</li>
-                            </ul>
-                        </div>
-                        <div style="padding: 16px; background: #e3f2fd; border-radius: 8px; margin-bottom: 16px;">
-                            <p style="font-size: 14px; color: #1565c0;"><strong>Next Step:</strong> Configure Kotlin IR linking to generate actual JS files from .knm metadata</p>
-                        </div>
-                        <div>
-                            <h3 style="font-size: 14px; font-weight: bold; color: #666; margin-bottom: 8px;">Project Targets</h3>
-                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                                <span style="background: #4caf50; color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px;">JVM Desktop ✅</span>
-                                <span style="background: #ff9800; color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px;">JS Web ⚠️</span>
-                                <span style="background: #2196f3; color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px;">Android</span>
-                                <span style="background: #9c27b0; color: white; padding: 4px 12px; border-radius: 4px; font-size: 12px;">iOS</span>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
+            setTimeout(function() {
+                var loading = document.getElementById('loading');
+                if (loading) loading.classList.add('hidden');
+            }, 8000);
         });
     </script>
 </body>

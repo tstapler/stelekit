@@ -1,16 +1,9 @@
 package dev.stapler.stelekit.util
 
-import kotlin.js.Date
+@JsFun("() => Date.now()")
+private external fun jsDateNow(): Double
 
 actual object PlatformTime {
-    actual fun now(): Long {
-        val perf = js("typeof performance !== 'undefined' ? performance : null")
-        return if (perf != null) {
-            (perf.now() * 1_000_000).toLong()
-        } else {
-            (Date.now() * 1_000_000).toLong()
-        }
-    }
-
-    actual fun currentThreadName(): String = "JS-Main"
+    actual fun now(): Long = (jsDateNow() * 1_000_000).toLong()
+    actual fun currentThreadName(): String = "WasmJs-Main"
 }

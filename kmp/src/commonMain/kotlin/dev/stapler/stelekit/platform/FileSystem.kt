@@ -23,4 +23,6 @@ interface FileSystem {
         path.substringAfterLast("/").substringAfterLast("\\").ifEmpty { path }
     fun startExternalChangeDetection(scope: CoroutineScope, onChange: () -> Unit) { /* no-op */ }
     fun stopExternalChangeDetection() { /* no-op */ }
+    /** Rename/move [from] to [to]. Returns false if not supported on this platform. */
+    fun renameFile(from: String, to: String): Boolean = false
 }

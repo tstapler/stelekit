@@ -1,10 +1,9 @@
 package dev.stapler.stelekit.performance
 
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.SteleDatabase
 import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
@@ -33,7 +32,7 @@ class HistogramWriter(
     private val channel = Channel<HistogramSample>(capacity = Channel.BUFFERED)
 
     init {
-        scope.launch(Dispatchers.IO) {
+        scope.launch(PlatformDispatcher.IO) {
             for (sample in channel) {
                 try {
                     val bucket = classifyBucket(sample.durationMs)

@@ -186,4 +186,21 @@ abstract class JvmFileSystemBase {
             null
         }
     }
+
+    open fun renameFile(from: String, to: String): Boolean {
+        return try {
+            val oldFile = File(from)
+            val newFile = File(to)
+            if (!oldFile.exists()) return false
+            if (newFile.exists()) return true
+            val renamed = oldFile.renameTo(newFile)
+            if (!renamed) {
+                oldFile.copyTo(newFile)
+                oldFile.delete()
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
 }

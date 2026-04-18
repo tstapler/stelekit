@@ -4,8 +4,8 @@ import starlight from '@astrojs/starlight';
 
 // https://astro.build/config
 export default defineConfig({
-	site: 'https://tstapler.github.io',
-	base: '/stelekit',
+	site: 'https://stelekit.stapler.dev',
+	base: '/',
 	integrations: [
 		starlight({
 			title: 'SteleKit',
@@ -14,6 +14,7 @@ export default defineConfig({
 				{ icon: 'github', label: 'GitHub', href: 'https://github.com/tstapler/stelekit' },
 			],
 			sidebar: [
+				{ label: 'Try in Browser →', link: '/demo/' },
 				{
 					label: 'User Guide',
 					items: [

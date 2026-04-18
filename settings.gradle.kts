@@ -23,7 +23,8 @@ plugins {
 }
 
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    // PREFER_PROJECT lets Kotlin/WASM plugin add its own toolchain repos (Node.js, Yarn, Binaryen)
+    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
     repositories {
         google()
         mavenCentral()

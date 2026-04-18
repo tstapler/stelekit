@@ -23,15 +23,12 @@ data class SerializedSpan(
 class RingBufferSpanExporter(val capacity: Int = 1000) {
     private val buffer = ArrayDeque<SerializedSpan>(capacity)
 
-    @Synchronized
     fun record(span: SerializedSpan) {
         if (buffer.size >= capacity) buffer.removeFirst()
         buffer.addLast(span)
     }
 
-    @Synchronized
     fun snapshot(): List<SerializedSpan> = buffer.toList()
 
-    @Synchronized
     fun clear() = buffer.clear()
 }
