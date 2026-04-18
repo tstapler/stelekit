@@ -100,6 +100,15 @@ class NormalizeJournalNamesMigrationTest {
         assertTrue("Important note" in undContents, "Non-empty block should be moved to underscore page")
         assertTrue(hypBlocks.isEmpty(), "Hyphen page should have no blocks after merge")
         assertNull(deletedHypPage, "Hyphen page should be deleted after merge")
+
+        // UUID preserved — block-ref wikilinks remain valid after merge
+        val movedBlock = undBlocks.firstOrNull { it.content == "Important note" }
+        assertEquals("block-content", movedBlock?.uuid, "Block UUID must be preserved during merge")
+
+        // Root position offset — moved block should be placed after existing block (position 0)
+        val existingPos = undBlocks.first { it.uuid == "block-existing" }.position
+        val movedPos = movedBlock!!.position
+        assertTrue(movedPos > existingPos, "Moved block position ($movedPos) should be > existing block position ($existingPos)")
     }
 
     @Test

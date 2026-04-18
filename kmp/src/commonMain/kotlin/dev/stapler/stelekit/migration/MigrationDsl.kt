@@ -32,6 +32,10 @@ interface PageScope {
     fun deleteProperty(key: String)
     fun renamePage(newName: String)
     fun deletePage()  // only valid if migration.allowDestructive = true
-    /** Re-parents non-empty blocks to [targetPageUuid], deletes empty blocks, then deletes this page. */
-    fun mergeIntoPage(targetPageUuid: String)  // only valid if migration.allowDestructive = true
+    /**
+     * Upserts non-empty blocks onto [targetPageUuid] (preserving UUIDs and intra-tree refs),
+     * deletes empty blocks, offsets root-level block positions past existing target content,
+     * then deletes this page. Only valid if migration.allowDestructive = true.
+     */
+    fun mergeIntoPage(targetPageUuid: String)
 }
