@@ -35,8 +35,11 @@ jobs:
           gradle-home-cache-cleanup: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
+      - name: Install Xvfb
+        run: sudo apt-get install -y xvfb
+
       - name: Run JVM tests
-        run: ./gradlew :kmp:jvmTest --no-daemon --build-cache
+        run: xvfb-run --auto-servernum ./gradlew :kmp:jvmTest --no-daemon --build-cache
 
       - name: Publish test report
         uses: mikepenz/action-junit-report@v4

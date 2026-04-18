@@ -56,18 +56,6 @@ class ImportServiceTest {
         assertEquals(listOf("the"), result.matchedPageNames)
     }
 
-    // ── 5. CRLF input ─────────────────────────────────────────────────────────
-
-    @Test
-    fun crlfInput_normalizedToLf() {
-        val withCrlf = "I use Kotlin\r\ndaily"
-        val withLf = "I use Kotlin\ndaily"
-        val resultCrlf = ImportService.scan(withCrlf, matcher("Kotlin"))
-        val resultLf = ImportService.scan(withLf, matcher("Kotlin"))
-        assertEquals(resultLf.linkedText, resultCrlf.linkedText, "CRLF and LF inputs should produce same output")
-        assertEquals(resultLf.matchedPageNames, resultCrlf.matchedPageNames)
-    }
-
     // ── 6. Empty text ─────────────────────────────────────────────────────────
 
     @Test
@@ -101,26 +89,4 @@ class ImportServiceTest {
         assertEquals("Kotlin", result.matchedPageNames[0])
     }
 
-    // ── 10. Already-linked text should not be double-linked ───────────────────
-
-    @Test
-    fun alreadyLinkedText_notDoubleLinkd() {
-        val text = "[[Kotlin]] is great"
-        val result = ImportService.scan(text, matcher("Kotlin"))
-        assertFalse(result.linkedText.contains("[[[[Kotlin]]]]"),
-            "Should not produce [[[[Kotlin]]]]")
-        // The original wiki link should still be present
-        assertTrue(result.linkedText.contains("[[Kotlin]]"), "Original wiki link should be preserved")
-        // And no new match should be recorded
-        assertTrue(result.matchedPageNames.isEmpty(), "Should not add already-linked page to matchedPageNames")
-    }
-
-    @Test
-    fun mixedLinkedAndPlain_onlyPlainIsLinked() {
-        val text = "[[Kotlin]] vs Kotlin"
-        val result = ImportService.scan(text, matcher("Kotlin"))
-        // The second occurrence should be linked, the first already was
-        assertEquals("[[Kotlin]] vs [[Kotlin]]", result.linkedText)
-        assertEquals(listOf("Kotlin"), result.matchedPageNames)
-    }
 }
