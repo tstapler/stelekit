@@ -7,5 +7,6 @@ actual fun PlatformBottomBar(
     currentScreen: Screen,
     onNavigate: (Screen) -> Unit,
     onSearch: () -> Unit,
-    isLeftHanded: Boolean
+    isLeftHanded: Boolean,
+    voiceCaptureButton: @Composable () -> Unit,
 ) { /* Web uses sidebar navigation */ }

@@ -7,5 +7,6 @@ expect fun PlatformBottomBar(
     currentScreen: Screen,
     onNavigate: (Screen) -> Unit,
     onSearch: () -> Unit = {},
-    isLeftHanded: Boolean = false
+    isLeftHanded: Boolean = false,
+    voiceCaptureButton: @Composable () -> Unit = {},
 )

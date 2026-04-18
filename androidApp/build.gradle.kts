@@ -17,6 +17,8 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = (findProperty("appVersion") as? String ?: "0.1.0")
+        buildConfigField("String", "WHISPER_API_KEY", "\"${findProperty("WHISPER_API_KEY") as? String ?: ""}\"")
+
     }
 
     signingConfigs {
@@ -47,6 +49,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {

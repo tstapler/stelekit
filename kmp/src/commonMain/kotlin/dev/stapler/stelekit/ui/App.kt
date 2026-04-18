@@ -74,6 +74,9 @@ import dev.stapler.stelekit.ui.screens.PermissionRecoveryScreen
 import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.domain.NoOpUrlFetcher
 import dev.stapler.stelekit.domain.UrlFetcher
+import dev.stapler.stelekit.voice.VoiceCaptureState
+import dev.stapler.stelekit.voice.VoiceCaptureViewModel
+import dev.stapler.stelekit.voice.VoicePipelineConfig
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import kotlin.math.roundToInt
@@ -95,7 +98,8 @@ fun StelekitApp(
     graphPath: String,
     pluginHost: PluginHost = remember { PluginHost() },
     encryptionManager: EncryptionManager = remember { DefaultEncryptionManager() },
-    urlFetcher: UrlFetcher = remember { NoOpUrlFetcher() }
+    urlFetcher: UrlFetcher = remember { NoOpUrlFetcher() },
+    voicePipeline: VoicePipelineConfig = remember { VoicePipelineConfig() },
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -208,7 +212,8 @@ fun StelekitApp(
             encryptionManager = encryptionManager,
             graphManager = graphManager,
             notificationManager = notificationManager,
-            urlFetcher = urlFetcher
+            urlFetcher = urlFetcher,
+            voicePipeline = voicePipeline,
         )
     }
 }
@@ -230,6 +235,7 @@ private fun GraphContent(
     graphManager: GraphManager,
     notificationManager: NotificationManager,
     urlFetcher: UrlFetcher = NoOpUrlFetcher(),
+    voicePipeline: VoicePipelineConfig = VoicePipelineConfig(),
 ) {
     val scope = rememberCoroutineScope()
     val composeClipboard = LocalClipboardManager.current
@@ -327,6 +333,13 @@ private fun GraphContent(
         }
     }
 
+    val journalsViewModel = remember {
+        JournalsViewModel(repos.journalService, blockStateManager, scope)
+    }
+    val voiceCaptureViewModel = remember {
+        VoiceCaptureViewModel(voicePipeline, repos.journalService, scope)
+    }
+
     // Force-flush pending writes on Android lifecycle pause/stop
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -334,14 +347,11 @@ private fun GraphContent(
             if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
                 viewModel.savePendingChanges()
                 scope.launch { blockStateManager.flush() }
+                voiceCaptureViewModel.cancel()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-
-    val journalsViewModel = remember {
-        JournalsViewModel(repos.journalService, blockStateManager, scope)
     }
     val allPagesViewModel = remember {
         AllPagesViewModel(repos.pageRepository, repos.blockRepository, scope)
@@ -351,6 +361,7 @@ private fun GraphContent(
     }
 
     val appState by viewModel.uiState.collectAsState()
+    val voiceCaptureState by voiceCaptureViewModel.state.collectAsState()
     val graphRegistry by graphManager.graphRegistry.collectAsState()
     val activeGraphInfo = graphManager.getActiveGraphInfo()
     val activeGraphId = graphRegistry.activeGraphId
@@ -419,6 +430,12 @@ private fun GraphContent(
                     PlatformBackHandler(enabled = appState.commandPaletteVisible) { viewModel.setCommandPaletteVisible(false) }
                     PlatformBackHandler(enabled = appState.searchDialogVisible) { viewModel.setSearchDialogVisible(false) }
                     PlatformBackHandler(enabled = appState.settingsVisible) { viewModel.setSettingsVisible(false) }
+                    // Cancel an in-progress voice capture before any navigation back.
+                    PlatformBackHandler(
+                        enabled = voiceCaptureState is VoiceCaptureState.Recording ||
+                            voiceCaptureState is VoiceCaptureState.Transcribing ||
+                            voiceCaptureState is VoiceCaptureState.Formatting,
+                    ) { voiceCaptureViewModel.cancel() }
                     // Highest priority: close sidebar on mobile before anything else.
                     PlatformBackHandler(enabled = isMobile && appState.sidebarExpanded) { viewModel.toggleSidebar() }
 
@@ -536,7 +553,15 @@ private fun GraphContent(
                                     closeSidebarIfMobile()
                                 },
                                 onSearch = { viewModel.setSearchDialogVisible(true) },
-                                isLeftHanded = appState.isLeftHanded
+                                isLeftHanded = appState.isLeftHanded,
+                                voiceCaptureButton = {
+                                    VoiceCaptureButton(
+                                        state = voiceCaptureState,
+                                        onTap = { voiceCaptureViewModel.onMicTapped() },
+                                        onDismissError = { voiceCaptureViewModel.dismissError() },
+                                        onAutoReset = { voiceCaptureViewModel.dismissError() },
+                                    )
+                                },
                             )
                         }
                     )

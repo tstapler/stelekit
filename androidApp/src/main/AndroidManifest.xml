@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- SAF (Storage Access Framework) grants are given at runtime via ACTION_OPEN_DOCUMENT_TREE
          and stored as persistable URI permissions — no manifest storage permissions needed. -->
 

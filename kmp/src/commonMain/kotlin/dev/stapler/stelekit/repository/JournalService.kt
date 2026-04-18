@@ -127,6 +127,30 @@ class JournalService(
     }
 
     /**
+     * Appends a new block with [content] to today's journal page.
+     * Creates the journal page if it does not yet exist.
+     */
+    @OptIn(DirectRepositoryWrite::class)
+    suspend fun appendToToday(content: String) {
+        val page = ensureTodayJournal()
+        val blocks = blockRepository.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
+        val nextPosition = (blocks.maxOfOrNull { it.position } ?: -1) + 1
+        val newBlock = dev.stapler.stelekit.model.Block(
+            uuid = UuidGenerator.generateV7(),
+            pageUuid = page.uuid,
+            content = content,
+            position = nextPosition,
+            createdAt = Clock.System.now(),
+            updatedAt = Clock.System.now(),
+        )
+        if (writeActor != null) {
+            writeActor.saveBlock(newBlock)
+        } else {
+            blockRepository.saveBlock(newBlock)
+        }
+    }
+
+    /**
      * Merges duplicate journal pages for the same date.
      * Keeps the page with real (non-empty) content; deletes the others and
      * re-parents any orphaned non-empty blocks to the winner.

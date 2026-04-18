@@ -14,6 +14,10 @@ import dev.stapler.stelekit.domain.UrlFetcherAndroid
 import dev.stapler.stelekit.platform.SteleKitContext
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.ui.StelekitApp
+import dev.stapler.stelekit.app.BuildConfig
+import dev.stapler.stelekit.voice.AndroidAudioRecorder
+import dev.stapler.stelekit.voice.VoicePipelineConfig
+import dev.stapler.stelekit.voice.WhisperSpeechToTextProvider
 import kotlinx.coroutines.CompletableDeferred
 
 class MainActivity : ComponentActivity() {
@@ -99,10 +103,21 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            val whisperApiKey = remember { BuildConfig.WHISPER_API_KEY }
+            val voicePipeline = remember {
+                VoicePipelineConfig(
+                    audioRecorder = AndroidAudioRecorder(this@MainActivity.applicationContext),
+                    sttProvider = if (whisperApiKey.isNotBlank())
+                        WhisperSpeechToTextProvider.withDefaults(whisperApiKey)
+                    else
+                        dev.stapler.stelekit.voice.NoOpSpeechToTextProvider(),
+                )
+            }
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = fileSystem.getDefaultGraphPath(),
-                urlFetcher = UrlFetcherAndroid()
+                urlFetcher = UrlFetcherAndroid(),
+                voicePipeline = voicePipeline,
             )
         }
     }
