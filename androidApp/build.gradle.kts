@@ -19,9 +19,23 @@ android {
         versionName = "1.0.0"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = System.getenv("ANDROID_KEYSTORE_PATH")?.let { file(it) }
+            storePassword = System.getenv("ANDROID_STORE_PASSWORD")
+            keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+            keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            val releaseSigningConfig = signingConfigs.getByName("release")
+            // Only apply signing when keystore env vars are present (i.e. in CI release builds)
+            if (releaseSigningConfig.storeFile != null) {
+                signingConfig = releaseSigningConfig
+            }
         }
     }
 
