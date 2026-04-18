@@ -89,24 +89,70 @@ jobs:
           gradle-home-cache-cleanup: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
-      - name: Package desktop distributable
+      - name: Install RPM toolchain
+        run: sudo apt-get install -y rpm
+
+      - name: Build DEB, RPM, and distributable
         run: |
           APP_VERSION="${{ env.VERSION }}"
-          ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache \
+          ./gradlew :kmp:packageDeb :kmp:packageRpm :kmp:createDistributable \
+            --no-daemon --build-cache \
             -PappVersion="${APP_VERSION#v}"
 
-      - name: Rename distributable with version
+      - name: Rename DEB and RPM with version
         run: |
-          DIST=$(find kmp/build/compose/binaries/main -type f \( -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" \) | head -1)
-          EXT="${DIST##*.}"
-          # Handle .tar.gz double extension
-          [[ "$DIST" == *.tar.gz ]] && EXT="tar.gz"
-          mv "$DIST" "kmp/build/compose/binaries/main/SteleKit-${{ env.VERSION }}-linux.$EXT"
+          DEB=$(find kmp/build/compose/binaries/main/deb -name "*.deb" | head -1)
+          RPM=$(find kmp/build/compose/binaries/main/rpm -name "*.rpm" | head -1)
+          mv "$DEB" "kmp/build/compose/binaries/main/deb/SteleKit-${{ env.VERSION }}-linux.deb"
+          mv "$RPM" "kmp/build/compose/binaries/main/rpm/SteleKit-${{ env.VERSION }}-linux.rpm"
+
+      - name: Build AppImage
+        run: |
+          APP_VERSION="${{ env.VERSION }}"
+          # Download appimagetool (use extract-and-run to avoid FUSE requirement in CI)
+          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
+            -O /tmp/appimagetool
+          chmod +x /tmp/appimagetool
+
+          # Set up AppDir from the Compose distributable
+          APPDIR="$(pwd)/AppDir"
+          mkdir -p "$APPDIR/usr"
+          cp -r kmp/build/compose/binaries/main/app/stelekit/* "$APPDIR/usr/"
+
+          # Desktop entry
+          cat > "$APPDIR/stelekit.desktop" << 'DESKTOP'
+          [Desktop Entry]
+          Name=SteleKit
+          Exec=stelekit
+          Icon=stelekit
+          Type=Application
+          Categories=Utility;Office;
+          Comment=Markdown-based outliner and note-taking app
+          DESKTOP
+
+          # Icon
+          cp kmp/src/jvmMain/resources/icons/icon.png "$APPDIR/stelekit.png"
+
+          # AppRun launcher
+          cat > "$APPDIR/AppRun" << 'APPRUN'
+          #!/bin/bash
+          SELF=$(readlink -f "$0")
+          HERE="${SELF%/*}"
+          exec "$HERE/usr/bin/stelekit" "$@"
+          APPRUN
+          chmod +x "$APPDIR/AppRun"
+
+          # Build AppImage (extract-and-run avoids FUSE in CI)
+          APPIMAGE_EXTRACT_AND_RUN=1 /tmp/appimagetool "$APPDIR" \
+            "kmp/build/compose/binaries/main/SteleKit-${APP_VERSION}-linux.AppImage"
 
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-linux
-          path: kmp/build/compose/binaries/main/SteleKit-*
+          path: |
+            kmp/build/compose/binaries/main/deb/SteleKit-*.deb
+            kmp/build/compose/binaries/main/rpm/SteleKit-*.rpm
+            kmp/build/compose/binaries/main/SteleKit-*-linux.AppImage
           retention-days: 30
 
   # ── Desktop: macOS ─────────────────────────────────────────────────────────
@@ -197,6 +243,8 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: release-artifacts
@@ -205,6 +253,30 @@ jobs:
       - name: List release artifacts
         run: find release-artifacts -type f | sort
 
+      - name: Update Homebrew formula SHA256s
+        run: |
+          LINUX_APPIMAGE=$(find release-artifacts -name "*.AppImage" | head -1)
+          MACOS_DMG=$(find release-artifacts -name "*.dmg" | head -1)
+
+          if [ -n "$LINUX_APPIMAGE" ]; then
+            LINUX_SHA=$(sha256sum "$LINUX_APPIMAGE" | awk '{print $1}')
+            sed -i "s/PLACEHOLDER_LINUX_SHA256/$LINUX_SHA/" HomebrewFormula/stelekit.rb
+          fi
+          if [ -n "$MACOS_DMG" ]; then
+            MACOS_SHA=$(sha256sum "$MACOS_DMG" | awk '{print $1}')
+            sed -i "s/PLACEHOLDER_MACOS_SHA256/$MACOS_SHA/" HomebrewFormula/stelekit.rb
+          fi
+
+          # Bump version in formula
+          VER="${{ env.VERSION }}"
+          sed -i "s/^  version \".*\"/  version \"${VER#v}\"/" HomebrewFormula/stelekit.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add HomebrewFormula/stelekit.rb
+          git diff --cached --quiet || git commit -m "chore: update Homebrew formula for ${{ env.VERSION }}"
+          git push origin HEAD:main
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -212,7 +284,7 @@ jobs:
           name: SteleKit ${{ env.VERSION }}
           files: release-artifacts/**
           generate_release_notes: true
-          draft: true
+          draft: false
           body: |
             ## SteleKit ${{ env.VERSION }}
 
@@ -220,10 +292,26 @@ jobs:
 
             | Platform | File |
             |----------|------|
-            | Android | `SteleKit-${{ env.VERSION }}-android.apk` |
-            | Linux | `SteleKit-${{ env.VERSION }}-linux.*` |
+            | Android APK | `SteleKit-${{ env.VERSION }}-android.apk` |
+            | Linux AppImage | `SteleKit-${{ env.VERSION }}-linux.AppImage` |
+            | Linux DEB | `SteleKit-${{ env.VERSION }}-linux.deb` |
+            | Linux RPM | `SteleKit-${{ env.VERSION }}-linux.rpm` |
             | macOS | `SteleKit-${{ env.VERSION }}-macos.dmg` |
-            | Windows | `SteleKit-${{ env.VERSION }}-windows.*` |
+            | Windows | `SteleKit-${{ env.VERSION }}-windows.msi` |
+
+            ### Linux Installation
+            **AppImage** (recommended — works on any distro including Arch/Manjaro):
+            ```bash
+            chmod +x SteleKit-${{ env.VERSION }}-linux.AppImage
+            ./SteleKit-${{ env.VERSION }}-linux.AppImage
+            ```
+            **Homebrew** (macOS and Linux):
+            ```bash
+            brew tap tstapler/stelekit
+            brew install stelekit
+            ```
+            **Debian/Ubuntu:** install the `.deb`
+            **Fedora/openSUSE:** install the `.rpm`
 
             ### Android Installation
             Enable **Install from unknown sources** in Android settings before installing the APK.

@@ -287,7 +287,7 @@ compose.desktop {
     application {
         mainClass = "dev.stapler.stelekit.desktop.MainKt"
         nativeDistributions {
-            targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb)
+            targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Rpm)
             packageName = "stelekit"
             // Compose Desktop requires MAJOR > 0. Map 0.x.y → 1.x.y for package metadata;
             // the public version (tag, APK, release title) remains 0.x.y.
