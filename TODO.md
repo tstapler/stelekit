@@ -58,6 +58,16 @@ ADRs: [project_plans/stelekit/decisions/](project_plans/stelekit/decisions/)
 
 ---
 
+## Mobile Voice Mode (Branch: stelekit-mobile-mode)
+
+Voice capture pipeline: mic tap → AudioRecord + MediaCodec → Whisper STT → LLM formatter → daily journal insert. Full plan: [docs/tasks/mobile-voice-mode.md](docs/tasks/mobile-voice-mode.md)
+
+- [x] **[VOICE-S1] Story 1 — Core pipeline (commonMain + Android, raw transcript)** — PR #2 open, CI passing. All T1.1–T1.7 complete: interfaces, ViewModel, WhisperSTT, AndroidAudioRecorder, App.kt wiring, VoiceCaptureButton. 13 ViewModel tests, MockEngine Whisper tests.
+- [ ] **[VOICE-S2] Story 2 — LLM formatting + settings** — Next. Adds ClaudeLlmFormatterProvider, OpenAiLlmFormatterProvider, VoiceSettings (EncryptedSharedPreferences), Settings UI for API keys, ViewModel LLM integration. Start with T2.1 (ClaudeLlmFormatterProvider, 2h). See [docs/tasks/mobile-voice-mode.md#story-2](docs/tasks/mobile-voice-mode.md).
+- [ ] **[VOICE-S3] Story 3 — iOS adapter + waveform feedback** — Blocked on Story 1 merge. IosAudioRecorder, IosSpeechToTextProvider (SFSpeechRecognizer), amplitude-reactive pulse.
+
+---
+
 ## Active Remediation (Post-Review March 2026)
 
 ### P0: STABILITY & COMPATIBILITY

@@ -2,8 +2,9 @@
 
 **Feature**: Voice capture → STT → LLM format → Logseq journal insert
 **Branch**: `stelekit-mobile-mode`
-**Status**: Planning complete — ready for implementation
+**Status**: Story 1 complete (PR #2, CI passing) — Story 2 ready to begin
 **Date**: 2026-04-18
+**Last Updated**: 2026-04-18
 
 ---
 
@@ -93,12 +94,12 @@ and LLM provider interfaces.
 
 ---
 
-## Story 1: Core pipeline — commonMain + Android, raw transcript
+## Story 1: Core pipeline — commonMain + Android, raw transcript [STATUS: COMPLETE]
 
 **Goal**: End-to-end wire from mic tap to journal insert. No LLM formatting. Raw transcript
 appended verbatim. Validates the entire pipeline plumbing before adding complexity.
 
-**Acceptance criteria**:
+**Acceptance criteria**: All met. PR #2 open, CI passing.
 - User taps mic button in Android bottom bar → `Recording` state (pulsing red indicator)
 - User taps stop → `Transcribing` state (spinner)
 - After transcription → `Done` state; transcript appended to today's journal as a timestamped
@@ -110,7 +111,7 @@ appended verbatim. Validates the entire pipeline plumbing before adding complexi
 
 ### Tasks
 
-**T1.1 — Define core interfaces and value types** [Micro, 1h]
+**T1.1 — Define core interfaces and value types** [Micro, 1h] [STATUS: COMPLETE]
 
 Create `AudioRecorder.kt`, `SpeechToTextProvider.kt`, `LlmFormatterProvider.kt`,
 `VoiceCaptureState.kt` in `commonMain/voice/`. Each file contains:
@@ -121,13 +122,13 @@ Create `AudioRecorder.kt`, `SpeechToTextProvider.kt`, `LlmFormatterProvider.kt`,
 
 No logic — pure interface definitions. Tests can be written against these immediately.
 
-**T1.2 — `VoicePipelineConfig` data class** [Micro, 1h]
+**T1.2 — `VoicePipelineConfig` data class** [Micro, 1h] [STATUS: COMPLETE]
 
 Create `VoicePipelineConfig.kt` bundling `audioRecorder`, `sttProvider`, `llmProvider`, and
 `systemPrompt`. Default constructs all `NoOp` providers. Define
 `DEFAULT_VOICE_SYSTEM_PROMPT` constant here.
 
-**T1.3 — `VoiceCaptureViewModel`** [Medium, 3h]
+**T1.3 — `VoiceCaptureViewModel`** [Medium, 3h] [STATUS: COMPLETE]
 
 Create `VoiceCaptureViewModel` in `commonMain/voice/`. Responsibilities:
 - `StateFlow<VoiceCaptureState>` initialized to `Idle`
@@ -144,7 +145,7 @@ Tests: inject `FakeAudioRecorder`, `FakeSpeechToTextProvider` (returns fixed tra
 `NoOpLlmFormatterProvider`. Verify state transitions for success, empty transcript, network error,
 and cancel paths.
 
-**T1.4 — `WhisperSpeechToTextProvider`** [Small, 2h]
+**T1.4 — `WhisperSpeechToTextProvider`** [Small, 2h] [STATUS: COMPLETE]
 
 Create `WhisperSpeechToTextProvider(httpClient: HttpClient, apiKey: String)` in `commonMain`.
 - Ktor multipart POST to `https://api.openai.com/v1/audio/transcriptions`
@@ -158,7 +159,7 @@ Create `WhisperSpeechToTextProvider(httpClient: HttpClient, apiKey: String)` in 
 Tests: use `MockEngine` (already in `jvmTest` dependencies) to verify multipart request shape,
 HTTP 200 success, HTTP 401 error mapping, and empty response mapping.
 
-**T1.5 — `AndroidAudioRecorder`** [Large, 4h]
+**T1.5 — `AndroidAudioRecorder`** [Large, 4h] [STATUS: COMPLETE]
 
 Create `AndroidAudioRecorder(context: Context)` in `androidMain`. Critical implementation details:
 
@@ -185,7 +186,7 @@ as the `VoiceCaptureViewModel`. It does not hold an `Activity` context.
 Tests: unit test the PCM→AAC pipeline with a short fixed PCM input. Integration test requires
 an Android device or Robolectric with audio mocks.
 
-**T1.6 — Wire into `App.kt` and `PlatformBottomBar`** [Medium, 3h]
+**T1.6 — Wire into `App.kt` and `PlatformBottomBar`** [Medium, 3h] [STATUS: COMPLETE]
 
 - Add `voicePipeline: VoicePipelineConfig = remember { VoicePipelineConfig() }` to `StelekitApp`
 - In `GraphContent`: create `VoiceCaptureViewModel` with `remember { ... }` (same pattern as
@@ -196,7 +197,7 @@ an Android device or Robolectric with audio mocks.
 - Pass `voiceCaptureButton = { VoiceCaptureButton(state, onClick) }` from `GraphContent`
 - Wire `AndroidAudioRecorder`, `WhisperSpeechToTextProvider` in `MainActivity`
 
-**T1.7 — `VoiceCaptureButton` composable** [Small, 2h]
+**T1.7 — `VoiceCaptureButton` composable** [Small, 2h] [STATUS: COMPLETE]
 
 Create `VoiceCaptureButton(state: VoiceCaptureState, onTap: () -> Unit, onDismissError: () -> Unit)`
 in `commonMain/ui/components/`.
@@ -217,7 +218,7 @@ Screenshot test via Roborazzi for each state variant.
 
 ---
 
-## Story 2: LLM formatting + settings
+## Story 2: LLM formatting + settings [STATUS: READY TO BEGIN]
 
 **Goal**: Format the raw transcript into Logseq outliner syntax via Claude or OpenAI. User can
 configure API keys in Settings. Word-count guard blocks LLM call for empty/silence recordings.
