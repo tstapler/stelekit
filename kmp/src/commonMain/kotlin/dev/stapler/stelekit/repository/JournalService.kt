@@ -135,7 +135,7 @@ class JournalService(
         val page = ensureTodayJournal()
         val blocks = blockRepository.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
         val nextPosition = (blocks.maxOfOrNull { it.position } ?: -1) + 1
-        val newBlock = dev.stapler.stelekit.model.Block(
+        val newBlock = Block(
             uuid = UuidGenerator.generateV7(),
             pageUuid = page.uuid,
             content = content,

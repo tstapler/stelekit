@@ -3,6 +3,7 @@
 package dev.stapler.stelekit.voice
 
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.CancellationException
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.forms.formData
@@ -59,6 +60,8 @@ class WhisperSpeechToTextProvider(
                     response.status.value, "HTTP ${response.status.value}"
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             TranscriptResult.Failure.NetworkError
         }

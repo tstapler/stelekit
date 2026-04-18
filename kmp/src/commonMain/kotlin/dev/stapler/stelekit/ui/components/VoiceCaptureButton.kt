@@ -71,9 +71,10 @@ fun VoiceCaptureButton(
         }
 
         VoiceCaptureState.Transcribing, VoiceCaptureState.Formatting -> {
-            val label = if (state == VoiceCaptureState.Transcribing) "Transcribing..." else "Formatting..."
+            val label = if (state == VoiceCaptureState.Transcribing) "Transcribing…" else "Formatting…"
             FloatingActionButton(
                 onClick = {},
+                enabled = false,
                 modifier = Modifier.semantics { contentDescription = label },
             ) {
                 CircularProgressIndicator(
@@ -141,7 +142,7 @@ fun VoiceCaptureButton(
                     onClick = onDismissError,
                     containerColor = MaterialTheme.colorScheme.error,
                 ) {
-                    Icon(Icons.Default.Warning, contentDescription = "Error — tap to dismiss")
+                    Icon(Icons.Default.Warning, contentDescription = "Error: ${state.message} — tap to dismiss")
                 }
             }
         }
