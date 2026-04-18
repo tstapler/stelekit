@@ -119,27 +119,31 @@ jobs:
           mkdir -p "$APPDIR/usr"
           cp -r kmp/build/compose/binaries/main/app/stelekit/* "$APPDIR/usr/"
 
-          # Desktop entry
-          cat > "$APPDIR/stelekit.desktop" << 'DESKTOP'
-          [Desktop Entry]
-          Name=SteleKit
-          Exec=stelekit
-          Icon=stelekit
-          Type=Application
-          Categories=Utility;Office;
-          Comment=Markdown-based outliner and note-taking app
-          DESKTOP
-
-          # Icon
+          # Icon — root (required by appimagetool) + hicolor path (for launcher integration)
+          mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+          mkdir -p "$APPDIR/usr/share/applications"
           cp kmp/src/jvmMain/resources/icons/icon.png "$APPDIR/stelekit.png"
+          cp kmp/src/jvmMain/resources/icons/icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/stelekit.png"
+
+          # Desktop entry — must be at root AND usr/share/applications for full integration
+          printf '%s\n' \
+            '[Desktop Entry]' \
+            'Name=SteleKit' \
+            'Exec=stelekit' \
+            'Icon=stelekit' \
+            'Type=Application' \
+            'Categories=Utility;Office;' \
+            'Comment=Markdown-based outliner and note-taking app' \
+            > "$APPDIR/stelekit.desktop"
+          cp "$APPDIR/stelekit.desktop" "$APPDIR/usr/share/applications/stelekit.desktop"
 
           # AppRun launcher
-          cat > "$APPDIR/AppRun" << 'APPRUN'
-          #!/bin/bash
-          SELF=$(readlink -f "$0")
-          HERE="${SELF%/*}"
-          exec "$HERE/usr/bin/stelekit" "$@"
-          APPRUN
+          printf '%s\n' \
+            '#!/bin/bash' \
+            'SELF=$(readlink -f "$0")' \
+            'HERE="${SELF%/*}"' \
+            'exec "$HERE/usr/bin/stelekit" "$@"' \
+            > "$APPDIR/AppRun"
           chmod +x "$APPDIR/AppRun"
 
           # Build AppImage (extract-and-run avoids FUSE in CI)
