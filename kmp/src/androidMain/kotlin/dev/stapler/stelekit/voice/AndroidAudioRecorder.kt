@@ -12,6 +12,7 @@ import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.media.MediaRecorder
 import android.media.AudioFocusRequest
+import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,16 +46,27 @@ class AndroidAudioRecorder(private val context: Context) : AudioRecorder {
         val outputFile = File(context.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
-        val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-            .setOnAudioFocusChangeListener { change ->
-                when (change) {
-                    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> pauseRequested = true
-                    AudioManager.AUDIOFOCUS_GAIN -> pauseRequested = false
-                    AudioManager.AUDIOFOCUS_LOSS -> stopRequested = true
-                }
+        val focusChangeListener = AudioManager.OnAudioFocusChangeListener { change ->
+            when (change) {
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> pauseRequested = true
+                AudioManager.AUDIOFOCUS_GAIN -> pauseRequested = false
+                AudioManager.AUDIOFOCUS_LOSS -> stopRequested = true
             }
-            .build()
-        audioManager.requestAudioFocus(focusRequest)
+        }
+        val focusRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setOnAudioFocusChangeListener(focusChangeListener)
+                .build()
+                .also { audioManager.requestAudioFocus(it) }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(
+                focusChangeListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT,
+            )
+            null
+        }
 
         val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
         val bufferSize = maxOf(minBuf * 4, 8192)
@@ -73,13 +85,13 @@ class AndroidAudioRecorder(private val context: Context) : AudioRecorder {
                     bufferSize,
                 )
             } catch (e: SecurityException) {
-                audioManager.abandonAudioFocusRequest(focusRequest)
+                abandonAudioFocus(audioManager, focusRequest, focusChangeListener)
                 return@withContext PlatformAudioFile("")
             }
 
             if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
                 audioRecord.release()
-                audioManager.abandonAudioFocusRequest(focusRequest)
+                abandonAudioFocus(audioManager, focusRequest, focusChangeListener)
                 return@withContext PlatformAudioFile("")
             }
 
@@ -164,7 +176,7 @@ class AndroidAudioRecorder(private val context: Context) : AudioRecorder {
             runCatching { mediaCodec?.release() }
             runCatching { mediaMuxer?.stop() }
             runCatching { mediaMuxer?.release() }
-            audioManager.abandonAudioFocusRequest(focusRequest)
+            abandonAudioFocus(audioManager, focusRequest, focusChangeListener)
             _amplitudeFlow.value = 0f
         }
     }
@@ -179,6 +191,19 @@ class AndroidAudioRecorder(private val context: Context) : AudioRecorder {
 
     override fun deleteRecording(file: PlatformAudioFile) {
         if (!file.isEmpty) File(file.path).delete()
+    }
+
+    private fun abandonAudioFocus(
+        audioManager: AudioManager,
+        focusRequest: AudioFocusRequest?,
+        listener: AudioManager.OnAudioFocusChangeListener,
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && focusRequest != null) {
+            audioManager.abandonAudioFocusRequest(focusRequest)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.abandonAudioFocus(listener)
+        }
     }
 
     /**
