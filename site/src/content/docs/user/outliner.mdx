@@ -1,0 +1,58 @@
+---
+title: Outliner
+description: Block editing, nesting, keyboard shortcuts, and block references in SteleKit
+---
+
+SteleKit is an outliner — every page is a tree of blocks. Each block is a unit of text that can contain children.
+
+## Editing blocks
+
+Click any block to focus it. Start typing to edit.
+
+- **Enter** — create a new block below the current one at the same level
+- **Backspace** at an empty block — delete the block and move focus up
+- The cursor position is preserved when you click away and return
+
+## Nesting blocks
+
+Blocks nest with Tab and Shift-Tab.
+
+- **Tab** — indent the current block (makes it a child of the block above)
+- **Shift-Tab** — outdent the current block (moves it up one level)
+- Indenting a block with children moves the subtree with it
+
+## Moving blocks
+
+- **Alt+Up** — move the current block up past its sibling
+- **Alt+Down** — move the current block down past its sibling
+
+Moving a block with children moves the entire subtree.
+
+## Keyboard reference
+
+| Action | Shortcut |
+|---|---|
+| New block below | Enter |
+| Indent | Tab |
+| Outdent | Shift+Tab |
+| Move up | Alt+Up |
+| Move down | Alt+Down |
+| Delete empty block | Backspace |
+| Search | Cmd/Ctrl+K |
+
+## Block references
+
+Type `[[` followed by a page name to create a wiki link. SteleKit indexes the reference immediately and adds a backlink on the target page.
+
+```
+[[Getting Started]]
+[[2024-01-15]]
+```
+
+Links resolve to the page with that exact name. If the page does not exist, SteleKit creates it when you navigate to it.
+
+See [Backlinks](/stelekit/user/backlinks/) for how bidirectional indexing works.
+
+## Block IDs and references
+
+SteleKit assigns stable IDs to blocks when they are linked. The ID is written to the Markdown file as a `id::` property. This is compatible with Logseq's block reference format.

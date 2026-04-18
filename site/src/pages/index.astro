@@ -1,0 +1,420 @@
+---
+// Landing page — not using Starlight layout (marketing page)
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="A local-first outliner for Desktop and Android. Reads your existing Logseq markdown." />
+    <title>SteleKit — Your knowledge, carved in stone.</title>
+    <link rel="icon" href="/stelekit/favicon.svg" type="image/svg+xml" />
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      :root {
+        --bg: #0d1117;
+        --bg-card: #161b22;
+        --bg-code: #1c2128;
+        --border: #30363d;
+        --text: #c9d1d9;
+        --text-muted: #8b949e;
+        --accent: #58a6ff;
+        --accent-dim: #1f3a5f;
+        --green: #3fb950;
+        --yellow: #d29922;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+        line-height: 1.6;
+      }
+
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      /* --- Nav --- */
+      nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 2rem;
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        background: var(--bg);
+        z-index: 10;
+      }
+      .nav-brand { font-weight: 700; font-size: 1.1rem; color: var(--text); }
+      .nav-links { display: flex; gap: 1.5rem; align-items: center; }
+      .nav-links a { color: var(--text-muted); font-size: 0.9rem; }
+      .nav-cta {
+        background: var(--accent);
+        color: #0d1117 !important;
+        padding: 0.4rem 1rem;
+        border-radius: 6px;
+        font-weight: 600;
+        text-decoration: none !important;
+      }
+      .nav-cta:hover { background: #79c0ff; }
+
+      /* --- Sections --- */
+      section { padding: 5rem 2rem; }
+      .container { max-width: 900px; margin: 0 auto; }
+
+      /* --- Hero --- */
+      .hero {
+        text-align: center;
+        padding-top: 6rem;
+        padding-bottom: 5rem;
+      }
+      .hero h1 {
+        font-size: clamp(2rem, 5vw, 3.5rem);
+        font-weight: 800;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        margin-bottom: 1.25rem;
+        color: #e6edf3;
+      }
+      .hero p {
+        font-size: 1.15rem;
+        color: var(--text-muted);
+        max-width: 580px;
+        margin: 0 auto 2rem;
+      }
+      .hero-buttons { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+      .btn-primary {
+        background: var(--accent);
+        color: #0d1117;
+        padding: 0.75rem 1.75rem;
+        border-radius: 8px;
+        font-weight: 700;
+        font-size: 1rem;
+        display: inline-block;
+        transition: background 0.15s;
+      }
+      .btn-primary:hover { background: #79c0ff; text-decoration: none; }
+      .btn-secondary {
+        background: var(--bg-card);
+        color: var(--text);
+        padding: 0.75rem 1.75rem;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 1rem;
+        border: 1px solid var(--border);
+        display: inline-block;
+        transition: border-color 0.15s;
+      }
+      .btn-secondary:hover { border-color: var(--accent); text-decoration: none; }
+
+      /* --- Platform matrix --- */
+      .platform-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.95rem;
+      }
+      .platform-table th, .platform-table td {
+        padding: 0.75rem 1rem;
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+      }
+      .platform-table th { color: var(--text-muted); font-weight: 500; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+      .status-working { color: var(--green); font-weight: 600; }
+      .status-demo { color: var(--accent); font-weight: 600; }
+      .status-planned { color: var(--yellow); }
+
+      /* --- Feature cards --- */
+      .features-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 1.25rem;
+      }
+      .feature-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1.5rem;
+      }
+      .feature-icon { font-size: 1.5rem; margin-bottom: 0.75rem; }
+      .feature-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.4rem; color: #e6edf3; }
+      .feature-card p { color: var(--text-muted); font-size: 0.9rem; }
+
+      /* --- Comparison table --- */
+      .comparison-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.95rem;
+      }
+      .comparison-table th, .comparison-table td {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--border);
+      }
+      .comparison-table th { color: var(--text-muted); font-weight: 500; font-size: 0.85rem; }
+      .comparison-table td:first-child { color: var(--text-muted); }
+      .check { color: var(--green); font-weight: 700; }
+      .dash { color: var(--text-muted); }
+
+      /* --- Quick start --- */
+      .code-block {
+        background: var(--bg-code);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.25rem 1.5rem;
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        font-size: 0.9rem;
+        overflow-x: auto;
+        color: #e6edf3;
+      }
+      .code-block .comment { color: var(--text-muted); }
+      .code-block .cmd { color: var(--green); }
+
+      /* --- Audience row --- */
+      .audience-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 1.25rem;
+      }
+      .audience-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1.5rem;
+        text-align: center;
+        transition: border-color 0.15s;
+      }
+      .audience-card:hover { border-color: var(--accent); text-decoration: none; }
+      .audience-card h3 { font-size: 1rem; font-weight: 700; color: #e6edf3; margin-bottom: 0.4rem; }
+      .audience-card p { color: var(--text-muted); font-size: 0.88rem; }
+
+      /* --- Section headers --- */
+      .section-label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--accent);
+        margin-bottom: 0.75rem;
+      }
+      .section-title {
+        font-size: clamp(1.5rem, 3vw, 2rem);
+        font-weight: 700;
+        color: #e6edf3;
+        margin-bottom: 0.75rem;
+      }
+      .section-desc {
+        color: var(--text-muted);
+        margin-bottom: 2rem;
+        max-width: 580px;
+      }
+
+      /* --- Footer --- */
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 2rem;
+        text-align: center;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+      }
+
+      @media (max-width: 600px) {
+        nav { padding: 1rem; }
+        .nav-links { gap: 1rem; }
+        section { padding: 3rem 1rem; }
+        .hero { padding-top: 3rem; }
+      }
+    </style>
+  </head>
+  <body>
+
+    <nav>
+      <a href="/stelekit/" class="nav-brand">SteleKit</a>
+      <div class="nav-links">
+        <a href="/stelekit/demo/" class="nav-cta">Try in Browser</a>
+        <a href="/stelekit/user/getting-started/">Docs</a>
+        <a href="https://github.com/tstapler/stelekit" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero">
+      <div class="container">
+        <h1>Your knowledge,<br />carved in stone.</h1>
+        <p>A local-first outliner for Desktop and Android. Reads your existing Logseq markdown. No install required to try.</p>
+        <div class="hero-buttons">
+          <a href="/stelekit/demo/" class="btn-primary">Try in Browser</a>
+          <a href="https://github.com/tstapler/stelekit/releases" class="btn-secondary">Download</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Platform matrix -->
+    <section style="padding-top: 0;">
+      <div class="container">
+        <div class="section-label">Platforms</div>
+        <h2 class="section-title">Runs where you do</h2>
+        <table class="platform-table">
+          <thead>
+            <tr>
+              <th>Platform</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Desktop (macOS, Linux, Windows)</td>
+              <td class="status-working">Working</td>
+            </tr>
+            <tr>
+              <td>Android</td>
+              <td class="status-working">Working</td>
+            </tr>
+            <tr>
+              <td>Web (Browser Demo)</td>
+              <td class="status-demo">Demo available</td>
+            </tr>
+            <tr>
+              <td>iOS</td>
+              <td class="status-planned">Planned</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Feature cards -->
+    <section>
+      <div class="container">
+        <div class="section-label">Features</div>
+        <h2 class="section-title">Everything you need to think in public</h2>
+        <p class="section-desc">Core outliner features, no cloud required.</p>
+        <div class="features-grid">
+          <div class="feature-card">
+            <div class="feature-icon">&#9633;</div>
+            <h3>Outliner</h3>
+            <p>Hierarchical block editing with keyboard-driven nesting. Tab to indent, Shift-Tab to outdent.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">&#128197;</div>
+            <h3>Journals</h3>
+            <p>Daily notes auto-created at startup. Each day is a page in <code>journals/YYYY_MM_DD.md</code>.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">&#8596;</div>
+            <h3>Bidirectional links</h3>
+            <p><code>[[page]]</code> links are indexed in real time. The backlinks panel shows every reference.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">&#128269;</div>
+            <h3>Search</h3>
+            <p>Full-text search across all pages and blocks. Press Cmd/Ctrl+K from anywhere.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">&#128274;</div>
+            <h3>Local-first</h3>
+            <p>Your files stay on your machine. Plain Markdown on disk, always. No account, no sync service.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Logseq comparison -->
+    <section>
+      <div class="container">
+        <div class="section-label">Comparison</div>
+        <h2 class="section-title">SteleKit vs. Logseq</h2>
+        <p class="section-desc">SteleKit exists because of Logseq's ideas, not in spite of them. It makes different technical bets.</p>
+        <table class="comparison-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>SteleKit</th>
+              <th>Logseq</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>File format</td>
+              <td>Markdown (Logseq-compatible)</td>
+              <td>Markdown</td>
+            </tr>
+            <tr>
+              <td>Browser demo</td>
+              <td class="check">Yes — no install</td>
+              <td class="dash">Server-required</td>
+            </tr>
+            <tr>
+              <td>Desktop</td>
+              <td class="check">Yes</td>
+              <td class="check">Yes</td>
+            </tr>
+            <tr>
+              <td>Android</td>
+              <td class="check">Yes</td>
+              <td class="check">Yes</td>
+            </tr>
+            <tr>
+              <td>iOS</td>
+              <td class="status-planned">Planned</td>
+              <td class="check">Yes</td>
+            </tr>
+            <tr>
+              <td>Open source</td>
+              <td>Source-available (Elastic 2.0)</td>
+              <td>Yes (AGPL)</td>
+            </tr>
+            <tr>
+              <td>KMP architecture</td>
+              <td class="check">Yes</td>
+              <td class="dash">No</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Quick start -->
+    <section>
+      <div class="container">
+        <div class="section-label">Quick Start</div>
+        <h2 class="section-title">Up in two commands</h2>
+        <p class="section-desc">Requires JDK 21. Point it at your existing Logseq graph directory — it reads the same markdown files.</p>
+        <div class="code-block">
+          <span class="comment"># Clone and run</span><br />
+          <span class="cmd">git clone https://github.com/tstapler/stelekit</span><br />
+          <span class="cmd">./gradlew run</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Audience links -->
+    <section>
+      <div class="container">
+        <div class="section-label">Where to go next</div>
+        <h2 class="section-title">Find your path</h2>
+        <div class="audience-grid">
+          <a href="/stelekit/user/getting-started/" class="audience-card">
+            <h3>User Guide</h3>
+            <p>Install, open a graph, and learn the outliner basics.</p>
+          </a>
+          <a href="/stelekit/developer/architecture/" class="audience-card">
+            <h3>Developer Docs</h3>
+            <p>Architecture, build commands, and module structure.</p>
+          </a>
+          <a href="/stelekit/developer/contributing/" class="audience-card">
+            <h3>Contribute</h3>
+            <p>Good first issues, branch naming, and PR process.</p>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <p>SteleKit &mdash; Source-available under Elastic License 2.0 &mdash;
+        <a href="https://github.com/tstapler/stelekit">GitHub</a>
+      </p>
+    </footer>
+
+  </body>
+</html>

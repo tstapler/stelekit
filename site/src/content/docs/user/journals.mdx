@@ -1,0 +1,56 @@
+---
+title: Journals
+description: Daily notes in SteleKit — how they work and how to navigate them
+---
+
+SteleKit opens today's journal entry automatically at startup. You do not need to create it.
+
+## What journals are
+
+Each day gets its own page. SteleKit creates the page for today when you open a graph. The page is blank until you write something.
+
+Journal pages are ordinary pages. They appear in search, accept wiki links, and accumulate backlinks like any other page.
+
+## Storage format
+
+Journal pages live in the `journals/` directory inside your graph folder:
+
+```
+journals/
+  2024_01_15.md
+  2024_01_16.md
+  2024_01_17.md
+```
+
+The filename format is `YYYY_MM_DD.md`. This is the same format Logseq uses, so your existing journal history opens without conversion.
+
+## Writing in a journal
+
+Open today's journal and start typing. Each line becomes a block. Use Tab to indent — journal entries support the full outliner feature set.
+
+```
+- Morning standup notes
+  - blocked on the API integration
+  - need to talk to [[Alice]]
+- Read [[Getting Started]] for SteleKit setup
+```
+
+## Navigating journal history
+
+The journal tab in the sidebar shows today's page. To navigate to a previous day:
+
+1. Click on the date heading to open the date picker
+2. Select any past date to jump to that day's entry
+3. Use the left/right arrows to step backward or forward by one day
+
+Past entries are read-write. You can add notes to any previous journal page.
+
+## Linking to journal pages
+
+Reference a journal page by its date in `[[YYYY-MM-DD]]` format:
+
+```
+See the notes from [[2024-01-10]]
+```
+
+SteleKit displays the date in a readable format in the backlinks panel.

@@ -1,0 +1,56 @@
+---
+title: Module Structure
+description: Source sets, key files, and what to find where in the SteleKit KMP module
+---
+
+All shared code lives in the `kmp/` module. The module targets four platforms from a single source tree.
+
+## Source sets
+
+| Source set | Purpose |
+|---|---|
+| `commonMain` | Platform-agnostic UI, domain logic, repositories, database abstraction, and parser. This is where most feature work happens. |
+| `jvmMain` | Desktop entry point (`Main.kt`), file watching with Java NIO, and JVM-specific logging configuration. |
+| `androidMain` | Android entry point and the SQLDelight driver factory for Android's bundled SQLite. |
+| `iosMain` | SQLDelight driver for iOS. The iOS target is currently disabled in the default build. |
+| `jsMain` | Compose/Wasm web target. Enabled via `gradle.properties` `enableJs=true`. |
+| `jvmTest` | JVM UI and integration tests. Uses Roborazzi for Compose screenshot assertions. |
+| `commonTest` | Shared test utilities and helpers available across all test source sets. |
+| `businessTest` | Business logic tests without UI dependencies. Fastest to run; no Compose runtime required. |
+
+## Directory layout inside `commonMain`
+
+```
+kotlin/dev/stapler/stelekit/
+  ui/                     # Compose UI — screens, components, App.kt
+  repository/             # Page, Block, Search, Journal repositories
+  db/                     # GraphManager, GraphLoader, GraphWriter
+  model/                  # Page, Block, Property data classes
+  parser/                 # Markdown parser
+  outliner/               # OutlinerPipeline — builds block trees from parsed markdown
+  platform/               # Platform abstractions (file access, logging)
+```
+
+## Key files
+
+| File | Role |
+|---|---|
+| `kmp/build.gradle.kts` | All dependencies, KMP targets, and SQLDelight configuration |
+| `kmp/src/commonMain/.../ui/App.kt` | Root Compose composable and screen routing logic |
+| `kmp/src/commonMain/.../ui/AppState.kt` | Global UI flags: sidebar, search dialog, command palette |
+| `kmp/src/commonMain/.../db/GraphManager.kt` | Multi-graph lifecycle — adds, removes, and scopes graphs |
+| `kmp/src/commonMain/.../db/GraphLoader.kt` | Reads markdown from disk and triggers parsing |
+| `kmp/src/commonMain/.../db/GraphWriter.kt` | Writes blocks to disk and detects external file conflicts |
+| `kmp/src/commonMain/.../model/Models.kt` | `Page`, `Block`, and `Property` data classes with built-in validation |
+| `kmp/src/commonMain/.../repository/RepositoryFactory.kt` | Selects `IN_MEMORY` or `SQLDELIGHT` backend |
+| `kmp/src/jvmMain/.../desktop/Main.kt` | Desktop application entry point |
+| `kmp/src/commonMain/sqldelight/.../SteleDatabase.sq` | SQLDelight schema — source of truth for all database types |
+
+## Adding a new platform feature
+
+1. Define the interface in `commonMain/platform/`
+2. Implement it in the target source set (`jvmMain`, `androidMain`, etc.)
+3. Inject via the `RepositoryFactory` or constructor parameter
+4. Test the common logic in `businessTest` with an `IN_MEMORY` backend
+
+For UI-only additions, work entirely in `commonMain/ui/`. Compose Multiplatform renders the same composables on all targets.

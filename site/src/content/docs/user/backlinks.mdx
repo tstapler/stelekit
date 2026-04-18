@@ -1,0 +1,46 @@
+---
+title: Backlinks
+description: Wiki links, bidirectional indexing, and the backlinks panel in SteleKit
+---
+
+Every `[[wiki link]]` you write creates a connection between two pages. SteleKit indexes both directions.
+
+## Creating links
+
+Type `[[` followed by the page name:
+
+```
+Today I finished reading [[Getting Started]].
+Planning to review [[Architecture]] next.
+```
+
+The link is live as you type. SteleKit adds a backlink on the target page immediately.
+
+If the target page does not exist yet, the link still works. SteleKit creates the page when you first navigate to it. Your backlink is waiting there.
+
+## The backlinks panel
+
+Open any page and scroll to the bottom. The backlinks panel lists every page that links to the current one.
+
+Each entry shows:
+- The name of the linking page
+- The block that contains the link, with its surrounding context
+- A link to navigate directly to that block
+
+The panel updates in real time as you write. Add a `[[new link]]` on another page and the count on the target page changes immediately.
+
+## Navigating the link graph
+
+Click any link text to navigate to that page. Use the browser-style back button in the header to return.
+
+The sidebar shows recently visited pages. Your navigation history is local to the session — it resets when you close the app.
+
+## Unlinked mentions
+
+SteleKit searches for the page name as plain text in addition to explicit `[[links]]`. Unlinked mentions appear below the backlinks panel with a button to convert them to formal links.
+
+## Link format compatibility
+
+The `[[page name]]` syntax is identical to Logseq's. Links in your existing Logseq graph are recognized without any conversion.
+
+Aliases (`[[target|display text]]`) are displayed with the alias text in the UI but stored in standard Logseq format on disk.
