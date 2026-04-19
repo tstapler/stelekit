@@ -1,27 +1,69 @@
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag (e.g. v1.0.0)'
+        description: 'Version tag (e.g. v1.0.0) — skips Release Please, builds immediately'
         required: true
+
+permissions:
+  contents: write
+  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
-# Resolve version: release event tag takes precedence over workflow_dispatch input
-env:
-  VERSION: ${{ github.event.release.tag_name || github.event.inputs.version }}
-
 jobs:
+  # ── Release Please ─────────────────────────────────────────────────────────
+  # Runs on every push to main. Creates / updates the release PR.
+  # When that PR is merged, Release Please publishes a GitHub Release and sets
+  # release_created=true, which gates all downstream build jobs.
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # ── Resolve version ────────────────────────────────────────────────────────
+  # Normalises the version string from either Release Please or workflow_dispatch
+  # so all build jobs can reference a single output.
+  resolve-version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    needs: release-please
+    if: |
+      always() && (
+        (needs.release-please.result == 'success' && needs.release-please.outputs.release_created == 'true') ||
+        (needs.release-please.result == 'skipped' && github.event_name == 'workflow_dispatch')
+      )
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - id: ver
+        run: |
+          if [ -n "${{ needs.release-please.outputs.tag_name }}" ]; then
+            echo "version=${{ needs.release-please.outputs.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
   # ── Android release APK ────────────────────────────────────────────────────
   android-release:
     name: Android Release APK
     runs-on: ubuntu-latest
+    needs: resolve-version
     permissions:
       contents: read
 
@@ -53,14 +95,14 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          APP_VERSION="${{ env.VERSION }}"
+          APP_VERSION="${{ needs.resolve-version.outputs.version }}"
           ./gradlew :androidApp:assembleRelease --no-daemon --build-cache \
             -PappVersion="${APP_VERSION#v}"
 
       - name: Rename APK with version
         run: |
           APK=$(find androidApp/build/outputs/apk/release -name "*.apk" | head -1)
-          mv "$APK" "androidApp/build/outputs/apk/release/SteleKit-${{ env.VERSION }}-android.apk"
+          mv "$APK" "androidApp/build/outputs/apk/release/SteleKit-${{ needs.resolve-version.outputs.version }}-android.apk"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -72,6 +114,7 @@ jobs:
   desktop-linux:
     name: Desktop (Linux)
     runs-on: ubuntu-latest
+    needs: resolve-version
     permissions:
       contents: read
 
@@ -93,7 +136,7 @@ jobs:
 
       - name: Build DEB, RPM, and distributable
         run: |
-          APP_VERSION="${{ env.VERSION }}"
+          APP_VERSION="${{ needs.resolve-version.outputs.version }}"
           ./gradlew :kmp:packageDeb :kmp:packageRpm :kmp:createDistributable \
             --no-daemon --build-cache \
             -PappVersion="${APP_VERSION#v}"
@@ -102,29 +145,25 @@ jobs:
         run: |
           DEB=$(find kmp/build/compose/binaries/main/deb -name "*.deb" | head -1)
           RPM=$(find kmp/build/compose/binaries/main/rpm -name "*.rpm" | head -1)
-          mv "$DEB" "kmp/build/compose/binaries/main/deb/SteleKit-${{ env.VERSION }}-linux.deb"
-          mv "$RPM" "kmp/build/compose/binaries/main/rpm/SteleKit-${{ env.VERSION }}-linux.rpm"
+          mv "$DEB" "kmp/build/compose/binaries/main/deb/SteleKit-${{ needs.resolve-version.outputs.version }}-linux.deb"
+          mv "$RPM" "kmp/build/compose/binaries/main/rpm/SteleKit-${{ needs.resolve-version.outputs.version }}-linux.rpm"
 
       - name: Build AppImage
         run: |
-          APP_VERSION="${{ env.VERSION }}"
-          # Download appimagetool (use extract-and-run to avoid FUSE requirement in CI)
+          APP_VERSION="${{ needs.resolve-version.outputs.version }}"
           wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
             -O /tmp/appimagetool
           chmod +x /tmp/appimagetool
 
-          # Set up AppDir from the Compose distributable
           APPDIR="$(pwd)/AppDir"
           mkdir -p "$APPDIR/usr"
           cp -r kmp/build/compose/binaries/main/app/stelekit/* "$APPDIR/usr/"
 
-          # Icon — root (required by appimagetool) + hicolor path (for launcher integration)
           mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
           mkdir -p "$APPDIR/usr/share/applications"
           cp kmp/src/jvmMain/resources/icons/icon.png "$APPDIR/stelekit.png"
           cp kmp/src/jvmMain/resources/icons/icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/stelekit.png"
 
-          # Desktop entry — must be at root AND usr/share/applications for full integration
           printf '%s\n' \
             '[Desktop Entry]' \
             'Name=SteleKit' \
@@ -136,7 +175,6 @@ jobs:
             > "$APPDIR/stelekit.desktop"
           cp "$APPDIR/stelekit.desktop" "$APPDIR/usr/share/applications/stelekit.desktop"
 
-          # AppRun launcher
           printf '%s\n' \
             '#!/bin/bash' \
             'SELF=$(readlink -f "$0")' \
@@ -145,7 +183,6 @@ jobs:
             > "$APPDIR/AppRun"
           chmod +x "$APPDIR/AppRun"
 
-          # Build AppImage (extract-and-run avoids FUSE in CI; ARCH required when JRE contains multi-arch libs)
           ARCH=$(uname -m)
           APPIMAGE_EXTRACT_AND_RUN=1 ARCH="$ARCH" /tmp/appimagetool "$APPDIR" \
             "kmp/build/compose/binaries/main/SteleKit-${APP_VERSION}-linux.AppImage"
@@ -163,6 +200,7 @@ jobs:
   desktop-macos:
     name: Desktop (macOS)
     runs-on: macos-latest
+    needs: resolve-version
     permissions:
       contents: read
 
@@ -181,14 +219,14 @@ jobs:
 
       - name: Package desktop distributable
         run: |
-          APP_VERSION="${{ env.VERSION }}"
+          APP_VERSION="${{ needs.resolve-version.outputs.version }}"
           ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache \
             -PappVersion="${APP_VERSION#v}"
 
       - name: Rename distributable with version
         run: |
           DIST=$(find kmp/build/compose/binaries/main -type f -name "*.dmg" | head -1)
-          mv "$DIST" "kmp/build/compose/binaries/main/SteleKit-${{ env.VERSION }}-macos.dmg"
+          mv "$DIST" "kmp/build/compose/binaries/main/SteleKit-${{ needs.resolve-version.outputs.version }}-macos.dmg"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -200,6 +238,7 @@ jobs:
   desktop-windows:
     name: Desktop (Windows)
     runs-on: windows-latest
+    needs: resolve-version
     permissions:
       contents: read
 
@@ -219,7 +258,7 @@ jobs:
       - name: Package desktop distributable
         shell: bash
         run: |
-          APP_VERSION="${{ env.VERSION }}"
+          APP_VERSION="${{ needs.resolve-version.outputs.version }}"
           ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache \
             -PappVersion="${APP_VERSION#v}"
 
@@ -228,7 +267,7 @@ jobs:
         run: |
           DIST=$(find kmp/build/compose/binaries/main -type f \( -name "*.msi" -o -name "*.exe" \) | head -1)
           EXT="${DIST##*.}"
-          mv "$DIST" "kmp/build/compose/binaries/main/SteleKit-${{ env.VERSION }}-windows.$EXT"
+          mv "$DIST" "kmp/build/compose/binaries/main/SteleKit-${{ needs.resolve-version.outputs.version }}-windows.$EXT"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -238,11 +277,9 @@ jobs:
 
   # ── Create GitHub Release ──────────────────────────────────────────────────
   github-release:
-    name: Create GitHub Release
+    name: Publish GitHub Release
     runs-on: ubuntu-latest
-    needs: [android-release, desktop-linux, desktop-macos, desktop-windows]
-    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
-
+    needs: [resolve-version, android-release, desktop-linux, desktop-macos, desktop-windows]
     permissions:
       contents: write
 
@@ -264,7 +301,6 @@ jobs:
 
           if [ -n "$LINUX_APPIMAGE" ]; then
             LINUX_SHA=$(sha256sum "$LINUX_APPIMAGE" | awk '{print $1}')
-            # Replace any existing 64-char hex SHA256 or placeholder on the linux sha256 line
             sed -i "/on_linux/,/end/{s/sha256 \"[0-9a-f]\{64\}\"/sha256 \"$LINUX_SHA\"/; s/sha256 \"PLACEHOLDER_LINUX_SHA256\"/sha256 \"$LINUX_SHA\"/}" HomebrewFormula/stelekit.rb
           fi
           if [ -n "$MACOS_DMG" ]; then
@@ -272,28 +308,23 @@ jobs:
             sed -i "/on_macos/,/end/{s/sha256 \"[0-9a-f]\{64\}\"/sha256 \"$MACOS_SHA\"/; s/sha256 \"PLACEHOLDER_MACOS_SHA256\"/sha256 \"$MACOS_SHA\"/}" HomebrewFormula/stelekit.rb
           fi
 
-          # Bump version in formula
-          VER="${{ env.VERSION }}"
+          VER="${{ needs.resolve-version.outputs.version }}"
           sed -i "s/^  version \".*\"/  version \"${VER#v}\"/" HomebrewFormula/stelekit.rb
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add HomebrewFormula/stelekit.rb
-          git diff --cached --quiet || git commit -m "chore: update Homebrew formula for ${{ env.VERSION }}"
+          git diff --cached --quiet || git commit -m "chore: update Homebrew formula for ${{ needs.resolve-version.outputs.version }}"
           git push origin HEAD:main
 
-      # When triggered by the 'release' event, Release Please already created the
-      # release with a changelog. Upload artifacts and prepend our download table.
-      # When triggered by workflow_dispatch, create/update the release with a body.
-      - name: Upload artifacts and prepend download table (release event)
-        if: github.event_name == 'release'
+      - name: Upload artifacts and prepend download table (Release Please release)
+        if: needs.release-please.result == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VER: ${{ env.VERSION }}
+          VER: ${{ needs.resolve-version.outputs.version }}
         run: |
           gh release upload "$VER" release-artifacts/**/* --clobber
 
-          # Preserve Release Please changelog, prepend download/install table
           EXISTING=$(gh release view "$VER" --json body --jq '.body')
           NEW_BODY="## SteleKit ${VER}
 
@@ -335,30 +366,30 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.VERSION }}
-          name: SteleKit ${{ env.VERSION }}
+          tag_name: ${{ needs.resolve-version.outputs.version }}
+          name: SteleKit ${{ needs.resolve-version.outputs.version }}
           files: release-artifacts/**
           generate_release_notes: true
           draft: false
           body: |
-            ## SteleKit ${{ env.VERSION }}
+            ## SteleKit ${{ needs.resolve-version.outputs.version }}
 
             ### Downloads
 
             | Platform | File |
             |----------|------|
-            | Android APK | `SteleKit-${{ env.VERSION }}-android.apk` |
-            | Linux AppImage | `SteleKit-${{ env.VERSION }}-linux.AppImage` |
-            | Linux DEB | `SteleKit-${{ env.VERSION }}-linux.deb` |
-            | Linux RPM | `SteleKit-${{ env.VERSION }}-linux.rpm` |
-            | macOS | `SteleKit-${{ env.VERSION }}-macos.dmg` |
-            | Windows | `SteleKit-${{ env.VERSION }}-windows.msi` |
+            | Android APK | `SteleKit-${{ needs.resolve-version.outputs.version }}-android.apk` |
+            | Linux AppImage | `SteleKit-${{ needs.resolve-version.outputs.version }}-linux.AppImage` |
+            | Linux DEB | `SteleKit-${{ needs.resolve-version.outputs.version }}-linux.deb` |
+            | Linux RPM | `SteleKit-${{ needs.resolve-version.outputs.version }}-linux.rpm` |
+            | macOS | `SteleKit-${{ needs.resolve-version.outputs.version }}-macos.dmg` |
+            | Windows | `SteleKit-${{ needs.resolve-version.outputs.version }}-windows.msi` |
 
             ### Linux Installation
             **AppImage** (recommended — works on any distro including Arch/Manjaro):
             ```bash
-            chmod +x SteleKit-${{ env.VERSION }}-linux.AppImage
-            ./SteleKit-${{ env.VERSION }}-linux.AppImage
+            chmod +x SteleKit-${{ needs.resolve-version.outputs.version }}-linux.AppImage
+            ./SteleKit-${{ needs.resolve-version.outputs.version }}-linux.AppImage
             ```
             **Homebrew** (macOS and Linux):
             ```bash
