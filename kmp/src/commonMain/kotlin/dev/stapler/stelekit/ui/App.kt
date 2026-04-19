@@ -91,8 +91,9 @@ import kotlinx.datetime.toLocalDateTime
  */
 @Composable
 fun StelekitApp(
-    fileSystem: PlatformFileSystem,
+    fileSystem: FileSystem,
     graphPath: String,
+    graphManager: GraphManager? = null,
     pluginHost: PluginHost = remember { PluginHost() },
     encryptionManager: EncryptionManager = remember { DefaultEncryptionManager() },
     urlFetcher: UrlFetcher = remember { NoOpUrlFetcher() }
@@ -104,7 +105,7 @@ fun StelekitApp(
     remember { registerAllMigrations() }
 
     // Create GraphManager - this owns all graph lifecycle
-    val graphManager = remember {
+    val graphManager = graphManager ?: remember {
         GraphManager(platformSettings, DriverFactory(), fileSystem, scope)
     }
 
@@ -223,7 +224,7 @@ fun StelekitApp(
 @Composable
 private fun GraphContent(
     repos: RepositorySet,
-    fileSystem: PlatformFileSystem,
+    fileSystem: FileSystem,
     platformSettings: PlatformSettings,
     pluginHost: PluginHost,
     encryptionManager: EncryptionManager,
@@ -719,7 +720,7 @@ private fun GraphDialogLayer(
     searchViewModel: SearchViewModel,
     viewModel: StelekitViewModel,
     notificationManager: NotificationManager,
-    fileSystem: PlatformFileSystem
+    fileSystem: FileSystem
 ) {
     // Hoist debug state so FrameTimeOverlay persists when the dialog is closed.
     var debugState by remember { mutableStateOf(DebugMenuState()) }
@@ -911,7 +912,7 @@ private fun FlashcardsScreen(blockStateManager: dev.stapler.stelekit.ui.state.Bl
         val nextReview = today.plus(newInterval, DateTimeUnit.DAY)
         val newProps = card.properties.toMutableMap().apply {
             put("card-next-review", nextReview.toString())
-            put("card-ease", "%.2f".format(newEase))
+            put("card-ease", kotlin.math.round(newEase * 100).toLong().let { "${it / 100}.${(it % 100).toString().padStart(2, '0')}" })
             put("card-interval", newInterval.toString())
         }
         scope.launch { blockStateManager.updateBlockProperties(card.uuid, newProps) }
@@ -926,7 +927,7 @@ private fun FlashcardsScreen(blockStateManager: dev.stapler.stelekit.ui.state.Bl
         val nextReview = today.plus(1, DateTimeUnit.DAY)
         val newProps = card.properties.toMutableMap().apply {
             put("card-next-review", nextReview.toString())
-            put("card-ease", "%.2f".format(newEase))
+            put("card-ease", kotlin.math.round(newEase * 100).toLong().let { "${it / 100}.${(it % 100).toString().padStart(2, '0')}" })
             put("card-interval", "1")
         }
         scope.launch { blockStateManager.updateBlockProperties(card.uuid, newProps) }

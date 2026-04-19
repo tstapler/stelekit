@@ -1,8 +1,5 @@
 package dev.stapler.stelekit.performance
 
-import io.opentelemetry.api.trace.Tracer
-import io.opentelemetry.api.metrics.Meter
-
 /**
  * Configuration for OpenTelemetry exporters.
  *
@@ -24,11 +21,17 @@ data class OtelExporterConfig(
  *
  * Call [initialize] once at application startup (before any [getTracer] calls).
  * Call [shutdown] when the application exits to flush pending spans.
+ *
+ * [getTracer] and [getMeter] return [Any] in commonMain to avoid a compile-time
+ * dependency on OpenTelemetry API types that are not available on all platforms.
+ * JVM/Android actuals cast the returned value to the appropriate OTel types internally.
  */
 expect object OtelProvider {
     val isInitialized: Boolean
     fun initialize(config: OtelExporterConfig = OtelExporterConfig())
-    fun getTracer(instrumentationName: String): Tracer
-    fun getMeter(instrumentationName: String): Meter
+    /** Returns an `io.opentelemetry.api.trace.Tracer` on JVM/Android; throws on wasmJs. */
+    fun getTracer(instrumentationName: String): Any
+    /** Returns an `io.opentelemetry.api.metrics.Meter` on JVM/Android; throws on wasmJs. */
+    fun getMeter(instrumentationName: String): Any
     fun shutdown()
 }

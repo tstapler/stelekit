@@ -1,0 +1,104 @@
+---
+title: Build
+description: Prerequisites, build commands, and module structure for SteleKit development
+---
+
+## Prerequisites
+
+| Tool | Version | Notes |
+|---|---|---|
+| JDK | 21 | Temurin recommended |
+| Android SDK | API 34+ | Required for Android targets |
+| Gradle | Wrapper | Use `./gradlew`, not a local install |
+
+Gradle downloads dependencies on first run. A warm build cache on a mid-range machine takes under 30 seconds for JVM tests.
+
+## Build commands
+
+### Run the desktop app
+
+```bash
+./gradlew run
+```
+
+### Run all tests
+
+```bash
+./gradlew allTests
+```
+
+### Run JVM tests only
+
+```bash
+./gradlew jvmTest
+```
+
+### Run a single test class
+
+```bash
+./gradlew jvmTest --tests "dev.stapler.stelekit.SomeTest"
+```
+
+### Run Android tests
+
+```bash
+./gradlew testDebugUnitTest
+```
+
+### Build and install on a connected Android device
+
+```bash
+./gradlew installAndroid
+```
+
+### Package a desktop distributable
+
+```bash
+./gradlew packageDistributionForCurrentOS
+```
+
+### Build the Wasm browser demo
+
+Requires `enableJs=true` in `gradle.properties`:
+
+```bash
+./gradlew :kmp:wasmJsBrowserDistribution --build-cache -PenableJs=true
+```
+
+Output lands in `kmp/build/dist/wasmJs/productionExecutable/`.
+
+## Module structure
+
+All source code is in `kmp/src/`:
+
+| Source set | Purpose |
+|---|---|
+| `commonMain` | Platform-agnostic UI, domain, repository, database, parser |
+| `jvmMain` | Desktop entry point, file watching, JVM logging |
+| `androidMain` | Android entry point, SQLDelight driver factory |
+| `iosMain` | iOS SQLDelight driver |
+| `wasmJsMain` | Web target (enabled via `gradle.properties` `enableJs=true`) |
+| `jvmTest` | JVM UI and integration tests (Roborazzi screenshot tests) |
+| `commonTest` | Shared test utilities |
+| `businessTest` | Business logic tests without UI |
+
+## Key files
+
+| File | Role |
+|---|---|
+| `kmp/build.gradle.kts` | All dependencies, targets, SQLDelight config |
+| `kmp/src/commonMain/.../ui/App.kt` | Root Compose composable, screen routing |
+| `kmp/src/commonMain/.../ui/AppState.kt` | Global app state model |
+| `kmp/src/commonMain/.../db/GraphManager.kt` | Multi-graph lifecycle |
+| `kmp/src/commonMain/.../db/GraphLoader.kt` | File import and markdown parsing |
+| `kmp/src/commonMain/.../db/GraphWriter.kt` | File export and conflict detection |
+| `kmp/src/commonMain/.../model/Models.kt` | Page, Block, Property data classes |
+| `kmp/src/commonMain/.../repository/RepositoryFactory.kt` | Backend abstraction |
+| `kmp/src/jvmMain/.../desktop/Main.kt` | Desktop entry point |
+| `kmp/src/commonMain/sqldelight/.../SteleDatabase.sq` | SQLDelight schema |
+
+## Gradle caching
+
+Gradle build cache is enabled by default. CI uses an encrypted remote cache via `gradle/actions/setup-gradle`. For local development, the local cache is in `~/.gradle/caches/`.
+
+Pass `--build-cache` to reuse cached task outputs across builds.

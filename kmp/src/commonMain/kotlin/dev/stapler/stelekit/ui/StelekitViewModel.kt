@@ -14,7 +14,7 @@ import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
-import dev.stapler.stelekit.platform.PlatformFileSystem
+import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.JournalService
@@ -32,6 +32,7 @@ import dev.stapler.stelekit.domain.PageNameIndex
 import dev.stapler.stelekit.performance.DebounceManager
 import dev.stapler.stelekit.ui.screens.SearchResultItem
 import dev.stapler.stelekit.ui.state.BlockStateManager
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlin.time.Clock
@@ -55,7 +56,7 @@ import kotlinx.coroutines.withContext
  */
 @OptIn(DirectRepositoryWrite::class)
 class StelekitViewModel(
-    private val fileSystem: PlatformFileSystem,
+    private val fileSystem: FileSystem,
     private val pageRepository: PageRepository,
     private val blockRepository: BlockRepository,
     private val searchRepository: SearchRepository,
@@ -1109,7 +1110,7 @@ class StelekitViewModel(
     }
 
     fun onDebugMenuStateChange(state: dev.stapler.stelekit.performance.DebugMenuState) {
-        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        scope.launch(PlatformDispatcher.IO) {
             debugFlagRepository?.saveDebugMenuState(state)
         }
     }

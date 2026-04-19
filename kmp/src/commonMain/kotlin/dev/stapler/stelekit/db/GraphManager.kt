@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.time.Clock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
@@ -41,7 +42,8 @@ class GraphManager(
     private val platformSettings: PlatformSettings,
     private val driverFactory: DriverFactory,
     private val fileSystem: FileSystem,
-    private val coroutineScope: CoroutineScope
+    private val coroutineScope: CoroutineScope,
+    val defaultBackend: GraphBackend = GraphBackend.SQLDELIGHT,
 ) {
     private val logger = Logger("GraphManager")
     private val json = Json { ignoreUnknownKeys = true }
@@ -131,7 +133,7 @@ class GraphManager(
                 id = graphId,
                 path = expandedPath,
                 displayName = displayName,
-                addedAt = System.currentTimeMillis()
+                addedAt = Clock.System.now().toEpochMilliseconds()
             )
             
             val registry = GraphRegistry(
@@ -156,43 +158,21 @@ class GraphManager(
      */
     private fun migrateDatabaseFile(oldPath: String, newPath: String): Boolean {
         return try {
-            // Use Java File for rename (works on JVM/Android)
-            val oldFile = java.io.File(oldPath)
-            val newFile = java.io.File(newPath)
-            
-            if (!oldFile.exists()) return false
-            if (newFile.exists()) return true // Already migrated
-            
-            // Try atomic rename first
-            val renamed = oldFile.renameTo(newFile)
-            if (!renamed) {
-                // Fall back to copy-and-delete
-                oldFile.copyTo(newFile)
-                oldFile.delete()
-            }
-            true
+            fileSystem.renameFile(oldPath, newPath)
         } catch (e: Exception) {
             println("Failed to migrate database file: ${e.message}")
             false
         }
     }
-    
+
     /**
      * Migrate WAL and SHM files (SQLite write-ahead log files)
      */
     private fun migrateWalShmFiles(dbDir: String, graphId: String) {
         try {
-            val walOld = java.io.File("$dbDir/logseq.db-wal")
-            val walNew = java.io.File(driverFactory.getDatabaseUrl(graphId).substringAfter("jdbc:sqlite:") + "-wal")
-            if (walOld.exists() && !walNew.exists()) {
-                walOld.renameTo(walNew)
-            }
-            
-            val shmOld = java.io.File("$dbDir/logseq.db-shm")
-            val shmNew = java.io.File(driverFactory.getDatabaseUrl(graphId).substringAfter("jdbc:sqlite:") + "-shm")
-            if (shmOld.exists() && !shmNew.exists()) {
-                shmOld.renameTo(shmNew)
-            }
+            val newDbPath = driverFactory.getDatabaseUrl(graphId).substringAfter("jdbc:sqlite:")
+            fileSystem.renameFile("$dbDir/logseq.db-wal", "$newDbPath-wal")
+            fileSystem.renameFile("$dbDir/logseq.db-shm", "$newDbPath-shm")
         } catch (e: Exception) {
             // Non-critical - WAL/SHM files may not exist
         }
@@ -221,7 +201,7 @@ class GraphManager(
             id = graphId,
             path = expandedPath,
             displayName = displayName,
-            addedAt = System.currentTimeMillis()
+            addedAt = Clock.System.now().toEpochMilliseconds()
         )
         
         val registry = _graphRegistry.value
@@ -294,7 +274,7 @@ class GraphManager(
         val dbUrl = driverFactory.getDatabaseUrl(id)
         val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl)
         currentFactory = factory
-        val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, graphScope)
+        val repoSet = factory.createRepositorySet(defaultBackend, graphScope)
         _activeRepositorySet.value = repoSet
 
         // Run one-shot UUID migration before graph content is loaded.
@@ -303,7 +283,7 @@ class GraphManager(
         val writeActor = repoSet.writeActor
         val deferred = CompletableDeferred<Unit>()
         _pendingMigration = deferred
-        if (writeActor != null) {
+        if (writeActor != null && defaultBackend == GraphBackend.SQLDELIGHT) {
             val db = factory.steleDatabase()
             graphScope.launch {
                 try {

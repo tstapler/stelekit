@@ -8,6 +8,6 @@ package dev.stapler.stelekit.performance
  * if the caller forgets to set it.
  */
 object DebugBuildConfig {
-    @Volatile
+    @kotlin.concurrent.Volatile
     var isDebugBuild: Boolean = false
 }

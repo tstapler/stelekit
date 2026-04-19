@@ -70,7 +70,7 @@ class SidecarManager(
                 val entry = parseSidecarLine(trimmed)
                 if (entry != null) {
                     // First match wins for duplicate-content blocks
-                    result.putIfAbsent(entry.first, entry.second)
+                    if (!result.containsKey(entry.first)) result[entry.first] = entry.second
                 }
             } catch (e: Exception) {
                 logger.warn("SidecarManager: failed to parse sidecar line: $trimmed", e)

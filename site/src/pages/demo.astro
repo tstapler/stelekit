@@ -1,0 +1,189 @@
+---
+const demoAvailable = import.meta.env.DEMO_AVAILABLE === 'true';
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SteleKit — Try in Browser</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+      :root {
+        --bg: #0d1117;
+        --bg-card: #161b22;
+        --border: #30363d;
+        --text: #c9d1d9;
+        --text-muted: #8b949e;
+        --accent: #58a6ff;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+        line-height: 1.6;
+        min-height: 100vh;
+      }
+
+      a { color: var(--accent); }
+
+      nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 2rem;
+        border-bottom: 1px solid var(--border);
+      }
+      .nav-brand { font-weight: 700; color: var(--text); text-decoration: none; }
+      .nav-links { display: flex; gap: 1.5rem; font-size: 0.9rem; }
+      .nav-links a { color: var(--text-muted); text-decoration: none; }
+      .nav-links a:hover { color: var(--accent); }
+
+      .wrapper { max-width: 960px; margin: 0 auto; padding: 2rem; }
+
+      h1 { font-size: 1.75rem; font-weight: 700; color: #e6edf3; margin-bottom: 1.5rem; }
+
+      .what-to-try {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+      }
+      .what-to-try h2 { font-size: 1rem; font-weight: 700; color: #e6edf3; margin-bottom: 1rem; }
+      .what-to-try ul { list-style: disc; padding-left: 1.5rem; color: var(--text-muted); }
+      .what-to-try li { margin-bottom: 0.5rem; }
+      .what-to-try code {
+        background: #0d1117;
+        border: 1px solid var(--border);
+        padding: 0.1em 0.4em;
+        border-radius: 4px;
+        font-size: 0.88em;
+        font-family: 'SFMono-Regular', Consolas, monospace;
+      }
+      .what-to-try kbd {
+        background: #21262d;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0.1em 0.5em;
+        font-size: 0.85em;
+        font-family: inherit;
+        color: var(--text);
+      }
+      .what-to-try p { color: var(--text-muted); font-size: 0.9rem; margin-top: 1rem; }
+
+      .reload-note {
+        background: #1c2128;
+        border: 1px solid #3d444d;
+        border-radius: 6px;
+        padding: 0.6rem 1rem;
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin-bottom: 1rem;
+      }
+
+      .demo-frame {
+        width: 100%;
+        height: 80vh;
+        min-height: 500px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+        display: block;
+      }
+
+      .mobile-warning {
+        display: none;
+        background: #1c2128;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.5rem;
+        text-align: center;
+        color: var(--text-muted);
+      }
+
+      @media (max-width: 767px) {
+        .demo-frame { display: none; }
+        .mobile-warning { display: block; }
+      }
+
+      .fallback {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 3rem 2rem;
+        text-align: center;
+      }
+      .fallback p { color: var(--text-muted); margin-bottom: 1rem; }
+      .fallback a { color: var(--accent); }
+
+      footer {
+        border-top: 1px solid var(--border);
+        padding: 1.5rem 2rem;
+        text-align: center;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        margin-top: 2rem;
+      }
+      footer a { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+
+    <nav>
+      <a href="/" class="nav-brand">SteleKit</a>
+      <div class="nav-links">
+        <a href="/user/getting-started/">Docs</a>
+        <a href="https://github.com/tstapler/stelekit" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </nav>
+
+    <div class="wrapper">
+      <h1>SteleKit in Your Browser</h1>
+
+      <div class="what-to-try">
+        <h2>What to try</h2>
+        <ul>
+          <li>Open the journal entry and edit a block — click to focus, Enter to add below, Tab to indent</li>
+          <li>Type <code>[[Getting Started]]</code> to create a wiki link</li>
+          <li>Navigate to Getting Started and look for the Backlinks panel</li>
+          <li>Press <kbd>Cmd/Ctrl+K</kbd> to open search</li>
+        </ul>
+        <p>The demo runs in your browser. No data leaves your device.</p>
+        <p>Requires Chrome 119+, Firefox 120+, or Safari 18.2+.</p>
+      </div>
+
+      {demoAvailable ? (
+        <>
+          <p class="reload-note">This page may refresh once on first load — the service worker is registering. This is expected.</p>
+          <div class="mobile-warning">
+            <p>The interactive demo is built for desktop screens.</p>
+            <p>Open this page on a laptop or desktop for the best experience.</p>
+          </div>
+          <iframe
+            class="demo-frame"
+            src="/demo/index.html"
+            title="SteleKit live demo"
+            allow="cross-origin-isolated"
+          />
+        </>
+      ) : (
+        <div class="fallback">
+          <p>The interactive demo is coming soon.</p>
+          <p>
+            <a href="https://github.com/tstapler/stelekit">View on GitHub</a> to build and run the desktop app, or
+            <a href="/user/getting-started/">read the User Guide</a>.
+          </p>
+        </div>
+      )}
+    </div>
+
+    <footer>
+      <p><a href="/">SteleKit</a> &mdash; <a href="https://github.com/tstapler/stelekit">GitHub</a></p>
+    </footer>
+
+  </body>
+</html>
