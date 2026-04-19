@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.ui.components
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -25,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -34,6 +36,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.voice.VoiceCaptureState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 
 private val ColorSuccess = Color(0xFF4CAF50)
 
@@ -43,6 +46,7 @@ fun VoiceCaptureButton(
     onTap: () -> Unit,
     onDismissError: () -> Unit,
     onAutoReset: () -> Unit = {},
+    amplitudeFlow: Flow<Float>? = null,
 ) {
     when (state) {
         VoiceCaptureState.Idle -> {
@@ -52,15 +56,28 @@ fun VoiceCaptureButton(
         }
 
         VoiceCaptureState.Recording -> {
-            val infiniteTransition = rememberInfiniteTransition()
-            val scale by infiniteTransition.animateFloat(
-                initialValue = 1f,
-                targetValue = 1.25f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(600),
-                    repeatMode = RepeatMode.Reverse,
-                ),
-            )
+            val scale = if (amplitudeFlow != null) {
+                // Amplitude-driven pulse: map RMS [0,1] → scale [1.0, 1.35]
+                val animatable = remember { Animatable(1f) }
+                LaunchedEffect(Unit) {
+                    amplitudeFlow.collect { rms ->
+                        animatable.animateTo(1f + (rms * 0.35f).coerceIn(0f, 0.35f), tween(80))
+                    }
+                }
+                animatable.value
+            } else {
+                // Fixed-period fallback when no amplitude data available
+                val infiniteTransition = rememberInfiniteTransition()
+                val fixedScale by infiniteTransition.animateFloat(
+                    initialValue = 1f,
+                    targetValue = 1.25f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(600),
+                        repeatMode = RepeatMode.Reverse,
+                    ),
+                )
+                fixedScale
+            }
             FloatingActionButton(
                 onClick = onTap,
                 containerColor = MaterialTheme.colorScheme.error,

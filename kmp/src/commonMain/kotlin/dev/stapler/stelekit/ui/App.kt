@@ -567,6 +567,7 @@ private fun GraphContent(
                                         onTap = { voiceCaptureViewModel.onMicTapped() },
                                         onDismissError = { voiceCaptureViewModel.dismissError() },
                                         onAutoReset = { voiceCaptureViewModel.resetToIdle() },
+                                        amplitudeFlow = voicePipeline.audioRecorder.amplitudeFlow,
                                     )
                                 },
                             )
