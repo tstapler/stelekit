@@ -334,6 +334,7 @@ class StelekitViewModel(
                                     if (journal.filePath.isNullOrBlank()) {
                                         blockStateManager?.savePageNow(journal.uuid)
                                     }
+                                    navigateTo(Screen.PageView(journal), addToHistory = false)
                                 }
                             },
                             onFullyLoaded = {
