@@ -55,6 +55,9 @@ class DslEvaluator(private val repoSet: RepositorySet) {
 
         val changes = mutableListOf<BlockChange>()
 
+        // O(1) lookup built once per evaluate() call.
+        private val pagesByName: Map<String, Page> = allPages.associateBy { it.name }
+
         override fun forBlocks(where: (Block) -> Boolean, transform: BlockScope.() -> Unit) {
             for ((_, blocks) in blocksByPage) {
                 for (block in blocks) {
@@ -71,13 +74,15 @@ class DslEvaluator(private val repoSet: RepositorySet) {
         override fun forPages(where: (Page) -> Boolean, transform: PageScope.() -> Unit) {
             for (page in allPages) {
                 if (!where(page)) continue
-                val pageScope = PageScopeImpl(page)
+                val pageScope = PageScopeImpl(page, blocksByPage)
                 transform.invoke(pageScope)
                 for (change in pageScope.changes) {
                     appendChange(change)
                 }
             }
         }
+
+        override fun findPage(name: String): Page? = pagesByName[name]
 
         private fun appendChange(change: BlockChange) {
             if (!migration.allowDestructive) {
@@ -122,7 +127,10 @@ class DslEvaluator(private val repoSet: RepositorySet) {
         }
     }
 
-    private inner class PageScopeImpl(override val page: Page) : PageScope {
+    private inner class PageScopeImpl(
+        override val page: Page,
+        private val blocksByPage: Map<String, List<Block>>,
+    ) : PageScope {
 
         val changes = mutableListOf<BlockChange>()
 
@@ -145,6 +153,32 @@ class DslEvaluator(private val repoSet: RepositorySet) {
         }
 
         override fun deletePage() {
+            changes.add(BlockChange.DeletePage(page.uuid))
+        }
+
+        override fun mergeIntoPage(targetPageUuid: String) {
+            val blocks = blocksByPage[page.uuid] ?: emptyList()
+            // Offset root-level blocks past existing content in the target page to avoid
+            // position collisions. Child blocks use sibling-relative positions so no offset needed.
+            val targetRootMax = blocksByPage[targetPageUuid]
+                ?.filter { it.parentUuid == null }
+                ?.maxOfOrNull { it.position } ?: -1
+            val rootOffset = targetRootMax + 1
+
+            for (block in blocks) {
+                if (block.content.isNotBlank()) {
+                    val moved = if (block.parentUuid == null) {
+                        block.copy(pageUuid = targetPageUuid, position = block.position + rootOffset)
+                    } else {
+                        block.copy(pageUuid = targetPageUuid)
+                    }
+                    // Upsert with the original UUID: preserves parentUuid/leftUuid chains
+                    // and any block-ref wikilinks that point to this block's UUID.
+                    changes.add(BlockChange.InsertBlock(moved))
+                } else {
+                    changes.add(BlockChange.DeleteBlock(block.uuid))
+                }
+            }
             changes.add(BlockChange.DeletePage(page.uuid))
         }
     }

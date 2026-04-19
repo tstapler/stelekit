@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-class ImportServiceTest {
+class ImportServiceInsertTest {
 
     private fun makeMatcher(vararg names: String): AhoCorasickMatcher {
         val map = names.associate { it.lowercase() to it }
