@@ -282,13 +282,53 @@ jobs:
           git push origin HEAD:main
 
       # When triggered by the 'release' event, Release Please already created the
-      # release with a changelog. Just upload the artifacts to it.
+      # release with a changelog. Upload artifacts and prepend our download table.
       # When triggered by workflow_dispatch, create/update the release with a body.
-      - name: Upload artifacts to existing release (release event)
+      - name: Upload artifacts and prepend download table (release event)
         if: github.event_name == 'release'
-        run: gh release upload ${{ env.VERSION }} release-artifacts/**/* --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VER: ${{ env.VERSION }}
+        run: |
+          gh release upload "$VER" release-artifacts/**/* --clobber
+
+          # Preserve Release Please changelog, prepend download/install table
+          EXISTING=$(gh release view "$VER" --json body --jq '.body')
+          NEW_BODY="## SteleKit ${VER}
+
+          ### Downloads
+
+          | Platform | File |
+          |----------|------|
+          | Android APK | \`SteleKit-${VER}-android.apk\` |
+          | Linux AppImage | \`SteleKit-${VER}-linux.AppImage\` |
+          | Linux DEB | \`SteleKit-${VER}-linux.deb\` |
+          | Linux RPM | \`SteleKit-${VER}-linux.rpm\` |
+          | macOS | \`SteleKit-${VER}-macos.dmg\` |
+          | Windows | \`SteleKit-${VER}-windows.msi\` |
+
+          ### Linux Installation
+          **AppImage** (recommended — works on any distro including Arch/Manjaro):
+          \`\`\`bash
+          chmod +x SteleKit-${VER}-linux.AppImage
+          ./SteleKit-${VER}-linux.AppImage
+          \`\`\`
+          **Homebrew** (macOS and Linux):
+          \`\`\`bash
+          brew tap tstapler/stelekit
+          brew install stelekit
+          \`\`\`
+          **Debian/Ubuntu:** install the \`.deb\`
+          **Fedora/openSUSE:** install the \`.rpm\`
+
+          ### Android Installation
+          Enable **Install from unknown sources** in Android settings before installing the APK.
+
+          ---
+
+          ${EXISTING}"
+
+          gh release edit "$VER" --notes "$NEW_BODY"
 
       - name: Create or update release (workflow_dispatch)
         if: github.event_name == 'workflow_dispatch'
