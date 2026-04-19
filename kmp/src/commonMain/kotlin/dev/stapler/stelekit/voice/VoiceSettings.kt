@@ -24,20 +24,16 @@ class VoiceSettings(private val platformSettings: PlatformSettings) {
     fun setOpenAiKey(key: String) =
         platformSettings.putString(KEY_OPENAI, key.trim())
 
+    fun getLlmEnabled(): Boolean =
+        platformSettings.getBoolean(KEY_LLM_ENABLED, true)
+
+    fun setLlmEnabled(enabled: Boolean) =
+        platformSettings.putBoolean(KEY_LLM_ENABLED, enabled)
+
     companion object {
         private const val KEY_WHISPER = "voice.whisper_key"
         private const val KEY_ANTHROPIC = "voice.anthropic_key"
         private const val KEY_OPENAI = "voice.openai_key"
+        private const val KEY_LLM_ENABLED = "voice.llm_enabled"
     }
-}
-
-fun buildVoicePipeline(audioRecorder: AudioRecorder, settings: VoiceSettings): VoicePipelineConfig {
-    val sttProvider: SpeechToTextProvider = settings.getWhisperApiKey()
-        ?.let { WhisperSpeechToTextProvider.withDefaults(it) }
-        ?: NoOpSpeechToTextProvider()
-    val llmProvider: LlmFormatterProvider = settings.getAnthropicKey()
-        ?.let { ClaudeLlmFormatterProvider.withDefaults(it) }
-        ?: settings.getOpenAiKey()?.let { OpenAiLlmFormatterProvider.withDefaults(it) }
-        ?: NoOpLlmFormatterProvider()
-    return VoicePipelineConfig(audioRecorder = audioRecorder, sttProvider = sttProvider, llmProvider = llmProvider)
 }

@@ -15,6 +15,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.io.IOException
 
 class ClaudeLlmFormatterProvider(
     private val httpClient: HttpClient,
@@ -25,7 +26,6 @@ class ClaudeLlmFormatterProvider(
         private const val MESSAGES_URL = "https://api.anthropic.com/v1/messages"
         private const val ANTHROPIC_VERSION = "2023-06-01"
         private const val CLAUDE_MODEL = "claude-haiku-4-5-20251001"
-        private val SENTENCE_END = setOf('.', '?', '!', ']', '\n')
         private val lenientJson = Json { ignoreUnknownKeys = true }
 
         fun withDefaults(apiKey: String): ClaudeLlmFormatterProvider {
@@ -37,9 +37,7 @@ class ClaudeLlmFormatterProvider(
     }
 
     override suspend fun format(transcript: String, systemPrompt: String): LlmResult {
-        val wordCount = transcript.split(Regex("\\s+")).count { it.isNotBlank() }
-        val maxTokens = (wordCount * 2).coerceIn(512, 4096)
-
+        val maxTokens = LlmProviderSupport.estimateMaxTokens(transcript)
         return try {
             val response = httpClient.post(MESSAGES_URL) {
                 headers {
@@ -60,17 +58,16 @@ class ClaudeLlmFormatterProvider(
                 200 -> {
                     val body = response.body<ClaudeResponse>()
                     val text = body.content.firstOrNull()?.text?.trim() ?: return LlmResult.Failure.NetworkError
-                    val truncated = text.isNotEmpty() && text.last() !in SENTENCE_END
-                    LlmResult.Success(formattedText = text, isLikelyTruncated = truncated)
+                    LlmResult.Success(formattedText = text, isLikelyTruncated = LlmProviderSupport.detectTruncation(text))
                 }
-                401 -> LlmResult.Failure.ApiError(401, "Invalid API key")
-                429 -> LlmResult.Failure.ApiError(429, "Rate limit exceeded")
-                else -> LlmResult.Failure.ApiError(response.status.value, "HTTP ${response.status.value}")
+                else -> LlmProviderSupport.mapHttpError(response.status.value)
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
+        } catch (e: IOException) {
             LlmResult.Failure.NetworkError
+        } catch (e: Exception) {
+            LlmResult.Failure.ApiError(-1, "Unexpected error: ${e.message}")
         }
     }
 }

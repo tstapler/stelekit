@@ -13,6 +13,7 @@ import android.media.MediaMuxer
 import android.media.MediaRecorder
 import android.media.AudioFocusRequest
 import android.os.Build
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,6 +22,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.sqrt
+
+private const val TAG = "AndroidAudioRecorder"
 
 class AndroidAudioRecorder(private val context: Context) : AudioRecorder {
 
@@ -31,6 +34,14 @@ class AndroidAudioRecorder(private val context: Context) : AudioRecorder {
         private const val BIT_RATE = 128_000
         private const val MIME_TYPE = "audio/mp4a-latm"
         private const val CODEC_TIMEOUT_US = 10_000L
+        // 4× minimum buffer gives the encoder enough headroom to avoid under-runs on loaded devices.
+        private const val BUFFER_SIZE_MULTIPLIER = 4
+        // Floor ensures a viable buffer even if getMinBufferSize returns an unexpectedly small value.
+        private const val MIN_BUFFER_SIZE = 8192
+        // Non-blocking poll interval while audio focus is transiently lost (e.g. incoming call).
+        private const val PAUSE_POLL_INTERVAL_MS = 50L
+        // Normalisation divisor for RMS amplitude → [0, 1] float.
+        private const val SHORT_MAX = Short.MAX_VALUE.toFloat()
     }
 
     private val _amplitudeFlow = MutableStateFlow(0f)
@@ -69,7 +80,7 @@ class AndroidAudioRecorder(private val context: Context) : AudioRecorder {
         }
 
         val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
-        val bufferSize = maxOf(minBuf * 4, 8192)
+        val bufferSize = maxOf(minBuf * BUFFER_SIZE_MULTIPLIER, MIN_BUFFER_SIZE)
 
         var audioRecord: AudioRecord? = null
         var mediaCodec: MediaCodec? = null
@@ -95,19 +106,8 @@ class AndroidAudioRecorder(private val context: Context) : AudioRecorder {
                 return@withContext PlatformAudioFile("")
             }
 
-            mediaCodec = MediaCodec.createEncoderByType(MIME_TYPE)
-            val format = MediaFormat.createAudioFormat(MIME_TYPE, SAMPLE_RATE, 1).apply {
-                setInteger(MediaFormat.KEY_BIT_RATE, BIT_RATE)
-                setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
-                setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, bufferSize)
-            }
-            mediaCodec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-            mediaCodec.start()
-
-            mediaMuxer = MediaMuxer(
-                outputFile.absolutePath,
-                MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4,
-            )
+            mediaCodec = setupMediaCodec(bufferSize)
+            mediaMuxer = setupMediaMuxer(outputFile)
 
             audioRecord.startRecording()
 
@@ -120,21 +120,14 @@ class AndroidAudioRecorder(private val context: Context) : AudioRecorder {
             // isActive checks for coroutine cancellation; stopRequested handles user-initiated stop.
             while (!stopRequested && isActive) {
                 if (pauseRequested) {
-                    kotlinx.coroutines.delay(50)
+                    kotlinx.coroutines.delay(PAUSE_POLL_INTERVAL_MS)
                     continue
                 }
 
                 val bytesRead = audioRecord.read(pcmBuffer, 0, pcmBuffer.size)
                 if (bytesRead <= 0) continue
 
-                // RMS amplitude for animated feedback
-                var sumSq = 0.0
-                for (i in 0 until bytesRead - 1 step 2) {
-                    val sample = ((pcmBuffer[i + 1].toInt() shl 8) or (pcmBuffer[i].toInt() and 0xFF)).toShort().toInt()
-                    sumSq += sample.toDouble() * sample.toDouble()
-                }
-                val rms = sqrt(sumSq / (bytesRead / 2)).toFloat() / Short.MAX_VALUE
-                _amplitudeFlow.value = rms.coerceIn(0f, 1f)
+                _amplitudeFlow.value = computeRms(pcmBuffer, bytesRead)
 
                 // Feed PCM to encoder
                 val inputIdx = mediaCodec.dequeueInputBuffer(CODEC_TIMEOUT_US)
@@ -171,11 +164,17 @@ class AndroidAudioRecorder(private val context: Context) : AudioRecorder {
             PlatformAudioFile("")
         } finally {
             runCatching { audioRecord?.stop() }
+                .onFailure { Log.w(TAG, "audioRecord.stop() failed", it) }
             runCatching { audioRecord?.release() }
+                .onFailure { Log.w(TAG, "audioRecord.release() failed", it) }
             runCatching { mediaCodec?.stop() }
+                .onFailure { Log.w(TAG, "mediaCodec.stop() failed", it) }
             runCatching { mediaCodec?.release() }
+                .onFailure { Log.w(TAG, "mediaCodec.release() failed", it) }
             runCatching { mediaMuxer?.stop() }
+                .onFailure { Log.w(TAG, "mediaMuxer.stop() failed", it) }
             runCatching { mediaMuxer?.release() }
+                .onFailure { Log.w(TAG, "mediaMuxer.release() failed", it) }
             abandonAudioFocus(audioManager, focusRequest, focusChangeListener)
             _amplitudeFlow.value = 0f
         }
@@ -191,6 +190,30 @@ class AndroidAudioRecorder(private val context: Context) : AudioRecorder {
 
     override fun deleteRecording(file: PlatformAudioFile) {
         if (!file.isEmpty) File(file.path).delete()
+    }
+
+    private fun setupMediaCodec(bufferSize: Int): MediaCodec {
+        val codec = MediaCodec.createEncoderByType(MIME_TYPE)
+        val format = MediaFormat.createAudioFormat(MIME_TYPE, SAMPLE_RATE, 1).apply {
+            setInteger(MediaFormat.KEY_BIT_RATE, BIT_RATE)
+            setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+            setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, bufferSize)
+        }
+        codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        codec.start()
+        return codec
+    }
+
+    private fun setupMediaMuxer(outputFile: File): MediaMuxer =
+        MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+
+    private fun computeRms(buffer: ByteArray, bytesRead: Int): Float {
+        var sumSq = 0.0
+        for (i in 0 until bytesRead - 1 step 2) {
+            val sample = ((buffer[i + 1].toInt() shl 8) or (buffer[i].toInt() and 0xFF)).toShort().toInt()
+            sumSq += sample.toDouble() * sample.toDouble()
+        }
+        return (sqrt(sumSq / (bytesRead / 2)).toFloat() / SHORT_MAX).coerceIn(0f, 1f)
     }
 
     private fun abandonAudioFocus(

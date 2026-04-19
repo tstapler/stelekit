@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.voice.VoiceCaptureState
@@ -39,6 +40,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 
 private val ColorSuccess = Color(0xFF4CAF50)
+
+// Scale range for amplitude-driven pulse: 1.0 (silence) → 1.35 (loud)
+private const val AMPLITUDE_SCALE_RANGE = 0.35f
+// Tween duration for amplitude animation — fast enough to feel reactive.
+private const val AMPLITUDE_TWEEN_MS = 80
+// Fixed pulse period when amplitude data is unavailable.
+private const val FIXED_PULSE_TWEEN_MS = 600
+private const val FIXED_PULSE_MAX_SCALE = 1.25f
+// Duration the Done state is shown before auto-resetting to Idle.
+private const val DONE_AUTO_RESET_MS = 5_000L
 
 @Composable
 fun VoiceCaptureButton(
@@ -61,7 +72,10 @@ fun VoiceCaptureButton(
                 val animatable = remember { Animatable(1f) }
                 LaunchedEffect(Unit) {
                     amplitudeFlow.collect { rms ->
-                        animatable.animateTo(1f + (rms * 0.35f).coerceIn(0f, 0.35f), tween(80))
+                        animatable.animateTo(
+                            1f + (rms * AMPLITUDE_SCALE_RANGE).coerceIn(0f, AMPLITUDE_SCALE_RANGE),
+                            tween(AMPLITUDE_TWEEN_MS),
+                        )
                     }
                 }
                 animatable.value
@@ -70,9 +84,9 @@ fun VoiceCaptureButton(
                 val infiniteTransition = rememberInfiniteTransition()
                 val fixedScale by infiniteTransition.animateFloat(
                     initialValue = 1f,
-                    targetValue = 1.25f,
+                    targetValue = FIXED_PULSE_MAX_SCALE,
                     animationSpec = infiniteRepeatable(
-                        animation = tween(600),
+                        animation = tween(FIXED_PULSE_TWEEN_MS),
                         repeatMode = RepeatMode.Reverse,
                     ),
                 )
@@ -91,7 +105,10 @@ fun VoiceCaptureButton(
             val label = if (state == VoiceCaptureState.Transcribing) "Transcribing…" else "Formatting…"
             FloatingActionButton(
                 onClick = {},
-                modifier = Modifier.semantics { contentDescription = label },
+                modifier = Modifier.semantics {
+                    contentDescription = label
+                    disabled()
+                },
             ) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(24.dp),
@@ -102,7 +119,7 @@ fun VoiceCaptureButton(
 
         is VoiceCaptureState.Done -> {
             LaunchedEffect(state) {
-                delay(3_000)
+                delay(DONE_AUTO_RESET_MS)
                 onAutoReset()
             }
             if (state.isLikelyTruncated) {
@@ -122,18 +139,24 @@ fun VoiceCaptureButton(
                         )
                     }
                     FloatingActionButton(
-                        onClick = {},
+                        onClick = onAutoReset,
                         containerColor = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.semantics {
+                            contentDescription = "Note saved — may be incomplete. Tap to dismiss."
+                        },
                     ) {
-                        Icon(Icons.Default.Warning, contentDescription = "Note saved — may be incomplete")
+                        Icon(Icons.Default.Warning, contentDescription = null)
                     }
                 }
             } else {
                 FloatingActionButton(
-                    onClick = {},
+                    onClick = onAutoReset,
                     containerColor = ColorSuccess,
+                    modifier = Modifier.semantics {
+                        contentDescription = "Note saved. Tap to dismiss."
+                    },
                 ) {
-                    Icon(Icons.Default.Check, contentDescription = "Note saved")
+                    Icon(Icons.Default.Check, contentDescription = null)
                 }
             }
         }
@@ -158,7 +181,7 @@ fun VoiceCaptureButton(
                     onClick = onDismissError,
                     containerColor = MaterialTheme.colorScheme.error,
                 ) {
-                    Icon(Icons.Default.Warning, contentDescription = "Error: ${state.message} — tap to dismiss")
+                    Icon(Icons.Default.Warning, contentDescription = "Error — tap to dismiss")
                 }
             }
         }

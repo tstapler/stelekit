@@ -2,6 +2,9 @@ package dev.stapler.stelekit.platform
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 
 object SteleKitContext {
     private var _context: Context? = null
@@ -16,10 +19,20 @@ object SteleKitContext {
 actual class PlatformSettings actual constructor() {
     private val prefs: SharedPreferences by lazy {
         try {
-            SteleKitContext.context.getSharedPreferences("stelekit_prefs", Context.MODE_PRIVATE)
+            val masterKey = MasterKey.Builder(SteleKitContext.context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                SteleKitContext.context,
+                "stelekit_secure_prefs",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
         } catch (e: Exception) {
-            // Fallback for tests or if not initialized
-            throw IllegalStateException("Context not initialized", e)
+            // Fallback to plain prefs if keystore fails (e.g., corrupted keystore after device wipe)
+            Log.w("PlatformSettings", "EncryptedSharedPreferences unavailable, falling back to plain prefs", e)
+            SteleKitContext.context.getSharedPreferences("stelekit_prefs", Context.MODE_PRIVATE)
         }
     }
 

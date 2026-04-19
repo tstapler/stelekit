@@ -91,41 +91,45 @@ class VoiceCaptureViewModel(
                         )
                         return@launch
                     }
-                    is TranscriptResult.Success -> {
-                        val fullTranscript = sttResult.text.trim()
-                        val inputTruncated = fullTranscript.length > MAX_TRANSCRIPT_CHARS
-                        val rawTranscript = if (inputTruncated) fullTranscript.take(MAX_TRANSCRIPT_CHARS) else fullTranscript
-                        val wordCount = rawTranscript.split(Regex("\\s+")).count { it.isNotBlank() }
-                        if (wordCount < pipeline.minWordCount) {
-                            _state.value = VoiceCaptureState.Error(
-                                PipelineStage.TRANSCRIBING,
-                                "Recording too short — try speaking for a few more seconds"
-                            )
-                            return@launch
-                        }
-
-                        _state.value = VoiceCaptureState.Formatting
-                        val prompt = pipeline.systemPrompt.replace("{{TRANSCRIPT}}", rawTranscript)
-                        var isLikelyTruncated = inputTruncated
-                        val formattedText = when (val llmResult = pipeline.llmProvider.format(rawTranscript, prompt)) {
-                            is LlmResult.Success -> {
-                                isLikelyTruncated = isLikelyTruncated || llmResult.isLikelyTruncated
-                                llmResult.formattedText
-                            }
-                            is LlmResult.Failure -> rawTranscript
-                        }
-
-                        journalService.appendToToday(buildVoiceNoteBlock(formattedText, rawTranscript))
-                        _state.value = VoiceCaptureState.Done(
-                            insertedText = formattedText,
-                            isLikelyTruncated = isLikelyTruncated,
-                        )
-                    }
+                    is TranscriptResult.Success -> processTranscript(sttResult.text.trim())
                 }
             } finally {
                 file?.takeIf { !it.isEmpty }?.let { pipeline.audioRecorder.deleteRecording(it) }
             }
         }
+    }
+
+    private suspend fun processTranscript(fullTranscript: String) {
+        val inputTruncated = fullTranscript.length > MAX_TRANSCRIPT_CHARS
+        val rawTranscript = if (inputTruncated) fullTranscript.take(MAX_TRANSCRIPT_CHARS) else fullTranscript
+        val wordCount = rawTranscript.split(Regex("\\s+")).count { it.isNotBlank() }
+        if (wordCount < pipeline.minWordCount) {
+            _state.value = VoiceCaptureState.Error(
+                PipelineStage.TRANSCRIBING,
+                "Recording too short — try speaking for a few more seconds"
+            )
+            return
+        }
+
+        _state.value = VoiceCaptureState.Formatting
+        val prompt = pipeline.systemPrompt.replace("{{TRANSCRIPT}}", rawTranscript)
+        var isLikelyTruncated = inputTruncated
+        val formattedText = when (val llmResult = pipeline.llmProvider.format(rawTranscript, prompt)) {
+            is LlmResult.Success -> {
+                isLikelyTruncated = isLikelyTruncated || llmResult.isLikelyTruncated
+                llmResult.formattedText
+            }
+            is LlmResult.Failure -> {
+                println("[VoiceCaptureViewModel] LLM formatting failed ($llmResult), inserting raw transcript")
+                rawTranscript
+            }
+        }
+
+        journalService.appendToToday(buildVoiceNoteBlock(formattedText, rawTranscript))
+        _state.value = VoiceCaptureState.Done(
+            insertedText = formattedText,
+            isLikelyTruncated = isLikelyTruncated,
+        )
     }
 
     internal fun buildVoiceNoteBlock(formattedText: String, rawTranscript: String): String {

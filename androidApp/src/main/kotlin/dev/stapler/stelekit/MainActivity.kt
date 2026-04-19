@@ -17,11 +17,8 @@ import dev.stapler.stelekit.domain.UrlFetcherAndroid
 import dev.stapler.stelekit.platform.SteleKitContext
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.ui.StelekitApp
-import dev.stapler.stelekit.app.BuildConfig
 import dev.stapler.stelekit.voice.AndroidAudioRecorder
-import dev.stapler.stelekit.voice.VoicePipelineConfig
 import dev.stapler.stelekit.voice.VoiceSettings
-import dev.stapler.stelekit.voice.WhisperSpeechToTextProvider
 import dev.stapler.stelekit.voice.buildVoicePipeline
 import dev.stapler.stelekit.platform.PlatformSettings
 import kotlinx.coroutines.CompletableDeferred

@@ -231,6 +231,27 @@ class VoiceCaptureViewModelTest {
     }
 
     @Test
+    fun `temp file deleted on STT failure`() = runTest {
+        var deletedPath: String? = null
+        val fakeRecorder = object : AudioRecorder {
+            override suspend fun startRecording(): PlatformAudioFile = PlatformAudioFile("/tmp/stt_fail.m4a")
+            override suspend fun stopRecording() = Unit
+            override suspend fun readBytes(file: PlatformAudioFile) = ByteArray(100)
+            override fun deleteRecording(file: PlatformAudioFile) { deletedPath = file.path }
+        }
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Failure.NetworkError }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
+            makeJournalService(), this,
+        )
+
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        assertEquals("/tmp/stt_fail.m4a", deletedPath)
+    }
+
+    @Test
     fun `STT Empty result emits Error at TRANSCRIBING`() = runTest {
         val fakeRecorder = object : AudioRecorder {
             override suspend fun startRecording(): PlatformAudioFile = PlatformAudioFile("/tmp/test.m4a")
@@ -328,6 +349,31 @@ class VoiceCaptureViewModelTest {
     }
 
     @Test
+    fun `LLM ApiError also falls back to raw transcript in Done state`() = runTest {
+        val transcript = "this is a test transcript with more than ten words total here"
+        val fakeRecorder = object : AudioRecorder {
+            override suspend fun startRecording(): PlatformAudioFile = PlatformAudioFile("/tmp/test.m4a")
+            override suspend fun stopRecording() = Unit
+            override suspend fun readBytes(file: PlatformAudioFile) = ByteArray(100)
+        }
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success(transcript) }
+        val fakeLlm = LlmFormatterProvider { _, _ -> LlmResult.Failure.ApiError(401, "Invalid API key") }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt, llmProvider = fakeLlm),
+            makeJournalService(), this,
+        )
+
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        val state = vm.state.first()
+        assertIs<VoiceCaptureState.Done>(state)
+        assert(state.insertedText.contains(transcript.trim())) {
+            "Expected Done.insertedText to contain raw transcript on LLM ApiError but got: ${state.insertedText}"
+        }
+    }
+
+    @Test
     fun `9-word transcript emits Error at TRANSCRIBING`() = runTest {
         val fakeRecorder = object : AudioRecorder {
             override suspend fun startRecording(): PlatformAudioFile = PlatformAudioFile("/tmp/test.m4a")
@@ -365,6 +411,36 @@ class VoiceCaptureViewModelTest {
         advanceUntilIdle()
 
         assertIs<VoiceCaptureState.Done>(vm.state.first())
+    }
+
+    @Test
+    fun `transcript over 10000 chars is truncated before LLM`() = runTest {
+        val longTranscript = "word ".repeat(2_500) // 12,500 chars
+        var receivedTranscript = ""
+        val fakeRecorder = object : AudioRecorder {
+            override suspend fun startRecording(): PlatformAudioFile = PlatformAudioFile("/tmp/test.m4a")
+            override suspend fun stopRecording() = Unit
+            override suspend fun readBytes(file: PlatformAudioFile) = ByteArray(100)
+        }
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success(longTranscript) }
+        val fakeLlm = LlmFormatterProvider { transcript, _ ->
+            receivedTranscript = transcript
+            LlmResult.Success("- formatted.", false)
+        }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt, llmProvider = fakeLlm),
+            makeJournalService(), this,
+        )
+
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        assert(receivedTranscript.length <= 10_000) {
+            "LLM received ${receivedTranscript.length} chars, expected ≤ 10,000"
+        }
+        val state = vm.state.first()
+        assertIs<VoiceCaptureState.Done>(state)
+        assert(state.isLikelyTruncated) { "Expected isLikelyTruncated=true for over-length transcript" }
     }
 
     @Test

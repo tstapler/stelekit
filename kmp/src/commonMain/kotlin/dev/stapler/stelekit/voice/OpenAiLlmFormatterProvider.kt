@@ -16,6 +16,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.io.IOException
 
 class OpenAiLlmFormatterProvider(
     private val httpClient: HttpClient,
@@ -25,7 +26,6 @@ class OpenAiLlmFormatterProvider(
 
     companion object {
         private const val OPENAI_MODEL = "gpt-4o-mini"
-        private val SENTENCE_END = setOf('.', '?', '!', ']', '\n')
         private val lenientJson = Json { ignoreUnknownKeys = true }
 
         fun withDefaults(apiKey: String, baseUrl: String = "https://api.openai.com"): OpenAiLlmFormatterProvider {
@@ -37,8 +37,7 @@ class OpenAiLlmFormatterProvider(
     }
 
     override suspend fun format(transcript: String, systemPrompt: String): LlmResult {
-        val wordCount = transcript.split(Regex("\\s+")).count { it.isNotBlank() }
-        val maxTokens = (wordCount * 2).coerceIn(512, 4096)
+        val maxTokens = LlmProviderSupport.estimateMaxTokens(transcript)
         val completionsUrl = "$baseUrl/v1/chat/completions"
 
         return try {
@@ -64,17 +63,16 @@ class OpenAiLlmFormatterProvider(
                     val body = response.body<OpenAiResponse>()
                     val text = body.choices.firstOrNull()?.message?.content?.trim()
                         ?: return LlmResult.Failure.NetworkError
-                    val truncated = text.isNotEmpty() && text.last() !in SENTENCE_END
-                    LlmResult.Success(formattedText = text, isLikelyTruncated = truncated)
+                    LlmResult.Success(formattedText = text, isLikelyTruncated = LlmProviderSupport.detectTruncation(text))
                 }
-                401 -> LlmResult.Failure.ApiError(401, "Invalid API key")
-                429 -> LlmResult.Failure.ApiError(429, "Rate limit exceeded")
-                else -> LlmResult.Failure.ApiError(response.status.value, "HTTP ${response.status.value}")
+                else -> LlmProviderSupport.mapHttpError(response.status.value)
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
+        } catch (e: IOException) {
             LlmResult.Failure.NetworkError
+        } catch (e: Exception) {
+            LlmResult.Failure.ApiError(-1, "Unexpected error: ${e.message}")
         }
     }
 }
