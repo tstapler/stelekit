@@ -1,8 +1,11 @@
 name: F-Droid Repo Update
 
 on:
-  release:
-    types: [published]
+  # Trigger after the Release workflow completes so all artifacts have been
+  # uploaded to the GitHub release before we try to download them.
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
   workflow_dispatch:
 
 # Share the pages concurrency group so this deploy doesn't collide with the
@@ -15,10 +18,17 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read
 
 jobs:
   update-fdroid:
     runs-on: ubuntu-latest
+    # For workflow_run: only proceed when the Release workflow succeeded.
+    # (Most pushes to main only update the release PR; only the PR-merge run
+    # sets release_created=true and uploads artifacts.)
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -86,7 +96,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
           cache-dependency-path: site/package-lock.json
 

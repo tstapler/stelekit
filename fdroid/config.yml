@@ -5,9 +5,9 @@
 #
 # Secrets used in CI:
 #   FDROID_KEYSTORE_BASE64  — base64-encoded keystore.p12
-#   FDROID_KEY_ALIAS        — key alias inside the keystore
 #   FDROID_KEY_PASS         — key password
 #   FDROID_STORE_PASS       — keystore password
+# (FDROID_KEY_ALIAS is not injected — repo_keyalias is hardcoded as 'onyx' below)
 
 repo_url: https://stelekit.stapler.dev/fdroid/repo
 repo_name: SteleKit
@@ -17,10 +17,10 @@ repo_description: >-
 
 archive_older: 3
 
-sdk_path: $ANDROID_HOME
-
 repo_keyalias: onyx
 keydname: CN=onyx, OU=F-Droid
 
 # keystore, keystorepass, and keypass are appended by CI from secrets.
 # Do not add them here.
+# sdk_path is intentionally omitted — fdroid update does not need the Android
+# SDK (it uses bundled tools to read APK metadata).
