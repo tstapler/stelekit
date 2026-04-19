@@ -3,7 +3,7 @@ package dev.stapler.stelekit.db
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
-import dev.stapler.stelekit.platform.PlatformFileSystem
+import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.util.FileUtils
@@ -18,7 +18,7 @@ import kotlinx.coroutines.sync.withLock
  * Updated to use UUID-native storage and safety checks for large deletions.
  */
 class GraphWriter(
-    private val fileSystem: PlatformFileSystem,
+    private val fileSystem: FileSystem,
     private val writeActor: DatabaseWriteActor? = null,
     private val onFileWritten: ((filePath: String) -> Unit)? = null,
     @Deprecated("Use writeActor instead", level = DeprecationLevel.WARNING)

@@ -24,7 +24,7 @@ kotlin {
     jvm()
 
     if (project.findProperty("enableJs") == "true") {
-        js(IR) {
+        wasmJs {
             browser()
             binaries.executable()
         }
@@ -61,9 +61,6 @@ kotlin {
                 implementation("org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
                 implementation("org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.8.4")
 
-                // OpenTelemetry API for common metrics
-                implementation("io.opentelemetry:opentelemetry-api:1.43.0")
-
                 // Coil 3 — image loading (KMP)
                 implementation("io.coil-kt.coil3:coil-compose:3.2.0")
                 implementation("io.coil-kt.coil3:coil-network-ktor3:3.2.0")
@@ -80,6 +77,10 @@ kotlin {
 
         val jvmCommonMain by creating {
             dependsOn(commonMain)
+            dependencies {
+                // OpenTelemetry API — JVM/Android only (not available for wasmJs)
+                implementation("io.opentelemetry:opentelemetry-api:1.43.0")
+            }
         }
 
         val commonTest by getting {
@@ -124,20 +125,15 @@ kotlin {
         }
 
         if (project.findProperty("enableJs") == "true") {
-            val jsMain by getting {
+            val wasmJsMain by getting {
                 dependencies {
-                    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core-js:1.10.2")
-                    implementation("org.jetbrains.compose.html:html-core:1.7.3")
-                    implementation("app.cash.sqldelight:web-worker-driver:2.3.2")
-                    implementation(npm("@cashapp/sqldelight-sqljs-worker", "2.3.2"))
-                    implementation(npm("sql.js", "1.10.3"))
-                    implementation(devNpm("copy-webpack-plugin", "9.1.0"))
+                    // Phase B: add @sqlite.org/sqlite-wasm driver here
                 }
             }
 
-            val jsTest by getting {
+            val wasmJsTest by getting {
                 dependencies {
-                    implementation(kotlin("test-js"))
+                    implementation(kotlin("test-wasm-js"))
                 }
             }
         }
@@ -290,7 +286,7 @@ compose.desktop {
     application {
         mainClass = "dev.stapler.stelekit.desktop.MainKt"
         nativeDistributions {
-            targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb)
+            targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Rpm)
             packageName = "stelekit"
             // Compose Desktop requires MAJOR > 0. Map 0.x.y → 1.x.y for package metadata;
             // the public version (tag, APK, release title) remains 0.x.y.
@@ -298,6 +294,7 @@ compose.desktop {
             val parts = rawVersion.split(".")
             packageVersion = if ((parts.firstOrNull()?.toIntOrNull() ?: 1) == 0)
                 "1.${parts.drop(1).joinToString(".")}" else rawVersion
+            modules("java.sql")
             linux {
                 iconFile.set(project.file("src/jvmMain/resources/icons/icon.png"))
             }

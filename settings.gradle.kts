@@ -31,17 +31,33 @@ dependencyResolutionManagement {
         maven("https://jitpack.io")
         maven("https://oss.sonatype.org/content/repositories/snapshots/")
         maven("https://repo.clojars.org/")
-        // Required for Kotlin/JS: Node.js and Yarn binary downloads (PREFER_SETTINGS blocks
-        // the project-level ivy repos that the Kotlin/JS plugin registers automatically)
-        ivy("https://nodejs.org/dist/") {
+        // Kotlin/WASM toolchain binaries — declared here so PREFER_SETTINGS mode resolves them
+        ivy {
+            name = "Node.js"
+            setUrl("https://nodejs.org/dist/")
+            patternLayout {
+                artifact("v[revision]/[artifact](-v[revision]-[classifier]).[ext]")
+            }
+            metadataSources { artifact() }
             content { includeModule("org.nodejs", "node") }
-            patternLayout { artifact("v[revision]/[artifact](-v[revision]-[classifier]).[ext]") }
-            metadataSources { artifact() }
         }
-        ivy("https://github.com/yarnpkg/yarn/releases/download/") {
-            content { includeModule("com.yarnpkg", "yarn") }
-            patternLayout { artifact("v[revision]/[artifact](-v[revision]).[ext]") }
+        ivy {
+            name = "Yarn"
+            setUrl("https://github.com/yarnpkg/yarn/releases/download")
+            patternLayout {
+                artifact("v[revision]/[artifact](-v[revision]).[ext]")
+            }
             metadataSources { artifact() }
+            content { includeModule("com.yarnpkg", "yarn") }
+        }
+        ivy {
+            name = "Binaryen"
+            setUrl("https://github.com/WebAssembly/binaryen/releases/download")
+            patternLayout {
+                artifact("version_[revision]/[artifact]-version_[revision]-[classifier].[ext]")
+            }
+            metadataSources { artifact() }
+            content { includeModule("com.github.webassembly", "binaryen") }
         }
     }
 }

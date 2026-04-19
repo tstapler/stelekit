@@ -1,5 +1,7 @@
 # Tasks
 
+- [ ] SteleKit Site — Astro + Starlight GitHub Pages site with CI/CD pipeline, landing page, user docs, developer docs, and demo page; depends on browser-wasm-demo.md for demo embed (docs/tasks/stelekit-site.md)
+- [ ] Browser Wasm Demo — migrate `js(IR)` to `wasmJs` + `CanvasBasedWindow`, rendering the real Compose UI in-browser via Skia canvas; switch SQLDelight to IN_MEMORY backend for demo (docs/tasks/browser-wasm-demo.md)
 - [ ] Recent Pages — per-graph visit history in left sidebar showing last 10 visited pages, persists across sessions (docs/tasks/recent-pages.md)
 - [ ] Copy / Cut / Paste Blocks — Ctrl+C/X/V block-tree clipboard with undo, external Markdown paste, and Ctrl+Shift+V block reference paste (docs/tasks/copy-cut-paste-blocks.md)
 - [ ] All Pages View — sortable table of every page with backlink counts, name filter, journal/page toggle, and multi-select bulk delete (docs/tasks/all-pages-view.md)

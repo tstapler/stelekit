@@ -1,0 +1,64 @@
+---
+title: Architecture
+description: Layered architecture, data flows, multi-graph support, and state management in SteleKit
+---
+
+SteleKit uses a layered architecture inside `kmp/src/commonMain/kotlin/dev/stapler/stelekit/`.
+
+## Layers
+
+```
+UI (Compose)       → ui/ (App.kt, screens/, components/)
+ViewModel          → ui/StelekitViewModel.kt, ui/LogseqViewModel.kt
+Repository         → repository/ (Page, Block, Search, Journal)
+Database/Files     → db/ (GraphManager, GraphLoader, GraphWriter)
+Domain Models      → model/
+Parser             → parser/ + outliner/
+Platform abstracts → platform/
+```
+
+Each layer depends only on the layer below it. The UI never reads from disk directly — it reads from repositories. Repositories never write to disk directly — they delegate to `GraphWriter`.
+
+## Key data flows
+
+### Startup
+
+`StelekitApp` → `GraphManager.addGraph(path)` creates a per-graph `RepositorySet` containing `PageRepository`, `BlockRepository`, and `SearchRepository`.
+
+### Page load
+
+`StelekitViewModel.navigateTo()` → `GraphLoader` reads markdown from disk → `OutlinerPipeline` builds the block tree → repositories store the result. The ViewModel observes the repository and updates the UI `StateFlow`.
+
+### Editing
+
+`BlockEditor` (UI) → `BlockStateManager` holds local editing state → debounced 500ms → `GraphWriter.saveBlock()` writes the updated markdown to disk.
+
+### External file changes
+
+`GraphLoader.externalFileChanges` is a `SharedFlow` that watches disk writes from other apps. When it detects a change to an open file, it emits a `DiskConflict`. The user resolves the conflict in the UI.
+
+## Multi-graph support
+
+`GraphManager` maintains multiple graphs simultaneously. Each graph has an isolated `RepositorySet` and its own `CoroutineScope`. Graphs do not share repositories — a block in graph A cannot reference a block in graph B.
+
+Repository backends:
+- `IN_MEMORY` — used in tests; no disk I/O
+- `SQLDELIGHT` — production; SQLite via SQLDelight 2.3.2
+
+## State management
+
+SteleKit uses three state holders:
+
+| State holder | Scope | Contents |
+|---|---|---|
+| `StelekitViewModel` | App | Navigation, open page, search query/results |
+| `AppState` | App | Sidebar open, search dialog, command palette |
+| `BlockStateManager` | Per block | Block text being edited, cursor position |
+
+`StelekitViewModel` exposes a single `StateFlow<StelekitUiState>` to the root composable. The UI tree subscribes at the root and receives derived state via `remember`.
+
+`BlockStateManager` is scoped to a single block's editor lifetime. It is created when the block gains focus and collected when focus leaves.
+
+## Database
+
+SQLDelight 2.3.2 generates type-safe Kotlin from `.sq` files in `kmp/src/commonMain/sqldelight/`. The schema lives in `SteleDatabase.sq`. SQLDelight generates DAOs and query result types at build time — there are no runtime SQL strings in the production code.

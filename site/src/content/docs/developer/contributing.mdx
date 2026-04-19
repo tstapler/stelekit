@@ -1,0 +1,50 @@
+---
+title: Contributing
+description: Good first issues, branch naming, test requirements, and PR process for SteleKit
+---
+
+Good first issues are labeled `good-first-issue` on [GitHub](https://github.com/tstapler/stelekit/issues?q=label%3Agood-first-issue). Build and run the JVM tests before starting:
+
+```bash
+./gradlew jvmTest
+```
+
+## What to work on
+
+- Feature parity gaps with Logseq (check open issues)
+- Test coverage — `businessTest` and `jvmTest` are the priority targets
+- Platform polishing — desktop keyboard shortcuts, Android layout edge cases
+- Documentation — corrections and additions to the pages in `site/src/content/docs/`
+
+## Branch naming
+
+Use `feature/short-description` or `fix/short-description`. Branch from `main`. Keep branches focused — one logical change per PR.
+
+## Test requirements
+
+Every PR that changes behavior requires a test. Accepted test locations:
+
+- `businessTest` — business logic without UI dependencies (preferred)
+- `jvmTest` — JVM UI and integration tests
+- `commonTest` — shared utilities only
+
+Tests in `jvmTest` may use Roborazzi for screenshot assertions. Add screenshot baselines when you add a new composable.
+
+Run the full suite before opening a PR:
+
+```bash
+./gradlew allTests
+```
+
+## PR process
+
+1. Open a draft PR early — this is encouraged for feedback on approach
+2. Fill in the PR description with what changed and why
+3. All CI checks must pass before review
+4. Request review from a maintainer once ready
+
+SteleKit is source-available (Elastic License 2.0). By submitting a PR you agree that your contribution will be published under that license.
+
+## Questions
+
+Open a [GitHub Discussion](https://github.com/tstapler/stelekit/discussions) or comment on the relevant issue. The maintainer response time is best-effort.

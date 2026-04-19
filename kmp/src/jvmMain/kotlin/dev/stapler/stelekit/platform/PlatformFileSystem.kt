@@ -1,5 +1,8 @@
 package dev.stapler.stelekit.platform
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.concurrent.CompletableFuture
 import javax.swing.JFileChooser
 import javax.swing.SwingUtilities
 
@@ -27,28 +30,35 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
 
     actual override fun getLastModifiedTime(path: String): Long? = super.getLastModifiedTime(path)
 
+    override fun renameFile(from: String, to: String): Boolean = super<JvmFileSystemBase>.renameFile(from, to)
+
     actual override fun pickDirectory(): String? {
-        var selectedPath: String? = null
-        val task = Runnable {
+        // Synchronous fallback — only safe when already on the AWT EDT and not inside
+        // a Compose coroutine dispatcher. Prefer pickDirectoryAsync() from coroutines.
+        val future = CompletableFuture<String?>()
+        SwingUtilities.invokeLater {
             val chooser = JFileChooser()
             chooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
             val result = chooser.showOpenDialog(null)
-            if (result == JFileChooser.APPROVE_OPTION) {
-                selectedPath = chooser.selectedFile.absolutePath
-            }
+            future.complete(if (result == JFileChooser.APPROVE_OPTION) chooser.selectedFile.absolutePath else null)
         }
-
-        if (SwingUtilities.isEventDispatchThread()) {
-            task.run()
-        } else {
-            SwingUtilities.invokeAndWait(task)
-        }
-        
-        // Whitelist the picked directory
-        selectedPath?.let { registerGraphRoot(it) }
-        
-        return selectedPath
+        return future.get()?.also { registerGraphRoot(it) }
     }
 
-    actual override suspend fun pickDirectoryAsync(): String? = pickDirectory()
+    actual override suspend fun pickDirectoryAsync(): String? {
+        // Must NOT call JFileChooser.showOpenDialog on the Compose FlushCoroutineDispatcher.
+        // showOpenDialog creates a nested AWT event loop (WaitDispatchSupport.enter) which
+        // corrupts coroutine continuation state. Fix: move to IO, schedule dialog on the
+        // real AWT EDT via invokeLater, block only the IO thread on the result.
+        return withContext(Dispatchers.IO) {
+            val future = CompletableFuture<String?>()
+            SwingUtilities.invokeLater {
+                val chooser = JFileChooser()
+                chooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+                val result = chooser.showOpenDialog(null)
+                future.complete(if (result == JFileChooser.APPROVE_OPTION) chooser.selectedFile.absolutePath else null)
+            }
+            future.get()?.also { registerGraphRoot(it) }
+        }
+    }
 }

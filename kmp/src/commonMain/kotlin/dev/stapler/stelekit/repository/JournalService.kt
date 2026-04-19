@@ -95,7 +95,7 @@ class JournalService(
         val pageUuid = UuidGenerator.generateV7()
         val newPage = Page(
             uuid = pageUuid,
-            name = hyphenName,
+            name = underscoreName,
             createdAt = today.atStartOfDayIn(TimeZone.currentSystemDefault()),
             updatedAt = Clock.System.now(),
             isJournal = true,

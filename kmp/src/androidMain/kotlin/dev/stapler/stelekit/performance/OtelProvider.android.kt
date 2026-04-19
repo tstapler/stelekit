@@ -26,11 +26,11 @@ actual object OtelProvider {
             .build()
     }
 
-    actual fun getTracer(instrumentationName: String): Tracer =
+    actual fun getTracer(instrumentationName: String): Any =
         sdk?.getTracer(instrumentationName)
             ?: throw IllegalStateException("OtelProvider not initialized — call initialize() first")
 
-    actual fun getMeter(instrumentationName: String): Meter =
+    actual fun getMeter(instrumentationName: String): Any =
         sdk?.getMeter(instrumentationName)
             ?: throw IllegalStateException("OtelProvider not initialized — call initialize() first")
 

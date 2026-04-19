@@ -6,9 +6,8 @@ import dev.stapler.stelekit.db.OperationLogger
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.db.UndoManager
 import dev.stapler.stelekit.db.createDatabase
-import dev.stapler.stelekit.performance.InstrumentedPageRepository
-import dev.stapler.stelekit.performance.InstrumentedSearchRepository
 import dev.stapler.stelekit.performance.OtelProvider
+import dev.stapler.stelekit.performance.wrapWithOtelIfAvailable
 import kotlinx.coroutines.CoroutineScope
 
 /**
@@ -55,11 +54,7 @@ class RepositoryFactoryImpl(
             }
             GraphBackend.SQLDELIGHT -> getOrCreateInstance("page_sqldelight") {
                 val repo = SqlDelightPageRepository(database)
-                if (OtelProvider.isInitialized) {
-                    InstrumentedPageRepository(repo, OtelProvider.getTracer("dev.stapler.stelekit.page"))
-                } else {
-                    repo
-                }
+                wrapWithOtelIfAvailable(repo, "dev.stapler.stelekit.page")
             }
             else -> throw NotImplementedError("Backend $backend not implemented")
         }
@@ -111,11 +106,7 @@ class RepositoryFactoryImpl(
             }
             GraphBackend.SQLDELIGHT -> getOrCreateInstance("search_sqldelight") {
                 val repo = SqlDelightSearchRepository(database)
-                if (OtelProvider.isInitialized) {
-                    InstrumentedSearchRepository(repo, OtelProvider.getTracer("dev.stapler.stelekit.search"))
-                } else {
-                    repo
-                }
+                wrapWithOtelIfAvailable(repo, "dev.stapler.stelekit.search")
             }
             else -> throw NotImplementedError("Backend $backend not implemented")
         }
@@ -132,7 +123,7 @@ class RepositoryFactoryImpl(
         val blockRepo = createBlockRepository(backend)
         val pageRepo = createPageRepository(backend)
         val (actor, undoManager) = if (scope != null) {
-            val sessionId = java.util.UUID.randomUUID().toString()
+            val sessionId = dev.stapler.stelekit.util.UuidGenerator.generateV7()
             val opLogger = if (backend == GraphBackend.SQLDELIGHT) OperationLogger(database, sessionId) else null
             val writeActor = DatabaseWriteActor(blockRepo, pageRepo, scope, opLogger)
             val undo = if (opLogger != null) UndoManager(database, writeActor, sessionId) else null

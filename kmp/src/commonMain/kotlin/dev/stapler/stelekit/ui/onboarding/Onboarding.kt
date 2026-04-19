@@ -8,7 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.ui.i18n.t
-import dev.stapler.stelekit.platform.PlatformFileSystem
+import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.launch
 
 enum class OnboardingStep {
@@ -19,7 +19,7 @@ enum class OnboardingStep {
 
 @Composable
 fun Onboarding(
-    fileSystem: PlatformFileSystem,
+    fileSystem: FileSystem,
     onComplete: () -> Unit,
     onGraphSelected: (String) -> Unit
 ) {
@@ -102,7 +102,7 @@ private fun WelcomeStep() {
 
 @Composable
 private fun GraphSelectionStep(
-    fileSystem: PlatformFileSystem,
+    fileSystem: FileSystem,
     onGraphSelected: (String) -> Unit
 ) {
     var selectedPath by remember { mutableStateOf(fileSystem.getDefaultGraphPath()) }
