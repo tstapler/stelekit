@@ -264,11 +264,12 @@ jobs:
 
           if [ -n "$LINUX_APPIMAGE" ]; then
             LINUX_SHA=$(sha256sum "$LINUX_APPIMAGE" | awk '{print $1}')
-            sed -i "s/PLACEHOLDER_LINUX_SHA256/$LINUX_SHA/" HomebrewFormula/stelekit.rb
+            # Replace any existing 64-char hex SHA256 or placeholder on the linux sha256 line
+            sed -i "/on_linux/,/end/{s/sha256 \"[0-9a-f]\{64\}\"/sha256 \"$LINUX_SHA\"/; s/sha256 \"PLACEHOLDER_LINUX_SHA256\"/sha256 \"$LINUX_SHA\"/}" HomebrewFormula/stelekit.rb
           fi
           if [ -n "$MACOS_DMG" ]; then
             MACOS_SHA=$(sha256sum "$MACOS_DMG" | awk '{print $1}')
-            sed -i "s/PLACEHOLDER_MACOS_SHA256/$MACOS_SHA/" HomebrewFormula/stelekit.rb
+            sed -i "/on_macos/,/end/{s/sha256 \"[0-9a-f]\{64\}\"/sha256 \"$MACOS_SHA\"/; s/sha256 \"PLACEHOLDER_MACOS_SHA256\"/sha256 \"$MACOS_SHA\"/}" HomebrewFormula/stelekit.rb
           fi
 
           # Bump version in formula
