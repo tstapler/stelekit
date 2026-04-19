@@ -365,8 +365,15 @@ private fun GraphContent(
                     onGraphSelected = { path ->
                         scope.launch {
                             val graphId = graphManager.addGraph(path)
-                            graphId?.let { graphManager.switchGraph(it) }
-                            viewModel.setGraphPath(path)
+                            if (graphId != null) {
+                                // Persist BEFORE switchGraph — switchGraph updates activeGraphId which
+                                // triggers key(activeGraphId) to destroy and recreate GraphContent
+                                // along with its scope. The new ViewModel reads these persisted values
+                                // in its init block and calls loadGraph automatically.
+                                viewModel.setGraphPath(path)
+                                viewModel.setOnboardingCompleted(true)
+                                graphManager.switchGraph(graphId)
+                            }
                         }
                     }
                 )
