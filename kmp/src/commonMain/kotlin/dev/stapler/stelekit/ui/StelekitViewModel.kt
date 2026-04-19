@@ -334,7 +334,11 @@ class StelekitViewModel(
                                     if (journal.filePath.isNullOrBlank()) {
                                         blockStateManager?.savePageNow(journal.uuid)
                                     }
-                                    navigateTo(Screen.PageView(journal), addToHistory = false)
+                                    // Only auto-navigate on cold start (currentScreen is the default
+                                    // Screen.Journals). Graph switches and reindex keep the user where they are.
+                                    if (_uiState.value.currentScreen == Screen.Journals) {
+                                        navigateTo(Screen.PageView(journal))
+                                    }
                                 }
                             },
                             onFullyLoaded = {
