@@ -9,7 +9,7 @@
 #   FDROID_KEY_PASS         — key password
 #   FDROID_STORE_PASS       — keystore password
 
-repo_url: https://tstapler.github.io/stelekit/fdroid/repo
+repo_url: https://stelekit.stapler.dev/fdroid/repo
 repo_name: SteleKit
 repo_description: >-
   Self-hosted F-Droid repository for SteleKit — a local-first Markdown
