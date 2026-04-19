@@ -15,10 +15,11 @@ data class SerializedSpan(
 /**
  * Fixed-capacity circular buffer for [SerializedSpan] entries.
  *
- * Thread-safe via [@Synchronized]. When capacity is exceeded, the oldest entry is dropped.
- * Call [record] to add entries — safe to call from any thread, including the main thread
- * (e.g. from JankStats' OnFrameListener).
- * Call [snapshot] to get a stable copy for bug report assembly.
+ * Not thread-safe. All calls to [record], [snapshot], and [clear] must be made from a
+ * single thread or coroutine context. On wasmJs this is always true (single-threaded).
+ * On JVM, dispatch to a dedicated coroutine dispatcher before calling.
+ *
+ * When capacity is exceeded, the oldest entry is dropped.
  */
 class RingBufferSpanExporter(val capacity: Int = 1000) {
     private val buffer = ArrayDeque<SerializedSpan>(capacity)

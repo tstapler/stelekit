@@ -4,9 +4,9 @@
 
 package dev.stapler.stelekit.platform
 
+import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.todayIn
-import kotlin.time.Clock
 
 /**
  * An in-memory FileSystem implementation for the browser demo.

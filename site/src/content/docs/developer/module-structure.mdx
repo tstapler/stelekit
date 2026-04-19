@@ -13,7 +13,7 @@ All shared code lives in the `kmp/` module. The module targets four platforms fr
 | `jvmMain` | Desktop entry point (`Main.kt`), file watching with Java NIO, and JVM-specific logging configuration. |
 | `androidMain` | Android entry point and the SQLDelight driver factory for Android's bundled SQLite. |
 | `iosMain` | SQLDelight driver for iOS. The iOS target is currently disabled in the default build. |
-| `jsMain` | Compose/Wasm web target. Enabled via `gradle.properties` `enableJs=true`. |
+| `wasmJsMain` | Compose/Wasm web target. Enabled via `gradle.properties` `enableJs=true`. |
 | `jvmTest` | JVM UI and integration tests. Uses Roborazzi for Compose screenshot assertions. |
 | `commonTest` | Shared test utilities and helpers available across all test source sets. |
 | `businessTest` | Business logic tests without UI dependencies. Fastest to run; no Compose runtime required. |

@@ -66,7 +66,7 @@ kmp/
 ./gradlew :kmp:assembleDebug
 
 # wasmJs browser bundle
-./gradlew :kmp:wasmJsBrowserProductionWebpack
+./gradlew :kmp:wasmJsBrowserDistribution
 ```
 
 ## Testing

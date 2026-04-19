@@ -9,6 +9,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read
 
 concurrency:
   group: pages
@@ -53,13 +54,27 @@ jobs:
     if: always() && (needs.build-demo.result == 'success' || needs.build-demo.result == 'skipped')
     steps:
       - uses: actions/checkout@v4
+      # Try current run first (when build-demo ran); fall back to last successful run
+      # so site-only edits keep the previously-built demo live.
       - id: download-demo
-        name: Download demo artifact (if available)
+        name: Download demo artifact (current run)
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
           name: demo-dist
           path: site/public/demo/
+      - id: download-demo-fallback
+        name: Download demo artifact (last successful run)
+        if: steps.download-demo.outcome == 'failure'
+        continue-on-error: true
+        run: |
+          LAST_RUN=$(gh run list --workflow pages.yml --status success --limit 1 \
+            --json databaseId --jq '.[0].databaseId // empty')
+          if [ -n "$LAST_RUN" ]; then
+            gh run download "$LAST_RUN" --name demo-dist --dir site/public/demo/
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
       - uses: actions/configure-pages@v5
       - uses: actions/setup-node@v4
         with:
