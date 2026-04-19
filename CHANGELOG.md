@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.0](https://github.com/tstapler/stelekit/compare/v0.3.2...v0.4.0) (2026-04-19)
+
+
+### Features
+
+* add fdroid self-hosted repo workflow and config ([8134007](https://github.com/tstapler/stelekit/commit/8134007bda742662176b26d60438a1c141fcef42))
+* add fdroid self-hosted repo workflow and config ([a3768fe](https://github.com/tstapler/stelekit/commit/a3768fe74ad53b2c05b49d6200ac749ab619ac63))
+* **voice:** Story 1 — Android voice capture → Whisper STT → journal insert ([815ed32](https://github.com/tstapler/stelekit/commit/815ed32811f086eb0000300a562afd782de57a08))
+
+
+### Bug Fixes
+
+* **ci:** rebase onto origin/main before Homebrew formula push ([8d92c7f](https://github.com/tstapler/stelekit/commit/8d92c7f676dd30498bf12cf869733e071df6ac58))
+* pin Node.js to 24 LTS in pages workflow ([ffa739e](https://github.com/tstapler/stelekit/commit/ffa739ec003ea6fb0c67701e7606605148b18c25))
+* **ui:** persist graph path before switchGraph to fix spinner-forever bug ([13cc5ea](https://github.com/tstapler/stelekit/commit/13cc5ea94a48702ab64acad27dccc3955951a256))
+* upgrade Node.js to 24 LTS in GitHub Pages workflow ([470df18](https://github.com/tstapler/stelekit/commit/470df18823fe22e1001139f16e7789a47e089b3e))
+* upgrade Node.js to lts/* in pages workflow ([4b9790a](https://github.com/tstapler/stelekit/commit/4b9790a40454ca00ddc7a6b35c89229bbfb07290))
+* **voice:** fix iOS framework link check — remove JVM-only APIs from commonMain ([5c2437e](https://github.com/tstapler/stelekit/commit/5c2437ead13652b563d8f6dd041cd4dc5737f8c0))
+
 ## [0.3.2](https://github.com/tstapler/stelekit/compare/v0.3.1...v0.3.2) (2026-04-19)
 
 
