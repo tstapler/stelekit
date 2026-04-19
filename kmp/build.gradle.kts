@@ -165,6 +165,9 @@ kotlin {
 
                 // JankStats — zero-allocation frame jank classification
                 implementation("androidx.metrics:metrics-performance:1.0.0-beta02")
+
+                // Encrypted SharedPreferences for API key storage
+                implementation("androidx.security:security-crypto:1.1.0-alpha06")
             }
         }
 

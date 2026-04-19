@@ -8,12 +8,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.domain.UrlFetcherAndroid
 import dev.stapler.stelekit.platform.SteleKitContext
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.ui.StelekitApp
+import dev.stapler.stelekit.voice.AndroidAudioRecorder
+import dev.stapler.stelekit.voice.VoiceSettings
+import dev.stapler.stelekit.voice.buildVoicePipeline
+import dev.stapler.stelekit.platform.PlatformSettings
 import kotlinx.coroutines.CompletableDeferred
 
 class MainActivity : ComponentActivity() {
@@ -99,10 +106,16 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            val audioRecorder = remember { AndroidAudioRecorder(this@MainActivity.applicationContext) }
+            val voiceSettings = remember { VoiceSettings(PlatformSettings()) }
+            var voicePipeline by remember { mutableStateOf(buildVoicePipeline(audioRecorder, voiceSettings)) }
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = fileSystem.getDefaultGraphPath(),
-                urlFetcher = UrlFetcherAndroid()
+                urlFetcher = UrlFetcherAndroid(),
+                voicePipeline = voicePipeline,
+                voiceSettings = voiceSettings,
+                onRebuildVoicePipeline = { voicePipeline = buildVoicePipeline(audioRecorder, voiceSettings) },
             )
         }
     }
