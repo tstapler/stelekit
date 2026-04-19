@@ -160,7 +160,9 @@ fdroid/
 
 **File**: `.github/workflows/fdroid.yml`
 
-This workflow runs after a successful release build (triggered by `release` event or tag push), downloads the signed APK from GitHub Releases, runs `fdroid update` to regenerate the index, and deploys to GitHub Pages.
+This workflow runs after a successful release build, downloads the signed APK from GitHub Releases, runs `fdroid update` to regenerate the index, and deploys to GitHub Pages.
+
+The APK is already signed by the existing Android keystore (`ANDROID_KEYSTORE` secret). The fdroid repo index itself needs a separate signing key (it signs `index-v2.json`, not the APK) — see Task 3.3.
 
 ```yaml
 name: F-Droid Repo Update
@@ -190,7 +192,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y fdroidserver
 
-      - name: Restore fdroid keystore
+      - name: Restore fdroid repo signing keystore
         env:
           FDROID_KEYSTORE_BASE64: ${{ secrets.FDROID_KEYSTORE_BASE64 }}
         run: |
@@ -209,14 +211,12 @@ jobs:
           keypass: $FDROID_KEY_PASS
           EOF
 
-      - name: Download APK from release
+      - name: Download signed APK from release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
-          VERSION="${VERSION#v}"  # strip leading 'v'
           gh release download "${{ github.event.release.tag_name }}" \
-            --pattern "*.apk" \
+            --pattern "SteleKit-*-android.apk" \
             --dir fdroid/repo/
 
       - name: Generate fdroid index
@@ -234,32 +234,35 @@ jobs:
         uses: actions/deploy-pages@v4
 ```
 
-**GitHub Actions secrets required**:
+**Existing secrets reused** (already in GitHub, no action needed):
+- APK signing: `ANDROID_KEYSTORE`, `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`
+
+**New secrets needed** (only for signing the fdroid index, not the APK):
 - `FDROID_KEYSTORE_BASE64` — `base64 -w0 fdroid-keystore.jks`
-- `FDROID_KEY_ALIAS` — alias for the fdroid repo signing key
+- `FDROID_KEY_ALIAS` — alias for the fdroid repo index signing key
 - `FDROID_KEY_PASS` — key password
 - `FDROID_STORE_PASS` — keystore password
 
 **GitHub Pages setup** (one-time, manual):
 - Repo Settings → Pages → Source: GitHub Actions
 
-#### Task 3.3 — Generate the fdroid signing key (one-time local setup)
+#### Task 3.3 — Generate the fdroid repo index signing key (one-time local setup)
 
-Run locally, commit the public cert, store the keystore as a secret:
+This key signs the `index-v2.json` file (the repo catalog), not the APKs. The APKs are already signed by the existing Android keystore.
 
 ```bash
 cd fdroid/
 fdroid init
-# This generates keystore.jks and updates config.yml with the fingerprint
+# Generates keystore.jks and writes repo_pubkey fingerprint to config.yml
 
 # Export keystore for CI
 base64 -w0 keystore.jks > keystore.jks.b64
-# → paste keystore.jks.b64 contents into FDROID_KEYSTORE_BASE64 secret
-# → delete keystore.jks.b64
+# → paste contents into FDROID_KEYSTORE_BASE64 GitHub secret
+# → delete keystore.jks.b64 locally
 
-# Commit only the public cert (NOT the keystore):
-git add config.yml repo/
-git add -N keystore.jks  # add to .gitignore instead
+# Commit the config (contains public fingerprint), not the keystore
+git add config.yml
+echo "fdroid/keystore.jks" >> ../.gitignore
 ```
 
 Add `fdroid/keystore.jks` to `.gitignore` — it must never be committed.
@@ -267,7 +270,7 @@ Add `fdroid/keystore.jks` to `.gitignore` — it must never be committed.
 **Acceptance criteria**:
 - `fdroid/config.yml` contains `repo_pubkey` fingerprint
 - `fdroid/keystore.jks` is in `.gitignore`
-- Keystore base64 is stored in GitHub Actions secrets
+- `FDROID_KEYSTORE_BASE64`, `FDROID_KEY_ALIAS`, `FDROID_KEY_PASS`, `FDROID_STORE_PASS` stored in GitHub Actions secrets
 
 ---
 
