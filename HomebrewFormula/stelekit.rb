@@ -6,12 +6,12 @@ class Stelekit < Formula
 
   on_linux do
     url "https://github.com/tstapler/stelekit/releases/download/v#{version}/SteleKit-v#{version}-linux.AppImage"
-    sha256 "PLACEHOLDER_LINUX_SHA256"
+    sha256 "ea19e3d73a689f5221538c9406543b7368062f3bec02589dd17bc6e1c47b5630"
   end
 
   on_macos do
     url "https://github.com/tstapler/stelekit/releases/download/v#{version}/SteleKit-v#{version}-macos.dmg"
-    sha256 "PLACEHOLDER_MACOS_SHA256"
+    sha256 "9f7b1681dc642ea27c30e391b97a1df116bfe47a2ba42ce07d079898241a12a4"
   end
 
   def install
