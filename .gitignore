@@ -127,6 +127,11 @@ resources/public/
 android/
 
 # --------------------
+# F-Droid repo signing keystore (secrets stored in GitHub Actions)
+# --------------------
+fdroid/keystore.p12
+
+# --------------------
 # Misc
 # --------------------
 *.hprof

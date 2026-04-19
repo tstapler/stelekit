@@ -1,0 +1,26 @@
+---
+# F-Droid self-hosted repository configuration for SteleKit.
+# Sensitive values (keystore, passwords) are injected by GitHub Actions
+# from repository secrets at build time — do NOT commit them here.
+#
+# Secrets used in CI:
+#   FDROID_KEYSTORE_BASE64  — base64-encoded keystore.p12
+#   FDROID_KEY_ALIAS        — key alias inside the keystore
+#   FDROID_KEY_PASS         — key password
+#   FDROID_STORE_PASS       — keystore password
+
+repo_url: https://tstapler.github.io/stelekit/fdroid/repo
+repo_name: SteleKit
+repo_description: >-
+  Self-hosted F-Droid repository for SteleKit — a local-first Markdown
+  outliner and note-taking app compatible with the Logseq file format.
+
+archive_older: 3
+
+sdk_path: $ANDROID_HOME
+
+repo_keyalias: onyx
+keydname: CN=onyx, OU=F-Droid
+
+# keystore, keystorepass, and keypass are appended by CI from secrets.
+# Do not add them here.
