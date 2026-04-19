@@ -63,7 +63,46 @@ private fun AnnotatedString.Builder.renderNodes(
     ctx: RenderContext,
     depth: Int = 0,
 ) {
-    for (node in nodes) renderNode(node, ctx, depth)
+    if (depth != 0) {
+        for (node in nodes) renderNode(node, ctx, depth)
+        return
+    }
+    // At depth 0: merge consecutive adjacent TextNodes into runs so that multi-word
+    // page names (e.g. "Meeting Notes") are found across word/space token boundaries.
+    var runOrigStart = -1
+    val runContent = StringBuilder()
+
+    fun flushRun() {
+        if (runOrigStart < 0 || runContent.isEmpty()) return
+        renderPlainText(runContent.toString(), runOrigStart, ctx)
+        runOrigStart = -1
+        runContent.clear()
+    }
+
+    for (node in nodes) {
+        if (node is TextNode && node.content.isNotEmpty()) {
+            val origStart = if (ctx.searchFrom + node.content.length <= ctx.original.length &&
+                ctx.original.startsWith(node.content, ctx.searchFrom)
+            ) {
+                ctx.searchFrom
+            } else {
+                ctx.original.indexOf(node.content, ctx.searchFrom).takeIf { it >= 0 }
+                    ?: ctx.searchFrom
+            }
+            ctx.searchFrom = origStart + node.content.length
+            if (runOrigStart >= 0 && runOrigStart + runContent.length == origStart) {
+                runContent.append(node.content)
+            } else {
+                flushRun()
+                runOrigStart = origStart
+                runContent.append(node.content)
+            }
+        } else {
+            flushRun()
+            renderNode(node, ctx, depth)
+        }
+    }
+    flushRun()
 }
 
 private fun AnnotatedString.Builder.renderNode(
