@@ -4,8 +4,7 @@ package dev.stapler.stelekit.voice
 
 import kotlinx.coroutines.flow.Flow
 
-@JvmInline
-value class PlatformAudioFile(val path: String) {
+data class PlatformAudioFile(val path: String) {
     val isEmpty: Boolean get() = path.isEmpty()
 }
 

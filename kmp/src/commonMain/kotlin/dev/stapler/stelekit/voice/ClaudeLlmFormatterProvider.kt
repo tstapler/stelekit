@@ -15,7 +15,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import java.io.IOException
+import io.ktor.utils.io.errors.IOException
 
 class ClaudeLlmFormatterProvider(
     private val httpClient: HttpClient,
