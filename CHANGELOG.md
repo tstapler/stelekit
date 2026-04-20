@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0](https://github.com/tstapler/stelekit/compare/v0.5.0...v0.6.0) (2026-04-20)
+
+
+### Features
+
+* **site:** apply brand palette, add logo, add F-Droid install instructions ([d3f9bcf](https://github.com/tstapler/stelekit/commit/d3f9bcf3c0c9c5d68077f304c58ef681b82fc790))
+
+
+### Bug Fixes
+
+* **android:** fix permission recovery — spinner forever, silent failures, no logs ([5a9feae](https://github.com/tstapler/stelekit/commit/5a9feae1e576e06d15166231a327dbf19e4c9a8c))
+* **brew:** fix Homebrew tap, centralize install docs, add README sync CI ([#14](https://github.com/tstapler/stelekit/issues/14)) ([8665537](https://github.com/tstapler/stelekit/commit/86655378490e4f2cb5544676d209ddd914e78338))
+* **fdroid:** install fdroidserver via pip to fix androguard API 36 parse error ([f5fe954](https://github.com/tstapler/stelekit/commit/f5fe954ff073b22d0a2e4f2d56ea78af1861f5ec))
+* **release:** use find instead of glob for artifact upload ([9d3055f](https://github.com/tstapler/stelekit/commit/9d3055f6a602089eb63b9f3d3635877c33c15b33))
+
 ## [0.5.0](https://github.com/tstapler/stelekit/compare/v0.4.0...v0.5.0) (2026-04-20)
 
 
