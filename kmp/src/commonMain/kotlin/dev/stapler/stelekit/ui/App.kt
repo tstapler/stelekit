@@ -165,7 +165,8 @@ fun StelekitApp(
                 PermissionRecoveryScreen(
                     folderName = fileSystem.getLibraryDisplayName(),
                     onReconnectFolder = { scope.launch { onFolderPicked() } },
-                    onChooseDifferentFolder = { scope.launch { onFolderPicked() } }
+                    onChooseDifferentFolder = { scope.launch { onFolderPicked() } },
+                    errorMessage = folderPickError,
                 )
             } else {
                 // First launch — no folder chosen yet
@@ -178,14 +179,15 @@ fun StelekitApp(
         return
     }
 
-    // Initialize with graph path if provided and no active graph
+    // Initialize with graph path if provided.
+    // Always call addGraph so repositories are initialized — this is idempotent
+    // (returns the existing ID if already registered) and handles reconnect after
+    // SAF permission loss, where activeGraphId may be non-null from the persisted
+    // registry but the in-memory repos have not been set up in this process.
     LaunchedEffect(currentGraphPath) {
-        if (currentGraphPath.isNotEmpty() && activeGraphId == null) {
+        if (currentGraphPath.isNotEmpty()) {
             val graphId = graphManager.addGraph(currentGraphPath)
-            graphId?.let { graphManager.switchGraph(it) }
-        } else if (activeGraphId != null) {
-            // Re-switch to ensure repositories are initialized
-            graphManager.switchGraph(activeGraphId)
+            graphManager.switchGraph(graphId)
         }
     }
 
