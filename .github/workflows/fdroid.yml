@@ -38,9 +38,8 @@ jobs:
 
       - name: Install fdroidserver
         run: |
-          sudo add-apt-repository ppa:fdroid/fdroidserver
-          sudo apt-get update -qq
-          sudo apt-get install -y fdroidserver
+          sudo apt-get install -y python3-pip aapt zipalign
+          pip3 install --user fdroidserver
 
       - name: Restore fdroid repo signing keystore
         env:
