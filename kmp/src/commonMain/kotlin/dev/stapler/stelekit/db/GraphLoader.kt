@@ -62,7 +62,7 @@ class GraphLoader(
 
     // Serializes all DB writes to avoid SQLITE_BUSY under concurrent graph loading.
     // If an external actor is provided (from RepositorySet), reuse it; otherwise create one locally.
-    private val writeActor = externalWriteActor ?: DatabaseWriteActor(blockRepository, pageRepository, parallelScope)
+    private val writeActor = externalWriteActor ?: DatabaseWriteActor(blockRepository, pageRepository)
 
     // Watcher job
     private var watcherJob: Job? = null

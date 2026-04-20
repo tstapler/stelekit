@@ -29,7 +29,6 @@ import kotlinx.coroutines.launch
 class DatabaseWriteActor(
     private val blockRepository: BlockRepository,
     private val pageRepository: PageRepository,
-    @Suppress("UNUSED_PARAMETER") scope: CoroutineScope? = null,
     private val opLogger: OperationLogger? = null,
 ) {
     sealed class WriteRequest {
@@ -65,7 +64,13 @@ class DatabaseWriteActor(
     init {
         actorScope.launch {
             for (request in channel) {
-                processRequest(request)
+                try {
+                    processRequest(request)
+                } catch (e: Exception) {
+                    // Unexpected throw (e.g. OOM, assertion) — complete the caller's deferred
+                    // so it doesn't hang, then continue the loop rather than dying.
+                    request.deferred.complete(Result.failure(e))
+                }
             }
         }
     }

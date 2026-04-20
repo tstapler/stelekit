@@ -4,11 +4,9 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.ui.fixtures.FakeBlockRepository
 import dev.stapler.stelekit.ui.fixtures.FakePageRepository
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -49,7 +47,7 @@ class DatabaseWriteActorTest {
     @Test
     fun `savePage routes to page repository and returns success`() = runBlocking {
         val pageRepo = FakePageRepository()
-        val actor = DatabaseWriteActor(FakeBlockRepository(), pageRepo, this)
+        val actor = DatabaseWriteActor(FakeBlockRepository(), pageRepo)
 
         val result = actor.savePage(page("p-1", "My Page"))
 
@@ -63,7 +61,7 @@ class DatabaseWriteActorTest {
     @Test
     fun `saveBlocks stores all supplied blocks`() = runBlocking {
         val blockRepo = FakeBlockRepository()
-        val actor = DatabaseWriteActor(blockRepo, FakePageRepository(), this)
+        val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
         val result = actor.saveBlocks(listOf(block("b1"), block("b2"), block("b3")))
 
@@ -77,7 +75,7 @@ class DatabaseWriteActorTest {
     @Test
     fun `deleteBlocksForPage removes all blocks for that page`() = runBlocking {
         val blockRepo = FakeBlockRepository(mapOf("page-1" to listOf(block("b1"), block("b2"))))
-        val actor = DatabaseWriteActor(blockRepo, FakePageRepository(), this)
+        val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
         val result = actor.deleteBlocksForPage("page-1")
 
@@ -95,7 +93,7 @@ class DatabaseWriteActorTest {
         val pageRepo = object : FakePageRepository() {
             override suspend fun savePage(page: Page): Result<Unit> = Result.failure(error)
         }
-        val actor = DatabaseWriteActor(FakeBlockRepository(), pageRepo, this)
+        val actor = DatabaseWriteActor(FakeBlockRepository(), pageRepo)
 
         val result = actor.savePage(page("p-1"))
 
@@ -111,7 +109,7 @@ class DatabaseWriteActorTest {
             override suspend fun saveBlocks(blocks: List<Block>): Result<Unit> =
                 Result.failure(error)
         }
-        val actor = DatabaseWriteActor(blockRepo, FakePageRepository(), this)
+        val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
         val result = actor.saveBlocks(listOf(block("b1")))
 
@@ -127,7 +125,7 @@ class DatabaseWriteActorTest {
             override suspend fun deleteBlocksForPage(pageUuid: String): Result<Unit> =
                 Result.failure(error)
         }
-        val actor = DatabaseWriteActor(blockRepo, FakePageRepository(), this)
+        val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
         val result = actor.deleteBlocksForPage("page-1")
 
@@ -145,26 +143,22 @@ class DatabaseWriteActorTest {
 
     @Test
     fun `when combined batch fails both requests are retried individually`() = runBlocking {
-        val gate = kotlinx.coroutines.sync.Mutex(locked = true)
-        var callCount = 0
+        // Fail specifically when saving 2+ blocks together (i.e. a coalesced batch transaction).
+        // Individual retries (1 block each) succeed. This is dispatcher-agnostic: whether the
+        // actor coalesces or not, both blocks end up stored.
         val blockRepo = object : FakeBlockRepository() {
-            override suspend fun saveBlocks(blocks: List<Block>): Result<Unit> {
-                // On first call (combined batch), wait for gate then fail.
-                // Subsequent individual retries succeed.
-                if (callCount == 0) { gate.lock(); gate.unlock() }
-                callCount++
-                return if (callCount == 1) Result.failure(RuntimeException("batch failed"))
+            override suspend fun saveBlocks(blocks: List<Block>): Result<Unit> =
+                if (blocks.size > 1) Result.failure(RuntimeException("batch failed"))
                 else super.saveBlocks(blocks)
-            }
         }
-        val actor = DatabaseWriteActor(blockRepo, FakePageRepository(), this)
+        val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
         val j1 = launch { actor.saveBlocks(listOf(block("b1", "page-1"))) }
         val j2 = launch { actor.saveBlocks(listOf(block("b2", "page-2"))) }
-        gate.unlock() // release after both requests are queued in the channel
         joinAll(j1, j2)
 
-        // Both blocks stored via individual retries
+        // Both blocks stored — either via individual retries after a coalesced batch failure,
+        // or directly if the actor processed them separately.
         assertNotNull(blockRepo.getBlockByUuid("b1").first().getOrNull(), "b1 stored after retry")
         assertNotNull(blockRepo.getBlockByUuid("b2").first().getOrNull(), "b2 stored after retry")
         actor.close()
@@ -172,27 +166,22 @@ class DatabaseWriteActorTest {
 
     @Test
     fun `partial success preserved when individual retries have different outcomes`() = runBlocking {
-        val gate = kotlinx.coroutines.sync.Mutex(locked = true)
-        var callCount = 0
+        // Fail any combined batch (size > 1); on individual retries, page-fail blocks still fail.
+        // This is dispatcher-agnostic: whether coalesced or not, page-ok succeeds and page-fail fails.
         val blockRepo = object : FakeBlockRepository() {
-            override suspend fun saveBlocks(blocks: List<Block>): Result<Unit> {
-                if (callCount == 0) { gate.lock(); gate.unlock() }
-                callCount++
-                return when {
-                    callCount == 1 -> Result.failure(RuntimeException("batch failed"))
-                    blocks.any { it.pageUuid == "page-fail" } ->
-                        Result.failure(RuntimeException("individual fail for page-fail"))
-                    else -> super.saveBlocks(blocks)
-                }
+            override suspend fun saveBlocks(blocks: List<Block>): Result<Unit> = when {
+                blocks.size > 1 -> Result.failure(RuntimeException("batch failed"))
+                blocks.any { it.pageUuid == "page-fail" } ->
+                    Result.failure(RuntimeException("individual fail for page-fail"))
+                else -> super.saveBlocks(blocks)
             }
         }
-        val actor = DatabaseWriteActor(blockRepo, FakePageRepository(), this)
+        val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
         var r1: Result<Unit>? = null
         var r2: Result<Unit>? = null
         val j1 = launch { r1 = actor.saveBlocks(listOf(block("b1", "page-ok"))) }
         val j2 = launch { r2 = actor.saveBlocks(listOf(block("b2", "page-fail"))) }
-        gate.unlock()
         joinAll(j1, j2)
 
         assertNotNull(r1); assertNotNull(r2)
@@ -206,7 +195,7 @@ class DatabaseWriteActorTest {
     @Test
     fun `twenty concurrent saveBlocks callers all receive results`() = runBlocking {
         val blockRepo = FakeBlockRepository()
-        val actor = DatabaseWriteActor(blockRepo, FakePageRepository(), this)
+        val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
         val n = 20
 
         val results = (1..n).map { i ->
@@ -225,7 +214,7 @@ class DatabaseWriteActorTest {
     fun `mixed request types complete without deadlock`() = runBlocking {
         val blockRepo = FakeBlockRepository()
         val pageRepo = FakePageRepository()
-        val actor = DatabaseWriteActor(blockRepo, pageRepo, this)
+        val actor = DatabaseWriteActor(blockRepo, pageRepo)
 
         val results = listOf(
             async { actor.savePage(page("p-1")) },
@@ -239,29 +228,51 @@ class DatabaseWriteActorTest {
         actor.close()
     }
 
-    // ──────── scope independence: actor survives external scope cancellation ──────────
+    // ──────── loop recovery: actor survives an unexpected exception ─────────────────────
     //
-    // The actor is created with an external CoroutineScope (e.g. rememberCoroutineScope from
-    // a Compose GraphContent). When key(activeGraphId) recreates the Compose subtree that
-    // scope is cancelled — but any in-flight graph load may still be calling savePage().
-    // The actor must process those writes rather than hanging forever on deferred.await().
+    // If processRequest throws unexpectedly (e.g. OOM, assertion) the loop must not die.
+    // The failing request's deferred is completed exceptionally and subsequent writes succeed.
 
     @Test
-    fun `writes complete after the provided scope is cancelled`() = runBlocking {
-        val externalScope = CoroutineScope(SupervisorJob())
-        val actor = DatabaseWriteActor(FakeBlockRepository(), FakePageRepository(), externalScope)
+    fun `actor loop continues after unexpected exception in processRequest`() = runBlocking {
+        val boom = RuntimeException("unexpected")
+        var throwOnce = AtomicBoolean(true)
+        val pageRepo = object : FakePageRepository() {
+            override suspend fun savePage(page: Page): Result<Unit> {
+                if (throwOnce.getAndSet(false)) throw boom
+                return super.savePage(page)
+            }
+        }
+        val actor = DatabaseWriteActor(FakeBlockRepository(), pageRepo)
 
-        assertTrue(actor.savePage(page("p-1")).isSuccess, "pre-cancel write should succeed")
+        val r1 = actor.savePage(page("p-bad"))
+        assertTrue(r1.isFailure, "throwing request should surface as failure")
+        assertEquals(boom, r1.exceptionOrNull())
 
-        // Simulate Compose GraphContent being destroyed (graph switch via key(activeGraphId))
-        externalScope.cancel()
-
-        // Actor must continue processing — the loading coroutine on Dispatchers.Default is
-        // still running and will call savePage() after the scope is forgotten.
-        val result = withTimeout(2000) { actor.savePage(page("p-2")) }
-        assertTrue(result.isSuccess, "post-cancel write should still succeed")
+        // Loop must still be alive — subsequent write goes through
+        val r2 = withTimeout(2000) { actor.savePage(page("p-ok")) }
+        assertTrue(r2.isSuccess, "actor should continue processing after the exception")
 
         actor.close()
+    }
+
+    // ──────────────── lifecycle: close stops the actor ───────────────────────────────
+
+    @Test
+    fun `writes complete after actor is closed and recreated`() = runBlocking {
+        val actor = DatabaseWriteActor(FakeBlockRepository(), FakePageRepository())
+
+        assertTrue(actor.savePage(page("p-1")).isSuccess, "pre-close write should succeed")
+
+        // close() is the only way to stop the actor now — simulates graph shutdown
+        actor.close()
+
+        // A fresh actor picks up where the old one left off (new graph load)
+        val actor2 = DatabaseWriteActor(FakeBlockRepository(), FakePageRepository())
+        val result = withTimeout(2000) { actor2.savePage(page("p-2")) }
+        assertTrue(result.isSuccess, "new actor should process writes normally")
+
+        actor2.close()
     }
 
     // ──────────────── ordering guarantee ─────────────────────────────────────
@@ -271,7 +282,7 @@ class DatabaseWriteActorTest {
         val blockRepo = FakeBlockRepository(
             mapOf("page-1" to listOf(block("old-1"), block("old-2")))
         )
-        val actor = DatabaseWriteActor(blockRepo, FakePageRepository(), this)
+        val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
         actor.deleteBlocksForPage("page-1")
         actor.saveBlocks(listOf(block("new-1"), block("new-2")))

@@ -49,7 +49,7 @@ class BacklinkRenamerTest {
     ): BacklinkRenamer {
         val fs = PlatformFileSystem()
         val graphWriter = GraphWriter(fs)
-        val actor = DatabaseWriteActor(blockRepo, pageRepo, CoroutineScope(SupervisorJob()))
+        val actor = DatabaseWriteActor(blockRepo, pageRepo)
         return BacklinkRenamer(pageRepo, blockRepo, graphWriter, actor)
     }
 
@@ -226,7 +226,7 @@ class BacklinkRenamerTest {
         blockRepo.saveBlock(makeBlock("block-2", "page-referrer", "Also [[Alpha|alias]]"))
 
         val fs = PlatformFileSystem()
-        val actor = DatabaseWriteActor(blockRepo, pageRepo, CoroutineScope(SupervisorJob()))
+        val actor = DatabaseWriteActor(blockRepo, pageRepo)
         val renamer = BacklinkRenamer(pageRepo, blockRepo, GraphWriter(fs), actor)
         val preview = renamer.preview(alphaPage, "Beta")
 

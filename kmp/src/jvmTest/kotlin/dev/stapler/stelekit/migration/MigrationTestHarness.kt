@@ -15,9 +15,6 @@ import dev.stapler.stelekit.repository.InMemoryReferenceRepository
 import dev.stapler.stelekit.repository.InMemorySearchRepository
 import dev.stapler.stelekit.repository.JournalService
 import dev.stapler.stelekit.repository.RepositorySet
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
-
 /**
  * Reusable test harness that wires up a complete in-memory migration environment.
  *
@@ -40,13 +37,11 @@ class MigrationTestHarness {
     /** In-memory SQLite database used for [ChangelogRepository] and [OperationLogger]. */
     val db: SteleDatabase = SteleDatabase(driver)
 
-    private val scope = CoroutineScope(SupervisorJob())
-
     private val blockRepo = InMemoryBlockRepository()
     private val pageRepo = InMemoryPageRepository()
 
     /** Write actor serialising all DB mutations to avoid SQLITE_BUSY contention. */
-    val writeActor: DatabaseWriteActor = DatabaseWriteActor(blockRepo, pageRepo, scope)
+    val writeActor: DatabaseWriteActor = DatabaseWriteActor(blockRepo, pageRepo)
 
     /** Operation logger backed by the in-memory SQLite DB. */
     val opLogger: OperationLogger = OperationLogger(db, sessionId = "test-session")

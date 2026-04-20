@@ -125,7 +125,7 @@ class RepositoryFactoryImpl(
         val (actor, undoManager) = if (scope != null) {
             val sessionId = dev.stapler.stelekit.util.UuidGenerator.generateV7()
             val opLogger = if (backend == GraphBackend.SQLDELIGHT) OperationLogger(database, sessionId) else null
-            val writeActor = DatabaseWriteActor(blockRepo, pageRepo, scope, opLogger)
+            val writeActor = DatabaseWriteActor(blockRepo, pageRepo, opLogger)
             val undo = if (opLogger != null) UndoManager(database, writeActor, sessionId) else null
             writeActor to undo
         } else {

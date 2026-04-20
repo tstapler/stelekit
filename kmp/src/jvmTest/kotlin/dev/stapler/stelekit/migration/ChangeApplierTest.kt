@@ -65,7 +65,7 @@ class ChangeApplierTest {
             pages.forEach { pageRepo.savePage(it) }
             blocks.forEach { blockRepo.saveBlock(it) }
         }
-        val actor = DatabaseWriteActor(blockRepo, pageRepo, CoroutineScope(SupervisorJob()))
+        val actor = DatabaseWriteActor(blockRepo, pageRepo)
         val repoSet = RepositorySet(
             blockRepository = blockRepo,
             pageRepository = pageRepo,
@@ -119,7 +119,7 @@ class ChangeApplierTest {
 
         val sessionId = "test-session"
         val opLogger = OperationLogger(database, sessionId)
-        val actor = DatabaseWriteActor(blockRepo, pageRepo, CoroutineScope(SupervisorJob()), opLogger)
+        val actor = DatabaseWriteActor(blockRepo, pageRepo, opLogger)
 
         val inMemBlockRepo = InMemoryBlockRepository()
         val inMemPageRepo = InMemoryPageRepository()

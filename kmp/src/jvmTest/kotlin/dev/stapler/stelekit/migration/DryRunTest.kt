@@ -16,8 +16,6 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.InMemorySearchRepository
 import dev.stapler.stelekit.repository.JournalService
 import dev.stapler.stelekit.repository.RepositorySet
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlin.test.AfterTest
@@ -56,8 +54,7 @@ class DryRunTest {
     private fun buildRepoSet(): Pair<RepositorySet, DatabaseWriteActor> {
         val blockRepo = InMemoryBlockRepository()
         val pageRepo = InMemoryPageRepository()
-        val scope = CoroutineScope(SupervisorJob())
-        val actor = DatabaseWriteActor(blockRepo, pageRepo, scope)
+        val actor = DatabaseWriteActor(blockRepo, pageRepo)
         val repoSet = RepositorySet(
             blockRepository = blockRepo,
             pageRepository = pageRepo,
