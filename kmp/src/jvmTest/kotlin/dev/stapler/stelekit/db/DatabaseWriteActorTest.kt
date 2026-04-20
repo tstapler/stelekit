@@ -4,11 +4,15 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.ui.fixtures.FakeBlockRepository
 import dev.stapler.stelekit.ui.fixtures.FakePageRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -232,6 +236,31 @@ class DatabaseWriteActorTest {
         ).map { it.await() }
 
         assertTrue(results.all { it.isSuccess })
+        actor.close()
+    }
+
+    // ──────── scope independence: actor survives external scope cancellation ──────────
+    //
+    // The actor is created with an external CoroutineScope (e.g. rememberCoroutineScope from
+    // a Compose GraphContent). When key(activeGraphId) recreates the Compose subtree that
+    // scope is cancelled — but any in-flight graph load may still be calling savePage().
+    // The actor must process those writes rather than hanging forever on deferred.await().
+
+    @Test
+    fun `writes complete after the provided scope is cancelled`() = runBlocking {
+        val externalScope = CoroutineScope(SupervisorJob())
+        val actor = DatabaseWriteActor(FakeBlockRepository(), FakePageRepository(), externalScope)
+
+        assertTrue(actor.savePage(page("p-1")).isSuccess, "pre-cancel write should succeed")
+
+        // Simulate Compose GraphContent being destroyed (graph switch via key(activeGraphId))
+        externalScope.cancel()
+
+        // Actor must continue processing — the loading coroutine on Dispatchers.Default is
+        // still running and will call savePage() after the scope is forgotten.
+        val result = withTimeout(2000) { actor.savePage(page("p-2")) }
+        assertTrue(result.isSuccess, "post-cancel write should still succeed")
+
         actor.close()
     }
 

@@ -7,6 +7,9 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -26,7 +29,7 @@ import kotlinx.coroutines.launch
 class DatabaseWriteActor(
     private val blockRepository: BlockRepository,
     private val pageRepository: PageRepository,
-    scope: CoroutineScope,
+    @Suppress("UNUSED_PARAMETER") scope: CoroutineScope? = null,
     private val opLogger: OperationLogger? = null,
 ) {
     sealed class WriteRequest {
@@ -55,8 +58,12 @@ class DatabaseWriteActor(
 
     private val channel = Channel<WriteRequest>(capacity = Channel.UNLIMITED)
 
+    // Own scope so the actor loop survives Compose scope cancellation (e.g. key(activeGraphId)
+    // graph switch). Callers must call close() to stop the actor.
+    private val actorScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     init {
-        scope.launch {
+        actorScope.launch {
             for (request in channel) {
                 processRequest(request)
             }
@@ -229,5 +236,8 @@ class DatabaseWriteActor(
     suspend fun deletePage(pageUuid: String): Result<Unit> =
         execute { pageRepository.deletePage(pageUuid) }
 
-    fun close() { channel.close() }
+    fun close() {
+        channel.close()
+        actorScope.cancel()
+    }
 }
