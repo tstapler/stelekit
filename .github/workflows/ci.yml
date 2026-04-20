@@ -104,6 +104,23 @@ jobs:
           path: '**/build/test-results/testDebugUnitTest/**/*.xml'
           retention-days: 7
 
+  # ── README sync check ─────────────────────────────────────────────────────
+  readme-sync:
+    name: README sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Regenerate README and check for drift
+        run: |
+          bash scripts/generate-readme.sh
+          if ! git diff --exit-code README.md; then
+            echo ""
+            echo "README.md is out of sync with docs/install.md."
+            echo "Run './scripts/generate-readme.sh' and commit the result."
+            exit 1
+          fi
+
   # JS / Web build is disabled in CI — the JS target compiles conditionally
   # (enableJs=true) but commonMain currently uses JVM-only APIs that don't
   # compile for Kotlin/JS. Re-enable once the target is multiplatform-clean.
