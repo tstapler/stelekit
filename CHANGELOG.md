@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.1](https://github.com/tstapler/stelekit/compare/v0.7.0...v0.7.1) (2026-04-20)
+
+
+### Bug Fixes
+
+* **android:** fix graph directory not found and write failures for sub-directory SAF paths ([4e42f5f](https://github.com/tstapler/stelekit/commit/4e42f5f381cb35c2c348a3ef26eb645077f6a2ee))
+* **db:** DatabaseWriteActor owns its scope, survives graph switch ([51045d1](https://github.com/tstapler/stelekit/commit/51045d168c3e0d9baa6f6c9d7343d40c2db1a233))
+* **db:** remove scope param, recover from unexpected exceptions in actor loop ([53cb69b](https://github.com/tstapler/stelekit/commit/53cb69b128321ea122ae953cc6fec66783e8d1cf))
+
 ## [0.7.0](https://github.com/tstapler/stelekit/compare/v0.6.0...v0.7.0) (2026-04-20)
 
 
