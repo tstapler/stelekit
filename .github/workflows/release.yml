@@ -301,19 +301,19 @@ jobs:
 
           if [ -n "$LINUX_APPIMAGE" ]; then
             LINUX_SHA=$(sha256sum "$LINUX_APPIMAGE" | awk '{print $1}')
-            sed -i "/on_linux/,/end/{s/sha256 \"[0-9a-f]\{64\}\"/sha256 \"$LINUX_SHA\"/; s/sha256 \"PLACEHOLDER_LINUX_SHA256\"/sha256 \"$LINUX_SHA\"/}" HomebrewFormula/stelekit.rb
+            sed -i "/on_linux/,/end/{s/sha256 \"[0-9a-f]\{64\}\"/sha256 \"$LINUX_SHA\"/; s/sha256 \"PLACEHOLDER_LINUX_SHA256\"/sha256 \"$LINUX_SHA\"/}" Formula/stelekit.rb
           fi
           if [ -n "$MACOS_DMG" ]; then
             MACOS_SHA=$(sha256sum "$MACOS_DMG" | awk '{print $1}')
-            sed -i "/on_macos/,/end/{s/sha256 \"[0-9a-f]\{64\}\"/sha256 \"$MACOS_SHA\"/; s/sha256 \"PLACEHOLDER_MACOS_SHA256\"/sha256 \"$MACOS_SHA\"/}" HomebrewFormula/stelekit.rb
+            sed -i "/on_macos/,/end/{s/sha256 \"[0-9a-f]\{64\}\"/sha256 \"$MACOS_SHA\"/; s/sha256 \"PLACEHOLDER_MACOS_SHA256\"/sha256 \"$MACOS_SHA\"/}" Formula/stelekit.rb
           fi
 
           VER="${{ needs.resolve-version.outputs.version }}"
-          sed -i "s/^  version \".*\"/  version \"${VER#v}\"/" HomebrewFormula/stelekit.rb
+          sed -i "s/^  version \".*\"/  version \"${VER#v}\"/" Formula/stelekit.rb
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add HomebrewFormula/stelekit.rb
+          git add Formula/stelekit.rb
           git diff --cached --quiet || git commit -m "chore: update Homebrew formula for ${{ needs.resolve-version.outputs.version }}"
           git fetch origin main
           git rebase origin/main
@@ -349,8 +349,8 @@ jobs:
           \`\`\`
           **Homebrew** (macOS and Linux):
           \`\`\`bash
-          brew tap tstapler/stelekit
-          brew install stelekit
+          brew tap tstapler/stelekit https://github.com/tstapler/stelekit
+          brew install tstapler/stelekit/stelekit
           \`\`\`
           **Debian/Ubuntu:** install the \`.deb\`
           **Fedora/openSUSE:** install the \`.rpm\`
@@ -395,8 +395,8 @@ jobs:
             ```
             **Homebrew** (macOS and Linux):
             ```bash
-            brew tap tstapler/stelekit
-            brew install stelekit
+            brew tap tstapler/stelekit https://github.com/tstapler/stelekit
+            brew install tstapler/stelekit/stelekit
             ```
             **Debian/Ubuntu:** install the `.deb`
             **Fedora/openSUSE:** install the `.rpm`
