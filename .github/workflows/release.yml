@@ -325,7 +325,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VER: ${{ needs.resolve-version.outputs.version }}
         run: |
-          gh release upload "$VER" release-artifacts/**/* --clobber
+          find release-artifacts -type f | xargs gh release upload "$VER" --clobber
 
           EXISTING=$(gh release view "$VER" --json body --jq '.body')
           NEW_BODY="## SteleKit ${VER}
