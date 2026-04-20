@@ -309,22 +309,35 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     actual override suspend fun pickDirectoryAsync(): String? {
         val result = onPickDirectory?.invoke() ?: return null
         // Refresh internal SAF state after a successful pick so hasStoragePermission() is current.
-        // toSafRoot() encodes all '/' as '%2F', so for root paths slashIdx is always -1.
-        // Use the same split logic as parseDocumentUri: if slashIdx == -1 the entire string
-        // is the encoded tree URI (no relative path component).
+        //
+        // We do NOT reconstruct the URI from the saf:// encoding here. toSafRoot() calls
+        // Uri.decode() internally, which strips percent-encoding, so Uri.parse() of the decoded
+        // string produces a URI whose toString() differs from the original treeUri (e.g.
+        // "primary:personal-wiki/logseq" vs "primary%3Apersonal-wiki%2Flogseq"). Android's
+        // Uri.equals() compares toString() directly — no normalization — so isSafPermissionValid
+        // would always return false on paths with colons or slashes in the document ID.
+        //
+        // Instead, read the URI that MainActivity already persisted to SharedPreferences before
+        // completing the deferred. That URI is the original treeUri from the picker and was the
+        // exact value passed to takePersistableUriPermission, so it matches what Android stored.
         if (result.startsWith("saf://")) {
             try {
-                val withoutScheme = result.removePrefix("saf://")
-                val slashIdx = withoutScheme.indexOf('/')
-                val encodedTreePart = if (slashIdx >= 0) withoutScheme.substring(0, slashIdx) else withoutScheme
-                val uri = Uri.parse(Uri.decode(encodedTreePart))
                 val ctx = context
-                if (ctx != null && isSafPermissionValid(ctx, uri)) {
-                    treeUri = uri
-                    treeRootDocId = DocumentsContract.getTreeDocumentId(uri)
-                    Log.d(TAG, "pickDirectoryAsync: SAF state refreshed — treeRootDocId=$treeRootDocId")
-                } else {
-                    Log.w(TAG, "pickDirectoryAsync: permission not valid for $uri after pick")
+                if (ctx != null) {
+                    val prefs = ctx.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+                    val uriStr = prefs.getString(KEY_SAF_TREE_URI, null)
+                    if (uriStr != null) {
+                        val uri = Uri.parse(uriStr)
+                        if (isSafPermissionValid(ctx, uri)) {
+                            treeUri = uri
+                            treeRootDocId = DocumentsContract.getTreeDocumentId(uri)
+                            Log.d(TAG, "pickDirectoryAsync: SAF state refreshed — treeRootDocId=$treeRootDocId")
+                        } else {
+                            Log.w(TAG, "pickDirectoryAsync: permission not valid for $uri after pick")
+                        }
+                    } else {
+                        Log.w(TAG, "pickDirectoryAsync: no URI in SharedPreferences after pick")
+                    }
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "pickDirectoryAsync: failed to refresh SAF state", e)

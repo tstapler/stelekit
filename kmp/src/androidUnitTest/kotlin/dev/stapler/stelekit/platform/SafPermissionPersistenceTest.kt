@@ -1,12 +1,14 @@
 package dev.stapler.stelekit.platform
 
 import android.content.Context
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 
 @RunWith(RobolectricTestRunner::class)
@@ -55,5 +57,26 @@ class SafPermissionPersistenceTest {
         val fs = PlatformFileSystem().apply { init(context) }
         val safPath = "saf://content%3A...//pages/foo.md"
         assertEquals(safPath, fs.expandTilde(safPath))
+    }
+
+    // Regression: decoding a saf:// URI and re-parsing it strips percent-encoding,
+    // causing isSafPermissionValid to return false on sub-directory picks whose document
+    // ID contains ':' or '/'. Verifies that Uri.parse(uriStr) round-trips correctly
+    // but Uri.parse(Uri.decode(uriStr)) does not — which is why pickDirectoryAsync must
+    // read from SharedPreferences rather than reconstruct the URI from the saf:// path.
+    @Test
+    fun `URI decoded and reparsed does not match original for sub-directory paths`() {
+        val originalStr = "content://com.android.externalstorage.documents/tree/primary%3Apersonal-wiki%2Flogseq"
+        val original = Uri.parse(originalStr)
+
+        // Old (buggy) approach: decode then re-parse — strips percent-encoding
+        val decodedReparsed = Uri.parse(Uri.decode(originalStr))
+        assertNotEquals(original, decodedReparsed,
+            "Decoded-and-reparsed URI must differ from original; if equal the old bug has regressed")
+
+        // New (correct) approach: parse directly from the stored string
+        val fromPrefs = Uri.parse(originalStr)
+        assertEquals(original, fromPrefs,
+            "URI parsed directly from SharedPreferences string must equal original")
     }
 }
