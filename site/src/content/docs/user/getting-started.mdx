@@ -10,6 +10,40 @@ Or [try it in your browser](/demo/) — no install required.
 
 **Prerequisites for desktop**: JDK 21 must be installed. The download page lists the exact build for your OS.
 
+### macOS and Linux — Homebrew
+
+```bash
+brew tap tstapler/stelekit
+brew install stelekit
+```
+
+### Android — F-Droid
+
+SteleKit is available on our self-hosted F-Droid repository. This gives you automatic update notifications through the F-Droid app.
+
+1. Install [F-Droid](https://f-droid.org/) if you haven't already
+2. Open F-Droid → **Settings** → **Repositories** → **+**
+3. Add this repository URL:
+   ```
+   https://stelekit.stapler.dev/fdroid/repo
+   ```
+4. Refresh the repository list and search for **SteleKit**
+
+Alternatively, download the APK directly from the [GitHub releases page](https://github.com/tstapler/stelekit/releases) and enable **Install from unknown sources** in Android settings.
+
+### Linux — package formats
+
+The GitHub releases page provides:
+- `.AppImage` — works on any distro (recommended for Arch/Manjaro)
+- `.deb` — Debian/Ubuntu
+- `.rpm` — Fedora/openSUSE
+
+```bash
+# AppImage
+chmod +x SteleKit-*-linux.AppImage
+./SteleKit-*-linux.AppImage
+```
+
 ## Open a graph
 
 A *graph* is a directory of Markdown files. SteleKit reads the same format as Logseq.

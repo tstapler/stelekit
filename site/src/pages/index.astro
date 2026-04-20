@@ -13,16 +13,16 @@
       *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
       :root {
-        --bg: #0d1117;
-        --bg-card: #161b22;
-        --bg-code: #1c2128;
-        --border: #30363d;
-        --text: #c9d1d9;
-        --text-muted: #8b949e;
-        --accent: #58a6ff;
-        --accent-dim: #1f3a5f;
-        --green: #3fb950;
-        --yellow: #d29922;
+        --bg: #282828;        /* StoneBackground */
+        --bg-card: #32302f;
+        --bg-code: #3c3836;   /* GraniteSurface */
+        --border: #504945;    /* PlinthDark */
+        --text: #ebdbb2;      /* SandText */
+        --text-muted: #928374; /* WornStone */
+        --accent: #83a598;    /* PatinaAccent */
+        --accent-dim: #1d3532;
+        --green: #83a598;     /* PatinaAccent — working/success */
+        --yellow: #d5c4a1;    /* PaleStone — planned */
       }
 
       body {
@@ -47,18 +47,19 @@
         background: var(--bg);
         z-index: 10;
       }
-      .nav-brand { font-weight: 700; font-size: 1.1rem; color: var(--text); }
+      .nav-brand { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; font-size: 1.1rem; color: var(--text); }
+      .nav-logo { width: 28px; height: 28px; flex-shrink: 0; }
       .nav-links { display: flex; gap: 1.5rem; align-items: center; }
       .nav-links a { color: var(--text-muted); font-size: 0.9rem; }
       .nav-cta {
         background: var(--accent);
-        color: #0d1117 !important;
+        color: var(--bg) !important;
         padding: 0.4rem 1rem;
         border-radius: 6px;
         font-weight: 600;
         text-decoration: none !important;
       }
-      .nav-cta:hover { background: #79c0ff; }
+      .nav-cta:hover { background: #9dbfb8; }
 
       /* --- Sections --- */
       section { padding: 5rem 2rem; }
@@ -76,7 +77,7 @@
         line-height: 1.15;
         letter-spacing: -0.02em;
         margin-bottom: 1.25rem;
-        color: #e6edf3;
+        color: var(--text);
       }
       .hero p {
         font-size: 1.15rem;
@@ -87,7 +88,7 @@
       .hero-buttons { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
       .btn-primary {
         background: var(--accent);
-        color: #0d1117;
+        color: var(--bg);
         padding: 0.75rem 1.75rem;
         border-radius: 8px;
         font-weight: 700;
@@ -95,7 +96,7 @@
         display: inline-block;
         transition: background 0.15s;
       }
-      .btn-primary:hover { background: #79c0ff; text-decoration: none; }
+      .btn-primary:hover { background: #9dbfb8; text-decoration: none; }
       .btn-secondary {
         background: var(--bg-card);
         color: var(--text);
@@ -138,7 +139,7 @@
         padding: 1.5rem;
       }
       .feature-icon { font-size: 1.5rem; margin-bottom: 0.75rem; }
-      .feature-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.4rem; color: #e6edf3; }
+      .feature-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.4rem; color: var(--text); }
       .feature-card p { color: var(--text-muted); font-size: 0.9rem; }
 
       /* --- Comparison table --- */
@@ -165,7 +166,7 @@
         font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
         font-size: 0.9rem;
         overflow-x: auto;
-        color: #e6edf3;
+        color: var(--text);
       }
       .code-block .comment { color: var(--text-muted); }
       .code-block .cmd { color: var(--green); }
@@ -185,7 +186,7 @@
         transition: border-color 0.15s;
       }
       .audience-card:hover { border-color: var(--accent); text-decoration: none; }
-      .audience-card h3 { font-size: 1rem; font-weight: 700; color: #e6edf3; margin-bottom: 0.4rem; }
+      .audience-card h3 { font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: 0.4rem; }
       .audience-card p { color: var(--text-muted); font-size: 0.88rem; }
 
       /* --- Section headers --- */
@@ -200,7 +201,7 @@
       .section-title {
         font-size: clamp(1.5rem, 3vw, 2rem);
         font-weight: 700;
-        color: #e6edf3;
+        color: var(--text);
         margin-bottom: 0.75rem;
       }
       .section-desc {
@@ -218,6 +219,29 @@
         font-size: 0.85rem;
       }
 
+      /* --- Hero logo --- */
+      .hero-logo { margin-bottom: 1.5rem; }
+      .hero-logo img { width: 80px; height: 80px; }
+
+      /* --- Install grid --- */
+      .install-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 1.25rem;
+      }
+      .install-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .install-platform { font-weight: 700; color: var(--text); font-size: 0.95rem; }
+      .install-hint { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem; }
+      .install-hint a { color: var(--accent); }
+
       @media (max-width: 600px) {
         nav { padding: 1rem; }
         .nav-links { gap: 1rem; }
@@ -229,7 +253,10 @@
   <body>
 
     <nav>
-      <a href="/" class="nav-brand">SteleKit</a>
+      <a href="/" class="nav-brand">
+        <img src="/brand/stelekit-mark.svg" alt="" class="nav-logo" aria-hidden="true" />
+        SteleKit
+      </a>
       <div class="nav-links">
         <a href="/demo/" class="nav-cta">Try in Browser</a>
         <a href="/user/getting-started/">Docs</a>
@@ -240,6 +267,9 @@
     <!-- Hero -->
     <section class="hero">
       <div class="container">
+        <div class="hero-logo">
+          <img src="/brand/stelekit-mark.svg" alt="SteleKit" width="80" height="80" />
+        </div>
         <h1>Your knowledge,<br />carved in stone.</h1>
         <p>A local-first outliner for Desktop and Android. Reads your existing Logseq markdown. No install required to try.</p>
         <div class="hero-buttons">
@@ -374,16 +404,38 @@
       </div>
     </section>
 
-    <!-- Quick start -->
+    <!-- Install -->
     <section>
       <div class="container">
-        <div class="section-label">Quick Start</div>
-        <h2 class="section-title">Up in two commands</h2>
-        <p class="section-desc">Requires JDK 21. Point it at your existing Logseq graph directory — it reads the same markdown files.</p>
-        <div class="code-block">
-          <span class="comment"># Clone and run</span><br />
-          <span class="cmd">git clone https://github.com/tstapler/stelekit</span><br />
-          <span class="cmd">./gradlew run</span>
+        <div class="section-label">Install</div>
+        <h2 class="section-title">Get SteleKit</h2>
+        <p class="section-desc">Download directly from GitHub or install via your platform's package manager.</p>
+        <div class="install-grid">
+          <div class="install-card">
+            <div class="install-platform">macOS &amp; Linux</div>
+            <div class="code-block">
+              <span class="comment"># Homebrew</span><br />
+              <span class="cmd">brew tap tstapler/stelekit</span><br />
+              <span class="cmd">brew install stelekit</span>
+            </div>
+            <p class="install-hint">Or download the <a href="https://github.com/tstapler/stelekit/releases">.dmg / .AppImage / .deb / .rpm</a>.</p>
+          </div>
+          <div class="install-card">
+            <div class="install-platform">Android</div>
+            <div class="code-block">
+              <span class="comment"># F-Droid — add our repo</span><br />
+              <span class="cmd">stelekit.stapler.dev/fdroid/repo</span>
+            </div>
+            <p class="install-hint">Open F-Droid → Settings → Add repository, paste the URL above. Or <a href="https://github.com/tstapler/stelekit/releases">download the APK</a> directly.</p>
+          </div>
+          <div class="install-card">
+            <div class="install-platform">Windows</div>
+            <div class="code-block">
+              <span class="comment"># Download installer</span><br />
+              <span class="cmd">github.com/tstapler/stelekit/releases</span>
+            </div>
+            <p class="install-hint">Download the <code>.msi</code> from the latest release.</p>
+          </div>
         </div>
       </div>
     </section>
