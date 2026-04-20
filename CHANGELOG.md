@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/tstapler/stelekit/compare/v0.4.0...v0.5.0) (2026-04-20)
+
+
+### Features
+
+* navigate to today's journal on app startup ([#12](https://github.com/tstapler/stelekit/issues/12)) ([262de3c](https://github.com/tstapler/stelekit/commit/262de3c0a64d5c78723452ccbd1915fa815835e6))
+
+
+### Bug Fixes
+
+* **ci:** fix artifact upload condition — release-please not in needs chain ([aa33116](https://github.com/tstapler/stelekit/commit/aa331160671d4b6b68be7ca8db25b5f9c2c4f851))
+* **ci:** fix fdroid workflow race condition, missing permission, Node version ([04a286b](https://github.com/tstapler/stelekit/commit/04a286bb919797c86ec183f3d6e1741f93d756f9))
+
 ## [0.4.0](https://github.com/tstapler/stelekit/compare/v0.3.2...v0.4.0) (2026-04-19)
 
 
