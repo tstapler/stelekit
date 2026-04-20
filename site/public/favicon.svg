@@ -1,1 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path fill-rule="evenodd" d="M81 36 64 0 47 36l-1 2-9-10a6 6 0 0 0-9 9l10 10h-2L0 64l36 17h2L28 91a6 6 0 1 0 9 9l9-10 1 2 17 36 17-36v-2l9 10a6 6 0 1 0 9-9l-9-9 2-1 36-17-36-17-2-1 9-9a6 6 0 1 0-9-9l-9 10v-2Zm-17 2-2 5c-4 8-11 15-19 19l-5 2 5 2c8 4 15 11 19 19l2 5 2-5c4-8 11-15 19-19l5-2-5-2c-8-4-15-11-19-19l-2-5Z" clip-rule="evenodd"/><path d="M118 19a6 6 0 0 0-9-9l-3 3a6 6 0 1 0 9 9l3-3Zm-96 4c-2 2-6 2-9 0l-3-3a6 6 0 1 1 9-9l3 3c3 2 3 6 0 9Zm0 82c-2-2-6-2-9 0l-3 3a6 6 0 1 0 9 9l3-3c3-2 3-6 0-9Zm96 4a6 6 0 0 1-9 9l-3-3a6 6 0 1 1 9-9l3 3Z"/><style>path{fill:#000}@media (prefers-color-scheme:dark){path{fill:#fff}}</style></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Stone background -->
+  <rect width="64" height="64" rx="10" fill="#282828"/>
+  <!-- Plinth -->
+  <rect x="7.5" y="55.5" width="49.25" height="2.75" rx="0.5" fill="#504945"/>
+  <!-- Back-left stele -->
+  <polygon points="10,56.25 23.75,56.25 23.375,33.5 21.5,14 12,14.5 10.25,34" fill="#B8AFA0"/>
+  <!-- Back-right stele -->
+  <polygon points="37.25,56.25 54.25,56.25 54.625,35 52.5,21 39,20.5 36.875,35.75" fill="#B8AFA0"/>
+  <!-- Front stele (tallest, warmest stone) -->
+  <polygon points="21.5,56.5 42.5,56.5 40.625,31.25 38.625,7.25 25,7.75 22.875,31.75" fill="#928374"/>
+  <!-- Carved inscription bands on front stele -->
+  <rect x="26.375" y="15" width="11.875" height="2.25" fill="#1D2021"/>
+  <rect x="26.625" y="19" width="9.125" height="2.25" fill="#1D2021"/>
+  <rect x="26.5" y="25.5" width="10.875" height="2.25" fill="#1D2021"/>
+  <rect x="26.875" y="29.5" width="7.625" height="2.25" fill="#1D2021"/>
+</svg>

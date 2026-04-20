@@ -10,6 +10,12 @@ export default defineConfig({
 		starlight({
 			title: 'SteleKit',
 			description: 'A local-first outliner for Desktop and Android. Reads your Logseq markdown.',
+			logo: {
+				src: './src/assets/stelekit-mark.svg',
+				alt: 'SteleKit',
+			},
+			favicon: '/favicon.svg',
+			customCss: ['./src/styles/custom.css'],
 			social: [
 				{ icon: 'github', label: 'GitHub', href: 'https://github.com/tstapler/stelekit' },
 			],

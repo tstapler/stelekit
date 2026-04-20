@@ -1,0 +1,40 @@
+/*
+ * SteleKit — Starlight stone palette override
+ * Matches the landing page's Gruvbox-inspired warm stone theme.
+ */
+
+/* Accent (used in both modes for interactive elements) */
+:root {
+  --sl-color-accent-low: #1d3532;
+  --sl-color-accent: #83a598;
+  --sl-color-accent-high: #b8d4d0;
+}
+
+/* Dark mode: warm stone */
+:root[data-theme='dark'] {
+  --sl-color-black: #282828;   /* StoneBackground — main bg */
+  --sl-color-white: #ebdbb2;   /* SandText — primary text */
+  --sl-color-gray-1: #d5c4a1;  /* warm light */
+  --sl-color-gray-2: #bdae93;
+  --sl-color-gray-3: #a89984;
+  --sl-color-gray-4: #928374;  /* WornStone — muted text */
+  --sl-color-gray-5: #665c54;
+  --sl-color-gray-6: #504945;  /* PlinthDark — borders */
+  --sl-color-gray-7: #3c3836;  /* GraniteSurface — nav/sidebar */
+}
+
+/* Light mode: warm parchment */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #c5dbd8;
+  --sl-color-accent: #458588;
+  --sl-color-accent-high: #1a5456;
+  --sl-color-white: #f5f0e8;   /* warm parchment — main bg */
+  --sl-color-black: #1d2021;   /* darkest stone — text */
+  --sl-color-gray-1: #3c3836;
+  --sl-color-gray-2: #504945;
+  --sl-color-gray-3: #665c54;
+  --sl-color-gray-4: #7c7369;
+  --sl-color-gray-5: #928374;
+  --sl-color-gray-6: #b8afa0;  /* pale stone — borders */
+  --sl-color-gray-7: #ede8dc;  /* limestone — nav/sidebar */
+}
