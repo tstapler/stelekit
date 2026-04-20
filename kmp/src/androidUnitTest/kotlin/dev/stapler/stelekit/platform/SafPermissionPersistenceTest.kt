@@ -59,6 +59,32 @@ class SafPermissionPersistenceTest {
         assertEquals(safPath, fs.expandTilde(safPath))
     }
 
+    // Regression: Uri.decode() on the tree URI part of a saf:// path causes Android's URI
+    // parser to split document IDs containing ':' or '/' into multiple path segments.
+    // getTreeDocumentId() then returns only the first segment, making every SAF file
+    // operation resolve to the wrong location (graph directory not found, writes fail).
+    @Test
+    fun `decoded tree URI produces wrong path segments for sub-directory document IDs`() {
+        val originalStr = "content://com.android.externalstorage.documents/tree/primary%3Apersonal-wiki%2Flogseq"
+        val originalUri = Uri.parse(originalStr)
+
+        // Correct: document ID "primary:personal-wiki/logseq" is preserved as a single path segment
+        assertEquals(
+            listOf("tree", "primary:personal-wiki/logseq"),
+            originalUri.pathSegments.takeLast(2),
+            "Original URI must have the full document ID as a single path segment"
+        )
+
+        // Buggy: Uri.decode strips encoding, parser splits on the unencoded '/' in the doc ID →
+        // path segments become ["tree", "primary:personal-wiki", "logseq"] instead of two segments
+        val decodedUri = Uri.parse(Uri.decode(originalStr))
+        assertNotEquals(
+            listOf("tree", "primary:personal-wiki/logseq"),
+            decodedUri.pathSegments.takeLast(2),
+            "Decoded-and-reparsed URI splits the document ID — confirms the bug being guarded against"
+        )
+    }
+
     // Regression: decoding a saf:// URI and re-parsing it strips percent-encoding,
     // causing isSafPermissionValid to return false on sub-directory picks whose document
     // ID contains ':' or '/'. Verifies that Uri.parse(uriStr) round-trips correctly

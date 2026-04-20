@@ -101,23 +101,34 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     private fun parseDocumentUri(safPath: String): Uri {
         val withoutScheme = safPath.removePrefix("saf://")
+        // The first unencoded '/' separates the encoded tree URI from the relative path.
+        // toSafRoot() encodes every character including '/' as '%2F', so there are no
+        // unencoded slashes in the tree part — slashIdx == -1 means this is the tree root.
         val slashIdx = withoutScheme.indexOf('/')
-        // slashIdx == -1 means this IS the tree root (no relative path component).
-        // toSafRoot() encodes every '/' in the tree URI as '%2F', so the first
-        // unencoded '/' is always the separator between the tree URI and the relative path.
-        val encodedTreePart = if (slashIdx >= 0) withoutScheme.substring(0, slashIdx) else withoutScheme
-        val treeUri = Uri.parse(Uri.decode(encodedTreePart))
-        val treeDocId = DocumentsContract.getTreeDocumentId(treeUri)
         val relativePath = if (slashIdx >= 0) withoutScheme.substring(slashIdx + 1) else ""
+
+        // Use the stored treeUri directly rather than reconstructing it from the saf:// path.
+        // Reconstructing via Uri.decode() strips percent-encoding, which causes Android's URI
+        // parser to split document IDs containing ':' or '/' (e.g. "primary:personal-wiki/logseq")
+        // into multiple path segments. getTreeDocumentId() then returns only the first segment,
+        // making every file/directory lookup resolve to the wrong location.
+        val resolvedTreeUri = treeUri
+            ?: Uri.parse(Uri.decode(withoutScheme.let {
+                if (slashIdx >= 0) it.substring(0, slashIdx) else it
+            }))
+        val treeDocId = DocumentsContract.getTreeDocumentId(resolvedTreeUri)
         val childDocId = if (relativePath.isEmpty()) treeDocId else "$treeDocId/$relativePath"
-        return DocumentsContract.buildDocumentUriUsingTree(treeUri, childDocId)
+        return DocumentsContract.buildDocumentUriUsingTree(resolvedTreeUri, childDocId)
     }
 
     private fun parseTreeUri(safPath: String): Uri {
-        val withoutScheme = safPath.removePrefix("saf://")
-        val slashIdx = withoutScheme.indexOf('/')
-        val encodedTreePart = if (slashIdx >= 0) withoutScheme.substring(0, slashIdx) else withoutScheme
-        return Uri.parse(Uri.decode(encodedTreePart))
+        // Same encoding issue as parseDocumentUri — use stored treeUri directly.
+        return treeUri ?: run {
+            val withoutScheme = safPath.removePrefix("saf://")
+            val slashIdx = withoutScheme.indexOf('/')
+            val encodedTreePart = if (slashIdx >= 0) withoutScheme.substring(0, slashIdx) else withoutScheme
+            Uri.parse(Uri.decode(encodedTreePart))
+        }
     }
 
     /** Returns the stored tree URI (used by MainActivity to pre-fill the folder picker hint). */
@@ -359,12 +370,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         if (!path.startsWith("saf://")) return super.displayNameForPath(path)
         return try {
             val ctx = context ?: return super.displayNameForPath(path)
-            // Decode the tree URI embedded in the SAF path and ask the provider for its name
-            val withoutScheme = path.removePrefix("saf://")
-            val slashIdx = withoutScheme.indexOf('/')
-            val encodedTreePart = if (slashIdx >= 0) withoutScheme.substring(0, slashIdx) else withoutScheme
-            val treeUriDecoded = Uri.parse(Uri.decode(encodedTreePart))
-            DocumentFile.fromTreeUri(ctx, treeUriDecoded)?.name
+            val resolvedTreeUri = treeUri ?: return super.displayNameForPath(path)
+            DocumentFile.fromTreeUri(ctx, resolvedTreeUri)?.name
                 ?: super.displayNameForPath(path)
         } catch (_: Exception) { super.displayNameForPath(path) }
     }
