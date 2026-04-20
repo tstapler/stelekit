@@ -18,17 +18,20 @@ import sys, pathlib
 readme_path = pathlib.Path(sys.argv[1])
 install_path = pathlib.Path(sys.argv[2])
 
-readme = readme_path.read_text()
-install = install_path.read_text().rstrip('\n')
+readme = readme_path.read_text(encoding="utf-8")
+install = install_path.read_text(encoding="utf-8").rstrip('\n')
 
 begin = '<!-- BEGIN_INSTALL -->'
 end   = '<!-- END_INSTALL -->'
 
 start = readme.find(begin)
-stop  = readme.find(end)
+if start == -1:
+    print("error: BEGIN_INSTALL marker not found in README.md", file=sys.stderr)
+    sys.exit(1)
 
-if start == -1 or stop == -1:
-    print("error: markers not found in README.md", file=sys.stderr)
+stop = readme.find(end, start)
+if stop == -1:
+    print("error: END_INSTALL marker not found after BEGIN_INSTALL in README.md", file=sys.stderr)
     sys.exit(1)
 
 new_readme = (
@@ -39,6 +42,6 @@ new_readme = (
     + readme[stop:]
 )
 
-readme_path.write_text(new_readme)
+readme_path.write_text(new_readme, encoding="utf-8")
 print("README.md updated.")
 PY
