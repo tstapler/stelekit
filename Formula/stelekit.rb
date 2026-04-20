@@ -54,15 +54,34 @@ class Stelekit < Formula
     if OS.linux?
       system "update-desktop-database", share/"applications" rescue nil
       system "gtk-update-icon-cache", "-f", "-t", share/"icons/hicolor" rescue nil
+
+      # Copy desktop entry and icon to the user's local share so app launchers
+      # that don't check HOMEBREW_PREFIX (i.e. XDG_DATA_DIRS not set) find them.
+      home = Pathname.new(ENV.fetch("HOME", ""))
+      user_apps = home/".local/share/applications"
+      user_apps.mkpath
+      cp share/"applications/stelekit.desktop", user_apps/"stelekit.desktop"
+      system "update-desktop-database", user_apps rescue nil
+
+      user_icons = home/".local/share/icons/hicolor/256x256/apps"
+      user_icons.mkpath
+      cp share/"icons/hicolor/256x256/apps/stelekit.png", user_icons/"stelekit.png"
     end
   end
 
   def caveats
     if OS.linux?
       <<~EOS
-        SteleKit is installed as an AppImage. To appear in your app launcher
-        immediately, refresh the desktop database:
+        SteleKit has been registered in your app launcher automatically.
+        If it doesn't appear, your desktop session may need to reload. Log out
+        and back in, or run:
           update-desktop-database ~/.local/share/applications
+
+        For app launchers to also pick up future Homebrew-installed apps, add
+        Homebrew's share directory to XDG_DATA_DIRS by sourcing brew shellenv
+        in ~/.profile or ~/.bash_profile:
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+
         If the app fails to start, try:
           APPIMAGE_EXTRACT_AND_RUN=1 stelekit
       EOS
