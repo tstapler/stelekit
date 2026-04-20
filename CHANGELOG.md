@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/tstapler/stelekit/compare/v0.6.0...v0.7.0) (2026-04-20)
+
+
+### Features
+
+* **site:** apply stone brand palette, fix copy, replace emoji icons, brand favicon ([257e82c](https://github.com/tstapler/stelekit/commit/257e82c374462507b2c1829d9031f2d1f6dc6826))
+
+
+### Bug Fixes
+
+* **android:** fix hasStoragePermission=false after SAF folder pick for sub-directory paths ([c711e85](https://github.com/tstapler/stelekit/commit/c711e85ccd35b24839fe16758f428e0e8f4f5cb2))
+* **brew:** copy desktop entry to user share dir on Linux install ([cf0c8af](https://github.com/tstapler/stelekit/commit/cf0c8af858d7028f3bcd1e15561c477fec6e698f))
+
 ## [0.6.0](https://github.com/tstapler/stelekit/compare/v0.5.0...v0.6.0) (2026-04-20)
 
 
