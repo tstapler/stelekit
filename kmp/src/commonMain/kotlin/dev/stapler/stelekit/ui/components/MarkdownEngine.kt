@@ -51,7 +51,7 @@ private class RenderContext(
     val linkColor: Color,
     val blockRefBg: Color,
     val codeBackground: Color,
-    val suggestionMatcher: AhoCorasickMatcher?,
+    val suggestionSpans: List<AhoCorasickMatcher.MatchSpan>,
     val suggestionColor: Color,
     var searchFrom: Int = 0,
 )
@@ -333,12 +333,12 @@ private fun AnnotatedString.Builder.renderGapWithSuggestions(
     gapStart: Int,
     ctx: RenderContext,
 ) {
-    val matcher = ctx.suggestionMatcher
-    if (matcher == null || gapText.isEmpty()) {
-        if (gapText.isNotEmpty()) append(gapText)
-        return
-    }
-    val matches = matcher.findAll(gapText)
+    if (gapText.isEmpty()) return
+    val gapEnd = gapStart + gapText.length
+    // Filter pre-computed spans to those that fall within this gap and remap to gap-local offsets.
+    val matches = ctx.suggestionSpans
+        .filter { it.start >= gapStart && it.end <= gapEnd }
+        .map { AhoCorasickMatcher.MatchSpan(it.start - gapStart, it.end - gapStart, it.canonicalName) }
     if (matches.isEmpty()) {
         append(gapText)
         return
@@ -380,7 +380,7 @@ fun parseMarkdownWithStyling(
     blockRefBackgroundColor: Color = linkColor.copy(alpha = 0.08f),
     resolvedRefs: Map<String, String> = emptyMap(),
     codeBackground: Color = Color.Gray.copy(alpha = 0.15f),
-    suggestionMatcher: AhoCorasickMatcher? = null,
+    suggestionSpans: List<AhoCorasickMatcher.MatchSpan> = emptyList(),
     suggestionColor: Color = Color.Unspecified,
 ): AnnotatedString {
     val nodes = InlineParser(text).parse()
@@ -390,7 +390,7 @@ fun parseMarkdownWithStyling(
         linkColor = linkColor,
         blockRefBg = blockRefBackgroundColor,
         codeBackground = codeBackground,
-        suggestionMatcher = suggestionMatcher,
+        suggestionSpans = suggestionSpans,
         suggestionColor = suggestionColor,
     )
     return buildAnnotatedString {

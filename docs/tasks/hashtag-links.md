@@ -2,7 +2,7 @@
 
 **Priority**: P0 — Launch-critical  
 **Created**: 2026-04-16  
-**Status**: Ready for Implementation
+**Status**: Stories 1 and 2 complete; Story 3 complete. Full feature implemented.
 
 ---
 
@@ -57,7 +57,7 @@ Users migrating from Logseq carry graphs where `#tag`, `#meeting`, `#project/alp
 
 ## Story Breakdown
 
-### Story 1: Multi-Word Hashtag Parsing [~2 days]
+### Story 1: Multi-Word Hashtag Parsing [~2 days] [STATUS: COMPLETE]
 
 **User value**: `#[[Meeting Notes]]` is a valid Logseq hashtag for a page with spaces. Without this, multi-word hashtag links silently break and users see `#[[Meeting` rendered as a tag and `Notes]]` as trailing text.
 
@@ -70,7 +70,7 @@ Users migrating from Logseq carry graphs where `#tag`, `#meeting`, `#project/alp
 
 ---
 
-#### Task 1.1: Extend `InlineParser.parseTag` to Handle `#[[bracket form]]` [2h]
+#### Task 1.1: Extend `InlineParser.parseTag` to Handle `#[[bracket form]]` [2h] [STATUS: COMPLETE]
 
 **Objective**: When the lexer emits `HASH` followed immediately by `L_BRACKET L_BRACKET`, delegate to a bracket-form tag parse path that reads until `R_BRACKET R_BRACKET` and emits `TagNode("multi word content")`.
 
@@ -111,7 +111,7 @@ Users migrating from Logseq carry graphs where `#tag`, `#meeting`, `#project/alp
 
 ---
 
-#### Task 1.2: Update `reconstructContent()` for Bracket-Form Hashtag Round-Trip [1h]
+#### Task 1.2: Update `reconstructContent()` for Bracket-Form Hashtag Round-Trip [1h] [STATUS: COMPLETE]
 
 **Objective**: `MarkdownParser.reconstructContent()` already handles `TagNode` by emitting `#${node.tag}`. Verify this is correct for multi-word tags: `TagNode("multi word")` must serialize as `#[[multi word]]`, not `#multi word`.
 
@@ -146,7 +146,7 @@ Users migrating from Logseq carry graphs where `#tag`, `#meeting`, `#project/alp
 
 ---
 
-### Story 2: Hashtag Participation in Backlink Rename [~1 day]
+### Story 2: Hashtag Participation in Backlink Rename [~1 day] [STATUS: COMPLETE]
 
 **User value**: When a user renames the page `meeting` to `meeting-notes`, all `#meeting` references across the graph should become `#meeting-notes`. Without this, renamed pages leave broken hashtag links that silently point nowhere.
 
@@ -159,7 +159,7 @@ Users migrating from Logseq carry graphs where `#tag`, `#meeting`, `#project/alp
 
 ---
 
-#### Task 2.1: Implement `replaceHashtag` Function in `BacklinkRenamer.kt` [2h]
+#### Task 2.1: Implement `replaceHashtag` Function in `BacklinkRenamer.kt` [2h] [STATUS: COMPLETE]
 
 **Objective**: Add a `replaceHashtag(content, oldName, newName)` function parallel to `replaceWikilink`. Apply both rewrites during `execute()`. Extend `preview()` to count blocks with either form.
 
@@ -199,7 +199,7 @@ Users migrating from Logseq carry graphs where `#tag`, `#meeting`, `#project/alp
 
 ---
 
-### Story 3: Hashtag Autocomplete in BlockEditor [~1 day]
+### Story 3: Hashtag Autocomplete in BlockEditor [~1 day] [STATUS: COMPLETE]
 
 **User value**: Typing `#` in the editor should trigger the same page-search autocomplete popup that `[[` triggers. Users expect to be able to type `#ide` and select `idea` to insert `#idea`. Without this, the only way to create a hashtag link is to type the full name manually, making hashtags harder to use than wikilinks.
 
@@ -212,7 +212,7 @@ Users migrating from Logseq carry graphs where `#tag`, `#meeting`, `#project/alp
 
 ---
 
-#### Task 3.1: Add `#` Autocomplete Trigger Detection in `BlockEditor.kt` [2h]
+#### Task 3.1: Add `#` Autocomplete Trigger Detection in `BlockEditor.kt` [2h] [STATUS: COMPLETE]
 
 **Objective**: The `onValueChange` handler in `BlockEditor.kt` already detects `[[` via regex and sets `AutocompleteState`. Add a parallel detection path for `#word` that also sets `AutocompleteState` with the partial tag name as the query.
 

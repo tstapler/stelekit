@@ -4,8 +4,8 @@
 - **Migration State**: Feature Implementation Phase - Core features complete!
 - **Technology Stack**: Kotlin 2.0.21, Compose Multiplatform 1.7.1, **SQLDelight 2.1.0 (Persistent)**
 - **Recent Activity**: Implemented FTS5 search with BM25 ranking, page-term highlighting with click-to-link UX, and Gradle daemon cleanup.
-- **Last Updated**: April 12, 2026
-- **Current Focus**: Knowledge Graph Maintenance (KGM Story 1 — Page Rename with Backlink Update)
+- **Last Updated**: April 20, 2026
+- **Current Focus**: KGM Story 1 close-out (command palette rename entry + hashtag-rename integration test), then Voice Mode Story 2 (LLM formatting + settings)
 
 ## Build Status
 
@@ -83,7 +83,7 @@ Voice capture pipeline: mic tap → AudioRecord + MediaCodec → Whisper STT →
 - [x] **[MG-001] Multi-Graph Support** - Allow users to manage multiple knowledge graphs with per-graph SQLite databases.
 
 ### P0: LOGSEQ PARITY (Launch-Critical)
-- [ ] **[HASH-001] Hashtag Links** — `#tag` and `#[[multi word tag]]` must parse as page references, render as clickable links, participate in backlink rename, and trigger autocomplete. Every Logseq graph uses hashtags; without this, all tag backlinks are broken. ([plan](docs/tasks/hashtag-links.md))
+- [x] **[HASH-001] Hashtag Links** — `#tag` and `#[[multi word tag]]` parse as page references, render as clickable links, participate in backlink rename (`replaceHashtag`), and trigger autocomplete. All three stories complete. ([plan](docs/tasks/hashtag-links.md))
 
 ### P1: FEATURE COMPLETION
 - [x] **[OPS-001] Implement Subtree Operations** - `promoteSubtree`, `demoteSubtree`, and `duplicateSubtree` are implemented.
@@ -94,7 +94,7 @@ Voice capture pipeline: mic tap → AudioRecord + MediaCodec → Whisper STT →
 - [x] **[ARCH-001] Extract JournalService** - Remove journal-domain methods from `PageRepository`; centralize creation logic in a `JournalService`. ([plan](docs/tasks/journal-service-extraction.md))
 - [x] **[PTH-001] Page Term Highlighting** - Highlight unlinked page-name occurrences in block view mode; click to convert to `[[wikilink]]`. Aho-Corasick matching, reactive `PageNameIndex`, `LinkSuggestionPopup`. ([plan](docs/tasks/page-term-highlighting.md))
 - [ ] **[GV-001] Graph View (Knowledge Graph Visualization)** — Force-directed global graph, local graph sidebar panel, namespace colour clustering, filters (journals/orphans/hops), Barnes–Hut for large graphs. ([plan](docs/tasks/graph-view.md))
-- [ ] **[KGM-001] Knowledge Graph Maintenance** - Three-story epic: (1) atomic page rename with backlink rewrite across all files, (2) unlinked mentions navigator panel reusing PTH-001 infrastructure, (3) duplicate page detector with edit-distance matching and safe non-destructive merge. Depends on PTH-001 Story 1. ([plan](docs/tasks/knowledge-graph-maintenance.md))
+- [ ] **[KGM-001] Knowledge Graph Maintenance** - Three-story epic. Story 1 (page rename + backlink rewrite) is ~90% complete: BacklinkRenamer, RenamePageDialog, ViewModel wiring, and PageView toolbar button all exist; missing is the command palette "rename-page" entry and the hashtag-rename integration test (T1.5 partial). Story 2 (unlinked mentions navigator) and Story 3 (duplicate page detector + merge) are unstarted. ([plan](docs/tasks/knowledge-graph-maintenance.md))
 
 ---
 
@@ -148,7 +148,7 @@ Voice capture pipeline: mic tap → AudioRecord + MediaCodec → Whisper STT →
 | WARN-002 | Low | `SqlDelightBlockRepository.kt:469,472,509,512` — redundant `.toLong()` conversion calls | Open |
 | PERF-001 | Medium | `loadDirectory` takes ~6.5s for 5464 pages — investigate parallelism or lazy chunk sizing | Open |
 | PERF-002 | Low | `processChunk` occasionally hits 288ms+ — may need batch-size tuning | Open |
-| KGM-001 | High | No backlink update on page rename — `[[OldName]]` links become broken after rename | Planned ([plan](docs/tasks/knowledge-graph-maintenance.md)) |
+| KGM-001 | High | No backlink update on page rename — `[[OldName]]` links become broken after rename | Mostly Fixed — BacklinkRenamer exists; command palette entry missing ([plan](docs/tasks/knowledge-graph-maintenance.md)) |
 | KGM-002 | Medium | No duplicate page detection or merge workflow | Planned ([plan](docs/tasks/knowledge-graph-maintenance.md)) |
 
 ---

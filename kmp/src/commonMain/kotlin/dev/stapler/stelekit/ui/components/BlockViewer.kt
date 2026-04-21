@@ -9,8 +9,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -83,7 +86,19 @@ fun WikiLinkText(
 ) {
     val blockRefBg = StelekitTheme.colors.blockRefBackground
     val codeBg = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-    val annotatedString = remember(text, linkColor, textColor, resolvedRefs, blockRefBg, codeBg, suggestionMatcher) {
+    // Compute suggestion spans off the composition thread. Each block runs its own
+    // produceState coroutine, so work spreads across frames rather than spiking
+    // all visible blocks simultaneously when the matcher changes.
+    val suggestionSpans by produceState(
+        initialValue = emptyList<AhoCorasickMatcher.MatchSpan>(),
+        key1 = text,
+        key2 = suggestionMatcher,
+    ) {
+        value = withContext(Dispatchers.Default) {
+            extractSuggestions(text, suggestionMatcher)
+        }
+    }
+    val annotatedString = remember(text, linkColor, textColor, resolvedRefs, blockRefBg, codeBg, suggestionSpans) {
         parseMarkdownWithStyling(
             text = text,
             linkColor = linkColor,
@@ -91,7 +106,7 @@ fun WikiLinkText(
             blockRefBackgroundColor = blockRefBg,
             resolvedRefs = resolvedRefs,
             codeBackground = codeBg,
-            suggestionMatcher = suggestionMatcher,
+            suggestionSpans = suggestionSpans,
             suggestionColor = linkColor,
         )
     }

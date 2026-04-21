@@ -1,7 +1,7 @@
 # Knowledge Graph Maintenance — Implementation Plan
 
 **Epic**: Knowledge Graph Maintenance  
-**Status**: Planning  
+**Status**: Story 1 Partially Complete — Tasks 1.1, 1.2, 1.3, 1.4 done; Task 1.5 missing hashtag integration test; Story 2 and 3 pending  
 **Target**: JVM + Android (KMP commonMain)  
 **ADRs**: ADR-007, ADR-008, ADR-009
 
@@ -198,8 +198,8 @@ Story 1 and Story 2 can begin development in parallel. Story 3 should start afte
 
 ---
 
-#### Task 1.1 — Implement `BacklinkRenamer` service
-**Files**: new `kmp/src/commonMain/kotlin/dev/stapler/stelekit/db/BacklinkRenamer.kt`  
+#### Task 1.1 — Implement `BacklinkRenamer` service [STATUS: COMPLETE]
+**Files**: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/db/BacklinkRenamer.kt`  
 **Effort**: 3 h
 
 ```kotlin
@@ -246,7 +246,7 @@ Implementation notes:
 
 ---
 
-#### Task 1.2 — Add SQL query for bulk backlink content update
+#### Task 1.2 — Add SQL query for bulk backlink content update [STATUS: COMPLETE]
 **Files**: `kmp/src/commonMain/sqldelight/dev/stapler/stelekit/db/SteleDatabase.sq`  
 **Effort**: 1 h
 
@@ -271,8 +271,8 @@ For graphs with >50 000 blocks, consider a FTS5 phrase query (`blocks_fts MATCH 
 
 ---
 
-#### Task 1.3 — Implement `RenamePageDialog` composable
-**Files**: new `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/components/RenamePageDialog.kt`  
+#### Task 1.3 — Implement `RenamePageDialog` composable [STATUS: COMPLETE]
+**Files**: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/components/RenamePageDialog.kt`  
 **Effort**: 2 h
 
 ```kotlin
@@ -294,9 +294,11 @@ Name validation: disallow empty names, names containing `[[`, `]]`, or `/` at st
 
 ---
 
-#### Task 1.4 — Wire rename action into `StelekitViewModel` and UI entry points
-**Files**: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/LogseqViewModel.kt`, `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/screens/PageView.kt`, `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/components/Sidebar.kt`  
-**Effort**: 2 h
+#### Task 1.4 — Wire rename action into `StelekitViewModel` and UI entry points [STATUS: PARTIALLY COMPLETE]
+**Files**: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/StelekitViewModel.kt`, `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/screens/PageView.kt`, `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt`  
+**Effort**: 2 h  
+**Completed**: `showRenameDialog`, `renamePage`, `dismissRenameDialog` in ViewModel; `RenamePageDialog` wired in `App.kt`; rename button in `PageView.kt` toolbar.  
+**Missing**: No "rename-page" command in the command palette (`updateCommands()` in `StelekitViewModel.kt` does not add a rename entry). Sidebar context menu also has no rename option.
 
 Add to `StelekitViewModel`:
 
@@ -311,9 +313,56 @@ Add a command in `updateCommands()`: `"rename-page"` that opens the dialog for `
 
 ---
 
-#### Task 1.5 — Unit and integration tests for `BacklinkRenamer`
-**Files**: new `kmp/src/jvmTest/kotlin/dev/stapler/stelekit/db/BacklinkRenamerTest.kt`  
-**Effort**: 2 h
+#### Task 1.6 — Add "rename-page" command to command palette [STATUS: PENDING] [NEXT TASK]
+**Files**:
+- `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/StelekitViewModel.kt` (modify — `updateCommands`)
+
+**Effort**: 1 h (Micro)
+
+**Scope**: Add a single `Command` entry to `updateCommands()` in `StelekitViewModel` that opens the `RenamePageDialog` for the currently open page. The command is only visible when `_uiState.value.currentPage` is non-null and is not a journal page.
+
+**Implementation**:
+In `updateCommands()` inside the `if (_uiState.value.currentPage != null)` block (after the export commands, around line 1205), add:
+
+```kotlin
+val currentPage = _uiState.value.currentPage
+if (currentPage != null && !currentPage.isJournal) {
+    legacyCommands += Command(
+        id = "rename-page",
+        label = "Rename page",
+        shortcut = null,
+        action = { showRenameDialog(currentPage) }
+    )
+}
+```
+
+**Context**:
+- `updateCommands()` is already called whenever current page changes (lines 663, 683, 704, 1057, 1062, 1079)
+- `showRenameDialog(page)` already exists on the ViewModel
+- `Command` data class takes `id`, `label`, `shortcut`, `action`
+- Journal page guard: use `currentPage.isJournal` (confirm field name on `Page` model before implementing)
+
+**Success Criteria**:
+- Opening command palette while on a non-journal page shows "Rename page" entry
+- Selecting it opens `RenamePageDialog` pre-populated with the current page name
+- Command is absent when no page is open or page is a journal
+
+**INVEST**:
+- Independent: self-contained ViewModel change, no cross-file coordination
+- Valuable: satisfies KGM requirement KGM-07 ("command palette offers rename action")
+- Estimable: 1h, trivial addition
+- Small: 6-8 lines in one function
+- Testable: verify `commands` StateFlow contains the entry when `currentPage` is non-null
+
+**Dependencies**: Task 1.4 (complete)
+
+---
+
+#### Task 1.5 — Unit and integration tests for `BacklinkRenamer` [STATUS: PARTIALLY COMPLETE]
+**Files**: `kmp/src/jvmTest/kotlin/dev/stapler/stelekit/db/BacklinkRenamerTest.kt`  
+**Effort**: 2 h  
+**Completed**: `replaceHashtag` unit tests (6 cases); rename with no backlinks; duplicate name rejection; wikilink-form backlink rewrite.  
+**Missing**: Integration test that creates a block with `#alpha`, renames page `alpha` → `beta`, verifies content becomes `#beta`. Alias form `[[Alpha|display]]` test. Journal page rename blocking test. Partial file-write failure + DB rollback test.
 
 Test cases:
 - Rename "Alpha" to "Beta": all blocks with `[[Alpha]]` contain `[[Beta]]` after execute; blocks without `[[Alpha]]` are unchanged
@@ -323,6 +372,34 @@ Test cases:
 - File-write failure for one file: DB is rolled back, error lists the failing file path
 - Journal page rename is blocked (returns `Result.failure` with `JournalRenameNotAllowedException`)
 - Empty graph (no blocks): rename succeeds with `updatedBlockCount = 0`
+
+#### Task 1.7 — Add missing BacklinkRenamer integration test cases [STATUS: PENDING]
+**Files**:
+- `kmp/src/jvmTest/kotlin/dev/stapler/stelekit/db/BacklinkRenamerTest.kt` (modify)
+
+**Effort**: 2 h (Small)
+
+**Scope**: Extend the existing `BacklinkRenamerTest` with four missing integration test cases covering hashtag rename, alias form, journal page rejection, and partial file-write rollback.
+
+**Missing test cases (from original Task 1.5 spec)**:
+1. Hashtag integration: create block `"#alpha notes"`, rename page `alpha` → `beta`, assert content becomes `"#beta notes"`.
+2. Alias form: block `"[[Alpha|see alpha]]"` after rename to `Beta` becomes `"[[Beta|see alpha]]"`.
+3. Journal page blocking: attempt rename of an `isJournal = true` page, assert `RenameResult.Failure` with `JournalRenameNotAllowedException` (verify this guard exists in BacklinkRenamer.execute).
+4. Partial file-write failure: mock `GraphWriter.savePage` to throw on one file, assert DB is rolled back (page name and block content revert).
+
+**Context**:
+- Existing test scaffolding in `BacklinkRenamerTest` provides `buildRenamer`, `makePage`, `makeBlock` helpers
+- `BacklinkRenamer.execute` signature: `execute(page: Page, newName: String, graphPath: String): RenameResult`
+- Check BacklinkRenamer implementation for journal guard (search `isJournal` in `BacklinkRenamer.kt`) before writing test 3
+
+**INVEST**:
+- Independent: additive to existing test file, no production code changes required
+- Valuable: closes the audit gap on hashtag rename correctness
+- Estimable: 2h
+- Small: 4 new test methods in one existing test class
+- Testable: pure test addition
+
+**Dependencies**: Task 1.5 (partial — extend it)
 
 ---
 

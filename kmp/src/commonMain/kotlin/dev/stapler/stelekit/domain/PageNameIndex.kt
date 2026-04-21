@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -46,6 +47,10 @@ class PageNameIndex(
         scope.launch {
             pageRepository.getAllPages()
                 .distinctUntilChanged()
+                // Coalesce rapid bursts (e.g. graph load saving pages one by one) into a
+                // single rebuild. 500 ms matches the block-editor save debounce so a rename
+                // and its save settle before the matcher is rebuilt.
+                .debounce(REBUILD_DEBOUNCE_MS)
                 .collect { result ->
                     result.getOrNull()?.let { pages ->
                         _canonicalNames.value = pages
@@ -62,6 +67,7 @@ class PageNameIndex(
 
     companion object {
         const val MIN_NAME_LENGTH = 3
+        const val REBUILD_DEBOUNCE_MS = 500L
 
         val DEFAULT_STOPWORDS: Set<String> = setOf(
             "the", "and", "for", "are", "but", "not", "you", "all", "can", "her",

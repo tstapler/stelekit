@@ -84,7 +84,7 @@ fun GlobalUnlinkedReferencesScreen(
                 ) {
                     items(
                         items = state.results,
-                        key = { it.block.uuid + it.targetPageName },
+                        key = { "${it.block.uuid}::${it.targetPageName}::${it.matchStart}" },
                     ) { entry ->
                         UnlinkedRefCard(
                             entry = entry,
@@ -169,7 +169,9 @@ private fun UnlinkedRefCard(
                 text = entry.block.content,
                 linkColor = linkColor,
                 textColor = MaterialTheme.colorScheme.onSurface,
-                suggestionMatcher = suggestionMatcher,
+                suggestionSpans = listOf(
+                    AhoCorasickMatcher.MatchSpan(entry.matchStart, entry.matchEnd, entry.targetPageName)
+                ),
                 suggestionColor = linkColor.copy(alpha = 0.7f),
             )
             Text(

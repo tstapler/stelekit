@@ -134,7 +134,7 @@ class RepositoryFactoryImpl(
 
         // Wire performance objects only for SQLDelight + a live scope (i.e. production graphs)
         val histogramWriter = if (backend == GraphBackend.SQLDELIGHT && scope != null) {
-            dev.stapler.stelekit.performance.HistogramWriter(database, scope)
+            dev.stapler.stelekit.performance.HistogramWriter(database, scope, actor)
         } else null
 
         val debugFlagRepo = if (backend == GraphBackend.SQLDELIGHT) {

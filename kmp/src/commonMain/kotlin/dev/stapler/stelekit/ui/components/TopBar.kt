@@ -44,6 +44,7 @@ fun TopBar(
     onGoForward: () -> Unit = {},
     onMenuToggle: () -> Unit = {},
     onExportPage: ((formatId: String) -> Unit)? = null,
+    onShowDebugMenu: (() -> Unit)? = null,
 ) {
     val isMobile = LocalWindowSizeClass.current.isMobile
     var viewMenuExpanded by remember { mutableStateOf(false) }
@@ -285,12 +286,28 @@ fun TopBar(
                         }
                     )
                     DropdownMenuItem(
+                        text = { Text("Logs") },
+                        onClick = {
+                            onNavigate(Screen.Logs)
+                            viewMenuExpanded = false
+                        }
+                    )
+                    DropdownMenuItem(
                         text = { Text(if (appState.isDebugMode) "Hide Debug Info" else "Show Debug Info") },
                         onClick = {
                             onToggleDebug()
                             viewMenuExpanded = false
                         }
                     )
+                    if (onShowDebugMenu != null) {
+                        DropdownMenuItem(
+                            text = { Text("Debug Menu  ⌘⇧D") },
+                            onClick = {
+                                viewMenuExpanded = false
+                                onShowDebugMenu()
+                            }
+                        )
+                    }
                     HorizontalDivider()
                     Text(
                         t("settings.language"),

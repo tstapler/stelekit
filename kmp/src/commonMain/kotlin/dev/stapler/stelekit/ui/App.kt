@@ -420,7 +420,8 @@ private fun GraphContent(
                                 onUndo = { journalsViewModel.undo() },
                                 onRedo = { journalsViewModel.redo() },
                                 onBack = { viewModel.goBack() },
-                                onForward = { viewModel.goForward() }
+                                onForward = { viewModel.goForward() },
+                                onDebugMenu = { viewModel.showDebugMenu() }
                             )
                         }
                 ) {
@@ -489,6 +490,7 @@ private fun GraphContent(
                                 onGoForward = { viewModel.goForward() },
                                 onMenuToggle = { viewModel.toggleSidebar() },
                                 onExportPage = { formatId -> viewModel.exportPage(formatId) },
+                                onShowDebugMenu = if (DebugBuildConfig.isDebugBuild) {{ viewModel.showDebugMenu() }} else null,
                             )
                         },
                         leftSidebar = {
@@ -616,7 +618,8 @@ private fun onGraphKeyEvent(
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onBack: () -> Unit,
-    onForward: () -> Unit
+    onForward: () -> Unit,
+    onDebugMenu: () -> Unit = {},
 ): Boolean {
     if (keyEvent.type != KeyEventType.KeyDown) return false
     val isMod = keyEvent.isCtrlPressed || keyEvent.isMetaPressed
@@ -633,6 +636,7 @@ private fun onGraphKeyEvent(
         (isMod && keyEvent.key == Key.LeftBracket) -> { onBack(); true }
         (keyEvent.isAltPressed && keyEvent.key == Key.DirectionRight) ||
         (isMod && keyEvent.key == Key.RightBracket) -> { onForward(); true }
+        isMod && isShift && keyEvent.key == Key.D -> { onDebugMenu(); true }
         else -> false
     }
 }

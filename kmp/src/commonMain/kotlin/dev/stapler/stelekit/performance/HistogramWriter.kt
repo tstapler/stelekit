@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.performance
 
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.SteleDatabase
 import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
@@ -27,7 +28,11 @@ data class HistogramSample(
  */
 class HistogramWriter(
     private val database: SteleDatabase,
-    scope: CoroutineScope
+    scope: CoroutineScope,
+    // Route writes through the actor so histogram inserts are serialized with all other
+    // DB writes. Without this, concurrent transaction() calls on Dispatchers.IO race with
+    // the actor's writes, causing SQLITE_BUSY when busy_timeout fires before a lock clears.
+    private val writeActor: DatabaseWriteActor? = null,
 ) {
     private val channel = Channel<HistogramSample>(capacity = Channel.BUFFERED)
 
@@ -36,18 +41,23 @@ class HistogramWriter(
             for (sample in channel) {
                 try {
                     val bucket = classifyBucket(sample.durationMs)
-                    database.steleDatabaseQueries.transaction {
-                        database.steleDatabaseQueries.insertHistogramBucketIfAbsent(
-                            operation_name = sample.operationName,
-                            bucket_ms = bucket,
-                            recorded_at = sample.recordedAt
-                        )
-                        database.steleDatabaseQueries.incrementHistogramBucketCount(
-                            recorded_at = sample.recordedAt,
-                            operation_name = sample.operationName,
-                            bucket_ms = bucket
-                        )
+                    val writeOp: suspend () -> Result<Unit> = {
+                        runCatching {
+                            database.steleDatabaseQueries.transaction {
+                                database.steleDatabaseQueries.insertHistogramBucketIfAbsent(
+                                    operation_name = sample.operationName,
+                                    bucket_ms = bucket,
+                                    recorded_at = sample.recordedAt
+                                )
+                                database.steleDatabaseQueries.incrementHistogramBucketCount(
+                                    recorded_at = sample.recordedAt,
+                                    operation_name = sample.operationName,
+                                    bucket_ms = bucket
+                                )
+                            }
+                        }
                     }
+                    if (writeActor != null) writeActor.execute(writeOp) else writeOp()
                 } catch (e: Exception) {
                     // A DB error must not kill the consumer coroutine — log and continue
                 }

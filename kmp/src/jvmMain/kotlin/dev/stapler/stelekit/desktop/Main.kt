@@ -4,8 +4,13 @@
 
 package dev.stapler.stelekit.desktop
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.Window
@@ -78,6 +83,25 @@ fun main() {
             title = "SteleKit",
             icon = painterResource("icons/icon.png")
         ) {
+            var otelStdoutEnabled by remember { mutableStateOf(false) }
+
+            MenuBar {
+                Menu("Developer") {
+                    CheckboxItem(
+                        text = "OTel Stdout",
+                        checked = otelStdoutEnabled,
+                        onCheckedChange = { enabled ->
+                            otelStdoutEnabled = enabled
+                            OtelProvider.shutdown()
+                            OtelProvider.initialize(
+                                OtelExporterConfig(enableStdout = enabled, enableRingBuffer = true)
+                            )
+                            logger.info("OTel stdout ${if (enabled) "enabled" else "disabled"}")
+                        }
+                    )
+                }
+            }
+
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = graphPath,
