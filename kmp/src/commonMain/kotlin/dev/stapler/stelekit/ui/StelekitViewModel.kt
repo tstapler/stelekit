@@ -1179,8 +1179,18 @@ class StelekitViewModel(
                     }
                 }.toMutableList()
 
-                // Add export commands only when a page is open
-                if (_uiState.value.currentPage != null) {
+                // Add rename/export commands only when a non-journal page is open
+                val currentPage = _uiState.value.currentPage
+                if (currentPage != null && !currentPage.isJournal) {
+                    legacyCommands += Command(
+                        id = "page.rename",
+                        label = "Rename page",
+                        shortcut = null,
+                        action = { showRenameDialog(currentPage) }
+                    )
+                }
+
+                if (currentPage != null) {
                     legacyCommands += Command(
                         id = "export.page.markdown",
                         label = "Export page as Markdown",
