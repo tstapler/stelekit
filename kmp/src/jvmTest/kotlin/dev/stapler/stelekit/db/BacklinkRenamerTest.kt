@@ -240,6 +240,61 @@ class BacklinkRenamerTest {
         assertEquals("Alpha", unchanged?.name)
     }
 
+    @Test
+    fun rename_rewrites_hashtag_references_end_to_end(): Unit = runBlocking {
+        val tempDir = File(System.getProperty("user.home"), "stelekit_renamer_test_${System.currentTimeMillis()}")
+        tempDir.mkdirs()
+        try {
+            val pagesDir = File(tempDir, "pages")
+            pagesDir.mkdirs()
+            File(pagesDir, "Alpha.md").writeText("- Content")
+            File(pagesDir, "Referrer.md").writeText("- #Alpha and #[[Alpha]] here")
+
+            val pageRepo = InMemoryPageRepository()
+            val blockRepo = InMemoryBlockRepository()
+
+            val alphaPage = makePage("page-alpha", "Alpha", filePath = "${pagesDir.absolutePath}/Alpha.md")
+            val referrerPage = makePage("page-referrer", "Referrer")
+            pageRepo.savePage(alphaPage)
+            pageRepo.savePage(referrerPage)
+
+            // Block containing both hashtag forms
+            val linkBlock = makeBlock("block-1", "page-referrer", "#Alpha and #[[Alpha]] here")
+            blockRepo.saveBlock(linkBlock)
+
+            val renamer = buildRenamer(pageRepo, blockRepo, tempDir.absolutePath)
+            val result = renamer.execute(alphaPage, "Beta", tempDir.absolutePath)
+
+            assertIs<RenameResult.Success>(result)
+            assertEquals(1, result.updatedBlockCount)
+
+            val updatedBlock = blockRepo.getBlockByUuid("block-1").first().getOrNull()
+            assertEquals("#Beta and #[[Beta]] here", updatedBlock?.content)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun rename_returns_failure_when_page_has_no_file_path(): Unit = runBlocking {
+        val tempDir = File(System.getProperty("user.home"), "stelekit_renamer_test_${System.currentTimeMillis()}")
+        tempDir.mkdirs()
+        try {
+            val pageRepo = InMemoryPageRepository()
+            val blockRepo = InMemoryBlockRepository()
+            // Page exists in repo but has no filePath — graphWriter.renamePage returns false
+            val noFilePage = makePage("page-alpha", "Alpha", filePath = null)
+            pageRepo.savePage(noFilePage)
+
+            val renamer = buildRenamer(pageRepo, blockRepo, tempDir.absolutePath)
+            val result = renamer.execute(noFilePage, "Beta", tempDir.absolutePath)
+
+            assertIs<RenameResult.Failure>(result)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
     // ---- replaceHashtag unit tests ----
 
     @Test
