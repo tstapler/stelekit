@@ -19,6 +19,8 @@ fun registerAllMigrations() {
     )
 }
 
+private val HYPHEN_DATE_REGEX = Regex("\\d{4}-\\d{2}-\\d{2}")
+
 val V20260418001_normalizeJournalNames = migration("V20260418001__normalize-journal-names") {
     description = "Rename hyphen-dated journal pages to underscore format and merge duplicates"
     checksumBody = "V20260418001__normalize-journal-names: rename YYYY-MM-DD journal pages to YYYY_MM_DD, merging any duplicates"
@@ -26,7 +28,7 @@ val V20260418001_normalizeJournalNames = migration("V20260418001__normalize-jour
     requires("V20260414001__baseline")
     apply {
         val migrationScope = this
-        forPages({ it.isJournal && it.name.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) }) {
+        forPages({ it.isJournal && it.name.matches(HYPHEN_DATE_REGEX) }) {
             val underscoreName = page.name.replace('-', '_')
             val target = migrationScope.findPage(underscoreName)
             if (target == null) {

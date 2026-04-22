@@ -3,8 +3,6 @@
 
 package dev.stapler.stelekit.migration
 
-import dev.stapler.stelekit.model.Block
-import dev.stapler.stelekit.model.Page
 
 fun migration(id: String, configure: MigrationBuilder.() -> Unit): Migration {
     val builder = MigrationBuilder(id)
@@ -41,9 +39,3 @@ class MigrationBuilder(val id: String) {
     }
 }
 
-/** No-op implementation of [MigrationScope] used for checksumBody computation. */
-private class NoOpMigrationScope : MigrationScope {
-    override fun forBlocks(where: (Block) -> Boolean, transform: BlockScope.() -> Unit) {}
-    override fun forPages(where: (Page) -> Boolean, transform: PageScope.() -> Unit) {}
-    override fun findPage(name: String): Page? = null
-}

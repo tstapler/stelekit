@@ -688,3 +688,37 @@ SELECT * FROM migration_changelog WHERE graph_id = ? ORDER BY execution_order;
 
 updateMigrationChecksum:
 UPDATE migration_changelog SET checksum = ? WHERE id = ? AND graph_id = ?;
+
+-- Span storage for OTel trace persistence
+
+CREATE TABLE IF NOT EXISTS spans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trace_id TEXT NOT NULL DEFAULT '',
+    span_id TEXT NOT NULL DEFAULT '',
+    parent_span_id TEXT NOT NULL DEFAULT '',
+    name TEXT NOT NULL,
+    start_epoch_ms INTEGER NOT NULL,
+    end_epoch_ms INTEGER NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    attributes_json TEXT NOT NULL DEFAULT '{}',
+    status_code TEXT NOT NULL DEFAULT 'OK'
+);
+
+CREATE INDEX IF NOT EXISTS spans_start_epoch_ms_idx ON spans(start_epoch_ms DESC);
+CREATE INDEX IF NOT EXISTS spans_trace_id_idx ON spans(trace_id);
+
+insertSpan:
+INSERT INTO spans (trace_id, span_id, parent_span_id, name, start_epoch_ms, end_epoch_ms, duration_ms, attributes_json, status_code)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectRecentSpans:
+SELECT * FROM spans ORDER BY start_epoch_ms DESC LIMIT ?;
+
+deleteSpansOlderThan:
+DELETE FROM spans WHERE end_epoch_ms < ?;
+
+deleteExcessSpans:
+DELETE FROM spans WHERE id NOT IN (SELECT id FROM spans ORDER BY start_epoch_ms DESC LIMIT ?);
+
+deleteAllSpans:
+DELETE FROM spans;

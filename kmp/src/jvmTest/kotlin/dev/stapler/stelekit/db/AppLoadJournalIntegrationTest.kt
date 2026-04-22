@@ -483,4 +483,55 @@ class AppLoadJournalIntegrationTest {
         assertEquals("Yesterday's thought", block.content, "Past journal block content must be unchanged")
         assertEquals("yesterday-uuid", block.pageUuid, "Past journal block must remain on its original page")
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Scenario 13: Warm-cache path — ensureTodayJournal concurrent with loadGraphProgressive
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `warm cache - ensureTodayJournal concurrent with loadGraphProgressive produces one page`() = runTest {
+        val todayUnderscore = today().toString().replace('-', '_')
+        val h = harness(mutableMapOf("/graph/journals/$todayUnderscore.md" to "- Existing note"))
+
+        // Simulate warm cache: pre-load the graph so DB already has today's journal
+        h.appLoad()
+        val pageAfterFirstLoad = h.pageRepo.getJournalPageByDate(today()).first().getOrNull()
+        assertNotNull(pageAfterFirstLoad, "First load should create today's journal")
+
+        // Simulate the warm-cache code path: ensureTodayJournal runs concurrently with
+        // a second loadGraphProgressive (as happens when the app restarts with a cached DB).
+        val ensureDeferred = async { h.journalService.ensureTodayJournal() }
+        val loadDeferred = async {
+            h.graphLoader.loadGraphProgressive(
+                graphPath = "/graph",
+                immediateJournalCount = 10,
+                onProgress = {},
+                onPhase1Complete = {},
+                onFullyLoaded = {}
+            )
+        }
+        ensureDeferred.await()
+        loadDeferred.await()
+
+        val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val todayPages = allPages.filter { it.journalDate == today() }
+        assertEquals(1, todayPages.size, "Concurrent warm-cache load must not duplicate today's journal")
+    }
+
+    @Test
+    fun `warm cache - getPageByJournalDate returns existing page without creating duplicate`() = runTest {
+        val todayUnderscore = today().toString().replace('-', '_')
+        val h = harness(mutableMapOf("/graph/journals/$todayUnderscore.md" to "- My note"))
+
+        h.appLoad()
+        val existingPage = h.pageRepo.getJournalPageByDate(today()).first().getOrNull()
+        assertNotNull(existingPage)
+
+        // Warm-cache lookup: should find the page, not create a new one
+        val lookedUp = h.journalService.getPageByJournalDate(today())
+        assertEquals(existingPage.uuid, lookedUp?.uuid, "Lookup should return the same page, not create a new one")
+
+        val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        assertEquals(1, allPages.filter { it.journalDate == today() }.size, "No duplicate created by lookup")
+    }
 }

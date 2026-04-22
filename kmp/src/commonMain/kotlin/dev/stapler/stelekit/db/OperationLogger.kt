@@ -4,6 +4,7 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlin.time.Clock
+import kotlin.time.Clock.System
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.Serializable
@@ -21,9 +22,11 @@ import kotlinx.serialization.Serializable
 class OperationLogger(
     private val db: SteleDatabase,
     val sessionId: String,
+    private val clock: Clock = System,
 ) {
     private val logger = Logger("OperationLogger")
     private val json = Json { ignoreUnknownKeys = true }
+    private val restricted = RestrictedDatabaseQueries(db.steleDatabaseQueries)
 
     enum class OpType {
         INSERT_BLOCK, UPDATE_BLOCK, DELETE_BLOCK, MOVE_BLOCK,
@@ -50,13 +53,14 @@ class OperationLogger(
     // In-memory Lamport clock; loaded from DB on first use
     private var seq: Long = -1L
 
+    @OptIn(DirectSqlWrite::class)
     private fun nextSeq(): Long {
         if (seq < 0) {
             seq = db.steleDatabaseQueries.selectLogicalClock(sessionId)
                 .executeAsOneOrNull() ?: 0L
         }
         seq += 1
-        db.steleDatabaseQueries.upsertLogicalClock(sessionId, seq)
+        restricted.upsertLogicalClock(sessionId, seq)
         return seq
     }
 
@@ -102,23 +106,29 @@ class OperationLogger(
         payload = OpPayload(batchId = batchId),
     )
 
+    @OptIn(DirectSqlWrite::class)
     private fun log(opType: OpType, entityUuid: String?, pageUuid: String?, payload: OpPayload) {
         try {
             val opId = UuidGenerator.generateV7()
-            val seq = nextSeq()
             val payloadJson = json.encodeToString(payload)
-            db.steleDatabaseQueries.insertOperation(
-                op_id = opId,
-                session_id = sessionId,
-                seq = seq,
-                op_type = opType.name,
-                entity_uuid = entityUuid,
-                page_uuid = pageUuid,
-                payload = payloadJson,
-                created_at = Clock.System.now().toEpochMilliseconds(),
-            )
+            val now = clock.now().toEpochMilliseconds()
+            // Wrap clock bump + operation insert in one transaction so the two writes
+            // share a single lock acquisition rather than two back-to-back ones.
+            restricted.transaction {
+                val seq = nextSeq()
+                restricted.insertOperation(
+                    op_id = opId,
+                    session_id = sessionId,
+                    seq = seq,
+                    op_type = opType.name,
+                    entity_uuid = entityUuid,
+                    page_uuid = pageUuid,
+                    payload = payloadJson,
+                    created_at = now,
+                )
+            }
         } catch (e: Exception) {
-            logger.error("OperationLogger: failed to log $opType for entity $entityUuid", e)
+            logger.error("Failed to log $opType entity=$entityUuid page=$pageUuid session=$sessionId seq=$seq", e)
             // Non-fatal: if op log fails, the underlying write already succeeded
         }
     }

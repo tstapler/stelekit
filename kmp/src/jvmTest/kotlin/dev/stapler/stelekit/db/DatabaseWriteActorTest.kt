@@ -275,6 +275,102 @@ class DatabaseWriteActorTest {
         actor2.close()
     }
 
+    // ──────────────── deleteBlocksForPages ───────────────────────────────────
+
+    @Test
+    fun `deleteBlocksForPages removes blocks for all specified pages`() = runBlocking {
+        val blockRepo = FakeBlockRepository(
+            mapOf(
+                "page-1" to listOf(block("b1", "page-1"), block("b2", "page-1")),
+                "page-2" to listOf(block("b3", "page-2")),
+                "page-3" to listOf(block("b4", "page-3")),
+            )
+        )
+        val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
+
+        val result = actor.deleteBlocksForPages(listOf("page-1", "page-2"))
+
+        assertTrue(result.isSuccess)
+        assertTrue(blockRepo.getBlocksForPage("page-1").first().getOrNull().isNullOrEmpty())
+        assertTrue(blockRepo.getBlocksForPage("page-2").first().getOrNull().isNullOrEmpty())
+        assertNotNull(blockRepo.getBlockByUuid("b4").first().getOrNull(), "page-3 untouched")
+        actor.close()
+    }
+
+    @Test
+    fun `deleteBlocksForPages with empty list returns success without touching repository`() = runBlocking {
+        var called = false
+        val blockRepo = object : FakeBlockRepository() {
+            override suspend fun deleteBlocksForPages(pageUuids: List<String>): Result<Unit> {
+                called = true
+                return super.deleteBlocksForPages(pageUuids)
+            }
+        }
+        val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
+
+        val result = actor.deleteBlocksForPages(emptyList())
+
+        assertTrue(result.isSuccess)
+        assertTrue(!called, "repository should not be called for empty list")
+        actor.close()
+    }
+
+    @Test
+    fun `deleteBlocksForPages failure is returned to caller`() = runBlocking {
+        val error = RuntimeException("disk error")
+        val blockRepo = object : FakeBlockRepository() {
+            override suspend fun deleteBlocksForPages(pageUuids: List<String>): Result<Unit> =
+                Result.failure(error)
+        }
+        val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
+
+        val result = actor.deleteBlocksForPages(listOf("page-1"))
+
+        assertTrue(result.isFailure)
+        assertEquals(error, result.exceptionOrNull())
+        actor.close()
+    }
+
+    // ──────────────── executeBatch ────────────────────────────────────────────
+
+    @Test
+    fun `executeBatch executes all operations in block`() = runBlocking {
+        val blockRepo = FakeBlockRepository()
+        val pageRepo = FakePageRepository()
+        val actor = DatabaseWriteActor(blockRepo, pageRepo)
+
+        actor.executeBatch("batch-1") {
+            savePage(page("p-1"))
+            saveBlocks(listOf(block("b1", "p-1"), block("b2", "p-1")))
+        }
+
+        assertNotNull(pageRepo.getPageByUuid("p-1").first().getOrNull())
+        assertNotNull(blockRepo.getBlockByUuid("b1").first().getOrNull())
+        assertNotNull(blockRepo.getBlockByUuid("b2").first().getOrNull())
+        actor.close()
+    }
+
+    @Test
+    fun `executeBatch finally block runs and actor survives exception in block`() = runBlocking {
+        val actor = DatabaseWriteActor(FakeBlockRepository(), FakePageRepository())
+        var threw = false
+
+        try {
+            actor.executeBatch("batch-err") {
+                @Suppress("UNREACHABLE_CODE")
+                throw RuntimeException("mid-batch failure")
+            }
+        } catch (_: RuntimeException) {
+            threw = true
+        }
+
+        assertTrue(threw)
+        // Actor must still be alive after the exception escaped executeBatch
+        val result = withTimeout(2000) { actor.savePage(page("p-ok")) }
+        assertTrue(result.isSuccess, "actor should continue after executeBatch exception")
+        actor.close()
+    }
+
     // ──────────────── ordering guarantee ─────────────────────────────────────
 
     @Test

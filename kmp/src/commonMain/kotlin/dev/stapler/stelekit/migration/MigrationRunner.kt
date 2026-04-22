@@ -194,7 +194,7 @@ class MigrationRunner(
      * Steps mirror [runPending] but no changelog records are created and no
      * [ChangeApplier] calls are made.
      */
-    suspend fun dryRun(graphId: String, repoSet: RepositorySet): MigrationPlan {
+    suspend fun dryRun(graphId: String, _repoSet: RepositorySet): MigrationPlan {
         val appliedIds = changelogRepo.appliedIds(graphId)
 
         // Validate DAG
@@ -260,12 +260,12 @@ class MigrationRunner(
         val appliedIds = changelogRepo.appliedIds(graphId)
         val allMigrations = registry.all()
         val baselineIndex = allMigrations.indexOfFirst { it.id == baselineId }
-        if (baselineIndex < 0) throw IllegalArgumentException("Migration '$baselineId' not found in registry")
+        require(baselineIndex >= 0) { "Migration '$baselineId' not found in registry" }
 
         val toBaseline = allMigrations.subList(0, baselineIndex + 1)
         val alreadyPresent = toBaseline.filter { it.id in appliedIds }
         if (alreadyPresent.isNotEmpty()) {
-            throw IllegalStateException(
+            error(
                 "Cannot baseline: migrations ${alreadyPresent.map { it.id }} already in changelog"
             )
         }

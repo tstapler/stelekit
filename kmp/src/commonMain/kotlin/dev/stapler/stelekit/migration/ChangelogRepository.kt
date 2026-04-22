@@ -3,10 +3,19 @@
 
 package dev.stapler.stelekit.migration
 
+import dev.stapler.stelekit.db.DirectSqlWrite
+import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
 import kotlin.time.Clock
 
+/**
+ * Migration-time writer. Runs before [dev.stapler.stelekit.db.DatabaseWriteActor] exists;
+ * direct SQL writes are intentional and safe here because migrations execute sequentially
+ * on a single coroutine at startup before any concurrent writes are possible.
+ */
+@OptIn(DirectSqlWrite::class)
 class ChangelogRepository(private val db: SteleDatabase) {
+    private val restricted = RestrictedDatabaseQueries(db.steleDatabaseQueries)
 
     /** Returns id → checksum for all APPLIED migrations for this graph. */
     fun appliedIds(graphId: String): Map<String, String> {
@@ -17,7 +26,7 @@ class ChangelogRepository(private val db: SteleDatabase) {
     }
 
     fun markRunning(id: String, graphId: String, order: Int, checksum: String, description: String) {
-        db.steleDatabaseQueries.insertMigrationRecord(
+        restricted.insertMigrationRecord(
             id = id,
             graph_id = graphId,
             description = description,
@@ -33,7 +42,7 @@ class ChangelogRepository(private val db: SteleDatabase) {
     }
 
     fun markApplied(id: String, graphId: String, executionMs: Long, changesApplied: Int) {
-        db.steleDatabaseQueries.updateMigrationStatus(
+        restricted.updateMigrationStatus(
             status = MigrationStatus.APPLIED.name,
             error_message = null,
             execution_ms = executionMs,
@@ -44,7 +53,7 @@ class ChangelogRepository(private val db: SteleDatabase) {
     }
 
     fun markFailed(id: String, graphId: String, errorMessage: String) {
-        db.steleDatabaseQueries.updateMigrationStatus(
+        restricted.updateMigrationStatus(
             status = MigrationStatus.FAILED.name,
             error_message = errorMessage,
             execution_ms = 0L,
@@ -62,7 +71,7 @@ class ChangelogRepository(private val db: SteleDatabase) {
     }
 
     fun deleteRecord(id: String, graphId: String) {
-        db.steleDatabaseQueries.deleteMigrationRecord(id, graphId)
+        restricted.deleteMigrationRecord(id, graphId)
     }
 
     /** Returns IDs of all FAILED migrations for this graph (filtered in memory). */
@@ -81,7 +90,7 @@ class ChangelogRepository(private val db: SteleDatabase) {
      * Calling this voids the tamper-detection guarantee for the updated migration — use with care.
      */
     fun updateChecksum(id: String, graphId: String, newChecksum: String) {
-        db.steleDatabaseQueries.updateMigrationChecksum(
+        restricted.updateMigrationChecksum(
             checksum = newChecksum,
             id = id,
             graph_id = graphId,
