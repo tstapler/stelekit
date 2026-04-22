@@ -28,11 +28,10 @@ class FileRegistry(private val fileSystem: FileSystem) {
     fun scanDirectory(dirPath: String): List<FileEntry> {
         if (!fileSystem.directoryExists(dirPath)) return emptyList()
 
-        val entries = fileSystem.listFiles(dirPath)
-            .filter { it.endsWith(".md") }
-            .map { fileName ->
+        val entries = fileSystem.listFilesWithModTimes(dirPath)
+            .filter { (name, _) -> name.endsWith(".md") }
+            .map { (fileName, modTime) ->
                 val filePath = "$dirPath/$fileName"
-                val modTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
                 modTimes[filePath] = modTime
                 // Initialise content hash so the guard in detectChanges has a baseline.
                 // Without this, any mtime change after startup bypasses the hash guard
@@ -83,13 +82,15 @@ class FileRegistry(private val fileSystem: FileSystem) {
     fun detectChanges(dirPath: String): ChangeSet {
         if (!fileSystem.directoryExists(dirPath)) return ChangeSet.EMPTY
 
-        val currentFiles = fileSystem.listFiles(dirPath).filter { it.endsWith(".md") }
+        val currentFilesWithTimes = fileSystem.listFilesWithModTimes(dirPath)
+            .filter { (name, _) -> name.endsWith(".md") }
         val newFiles = mutableListOf<ChangedFile>()
         val changedFiles = mutableListOf<ChangedFile>()
+        val currentPaths = HashSet<String>(currentFilesWithTimes.size * 2)
 
-        for (fileName in currentFiles) {
+        for ((fileName, modTime) in currentFilesWithTimes) {
             val filePath = "$dirPath/$fileName"
-            val modTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
+            currentPaths.add(filePath)
             val lastKnown = modTimes[filePath]
 
             if (lastKnown == null) {
@@ -113,8 +114,7 @@ class FileRegistry(private val fileSystem: FileSystem) {
             }
         }
 
-        // Detect deleted files
-        val currentPaths = currentFiles.map { "$dirPath/$it" }.toSet()
+        // Detect deleted files — currentPaths was built in the loop above, no second pass needed
         val deletedPaths = modTimes.keys
             .filter { it.startsWith("$dirPath/") && it !in currentPaths }
             .toList()

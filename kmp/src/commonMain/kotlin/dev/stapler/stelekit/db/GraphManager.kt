@@ -22,13 +22,13 @@ import dev.stapler.stelekit.util.ContentHasher
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
@@ -42,13 +42,11 @@ class GraphManager(
     private val platformSettings: PlatformSettings,
     private val driverFactory: DriverFactory,
     private val fileSystem: FileSystem,
-    private val coroutineScope: CoroutineScope,
     val defaultBackend: GraphBackend = GraphBackend.SQLDELIGHT,
 ) {
+    private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val logger = Logger("GraphManager")
     private val json = Json { ignoreUnknownKeys = true }
-    private val mutex = Mutex()
-    
     private val _graphRegistry = MutableStateFlow(GraphRegistry())
     val graphRegistry: StateFlow<GraphRegistry> = _graphRegistry.asStateFlow()
     

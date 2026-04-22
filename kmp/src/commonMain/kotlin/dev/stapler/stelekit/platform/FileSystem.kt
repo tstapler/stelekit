@@ -16,6 +16,16 @@ interface FileSystem {
     fun pickDirectory(): String?
     suspend fun pickDirectoryAsync(): String? = pickDirectory()
     fun getLastModifiedTime(path: String): Long?
+
+    /**
+     * Returns file names paired with their last-modified timestamps in one pass.
+     * Default implementation calls [listFiles] + [getLastModifiedTime] per file;
+     * JVM overrides this with a single [File.listFiles] traversal to avoid
+     * per-file path reconstruction and [validatePath] overhead.
+     */
+    fun listFilesWithModTimes(path: String): List<Pair<String, Long>> =
+        listFiles(path).map { name -> name to (getLastModifiedTime("$path/$name") ?: 0L) }
+
     fun hasStoragePermission(): Boolean = true
     fun getLibraryDisplayName(): String? = null
     /** Human-readable name for a given graph path. Defaults to the last path segment. */

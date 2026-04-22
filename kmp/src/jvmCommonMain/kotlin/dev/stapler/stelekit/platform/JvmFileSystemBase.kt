@@ -187,6 +187,21 @@ abstract class JvmFileSystemBase {
         }
     }
 
+    open fun listFilesWithModTimes(path: String): List<Pair<String, Long>> {
+        return try {
+            val validatedPath = validatePath(path)
+            val directory = File(validatedPath)
+            if (!directory.exists() || !directory.isDirectory) return emptyList()
+            directory.listFiles()
+                ?.filter { it.isFile }
+                ?.map { file -> file.name to file.lastModified() }
+                ?.sortedBy { it.first }
+                ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     open fun renameFile(from: String, to: String): Boolean {
         return try {
             val oldFile = File(from)

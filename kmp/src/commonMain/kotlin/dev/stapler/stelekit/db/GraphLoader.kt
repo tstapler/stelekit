@@ -6,15 +6,17 @@ import dev.stapler.stelekit.model.ParsedBlock
 import dev.stapler.stelekit.model.toDiscriminatorString
 import kotlin.time.Instant
 import dev.stapler.stelekit.outliner.JournalUtils
-import dev.stapler.stelekit.outliner.OutlinerPipeline
 import dev.stapler.stelekit.parser.MarkdownParser
 import dev.stapler.stelekit.parsing.ParseMode
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.BlockRepository
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.JournalDateResolver
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.performance.PerformanceMonitor
+import dev.stapler.stelekit.performance.SerializedSpan
+import dev.stapler.stelekit.performance.SpanRepository
 import dev.stapler.stelekit.util.ContentHasher
 import dev.stapler.stelekit.util.FileUtils
 import dev.stapler.stelekit.util.UuidGenerator
@@ -43,11 +45,29 @@ class GraphLoader(
     val fileRegistry: FileRegistry = FileRegistry(fileSystem),
     externalWriteActor: DatabaseWriteActor? = null,
     private val sidecarManager: SidecarManager? = null,
-    private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
+    private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
+    private val spanRepository: SpanRepository? = null,
 ) {
     private val logger = Logger("GraphLoader")
-    private val outlinerPipeline = OutlinerPipeline()
     private val markdownParser = MarkdownParser()
+
+    // Lightweight span tracking for the Spans waterfall tab.
+    private fun genId(): String =
+        kotlin.random.Random.nextLong().toULong().toString(16).padStart(16, '0')
+
+    private inner class Span(val name: String, val traceId: String, val parentSpanId: String = "") {
+        val spanId: String = genId()
+        private val startMs: Long = Clock.System.now().toEpochMilliseconds()
+        suspend fun finish(statusCode: String = "OK", vararg attrs: Pair<String, String>) {
+            val endMs = Clock.System.now().toEpochMilliseconds()
+            spanRepository?.insertSpan(SerializedSpan(
+                name = name, startEpochMs = startMs, endEpochMs = endMs,
+                durationMs = endMs - startMs, attributes = mapOf(*attrs),
+                statusCode = statusCode, traceId = traceId,
+                spanId = spanId, parentSpanId = parentSpanId,
+            ))
+        }
+    }
 
     // Tracks the currently loaded graph path so on-demand loads can resolve file paths
     var currentGraphPath: String = ""
@@ -55,7 +75,12 @@ class GraphLoader(
 
     // Platform-agnostic parallelism configuration
     private val ioThreads = 4
-    private val computationThreads = 2
+
+    // Background indexing is capped below the full Default thread pool so user-triggered
+    // high-priority saves always have threads available for parse work. Write throughput
+    // is serialized by DatabaseWriteActor regardless, so capping parse concurrency here
+    // doesn't meaningfully slow total indexing time.
+    private val backgroundIndexDispatcher = Dispatchers.Default.limitedParallelism(ioThreads)
 
     // Platform-agnostic coroutine scope for parallel processing
     private val parallelScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -303,12 +328,12 @@ class GraphLoader(
                 
                 unloadedPages.chunked(10).forEach { chunk ->
                     chunk.map { page ->
-                        async(Dispatchers.Default) {
+                        async(backgroundIndexDispatcher) {
                             val path = page.filePath ?: resolvePageFilePath(page.name)
                             if (path != null) {
                                 val content = fileSystem.readFile(path)
                                 if (content != null) {
-                                    parseAndSavePage(path, content, ParseMode.FULL)
+                                    parseAndSavePage(path, content, ParseMode.FULL, DatabaseWriteActor.Priority.LOW)
                                 }
                             }
                         }
@@ -349,6 +374,46 @@ class GraphLoader(
         for (filePath in changeSet.deletedPaths) {
             logger.info("File deletion detected: $filePath")
         }
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun flushChunkWrites(
+        pagesToSave: List<Page>,
+        pageUuidsToDelete: Set<String>,
+        blocksToSaveByPage: Map<String, List<Block>>,
+        failedPageUuids: MutableSet<String>,
+    ): Result<Unit> = try {
+        if (pagesToSave.isNotEmpty()) {
+            val bulkResult = pageRepository.savePages(pagesToSave)
+            if (bulkResult.isFailure) {
+                // Bulk transaction failed — retry individually to track which pages failed.
+                for (page in pagesToSave) {
+                    val result = pageRepository.savePage(page)
+                    if (result.isFailure) {
+                        val e = result.exceptionOrNull()!!
+                        logger.error("savePage failed for ${page.name}", e)
+                        _writeErrors.tryEmit(WriteError(page.filePath ?: page.name, 0, e))
+                        failedPageUuids.add(page.uuid)
+                    }
+                }
+            }
+        }
+        val uuidsToDelete = pageUuidsToDelete.filter { it !in failedPageUuids }
+        if (uuidsToDelete.isNotEmpty()) {
+            blockRepository.deleteBlocksForPages(uuidsToDelete)
+        }
+        for ((pageUuid, blocks) in blocksToSaveByPage) {
+            if (pageUuid in failedPageUuids) continue
+            val result = blockRepository.saveBlocks(blocks)
+            if (result.isFailure) {
+                val e = result.exceptionOrNull()!!
+                logger.error("saveBlocks failed for pageUuid=$pageUuid (${blocks.size} blocks)", e)
+                _writeErrors.tryEmit(WriteError(pageUuid, blocks.size, e))
+            }
+        }
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Result.failure(e)
     }
 
     fun stopWatching() {
@@ -514,15 +579,23 @@ class GraphLoader(
         PerformanceMonitor.startTrace("loadDirectory")
         try {
             if (!fileSystem.directoryExists(path)) return
-            
+
             // Single scan registers ALL files and provides filtered views
-            val allEntries = fileRegistry.scanDirectory(path)
+            fileRegistry.scanDirectory(path)
 
             val fileEntries = if (path.endsWith("/journals")) {
                 fileRegistry.recentJournals(path, 30)
             } else {
                 fileRegistry.pageFiles(path)
             }
+
+            // Pre-load all existing pages in one query. Replaces one getPageByName DB call per
+            // file (up to 4 000 round-trips on a warm restart) with a single bulk read whose
+            // result is shared across all parallel chunks read-only.
+            val allPages = pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+            val pagesByName = allPages.associateBy { it.name.lowercase() }
+            val pagesByJournalDate = allPages.filter { it.journalDate != null }
+                .associateBy { it.journalDate!! }
 
             val loadedCount = coroutineScope {
                 var processedCount = 0
@@ -549,25 +622,17 @@ class GraphLoader(
                                 val isJournalFile = path.endsWith("/journals")
                                 val existingPage = if (isJournalFile) {
                                     val journalDate = JournalUtils.parseJournalDate(title)
-                                    if (journalDate != null) {
-                                        journalDateResolver.getPageByJournalDate(journalDate)
-                                    } else {
-                                        pageRepository.getPageByName(name).first().getOrNull()
-                                    }
+                                    if (journalDate != null) pagesByJournalDate[journalDate]
+                                    else pagesByName[name.lowercase()]
                                 } else {
-                                    pageRepository.getPageByName(name).first().getOrNull()
+                                    pagesByName[name.lowercase()]
                                 }
-                                
-                                // Check if blocks exist for this page to handle partially loaded/failed states
-                                val hasBlocks = if (existingPage != null) {
-                                    val blocksResult = blockRepository.getBlocksForPage(existingPage.uuid).first()
-                                    val blocks = blocksResult.getOrNull() ?: emptyList()
-                                    blocks.isNotEmpty()
-                                } else false
 
-                                val shouldSkip = existingPage != null && fileModTime != 0L && 
+                                // isContentLoaded is set atomically with block saves, so it reliably
+                                // reflects whether blocks are present without a second DB round-trip.
+                                val shouldSkip = existingPage != null && fileModTime != 0L &&
                                     existingPage.updatedAt.toEpochMilliseconds() >= fileModTime &&
-                                    hasBlocks
+                                    existingPage.isContentLoaded
                                 
                                 if (shouldSkip) {
                                     return@count true  // Count as processed but skip actual parsing
@@ -591,37 +656,17 @@ class GraphLoader(
                                 }
                             }
                             
-                            // Track pages where savePage failed so we never call saveBlocks
-                            // for a page_uuid that isn't committed — that would cause a FK error.
+                            // Flush all writes for this chunk through the actor in a single dispatch.
+                            // Previously each savePage / deleteBlocks / saveBlocks was its own actor
+                            // call; with N chunks in flight that created O(N×chunk) queue depth and
+                            // made each batchDeleteBlocks wait behind all prior savePages.
                             val failedPageUuids = mutableSetOf<String>()
-                            if (pagesToSave.isNotEmpty()) {
-                                pagesToSave.forEach { page ->
-                                    writeActor.savePage(page).onFailure { e ->
-                                        logger.error("savePage failed for ${page.name}", e)
-                                        _writeErrors.tryEmit(WriteError(page.filePath ?: page.name, 0, e))
-                                        failedPageUuids.add(page.uuid)
-                                    }
-                                }
-                            }
-
-                            if (pageUuidsToDelete.isNotEmpty()) {
+                            if (pagesToSave.isNotEmpty() || pageUuidsToDelete.isNotEmpty()) {
                                 PerformanceMonitor.startTrace("batchDeleteBlocks")
-                                pageUuidsToDelete.forEach { pageUuid ->
-                                    if (pageUuid !in failedPageUuids) {
-                                        writeActor.deleteBlocksForPage(pageUuid)
-                                    }
+                                writeActor.execute(DatabaseWriteActor.Priority.LOW) {
+                                    flushChunkWrites(pagesToSave, pageUuidsToDelete, blocksToSaveByPage, failedPageUuids)
                                 }
                                 PerformanceMonitor.endTrace("batchDeleteBlocks")
-                            }
-
-                            if (blocksToSaveByPage.isNotEmpty()) {
-                                blocksToSaveByPage.forEach { (pageUuid, blocks) ->
-                                    if (pageUuid in failedPageUuids) return@forEach
-                                    writeActor.saveBlocks(blocks).onFailure { e ->
-                                        logger.error("saveBlocks failed for pageUuid=$pageUuid (${blocks.size} blocks)", e)
-                                        _writeErrors.tryEmit(WriteError(pageUuid, blocks.size, e))
-                                    }
-                                }
                             }
                             
                             processedCount += chunk.size
@@ -766,7 +811,12 @@ class GraphLoader(
         return ParseResult(page = pageWithMetadata, blocks = blocksList)
     }
     
-    suspend fun parseAndSavePage(filePath: String, content: String, mode: ParseMode = ParseMode.FULL) {
+    suspend fun parseAndSavePage(
+        filePath: String,
+        content: String,
+        mode: ParseMode = ParseMode.FULL,
+        priority: DatabaseWriteActor.Priority = DatabaseWriteActor.Priority.HIGH,
+    ) {
         if (mode == ParseMode.METADATA_ONLY && isPriorityFile(filePath)) return
 
         val lock = getFileLock(filePath)
@@ -774,6 +824,8 @@ class GraphLoader(
             if (mode == ParseMode.METADATA_ONLY && isPriorityFile(filePath)) return
 
             PerformanceMonitor.startTrace("parseAndSavePage")
+            val traceId = genId()
+            val rootSpan = Span("parseAndSavePage", traceId)
             try {
                 val fileName = filePath.replace("\\", "/").substringAfterLast("/")
                 val title = FileUtils.decodeFileName(fileName.removeSuffix(".md"))
@@ -794,11 +846,13 @@ class GraphLoader(
                 
                 val now = Clock.System.now()
                 
+                val lookupSpan = Span("db.lookupPage", traceId, rootSpan.spanId)
                 val existingPage = if (isJournal && journalDate != null) {
                     journalDateResolver.getPageByJournalDate(journalDate)
                 } else {
                     pageRepository.getPageByName(name).first().getOrNull()
                 }
+                lookupSpan.finish("OK", "page.name" to name, "page.found" to (existingPage != null).toString())
 
                 // Skip METADATA_ONLY if page is already fully loaded (don't overwrite full content)
                 if (mode == ParseMode.METADATA_ONLY && existingPage != null) {
@@ -806,16 +860,21 @@ class GraphLoader(
                 }
 
                 // OPTIMIZATION: If mode is FULL, but page is already loaded and fresh (checked inside lock), skip.
+                // Blocks are cached here to avoid a second DB round-trip at the diff-merge step below.
+                var cachedExistingBlocks: List<Block>? = null
                 if (mode == ParseMode.FULL && existingPage != null) {
                      val fileModTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
-                     
+
+                     val getBlocksSpan = Span("db.getBlocks", traceId, rootSpan.spanId)
                      val blocksResult = blockRepository.getBlocksForPage(existingPage.uuid).first()
                      val blocks = blocksResult.getOrNull() ?: emptyList()
-                     // A page is only fully up-to-date if blocks are present (or the file is empty) 
+                     cachedExistingBlocks = blocks
+                     getBlocksSpan.finish("OK", "block.count" to blocks.size.toString())
+                     // A page is only fully up-to-date if blocks are present (or the file is empty)
                      // and all blocks are loaded.
                      val allBlocksLoaded = blocks.isNotEmpty() && blocks.all { it.isLoaded }
 
-                     if (fileModTime != 0L && 
+                     if (fileModTime != 0L &&
                          existingPage.updatedAt.toEpochMilliseconds() >= fileModTime &&
                          allBlocksLoaded) return
                 }
@@ -838,7 +897,9 @@ class GraphLoader(
                     isContentLoaded = mode == ParseMode.FULL
                 )
                 
+                val parseSpan = Span("parse.markdown", traceId, rootSpan.spanId)
                 val parsedPage = markdownParser.parsePage(content)
+                parseSpan.finish("OK", "content.bytes" to content.length.toString())
                 val blocksToSave = mutableListOf<Block>()
                 var firstBlockSkipped = false
                 
@@ -850,7 +911,9 @@ class GraphLoader(
                     }
                 }
                 
-                val savePageResult = writeActor.savePage(page)
+                val savePageSpan = Span("db.savePage", traceId, rootSpan.spanId)
+                val savePageResult = writeActor.savePage(page, priority)
+                savePageSpan.finish()
                 if (savePageResult.isFailure) {
                     val e = savePageResult.exceptionOrNull()!!
                     logger.error("savePage failed for $filePath — skipping block writes to prevent FK violation", e)
@@ -864,8 +927,8 @@ class GraphLoader(
                     val stubs = mutableListOf<Block>()
                     createStubBlocks(rootBlocks, filePath, pageUuid, null, 0, updatedAt, stubs)
                     if (stubs.isNotEmpty()) {
-                        writeActor.deleteBlocksForPage(pageUuid)
-                        writeActor.saveBlocks(stubs).onFailure { e ->
+                        writeActor.deleteBlocksForPage(pageUuid, priority)
+                        writeActor.saveBlocks(stubs, priority).onFailure { e ->
                             logger.error("saveBlocks (stubs) failed for $filePath (${stubs.size} blocks)", e)
                             _writeErrors.tryEmit(WriteError(filePath, stubs.size, e))
                         }
@@ -873,8 +936,8 @@ class GraphLoader(
                     return@withLock
                 }
 
-                val existingBlocksResult = blockRepository.getBlocksForPage(pageUuid).first()
-                val existingBlocks = existingBlocksResult.getOrNull() ?: emptyList()
+                val existingBlocks = cachedExistingBlocks
+                    ?: blockRepository.getBlocksForPage(pageUuid).first().getOrNull() ?: emptyList()
                 val existingVersions = existingBlocks.associate { it.uuid to it.version }
                 val existingContent = existingBlocks.associate { it.uuid to it.content }
 
@@ -883,6 +946,7 @@ class GraphLoader(
                 val sidecarMap = sidecarManager?.read(pageSlug)
 
                 val rootBlocks = if (firstBlockSkipped) parsedPage.blocks.drop(1) else parsedPage.blocks
+                val processBlocksSpan = Span("parse.processBlocks", traceId, rootSpan.spanId)
                 processParsedBlocks(
                     parsedBlocks = rootBlocks,
                     pagePath = filePath,
@@ -896,6 +960,7 @@ class GraphLoader(
                     existingContent = existingContent,
                     sidecarMap = sidecarMap,
                 )
+                processBlocksSpan.finish("OK", "block.count" to blocksToSave.size.toString())
 
                 // Clear and update blocks if mode is FULL.
                 // Safety guard: if the file has content but the parser returned no blocks,
@@ -926,7 +991,9 @@ class GraphLoader(
                         val existingSummaries = existingBlocks.map { b ->
                             DiffMerge.ExistingBlockSummary(uuid = b.uuid, contentHash = b.contentHash, isLoaded = b.isLoaded)
                         }
+                        val diffSpan = Span("diff", traceId, rootSpan.spanId)
                         val diff = DiffMerge.diff(existingSummaries, blocksToSave)
+                        diffSpan.finish("OK", "to.insert" to diff.toInsert.size.toString(), "to.delete" to diff.toDelete.size.toString())
 
                         // Delete blocks no longer present
                         diff.toDelete.forEach { uuid ->
@@ -937,15 +1004,17 @@ class GraphLoader(
                         // Save new and changed blocks together
                         val blocksToWrite = diff.toInsert + diff.toUpdate
                         if (blocksToWrite.isNotEmpty()) {
-                            writeActor.saveBlocks(blocksToWrite).onFailure { e ->
+                            val saveBlocksSpan = Span("db.saveBlocks", traceId, rootSpan.spanId)
+                            writeActor.saveBlocks(blocksToWrite, priority).onFailure { e ->
                                 logger.error("saveBlocks failed for $filePath (${blocksToWrite.size} blocks)", e)
                                 _writeErrors.tryEmit(WriteError(filePath, blocksToWrite.size, e))
                             }
+                            saveBlocksSpan.finish("OK", "block.count" to blocksToWrite.size.toString())
                         }
                     }
                 } else if (blocksToSave.isNotEmpty()) {
-                    writeActor.deleteBlocksForPage(pageUuid)
-                    writeActor.saveBlocks(blocksToSave).onFailure { e ->
+                    writeActor.deleteBlocksForPage(pageUuid, priority)
+                    writeActor.saveBlocks(blocksToSave, priority).onFailure { e ->
                         logger.error("saveBlocks failed for $filePath (${blocksToSave.size} blocks)", e)
                         _writeErrors.tryEmit(WriteError(filePath, blocksToSave.size, e))
                     }
@@ -957,6 +1026,7 @@ class GraphLoader(
                     fileRegistry.updateModTime(filePath, updatedModTime)
                 }
             } finally {
+                rootSpan.finish("OK", "file.path" to filePath)
                 PerformanceMonitor.endTrace("parseAndSavePage")
             }
         }

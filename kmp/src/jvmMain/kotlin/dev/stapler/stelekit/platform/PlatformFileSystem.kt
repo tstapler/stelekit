@@ -18,6 +18,8 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
 
     actual override fun listFiles(path: String): List<String> = super.listFiles(path)
 
+    override fun listFilesWithModTimes(path: String): List<Pair<String, Long>> = super<JvmFileSystemBase>.listFilesWithModTimes(path)
+
     actual override fun listDirectories(path: String): List<String> = super.listDirectories(path)
 
     actual override fun fileExists(path: String): Boolean = super.fileExists(path)

@@ -3,8 +3,8 @@ package dev.stapler.stelekit.db
 actual class PlatformUtils actual constructor() {
     actual fun getDatabaseDirectory(): String {
         // On Android, use app-specific directory from static context
-        val context = DriverFactory.staticContext 
-            ?: throw IllegalStateException("DriverFactory must be initialized with a Context before calling PlatformUtils.getDatabaseDirectory().")
+        val context = DriverFactory.staticContext
+            ?: error("DriverFactory must be initialized with a Context before calling PlatformUtils.getDatabaseDirectory().")
         
         return context.filesDir.absolutePath
     }
