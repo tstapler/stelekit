@@ -65,6 +65,7 @@ class JournalsViewModelTest {
         override suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean): Result<Unit> = Result.success(Unit)
         override suspend fun deleteBulk(blockUuids: List<String>, deleteChildren: Boolean): Result<Unit> = Result.success(Unit)
         override suspend fun deleteBlocksForPage(pageUuid: String): Result<Unit> = Result.success(Unit)
+        override suspend fun deleteBlocksForPages(pageUuids: List<String>): Result<Unit> = Result.success(Unit)
         override suspend fun moveBlock(blockUuid: String, newParentUuid: String?, newPosition: Int): Result<Unit> = Result.success(Unit)
         override suspend fun indentBlock(blockUuid: String): Result<Unit> = Result.success(Unit)
         override suspend fun outdentBlock(blockUuid: String): Result<Unit> = Result.success(Unit)
@@ -114,6 +115,13 @@ class JournalsViewModelTest {
         override suspend fun savePage(page: Page): Result<Unit> {
             val existingIdx = pages.indexOfFirst { it.uuid == page.uuid }
             if (existingIdx >= 0) pages[existingIdx] = page else pages.add(page)
+            return Result.success(Unit)
+        }
+        override suspend fun savePages(pageList: List<Page>): Result<Unit> {
+            pageList.forEach { page ->
+                val existingIdx = pages.indexOfFirst { it.uuid == page.uuid }
+                if (existingIdx >= 0) pages[existingIdx] = page else pages.add(page)
+            }
             return Result.success(Unit)
         }
         override suspend fun deletePage(pageUuid: String): Result<Unit> = Result.success(Unit)

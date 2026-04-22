@@ -81,6 +81,11 @@ open class FakePageRepository(initialPages: List<Page> = emptyList()) : PageRepo
         return Result.success(Unit)
     }
 
+    override suspend fun savePages(pages: List<Page>): Result<Unit> {
+        _pages.value = _pages.value + pages.associateBy { it.uuid }
+        return Result.success(Unit)
+    }
+
     override suspend fun toggleFavorite(pageUuid: String): Result<Unit> {
         val page = _pages.value[pageUuid] ?: return Result.success(Unit)
         _pages.value = _pages.value + (pageUuid to page.copy(isFavorite = !page.isFavorite))
@@ -174,6 +179,12 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
 
     override suspend fun deleteBlocksForPage(pageUuid: String): Result<Unit> {
         _blocks.value = _blocks.value.filterValues { it.pageUuid != pageUuid }
+        return Result.success(Unit)
+    }
+
+    override suspend fun deleteBlocksForPages(pageUuids: List<String>): Result<Unit> {
+        val uuidSet = pageUuids.toSet()
+        _blocks.value = _blocks.value.filterValues { it.pageUuid !in uuidSet }
         return Result.success(Unit)
     }
 

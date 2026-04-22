@@ -63,6 +63,15 @@ class CachedPageRepository(
         return cache.savePage(page)
     }
 
+    override suspend fun savePages(pages: List<Page>): Result<Unit> {
+        var lastFailure: Result<Unit> = Result.success(Unit)
+        for (page in pages) {
+            val result = cache.savePage(page)
+            if (result.isFailure) lastFailure = result
+        }
+        return lastFailure
+    }
+
     override suspend fun toggleFavorite(pageUuid: String): Result<Unit> {
         return delegate.toggleFavorite(pageUuid).also {
             cache.invalidatePage(pageUuid)

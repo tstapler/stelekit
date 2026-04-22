@@ -24,19 +24,19 @@ class BlockCache(
     private val config: CacheConfig,
     private val delegate: BlockRepository
 ) {
-    private val blockCache = LRUCache<String, CachedBlock>(config, "blocks")
+    private val cache = LRUCache<String, CachedBlock>(config, "blocks")
     private val childrenIndex = ConcurrentHashMap<String, MutableList<String>>()
     private val hierarchyCache = LRUCache<String, CachedHierarchy>(config, "hierarchies")
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val metrics = MutableStateFlow(CacheMetrics())
 
     fun start() {
-        blockCache.start()
+        cache.start()
         hierarchyCache.start()
     }
 
     fun stop() {
-        blockCache.stop()
+        cache.stop()
         hierarchyCache.stop()
         scope.cancel()
     }
@@ -46,7 +46,7 @@ class BlockCache(
      */
     fun getBlockByUuid(uuid: String): Flow<Result<Block?>> = flow {
         try {
-            val cached = blockCache.get(uuid)
+            val cached = cache.get(uuid)
             if (cached != null) {
                 metrics.value = metrics.value.withBlockHit()
                 emit(success(cached.block))
@@ -58,7 +58,7 @@ class BlockCache(
                             block = block,
                             childrenUuids = emptyList()
                         )
-                        blockCache.put(uuid, cachedBlock)
+                        cache.put(uuid, cachedBlock)
                         if (config.enablePrefetch && config.prefetchDepth > 0) {
                             prefetchBlockChildren(block.uuid, 1)
                         }
@@ -78,7 +78,7 @@ class BlockCache(
         try {
             var parentBlock: Block? = null
 
-            blockCache.get(blockUuid)?.let { cached ->
+            cache.get(blockUuid)?.let { cached ->
                 parentBlock = cached.block
             }
 
@@ -95,7 +95,7 @@ class BlockCache(
             val cachedChildrenUuids = childrenIndex[blockUuid]
             if (cachedChildrenUuids != null) {
                 val cachedChildren = cachedChildrenUuids.mapNotNull { uuid ->
-                    blockCache.get(uuid)?.block
+                    cache.get(uuid)?.block
                 }
                 if (cachedChildren.size == cachedChildrenUuids.size) {
                     metrics.value = metrics.value.withBlockHit()
@@ -116,7 +116,7 @@ class BlockCache(
                             childrenUuids = emptyList(),
                             parentId = blockUuid
                         )
-                        blockCache.put(child.uuid, cached)
+                        cache.put(child.uuid, cached)
                         child
                     }
 
@@ -161,7 +161,7 @@ class BlockCache(
 
                         // Cache individual blocks
                         hierarchy.forEach { (block, _) ->
-                            blockCache.put(block.uuid, CachedBlock(block))
+                            cache.put(block.uuid, CachedBlock(block))
                         }
 
                         emit(success(hierarchy))
@@ -178,9 +178,9 @@ class BlockCache(
      */
     fun getBlockParent(blockUuid: String): Flow<Result<Block?>> = flow {
         try {
-            val cached = blockCache.get(blockUuid)
+            val cached = cache.get(blockUuid)
             if (cached != null && cached.parentId != null) {
-                val parent = blockCache.get(cached.parentId)
+                val parent = cache.get(cached.parentId)
                 if (parent != null) {
                     metrics.value = metrics.value.withBlockHit()
                     emit(success(parent.block))
@@ -201,12 +201,12 @@ class BlockCache(
     fun getBlockAncestors(blockUuid: String): Flow<Result<List<Block>>> = flow {
         try {
             // Try to build from cache
-            val cached = blockCache.get(blockUuid)
+            val cached = cache.get(blockUuid)
             if (cached != null) {
                 val ancestors = mutableListOf<Block>()
                 var currentParentUuid: String? = cached.parentId
                 while (currentParentUuid != null) {
-                    val parent = blockCache.get(currentParentUuid)
+                    val parent = cache.get(currentParentUuid)
                     if (parent != null) {
                         ancestors.add(parent.block)
                         currentParentUuid = parent.parentId
@@ -271,9 +271,9 @@ class BlockCache(
      * Invalidate a specific block from cache.
      */
     fun invalidateBlock(uuid: String) {
-        val cached = blockCache.get(uuid)
+        val cached = cache.get(uuid)
         cached?.let {
-            blockCache.remove(uuid)
+            cache.remove(uuid)
             it.block.parentUuid?.let { pid ->
                 childrenIndex[pid]?.remove(uuid)
             }
@@ -285,7 +285,7 @@ class BlockCache(
      * Useful when reordering blocks.
      */
     fun invalidateSiblings(blockUuid: String) {
-        val cached = blockCache.get(blockUuid)
+        val cached = cache.get(blockUuid)
         cached?.block?.parentUuid?.let { pid ->
             childrenIndex.remove(pid)
         }
@@ -304,7 +304,7 @@ class BlockCache(
      * Clear all caches.
      */
     fun clear() {
-        blockCache.clear()
+        cache.clear()
         hierarchyCache.clear()
         childrenIndex.clear()
     }
@@ -319,7 +319,7 @@ class BlockCache(
 
         scope.launch {
             try {
-                val block = blockCache.get(blockUuid)
+                val block = cache.get(blockUuid)
                 if (block != null) {
                     val childrenUuids = childrenIndex[blockUuid]
                     if (childrenUuids == null) {

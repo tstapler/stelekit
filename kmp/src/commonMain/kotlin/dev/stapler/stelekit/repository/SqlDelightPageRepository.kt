@@ -1,5 +1,8 @@
 package dev.stapler.stelekit.repository
 
+import dev.stapler.stelekit.cache.LruCache
+import dev.stapler.stelekit.cache.RepoCacheConfig
+import dev.stapler.stelekit.cache.RequestCoalescer
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
@@ -23,98 +26,122 @@ class SqlDelightPageRepository(
 
     private val queries = database.steleDatabaseQueries
 
-    override fun getPageByUuid(uuid: String): Flow<Result<Page?>> = 
-        queries.selectPageByUuid(uuid)
-            .asFlow()
-            .mapToOneOrNull(PlatformDispatcher.IO)
-            .map { success(it?.toModel()) }
+    private val cacheConfig = RepoCacheConfig.fromPlatform()
 
-    override fun getPageByName(name: String): Flow<Result<Page?>> = 
-        queries.selectPageByName(name)
-            .asFlow()
-            .mapToOneOrNull(PlatformDispatcher.IO)
-            .map { success(it?.toModel()) }
+    // Page LRU caches: 20% each of platform cache budget.
+    // Weigher: 300 bytes fixed + 2 bytes per char in name and filePath.
+    // Only caches found pages; null (not found) results are not cached.
+    private val pageByUuidCache = LruCache<String, Page>(
+        maxWeight = cacheConfig.pageByUuidCacheBytes,
+        weigher = { _, p -> 300L + p.name.length * 2 + (p.filePath?.length ?: 0) * 2 }
+    )
+    private val pageByNameCache = LruCache<String, Page>(
+        maxWeight = cacheConfig.pageByNameCacheBytes,
+        weigher = { _, p -> 300L + p.name.length * 2 + (p.filePath?.length ?: 0) * 2 }
+    )
+
+    // Deduplicates concurrent identical getPageByName lookups (e.g. during parallel indexing).
+    private val byNameCoalescer = RequestCoalescer<String, Page?>()
+
+    override fun getPageByUuid(uuid: String): Flow<Result<Page?>> = flow {
+        val cached = pageByUuidCache.get(uuid)
+        if (cached != null) {
+            emit(success(cached))
+            return@flow
+        }
+        val page = queries.selectPageByUuid(uuid).executeAsOneOrNull()?.toModel()
+        if (page != null) {
+            pageByUuidCache.put(page.uuid, page)
+            pageByNameCache.put(page.name.lowercase(), page)
+        }
+        emit(success(page))
+    }.flowOn(PlatformDispatcher.DB)
+
+    override fun getPageByName(name: String): Flow<Result<Page?>> = flow {
+        val cached = pageByNameCache.get(name.lowercase())
+        if (cached != null) {
+            emit(success(cached))
+            return@flow
+        }
+        val page = byNameCoalescer.execute(name.lowercase()) {
+            queries.selectPageByName(name).executeAsOneOrNull()?.toModel()
+        }
+        if (page != null) {
+            pageByNameCache.put(name.lowercase(), page)
+            pageByUuidCache.put(page.uuid, page)
+        }
+        emit(success(page))
+    }.flowOn(PlatformDispatcher.DB)
 
     override fun getPagesInNamespace(namespace: String): Flow<Result<List<Page>>> = 
         queries.selectPagesByNamespaceUnpaginated(namespace)
             .asFlow()
-            .mapToList(PlatformDispatcher.IO)
+            .mapToList(PlatformDispatcher.DB)
             .map { list -> success(list.map { it.toModel() }) }
 
     override fun getPages(limit: Int, offset: Int): Flow<Result<List<Page>>> = 
         queries.selectAllPagesPaginated(limit.toLong(), offset.toLong())
             .asFlow()
-            .mapToList(PlatformDispatcher.IO)
+            .mapToList(PlatformDispatcher.DB)
             .map { list -> success(list.map { it.toModel() }) }
 
     override fun searchPages(query: String, limit: Int, offset: Int): Flow<Result<List<Page>>> = 
         queries.selectPagesByNameLikePaginated("%$query%", limit.toLong(), offset.toLong())
             .asFlow()
-            .mapToList(PlatformDispatcher.IO)
+            .mapToList(PlatformDispatcher.DB)
             .map { list -> success(list.map { it.toModel() }) }
 
-    override fun getAllPages(): Flow<Result<List<Page>>> = 
+    override fun getAllPages(): Flow<Result<List<Page>>> =
         queries.selectAllPages()
             .asFlow()
-            .mapToList(PlatformDispatcher.IO)
+            .conflate()  // drop intermediate invalidations during bulk import to avoid O(N²) full-table scans
+            .mapToList(PlatformDispatcher.DB)
             .map { list -> success(list.map { it.toModel() }) }
 
     override fun getJournalPages(limit: Int, offset: Int): Flow<Result<List<Page>>> =
         queries.selectJournalPages(limit.toLong(), offset.toLong())
             .asFlow()
-            .mapToList(PlatformDispatcher.IO)
+            .mapToList(PlatformDispatcher.DB)
             .map { list -> success(list.map { it.toModel() }) }
 
     override fun getJournalPageByDate(date: kotlinx.datetime.LocalDate): Flow<Result<Page?>> =
         queries.selectJournalPageByDate(date.toString())
             .asFlow()
-            .mapToOneOrNull(PlatformDispatcher.IO)
+            .mapToOneOrNull(PlatformDispatcher.DB)
             .map { success(it?.toModel()) }
 
     override fun getRecentPages(limit: Int): Flow<Result<List<Page>>> = 
         queries.selectRecentlyUpdatedPages(limit.toLong())
             .asFlow()
-            .mapToList(PlatformDispatcher.IO)
+            .mapToList(PlatformDispatcher.DB)
             .map { list -> success(list.map { it.toModel() }) }
 
     override fun getUnloadedPages(): Flow<Result<List<Page>>> = 
         queries.selectUnloadedPages()
             .asFlow()
-            .mapToList(PlatformDispatcher.IO)
+            .mapToList(PlatformDispatcher.DB)
             .map { list -> success(list.map { it.toModel() }) }
 
-    override suspend fun savePage(page: Page): Result<Unit> = withContext(PlatformDispatcher.IO) {
+    override suspend fun savePage(page: Page): Result<Unit> = withContext(PlatformDispatcher.DB) {
+        try {
+            upsertPage(page)
+            pageByUuidCache.put(page.uuid, page)
+            pageByNameCache.put(page.name.lowercase(), page)
+            success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun savePages(pages: List<Page>): Result<Unit> = withContext(PlatformDispatcher.DB) {
+        if (pages.isEmpty()) return@withContext success(Unit)
         try {
             queries.transaction {
-                // 1. Try to insert (will ignore if UUID conflict exists)
-                queries.insertPage(
-                    uuid = page.uuid,
-                    name = page.name,
-                    namespace = page.namespace,
-                    file_path = page.filePath,
-                    created_at = page.createdAt.toEpochMilliseconds(),
-                    updated_at = page.updatedAt.toEpochMilliseconds(),
-                    properties = page.properties.entries.joinToString(",") { "${it.key}:${it.value}" },
-                    version = page.version,
-                    is_favorite = if (page.isFavorite) 1L else 0L,
-                    is_journal = if (page.isJournal) 1L else 0L,
-                    journal_date = page.journalDate?.toString(),
-                    is_content_loaded = if (page.isContentLoaded) 1L else 0L
-                )
-
-                // 2. Update all fields (in case it already exists)
-                queries.updatePage(
-                    namespace = page.namespace,
-                    file_path = page.filePath,
-                    updated_at = page.updatedAt.toEpochMilliseconds(),
-                    properties = page.properties.entries.joinToString(",") { "${it.key}:${it.value}" },
-                    version = page.version,
-                    is_favorite = if (page.isFavorite) 1L else 0L,
-                    is_journal = if (page.isJournal) 1L else 0L,
-                    journal_date = page.journalDate?.toString(),
-                    is_content_loaded = if (page.isContentLoaded) 1L else 0L,
-                    uuid = page.uuid
-                )
+                pages.forEach { page -> upsertPage(page) }
+            }
+            pages.forEach { page ->
+                pageByUuidCache.put(page.uuid, page)
+                pageByNameCache.put(page.name.lowercase(), page)
             }
             success(Unit)
         } catch (e: Exception) {
@@ -122,7 +149,36 @@ class SqlDelightPageRepository(
         }
     }
 
-    override suspend fun toggleFavorite(pageUuid: String): Result<Unit> = withContext(PlatformDispatcher.IO) {
+    private fun upsertPage(page: Page) {
+        queries.insertPage(
+            uuid = page.uuid,
+            name = page.name,
+            namespace = page.namespace,
+            file_path = page.filePath,
+            created_at = page.createdAt.toEpochMilliseconds(),
+            updated_at = page.updatedAt.toEpochMilliseconds(),
+            properties = page.properties.entries.joinToString(",") { "${it.key}:${it.value}" },
+            version = page.version,
+            is_favorite = if (page.isFavorite) 1L else 0L,
+            is_journal = if (page.isJournal) 1L else 0L,
+            journal_date = page.journalDate?.toString(),
+            is_content_loaded = if (page.isContentLoaded) 1L else 0L
+        )
+        queries.updatePage(
+            namespace = page.namespace,
+            file_path = page.filePath,
+            updated_at = page.updatedAt.toEpochMilliseconds(),
+            properties = page.properties.entries.joinToString(",") { "${it.key}:${it.value}" },
+            version = page.version,
+            is_favorite = if (page.isFavorite) 1L else 0L,
+            is_journal = if (page.isJournal) 1L else 0L,
+            journal_date = page.journalDate?.toString(),
+            is_content_loaded = if (page.isContentLoaded) 1L else 0L,
+            uuid = page.uuid
+        )
+    }
+
+    override suspend fun toggleFavorite(pageUuid: String): Result<Unit> = withContext(PlatformDispatcher.DB) {
         try {
             val page = queries.selectPageByUuid(pageUuid).executeAsOneOrNull()
             if (page != null) {
@@ -135,18 +191,24 @@ class SqlDelightPageRepository(
         }
     }
 
-    override suspend fun renamePage(pageUuid: String, newName: String): Result<Unit> = withContext(PlatformDispatcher.IO) {
+    override suspend fun renamePage(pageUuid: String, newName: String): Result<Unit> = withContext(PlatformDispatcher.DB) {
         try {
+            val old = pageByUuidCache.get(pageUuid)
+            if (old != null) pageByNameCache.remove(old.name.lowercase())
             queries.updatePageName(newName, pageUuid)
+            pageByUuidCache.remove(pageUuid)
             success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    override suspend fun deletePage(pageUuid: String): Result<Unit> = withContext(PlatformDispatcher.IO) {
+    override suspend fun deletePage(pageUuid: String): Result<Unit> = withContext(PlatformDispatcher.DB) {
         try {
+            val old = pageByUuidCache.get(pageUuid)
+            if (old != null) pageByNameCache.remove(old.name.lowercase())
             queries.deletePageByUuid(pageUuid)
+            pageByUuidCache.remove(pageUuid)
             success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -160,10 +222,12 @@ class SqlDelightPageRepository(
         } catch (e: Exception) {
             emit(Result.failure(e))
         }
-    }.flowOn(PlatformDispatcher.IO)
+    }.flowOn(PlatformDispatcher.DB)
 
-    override suspend fun clear(): Unit = withContext(PlatformDispatcher.IO) {
+    override suspend fun clear(): Unit = withContext(PlatformDispatcher.DB) {
         queries.deleteAllPages()
+        pageByUuidCache.invalidateAll()
+        pageByNameCache.invalidateAll()
     }
 
     private fun dev.stapler.stelekit.db.Pages.toModel(): Page {

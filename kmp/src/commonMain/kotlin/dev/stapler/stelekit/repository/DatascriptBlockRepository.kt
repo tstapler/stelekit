@@ -456,6 +456,23 @@ class DatascriptBlockRepository : BlockRepository {
         }
     }
 
+    override suspend fun deleteBlocksForPages(pageUuids: List<String>): Result<Unit> {
+        if (pageUuids.isEmpty()) return success(Unit)
+        return writeMutex.withLock {
+            try {
+                val uuidSet = pageUuids.toSet()
+                val current = blocks.value.toMutableMap()
+                val toRemove = current.values.filter { it.pageUuid in uuidSet }.map { it.uuid }
+                toRemove.forEach { current.remove(it) }
+                blocks.value = current
+                refreshIndexes(current)
+                success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+    }
+
     override suspend fun clear() {
         writeMutex.withLock {
             blocks.value = emptyMap()

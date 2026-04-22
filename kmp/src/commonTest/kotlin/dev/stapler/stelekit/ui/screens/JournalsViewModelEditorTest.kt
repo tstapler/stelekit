@@ -184,6 +184,12 @@ class JournalsViewModelEditorTest {
             return Result.success(Unit)
         }
 
+        override suspend fun deleteBlocksForPages(pageUuids: List<String>): Result<Unit> {
+            val uuidSet = pageUuids.toSet()
+            blocks.value = blocks.value.filterValues { it.pageUuid !in uuidSet }
+            return Result.success(Unit)
+        }
+
         override suspend fun moveBlock(blockUuid: String, newParentUuid: String?, newPosition: Int): Result<Unit> =
             Result.success(Unit)
 
@@ -292,6 +298,14 @@ class JournalsViewModelEditorTest {
         override suspend fun savePage(page: Page): Result<Unit> {
             pages.removeAll { it.uuid == page.uuid }
             pages.add(page)
+            return Result.success(Unit)
+        }
+
+        override suspend fun savePages(pageList: List<Page>): Result<Unit> {
+            pageList.forEach { page ->
+                pages.removeAll { it.uuid == page.uuid }
+                pages.add(page)
+            }
             return Result.success(Unit)
         }
 

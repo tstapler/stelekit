@@ -110,6 +110,16 @@ class InMemoryBlockRepository : BlockRepository {
         return success(Unit)
     }
 
+    override suspend fun deleteBlocksForPages(pageUuids: List<String>): Result<Unit> {
+        if (pageUuids.isEmpty()) return success(Unit)
+        val uuidSet = pageUuids.toSet()
+        val current = this.blocks.value.toMutableMap()
+        val toRemove = current.values.filter { it.pageUuid in uuidSet }.map { it.uuid }
+        toRemove.forEach { current.remove(it) }
+        this.blocks.value = current
+        return success(Unit)
+    }
+
     override suspend fun clear() {
         blocks.value = emptyMap()
     }
@@ -562,6 +572,13 @@ class InMemoryPageRepository : PageRepository {
     override suspend fun savePage(page: Page): Result<Unit> {
         val current = pages.value.toMutableMap()
         current[page.uuid] = page
+        pages.value = current
+        return success(Unit)
+    }
+
+    override suspend fun savePages(pageList: List<Page>): Result<Unit> {
+        val current = pages.value.toMutableMap()
+        pageList.forEach { current[it.uuid] = it }
         pages.value = current
         return success(Unit)
     }

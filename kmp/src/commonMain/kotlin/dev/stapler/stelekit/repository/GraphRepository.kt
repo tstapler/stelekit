@@ -62,6 +62,13 @@ interface BlockRepository {
     suspend fun deleteBlocksForPage(pageUuid: String): Result<Unit>
 
     /**
+     * Delete all blocks for multiple pages in a single transaction.
+     * Significantly faster than calling [deleteBlocksForPage] in a loop during bulk loads.
+     */
+    @DirectRepositoryWrite
+    suspend fun deleteBlocksForPages(pageUuids: List<String>): Result<Unit>
+
+    /**
      * Clear all blocks from the repository
      */
     @DirectRepositoryWrite
@@ -242,6 +249,13 @@ interface PageRepository {
      */
     @DirectRepositoryWrite
     suspend fun savePage(page: Page): Result<Unit>
+
+    /**
+     * Save multiple pages in a single transaction.
+     * Significantly faster than calling [savePage] in a loop during bulk loads.
+     */
+    @DirectRepositoryWrite
+    suspend fun savePages(pages: List<Page>): Result<Unit>
 
     /**
      * Toggle favorite status for a page
@@ -529,5 +543,7 @@ data class RepositorySet(
     val undoManager: dev.stapler.stelekit.db.UndoManager? = null,
     val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
     val debugFlagRepository: dev.stapler.stelekit.performance.DebugFlagRepository? = null,
+    val ringBuffer: dev.stapler.stelekit.performance.RingBufferSpanExporter? = null,
+    val spanRepository: dev.stapler.stelekit.performance.SpanRepository? = null,
     val bugReportBuilder: dev.stapler.stelekit.performance.BugReportBuilder? = null
 )

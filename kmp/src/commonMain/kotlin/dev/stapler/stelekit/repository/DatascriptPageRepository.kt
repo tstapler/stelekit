@@ -102,8 +102,18 @@ class DatascriptPageRepository : PageRepository {
             val current = pages.value.toMutableMap()
             current[page.uuid] = page
             pages.value = current
+            refreshIndexes(current)
+            success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
-            // Update indexes
+    override suspend fun savePages(pageList: List<Page>): Result<Unit> {
+        return try {
+            val current = pages.value.toMutableMap()
+            pageList.forEach { current[it.uuid] = it }
+            pages.value = current
             refreshIndexes(current)
             success(Unit)
         } catch (e: Exception) {

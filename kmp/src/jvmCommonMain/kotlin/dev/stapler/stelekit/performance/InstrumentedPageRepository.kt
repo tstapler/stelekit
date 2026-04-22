@@ -57,6 +57,21 @@ class InstrumentedPageRepository(
     }
 
     @DirectRepositoryWrite
+    override suspend fun savePages(pages: List<Page>): Result<Unit> {
+        val span = tracer.spanBuilder("page.savePages")
+            .setAttribute("page.count", pages.size.toLong())
+            .startSpan()
+        return try {
+            delegate.savePages(pages)
+        } catch (e: Exception) {
+            span.setStatus(StatusCode.ERROR, e.message ?: "")
+            throw e
+        } finally {
+            span.end()
+        }
+    }
+
+    @DirectRepositoryWrite
     override suspend fun toggleFavorite(pageUuid: String): Result<Unit> {
         val span = tracer.spanBuilder("page.toggleFavorite")
             .setAttribute("page.uuid", pageUuid)
