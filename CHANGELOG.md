@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.8.0](https://github.com/tstapler/stelekit/compare/v0.7.1...v0.8.0) (2026-04-22)
+
+
+### Features
+
+* **cache:** add LruCache, RequestCoalescer, and platform-aware cache sizing ([05e982a](https://github.com/tstapler/stelekit/commit/05e982ac56ef5683bf1ee3c96b275ea428284537))
+* **ci:** generate flamegraph PNG and embed it inline in benchmark PR comment ([7425ee8](https://github.com/tstapler/stelekit/commit/7425ee8ce151e89081aef3af0e50f89dcc8ee7ce))
+* **ci:** upload flamegraph PNG via GitHub uploads API instead of repo commit ([d4ead21](https://github.com/tstapler/stelekit/commit/d4ead21083aef83e17af0f1f574fcc4e36f37042))
+* **db:** add priority channels and bulk SavePages to DatabaseWriteActor ([c9dee34](https://github.com/tstapler/stelekit/commit/c9dee34f0deaa5453593a12b20bec316b1ee3c3d))
+* **db:** add spans table to schema and extend migration infrastructure ([c216f0f](https://github.com/tstapler/stelekit/commit/c216f0fd7c98cf3202d262c229aad68f39580bf8))
+* **db:** enforce all SQL writes through @DirectSqlWrite + RestrictedDatabaseQueries ([7a880d1](https://github.com/tstapler/stelekit/commit/7a880d12908324490d10654d853b5cd88952dd92))
+* **performance:** add OpenTelemetry tracing, JFR benchmarks, and frame metrics ([5e55e1a](https://github.com/tstapler/stelekit/commit/5e55e1afd5767dfc0ea8298d8315b20ddd3dd015))
+* **repository:** savePages bulk write, page LRU cache, block domain model cache ([0f31ee0](https://github.com/tstapler/stelekit/commit/0f31ee0ab544b96b62cf969085862851b29685ae))
+* **ui:** add rename-page to command palette ([f898fff](https://github.com/tstapler/stelekit/commit/f898fff2c5af43cb198fd4d2b32bd1295458a0a5))
+* **ui:** expand performance dashboard and wire OTel into compose layer ([ed045f4](https://github.com/tstapler/stelekit/commit/ed045f40d1cc85ca5daa12c8db889bb114499a63))
+
+
+### Performance Improvements
+
+* **db:** add pooled JDBC SQLite driver and PlatformDispatcher.DB abstraction ([e4001e9](https://github.com/tstapler/stelekit/commit/e4001e9600e8b38f448550fa6f56a5aa586926ee))
+* **graph-loader:** bulk chunk writes, skip-unchanged pages, single-pass mtime scan ([a6261cb](https://github.com/tstapler/stelekit/commit/a6261cbe4ce2a39361b3b781584ed4cfa30829cf))
+
 ## [0.7.1](https://github.com/tstapler/stelekit/compare/v0.7.0...v0.7.1) (2026-04-20)
 
 
