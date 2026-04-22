@@ -12,11 +12,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -27,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.stapler.stelekit.performance.HistogramWriter
+import dev.stapler.stelekit.performance.PerfExporter
 import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import dev.stapler.stelekit.performance.RingBufferSpanExporter
@@ -43,6 +46,7 @@ fun PerformanceDashboard(
     histogramWriter: HistogramWriter? = null,
     ringBuffer: RingBufferSpanExporter? = null,
     spanRepository: SpanRepository? = null,
+    perfExporter: PerfExporter? = null,
     modifier: Modifier = Modifier,
 ) {
     var selectedTab by remember { mutableStateOf(0) }
@@ -65,7 +69,7 @@ fun PerformanceDashboard(
 
         when (selectedTab) {
             0 -> HistogramsTab(histogramWriter)
-            1 -> SpansTab(spanRepository, ringBuffer)
+            1 -> SpansTab(spanRepository, ringBuffer, perfExporter)
             2 -> TracesTab()
         }
     }
@@ -144,9 +148,16 @@ private fun p99Color(p99Ms: Long): Color = when {
     else -> Color(0xFF4CAF50)
 }
 
+private val durationPresets = listOf(0L, 50L, 100L, 250L, 500L)
+
 @Composable
-private fun SpansTab(spanRepository: SpanRepository?, ringBuffer: RingBufferSpanExporter?) {
+private fun SpansTab(
+    spanRepository: SpanRepository?,
+    ringBuffer: RingBufferSpanExporter?,
+    perfExporter: PerfExporter? = null,
+) {
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     // SQLite-persisted spans (reactive flow); fall back to polling ring buffer if no repo.
     val liveSpans by if (spanRepository != null) {
@@ -164,83 +175,164 @@ private fun SpansTab(spanRepository: SpanRepository?, ringBuffer: RingBufferSpan
     var frozenSpans by remember { mutableStateOf<List<SerializedSpan>?>(null) }
     var maxDepth by remember { mutableIntStateOf(8) }
 
-    val displaySpans = frozenSpans ?: liveSpans
-    val traces = remember(displaySpans, maxDepth) { groupIntoTraces(displaySpans, maxDepth) }
+    // Filter state
+    var filterName by remember { mutableStateOf("") }
+    var minDurationMs by remember { mutableLongStateOf(0L) }
+    var errorsOnly by remember { mutableStateOf(false) }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Traces (${traces.size})", style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.weight(1f))
-            // Max depth control
-            Text("Depth:", style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.width(4.dp))
-            IconButton(onClick = { if (maxDepth > 1) maxDepth-- }, modifier = Modifier.size(32.dp)) {
-                Text("−", style = MaterialTheme.typography.labelLarge)
-            }
-            Text(
-                text = maxDepth.toString(),
-                style = MaterialTheme.typography.labelMedium,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.widthIn(min = 20.dp),
-            )
-            IconButton(onClick = { if (maxDepth < 32) maxDepth++ }, modifier = Modifier.size(32.dp)) {
-                Text("+", style = MaterialTheme.typography.labelLarge)
-            }
-            Spacer(Modifier.width(4.dp))
-            // Pause / resume
-            IconButton(onClick = {
-                if (paused) {
-                    frozenSpans = null
-                } else {
-                    frozenSpans = liveSpans
+    // Detail panel state
+    var selectedSpan by remember { mutableStateOf<SerializedSpan?>(null) }
+
+    val displaySpans = frozenSpans ?: liveSpans
+    val allTraces = remember(displaySpans, maxDepth) { groupIntoTraces(displaySpans, maxDepth) }
+    val traces = remember(allTraces, filterName, minDurationMs, errorsOnly) {
+        allTraces.filter { trace ->
+            (filterName.isBlank() || trace.rows.any { it.span.name.contains(filterName, ignoreCase = true) }) &&
+            trace.durationMs >= minDurationMs &&
+            (!errorsOnly || trace.hasError)
+        }
+    }
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { padding ->
+    Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // ── Toolbar row 1: controls ──────────────────────────────────
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Traces (${traces.size}/${allTraces.size})", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.weight(1f))
+                Text("Depth:", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = { if (maxDepth > 1) maxDepth-- }, modifier = Modifier.size(32.dp)) {
+                    Text("−", style = MaterialTheme.typography.labelLarge)
                 }
-                paused = !paused
-            }) {
-                Icon(
-                    imageVector = if (paused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                    contentDescription = if (paused) "Resume" else "Pause",
-                    tint = if (paused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                Text(
+                    text = maxDepth.toString(),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.widthIn(min = 20.dp),
+                )
+                IconButton(onClick = { if (maxDepth < 32) maxDepth++ }, modifier = Modifier.size(32.dp)) {
+                    Text("+", style = MaterialTheme.typography.labelLarge)
+                }
+                Spacer(Modifier.width(4.dp))
+                IconButton(onClick = {
+                    if (paused) { frozenSpans = null } else { frozenSpans = liveSpans }
+                    paused = !paused
+                }) {
+                    Icon(
+                        imageVector = if (paused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                        contentDescription = if (paused) "Resume" else "Pause",
+                        tint = if (paused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                if (perfExporter != null) {
+                    IconButton(onClick = {
+                        scope.launch {
+                            val msg = try {
+                                val path = perfExporter.export()
+                                "Exported to $path"
+                            } catch (e: Exception) {
+                                "Export failed: ${e.message}"
+                            }
+                            snackbarHostState.showSnackbar(msg)
+                        }
+                    }) {
+                        Icon(Icons.Default.FileDownload, contentDescription = "Export JSON")
+                    }
+                }
+                IconButton(onClick = {
+                    scope.launch { spanRepository?.clear(); ringBuffer?.clear() }
+                }) {
+                    Icon(Icons.Default.Delete, contentDescription = "Clear")
+                }
+            }
+            // ── Toolbar row 2: filters ───────────────────────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = filterName,
+                    onValueChange = { filterName = it },
+                    placeholder = { Text("Filter by span name…", style = MaterialTheme.typography.labelSmall) },
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                )
+                durationPresets.forEach { preset ->
+                    val selected = minDurationMs == preset
+                    FilterChip(
+                        selected = selected,
+                        onClick = { minDurationMs = preset },
+                        label = {
+                            Text(
+                                if (preset == 0L) "Any" else "≥${preset}ms",
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        },
+                    )
+                }
+                FilterChip(
+                    selected = errorsOnly,
+                    onClick = { errorsOnly = !errorsOnly },
+                    label = { Text("Errors", style = MaterialTheme.typography.labelSmall) },
                 )
             }
-            // Clear
-            IconButton(onClick = {
-                scope.launch {
-                    spanRepository?.clear()
-                    ringBuffer?.clear()
+            HorizontalDivider()
+            if (traces.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        if (allTraces.isEmpty()) "No spans recorded yet" else "No traces match the current filter",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-            }) {
-                Icon(Icons.Default.Delete, contentDescription = "Clear")
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(traces) { trace ->
+                        TraceWaterfallRow(trace, onSpanClick = { selectedSpan = it })
+                    }
+                }
             }
         }
-        HorizontalDivider()
-        if (traces.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No spans recorded yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        } else {
-            LazyColumn(
+        // ── Span detail panel overlay ────────────────────────────────────
+        val span = selectedSpan
+        if (span != null) {
+            Box(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                contentAlignment = Alignment.BottomCenter
             ) {
-                items(traces) { trace ->
-                    TraceWaterfallRow(trace)
-                }
+                SpanDetailPanel(span = span, onDismiss = { selectedSpan = null })
             }
         }
     }
+    } // Scaffold
 }
 
 private data class TraceGroup(
     val traceId: String,
     val rows: List<SpanRow>,      // DFS-ordered, root first
     val startMs: Long,
-    val durationMs: Long
+    val durationMs: Long,
+    val spanCount: Int,
+    val slowestChildName: String,
+    val slowestChildMs: Long,
+    val hasError: Boolean,
 )
 
 private data class SpanRow(val span: SerializedSpan, val depth: Int)
@@ -270,23 +362,31 @@ private fun groupIntoTraces(spans: List<SerializedSpan>, maxDepth: Int = 8): Lis
         }
         // Append any orphaned spans (parentSpanId set but parent not in this trace window)
         group.filter { it.spanId !in visited }.forEach { rows += SpanRow(it, 1) }
+        // Slowest child = deepest-depth span (depth > 0) with max durationMs
+        val slowestChild = rows.filter { it.depth > 0 }.maxByOrNull { it.span.durationMs }
         TraceGroup(
             traceId = group.first().traceId,
             rows = rows,
             startMs = startMs,
-            durationMs = (endMs - startMs).coerceAtLeast(1)
+            durationMs = (endMs - startMs).coerceAtLeast(1),
+            spanCount = rows.size,
+            slowestChildName = slowestChild?.span?.name ?: "",
+            slowestChildMs = slowestChild?.span?.durationMs ?: 0L,
+            hasError = rows.any { it.span.statusCode == "ERROR" },
         )
-    }.sortedByDescending { it.startMs }
+    // Error traces first, then newest first within each tier
+    }.sortedWith(compareByDescending<TraceGroup> { it.hasError }.thenByDescending { it.startMs })
 }
 
 @Composable
-private fun TraceWaterfallRow(trace: TraceGroup) {
+private fun TraceWaterfallRow(
+    trace: TraceGroup,
+    onSpanClick: (SerializedSpan) -> Unit = {},
+) {
     var expanded by remember { mutableStateOf(true) }
-    val rootRow = trace.rows.firstOrNull()
-    val rootSpan = rootRow?.span
-    val hasError = trace.rows.any { it.span.statusCode == "ERROR" }
+    val rootSpan = trace.rows.firstOrNull()?.span
     val statusColor = when {
-        hasError -> MaterialTheme.colorScheme.error
+        trace.hasError -> MaterialTheme.colorScheme.error
         trace.durationMs > 500 -> Color(0xFFFF9800)
         else -> Color(0xFF4CAF50)
     }
@@ -310,12 +410,25 @@ private fun TraceWaterfallRow(trace: TraceGroup) {
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.width(6.dp))
-                Text(
-                    text = rootSpan?.name ?: "trace",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.weight(1f)
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = rootSpan?.name ?: "trace",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    val subtitle = buildString {
+                        append("${trace.spanCount} spans")
+                        if (trace.slowestChildName.isNotEmpty()) {
+                            append(" · slowest: ${trace.slowestChildName} ${trace.slowestChildMs}ms")
+                        }
+                    }
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
                 if (trace.traceId.isNotEmpty()) {
                     Text(
                         text = trace.traceId.takeLast(8),
@@ -335,8 +448,9 @@ private fun TraceWaterfallRow(trace: TraceGroup) {
 
             if (expanded) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                TimelineRuler(durationMs = trace.durationMs)
                 trace.rows.forEach { row ->
-                    SpanWaterfallRow(row, trace.startMs, trace.durationMs)
+                    SpanWaterfallRow(row, trace.startMs, trace.durationMs, onSpanClick)
                 }
                 Spacer(Modifier.height(4.dp))
             }
@@ -345,7 +459,12 @@ private fun TraceWaterfallRow(trace: TraceGroup) {
 }
 
 @Composable
-private fun SpanWaterfallRow(row: SpanRow, traceStartMs: Long, traceDurationMs: Long) {
+private fun SpanWaterfallRow(
+    row: SpanRow,
+    traceStartMs: Long,
+    traceDurationMs: Long,
+    onSpanClick: (SerializedSpan) -> Unit = {},
+) {
     val span = row.span
     val isError = span.statusCode == "ERROR"
     val barColor = when {
@@ -357,14 +476,25 @@ private fun SpanWaterfallRow(row: SpanRow, traceStartMs: Long, traceDurationMs: 
     val widthFraction = (span.durationMs.toFloat() / traceDurationMs).coerceAtLeast(0.004f).coerceAtMost(1f - offsetFraction)
 
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp, horizontal = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSpanClick(span) }
+            .padding(vertical = 2.dp, horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Span name with depth indent — fixed 40% width
         Row(
             modifier = Modifier.weight(0.4f).padding(start = (row.depth * 12).dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            if (isError) {
+                Text(
+                    text = "●",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             Text(
                 text = span.name,
                 style = MaterialTheme.typography.labelSmall,
@@ -393,6 +523,137 @@ private fun SpanWaterfallRow(row: SpanRow, traceStartMs: Long, traceDurationMs: 
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+// Mirrors the Row(weight(0.4f) + weight(0.6f)) layout of SpanWaterfallRow so the ruler
+// tick marks align with the start of the timeline bar column.
+@Composable
+private fun TimelineRuler(durationMs: Long, modifier: Modifier = Modifier) {
+    val tickCount = 5
+    val onSurface = MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(18.dp)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.Bottom
+    ) {
+        // Empty name column — same 40% as SpanWaterfallRow
+        Spacer(Modifier.weight(0.4f))
+        // Ruler column — same 60%
+        BoxWithConstraints(modifier = Modifier.weight(0.6f).fillMaxHeight()) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                for (i in 0..tickCount) {
+                    val x = (i.toFloat() / tickCount) * size.width
+                    drawLine(
+                        color = onSurface.copy(alpha = 0.35f),
+                        start = Offset(x, size.height * 0.4f),
+                        end = Offset(x, size.height),
+                        strokeWidth = 1f
+                    )
+                }
+            }
+            for (i in 0..tickCount) {
+                val fraction = i.toFloat() / tickCount
+                val labelMs = (fraction * durationMs).toLong()
+                Text(
+                    text = "${labelMs}ms",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.TopStart).offset(x = (fraction * maxWidth.value).dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpanDetailPanel(span: SerializedSpan, onDismiss: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 8.dp,
+        shadowElevation = 8.dp,
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(span.name, style = MaterialTheme.typography.titleSmall, fontFamily = FontFamily.Monospace)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val badgeColor = if (span.statusCode == "ERROR") MaterialTheme.colorScheme.error
+                                     else Color(0xFF4CAF50)
+                    Surface(
+                        color = badgeColor.copy(alpha = 0.15f),
+                        shape = MaterialTheme.shapes.extraSmall
+                    ) {
+                        Text(
+                            text = span.statusCode,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = badgeColor,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    TextButton(onClick = onDismiss) { Text("Dismiss") }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(8.dp))
+            // Timing row
+            SelectionContainer {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    DetailRow("duration", "${span.durationMs}ms")
+                    DetailRow("start", "${span.startEpochMs}ms epoch")
+                    DetailRow("end", "${span.endEpochMs}ms epoch")
+                    DetailRow("trace_id", span.traceId)
+                    DetailRow("span_id", span.spanId)
+                    DetailRow("parent_span_id", span.parentSpanId.ifEmpty { "(root)" })
+                    if (span.attributes.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(4.dp))
+                        Text("Attributes", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(4.dp))
+                        span.attributes.entries.sortedBy { it.key }.forEach { (k, v) ->
+                            DetailRow(k, v)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailRow(key: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = key,
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.widthIn(min = 110.dp)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.weight(1f),
+            overflow = TextOverflow.Ellipsis,
+            maxLines = 2,
+        )
     }
 }
 

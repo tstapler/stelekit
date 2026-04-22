@@ -545,5 +545,9 @@ data class RepositorySet(
     val debugFlagRepository: dev.stapler.stelekit.performance.DebugFlagRepository? = null,
     val ringBuffer: dev.stapler.stelekit.performance.RingBufferSpanExporter? = null,
     val spanRepository: dev.stapler.stelekit.performance.SpanRepository? = null,
-    val bugReportBuilder: dev.stapler.stelekit.performance.BugReportBuilder? = null
+    val bugReportBuilder: dev.stapler.stelekit.performance.BugReportBuilder? = null,
+    val perfExporter: dev.stapler.stelekit.performance.PerfExporter? = null,
+    val spanEmitter: dev.stapler.stelekit.performance.SpanEmitter? = null,
+    val sloChecker: dev.stapler.stelekit.performance.SloChecker? = null,
+    val spanLogSink: dev.stapler.stelekit.performance.SpanLogSink? = null,
 )

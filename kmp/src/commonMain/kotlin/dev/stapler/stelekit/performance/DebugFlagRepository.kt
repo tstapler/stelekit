@@ -29,6 +29,7 @@ class DebugFlagRepository(private val database: SteleDatabase) {
         isFrameOverlayEnabled = getFlag("frame_overlay"),
         isOtelStdoutEnabled = getFlag("otel_stdout"),
         isJankStatsEnabled = getFlag("jank_stats"),
+        isQueryTracingEnabled = getFlag("query_tracing"),
         isDebugMenuVisible = false  // never persisted as visible
     )
 
@@ -36,5 +37,6 @@ class DebugFlagRepository(private val database: SteleDatabase) {
         setFlag("frame_overlay", state.isFrameOverlayEnabled)
         setFlag("otel_stdout", state.isOtelStdoutEnabled)
         setFlag("jank_stats", state.isJankStatsEnabled)
+        setFlag("query_tracing", state.isQueryTracingEnabled)
     }
 }

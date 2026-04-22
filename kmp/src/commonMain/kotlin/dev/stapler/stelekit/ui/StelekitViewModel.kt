@@ -75,8 +75,10 @@ class StelekitViewModel(
     private val exportService: ExportService? = null,
     private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
     private val bugReportBuilder: dev.stapler.stelekit.performance.BugReportBuilder? = null,
-    private val debugFlagRepository: dev.stapler.stelekit.performance.DebugFlagRepository? = null
+    private val debugFlagRepository: dev.stapler.stelekit.performance.DebugFlagRepository? = null,
+    ringBuffer: dev.stapler.stelekit.performance.RingBufferSpanExporter? = null,
 ) {
+    private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(ringBuffer)
     private val scope = scope
     private val logger = Logger("StelekitViewModel")
 
@@ -646,7 +648,18 @@ class StelekitViewModel(
                 }
             )
         }
-        histogramWriter?.record("navigation", kotlin.time.Clock.System.now().toEpochMilliseconds() - navStart)
+        val navEnd = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        val navDurationMs = navEnd - navStart
+        histogramWriter?.record("navigation", navDurationMs)
+        spanEmitter.emit(
+            name = "navigation",
+            startMs = navStart,
+            endMs = navEnd,
+            attrs = mapOf(
+                "screen" to screen::class.simpleName.orEmpty(),
+                "duration.ms" to navDurationMs.toString(),
+            )
+        )
         if (screen is Screen.PageView) {
             refreshCurrentPage()
         }

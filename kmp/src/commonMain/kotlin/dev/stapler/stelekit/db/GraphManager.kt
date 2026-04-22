@@ -272,7 +272,14 @@ class GraphManager(
         val dbUrl = driverFactory.getDatabaseUrl(id)
         val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl)
         currentFactory = factory
-        val repoSet = factory.createRepositorySet(defaultBackend, graphScope)
+        val deviceInfo = try { dev.stapler.stelekit.performance.getDeviceInfo() } catch (_: Exception) { null }
+        val repoSet = factory.createRepositorySet(
+            backend = defaultBackend,
+            scope = graphScope,
+            fileSystem = fileSystem,
+            appVersion = deviceInfo?.appVersion ?: "unknown",
+            platform = deviceInfo?.platform ?: "unknown",
+        )
         _activeRepositorySet.value = repoSet
 
         // Run one-shot UUID migration before graph content is loaded.

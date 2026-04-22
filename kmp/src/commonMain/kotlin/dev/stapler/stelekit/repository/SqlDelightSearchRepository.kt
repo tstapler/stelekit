@@ -4,7 +4,14 @@ import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.performance.ActiveSpanContext
+import dev.stapler.stelekit.performance.AppSession
+import dev.stapler.stelekit.performance.CurrentSpanContext
+import dev.stapler.stelekit.performance.HistogramWriter
+import dev.stapler.stelekit.performance.RingBufferSpanExporter
+import dev.stapler.stelekit.performance.SpanEmitter
 import dev.stapler.stelekit.search.FtsQueryBuilder
+import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -20,25 +27,43 @@ import kotlin.Result.Companion.success
  */
 class SqlDelightSearchRepository(
     private val database: SteleDatabase,
-    private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
+    private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
+    ringBuffer: RingBufferSpanExporter? = null,
 ) : SearchRepository {
 
     private val queries = database.steleDatabaseQueries
+    private val spanEmitter = SpanEmitter(ringBuffer)
 
     override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Result<List<Block>>> = flow {
         try {
             val ftsQuery = FtsQueryBuilder.build(query)
-            if (ftsQuery.isEmpty()) {
-                emit(success(emptyList()))
-                return@flow
+            if (ftsQuery.isEmpty()) { emit(success(emptyList())); return@flow }
+            val startMs = HistogramWriter.epochMs()
+            val traceId = UuidGenerator.generateV7()
+            val spanId = UuidGenerator.generateV7()
+            CurrentSpanContext.set(ActiveSpanContext(traceId, spanId))
+            val results = try {
+                queries.searchBlocksByContentFts(
+                    query = ftsQuery,
+                    limit = limit.toLong(),
+                    offset = offset.toLong()
+                ).executeAsList().map { it.toBlockModel() }
+            } finally {
+                CurrentSpanContext.set(null)
             }
-            val start = kotlin.time.Clock.System.now().toEpochMilliseconds()
-            val results = queries.searchBlocksByContentFts(
-                query = ftsQuery,
-                limit = limit.toLong(),
-                offset = offset.toLong()
-            ).executeAsList().map { it.toBlockModel() }
-            histogramWriter?.record("search", kotlin.time.Clock.System.now().toEpochMilliseconds() - start)
+            val durationMs = HistogramWriter.epochMs() - startMs
+            histogramWriter?.record("search", durationMs)
+            spanEmitter.emit(
+                name = "search.blocks",
+                startMs = startMs,
+                traceId = traceId,
+                parentSpanId = spanId,
+                attrs = mapOf(
+                    "query.terms" to ftsQuery.length.toString(),
+                    "result.count" to results.size.toString(),
+                    "duration.ms" to durationMs.toString(),
+                )
+            )
             emit(success(results))
         } catch (e: Exception) {
             emit(Result.failure(e))
@@ -48,24 +73,33 @@ class SqlDelightSearchRepository(
     override fun searchPagesByTitle(query: String, limit: Int): Flow<Result<List<Page>>> = flow {
         try {
             val ftsQuery = FtsQueryBuilder.build(query)
-            if (ftsQuery.isEmpty()) {
-                emit(success(emptyList()))
-                return@flow
-            }
-            val start = kotlin.time.Clock.System.now().toEpochMilliseconds()
+            if (ftsQuery.isEmpty()) { emit(success(emptyList())); return@flow }
+            val startMs = HistogramWriter.epochMs()
+            val traceId = UuidGenerator.generateV7()
+            val spanId = UuidGenerator.generateV7()
+            CurrentSpanContext.set(ActiveSpanContext(traceId, spanId))
             val results = try {
-                queries.searchPagesByNameFts(
-                    query = ftsQuery,
-                    limit = limit.toLong()
-                ).executeAsList().map { it.toPageModel() }
-            } catch (_: Exception) {
-                // Fall back to LIKE if pages_fts not yet available on this db
-                queries.selectPagesByNameLike("%$query%")
-                    .executeAsList()
-                    .take(limit)
-                    .map { it.toPageModel() }
+                try {
+                    queries.searchPagesByNameFts(query = ftsQuery, limit = limit.toLong())
+                        .executeAsList().map { it.toPageModel() }
+                } catch (_: Exception) {
+                    queries.selectPagesByNameLike("%$query%").executeAsList().take(limit).map { it.toPageModel() }
+                }
+            } finally {
+                CurrentSpanContext.set(null)
             }
-            histogramWriter?.record("search", kotlin.time.Clock.System.now().toEpochMilliseconds() - start)
+            val durationMs = HistogramWriter.epochMs() - startMs
+            histogramWriter?.record("search", durationMs)
+            spanEmitter.emit(
+                name = "search.pages",
+                startMs = startMs,
+                traceId = traceId,
+                parentSpanId = spanId,
+                attrs = mapOf(
+                    "result.count" to results.size.toString(),
+                    "duration.ms" to durationMs.toString(),
+                )
+            )
             emit(success(results))
         } catch (e: Exception) {
             emit(Result.failure(e))

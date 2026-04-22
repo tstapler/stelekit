@@ -6,8 +6,14 @@ import dev.stapler.stelekit.db.OperationLogger
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.db.UndoManager
 import dev.stapler.stelekit.db.createDatabase
+import dev.stapler.stelekit.logging.LogManager
 import dev.stapler.stelekit.performance.HistogramWriter
 import dev.stapler.stelekit.performance.OtelProvider
+import dev.stapler.stelekit.performance.RingBufferSpanExporter
+import dev.stapler.stelekit.performance.SloChecker
+import dev.stapler.stelekit.performance.SpanEmitter
+import dev.stapler.stelekit.performance.SpanLogSink
+import dev.stapler.stelekit.performance.TimingDriverWrapper
 import dev.stapler.stelekit.performance.wrapWithOtelIfAvailable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -24,10 +30,17 @@ class RepositoryFactoryImpl(
 
     private var activeDriver: app.cash.sqldelight.db.SqlDriver? = null
 
+    // Set by createRepositorySet before repositories are instantiated so constructors receive
+    // the live perf objects. Fields are written once before first use — not thread-safe by design.
+    internal var tracingRingBuffer: RingBufferSpanExporter? = null
+    private var searchRingBuffer: RingBufferSpanExporter? = null
+    private var searchHistogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
+
     private val database: SteleDatabase by lazy {
         val driver = driverFactory.createDriver(jdbcUrl)
         activeDriver = driver
-        SteleDatabase(driver)
+        val effectiveDriver = tracingRingBuffer?.let { TimingDriverWrapper(driver, it) } ?: driver
+        SteleDatabase(effectiveDriver)
     }
 
     private val instances = mutableMapOf<String, Any>()
@@ -108,7 +121,7 @@ class RepositoryFactoryImpl(
                 )
             }
             GraphBackend.SQLDELIGHT -> getOrCreateInstance("search_sqldelight") {
-                val repo = SqlDelightSearchRepository(database)
+                val repo = SqlDelightSearchRepository(database, searchHistogramWriter, searchRingBuffer)
                 wrapWithOtelIfAvailable(repo, "dev.stapler.stelekit.search")
             }
             else -> throw NotImplementedError("Backend $backend not implemented")
@@ -122,7 +135,20 @@ class RepositoryFactoryImpl(
             writeActor = writeActor
         )
 
-    fun createRepositorySet(backend: GraphBackend, scope: CoroutineScope? = null): RepositorySet {
+    fun createRepositorySet(
+        backend: GraphBackend,
+        scope: CoroutineScope? = null,
+        fileSystem: dev.stapler.stelekit.platform.FileSystem? = null,
+        appVersion: String = "unknown",
+        platform: String = "unknown",
+    ): RepositorySet {
+        // Determine the ring buffer BEFORE the database lazy property is first accessed so
+        // TimingDriverWrapper can be wired in at driver-creation time.
+        val ringBuffer = dev.stapler.stelekit.performance.OtelProvider.ringBuffer
+            ?: if (backend == GraphBackend.SQLDELIGHT && scope != null)
+                dev.stapler.stelekit.performance.RingBufferSpanExporter() else null
+        if (ringBuffer != null) tracingRingBuffer = ringBuffer
+
         val blockRepo = createBlockRepository(backend)
         val pageRepo = createPageRepository(backend)
         val (actor, undoManager) = if (scope != null) {
@@ -144,17 +170,37 @@ class RepositoryFactoryImpl(
             dev.stapler.stelekit.performance.DebugFlagRepository(database)
         } else null
 
-        // Prefer the OtelProvider's ring buffer (already wired to the OTel SDK span pipeline).
-        // Fall back to a standalone buffer if OTel is not initialized (e.g. tests, iOS).
-        val ringBuffer = dev.stapler.stelekit.performance.OtelProvider.ringBuffer
-            ?: if (histogramWriter != null) dev.stapler.stelekit.performance.RingBufferSpanExporter() else null
-
         val spanRepository = if (backend == GraphBackend.SQLDELIGHT) {
             SqlDelightSpanRepository(database)
         } else null
 
         val bugReportBuilder = if (histogramWriter != null && ringBuffer != null) {
             dev.stapler.stelekit.performance.BugReportBuilder(ringBuffer, histogramWriter)
+        } else null
+
+        val perfExporter = if (spanRepository != null && histogramWriter != null && fileSystem != null) {
+            dev.stapler.stelekit.performance.PerfExporter(
+                spanRepository = spanRepository,
+                histogramWriter = histogramWriter,
+                fileSystem = fileSystem,
+                appVersion = appVersion,
+                platform = platform,
+            )
+        } else null
+
+        // Wire perf objects that depend on both histogramWriter and ringBuffer being ready
+        val spanEmitter = SpanEmitter(ringBuffer)
+        if (ringBuffer != null) actor?.ringBuffer = ringBuffer
+        searchHistogramWriter = histogramWriter
+        searchRingBuffer = ringBuffer
+
+        val sloChecker = if (histogramWriter != null && scope != null) {
+            SloChecker(histogramWriter, spanEmitter, scope)
+        } else null
+
+        // Register a log sink that bridges ERROR logs into spans
+        val spanLogSink = if (ringBuffer != null) {
+            SpanLogSink(spanEmitter).also { LogManager.addSink(it) }
         } else null
 
         // Background drain: every 5s flush in-memory ring buffer to SQLite and prune old data
@@ -184,7 +230,11 @@ class RepositoryFactoryImpl(
             debugFlagRepository = debugFlagRepo,
             ringBuffer = ringBuffer,
             spanRepository = spanRepository,
-            bugReportBuilder = bugReportBuilder
+            bugReportBuilder = bugReportBuilder,
+            perfExporter = perfExporter,
+            spanEmitter = spanEmitter,
+            sloChecker = sloChecker,
+            spanLogSink = spanLogSink,
         )
     }
 

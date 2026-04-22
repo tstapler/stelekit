@@ -327,7 +327,9 @@ private fun GraphContent(
             undoManager = repos.undoManager,
             exportService = exportService,
             bugReportBuilder = repos.bugReportBuilder,
-            debugFlagRepository = repos.debugFlagRepository
+            debugFlagRepository = repos.debugFlagRepository,
+            histogramWriter = repos.histogramWriter,
+            ringBuffer = repos.ringBuffer,
         ).also {
             viewModelRef = it
             it.startAutoSave()
@@ -808,6 +810,7 @@ private fun ScreenRouter(
                     histogramWriter = repos.histogramWriter,
                     ringBuffer = repos.ringBuffer,
                     spanRepository = repos.spanRepository,
+                    perfExporter = repos.perfExporter,
                 )
             }
             is Screen.GlobalUnlinkedReferences -> GlobalUnlinkedReferencesScreen(

@@ -35,4 +35,7 @@ interface FileSystem {
     fun stopExternalChangeDetection() { /* no-op */ }
     /** Rename/move [from] to [to]. Returns false if not supported on this platform. */
     fun renameFile(from: String, to: String): Boolean = false
+
+    /** Platform-appropriate directory for user-facing exported files (e.g. ~/Downloads). */
+    fun getDownloadsPath(): String = expandTilde("~/Downloads")
 }

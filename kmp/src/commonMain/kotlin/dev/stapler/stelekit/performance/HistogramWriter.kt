@@ -125,6 +125,11 @@ class HistogramWriter(
         }
 
         fun epochMs(): Long = Clock.System.now().toEpochMilliseconds()
+
+        val KNOWN_OPERATIONS = listOf(
+            "frame_duration", "graph_load", "navigation", "search",
+            "editor_input", "sql.select", "sql.insert", "sql.update", "sql.delete"
+        )
     }
 }
 

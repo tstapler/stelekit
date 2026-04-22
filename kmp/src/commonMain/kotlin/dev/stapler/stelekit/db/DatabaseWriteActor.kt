@@ -3,10 +3,15 @@ package dev.stapler.stelekit.db
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.performance.AppSession
+import dev.stapler.stelekit.performance.HistogramWriter
+import dev.stapler.stelekit.performance.RingBufferSpanExporter
+import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -85,8 +90,12 @@ class DatabaseWriteActor(
             val op: suspend () -> Result<Unit>,
             override val priority: Priority = Priority.HIGH,
             override val deferred: CompletableDeferred<Result<Unit>> = CompletableDeferred(),
+            val enqueueMs: Long = HistogramWriter.epochMs(),
         ) : WriteRequest()
     }
+
+    /** Set after construction once the ring buffer is available. Not thread-safe — set once before use. */
+    var ringBuffer: RingBufferSpanExporter? = null
 
     private val highPriority = Channel<WriteRequest>(capacity = Channel.UNLIMITED)
     private val lowPriority = Channel<WriteRequest>(capacity = Channel.UNLIMITED)
@@ -156,8 +165,25 @@ class DatabaseWriteActor(
                 request.deferred.complete(blockRepository.deleteBlocksForPages(request.pageUuids))
             }
             is WriteRequest.SaveBlocks -> processSaveBlocks(request)
-            is WriteRequest.Execute ->
+            is WriteRequest.Execute -> {
+                val waitMs = HistogramWriter.epochMs() - request.enqueueMs
+                if (waitMs > 10L) {
+                    ringBuffer?.record(SerializedSpan(
+                        name = "db.queue_wait",
+                        startEpochMs = request.enqueueMs,
+                        endEpochMs = request.enqueueMs + waitMs,
+                        durationMs = waitMs,
+                        attributes = mapOf(
+                            "priority" to request.priority.name,
+                            "session.id" to AppSession.id,
+                        ),
+                        statusCode = if (waitMs > 500L) "ERROR" else "OK",
+                        traceId = UuidGenerator.generateV7(),
+                        spanId = UuidGenerator.generateV7(),
+                    ))
+                }
                 request.deferred.complete(request.op())
+            }
         }
     }
 

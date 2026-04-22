@@ -14,6 +14,8 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.JournalDateResolver
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.performance.ActiveSpanContext
+import dev.stapler.stelekit.performance.CurrentSpanContext
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.performance.SpanRepository
@@ -60,9 +62,10 @@ class GraphLoader(
         private val startMs: Long = Clock.System.now().toEpochMilliseconds()
         suspend fun finish(statusCode: String = "OK", vararg attrs: Pair<String, String>) {
             val endMs = Clock.System.now().toEpochMilliseconds()
+            val allAttrs = mapOf(*attrs) + ("session.id" to dev.stapler.stelekit.performance.AppSession.id)
             spanRepository?.insertSpan(SerializedSpan(
                 name = name, startEpochMs = startMs, endEpochMs = endMs,
-                durationMs = endMs - startMs, attributes = mapOf(*attrs),
+                durationMs = endMs - startMs, attributes = allAttrs,
                 statusCode = statusCode, traceId = traceId,
                 spanId = spanId, parentSpanId = parentSpanId,
             ))
@@ -193,6 +196,9 @@ class GraphLoader(
     suspend fun loadGraph(graphPath: String, onProgress: (String) -> Unit) {
         currentGraphPath = graphPath
         PerformanceMonitor.startTrace("loadGraph")
+        val traceId = genId()
+        val rootSpan = Span("graph_load", traceId)
+        CurrentSpanContext.set(ActiveSpanContext(traceId = traceId, parentSpanId = rootSpan.spanId))
         try {
             if (!fileSystem.directoryExists(graphPath)) {
                 logger.warn("Graph directory not found: $graphPath")
@@ -212,11 +218,11 @@ class GraphLoader(
                 val loadPagesJob = async {
                     loadDirectory(pagesDir, onProgress, ParseMode.FULL)
                 }
-                
+
                 val loadJournalsJob = async {
                     loadDirectory(journalsDir, onProgress, ParseMode.FULL)
                 }
-                
+
                 awaitAll(loadPagesJob, loadJournalsJob)
             }
 
@@ -229,7 +235,12 @@ class GraphLoader(
 
             // Start watching after initial load
             startWatching(graphPath)
+            rootSpan.finish("OK", "graph.path" to graphPath, "duration.ms" to duration.inWholeMilliseconds.toString())
+        } catch (e: Exception) {
+            rootSpan.finish("ERROR", "graph.path" to graphPath, "error.message" to (e.message ?: "unknown"))
+            throw e
         } finally {
+            CurrentSpanContext.set(null)
             PerformanceMonitor.endTrace("loadGraph")
         }
     }
@@ -243,6 +254,9 @@ class GraphLoader(
     ) {
         currentGraphPath = graphPath
         PerformanceMonitor.startTrace("loadGraphProgressive")
+        val traceId = genId()
+        val rootSpan = Span("graph_load.progressive", traceId)
+        CurrentSpanContext.set(ActiveSpanContext(traceId = traceId, parentSpanId = rootSpan.spanId))
         try {
             if (!fileSystem.directoryExists(graphPath)) {
                 logger.warn("Graph directory not found: $graphPath")
@@ -261,13 +275,17 @@ class GraphLoader(
             sanitizeDirectory(journalsDir)
 
             val phase1Start = Clock.System.now()
+            val phase1Span = Span("graph_load.phase1_journals", traceId, rootSpan.spanId)
             val loadedImmediateCount = loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
             val phase1Duration = Clock.System.now() - phase1Start
+            phase1Span.finish("OK", "journal.count" to loadedImmediateCount.toString(),
+                "duration.ms" to phase1Duration.inWholeMilliseconds.toString())
             logger.info("Phase 1 complete: Loaded $loadedImmediateCount journals in $phase1Duration")
 
             onProgress("Ready - loading remaining content...")
             onPhase1Complete()
 
+            val phase2Span = Span("graph_load.phase2_background", traceId, rootSpan.spanId)
             coroutineScope {
                 launch(Dispatchers.Default) {
                     loadRemainingJournals(journalsDir, immediateJournalCount, onProgress)
@@ -277,15 +295,23 @@ class GraphLoader(
                     loadDirectory(pagesDir, onProgress, ParseMode.METADATA_ONLY)
                 }
             }
+            phase2Span.finish("OK")
 
             val totalDuration = Clock.System.now() - startTime
             logger.info("Progressive graph load complete. Total duration: $totalDuration")
+            histogramWriter?.record("graph_load", totalDuration.inWholeMilliseconds)
             onProgress("Graph loaded completely.")
             onFullyLoaded()
-            
+
             // Start watching after initial load
             startWatching(graphPath)
+            rootSpan.finish("OK", "graph.path" to graphPath,
+                "duration.ms" to totalDuration.inWholeMilliseconds.toString())
+        } catch (e: Exception) {
+            rootSpan.finish("ERROR", "graph.path" to graphPath, "error.message" to (e.message ?: "unknown"))
+            throw e
         } finally {
+            CurrentSpanContext.set(null)
             PerformanceMonitor.endTrace("loadGraphProgressive")
         }
     }
@@ -826,6 +852,7 @@ class GraphLoader(
             PerformanceMonitor.startTrace("parseAndSavePage")
             val traceId = genId()
             val rootSpan = Span("parseAndSavePage", traceId)
+            CurrentSpanContext.set(ActiveSpanContext(traceId = traceId, parentSpanId = rootSpan.spanId))
             try {
                 val fileName = filePath.replace("\\", "/").substringAfterLast("/")
                 val title = FileUtils.decodeFileName(fileName.removeSuffix(".md"))
@@ -1026,6 +1053,7 @@ class GraphLoader(
                     fileRegistry.updateModTime(filePath, updatedModTime)
                 }
             } finally {
+                CurrentSpanContext.set(null)
                 rootSpan.finish("OK", "file.path" to filePath)
                 PerformanceMonitor.endTrace("parseAndSavePage")
             }
