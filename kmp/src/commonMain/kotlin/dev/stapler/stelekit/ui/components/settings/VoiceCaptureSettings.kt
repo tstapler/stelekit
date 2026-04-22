@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Tyler Stapler
 // SPDX-License-Identifier: Elastic-2.0
-package dev.stapler.stelekit.ui.components
+package dev.stapler.stelekit.ui.components.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

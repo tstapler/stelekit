@@ -26,5 +26,5 @@ val DeepPatina = Color(0xFF458588)           // deep patina — links, primary a
 val AmberHighlight = Color(0xFFD79921)       // amber — highlights
 
 // === Shared constants ===
-val IndentGuideAlpha = 0.1f
-val BlockRefAlpha = 0.08f
+const val INDENT_GUIDE_ALPHA = 0.1f
+const val BLOCK_REF_ALPHA = 0.08f

@@ -1,4 +1,4 @@
-package dev.stapler.stelekit.ui.components
+package dev.stapler.stelekit.ui.components.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable

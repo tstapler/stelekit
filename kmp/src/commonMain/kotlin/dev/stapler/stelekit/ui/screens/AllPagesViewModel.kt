@@ -8,17 +8,21 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.PageRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -33,8 +37,11 @@ enum class PageTypeFilter { ALL, JOURNALS, PAGES }
 class AllPagesViewModel(
     private val pageRepository: PageRepository,
     private val blockRepository: BlockRepository,
-    private val scope: CoroutineScope
+    // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
+    // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 ) {
+    private val scope = scope
     private val _allRows = MutableStateFlow<List<PageRow>>(emptyList())
     private val _filterQuery = MutableStateFlow("")
     private val _sortColumn = MutableStateFlow(SortColumn.NAME)
@@ -113,32 +120,48 @@ class AllPagesViewModel(
     private suspend fun loadAllPages() {
         _isLoading.value = true
         try {
-            pageRepository.getAllPages().collect { result ->
-                val pageList = result.getOrNull()
-                if (pageList != null) {
-                    _allRows.value = pageList.map { PageRow(it) }
-                    _isLoading.value = false
-                    // Load backlink counts in background with concurrency limit
-                    val semaphore = Semaphore(8)
-                    pageList.forEach { page ->
-                        scope.launch {
-                            semaphore.withPermit {
-                                val count = blockRepository.countLinkedReferences(page.name)
-                                    .first().getOrNull() ?: 0L
-                                _allRows.update { rows ->
-                                    rows.map { row ->
-                                        if (row.page.uuid == page.uuid) row.copy(backlinkCount = count.toInt()) else row
+            pageRepository.getAllPages()
+                .distinctUntilChanged { old, new ->
+                    // Only re-trigger backlink loading when the set of page UUIDs changes,
+                    // not on every metadata update (e.g. updatedAt tick during indexing).
+                    old.getOrNull()?.map { it.uuid } == new.getOrNull()?.map { it.uuid }
+                }
+                .collect { result ->
+                    val pageList = result.getOrNull()
+                    if (pageList != null) {
+                        // Preserve existing backlink counts for pages already loaded.
+                        val existingCounts = _allRows.value.associate { it.page.uuid to it.backlinkCount }
+                        _allRows.value = pageList.map { PageRow(it, existingCounts[it.uuid] ?: 0) }
+                        _isLoading.value = false
+
+                        // Only fetch backlink counts for pages we haven't counted yet.
+                        val uncounted = pageList.filter { existingCounts[it.uuid] == null }
+                        if (uncounted.isNotEmpty()) {
+                            val semaphore = Semaphore(8)
+                            uncounted.forEach { page ->
+                                scope.launch {
+                                    semaphore.withPermit {
+                                        val count = blockRepository.countLinkedReferences(page.name)
+                                            .first().getOrNull() ?: 0L
+                                        _allRows.update { rows ->
+                                            rows.map { row ->
+                                                if (row.page.uuid == page.uuid) row.copy(backlinkCount = count.toInt()) else row
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
+                    } else {
+                        _isLoading.value = false
                     }
-                } else {
-                    _isLoading.value = false
                 }
-            }
         } catch (e: Exception) {
             _isLoading.value = false
         }
+    }
+
+    fun close() {
+        scope.cancel()
     }
 }

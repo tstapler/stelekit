@@ -61,14 +61,6 @@ fun ReferencesPanel(
         hasMoreUnlinked = true
     }
 
-    // Load linked references function
-    val loadMoreLinked = {
-        if (!isLoadingLinked && hasMoreLinked) {
-            isLoadingLinked = true
-            // Launch in a side effect or separate scope
-        }
-    }
-    
     // Actually using LaunchedEffect to trigger loads when offset changes
     LaunchedEffect(page.name, linkedOffset) {
         isLoadingLinked = true

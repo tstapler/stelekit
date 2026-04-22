@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.repository.BlockRepository
+import dev.stapler.stelekit.performance.NavigationTracingEffect
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.ui.state.BlockStateManager
 import dev.stapler.stelekit.ui.StelekitViewModel
@@ -59,9 +60,14 @@ fun PageView(
     isDebugMode: Boolean = false,
     isLeftHanded: Boolean = false
 ) {
-    val scope = rememberCoroutineScope()
+    NavigationTracingEffect("PageView/${page.name}")
     val focusManager = LocalFocusManager.current
     var toolbarHeight by remember { mutableStateOf(0) }
+
+    if (isDebugMode) {
+        val recomposeCount = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+        androidx.compose.runtime.SideEffect { println("[Recompose] PageView #${++recomposeCount.intValue}") }
+    }
 
     // All state from BlockStateManager
     val allBlocks by blockStateManager.blocks.collectAsState()
@@ -70,6 +76,7 @@ fun PageView(
     val collapsedBlockUuids by blockStateManager.collapsedBlockUuids.collectAsState()
     val selectedBlockUuids by blockStateManager.selectedBlockUuids.collectAsState()
     val isInSelectionMode by blockStateManager.isInSelectionMode.collectAsState()
+    val loadingPageUuids by blockStateManager.loadingPageUuids.collectAsState()
     val suggestionMatcher by viewModel.suggestionMatcher.collectAsState()
 
     // Navigator panel state — empty list means closed
@@ -179,18 +186,27 @@ fun PageView(
             // Blocks content
             item {
                 if (blocks.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { blockStateManager.addBlockToPage(page.uuid) }
-                            .padding(vertical = 8.dp)
-                    ) {
-                        Text(
-                            text = "Click to write...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp)
-                        )
+                    if (!page.isContentLoaded || page.uuid in loadingPageUuids) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { blockStateManager.addBlockToPage(page.uuid) }
+                                .padding(vertical = 8.dp)
+                        ) {
+                            Text(
+                                text = "Click to write...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp)
+                            )
+                        }
                     }
                 } else {
                     val sortedBlocks = remember(blocks) { BlockSorter.sort(blocks) }

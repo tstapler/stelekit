@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.performance.NavigationTracingEffect
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
@@ -34,6 +35,7 @@ fun AllPagesScreen(
     onBulkDelete: (List<String>) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    NavigationTracingEffect("AllPages")
     val pages by viewModel.pages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val selectedUuids by viewModel.selectedUuids.collectAsState()

@@ -167,7 +167,6 @@ private fun AnnotatedString.Builder.renderNode(
             ) { append(node.content) }
 
         is WikiLinkNode -> {
-            val display = if (node.alias != null) "${node.target}|${node.alias}" else node.target
             val start = length
             withStyle(SpanStyle(color = ctx.linkColor, fontWeight = FontWeight.Medium)) {
                 append("[[${node.alias ?: node.target}]]")

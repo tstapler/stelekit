@@ -25,6 +25,7 @@ import dev.stapler.stelekit.ui.components.MobileBlockToolbar
 import dev.stapler.stelekit.ui.components.SearchDialog
 import dev.stapler.stelekit.ui.components.SuggestionItem
 import dev.stapler.stelekit.ui.components.SuggestionNavigatorPanel
+import dev.stapler.stelekit.performance.NavigationTracingEffect
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 
@@ -46,8 +47,10 @@ fun JournalsView(
     isLeftHanded: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    NavigationTracingEffect("Journals")
     val uiState by viewModel.uiState.collectAsState()
     val allBlocks by viewModel.blocks.collectAsState()
+    val loadingPageUuids by viewModel.loadingPageUuids.collectAsState()
     val editingBlockUuid by viewModel.editingBlockUuid.collectAsState()
     val editingCursorIndex by viewModel.editingCursorIndex.collectAsState()
     val collapsedBlockUuids by viewModel.collapsedBlockUuids.collectAsState()
@@ -57,6 +60,11 @@ fun JournalsView(
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     var toolbarHeight by remember { mutableStateOf(0) }
+
+    if (isDebugMode) {
+        val recomposeCount = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+        SideEffect { println("[Recompose] JournalsView #${++recomposeCount.intValue}") }
+    }
 
     // Navigator panel state — empty list means closed
     var navigatorSuggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
@@ -108,10 +116,11 @@ fun JournalsView(
                 contentType = { "journal_entry" }
             ) { page ->
                 val blockList = allBlocks[page.uuid] ?: emptyList()
-                
+
                 JournalEntry(
                     page = page,
                     blocks = blockList,
+                    isLoading = !page.isContentLoaded || page.uuid in loadingPageUuids,
                     isDebugMode = isDebugMode,
                     editingBlockUuid = editingBlockUuid,
                     editingCursorIndex = editingCursorIndex,
@@ -260,6 +269,7 @@ fun JournalsView(
 private fun JournalEntry(
     page: Page,
     blocks: List<Block>,
+    isLoading: Boolean,
     isDebugMode: Boolean,
     editingBlockUuid: String?,
     editingCursorIndex: Int?,
@@ -306,19 +316,27 @@ private fun JournalEntry(
 
         // Blocks content
         if (blocks.isEmpty()) {
-            // Empty journal placeholder - Click to add first block
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onAddBlockToPage(page.uuid) }
-                    .padding(vertical = 8.dp)
-            ) {
-                Text(
-                    text = "Click to write...",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp)
-                )
+            if (isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onAddBlockToPage(page.uuid) }
+                        .padding(vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "Click to write...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp)
+                    )
+                }
             }
         } else {
             // Sort blocks hierarchically for display

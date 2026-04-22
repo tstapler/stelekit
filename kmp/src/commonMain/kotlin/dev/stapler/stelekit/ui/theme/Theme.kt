@@ -47,9 +47,9 @@ private val LightColorScheme = lightColorScheme(
 
 private val LightExtendedColors = StelekitExtendedColors(
     bullet = PaleStone,
-    indentGuide = PaleStone.copy(alpha = IndentGuideAlpha),
+    indentGuide = PaleStone.copy(alpha = INDENT_GUIDE_ALPHA),
     sidebarBackground = LimestoneSurface,
-    blockRefBackground = DeepPatina.copy(alpha = BlockRefAlpha)
+    blockRefBackground = DeepPatina.copy(alpha = BLOCK_REF_ALPHA)
 )
 
 private val DarkColorScheme = darkColorScheme(
@@ -66,9 +66,9 @@ private val DarkColorScheme = darkColorScheme(
 
 private val DarkExtendedColors = StelekitExtendedColors(
     bullet = WornStone.copy(alpha = 0.6f),
-    indentGuide = WornStone.copy(alpha = IndentGuideAlpha),
+    indentGuide = WornStone.copy(alpha = INDENT_GUIDE_ALPHA),
     sidebarBackground = GraniteSurface,
-    blockRefBackground = PatinaAccent.copy(alpha = BlockRefAlpha)
+    blockRefBackground = PatinaAccent.copy(alpha = BLOCK_REF_ALPHA)
 )
 
 // Stone theme: same warm stone palette as dark, richer contrast

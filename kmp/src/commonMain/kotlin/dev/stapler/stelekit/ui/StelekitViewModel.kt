@@ -29,12 +29,12 @@ import dev.stapler.stelekit.editor.commands.EditorCommand
 import dev.stapler.stelekit.editor.commands.CommandResult
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
 import dev.stapler.stelekit.domain.PageNameIndex
-import dev.stapler.stelekit.performance.DebounceManager
 import dev.stapler.stelekit.ui.screens.SearchResultItem
 import dev.stapler.stelekit.ui.state.BlockStateManager
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlin.time.Clock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -63,7 +64,9 @@ class StelekitViewModel(
     private val graphLoader: GraphLoader,
     private val graphWriter: GraphWriter,
     private val platformSettings: PlatformSettings,
-    private val scope: CoroutineScope,
+    // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
+    // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     private val notificationManager: NotificationManager? = null,
     private val journalService: JournalService = JournalService(pageRepository, blockRepository),
     private val blockStateManager: BlockStateManager? = null,
@@ -74,6 +77,7 @@ class StelekitViewModel(
     private val bugReportBuilder: dev.stapler.stelekit.performance.BugReportBuilder? = null,
     private val debugFlagRepository: dev.stapler.stelekit.performance.DebugFlagRepository? = null
 ) {
+    private val scope = scope
     private val logger = Logger("StelekitViewModel")
 
     // --- Undo / Redo ---
@@ -110,9 +114,6 @@ class StelekitViewModel(
         notificationManager?.show(message, type, timeout)
     }
     
-    // Debounce manager for block updates
-    private val debounceManager = DebounceManager(scope, 300L)
-
     // Rename orchestrator — coordinates DB updates + disk file rewrites.
     // Lazy so tests that don't exercise rename don't fail on a missing actor at construction time.
     private val backlinkRenamer by lazy {
@@ -326,20 +327,9 @@ class StelekitViewModel(
                                 logger.info("Phase 1 complete - UI is now interactive")
                                 _uiState.update { it.copy(isLoading = false, statusMessage = "Ready") }
 
-                                // Ensure today's journal exists AFTER disk pages are loaded
-                                // to avoid creating a duplicate empty page that races with GraphLoader
-                                scope.launch {
-                                    val journal = journalService.ensureTodayJournal()
-                                    // Write to disk if the file doesn't exist yet (new journal)
-                                    if (journal.filePath.isNullOrBlank()) {
-                                        blockStateManager?.savePageNow(journal.uuid)
-                                    }
-                                    // Only auto-navigate on cold start (currentScreen is the default
-                                    // Screen.Journals). Graph switches and reindex keep the user where they are.
-                                    if (_uiState.value.currentScreen == Screen.Journals) {
-                                        navigateTo(Screen.PageView(journal))
-                                    }
-                                }
+                                // Ensure today's journal exists so it appears at the top of the
+                                // journals list. No navigation — the list updates reactively.
+                                scope.launch { journalService.ensureTodayJournal() }
                             },
                             onFullyLoaded = {
                                 logger.info("Graph fully loaded")
@@ -856,6 +846,10 @@ class StelekitViewModel(
         logger.info("Auto-save started")
     }
 
+    fun close() {
+        scope.cancel()
+    }
+
     /**
      * Collects [GraphLoader.externalFileChanges] and intercepts changes to pages
      * the user is currently editing, surfacing a conflict dialog instead of
@@ -1115,7 +1109,7 @@ class StelekitViewModel(
     }
 
     fun onDebugMenuStateChange(state: dev.stapler.stelekit.performance.DebugMenuState) {
-        scope.launch(PlatformDispatcher.IO) {
+        scope.launch(PlatformDispatcher.DB) {
             debugFlagRepository?.saveDebugMenuState(state)
         }
     }

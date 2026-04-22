@@ -88,6 +88,11 @@ fun BlockList(
     onAutoSelectForDrag: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    if (isDebugMode) {
+        val recomposeCount = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+        androidx.compose.runtime.SideEffect { println("[Recompose] BlockList #${++recomposeCount.intValue}") }
+    }
+
     // Build a map of parent UUID to children for quick lookup
     val childrenByParent = remember(blocks) {
         blocks.groupBy { it.parentUuid }
@@ -133,7 +138,7 @@ fun BlockList(
         }
     }
 
-    fun computeDropTarget(state: BlockDragState, allBlocksList: List<Block>) {
+    fun computeDropTarget(state: BlockDragState, _allBlocksList: List<Block>) {
         val currentY = state.pointerOffsetY
         val dropTarget = blockBounds.entries
             .filter { (uuid, _) -> uuid !in state.draggedUuids }

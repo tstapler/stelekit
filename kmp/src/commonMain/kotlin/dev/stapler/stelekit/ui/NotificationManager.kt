@@ -3,7 +3,9 @@ package dev.stapler.stelekit.ui
 import dev.stapler.stelekit.model.Notification
 import dev.stapler.stelekit.model.NotificationType
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -11,7 +13,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
 
-class NotificationManager(private val scope: CoroutineScope) {
+class NotificationManager {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _activeNotifications = MutableStateFlow<List<Notification>>(emptyList())
     val activeNotifications: StateFlow<List<Notification>> = _activeNotifications.asStateFlow()
 

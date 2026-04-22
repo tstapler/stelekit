@@ -14,6 +14,7 @@ import dev.stapler.stelekit.ui.screens.FormatAction
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -22,6 +23,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
@@ -43,11 +46,15 @@ import kotlinx.coroutines.launch
 class BlockStateManager(
     private val blockRepository: BlockRepository,
     private val graphLoader: GraphLoader,
-    private val scope: CoroutineScope,
+    // Default scope owns its own lifecycle so callers stored in remember{} don't pass
+    // rememberCoroutineScope(), which is cancelled when the composable leaves composition.
+    // Tests inject a TestCoroutineScope for deterministic scheduling.
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     private val graphWriter: GraphWriter? = null,
     private val pageRepository: PageRepository? = null,
     private val graphPathProvider: () -> String = { "" }
 ) {
+    private val scope = scope
     private val logger = Logger("BlockStateManager")
     private val diskWriteDebounce = DebounceManager(scope, 300L)
 
@@ -284,7 +291,7 @@ class BlockStateManager(
 
     private val undoStack = ArrayDeque<UndoEntry>()
     private val redoStack = ArrayDeque<UndoEntry>()
-    private val MAX_UNDO = 100
+    private val maxUndo = 100
 
     private val _canUndo = MutableStateFlow(false)
     val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
@@ -294,7 +301,7 @@ class BlockStateManager(
 
     fun record(undo: suspend () -> Unit, redo: (suspend () -> Unit)? = null) {
         undoStack.addLast(UndoEntry(undo, redo))
-        if (undoStack.size > MAX_UNDO) undoStack.removeFirst()
+        if (undoStack.size > maxUndo) undoStack.removeFirst()
         redoStack.clear()
         _canUndo.value = true
         _canRedo.value = false
@@ -333,7 +340,12 @@ class BlockStateManager(
 
         observationJobs[pageUuid] = scope.launch {
             if (!isContentLoaded) {
-                graphLoader.loadFullPage(pageUuid)
+                _loadingPageUuids.update { it + pageUuid }
+                try {
+                    graphLoader.loadFullPage(pageUuid)
+                } finally {
+                    _loadingPageUuids.update { it - pageUuid }
+                }
             }
 
             blockRepository.getBlocksForPage(pageUuid).collect { result ->
@@ -846,5 +858,9 @@ class BlockStateManager(
         } finally {
             _loadingPageUuids.update { it - pageUuid }
         }
+    }
+
+    fun close() {
+        scope.cancel()
     }
 }

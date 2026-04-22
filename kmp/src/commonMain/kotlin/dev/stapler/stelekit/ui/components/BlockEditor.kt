@@ -22,6 +22,9 @@ import dev.stapler.stelekit.ui.screens.SearchResultItem
  * The editable text field for a block in edit mode, including keyboard
  * handlers and autocomplete trigger detection.
  */
+private val WIKI_LINK_AUTOCOMPLETE_REGEX = Regex("\\[\\[([^\\]]*)$")
+private val HASHTAG_AUTOCOMPLETE_REGEX = Regex("#([^\\s#\\[\\](),!?;.\"']*)$")
+
 @Composable
 internal fun BlockEditor(
     textFieldValue: TextFieldValue,
@@ -68,8 +71,8 @@ internal fun BlockEditor(
             // Autocomplete trigger detection
             val cursor = newValue.selection.min
             val textBeforeCursor = newValue.text.take(cursor)
-            val wikiMatch = Regex("\\[\\[([^\\]]*)$").find(textBeforeCursor)
-            val hashMatch = if (wikiMatch == null) Regex("#([^\\s#\\[\\](),!?;.\"']*)$").find(textBeforeCursor) else null
+            val wikiMatch = WIKI_LINK_AUTOCOMPLETE_REGEX.find(textBeforeCursor)
+            val hashMatch = if (wikiMatch == null) HASHTAG_AUTOCOMPLETE_REGEX.find(textBeforeCursor) else null
 
             val (activeMatch, trigger) = when {
                 wikiMatch != null -> Pair(wikiMatch, AutocompleteTrigger.WIKI_LINK)
@@ -446,7 +449,7 @@ internal fun applyAutocompleteSelection(
     onLocalVersionIncrement: () -> Long,
     onContentChange: (String, Long) -> Unit,
 ) {
-    val item = searchResults[selectedIndex]
+    val item = searchResults.getOrNull(selectedIndex) ?: return
     val pageName = when (item) {
         is SearchResultItem.PageItem -> item.page.name
         is SearchResultItem.AliasItem -> item.alias

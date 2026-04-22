@@ -1,4 +1,4 @@
-package dev.stapler.stelekit.ui.components
+package dev.stapler.stelekit.ui.components.settings
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button

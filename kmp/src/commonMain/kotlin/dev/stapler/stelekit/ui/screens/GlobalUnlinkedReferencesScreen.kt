@@ -12,6 +12,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
+import dev.stapler.stelekit.performance.NavigationTracingEffect
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.ui.Screen
@@ -27,6 +28,7 @@ fun GlobalUnlinkedReferencesScreen(
     onNavigateTo: (Screen) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    NavigationTracingEffect("GlobalUnlinkedReferences")
     val scope = rememberCoroutineScope()
     val viewModel = remember {
         GlobalUnlinkedReferencesViewModel(

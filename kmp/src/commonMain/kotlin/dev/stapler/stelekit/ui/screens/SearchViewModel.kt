@@ -6,20 +6,26 @@ import dev.stapler.stelekit.repository.SearchRepository
 import dev.stapler.stelekit.repository.SearchRequest
 import dev.stapler.stelekit.repository.SearchScope
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 private const val MAX_RECENT_QUERIES = 10
 
 class SearchViewModel(
     private val searchRepository: SearchRepository,
-    private val scope: CoroutineScope
+    // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
+    // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 ) {
+    private val scope = scope
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
@@ -114,6 +120,10 @@ class SearchViewModel(
         if (currentQuery.isNotBlank()) {
             onQueryChange(currentQuery)
         }
+    }
+
+    fun close() {
+        scope.cancel()
     }
 }
 

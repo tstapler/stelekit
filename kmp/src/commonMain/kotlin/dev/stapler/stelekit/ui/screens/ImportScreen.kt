@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.domain.FetchResult
 import dev.stapler.stelekit.domain.TopicSuggestion
+import dev.stapler.stelekit.performance.NavigationTracingEffect
 import dev.stapler.stelekit.ui.components.parseMarkdownWithStyling
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -41,6 +42,7 @@ fun ImportScreen(
      */
     onHtmlPaste: (() -> Unit)? = null,
 ) {
+    NavigationTracingEffect("Import")
     val state by viewModel.state.collectAsState()
     val coroutineScope: CoroutineScope = rememberCoroutineScope()
     var stage by remember { mutableStateOf(Stage.INPUT) }

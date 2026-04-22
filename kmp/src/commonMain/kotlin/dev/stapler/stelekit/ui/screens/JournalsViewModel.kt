@@ -6,12 +6,15 @@ import dev.stapler.stelekit.repository.JournalService
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.ui.state.BlockStateManager
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
@@ -39,8 +42,11 @@ enum class FormatAction(val prefix: String, val suffix: String) {
 class JournalsViewModel(
     private val journalService: JournalService,
     val blockStateManager: BlockStateManager,
-    private val scope: CoroutineScope
+    // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
+    // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 ) {
+    private val scope = scope
     private val logger = Logger("JournalsViewModel")
     private val _uiState = MutableStateFlow(JournalsUiState())
     val uiState: StateFlow<JournalsUiState> = _uiState.asStateFlow()
@@ -56,6 +62,7 @@ class JournalsViewModel(
     val formatEvents: SharedFlow<FormatAction> = blockStateManager.formatEvents
     val canUndo: StateFlow<Boolean> = blockStateManager.canUndo
     val canRedo: StateFlow<Boolean> = blockStateManager.canRedo
+    val loadingPageUuids: StateFlow<Set<String>> = blockStateManager.loadingPageUuids
 
     // ---- Pagination ----
 
@@ -155,11 +162,14 @@ class JournalsViewModel(
     fun clearSelection() = blockStateManager.clearSelection()
     fun deleteSelectedBlocks(): Job = blockStateManager.deleteSelectedBlocks()
     fun insertLinkAtCursor(blockUuid: String, pageName: String) = blockStateManager.insertLinkAtCursor(blockUuid, pageName)
+
+    fun close() {
+        scope.cancel()
+    }
 }
 
 data class JournalsUiState(
     val pages: List<Page> = emptyList(),
     val isLoading: Boolean = false,
-    val hasMore: Boolean = true,
-    val loadingPageUuids: Set<String> = emptySet()
+    val hasMore: Boolean = true
 )

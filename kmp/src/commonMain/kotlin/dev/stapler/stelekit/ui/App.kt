@@ -54,11 +54,17 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.DebugMenuState
+import dev.stapler.stelekit.performance.LocalSpanRecorder
+import dev.stapler.stelekit.performance.NavigationTracingEffect
+import dev.stapler.stelekit.performance.NoOpSpanRecorder
+import dev.stapler.stelekit.performance.PlatformJankStatsEffect
+import dev.stapler.stelekit.performance.SpanRecorder
 import dev.stapler.stelekit.platform.*
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.repository.*
 import dev.stapler.stelekit.ui.components.*
+import dev.stapler.stelekit.ui.components.settings.SettingsDialog
 import dev.stapler.stelekit.ui.i18n.I18n
 import dev.stapler.stelekit.ui.i18n.LocalI18n
 import dev.stapler.stelekit.ui.i18n.t
@@ -104,6 +110,7 @@ fun StelekitApp(
     voicePipeline: VoicePipelineConfig = remember { VoicePipelineConfig() },
     voiceSettings: VoiceSettings? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
+    spanRecorder: SpanRecorder = NoOpSpanRecorder,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -113,7 +120,7 @@ fun StelekitApp(
 
     // Create GraphManager - this owns all graph lifecycle
     val graphManager = graphManager ?: remember {
-        GraphManager(platformSettings, DriverFactory(), fileSystem, scope)
+        GraphManager(platformSettings, DriverFactory(), fileSystem)
     }
 
     // Observe the active repository set
@@ -191,7 +198,7 @@ fun StelekitApp(
         }
     }
 
-    val notificationManager = remember { NotificationManager(scope) }
+    val notificationManager = remember { NotificationManager() }
 
     val repos = activeRepoSet
 
@@ -222,6 +229,7 @@ fun StelekitApp(
             voicePipeline = voicePipeline,
             voiceSettings = voiceSettings,
             onRebuildVoicePipeline = onRebuildVoicePipeline,
+            spanRecorder = spanRecorder,
         )
     }
 }
@@ -246,7 +254,9 @@ private fun GraphContent(
     voicePipeline: VoicePipelineConfig = VoicePipelineConfig(),
     voiceSettings: VoiceSettings? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
+    spanRecorder: SpanRecorder = NoOpSpanRecorder,
 ) {
+    CompositionLocalProvider(LocalSpanRecorder provides spanRecorder) {
     val scope = rememberCoroutineScope()
     val composeClipboard = LocalClipboardManager.current
     val clipboardProvider = rememberClipboardProvider(composeClipboard)
@@ -262,6 +272,7 @@ private fun GraphContent(
             repos.journalService,
             externalWriteActor = repos.writeActor,
             sidecarManager = sidecarManager,
+            spanRepository = repos.spanRepository,
         )
     }
     val graphWriter = remember {
@@ -282,7 +293,6 @@ private fun GraphContent(
         dev.stapler.stelekit.ui.state.BlockStateManager(
             blockRepository = repos.blockRepository,
             graphLoader = graphLoader,
-            scope = scope,
             graphWriter = graphWriter,
             pageRepository = repos.pageRepository,
             graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" }
@@ -311,7 +321,6 @@ private fun GraphContent(
             graphLoader,
             graphWriter,
             platformSettings,
-            scope,
             journalService = repos.journalService,
             blockStateManager = blockStateManager,
             writeActor = repos.writeActor,
@@ -343,11 +352,54 @@ private fun GraphContent(
         }
     }
 
+    val frameMetricState = remember { kotlinx.coroutines.flow.MutableStateFlow(dev.stapler.stelekit.performance.FrameMetric()) }
+
+    var debugMenuState by remember {
+        mutableStateOf(repos.debugFlagRepository?.loadDebugMenuState() ?: DebugMenuState())
+    }
+
+    PlatformJankStatsEffect(
+        histogramWriter = repos.histogramWriter,
+        isEnabled = debugMenuState.isJankStatsEnabled,
+    )
+
+    androidx.compose.runtime.LaunchedEffect(repos.histogramWriter) {
+        var lastNanos = 0L
+        while (true) {
+            androidx.compose.runtime.withFrameNanos { nanos ->
+                if (lastNanos != 0L) {
+                    val durationMs = (nanos - lastNanos) / 1_000_000L
+                    // Only record when a frame was actively rendered. withFrameNanos fires on
+                    // demand — when the app is idle Compose can skip frames for hundreds of ms.
+                    // Gaps > 100ms are idle sleeps, not slow renders; recording them inflates
+                    // the histogram and triggers false jank alerts.
+                    if (durationMs in 1L..100L) {
+                        repos.histogramWriter?.record("frame_duration", durationMs)
+                        val isJank = durationMs > 32L
+                        frameMetricState.value = dev.stapler.stelekit.performance.FrameMetric(durationMs, isJank)
+                        if (isJank) {
+                            repos.ringBuffer?.record(
+                                dev.stapler.stelekit.performance.SerializedSpan(
+                                    name = "jank_frame",
+                                    startEpochMs = dev.stapler.stelekit.performance.HistogramWriter.epochMs() - durationMs,
+                                    endEpochMs = dev.stapler.stelekit.performance.HistogramWriter.epochMs(),
+                                    durationMs = durationMs,
+                                    attributes = mapOf("frame.duration_ms" to durationMs.toString()),
+                                )
+                            )
+                        }
+                    }
+                }
+                lastNanos = nanos
+            }
+        }
+    }
+
     val journalsViewModel = remember {
-        JournalsViewModel(repos.journalService, blockStateManager, scope)
+        JournalsViewModel(repos.journalService, blockStateManager)
     }
     val voiceCaptureViewModel = remember {
-        VoiceCaptureViewModel(voicePipeline, repos.journalService, scope)
+        VoiceCaptureViewModel(voicePipeline, repos.journalService)
     }
 
     // Force-flush pending writes on Android lifecycle pause/stop
@@ -364,10 +416,24 @@ private fun GraphContent(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     val allPagesViewModel = remember {
-        AllPagesViewModel(repos.pageRepository, repos.blockRepository, scope)
+        AllPagesViewModel(repos.pageRepository, repos.blockRepository)
     }
     val searchViewModel = remember {
-        SearchViewModel(repos.searchRepository, scope)
+        SearchViewModel(repos.searchRepository)
+    }
+
+    // Cancel all ViewModel scopes when GraphContent leaves composition (key(activeGraphId) re-keys).
+    // Without this, orphaned scopes from the previous composition keep running concurrently,
+    // causing duplicate graph loads and write-actor contention (batchDeleteBlocks slowdowns).
+    DisposableEffect(viewModel) {
+        onDispose {
+            blockStateManager.close()
+            journalsViewModel.close()
+            allPagesViewModel.close()
+            searchViewModel.close()
+            voiceCaptureViewModel.close()
+            viewModel.close()
+        }
     }
 
     val appState by viewModel.uiState.collectAsState()
@@ -594,6 +660,12 @@ private fun GraphContent(
                         fileSystem = fileSystem,
                         voiceSettings = voiceSettings,
                         onRebuildVoicePipeline = onRebuildVoicePipeline,
+                        frameMetric = frameMetricState,
+                        debugState = debugMenuState,
+                        onDebugStateChange = { newState ->
+                            debugMenuState = newState
+                            viewModel.onDebugMenuStateChange(newState)
+                        },
                     )
 
                     } // CompositionLocalProvider(LocalWindowSizeClass)
@@ -601,6 +673,7 @@ private fun GraphContent(
             }
         }
     }
+    } // CompositionLocalProvider(LocalSpanRecorder)
 }
 
 /**
@@ -712,15 +785,31 @@ private fun ScreenRouter(
                 suggestionMatcher = suggestionMatcher,
                 isLeftHanded = appState.isLeftHanded
             )
-            is Screen.Flashcards -> FlashcardsScreen(blockStateManager)
+            is Screen.Flashcards -> {
+                NavigationTracingEffect("Flashcards")
+                FlashcardsScreen(blockStateManager)
+            }
             is Screen.AllPages -> AllPagesScreen(
                 viewModel = allPagesViewModel,
                 onPageClick = { page -> viewModel.navigateTo(Screen.PageView(page)) },
                 onBulkDelete = { uuids -> viewModel.bulkDeletePages(uuids) }
             )
-            is Screen.Notifications -> NotificationHistory(notificationManager)
-            is Screen.Logs -> LogDashboard()
-            is Screen.Performance -> PerformanceDashboard()
+            is Screen.Notifications -> {
+                NavigationTracingEffect("Notifications")
+                NotificationHistory(notificationManager)
+            }
+            is Screen.Logs -> {
+                NavigationTracingEffect("Logs")
+                LogDashboard()
+            }
+            is Screen.Performance -> {
+                NavigationTracingEffect("Performance")
+                PerformanceDashboard(
+                    histogramWriter = repos.histogramWriter,
+                    ringBuffer = repos.ringBuffer,
+                    spanRepository = repos.spanRepository,
+                )
+            }
             is Screen.GlobalUnlinkedReferences -> GlobalUnlinkedReferencesScreen(
                 pageRepository = repos.pageRepository,
                 blockRepository = repos.blockRepository,
@@ -771,9 +860,10 @@ private fun GraphDialogLayer(
     fileSystem: FileSystem,
     voiceSettings: VoiceSettings? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
+    frameMetric: kotlinx.coroutines.flow.StateFlow<dev.stapler.stelekit.performance.FrameMetric>,
+    debugState: DebugMenuState = DebugMenuState(),
+    onDebugStateChange: (DebugMenuState) -> Unit = {},
 ) {
-    // Hoist debug state so FrameTimeOverlay persists when the dialog is closed.
-    var debugState by remember { mutableStateOf(DebugMenuState()) }
     // Holds the last exported bug report JSON for display in a read-only dialog.
     var exportedReport by remember { mutableStateOf<String?>(null) }
 
@@ -835,15 +925,12 @@ private fun GraphDialogLayer(
     )
 
     // Frame-time debug overlay — shown in top corner when enabled, regardless of dialog state.
-    PlatformFrameTimeOverlay(isEnabled = debugState.isFrameOverlayEnabled)
+    PlatformFrameTimeOverlay(isEnabled = debugState.isFrameOverlayEnabled, frameMetric = frameMetric)
 
     if (appState.isDebugMenuVisible && DebugBuildConfig.isDebugBuild) {
         DebugMenuOverlay(
             state = debugState,
-            onStateChange = { newState ->
-                debugState = newState
-                viewModel.onDebugMenuStateChange(newState)
-            },
+            onStateChange = { newState -> onDebugStateChange(newState) },
             onExportBugReport = {
                 val json = viewModel.exportBugReport()
                 if (json != null) {
