@@ -181,7 +181,7 @@ class ConflictDetector {
     private fun detectMoveConflicts(
         change: BlockChange,
         existingBlock: Block,
-        saveState: BlockSaveState?,
+        _saveState: BlockSaveState?,
         conflicts: MutableList<ConflictInfo>
     ) {
         // Move conflicts if the block structure changed since last known state
@@ -386,7 +386,7 @@ data class ResolutionContext(
     /**
      * Discard local changes for a block
      */
-    suspend fun discardLocalChanges(blockUuid: String): Boolean {
+    suspend fun discardLocalChanges(_blockUuid: String): Boolean {
         return try {
             // Reload block from storage, discarding local changes
             true
@@ -415,7 +415,7 @@ data class ResolutionContext(
     /**
      * Mark conflict for manual resolution
      */
-    suspend fun markForManualResolution(conflict: ConflictInfo): Boolean {
+    suspend fun markForManualResolution(_conflict: ConflictInfo): Boolean {
         return try {
             // Add to manual resolution queue
             true
@@ -424,17 +424,17 @@ data class ResolutionContext(
         }
     }
     
-    private suspend fun mergeContentConflict(conflict: ConflictInfo): MergeResult {
+    private suspend fun mergeContentConflict(_conflict: ConflictInfo): MergeResult {
         // Simple content merge - could be enhanced with diff/merge algorithms
         return MergeResult(true, "Content merged automatically")
     }
     
-    private suspend fun mergePropertyConflict(conflict: ConflictInfo): MergeResult {
+    private suspend fun mergePropertyConflict(_conflict: ConflictInfo): MergeResult {
         // Merge properties by taking union of both sets
         return MergeResult(true, "Properties merged automatically")
     }
     
-    private suspend fun mergeMoveConflict(conflict: ConflictInfo): MergeResult {
+    private suspend fun mergeMoveConflict(_conflict: ConflictInfo): MergeResult {
         // Move conflicts typically need manual resolution
         return MergeResult(false, "Move conflicts require manual resolution")
     }

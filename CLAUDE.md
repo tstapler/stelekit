@@ -79,6 +79,119 @@ Platform abstracts → platform/
 
 SQLDelight 2.3.2 generates type-safe Kotlin from `.sq` files in `kmp/src/commonMain/sqldelight/`. Schema in `SteleDatabase.sq`.
 
+#### Write enforcement — `@DirectSqlWrite`
+
+**Never call mutating methods (`insert*`, `update*`, `delete*`, `upsert*`, `transaction`) directly on `SteleDatabaseQueries`.** All writes are gated behind `@DirectSqlWrite` on `RestrictedDatabaseQueries` (`db/RestrictedDatabaseQueries.kt`).
+
+Rules:
+- Route writes through `DatabaseWriteActor` (preferred) — use `actor.execute { ... }` or the typed methods (`saveBlock`, `savePage`, etc.).
+- If a helper class needs to write inside an actor lambda, inject `RestrictedDatabaseQueries` and annotate the private write function `@OptIn(DirectSqlWrite::class)`.
+- Migration-time writers (`MigrationRunner`, `UuidMigration`) run before the actor exists and may carry `@OptIn(DirectSqlWrite::class)` at class level — this is the only approved class-level opt-in outside the actor.
+- When you add a new query to `SteleDatabase.sq` that performs INSERT/UPDATE/DELETE/UPSERT, add a corresponding forwarding stub to `RestrictedDatabaseQueries` annotated `@DirectSqlWrite`.
+
+### Coroutine dispatcher and database connection pool
+
+The database layer uses `PlatformDispatcher.DB` for all SQL work and `DatabaseWriteActor` to serialize writes. Follow these rules when adding or modifying repository code.
+
+#### Dispatcher matrix
+
+| Context | Dispatcher | Mechanism |
+|---|---|---|
+| Read `Flow` (SQLDelight generated) | `PlatformDispatcher.DB` | `mapToList(DB)` / `mapToOneOrNull(DB)` |
+| Read `flow { }` block with raw SQL | `PlatformDispatcher.DB` | `.flowOn(DB)` at end of chain |
+| Write `suspend fun` | `PlatformDispatcher.DB` | `withContext(DB) { ... }` |
+| `DatabaseWriteActor` internal scope | `PlatformDispatcher.Default` | Owns its own `CoroutineScope` |
+| Non-database IO (files, network) | `PlatformDispatcher.IO` | Direct or `withContext(IO)` |
+
+#### Read pattern — use in every `SqlDelight*Repository`
+
+```kotlin
+// Generated query → reactive Flow
+override fun getPageByUuid(uuid: String): Flow<Result<Page?>> =
+    queries.selectPageByUuid(uuid)
+        .asFlow()
+        .mapToOneOrNull(PlatformDispatcher.DB)      // ← always DB, never IO
+        .map { success(it?.toModel()) }
+
+// Custom flow with raw SQL calls
+override fun getBlockHierarchy(rootUuid: String): Flow<Result<List<BlockWithDepth>>> = flow {
+    // Synchronous SQL here — flowOn switches the whole upstream to DB dispatcher
+    emit(success(queries.selectBlockByUuid(rootUuid)?.let { ... } ?: emptyList()))
+}.flowOn(PlatformDispatcher.DB)                     // ← always at the end of the chain
+```
+
+#### Write pattern — use in every `SqlDelight*Repository`
+
+```kotlin
+override suspend fun savePage(page: Page): Result<Unit> = withContext(PlatformDispatcher.DB) {
+    try {
+        queries.transaction { queries.insertPage(...); queries.updatePage(...) }
+        success(Unit)
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+}
+```
+
+All write calls reach the repository through `DatabaseWriteActor`, which serializes them to a single coroutine. The `withContext(PlatformDispatcher.DB)` inside the repository ensures the write always executes on a pooled DB connection thread, regardless of which thread the actor is currently running on.
+
+#### Platform mapping for `PlatformDispatcher.DB`
+
+| Platform | Value | Rationale |
+|---|---|---|
+| JVM | `Dispatchers.IO` | `PooledJdbcSqliteDriver` pre-creates 8 connections at startup — unlimited read concurrency; pool bounds total connection count |
+| Android | `Dispatchers.IO` | Android SQLite driver manages its own native connection pool |
+| iOS | `Dispatchers.Default` | Native driver, GCD handles threading |
+| WASM/JS | `Dispatchers.Default` | Single-threaded runtime |
+
+#### Never do
+
+```kotlin
+// ✗ Hardcode Dispatchers.IO — wrong on iOS/WASM and bypasses pool abstraction
+.mapToList(Dispatchers.IO)
+
+// ✗ Use PlatformDispatcher.DB for non-database IO
+withContext(PlatformDispatcher.DB) { File("...").readText() }
+
+// ✗ Use PlatformDispatcher.IO for database reads — bypasses pool abstraction on JVM
+.mapToList(PlatformDispatcher.IO)
+
+// ✗ Write SQL without withContext(DB) — inconsistent thread safety across platforms
+override suspend fun addReference(...): Result<Unit> {
+    queries.insertBlockReference(...)  // missing withContext
+}
+
+// ✗ Pass rememberCoroutineScope() into any class that touches the DB
+val scope = rememberCoroutineScope()
+val actor = remember { DatabaseWriteActor(repo, scope) }  // scope cancelled on recomposition
+```
+
+### Coroutine scope ownership — `rememberCoroutineScope` must not escape composition
+
+**Never pass a `rememberCoroutineScope()` result to a class that outlives the composable.** Compose cancels `rememberCoroutineScope` scopes when the composable leaves the composition; any object still holding that scope will throw `ForgottenCoroutineScopeException` on its next `launch`.
+
+Rules:
+- Any class instantiated inside `remember { }` must own its `CoroutineScope` internally: `private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)`.
+- `rememberCoroutineScope()` is for transient UI work only — event handlers, one-shot animations, button callbacks — never for objects stored in `remember`.
+- Long-lived classes expose results as `StateFlow`/`Flow`; composables collect them with `collectAsState()`. They do not accept a caller-supplied scope.
+- To audit: grep for `remember.*scope` or `scope.*remember` and confirm no `rememberCoroutineScope()` value is flowing into a constructor stored by `remember { }`.
+
+Violation pattern (forbidden):
+```kotlin
+val scope = rememberCoroutineScope()
+val manager = remember { SomeManager(scope) }  // scope will be cancelled on recomposition
+```
+
+Correct pattern:
+```kotlin
+// SomeManager.kt
+class SomeManager(...) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+}
+// Composable
+val manager = remember { SomeManager() }
+```
+
 ## Testing Infrastructure
 
 See `kmp/TESTING_README.md` for the full testing guide. Test source sets:

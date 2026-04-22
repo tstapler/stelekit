@@ -302,26 +302,21 @@ class PersistencePerformanceMonitor(
             averageSaveTime = avgTime,
             averageQueueTime = 0.0, // Would need queue tracking
             throughputOperationsPerSecond = totalOps.toDouble() / 5.0, // Per 5 second interval
-            memoryUsage = getMemoryUsage(),
-            diskUsage = getDiskUsage(),
+            memoryUsage = memoryUsage,
+            diskUsage = diskUsage,
             conflictRate = if (totalOps > 0) totalErrors.toDouble() / totalOps else 0.0,
             retryRate = 0.0, // Would need retry tracking
             uptime = Clock.System.now().toEpochMilliseconds()
         )
-        
+
         _metrics.value = metrics
     }
-    
-    private fun getMemoryUsage(): Long {
-        // Platform-specific memory usage calculation
-        // In KMP common, we return 0 or rely on platform-specific code if available.
-        return 0L
-    }
-    
-    private fun getDiskUsage(): Long {
-        // Would need platform-specific disk usage calculation
-        return 0L
-    }
+
+    // Platform-specific memory usage calculation; in KMP common, returns 0 until platform code is available.
+    private val memoryUsage: Long = 0L
+
+    // Would need platform-specific disk usage calculation.
+    private val diskUsage: Long = 0L
 }
 
 

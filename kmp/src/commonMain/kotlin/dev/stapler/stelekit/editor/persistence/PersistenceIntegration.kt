@@ -23,8 +23,8 @@ object PersistenceFactory {
      */
     fun createPersistenceSystem(
         blockRepository: BlockRepository,
-        graphWriter: GraphWriter,
-        fileSystem: PlatformFileSystem,
+        _graphWriter: GraphWriter,
+        _fileSystem: PlatformFileSystem,
         notificationManager: NotificationManager,
         scope: CoroutineScope,
         config: PersistenceConfig = PersistenceConfig.DEFAULT
@@ -33,8 +33,6 @@ object PersistenceFactory {
         // Create core persistence manager
         val persistenceManager = PersistenceManager(
             blockRepository = blockRepository,
-            graphWriter = graphWriter,
-            fileSystem = fileSystem,
             notificationManager = notificationManager,
             scope = scope,
             initialConfig = config
@@ -297,7 +295,7 @@ class IntegratedPersistenceSystem(
     }
     
     private fun calculateSystemHealth(
-        persistenceStats: PersistenceStats,
+        _persistenceStats: PersistenceStats,
         persistenceState: PersistenceState,
         performanceMetrics: PersistencePerformanceMetrics,
         recoveryStats: RecoveryStats
@@ -380,13 +378,13 @@ object PersistenceExample {
         val fileSystem = PlatformFileSystem()
         val graphWriter = GraphWriter(fileSystem)
         
-        val notificationManager = NotificationManager(scope)
+        val notificationManager = NotificationManager()
         
         // Create integrated system
         val system = PersistenceFactory.createPersistenceSystem(
             blockRepository = blockRepository,
-            graphWriter = graphWriter,
-            fileSystem = fileSystem,
+            _graphWriter = graphWriter,
+            _fileSystem = fileSystem,
             notificationManager = notificationManager,
             scope = scope,
             config = PersistenceConfig.DEFAULT.copy(

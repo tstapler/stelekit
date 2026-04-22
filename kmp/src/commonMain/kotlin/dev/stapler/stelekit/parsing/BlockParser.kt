@@ -7,6 +7,12 @@ class BlockParser(private val source: CharSequence) {
     private val lexer = Lexer(source)
     private var currentToken = lexer.nextToken()
 
+    companion object {
+        private val THEMATIC_BREAK_REGEX = Regex("---+|___+")
+        private val TABLE_SEPARATOR_REGEX = Regex("-+")
+        private val ORDERED_LIST_EXTRACT_REGEX = Regex("^(\\d+)\\.$")
+    }
+
     fun parse(): DocumentNode {
         val rootBlocks = parseBlocksAtLevel(0)
         return DocumentNode(rootBlocks)
@@ -141,7 +147,7 @@ class BlockParser(private val source: CharSequence) {
         // 1d. Check for thematic break from TEXT token: --- or ___
         if (currentToken.type == TokenType.TEXT) {
             val text = currentToken.text(source).toString()
-            if (text.matches(Regex("---+|___+"))) {
+            if (text.matches(THEMATIC_BREAK_REGEX)) {
                 val next = peekToken(1)
                 if (next.type == TokenType.NEWLINE || next.type == TokenType.EOF) {
                     advance() // consume ---
@@ -174,7 +180,7 @@ class BlockParser(private val source: CharSequence) {
         // 1g. Check for ordered list: N. content
         if (currentToken.type == TokenType.TEXT) {
             val txt = currentToken.text(source).toString()
-            val numDotMatch = Regex("^(\\d+)\\.$").find(txt)
+            val numDotMatch = ORDERED_LIST_EXTRACT_REGEX.find(txt)
             if (numDotMatch != null) {
                 val peekNext = peekToken(1)
                 if (peekNext.type == TokenType.WS || peekNext.type == TokenType.EOF || peekNext.type == TokenType.NEWLINE) {
@@ -275,7 +281,7 @@ class BlockParser(private val source: CharSequence) {
         }
     }
 
-    private fun parseBlockquote(level: Int): BlockquoteBlockNode {
+    private fun parseBlockquote(_level: Int): BlockquoteBlockNode {
         val innerBlocks = mutableListOf<BlockNode>()
         // Parse first line content
         val line = parseLine()
@@ -322,7 +328,7 @@ class BlockParser(private val source: CharSequence) {
                 c.startsWith(":") && c.endsWith(":") -> TableAlignment.CENTER
                 c.endsWith(":") -> TableAlignment.RIGHT
                 c.startsWith(":") -> TableAlignment.LEFT
-                c.matches(Regex("-+")) -> null
+                c.matches(TABLE_SEPARATOR_REGEX) -> null
                 else -> {
                     lexer.restoreState(savedState)
                     currentToken = savedToken
@@ -443,19 +449,24 @@ class BlockParser(private val source: CharSequence) {
         return 0
     }
 
+    private fun isOrderedListMarker(text: String): Boolean {
+        if (text.isEmpty() || !text.last().equals('.')) return false
+        return text.dropLast(1).all { it.isDigit() } && text.length > 1
+    }
+
     private fun peekIsBullet(): Boolean {
         if (currentToken.type == TokenType.BULLET) return true
 
         // Check for ordered list "N."
         if (currentToken.type == TokenType.TEXT) {
             val txt = currentToken.text(source).toString()
-            if (txt.matches(Regex("\\d+\\."))) return true
+            if (isOrderedListMarker(txt)) return true
         }
 
         if (currentToken.type == TokenType.INDENT) {
             val next = peekToken(1)
             if (next.type == TokenType.BULLET) return true
-            if (next.type == TokenType.TEXT && next.text(source).toString().matches(Regex("\\d+\\."))) return true
+            if (next.type == TokenType.TEXT && isOrderedListMarker(next.text(source).toString())) return true
         }
         return false
     }
@@ -473,7 +484,7 @@ class BlockParser(private val source: CharSequence) {
         // We need to advance `offset` times from current state?
         // No, `lexer` is poised to return `next` (offset 1).
 
-        for (i in 0 until offset) {
+        repeat(offset) {
             token = lexer.nextToken()
         }
 

@@ -109,7 +109,7 @@ class PersistenceErrorHandler(
             var failed = 0
             
             for (failure in failuresToRetry) {
-                when (val result = retryOperation(failure)) {
+                when (retryOperation(failure)) {
                     is RetryResult.Success -> {
                         removeRetryOperation(failure.id)
                         recovered++
@@ -266,7 +266,7 @@ class PersistenceErrorHandler(
         retryQueue.value = current
     }
     
-    private fun determineMaxRetries(operation: String, error: Throwable): Int {
+    private fun determineMaxRetries(operation: String, _error: Throwable): Int {
         return when {
             operation.contains("delete") -> 1 // Fewer retries for delete
             operation.contains("save") -> maxRetries // Standard retries for save

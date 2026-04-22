@@ -32,11 +32,9 @@ import kotlin.Result
  */
 class Editor(
     private val blockRepository: BlockRepository,
-    private val graphWriter: GraphWriter,
     private val textOperations: ITextOperations,
     private val blockOperations: IBlockOperations,
     private val commandSystem: ICommandSystem,
-    private val formatProcessor: IFormatProcessor
 ) : IEditor {
 
     private val scope = mutableStateOf<kotlinx.coroutines.CoroutineScope?>(null)

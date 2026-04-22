@@ -345,7 +345,7 @@ class OptimizedTextOperations(
 
     override suspend fun paste(blockId: String): Result<Unit> = operationMutex.withLock {
         try {
-            val text = getClipboardText()
+            val text = clipboardText
             val currentState = _textStates.value[blockId] ?: TextState()
             val content = currentState.content
             
@@ -483,9 +483,7 @@ class OptimizedTextOperations(
 
     private suspend fun updateBlockContentOptimized(blockId: String, content: String) {
         // Security: validate content length
-        if (content.length > MAX_CONTENT_LENGTH) {
-            throw IllegalArgumentException("Content exceeds maximum length")
-        }
+        require(content.length <= MAX_CONTENT_LENGTH) { "Content exceeds maximum length" }
         
         val block = blockRepository.getBlockByUuid(blockId).first().getOrNull()
         if (block != null) {
@@ -535,11 +533,8 @@ class OptimizedTextOperations(
         return !char.isLetterOrDigit() && char != '_' && char != '-'
     }
 
-    private fun getClipboardText(): String {
-        // Platform-specific clipboard implementation would go here
-        // For now, return placeholder
-        return "[pasted text]"
-    }
+    // Platform-specific clipboard implementation would go here; returns placeholder for now.
+    private val clipboardText: String = "[pasted text]"
 
     override suspend fun initializeBlock(blockId: String, content: String): Result<Unit> {
         return try {
@@ -563,8 +558,7 @@ class OptimizedTextOperations(
         // Security constants
         private const val MAX_TEXT_LENGTH = 10000
         private const val MAX_CONTENT_LENGTH = 100000
-        private const val MAX_CLIPBOARD_LENGTH = 50000
-        
+
         // Security: dangerous character ranges
         private val DANGEROUS_CHARACTERS = setOf(
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, // Control chars

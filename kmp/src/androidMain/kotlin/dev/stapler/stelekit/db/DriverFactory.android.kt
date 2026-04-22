@@ -24,7 +24,7 @@ actual class DriverFactory actual constructor() {
     actual fun createDriver(jdbcUrl: String): SqlDriver {
         val dbName = jdbcUrl.substringAfter("jdbc:sqlite:")
 
-        val context = staticContext ?: throw IllegalStateException(
+        val context = staticContext ?: error(
             "DriverFactory must be initialized with a Context before creating a driver. " +
             "Call DriverFactory().init(context) first."
         )
@@ -61,7 +61,7 @@ actual class DriverFactory actual constructor() {
     }
 
     actual fun getDatabaseDirectory(): String {
-        val context = staticContext ?: throw IllegalStateException("DriverFactory not initialized with a Context.")
+        val context = staticContext ?: error("DriverFactory not initialized with a Context.")
         return context.filesDir.absolutePath
     }
 }

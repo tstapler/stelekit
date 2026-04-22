@@ -62,7 +62,8 @@ class PageNameIndexTest {
             val index = PageNameIndex(
                 pageRepository = pageRepo,
                 scope = indexScope,
-                excludeJournalPages = true
+                excludeJournalPages = true,
+                rebuildDebounceMs = 0L,
             )
 
             val matcher = index.awaitMatcher()
@@ -88,7 +89,8 @@ class PageNameIndexTest {
             val index = PageNameIndex(
                 pageRepository = pageRepo,
                 scope = indexScope,
-                excludeJournalPages = false
+                excludeJournalPages = false,
+                rebuildDebounceMs = 0L,
             )
 
             val matcher = index.awaitMatcher()
@@ -114,7 +116,8 @@ class PageNameIndexTest {
             val index = PageNameIndex(
                 pageRepository = pageRepo,
                 scope = indexScope,
-                minNameLength = 3
+                minNameLength = 3,
+                rebuildDebounceMs = 0L,
             )
 
             val matcher = index.awaitMatcher()
@@ -140,7 +143,8 @@ class PageNameIndexTest {
         try {
             val index = PageNameIndex(
                 pageRepository = pageRepo,
-                scope = indexScope
+                scope = indexScope,
+                rebuildDebounceMs = 0L,
             )
 
             // No pages → matcher stays null. Brief real-time wait to let the pipeline settle.
@@ -164,7 +168,8 @@ class PageNameIndexTest {
         try {
             val index = PageNameIndex(
                 pageRepository = pageRepo,
-                scope = indexScope
+                scope = indexScope,
+                rebuildDebounceMs = 0L,
             )
 
             val firstMatcher = index.awaitMatcher()

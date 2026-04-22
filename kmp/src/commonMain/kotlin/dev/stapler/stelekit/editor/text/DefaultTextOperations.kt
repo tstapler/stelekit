@@ -11,9 +11,7 @@ import dev.stapler.stelekit.editor.TextFormat
  * Default implementation of text operations for initial state.
  * Mostly no-ops or in-memory only.
  */
-class DefaultTextOperations(
-    private val scope: CoroutineScope
-) : ITextOperations {
+class DefaultTextOperations : ITextOperations {
     
     private val _textState = MutableStateFlow(TextState())
     

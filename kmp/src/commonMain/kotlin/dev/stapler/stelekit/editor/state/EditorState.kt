@@ -651,8 +651,8 @@ data class EditorState(
         /**
          * Creates an empty EditorState with default configuration.
          */
-        fun empty(scope: CoroutineScope): EditorState {
-            val textOperations = DefaultTextOperations(scope)
+        fun empty(_scope: CoroutineScope): EditorState {
+            val textOperations = DefaultTextOperations()
             return EditorState(
                 textOperations = textOperations,
                 config = EditorConfig()
@@ -662,8 +662,8 @@ data class EditorState(
         /**
          * Creates an EditorState with initial content.
          */
-        fun withContent(content: String, scope: CoroutineScope): EditorState {
-            val textOperations = DefaultTextOperations(scope)
+        fun withContent(content: String, _scope: CoroutineScope): EditorState {
+            val textOperations = DefaultTextOperations()
             return EditorState(
                 textOperations = textOperations,
                 config = EditorConfig(),

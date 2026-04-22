@@ -35,6 +35,8 @@ object TopicExtractor {
         "approach", "paper", "work", "section", "figure", "table",
     )
 
+    private val WHITESPACE_REGEX = Regex("""\s+""")
+
     // 2–4 consecutive capitalized tokens
     private val MULTI_WORD_REGEX = Regex("""[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*){1,3}""")
 
@@ -66,7 +68,7 @@ object TopicExtractor {
         // 1. Multi-word capitalized phrases (2–4 words)
         MULTI_WORD_REGEX.findAll(rawText).forEach { match ->
             val term = match.value
-            val words = term.split(Regex("""\s+"""))
+            val words = term.split(WHITESPACE_REGEX)
             if (words.size in 2..4 && !isStopword(term)) {
                 multiWordRanges.add(match.range)
                 val data = candidates.getOrPut(term) { CandidateData(wordCount = words.size) }

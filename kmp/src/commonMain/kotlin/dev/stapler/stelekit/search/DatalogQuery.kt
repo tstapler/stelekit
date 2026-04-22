@@ -25,6 +25,11 @@ class DatalogQuery(
     val args: Map<String, Any> = emptyMap()
 ) {
     companion object {
+        private val FIND_REGEX = Regex(":find\\s+(.*?)(?=:where|$)")
+        private val WHERE_REGEX = Regex(":where\\s+(.*)")
+        private val WHITESPACE_REGEX = Regex("\\s+")
+        private val PATTERN_REGEX = Regex("\\[\\s*(\\?\\w+)\\s+(:[\\w/]+)\\s+\"?([^\"]+)\"?\\s*\\]")
+
         /**
          * Basic Datalog syntax parser.
          * Supports simple :find and :where clauses with triple patterns.
@@ -32,20 +37,19 @@ class DatalogQuery(
          */
         fun parse(query: String): DatalogQuery {
             val normalized = query.trim().replace("\n", " ")
-            
-            val findMatch = Regex(":find\\s+(.*?)(?=:where|$)").find(normalized)
-            val whereMatch = Regex(":where\\s+(.*)").find(normalized)
+
+            val findMatch = FIND_REGEX.find(normalized)
+            val whereMatch = WHERE_REGEX.find(normalized)
 
             val findVars = findMatch?.groupValues?.get(1)
-                ?.split(Regex("\\s+"))
+                ?.split(WHITESPACE_REGEX)
                 ?.map { it.trim() }
                 ?.filter { it.startsWith("?") } ?: emptyList()
-            
+
             val patterns = mutableListOf<DatalogPattern>()
             whereMatch?.groupValues?.get(1)?.let { whereClause ->
                 // Match patterns like [?b :block/content "value"]
-                val patternRegex = Regex("\\[\\s*(\\?\\w+)\\s+(:[\\w/]+)\\s+\"?([^\"]+)\"?\\s*\\]")
-                patternRegex.findAll(whereClause).forEach { match ->
+                PATTERN_REGEX.findAll(whereClause).forEach { match ->
                     val groups = match.groupValues
                     patterns.add(DatalogPattern(groups[1], groups[2], groups[3]))
                 }
@@ -59,32 +63,13 @@ class DatalogQuery(
 /**
  * Engine that executes Datalog queries against the repository layer.
  */
-class DatalogEngine(
-    private val blockRepository: BlockRepository,
-    private val pageRepository: PageRepository
-) {
+class DatalogEngine {
     /**
      * Executes a Datalog query and returns the results.
      * Currently supports basic block and page filtering by mapping to SearchRequest.
      */
-    suspend fun execute(query: DatalogQuery): Result<List<Any>> {
-        val results = mutableListOf<Any>()
-        
-        // Map Datalog patterns to repository operations
-        val blockPatterns = query.where.filter { it.attribute.startsWith(":block/") }
-        val pagePatterns = query.where.filter { it.attribute.startsWith(":page/") }
-        val propertyPatterns = query.where.filter { !it.attribute.startsWith(":") }
-
-        // Example: [?b :block/content "search"] -> SearchRequest(query = "search")
-        val contentPattern = blockPatterns.find { it.attribute == ":block/content" }
-        val pageNamePattern = pagePatterns.find { it.attribute == ":page/name" }
-        
-        val propertyFilters = propertyPatterns.associate { it.attribute to it.value }
-
-        // This is where the engine would coordinate with SearchRepository
-        // For now, we provide the structure for this integration
-        
-        return success(results)
+    suspend fun execute(_query: DatalogQuery): Result<List<Any>> {
+        return success(emptyList())
     }
 
     /**
@@ -100,7 +85,7 @@ class DatalogEngine(
  * This will allow building Datalog queries using a drag-and-drop interface.
  */
 class VisualQueryBuilder {
-    fun buildFromSchema(schema: Any): DatalogQuery {
+    fun buildFromSchema(_schema: Any): DatalogQuery {
         // TODO: Implement visual to datalog transformation
         return DatalogQuery(emptyList(), emptyList())
     }

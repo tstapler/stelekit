@@ -20,7 +20,6 @@ import kotlin.Result
  */
 class BlockOperations(
     private val blockRepository: BlockRepository,
-    private val graphWriter: GraphWriter
 ) : IBlockOperations, BlockRepository by blockRepository {
 
     private val operationMutex = Mutex()
@@ -259,7 +258,7 @@ class BlockOperations(
             
             if (mergeResult.isSuccess) {
                 blockRepository.getBlockByUuid(blockUuid).first()
-                    .map { it ?: throw IllegalStateException("Block disappeared after merge") }
+                    .map { it ?: error("Block disappeared after merge") }
             } else {
                 Result.failure(mergeResult.exceptionOrNull() ?: Exception("Merge failed"))
             }
@@ -292,7 +291,7 @@ class BlockOperations(
             
             if (mergeResult.isSuccess) {
                 blockRepository.getBlockByUuid(prevBlock.uuid).first()
-                    .map { it ?: throw IllegalStateException("Block disappeared after merge") }
+                    .map { it ?: error("Block disappeared after merge") }
             } else {
                 Result.failure(mergeResult.exceptionOrNull() ?: Exception("Merge failed"))
             }

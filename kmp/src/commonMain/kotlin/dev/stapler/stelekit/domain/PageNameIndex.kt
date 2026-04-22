@@ -30,6 +30,7 @@ class PageNameIndex(
     private val excludeJournalPages: Boolean = true,
     private val minNameLength: Int = MIN_NAME_LENGTH,
     private val stopwords: Set<String> = DEFAULT_STOPWORDS,
+    private val rebuildDebounceMs: Long = REBUILD_DEBOUNCE_MS,
 ) {
     private val _canonicalNames = MutableStateFlow<Map<String, String>>(emptyMap())
 
@@ -50,16 +51,18 @@ class PageNameIndex(
                 // Coalesce rapid bursts (e.g. graph load saving pages one by one) into a
                 // single rebuild. 500 ms matches the block-editor save debounce so a rename
                 // and its save settle before the matcher is rebuilt.
-                .debounce(REBUILD_DEBOUNCE_MS)
+                .debounce(rebuildDebounceMs)
                 .collect { result ->
                     result.getOrNull()?.let { pages ->
                         _canonicalNames.value = pages
-                            .filter { page ->
-                                page.name.length >= minNameLength &&
-                                    (!excludeJournalPages || !page.isJournal) &&
-                                    page.name.lowercase() !in stopwords
+                            .mapNotNull { page ->
+                                if (page.name.length < minNameLength) return@mapNotNull null
+                                if (excludeJournalPages && page.isJournal) return@mapNotNull null
+                                val lower = page.name.lowercase()
+                                if (lower in stopwords) return@mapNotNull null
+                                lower to page.name
                             }
-                            .associate { it.name.lowercase() to it.name }
+                            .toMap()
                     }
                 }
         }

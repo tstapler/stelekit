@@ -52,23 +52,19 @@ class ClaudeTopicEnricher(
             append("<document>\n$truncatedText\n</document>")
         }
 
-        val response = try {
-            httpClient.post(MESSAGES_URL) {
-                headers {
-                    append("x-api-key", apiKey)
-                    append("anthropic-version", ANTHROPIC_VERSION)
-                }
-                contentType(ContentType.Application.Json)
-                setBody(
-                    MessagesRequest(
-                        model = CLAUDE_MODEL,
-                        maxTokens = 256,
-                        messages = listOf(Message(role = "user", content = prompt)),
-                    ),
-                )
+        val response = httpClient.post(MESSAGES_URL) {
+            headers {
+                append("x-api-key", apiKey)
+                append("anthropic-version", ANTHROPIC_VERSION)
             }
-        } catch (e: Exception) {
-            throw e
+            contentType(ContentType.Application.Json)
+            setBody(
+                MessagesRequest(
+                    model = CLAUDE_MODEL,
+                    maxTokens = 256,
+                    messages = listOf(Message(role = "user", content = prompt)),
+                ),
+            )
         }
 
         if (response.status.value == 429) {

@@ -27,6 +27,7 @@ import dev.stapler.stelekit.ui.isMobile
 import dev.stapler.stelekit.ui.Screen
 import dev.stapler.stelekit.ui.i18n.Language
 import dev.stapler.stelekit.ui.i18n.t
+import dev.stapler.stelekit.ui.components.settings.themeModeLabel
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 
 @Composable

@@ -150,6 +150,10 @@ class CachedBlockRepository(
         return delegate.deleteBlocksForPage(pageUuid)
     }
 
+    override suspend fun deleteBlocksForPages(pageUuids: List<String>): Result<Unit> {
+        return delegate.deleteBlocksForPages(pageUuids)
+    }
+
     override suspend fun clear() {
         delegate.clear()
         cache.clear()

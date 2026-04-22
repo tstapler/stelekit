@@ -76,7 +76,7 @@ class RTCManager {
         return emptyList()
     }
 
-    private fun patchOperation(remoteOp: RTCOp, localOp: RTCOp): RTCOp {
+    private fun patchOperation(remoteOp: RTCOp, _localOp: RTCOp): RTCOp {
         // Placeholder: Implement specific patching logic based on operation types.
         // For example, if both are updates, local might win or they might be merged.
         return remoteOp // Simplified placeholder

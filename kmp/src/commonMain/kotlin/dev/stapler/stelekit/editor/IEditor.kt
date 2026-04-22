@@ -90,7 +90,7 @@ interface IFormatProcessor {
      * Get the active format at a specific position in the text
      */
     fun getFormatAt(content: String, position: Int): Result<TextFormat>
-    
+
     /**
      * Parse markdown content into formatted segments (for rendering)
      * This might return a list of spans or similar, but for now we just need the interface definition.

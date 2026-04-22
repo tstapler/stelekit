@@ -6,9 +6,12 @@ import dev.stapler.stelekit.db.OperationLogger
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.db.UndoManager
 import dev.stapler.stelekit.db.createDatabase
+import dev.stapler.stelekit.performance.HistogramWriter
 import dev.stapler.stelekit.performance.OtelProvider
 import dev.stapler.stelekit.performance.wrapWithOtelIfAvailable
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Factory implementation for creating repository instances.
@@ -141,13 +144,32 @@ class RepositoryFactoryImpl(
             dev.stapler.stelekit.performance.DebugFlagRepository(database)
         } else null
 
-        val ringBuffer = if (histogramWriter != null) {
-            dev.stapler.stelekit.performance.RingBufferSpanExporter()
+        // Prefer the OtelProvider's ring buffer (already wired to the OTel SDK span pipeline).
+        // Fall back to a standalone buffer if OTel is not initialized (e.g. tests, iOS).
+        val ringBuffer = dev.stapler.stelekit.performance.OtelProvider.ringBuffer
+            ?: if (histogramWriter != null) dev.stapler.stelekit.performance.RingBufferSpanExporter() else null
+
+        val spanRepository = if (backend == GraphBackend.SQLDELIGHT) {
+            SqlDelightSpanRepository(database)
         } else null
 
         val bugReportBuilder = if (histogramWriter != null && ringBuffer != null) {
             dev.stapler.stelekit.performance.BugReportBuilder(ringBuffer, histogramWriter)
         } else null
+
+        // Background drain: every 5s flush in-memory ring buffer to SQLite and prune old data
+        if (scope != null && ringBuffer != null && spanRepository != null) {
+            scope.launch {
+                val sevenDaysMs = 7L * 24 * 60 * 60 * 1000
+                while (true) {
+                    delay(5_000)
+                    val drained = ringBuffer.drain()
+                    drained.forEach { span -> spanRepository.insertSpan(span) }
+                    spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)
+                    spanRepository.deleteExcessSpans(10_000)
+                }
+            }
+        }
 
         return RepositorySet(
             blockRepository = blockRepo,
@@ -160,6 +182,8 @@ class RepositoryFactoryImpl(
             undoManager = undoManager,
             histogramWriter = histogramWriter,
             debugFlagRepository = debugFlagRepo,
+            ringBuffer = ringBuffer,
+            spanRepository = spanRepository,
             bugReportBuilder = bugReportBuilder
         )
     }

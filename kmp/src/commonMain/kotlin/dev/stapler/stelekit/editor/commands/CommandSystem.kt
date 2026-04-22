@@ -12,7 +12,6 @@ import dev.stapler.stelekit.logging.Logger
  */
 class CommandSystem(
     private val registry: CommandRegistry,
-    private val scope: CoroutineScope
 ) : ICommandSystem {
     
     private val logger = Logger("CommandSystem")
@@ -90,12 +89,12 @@ class CommandSystem(
     private fun addToHistory(entry: CommandHistoryEntry) {
         val currentHistory = _history.value.toMutableList()
         currentHistory.add(0, entry)
-        
+
         // Limit history size
         if (currentHistory.size > maxHistorySize) {
             currentHistory.removeAt(currentHistory.lastIndex)
         }
-        
+
         _history.value = currentHistory
     }
 }

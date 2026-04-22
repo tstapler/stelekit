@@ -22,7 +22,7 @@ class ParseMarkdownWithStylingTest {
             text = text,
             linkColor = Color.Blue,
             textColor = Color.Black,
-            suggestionMatcher = matcher,
+            suggestionSpans = extractSuggestions(text, matcher),
         ).getStringAnnotations(PAGE_SUGGESTION_TAG, 0, text.length)
 
     private fun suggestionNamesIn(text: String, matcher: AhoCorasickMatcher) =
@@ -43,7 +43,6 @@ class ParseMarkdownWithStylingTest {
             text = "I use Kotlin daily",
             linkColor = Color.Blue,
             textColor = Color.Black,
-            suggestionMatcher = null,
         ).getStringAnnotations(PAGE_SUGGESTION_TAG, 0, 100)
         assertTrue(result.isEmpty())
     }

@@ -24,6 +24,9 @@ import dev.stapler.stelekit.error.JvmErrorTracker
 import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.OtelProvider
 import dev.stapler.stelekit.performance.OtelExporterConfig
+import dev.stapler.stelekit.performance.OtelLogSink
+import dev.stapler.stelekit.performance.OtelSpanRecorder
+import io.opentelemetry.api.trace.Tracer
 import javax.swing.UIManager
 
 fun main() {
@@ -36,6 +39,9 @@ fun main() {
 
     // Initialize OpenTelemetry SDK early so instrumented code can emit spans
     OtelProvider.initialize(OtelExporterConfig(enableStdout = false, enableRingBuffer = true))
+
+    // Enrich log lines with active trace/span IDs for log-trace correlation
+    dev.stapler.stelekit.logging.LogManager.addSink(OtelLogSink(fileLogSink))
 
     // JVM shutdown hook — ensures logs are flushed and OTel is shut down on exit
     Runtime.getRuntime().addShutdownHook(Thread {
@@ -69,7 +75,10 @@ fun main() {
 
         val fileSystem = PlatformFileSystem()
         val graphPath = fileSystem.getDefaultGraphPath()
-        
+        val spanRecorder = remember {
+            OtelSpanRecorder(OtelProvider.getTracer("compose.navigation") as Tracer)
+        }
+
         logger.info("Starting Desktop Application with graph: $graphPath")
         errorTracker.recordBreadcrumb("Graph path resolved: $graphPath", "SYSTEM")
 
@@ -105,7 +114,8 @@ fun main() {
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = graphPath,
-                urlFetcher = UrlFetcherJvm()
+                urlFetcher = UrlFetcherJvm(),
+                spanRecorder = spanRecorder,
             )
         }
     }

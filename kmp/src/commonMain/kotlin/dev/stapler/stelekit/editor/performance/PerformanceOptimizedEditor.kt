@@ -41,8 +41,7 @@ fun PerformanceOptimizedEditor(
     
     // Performance: Debounced state update
     var lastContentUpdate by remember { mutableStateOf(0L) }
-    val debouncedUpdateDelay = remember { 16L } // ~60fps for responsive typing
-    
+
     // Performance: Virtual scrolling for large documents
     val listState = rememberLazyListState()
     
@@ -183,8 +182,7 @@ private fun BlockEditorPlaceholder(
 class EditorPerformanceManager {
     
     private val performanceMetrics = mutableMapOf<String, MutableList<Long>>()
-    private val renderTimes = mutableMapOf<String, Long>()
-    
+
     /**
      * Track performance of editor operations
      */

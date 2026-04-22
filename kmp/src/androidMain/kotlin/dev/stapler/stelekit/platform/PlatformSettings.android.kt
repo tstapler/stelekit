@@ -9,7 +9,7 @@ import androidx.security.crypto.MasterKey
 object SteleKitContext {
     private var _context: Context? = null
     val context: Context
-        get() = _context ?: throw IllegalStateException("SteleKitContext not initialized. Call init(context) first.")
+        get() = _context ?: error("SteleKitContext not initialized. Call init(context) first.")
 
     fun init(context: Context) {
         _context = context.applicationContext

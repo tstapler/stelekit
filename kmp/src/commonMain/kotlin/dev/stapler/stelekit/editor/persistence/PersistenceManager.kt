@@ -23,8 +23,6 @@ import kotlin.math.max
  */
 class PersistenceManager(
     private val blockRepository: BlockRepository,
-    private val graphWriter: GraphWriter,
-    private val fileSystem: PlatformFileSystem,
     private val notificationManager: NotificationManager,
     private val scope: CoroutineScope,
     initialConfig: PersistenceConfig = PersistenceConfig.DEFAULT
@@ -32,7 +30,6 @@ class PersistenceManager(
     
     private val logger = dev.stapler.stelekit.logging.Logger("PersistenceManager")
     private val conflictDetector = ConflictDetector()
-    private val conflictResolver = ConflictResolver()
     private val mutex = Mutex()
     
     // State management

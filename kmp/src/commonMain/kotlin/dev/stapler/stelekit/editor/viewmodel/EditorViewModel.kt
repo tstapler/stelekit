@@ -683,7 +683,7 @@ class EditorViewModel(
             textStateFlow.map { textState ->
                 EditorStatistics(
                     characterCount = textState.content.length,
-                    wordCount = textState.content.split(Regex("\\s+")).filter { it.isNotBlank() }.size,
+                    wordCount = textState.content.split(WHITESPACE_REGEX).filter { it.isNotBlank() }.size,
                     lineCount = textState.content.split('\n').size,
                     hasUnsavedChanges = state.hasUnsavedChanges,
                     isFocused = state.isFocused,
@@ -703,6 +703,10 @@ class EditorViewModel(
     fun dispose() {
         autoSaveJob?.cancel()
         logger.debug("EditorViewModel disposed")
+    }
+
+    companion object {
+        private val WHITESPACE_REGEX = Regex("\\s+")
     }
 }
 
@@ -789,7 +793,7 @@ data class EditorStatistics(
 )
 
 // Extension function for i18n
-private fun t(key: String, vararg args: Any): String {
+private fun t(key: String, vararg _args: Any): String {
     return when (key) {
         "editor.loading.block" -> "Loading block..."
         "editor.saving.block" -> "Saving block..."

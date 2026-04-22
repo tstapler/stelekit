@@ -48,7 +48,7 @@ class InlineParser(private val source: CharSequence) {
 
         var left = parsePrefix(token)
 
-        while (precedence < getPrecedence()) {
+        while (precedence < currentPrecedence) {
             token = currentToken
             advance()
             left = parseInfix(left, token)
@@ -101,13 +101,11 @@ class InlineParser(private val source: CharSequence) {
         return TextNode(text)
     }
 
-    private fun parseInfix(left: InlineNode, token: Token): InlineNode {
+    private fun parseInfix(left: InlineNode, _token: Token): InlineNode {
         return left // Placeholder
     }
 
-    private fun getPrecedence(): Int {
-        return 0
-    }
+    private val currentPrecedence: Int = 0
 
     private fun parseMacro(): InlineNode {
         // Parse {{name args}}
@@ -142,7 +140,7 @@ class InlineParser(private val source: CharSequence) {
         }
     }
 
-    private fun parseHighlight(token: Token): InlineNode {
+    private fun parseHighlight(_token: Token): InlineNode {
         // ==text==
         val savedLexerState = lexer.saveState()
         val savedToken = currentToken
@@ -241,7 +239,7 @@ class InlineParser(private val source: CharSequence) {
         return SuperscriptNode(children)
     }
 
-    private fun parseLink(token: Token): InlineNode {
+    private fun parseLink(_token: Token): InlineNode {
         // Handle [[WikiLink]] or [label](url)
         if (currentToken.type == TokenType.L_BRACKET) {
             // [[ detected — wiki-link path
@@ -323,7 +321,7 @@ class InlineParser(private val source: CharSequence) {
         return TextNode("[")
     }
 
-    private fun parseBlockRef(token: Token): InlineNode {
+    private fun parseBlockRef(_token: Token): InlineNode {
         // Token is BLOCK_REF_OPEN ((
         val sb = StringBuilder()
         while (currentToken.type != TokenType.BLOCK_REF_CLOSE && currentToken.type != TokenType.EOF) {
@@ -416,7 +414,7 @@ class InlineParser(private val source: CharSequence) {
         return TextNode(token.text(source).toString())
     }
 
-    private fun parseTag(token: Token): InlineNode {
+    private fun parseTag(_token: Token): InlineNode {
         // #[[multi word tag]] bracket form
         if (currentToken.type == TokenType.L_BRACKET) {
             val savedLexerState = lexer.saveState()
@@ -431,7 +429,6 @@ class InlineParser(private val source: CharSequence) {
                 val sb = StringBuilder()
                 while (currentToken.type != TokenType.EOF && currentToken.type != TokenType.NEWLINE) {
                     if (currentToken.type == TokenType.R_BRACKET) {
-                        val afterFirstClose = lexer.saveState()
                         val firstCloseToken = currentToken
                         advance()
                         if (currentToken.type == TokenType.R_BRACKET) {

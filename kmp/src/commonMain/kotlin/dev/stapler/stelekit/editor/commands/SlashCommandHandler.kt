@@ -102,13 +102,11 @@ interface ISlashCommandHandler {
  */
 class SlashCommandHandler(
     private val commandSystem: ICommandSystem,
-    private val scope: CoroutineScope
 ) : ISlashCommandHandler {
     
     private val logger = Logger("SlashCommandHandler")
     private val _registeredCommands = MutableStateFlow<Map<String, suspend (SlashCommand, CommandContext) -> CommandResult>>(emptyMap())
-    private val registeredCommands: StateFlow<Map<String, suspend (SlashCommand, CommandContext) -> CommandResult>> = _registeredCommands.asStateFlow()
-    
+
     override suspend fun parse(input: String, cursorPosition: Int): SlashCommandParseResult {
         val trimmed = input.trim()
         
@@ -311,7 +309,7 @@ class SlashCommandHandler(
     /**
      * Get command suggestions based on partial input
      */
-    private suspend fun getCommandSuggestions(partialCommand: String, args: List<String>): List<SlashCommandSuggestion> {
+    private suspend fun getCommandSuggestions(partialCommand: String, _args: List<String>): List<SlashCommandSuggestion> {
         val availableCommands = commandSystem.getAvailableCommands(CommandContext())
         
         return availableCommands.mapNotNull { command ->

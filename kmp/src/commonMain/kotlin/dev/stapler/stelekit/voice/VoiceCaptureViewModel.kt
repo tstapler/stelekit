@@ -4,10 +4,13 @@ package dev.stapler.stelekit.voice
 
 import dev.stapler.stelekit.repository.JournalService
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
 import kotlinx.datetime.TimeZone
@@ -18,8 +21,11 @@ private const val MAX_TRANSCRIPT_CHARS = 10_000
 class VoiceCaptureViewModel(
     private val pipeline: VoicePipelineConfig,
     private val journalService: JournalService,
-    private val scope: CoroutineScope,
+    // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
+    // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
+    private val scope = scope
     private val _state = MutableStateFlow<VoiceCaptureState>(VoiceCaptureState.Idle)
     val state: StateFlow<VoiceCaptureState> = _state.asStateFlow()
 
@@ -143,5 +149,9 @@ class VoiceCaptureViewModel(
             append(rawTranscript)
             append("\n  #+END_QUOTE")
         }
+    }
+
+    fun close() {
+        scope.cancel()
     }
 }

@@ -46,7 +46,7 @@ object Validation {
         require(validated.isNotBlank()) { "UUID cannot be blank" }
         // Relaxed validation to allow for human-readable IDs in tests (e.g. "page-1")
         // but still ensuring it's a reasonable string.
-        require(validated.matches(Regex("^[a-zA-Z0-9-]+$"))) {
+        require(validated.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' }) {
             "Invalid UUID format: $validated"
         }
         return validated

@@ -15,8 +15,8 @@ class CommandManager(
     private val logger = Logger("CommandManager")
     
     private val registry = CommandRegistry()
-    private val commandSystem = CommandSystem(registry, scope)
-    private val slashCommandHandler = SlashCommandHandler(commandSystem, scope)
+    private val commandSystem = CommandSystem(registry)
+    private val slashCommandHandler = SlashCommandHandler(commandSystem)
     
     init {
         // Register essential commands

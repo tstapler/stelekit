@@ -193,7 +193,7 @@ class BlockTreeOperations(
     suspend fun duplicateSubtree(
         rootBlockUuid: String,
         targetParentUuid: String? = null,
-        targetPosition: PositioningMode = PositioningMode.END
+        _targetPosition: PositioningMode = PositioningMode.END
     ): Result<Block> {
         return try {
             // 1. Get entire subtree
