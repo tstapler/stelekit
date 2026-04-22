@@ -1,0 +1,360 @@
+build:
+  maxIssues: 0
+
+config:
+  validation: true
+  warningsAsErrors: false
+
+# Custom SteleKit rules (compiled from buildSrc)
+stelekit:
+  active: true
+  RegexInLambda:
+    active: true
+
+# Compose Multiplatform rules (io.nlopez.compose.rules)
+Compose:
+  active: true
+  ComposableNaming:
+    active: true
+  ComposableAnnotationNaming:
+    active: true
+  ComposableParamOrder:
+    active: true
+  MutableStateParam:
+    active: true
+  MutableParams:
+    active: true
+  MutableStateAutoboxing:
+    active: true
+  RememberMissing:
+    active: true
+  RememberContentMissing:
+    active: true
+  CompositionLocalNaming:
+    active: true
+  CompositionLocalAllowlist:
+    active: true
+    # List any project-specific CompositionLocals that are intentionally global here
+    allowedCompositionLocals: ''
+  LambdaParameterInRestartableEffect:
+    active: true
+  ContentEmitterReturningValues:
+    active: true
+  MultipleEmitters:
+    active: true
+  ContentTrailingLambda:
+    active: true
+  ContentSlotReused:
+    active: true
+  LambdaParameterEventTrailing:
+    active: true
+  ParameterNaming:
+    active: true
+  PreviewAnnotationNaming:
+    active: true
+  PreviewPublic:
+    active: true
+  ModifierMissing:
+    active: true
+  ModifierClickableOrder:
+    active: true
+  ModifierNotUsedAtRoot:
+    active: true
+  ModifierReused:
+    active: true
+  ModifierWithoutDefault:
+    active: true
+  ModifierNaming:
+    active: true
+  ModifierComposed:
+    active: true
+  DefaultsVisibility:
+    active: true
+  # ViewModel rules disabled — project does not use Hilt/Koin injection
+  ViewModelForwarding:
+    active: false
+  ViewModelInjection:
+    active: false
+  # Opt-in rules — disabled for now
+  Material2:
+    active: false
+  UnstableCollections:
+    active: false
+  PreviewNaming:
+    active: false
+
+# Only override rules that differ from Detekt defaults.
+# buildUponDefaultConfig = true in build.gradle.kts means defaults apply for everything not listed here.
+
+coroutines:
+  active: true
+  GlobalCoroutineUsage:
+    active: true
+  RedundantSuspendModifier:
+    active: true
+  SleepInsteadOfDelay:
+    active: true
+  SuspendFunSwallowedCancellation:
+    active: true
+  SuspendFunWithCoroutineScopeReceiver:
+    active: true
+  SuspendFunWithFlowReturnType:
+    active: true
+  InjectDispatcher:
+    # We use PlatformDispatcher abstraction — injecting raw Dispatchers is caught by ForbiddenImport
+    active: false
+
+performance:
+  active: true
+  ArrayPrimitive:
+    active: true
+  CouldBeSequence:
+    active: true
+    threshold: 3
+  ForEachOnRange:
+    active: true
+  SpreadOperator:
+    active: true
+  UnnecessaryTemporaryInstantiation:
+    active: true
+
+potential-bugs:
+  active: true
+  AvoidReferentialEquality:
+    active: true
+    forbiddenTypePatterns:
+      - 'kotlin.String'
+  DoubleMutabilityForCollection:
+    active: true
+  EqualsAlwaysReturnsTrueOrFalse:
+    active: true
+  EqualsWithHashCodeExist:
+    active: true
+  InvalidRange:
+    active: true
+  IteratorHasNextCallsNextMethod:
+    active: true
+  MapGetWithNotNullAssertionOperator:
+    active: true
+  PropertyUsedBeforeDeclaration:
+    active: true
+  UnconditionalJumpStatementInLoop:
+    active: true
+  UnnecessaryNotNullCheck:
+    active: true
+  UnnecessaryNotNullOperator:
+    active: true
+  UnnecessarySafeCall:
+    active: true
+  UnreachableCode:
+    active: true
+  UselessPostfixExpression:
+    active: true
+  WrongEqualsTypeParameter:
+    active: true
+  # Noisy rules disabled for existing codebase
+  CastToNullableType:
+    active: false
+  HasPlatformType:
+    active: false
+  IgnoredReturnValue:
+    active: false
+  NullCheckOnMutableProperty:
+    active: false
+  UnsafeCallOnNullableType:
+    active: false
+  UnsafeCast:
+    active: false
+
+naming:
+  active: true
+  FunctionNaming:
+    active: true
+    # Allow PascalCase for @Composable functions
+    functionPattern: '([a-z][a-zA-Z0-9]*)|(`.*`)'
+    ignoreAnnotated:
+      - 'Composable'
+  InvalidPackageDeclaration:
+    active: true
+    rootPackage: 'dev.stapler.stelekit'
+    requireRootInDeclaration: false
+  # KMP expect/actual files use the `.jvm.kt` / `.android.kt` / `.ios.kt` suffix
+  # convention so `PlatformDispatcher.jvm.kt` legitimately contains `PlatformDispatcher`.
+  MatchingDeclarationName:
+    active: false
+  # RestrictedDatabaseQueries mirrors SQLDelight-generated snake_case parameter names.
+  FunctionParameterNaming:
+    active: false
+  # Permissive overrides — single-letter names are common in math/Compose
+  VariableMinLength:
+    active: false
+  FunctionMinLength:
+    active: false
+  FunctionMaxLength:
+    active: false
+  VariableMaxLength:
+    active: false
+  LambdaParameterNaming:
+    active: false
+  # Allow UPPER_SNAKE_CASE or camelCase for top-level vals
+  TopLevelPropertyNaming:
+    active: true
+    constantPattern: '[A-Z][_A-Z0-9]*'
+    propertyPattern: '[A-Za-z][_A-Za-z0-9]*'
+    privatePropertyPattern: '_?[A-Za-z][_A-Za-z0-9]*'
+
+style:
+  active: true
+  # Project-specific: enforce PlatformDispatcher instead of raw Dispatchers
+  ForbiddenImport:
+    active: true
+    imports:
+      - value: 'kotlinx.coroutines.Dispatchers.IO'
+        reason: 'Use PlatformDispatcher.IO — raw Dispatchers.IO is wrong on iOS/WASM'
+      - value: 'kotlinx.coroutines.Dispatchers.Main'
+        reason: 'Use PlatformDispatcher.Main for KMP compatibility'
+    forbiddenPatterns: ''
+  ForbiddenMethodCall:
+    active: true
+    methods:
+      - reason: 'Use the project logger instead of println'
+        value: 'kotlin.io.println'
+      - reason: 'Use the project logger instead of print'
+        value: 'kotlin.io.print'
+  MayBeConst:
+    active: true
+  ModifierOrder:
+    active: true
+  ObjectLiteralToLambda:
+    active: true
+  PreferToOverPairSyntax:
+    active: true
+  ProtectedMemberInFinalClass:
+    active: true
+  RedundantHigherOrderMapUsage:
+    active: true
+  SafeCast:
+    active: true
+  UnnecessaryApply:
+    active: true
+  UnnecessaryBackticks:
+    active: true
+  UnnecessaryFilter:
+    active: true
+  UnnecessaryInheritance:
+    active: true
+  UntilInsteadOfRangeTo:
+    active: true
+  UseAnyOrNoneInsteadOfFind:
+    active: true
+  UseEmptyCounterpart:
+    active: true
+  UseIfEmptyOrIfBlank:
+    active: true
+  UseIsNullOrEmpty:
+    active: true
+  UseOrEmpty:
+    active: true
+  UseSumOfInsteadOfFlatMapSize:
+    active: true
+  NestedClassesVisibility:
+    active: true
+  OptionalAbstractKeyword:
+    active: true
+  UseArrayLiteralsInAnnotations:
+    active: true
+  UseCheckNotNull:
+    active: true
+  # Disabled — too opinionated / noisy for existing codebase
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    active: false
+  ReturnCount:
+    active: false
+  WildcardImport:
+    active: false
+  # Parser loops legitimately use multiple break/continue for readability
+  LoopWithTooManyJumpStatements:
+    active: false
+  # Migration runner legitimately throws from multiple paths
+  ThrowsCount:
+    active: false
+  # Benchmark functions use PascalCase by JMH convention
+  FunctionOnlyReturningConstant:
+    active: true
+  UnusedParameter:
+    active: true
+    # _paramName prefix is conventional for interface/override params not used in this impl
+    allowedNames: '_.*|ignored|expected|serialVersionUID'
+    # @Composable parameters are part of the named-argument public API — never rename them
+    ignoreAnnotated:
+      - 'Composable'
+  UnusedImports:
+    active: false
+  UnusedPrivateMember:
+    active: false
+  ForbiddenComment:
+    active: false
+
+complexity:
+  active: true
+  # Compose composables and parsers are legitimately long — structural complexity
+  # rules add noise without actionable signal in this codebase.
+  CyclomaticComplexMethod:
+    active: false
+  LongMethod:
+    active: false
+  LargeClass:
+    active: false
+  NestedBlockDepth:
+    active: true
+    threshold: 6
+  # Disabled — too many legitimate uses in KMP/Compose
+  LongParameterList:
+    active: false
+  TooManyFunctions:
+    active: false
+  CognitiveComplexMethod:
+    active: false
+  StringLiteralDuplication:
+    active: false
+  MethodOverloading:
+    active: false
+
+# Disable comments rules — doc style is a separate concern
+comments:
+  active: false
+
+empty-blocks:
+  active: true
+  EmptyCatchBlock:
+    active: true
+    allowedExceptionNameRegex: '_|(ignored|expected|e)'
+  EmptyClassBlock:
+    active: false
+  EmptyFunctionBlock:
+    active: false
+
+exceptions:
+  active: true
+  PrintStackTrace:
+    active: true
+  RethrowCaughtException:
+    active: true
+  ReturnFromFinally:
+    active: true
+  ThrowingNewInstanceOfSameException:
+    active: true
+  ThrowingExceptionFromFinally:
+    active: true
+  # Disabled — too broad for this codebase
+  TooGenericExceptionCaught:
+    active: false
+  TooGenericExceptionThrown:
+    active: false
+  SwallowedException:
+    active: false
+  # Parser catch blocks that check exception type mid-catch are legitimate
+  InstanceOfCheckForException:
+    active: false

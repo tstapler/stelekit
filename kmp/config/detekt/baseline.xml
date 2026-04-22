@@ -1,0 +1,364 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues></ManuallySuppressedIssues>
+  <CurrentIssues>
+    <ID>ComplexCondition:AndroidAudioRecorder.kt$AndroidAudioRecorder$!isConfig &amp;&amp; muxerStarted &amp;&amp; trackIndex &gt;= 0 &amp;&amp; info.size &gt; 0</ID>
+    <ID>ComposableParamOrder:App.kt$GraphDialogLayer</ID>
+    <ID>ComposableParamOrder:AutocompleteMenu.kt$AutocompleteMenu</ID>
+    <ID>ComposableParamOrder:BlockEditor.kt$BlockEditor</ID>
+    <ID>ComposableParamOrder:BlockItem.kt$BlockItem</ID>
+    <ID>ComposableParamOrder:BlockList.kt$BlockList</ID>
+    <ID>ComposableParamOrder:BlockRenderer.kt$BlockRenderer</ID>
+    <ID>ComposableParamOrder:JournalsView.kt$JournalEntry</ID>
+    <ID>ComposableParamOrder:JournalsView.kt$JournalsView</ID>
+    <ID>ComposableParamOrder:MainLayout.kt$MainLayout</ID>
+    <ID>ComposableParamOrder:MobileBlockToolbar.kt$MobileBlockToolbar</ID>
+    <ID>ComposableParamOrder:PerformanceDashboard.kt$PerformanceDashboard</ID>
+    <ID>ComposableParamOrder:PerformanceOptimizedEditor.kt$PerformanceOptimizedEditor</ID>
+    <ID>ComposableParamOrder:Sidebar.kt$GraphItem</ID>
+    <ID>ComposableParamOrder:Sidebar.kt$GraphSwitcher</ID>
+    <ID>ComposableParamOrder:Sidebar.kt$LeftSidebar</ID>
+    <ID>ComposableParamOrder:Sidebar.kt$RightSidebar</ID>
+    <ID>CompositionLocalAllowlist:GraphRootPathProvider.kt$LocalGraphRootPath</ID>
+    <ID>CompositionLocalAllowlist:I18n.kt$LocalI18n</ID>
+    <ID>CompositionLocalAllowlist:OtelComposeTracking.kt$LocalSpanRecorder</ID>
+    <ID>CompositionLocalAllowlist:Theme.kt$LocalStelekitColors</ID>
+    <ID>CompositionLocalAllowlist:WindowSizeClass.kt$LocalWindowSizeClass</ID>
+    <ID>ContentSlotReused:MainLayout.kt$content</ID>
+    <ID>ContentSlotReused:MainLayout.kt$leftSidebar</ID>
+    <ID>ContentTrailingLambda:MainLayout.kt$content</ID>
+    <ID>CyclomaticComplexMethod:App.kt$@Composable private fun FlashcardsScreen(blockStateManager: dev.stapler.stelekit.ui.state.BlockStateManager)</ID>
+    <ID>CyclomaticComplexMethod:App.kt$@Composable private fun GraphContent( repos: RepositorySet, fileSystem: FileSystem, platformSettings: PlatformSettings, pluginHost: PluginHost, encryptionManager: EncryptionManager, graphManager: GraphManager, notificationManager: NotificationManager, urlFetcher: UrlFetcher = NoOpUrlFetcher(), voicePipeline: VoicePipelineConfig = VoicePipelineConfig(), voiceSettings: VoiceSettings? = null, onRebuildVoicePipeline: (() -&gt; Unit)? = null, spanRecorder: SpanRecorder = NoOpSpanRecorder, )</ID>
+    <ID>CyclomaticComplexMethod:App.kt$private fun onGraphKeyEvent( keyEvent: KeyEvent, onCommandPalette: () -&gt; Unit, onSearch: () -&gt; Unit, onToggleSidebar: () -&gt; Unit, onToggleRightSidebar: () -&gt; Unit, onSettings: () -&gt; Unit, onUndo: () -&gt; Unit, onRedo: () -&gt; Unit, onBack: () -&gt; Unit, onForward: () -&gt; Unit, onDebugMenu: () -&gt; Unit = {}, ): Boolean</ID>
+    <ID>CyclomaticComplexMethod:BlockEditor.kt$private fun handleKeyEvent( event: KeyEvent, textFieldValue: TextFieldValue, onTextFieldValueChange: (TextFieldValue) -&gt; Unit, textLayoutResult: TextLayoutResult?, autocompleteState: AutocompleteState?, onAutocompleteStateChange: (AutocompleteState?) -&gt; Unit, searchResults: List&lt;SearchResultItem&gt;, selectedIndex: Int, onSelectedIndexChange: (Int) -&gt; Unit, onEnterFilterMode: () -&gt; Unit = {}, localVersion: Long, onLocalVersionIncrement: () -&gt; Long, onContentChange: (String, Long) -&gt; Unit, blockUuid: String, onNewBlock: (String) -&gt; Unit, onSplitBlock: (String, Int) -&gt; Unit, onMergeBlock: (String) -&gt; Unit, onBackspace: () -&gt; Unit, onIndent: () -&gt; Unit, onOutdent: () -&gt; Unit, onMoveUp: () -&gt; Unit, onMoveDown: () -&gt; Unit, onFocusUp: () -&gt; Unit, onFocusDown: () -&gt; Unit, ): Boolean</ID>
+    <ID>CyclomaticComplexMethod:BlockItem.kt$@Composable internal fun BlockItem( block: Block, isDebugMode: Boolean = false, isEditing: Boolean, hasChildren: Boolean = false, isCollapsed: Boolean = false, textColor: Color = Color.Unspecified, linkColor: Color = MaterialTheme.colorScheme.primary, isSelected: Boolean = false, isInSelectionMode: Boolean = false, onToggleSelect: () -&gt; Unit = {}, onEnterSelectionMode: () -&gt; Unit = {}, isShiftDown: Boolean = false, onShiftClick: () -&gt; Unit = {}, onStartEditing: () -&gt; Unit, onStopEditing: () -&gt; Unit, onContentChange: (String, Long) -&gt; Unit, onLinkClick: (String) -&gt; Unit, onNewBlock: (String) -&gt; Unit, onSplitBlock: (String, Int) -&gt; Unit, onMergeBlock: (String) -&gt; Unit = {}, initialCursorPosition: Int? = null, onBackspace: () -&gt; Unit = {}, onLoadContent: () -&gt; Unit = {}, onToggleCollapse: () -&gt; Unit = {}, onIndent: () -&gt; Unit = {}, onOutdent: () -&gt; Unit = {}, onMoveUp: () -&gt; Unit = {}, onMoveDown: () -&gt; Unit = {}, onFocusUp: () -&gt; Unit = {}, onFocusDown: () -&gt; Unit = {}, onResolveContent: suspend (String) -&gt; String? = { null }, onSearchPages: (String) -&gt; Flow&lt;List&lt;SearchResultItem&gt;&gt; = { emptyFlow() }, formatEvents: SharedFlow&lt;FormatAction&gt;? = null, suggestionMatcher: AhoCorasickMatcher? = null, /** Called when the user requests to navigate all suggestions on screen (via context menu). */ onNavigateAllSuggestions: (() -&gt; Unit)? = null, onDragStart: (uuid: String, startY: Float) -&gt; Unit = { _, _ -&gt; }, onDrag: (deltaY: Float) -&gt; Unit = {}, onDragEnd: () -&gt; Unit = {}, dropAbove: Boolean = false, dropBelow: Boolean = false, dropAsChild: Boolean = false, modifier: Modifier = Modifier )</ID>
+    <ID>CyclomaticComplexMethod:BlockList.kt$@Composable fun BlockList( blocks: List&lt;Block&gt;, isDebugMode: Boolean = false, editingBlockUuid: String?, collapsedBlocks: Set&lt;String&gt; = emptySet(), onStartEditing: (String) -&gt; Unit, onStopEditing: (blockUuid: String) -&gt; Unit, onContentChange: (String, String, Long) -&gt; Unit, onLinkClick: (String) -&gt; Unit, onNewBlock: (String) -&gt; Unit, onSplitBlock: (String, Int) -&gt; Unit, onMergeBlock: (String) -&gt; Unit = {}, editingCursorIndex: Int? = null, onBackspace: (String) -&gt; Unit = {}, onLoadContent: (String) -&gt; Unit = {}, onToggleCollapse: (String) -&gt; Unit = {}, onIndent: (String) -&gt; Unit = {}, onOutdent: (String) -&gt; Unit = {}, onMoveUp: (String) -&gt; Unit = {}, onMoveDown: (String) -&gt; Unit = {}, onFocusUp: (String) -&gt; Unit = {}, onFocusDown: (String) -&gt; Unit = {}, onResolveContent: suspend (String) -&gt; String? = { null }, onSearchPages: (String) -&gt; Flow&lt;List&lt;SearchResultItem&gt;&gt; = { emptyFlow() }, formatEvents: SharedFlow&lt;FormatAction&gt;? = null, selectedBlockUuids: Set&lt;String&gt; = emptySet(), isInSelectionMode: Boolean = false, onToggleSelect: (String) -&gt; Unit = {}, onEnterSelectionMode: (String) -&gt; Unit = {}, onShiftClick: (String) -&gt; Unit = {}, onShiftArrowUp: () -&gt; Unit = {}, onShiftArrowDown: () -&gt; Unit = {}, suggestionMatcher: AhoCorasickMatcher? = null, /** * Called when the user requests to navigate all visible suggestions. * [BlockList] collects suggestions from all visible (non-hidden) blocks and * passes them to this callback so the parent screen can open the navigator panel. */ onNavigateAllSuggestions: ((List&lt;SuggestionItem&gt;) -&gt; Unit)? = null, onMoveSelectedBlocks: (newParentUuid: String?, insertAfterUuid: String?) -&gt; Unit = { _, _ -&gt; }, onAutoSelectForDrag: (String) -&gt; Unit = {}, modifier: Modifier = Modifier )</ID>
+    <ID>CyclomaticComplexMethod:BlockParser.kt$BlockParser$private fun parseBlock(level: Int): BlockNode</ID>
+    <ID>CyclomaticComplexMethod:BlockViewer.kt$@Composable fun WikiLinkText( text: String, textColor: Color, linkColor: Color, modifier: Modifier = Modifier, resolvedRefs: Map&lt;String, String&gt; = emptyMap(), onLinkClick: (String) -&gt; Unit = {}, onUrlClick: (String) -&gt; Unit = {}, onClick: () -&gt; Unit = {}, suggestionMatcher: AhoCorasickMatcher? = null, onSuggestionClick: (canonicalName: String, contentStart: Int, contentEnd: Int) -&gt; Unit = { _, _, _ -&gt; }, onSuggestionRightClick: (canonicalName: String, contentStart: Int, contentEnd: Int) -&gt; Unit = { _, _, _ -&gt; }, )</ID>
+    <ID>CyclomaticComplexMethod:ChangeApplier.kt$ChangeApplier$suspend fun apply(changes: List&lt;BlockChange&gt;, repoSet: RepositorySet): ChangeSummary</ID>
+    <ID>CyclomaticComplexMethod:CommandPalette.kt$@Composable fun CommandPalette( visible: Boolean, commands: List&lt;Command&gt;, onDismiss: () -&gt; Unit )</ID>
+    <ID>CyclomaticComplexMethod:GraphLoader.kt$GraphLoader$suspend fun parseAndSavePage( filePath: String, content: String, mode: ParseMode = ParseMode.FULL, priority: DatabaseWriteActor.Priority = DatabaseWriteActor.Priority.HIGH, )</ID>
+    <ID>CyclomaticComplexMethod:HtmlExporter.kt$HtmlExporter$private fun appendNode( sb: StringBuilder, node: InlineNode, resolvedRefs: Map&lt;String, String&gt; )</ID>
+    <ID>CyclomaticComplexMethod:InputHandling.kt$KeyboardEventHandler$fun handleKeyPress( key: String, modifiers: Set&lt;KeyModifier&gt; = emptySet(), timestamp: Instant = kotlin.time.Clock.System.now() ): Boolean</ID>
+    <ID>CyclomaticComplexMethod:Lexer.kt$Lexer$fun nextToken(): Token</ID>
+    <ID>CyclomaticComplexMethod:MarkdownEngine.kt$private fun AnnotatedString.Builder.renderNode( node: InlineNode, ctx: RenderContext, depth: Int, )</ID>
+    <ID>CyclomaticComplexMethod:MarkdownExporter.kt$MarkdownExporter$private fun StringBuilder.appendNode(node: InlineNode, resolvedRefs: Map&lt;String, String&gt;)</ID>
+    <ID>CyclomaticComplexMethod:MarkdownParser.kt$MarkdownParser$private fun convertBlock(block: BlockNode): ParsedBlock</ID>
+    <ID>CyclomaticComplexMethod:MarkdownParser.kt$MarkdownParser$private fun reconstructContent(nodes: List&lt;InlineNode&gt;): String</ID>
+    <ID>CyclomaticComplexMethod:PageView.kt$@Composable fun PageView( page: Page, blockRepository: BlockRepository, pageRepository: PageRepository, blockStateManager: BlockStateManager, currentGraphPath: String, onToggleFavorite: (Page) -&gt; Unit, onRefresh: () -&gt; Unit, onLinkClick: (String) -&gt; Unit, viewModel: StelekitViewModel, searchViewModel: SearchViewModel? = null, isDebugMode: Boolean = false, isLeftHanded: Boolean = false )</ID>
+    <ID>CyclomaticComplexMethod:PlainTextExporter.kt$PlainTextExporter$private fun StringBuilder.appendNode(node: InlineNode, resolvedRefs: Map&lt;String, String&gt;)</ID>
+    <ID>CyclomaticComplexMethod:SearchDialog.kt$@Composable fun SearchDialog( visible: Boolean, onDismiss: () -&gt; Unit, onNavigateToPage: (String) -&gt; Unit, onNavigateToBlock: (String) -&gt; Unit, onCreatePage: (String) -&gt; Unit, viewModel: SearchViewModel, currentPageUuid: String? = null, onPageSelected: ((String) -&gt; Unit)? = null )</ID>
+    <ID>CyclomaticComplexMethod:SlashCommandHandler.kt$SlashCommandHandler$private fun mapCommandIdToSlash(commandId: String): String?</ID>
+    <ID>CyclomaticComplexMethod:SlashCommandHandler.kt$SlashCommandHandler$private fun mapSlashToCommandId(slashCommand: String): String?</ID>
+    <ID>FunctionNaming:MarkdownEngineBenchmark.kt$MarkdownEngineBenchmark$@Benchmark fun fullPipeline_extractThenParse(): androidx.compose.ui.text.AnnotatedString</ID>
+    <ID>FunctionOnlyReturningConstant:InlineParser.kt$InlineParser$private fun getPrecedence(): Int</ID>
+    <ID>FunctionOnlyReturningConstant:OptimizedTextOperations.kt$OptimizedTextOperations$private fun getClipboardText(): String</ID>
+    <ID>FunctionOnlyReturningConstant:PersistenceOptimizations.kt$PersistencePerformanceMonitor$private fun getDiskUsage(): Long</ID>
+    <ID>FunctionOnlyReturningConstant:PersistenceOptimizations.kt$PersistencePerformanceMonitor$private fun getMemoryUsage(): Long</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$applied_at: Long</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$applied_by: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$attributes_json: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$block_type: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$block_uuid: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$block_uuid_: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$bucket_ms: Long</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$changes_applied: Long</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$content_hash: String?</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$created_at: Long</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$duration_ms: Long</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$end_epoch_ms: Long</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$entity_type: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$entity_uuid: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$entity_uuid: String?</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$error_message: String?</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$execution_ms: Long</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$execution_order: Long</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$file_path: String?</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$from_block_uuid: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$from_block_uuid_: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$graph_id: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$is_content_loaded: Long</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$is_favorite: Long?</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$is_journal: Long?</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$journal_date: String?</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$left_uuid: String?</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$left_uuid_: String?</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$op_id: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$op_type: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$operation_name: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$page_uuid: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$page_uuid: String?</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$parent_span_id: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$parent_uuid: String?</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$parent_uuid_: String?</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$plugin_id: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$recorded_at: Long</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$session_id: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$span_id: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$start_epoch_ms: Long</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$status_code: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$to_block_uuid: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$to_block_uuid_: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$trace_id: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$updated_at: Long</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$updated_at: Long?</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$uuid_: String</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$value_: Long</ID>
+    <ID>FunctionParameterNaming:RestrictedDatabaseQueries.kt$RestrictedDatabaseQueries$value_: String</ID>
+    <ID>InstanceOfCheckForException:GraphLoader.kt$GraphLoader$e is CancellationException</ID>
+    <ID>InvalidPackageDeclaration:AdvancedSettings.kt$package dev.stapler.stelekit.ui.components</ID>
+    <ID>InvalidPackageDeclaration:EditorSettings.kt$package dev.stapler.stelekit.ui.components</ID>
+    <ID>InvalidPackageDeclaration:GeneralSettings.kt$package dev.stapler.stelekit.ui.components</ID>
+    <ID>InvalidPackageDeclaration:PluginsSettings.kt$package dev.stapler.stelekit.ui.components</ID>
+    <ID>InvalidPackageDeclaration:SettingsComponents.kt$package dev.stapler.stelekit.ui.components</ID>
+    <ID>InvalidPackageDeclaration:SettingsDialog.kt$package dev.stapler.stelekit.ui.components</ID>
+    <ID>InvalidPackageDeclaration:VoiceCaptureSettings.kt$package dev.stapler.stelekit.ui.components</ID>
+    <ID>LambdaParameterInRestartableEffect:BlockItem.kt$onContentChange</ID>
+    <ID>LambdaParameterInRestartableEffect:BlockItem.kt$onLoadContent</ID>
+    <ID>LambdaParameterInRestartableEffect:BlockItem.kt$onResolveContent</ID>
+    <ID>LambdaParameterInRestartableEffect:BlockItem.kt$onSearchPages</ID>
+    <ID>LambdaParameterInRestartableEffect:ImportScreen.kt$onClearUndoSnackbar</ID>
+    <ID>LambdaParameterInRestartableEffect:ImportScreen.kt$onDismiss</ID>
+    <ID>LambdaParameterInRestartableEffect:ImportScreen.kt$onUndoStubCreation</ID>
+    <ID>LambdaParameterInRestartableEffect:RichTextEditor.kt$onContentChange</ID>
+    <ID>LambdaParameterInRestartableEffect:VoiceCaptureButton.kt$onAutoReset</ID>
+    <ID>LargeClass:GraphLoader.kt$GraphLoader</ID>
+    <ID>LargeClass:StelekitViewModel.kt$StelekitViewModel</ID>
+    <ID>LongMethod:AllPagesScreen.kt$@Composable fun AllPagesScreen( viewModel: AllPagesViewModel, onPageClick: (Page) -&gt; Unit, onBulkDelete: (List&lt;String&gt;) -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:AndroidAudioRecorder.kt$AndroidAudioRecorder$override suspend fun startRecording(): PlatformAudioFile</ID>
+    <ID>LongMethod:App.kt$@Composable fun StelekitApp( fileSystem: FileSystem, graphPath: String, graphManager: GraphManager? = null, pluginHost: PluginHost = remember { PluginHost() }, encryptionManager: EncryptionManager = remember { DefaultEncryptionManager() }, urlFetcher: UrlFetcher = remember { NoOpUrlFetcher() }, voicePipeline: VoicePipelineConfig = remember { VoicePipelineConfig() }, voiceSettings: VoiceSettings? = null, onRebuildVoicePipeline: (() -&gt; Unit)? = null, spanRecorder: SpanRecorder = NoOpSpanRecorder, )</ID>
+    <ID>LongMethod:App.kt$@Composable private fun FlashcardsScreen(blockStateManager: dev.stapler.stelekit.ui.state.BlockStateManager)</ID>
+    <ID>LongMethod:App.kt$@Composable private fun GraphContent( repos: RepositorySet, fileSystem: FileSystem, platformSettings: PlatformSettings, pluginHost: PluginHost, encryptionManager: EncryptionManager, graphManager: GraphManager, notificationManager: NotificationManager, urlFetcher: UrlFetcher = NoOpUrlFetcher(), voicePipeline: VoicePipelineConfig = VoicePipelineConfig(), voiceSettings: VoiceSettings? = null, onRebuildVoicePipeline: (() -&gt; Unit)? = null, spanRecorder: SpanRecorder = NoOpSpanRecorder, )</ID>
+    <ID>LongMethod:App.kt$@Composable private fun GraphDialogLayer( appState: AppState, searchViewModel: SearchViewModel, viewModel: StelekitViewModel, notificationManager: NotificationManager, fileSystem: FileSystem, voiceSettings: VoiceSettings? = null, onRebuildVoicePipeline: (() -&gt; Unit)? = null, frameMetric: kotlinx.coroutines.flow.StateFlow&lt;dev.stapler.stelekit.performance.FrameMetric&gt;, debugState: DebugMenuState = DebugMenuState(), onDebugStateChange: (DebugMenuState) -&gt; Unit = {}, )</ID>
+    <ID>LongMethod:App.kt$@Composable private fun ScreenRouter( screen: Screen, repos: RepositorySet, blockStateManager: dev.stapler.stelekit.ui.state.BlockStateManager, journalsViewModel: JournalsViewModel, allPagesViewModel: AllPagesViewModel, viewModel: StelekitViewModel, searchViewModel: SearchViewModel, notificationManager: NotificationManager, appState: AppState, graphWriter: GraphWriter, urlFetcher: UrlFetcher = NoOpUrlFetcher(), )</ID>
+    <ID>LongMethod:AutocompleteMenu.kt$@Composable fun AutocompleteMenu( items: List&lt;SearchResultItem&gt;, selectedIndex: Int, onItemSelected: (SearchResultItem) -&gt; Unit, onDismiss: () -&gt; Unit, cursorRect: Rect?, filterText: String = "", isFilterActive: Boolean = false, onFilterTextChange: (String) -&gt; Unit = {}, onFilterFocusChange: (Boolean) -&gt; Unit = {}, onDeactivateFilter: () -&gt; Unit = {}, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:AutocompleteMenu.kt$@Composable private fun AutocompleteItem( item: SearchResultItem, isSelected: Boolean, onClick: () -&gt; Unit )</ID>
+    <ID>LongMethod:BlockEditor.kt$@Composable internal fun BlockEditor( textFieldValue: TextFieldValue, onTextFieldValueChange: (TextFieldValue) -&gt; Unit, focusRequester: FocusRequester, isEditing: Boolean, hasFocused: Boolean, onHasFocusedChange: (Boolean) -&gt; Unit, blockUuid: String, autocompleteState: AutocompleteState?, onAutocompleteStateChange: (AutocompleteState?) -&gt; Unit, searchResults: List&lt;SearchResultItem&gt;, selectedIndex: Int, onSelectedIndexChange: (Int) -&gt; Unit, onEnterFilterMode: () -&gt; Unit = {}, localVersion: Long, onLocalVersionIncrement: () -&gt; Long, onContentChange: (String, Long) -&gt; Unit, onStopEditing: () -&gt; Unit, onNewBlock: (String) -&gt; Unit, onSplitBlock: (String, Int) -&gt; Unit, onMergeBlock: (String) -&gt; Unit, onBackspace: () -&gt; Unit, onIndent: () -&gt; Unit, onOutdent: () -&gt; Unit, onMoveUp: () -&gt; Unit, onMoveDown: () -&gt; Unit, onFocusUp: () -&gt; Unit, onFocusDown: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>LongMethod:BlockEditor.kt$private fun handleKeyEvent( event: KeyEvent, textFieldValue: TextFieldValue, onTextFieldValueChange: (TextFieldValue) -&gt; Unit, textLayoutResult: TextLayoutResult?, autocompleteState: AutocompleteState?, onAutocompleteStateChange: (AutocompleteState?) -&gt; Unit, searchResults: List&lt;SearchResultItem&gt;, selectedIndex: Int, onSelectedIndexChange: (Int) -&gt; Unit, onEnterFilterMode: () -&gt; Unit = {}, localVersion: Long, onLocalVersionIncrement: () -&gt; Long, onContentChange: (String, Long) -&gt; Unit, blockUuid: String, onNewBlock: (String) -&gt; Unit, onSplitBlock: (String, Int) -&gt; Unit, onMergeBlock: (String) -&gt; Unit, onBackspace: () -&gt; Unit, onIndent: () -&gt; Unit, onOutdent: () -&gt; Unit, onMoveUp: () -&gt; Unit, onMoveDown: () -&gt; Unit, onFocusUp: () -&gt; Unit, onFocusDown: () -&gt; Unit, ): Boolean</ID>
+    <ID>LongMethod:BlockGutter.kt$@Composable internal fun BlockGutter( level: Int, isDebugMode: Boolean, hasChildren: Boolean, isCollapsed: Boolean, onToggleCollapse: () -&gt; Unit, onMoveUp: () -&gt; Unit, onMoveDown: () -&gt; Unit, isSelected: Boolean = false, isInSelectionMode: Boolean = false, onToggleSelect: () -&gt; Unit = {}, blockUuid: String = "", onDragStart: (uuid: String, startY: Float) -&gt; Unit = { _, _ -&gt; }, onDrag: (deltaY: Float) -&gt; Unit = {}, onDragEnd: () -&gt; Unit = {}, )</ID>
+    <ID>LongMethod:BlockItem.kt$@Composable internal fun BlockItem( block: Block, isDebugMode: Boolean = false, isEditing: Boolean, hasChildren: Boolean = false, isCollapsed: Boolean = false, textColor: Color = Color.Unspecified, linkColor: Color = MaterialTheme.colorScheme.primary, isSelected: Boolean = false, isInSelectionMode: Boolean = false, onToggleSelect: () -&gt; Unit = {}, onEnterSelectionMode: () -&gt; Unit = {}, isShiftDown: Boolean = false, onShiftClick: () -&gt; Unit = {}, onStartEditing: () -&gt; Unit, onStopEditing: () -&gt; Unit, onContentChange: (String, Long) -&gt; Unit, onLinkClick: (String) -&gt; Unit, onNewBlock: (String) -&gt; Unit, onSplitBlock: (String, Int) -&gt; Unit, onMergeBlock: (String) -&gt; Unit = {}, initialCursorPosition: Int? = null, onBackspace: () -&gt; Unit = {}, onLoadContent: () -&gt; Unit = {}, onToggleCollapse: () -&gt; Unit = {}, onIndent: () -&gt; Unit = {}, onOutdent: () -&gt; Unit = {}, onMoveUp: () -&gt; Unit = {}, onMoveDown: () -&gt; Unit = {}, onFocusUp: () -&gt; Unit = {}, onFocusDown: () -&gt; Unit = {}, onResolveContent: suspend (String) -&gt; String? = { null }, onSearchPages: (String) -&gt; Flow&lt;List&lt;SearchResultItem&gt;&gt; = { emptyFlow() }, formatEvents: SharedFlow&lt;FormatAction&gt;? = null, suggestionMatcher: AhoCorasickMatcher? = null, /** Called when the user requests to navigate all suggestions on screen (via context menu). */ onNavigateAllSuggestions: (() -&gt; Unit)? = null, onDragStart: (uuid: String, startY: Float) -&gt; Unit = { _, _ -&gt; }, onDrag: (deltaY: Float) -&gt; Unit = {}, onDragEnd: () -&gt; Unit = {}, dropAbove: Boolean = false, dropBelow: Boolean = false, dropAsChild: Boolean = false, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:BlockList.kt$@Composable fun BlockList( blocks: List&lt;Block&gt;, isDebugMode: Boolean = false, editingBlockUuid: String?, collapsedBlocks: Set&lt;String&gt; = emptySet(), onStartEditing: (String) -&gt; Unit, onStopEditing: (blockUuid: String) -&gt; Unit, onContentChange: (String, String, Long) -&gt; Unit, onLinkClick: (String) -&gt; Unit, onNewBlock: (String) -&gt; Unit, onSplitBlock: (String, Int) -&gt; Unit, onMergeBlock: (String) -&gt; Unit = {}, editingCursorIndex: Int? = null, onBackspace: (String) -&gt; Unit = {}, onLoadContent: (String) -&gt; Unit = {}, onToggleCollapse: (String) -&gt; Unit = {}, onIndent: (String) -&gt; Unit = {}, onOutdent: (String) -&gt; Unit = {}, onMoveUp: (String) -&gt; Unit = {}, onMoveDown: (String) -&gt; Unit = {}, onFocusUp: (String) -&gt; Unit = {}, onFocusDown: (String) -&gt; Unit = {}, onResolveContent: suspend (String) -&gt; String? = { null }, onSearchPages: (String) -&gt; Flow&lt;List&lt;SearchResultItem&gt;&gt; = { emptyFlow() }, formatEvents: SharedFlow&lt;FormatAction&gt;? = null, selectedBlockUuids: Set&lt;String&gt; = emptySet(), isInSelectionMode: Boolean = false, onToggleSelect: (String) -&gt; Unit = {}, onEnterSelectionMode: (String) -&gt; Unit = {}, onShiftClick: (String) -&gt; Unit = {}, onShiftArrowUp: () -&gt; Unit = {}, onShiftArrowDown: () -&gt; Unit = {}, suggestionMatcher: AhoCorasickMatcher? = null, /** * Called when the user requests to navigate all visible suggestions. * [BlockList] collects suggestions from all visible (non-hidden) blocks and * passes them to this callback so the parent screen can open the navigator panel. */ onNavigateAllSuggestions: ((List&lt;SuggestionItem&gt;) -&gt; Unit)? = null, onMoveSelectedBlocks: (newParentUuid: String?, insertAfterUuid: String?) -&gt; Unit = { _, _ -&gt; }, onAutoSelectForDrag: (String) -&gt; Unit = {}, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:BlockParser.kt$BlockParser$private fun parseBlock(level: Int): BlockNode</ID>
+    <ID>LongMethod:BlockViewer.kt$@Composable fun WikiLinkText( text: String, textColor: Color, linkColor: Color, modifier: Modifier = Modifier, resolvedRefs: Map&lt;String, String&gt; = emptyMap(), onLinkClick: (String) -&gt; Unit = {}, onUrlClick: (String) -&gt; Unit = {}, onClick: () -&gt; Unit = {}, suggestionMatcher: AhoCorasickMatcher? = null, onSuggestionClick: (canonicalName: String, contentStart: Int, contentEnd: Int) -&gt; Unit = { _, _, _ -&gt; }, onSuggestionRightClick: (canonicalName: String, contentStart: Int, contentEnd: Int) -&gt; Unit = { _, _, _ -&gt; }, )</ID>
+    <ID>LongMethod:ChangeApplier.kt$ChangeApplier$suspend fun apply(changes: List&lt;BlockChange&gt;, repoSet: RepositorySet): ChangeSummary</ID>
+    <ID>LongMethod:CommandPalette.kt$@Composable fun CommandPalette( visible: Boolean, commands: List&lt;Command&gt;, onDismiss: () -&gt; Unit )</ID>
+    <ID>LongMethod:GlobalUnlinkedReferencesScreen.kt$@Composable fun GlobalUnlinkedReferencesScreen( pageRepository: PageRepository, blockRepository: BlockRepository, writeActor: DatabaseWriteActor?, graphPath: String, suggestionMatcher: AhoCorasickMatcher?, onNavigateTo: (Screen) -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>LongMethod:GraphLoader.kt$GraphLoader$private suspend fun loadDirectory(path: String, onProgress: (String) -&gt; Unit, mode: ParseMode = ParseMode.METADATA_ONLY)</ID>
+    <ID>LongMethod:GraphLoader.kt$GraphLoader$suspend fun parseAndSavePage( filePath: String, content: String, mode: ParseMode = ParseMode.FULL, priority: DatabaseWriteActor.Priority = DatabaseWriteActor.Priority.HIGH, )</ID>
+    <ID>LongMethod:HtmlExporter.kt$HtmlExporter$private fun appendNode( sb: StringBuilder, node: InlineNode, resolvedRefs: Map&lt;String, String&gt; )</ID>
+    <ID>LongMethod:ImportScreen.kt$@Composable private fun TopicSuggestionTray( state: ImportState, onSuggestionAccepted: (String) -&gt; Unit, onSuggestionDismissed: (String) -&gt; Unit, onAcceptAllSuggestions: () -&gt; Unit, )</ID>
+    <ID>LongMethod:ImportScreen.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable private fun ReviewStage( state: ImportState, onConfirmImport: () -&gt; Unit, onBack: () -&gt; Unit, onSuggestionAccepted: (String) -&gt; Unit, onSuggestionDismissed: (String) -&gt; Unit, onAcceptAllSuggestions: () -&gt; Unit, onUndoStubCreation: () -&gt; Unit, onClearUndoSnackbar: () -&gt; Unit, )</ID>
+    <ID>LongMethod:ImportViewModel.kt$ImportViewModel$suspend fun confirmImport()</ID>
+    <ID>LongMethod:InputHandling.kt$KeyboardEventHandler$fun handleKeyPress( key: String, modifiers: Set&lt;KeyModifier&gt; = emptySet(), timestamp: Instant = kotlin.time.Clock.System.now() ): Boolean</ID>
+    <ID>LongMethod:JournalsView.kt$@Composable fun JournalsView( viewModel: JournalsViewModel, blockRepository: BlockRepository, isDebugMode: Boolean, onLinkClick: (String) -&gt; Unit, searchViewModel: SearchViewModel? = null, onSearchPages: (String) -&gt; kotlinx.coroutines.flow.Flow&lt;List&lt;SearchResultItem&gt;&gt; = { kotlinx.coroutines.flow.emptyFlow() }, suggestionMatcher: AhoCorasickMatcher? = null, isLeftHanded: Boolean = false, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:Lexer.kt$Lexer$fun nextToken(): Token</ID>
+    <ID>LongMethod:LogDashboard.kt$@Composable fun LogDashboard( modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:MarkdownEngine.kt$private fun AnnotatedString.Builder.renderNode( node: InlineNode, ctx: RenderContext, depth: Int, )</ID>
+    <ID>LongMethod:MarkdownExporter.kt$MarkdownExporter$private fun StringBuilder.appendNode(node: InlineNode, resolvedRefs: Map&lt;String, String&gt;)</ID>
+    <ID>LongMethod:MarkdownParser.kt$MarkdownParser$private fun reconstructContent(nodes: List&lt;InlineNode&gt;): String</ID>
+    <ID>LongMethod:MobileBlockToolbar.kt$@Composable fun MobileBlockToolbar( editingBlockId: String?, onIndent: (String) -&gt; Unit, onOutdent: (String) -&gt; Unit, onMoveUp: (String) -&gt; Unit, onMoveDown: (String) -&gt; Unit, onAddBlock: (String) -&gt; Unit = {}, onUndo: () -&gt; Unit = {}, onRedo: () -&gt; Unit = {}, onFormat: (FormatAction) -&gt; Unit = {}, onLinkPicker: (() -&gt; Unit)? = null, isInSelectionMode: Boolean = false, selectedCount: Int = 0, onDeleteSelected: () -&gt; Unit = {}, onClearSelection: () -&gt; Unit = {}, isLeftHanded: Boolean = false, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:PageView.kt$@Composable fun PageView( page: Page, blockRepository: BlockRepository, pageRepository: PageRepository, blockStateManager: BlockStateManager, currentGraphPath: String, onToggleFavorite: (Page) -&gt; Unit, onRefresh: () -&gt; Unit, onLinkClick: (String) -&gt; Unit, viewModel: StelekitViewModel, searchViewModel: SearchViewModel? = null, isDebugMode: Boolean = false, isLeftHanded: Boolean = false )</ID>
+    <ID>LongMethod:PermissionRecoveryScreen.kt$@Composable fun PermissionRecoveryScreen( folderName: String?, onReconnectFolder: () -&gt; Unit, onChooseDifferentFolder: () -&gt; Unit, errorMessage: String? = null, )</ID>
+    <ID>LongMethod:RichTextEditor.kt$@Composable fun RichTextEditor( blockId: String, editorState: EditorState, textOperations: ITextOperations, editorConfig: EditorConfig, onEditorStateChange: (EditorState) -&gt; Unit, modifier: Modifier = Modifier, placeholder: @Composable () -&gt; Unit = { }, textStyle: TextStyle = MaterialTheme.typography.bodyLarge, enabled: Boolean = true, readOnly: Boolean = false, visualTransformation: VisualTransformation = VisualTransformation.None, keyboardOptions: KeyboardOptions = KeyboardOptions.Default, keyboardActions: KeyboardActions = KeyboardActions.Default, interactionSource: androidx.compose.foundation.interaction.MutableInteractionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, cursorBrush: Brush = SolidColor(MaterialTheme.colorScheme.primary), onTextLayout: (androidx.compose.ui.text.TextLayoutResult) -&gt; Unit = { }, onTriggerDetected: (String, androidx.compose.ui.geometry.Rect?) -&gt; Unit = { _, _ -&gt; } )</ID>
+    <ID>LongMethod:SearchDialog.kt$@Composable fun SearchDialog( visible: Boolean, onDismiss: () -&gt; Unit, onNavigateToPage: (String) -&gt; Unit, onNavigateToBlock: (String) -&gt; Unit, onCreatePage: (String) -&gt; Unit, viewModel: SearchViewModel, currentPageUuid: String? = null, onPageSelected: ((String) -&gt; Unit)? = null )</ID>
+    <ID>LongMethod:SettingsDialog.kt$@Composable fun SettingsDialog( visible: Boolean, onDismiss: () -&gt; Unit, currentTheme: StelekitThemeMode, onThemeChange: (StelekitThemeMode) -&gt; Unit, currentLanguage: Language, onLanguageChange: (Language) -&gt; Unit, onReindex: () -&gt; Unit, isLeftHanded: Boolean = false, onLeftHandedChange: (Boolean) -&gt; Unit = {}, voiceSettings: VoiceSettings? = null, onRebuildVoicePipeline: (() -&gt; Unit)? = null, )</ID>
+    <ID>LongMethod:Sidebar.kt$@Composable fun GraphSwitcher( currentGraphName: String, availableGraphs: List&lt;GraphInfo&gt;, activeGraphId: String? = null, onGraphSelected: (String) -&gt; Unit, onAddGraph: () -&gt; Unit, onRemoveGraph: (String) -&gt; Unit, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:Sidebar.kt$@Composable fun LeftSidebar( expanded: Boolean, isLoading: Boolean, favoritePages: List&lt;Page&gt;, recentPages: List&lt;Page&gt;, currentScreen: Screen, currentGraphName: String = "", availableGraphs: List&lt;GraphInfo&gt; = emptyList(), activeGraphId: String? = null, onPageClick: (Page) -&gt; Unit, onNavigate: (Screen) -&gt; Unit, onToggleFavorite: (Page) -&gt; Unit, onGraphSelected: (String) -&gt; Unit = {}, onAddGraph: () -&gt; Unit = {}, onRemoveGraph: (String) -&gt; Unit = {}, onCollapse: () -&gt; Unit = {}, modifier: Modifier = Modifier )</ID>
+    <ID>LongMethod:SqlDelightSearchRepository.kt$SqlDelightSearchRepository$override fun searchWithFilters(searchRequest: SearchRequest): Flow&lt;Result&lt;SearchResult&gt;&gt;</ID>
+    <ID>LongMethod:SuggestionNavigatorPanel.kt$@Composable internal fun SuggestionNavigatorPanel( suggestions: List&lt;SuggestionItem&gt;, currentIndex: Int, onLink: () -&gt; Unit, onSkip: () -&gt; Unit, onPrevious: () -&gt; Unit, onNext: () -&gt; Unit, onClose: () -&gt; Unit, modifier: Modifier = Modifier, )</ID>
+    <ID>LongMethod:TopBar.kt$@Composable fun TopBar( appState: AppState, platformSettings: PlatformSettings, onSettingsClick: () -&gt; Unit, onNewPageClick: () -&gt; Unit, onNavigate: (Screen) -&gt; Unit, onThemeChange: (StelekitThemeMode) -&gt; Unit, onLanguageChange: (Language) -&gt; Unit, onResetOnboarding: () -&gt; Unit, onToggleDebug: () -&gt; Unit, onGoBack: () -&gt; Unit = {}, onGoForward: () -&gt; Unit = {}, onMenuToggle: () -&gt; Unit = {}, onExportPage: ((formatId: String) -&gt; Unit)? = null, onShowDebugMenu: (() -&gt; Unit)? = null, )</ID>
+    <ID>LongMethod:VoiceCaptureButton.kt$@Composable fun VoiceCaptureButton( state: VoiceCaptureState, onTap: () -&gt; Unit, onDismissError: () -&gt; Unit, onAutoReset: () -&gt; Unit = {}, amplitudeFlow: Flow&lt;Float&gt;? = null, )</ID>
+    <ID>LongMethod:VoiceCaptureSettings.kt$@Composable fun VoiceCaptureSettings( voiceSettings: VoiceSettings, onRebuildPipeline: () -&gt; Unit, )</ID>
+    <ID>LoopWithTooManyJumpStatements:AndroidAudioRecorder.kt$AndroidAudioRecorder$while</ID>
+    <ID>LoopWithTooManyJumpStatements:BlockParser.kt$BlockParser$while</ID>
+    <ID>LoopWithTooManyJumpStatements:ChangeApplier.kt$ChangeApplier$for</ID>
+    <ID>LoopWithTooManyJumpStatements:DatascriptBlockRepository.kt$DatascriptBlockRepository$while</ID>
+    <ID>LoopWithTooManyJumpStatements:FileRegistry.kt$FileRegistry$for</ID>
+    <ID>LoopWithTooManyJumpStatements:GlobalUnlinkedReferencesViewModel.kt$GlobalUnlinkedReferencesViewModel$while</ID>
+    <ID>LoopWithTooManyJumpStatements:InMemoryRepositories.kt$InMemoryBlockRepository$while</ID>
+    <ID>LoopWithTooManyJumpStatements:InlineParser.kt$InlineParser$while</ID>
+    <ID>LoopWithTooManyJumpStatements:OutlinerPipeline.kt$OutlinerPipeline$for</ID>
+    <ID>LoopWithTooManyJumpStatements:PersistenceManager.kt$PersistenceManager$for</ID>
+    <ID>LoopWithTooManyJumpStatements:PropertiesParser.kt$PropertiesParser$for</ID>
+    <ID>LoopWithTooManyJumpStatements:SnippetText.kt$while</ID>
+    <ID>LoopWithTooManyJumpStatements:SqlDelightBlockRepository.kt$SqlDelightBlockRepository$while</ID>
+    <ID>LoopWithTooManyJumpStatements:UuidMigration.kt$UuidMigration$for</ID>
+    <ID>MatchingDeclarationName:DeviceInfo.android.kt$DeviceInfo</ID>
+    <ID>MatchingDeclarationName:DeviceInfo.ios.kt$DeviceInfo</ID>
+    <ID>MatchingDeclarationName:DeviceInfo.jvm.kt$DeviceInfo</ID>
+    <ID>MatchingDeclarationName:DriverFactory.android.kt$DriverFactory</ID>
+    <ID>MatchingDeclarationName:DriverFactory.ios.kt$DriverFactory</ID>
+    <ID>MatchingDeclarationName:MarkdownEngine.kt$MarkdownPatterns</ID>
+    <ID>MatchingDeclarationName:Onboarding.kt$OnboardingStep</ID>
+    <ID>MatchingDeclarationName:OtelProvider.android.kt$OtelProvider</ID>
+    <ID>MatchingDeclarationName:OtelProvider.ios.kt$OtelProvider</ID>
+    <ID>MatchingDeclarationName:OtelProvider.jvm.kt$OtelProvider</ID>
+    <ID>MatchingDeclarationName:PlatformDispatcher.android.kt$PlatformDispatcher</ID>
+    <ID>MatchingDeclarationName:PlatformDispatcher.jvm.kt$PlatformDispatcher</ID>
+    <ID>MatchingDeclarationName:PlatformUtils.android.kt$PlatformUtils</ID>
+    <ID>MatchingDeclarationName:PlatformUtils.jvm.kt$PlatformUtils</ID>
+    <ID>MatchingDeclarationName:Time.android.kt$PlatformTime</ID>
+    <ID>MatchingDeclarationName:Time.jvm.kt$PlatformTime</ID>
+    <ID>MatchingDeclarationName:Time.kt$PlatformTime</ID>
+    <ID>MayBeConst:Color.kt$// === Shared constants === val IndentGuideAlpha = 0.1f</ID>
+    <ID>MayBeConst:Color.kt$val BlockRefAlpha = 0.08f</ID>
+    <ID>MemberNameEqualsClassName:BlockCache.kt$BlockCache$private val blockCache = LRUCache&lt;String, CachedBlock&gt;(config, "blocks")</ID>
+    <ID>MemberNameEqualsClassName:PageCache.kt$PageCache$private val pageCache = LRUCache&lt;PageCache.Key, CachedPage&gt;(config, "pages")</ID>
+    <ID>ModifierMissing:AdvancedSettings.kt$AdvancedSettings</ID>
+    <ID>ModifierMissing:App.kt$StelekitApp</ID>
+    <ID>ModifierMissing:CommandPalette.kt$CommandItem</ID>
+    <ID>ModifierMissing:FrameTimeOverlay.kt$FrameTimeOverlay</ID>
+    <ID>ModifierMissing:GeneralSettings.kt$GeneralSettings</ID>
+    <ID>ModifierMissing:LibrarySetupScreen.kt$LibrarySetupScreen</ID>
+    <ID>ModifierMissing:LogDashboard.kt$LogItem</ID>
+    <ID>ModifierMissing:MainLayout.kt$MainLayout</ID>
+    <ID>ModifierMissing:NotificationDisplay.kt$NotificationHistory</ID>
+    <ID>ModifierMissing:NotificationDisplay.kt$NotificationToast</ID>
+    <ID>ModifierMissing:Onboarding.kt$Onboarding</ID>
+    <ID>ModifierMissing:PDFViewer.kt$PDFViewer</ID>
+    <ID>ModifierMissing:PageView.kt$PageView</ID>
+    <ID>ModifierMissing:PerformanceDashboard.kt$PerformanceEventItem</ID>
+    <ID>ModifierMissing:PermissionRecoveryScreen.kt$PermissionRecoveryScreen</ID>
+    <ID>ModifierMissing:PlatformBottomBar.android.kt$PlatformBottomBar</ID>
+    <ID>ModifierMissing:PlatformFrameTimeOverlay.jvm.kt$PlatformFrameTimeOverlay</ID>
+    <ID>ModifierMissing:PluginsSettings.kt$PluginsSettings</ID>
+    <ID>ModifierMissing:SearchDialog.kt$SearchResultRow</ID>
+    <ID>ModifierMissing:SettingsComponents.kt$SettingsRow</ID>
+    <ID>ModifierMissing:SettingsComponents.kt$SettingsSection</ID>
+    <ID>ModifierMissing:SettingsComponents.kt$SettingsToggleRow</ID>
+    <ID>ModifierMissing:SettingsDialog.kt$CategoryItem</ID>
+    <ID>ModifierMissing:Sidebar.kt$NavigationItem</ID>
+    <ID>ModifierMissing:Sidebar.kt$SidebarItem</ID>
+    <ID>ModifierMissing:TopBar.kt$TopBar</ID>
+    <ID>ModifierMissing:VoiceCaptureButton.kt$VoiceCaptureButton</ID>
+    <ID>ModifierMissing:VoiceCaptureSettings.kt$VoiceCaptureSettings</ID>
+    <ID>ModifierMissing:Whiteboard.kt$Whiteboard</ID>
+    <ID>ModifierNotUsedAtRoot:BlockItem.kt$modifier = modifier .fillMaxWidth() .padding(start = (block.level * 24).dp, top = 2.dp, bottom = 2.dp)</ID>
+    <ID>MultipleEmitters:BlockGutter.kt$BlockGutter</ID>
+    <ID>MultipleEmitters:ImportScreen.kt$PasteTabContent</ID>
+    <ID>MultipleEmitters:ImportScreen.kt$TopicSuggestionTray</ID>
+    <ID>MultipleEmitters:ImportScreen.kt$UrlTabContent</ID>
+    <ID>MutableStateAutoboxing:App.kt$mutableStateOf(0)</ID>
+    <ID>MutableStateAutoboxing:App.kt$mutableStateOf(0f)</ID>
+    <ID>MutableStateAutoboxing:BlockItem.kt$mutableStateOf(0)</ID>
+    <ID>MutableStateAutoboxing:CommandPalette.kt$mutableStateOf(0)</ID>
+    <ID>MutableStateAutoboxing:JournalsView.kt$mutableStateOf(0)</ID>
+    <ID>MutableStateAutoboxing:PageView.kt$mutableStateOf(0)</ID>
+    <ID>MutableStateAutoboxing:PerformanceDashboard.kt$mutableStateOf(0)</ID>
+    <ID>MutableStateAutoboxing:PerformanceOptimizedEditor.kt$mutableStateOf(0L)</ID>
+    <ID>MutableStateAutoboxing:SearchDialog.kt$mutableStateOf(0)</ID>
+    <ID>NestedBlockDepth:BlockParser.kt$BlockParser$private fun parseBlock(level: Int): BlockNode</ID>
+    <ID>NestedBlockDepth:GraphLoader.kt$GraphLoader$private suspend fun sanitizeDirectory(path: String)</ID>
+    <ID>NewLineAtEndOfFile:CommandManager.kt$dev.stapler.stelekit.editor.commands.CommandManager.kt</ID>
+    <ID>NewLineAtEndOfFile:CommandRegistry.kt$dev.stapler.stelekit.editor.commands.CommandRegistry.kt</ID>
+    <ID>NewLineAtEndOfFile:CommandSystem.kt$dev.stapler.stelekit.editor.commands.CommandSystem.kt</ID>
+    <ID>NewLineAtEndOfFile:CommandTypes.kt$dev.stapler.stelekit.editor.commands.CommandTypes.kt</ID>
+    <ID>NewLineAtEndOfFile:CursorState.kt$dev.stapler.stelekit.model.CursorState.kt</ID>
+    <ID>NewLineAtEndOfFile:EditorCommand.kt$dev.stapler.stelekit.model.EditorCommand.kt</ID>
+    <ID>NewLineAtEndOfFile:EditorState.kt$dev.stapler.stelekit.editor.state.EditorState.kt</ID>
+    <ID>NewLineAtEndOfFile:FormatModels.kt$dev.stapler.stelekit.editor.format.FormatModels.kt</ID>
+    <ID>NewLineAtEndOfFile:GraphInfo.kt$dev.stapler.stelekit.model.GraphInfo.kt</ID>
+    <ID>NewLineAtEndOfFile:IBlockRepository.kt$dev.stapler.stelekit.data.repositories.IBlockRepository.kt</ID>
+    <ID>NewLineAtEndOfFile:IDataSynchronizer.kt$dev.stapler.stelekit.editor.persistence.IDataSynchronizer.kt</ID>
+    <ID>NewLineAtEndOfFile:IEditor.kt$dev.stapler.stelekit.editor.IEditor.kt</ID>
+    <ID>NewLineAtEndOfFile:IFormatProcessor.kt$dev.stapler.stelekit.editor.format.IFormatProcessor.kt</ID>
+    <ID>NewLineAtEndOfFile:IPersistenceManager.kt$dev.stapler.stelekit.editor.persistence.IPersistenceManager.kt</ID>
+    <ID>NewLineAtEndOfFile:ITextOperations.kt$dev.stapler.stelekit.editor.text.ITextOperations.kt</ID>
+    <ID>NewLineAtEndOfFile:InputHandling.kt$dev.stapler.stelekit.editor.input.InputHandling.kt</ID>
+    <ID>NewLineAtEndOfFile:PDFViewer.kt$dev.stapler.stelekit.ui.components.PDFViewer.kt</ID>
+    <ID>NewLineAtEndOfFile:PersistenceOptimizations.kt$dev.stapler.stelekit.editor.persistence.PersistenceOptimizations.kt</ID>
+    <ID>NewLineAtEndOfFile:PlatformFileSystem.kt$dev.stapler.stelekit.platform.PlatformFileSystem.kt</ID>
+    <ID>NewLineAtEndOfFile:RepositoryFactory.kt$dev.stapler.stelekit.repository.RepositoryFactory.kt</ID>
+    <ID>NewLineAtEndOfFile:SlashCommandHandler.kt$dev.stapler.stelekit.editor.commands.SlashCommandHandler.kt</ID>
+    <ID>NewLineAtEndOfFile:TextModels.kt$dev.stapler.stelekit.editor.text.TextModels.kt</ID>
+    <ID>NewLineAtEndOfFile:Whiteboard.kt$dev.stapler.stelekit.ui.components.Whiteboard.kt</ID>
+    <ID>ParameterNaming:AutocompleteMenu.kt$onItemSelected</ID>
+    <ID>ParameterNaming:ImportScreen.kt$onAccepted</ID>
+    <ID>ParameterNaming:ImportScreen.kt$onDismissed</ID>
+    <ID>ParameterNaming:ImportScreen.kt$onRawTextChanged</ID>
+    <ID>ParameterNaming:ImportScreen.kt$onSuggestionAccepted</ID>
+    <ID>ParameterNaming:ImportScreen.kt$onSuggestionDismissed</ID>
+    <ID>ParameterNaming:ImportScreen.kt$onUrlChanged</ID>
+    <ID>ParameterNaming:MobileBlockToolbar.kt$onDeleteSelected</ID>
+    <ID>ParameterNaming:Onboarding.kt$onGraphSelected</ID>
+    <ID>ParameterNaming:RichTextEditor.kt$onTriggerDetected</ID>
+    <ID>ParameterNaming:SearchDialog.kt$onPageSelected</ID>
+    <ID>ParameterNaming:Sidebar.kt$onGraphSelected</ID>
+    <ID>RethrowCaughtException:ClaudeTopicEnricher.kt$ClaudeTopicEnricher$throw e</ID>
+    <ID>ThrowsCount:MigrationRunner.kt$MigrationRunner$suspend fun runPending(graphId: String, repoSet: RepositorySet, graphPath: String): RunResult</ID>
+    <ID>UnusedParameter:App.kt$fileSystem: FileSystem</ID>
+    <ID>UnusedParameter:BlockEditor.kt$localVersion: Long</ID>
+    <ID>UnusedParameter:BlockGutter.kt$onMoveDown: () -&gt; Unit</ID>
+    <ID>UnusedParameter:BlockGutter.kt$onMoveUp: () -&gt; Unit</ID>
+    <ID>UnusedParameter:BlockList.kt$allBlocksList: List&lt;Block&gt;</ID>
+    <ID>UnusedParameter:BlockParser.kt$BlockParser$level: Int</ID>
+    <ID>UnusedParameter:BlockTreeOperations.kt$BlockTreeOperations$targetPosition: PositioningMode = PositioningMode.END</ID>
+    <ID>UnusedParameter:ConflictResolution.kt$ConflictDetector$saveState: BlockSaveState?</ID>
+    <ID>UnusedParameter:ConflictResolution.kt$ResolutionContext$blockUuid: String</ID>
+    <ID>UnusedParameter:ConflictResolution.kt$ResolutionContext$conflict: ConflictInfo</ID>
+    <ID>UnusedParameter:DatalogQuery.kt$VisualQueryBuilder$schema: Any</ID>
+    <ID>UnusedParameter:EditorViewModel.kt$vararg args: Any</ID>
+    <ID>UnusedParameter:GlobalUnlinkedReferencesScreen.kt$graphPath: String</ID>
+    <ID>UnusedParameter:GlobalUnlinkedReferencesScreen.kt$onNavigateTo: (Screen) -&gt; Unit</ID>
+    <ID>UnusedParameter:GlobalUnlinkedReferencesScreen.kt$suggestionMatcher: AhoCorasickMatcher?</ID>
+    <ID>UnusedParameter:InlineParser.kt$InlineParser$token: Token</ID>
+    <ID>UnusedParameter:JournalsView.kt$blockRepository: BlockRepository</ID>
+    <ID>UnusedParameter:MigrationRunner.kt$MigrationRunner$repoSet: RepositorySet</ID>
+    <ID>UnusedParameter:PageView.kt$onRefresh: () -&gt; Unit</ID>
+    <ID>UnusedParameter:PerformanceOptimizedEditor.kt$blockOperations: IBlockOperations</ID>
+    <ID>UnusedParameter:PersistenceErrorHandler.kt$PersistenceErrorHandler$error: Throwable</ID>
+    <ID>UnusedParameter:PersistenceIntegration.kt$IntegratedPersistenceSystem$persistenceStats: PersistenceStats</ID>
+    <ID>UnusedParameter:RTCManager.kt$RTCManager$localOp: RTCOp</ID>
+    <ID>UnusedParameter:RichTextEditor.kt$editorConfig: EditorConfig</ID>
+    <ID>UnusedParameter:RichTextEditor.kt$editorState: EditorState</ID>
+    <ID>UnusedParameter:RichTextEditor.kt$onDelete: () -&gt; Unit = { }</ID>
+    <ID>UnusedParameter:RichTextEditor.kt$onEditorStateChange: (EditorState) -&gt; Unit</ID>
+    <ID>UnusedParameter:RichTextEditor.kt$onFocusChange: (Boolean) -&gt; Unit = {}</ID>
+    <ID>UnusedParameter:SlashCommandHandler.kt$SlashCommandHandler$args: List&lt;String&gt;</ID>
+    <ID>UnusedParameter:StelekitViewModel.kt$StelekitViewModel$pages: List&lt;Page&gt;</ID>
+    <ID>UnusedParameter:StelekitViewModel.kt$StelekitViewModel$reset: Boolean = false</ID>
+    <ID>UnusedParameter:TopBar.kt$platformSettings: PlatformSettings</ID>
+    <ID>UnusedPrivateClass:MigrationBuilder.kt$NoOpMigrationScope : MigrationScope</ID>
+    <ID>UnusedPrivateProperty:BlockOperations.kt$BlockOperations$private val graphWriter: GraphWriter</ID>
+    <ID>UnusedPrivateProperty:BlockParser.kt$BlockParser$i</ID>
+    <ID>UnusedPrivateProperty:CommandSystem.kt$CommandSystem$private val scope: CoroutineScope</ID>
+    <ID>UnusedPrivateProperty:DatalogQuery.kt$DatalogEngine$private val blockRepository: BlockRepository</ID>
+    <ID>UnusedPrivateProperty:DatalogQuery.kt$DatalogEngine$private val pageRepository: PageRepository</ID>
+    <ID>UnusedPrivateProperty:DatalogQuery.kt$DatalogEngine$val contentPattern = blockPatterns.find { it.attribute == ":block/content" }</ID>
+    <ID>UnusedPrivateProperty:DatalogQuery.kt$DatalogEngine$val pageNamePattern = pagePatterns.find { it.attribute == ":page/name" }</ID>
+    <ID>UnusedPrivateProperty:DatalogQuery.kt$DatalogEngine$val propertyFilters = propertyPatterns.associate { it.attribute to it.value }</ID>
+    <ID>UnusedPrivateProperty:DefaultTextOperations.kt$DefaultTextOperations$private val scope: CoroutineScope</ID>
+    <ID>UnusedPrivateProperty:Editor.kt$Editor$private val formatProcessor: IFormatProcessor</ID>
+    <ID>UnusedPrivateProperty:Editor.kt$Editor$private val graphWriter: GraphWriter</ID>
+    <ID>UnusedPrivateProperty:GraphLoader.kt$GraphLoader$private val computationThreads = 2</ID>
+    <ID>UnusedPrivateProperty:GraphLoader.kt$GraphLoader$private val outlinerPipeline = OutlinerPipeline()</ID>
+    <ID>UnusedPrivateProperty:GraphLoader.kt$GraphLoader$val allEntries = fileRegistry.scanDirectory(path)</ID>
+    <ID>UnusedPrivateProperty:GraphManager.kt$GraphManager$private val mutex = Mutex()</ID>
+    <ID>UnusedPrivateProperty:InlineParser.kt$InlineParser$val afterFirstClose = lexer.saveState()</ID>
+    <ID>UnusedPrivateProperty:MarkdownEngine.kt$val display = if (node.alias != null) "${node.target}|${node.alias}" else node.target</ID>
+    <ID>UnusedPrivateProperty:OptimizedTextOperations.kt$OptimizedTextOperations.Companion$private const val MAX_CLIPBOARD_LENGTH = 50000</ID>
+    <ID>UnusedPrivateProperty:PageView.kt$val scope = rememberCoroutineScope()</ID>
+    <ID>UnusedPrivateProperty:PerformanceOptimizedEditor.kt$EditorPerformanceManager$private val renderTimes = mutableMapOf&lt;String, Long&gt;()</ID>
+    <ID>UnusedPrivateProperty:PerformanceOptimizedEditor.kt$val debouncedUpdateDelay = remember { 16L } // ~60fps for responsive typing</ID>
+    <ID>UnusedPrivateProperty:PersistenceErrorHandler.kt$PersistenceErrorHandler$val result = retryOperation(failure)</ID>
+    <ID>UnusedPrivateProperty:PersistenceManager.kt$PersistenceManager$private val conflictResolver = ConflictResolver()</ID>
+    <ID>UnusedPrivateProperty:PersistenceManager.kt$PersistenceManager$private val fileSystem: PlatformFileSystem</ID>
+    <ID>UnusedPrivateProperty:PersistenceManager.kt$PersistenceManager$private val graphWriter: GraphWriter</ID>
+    <ID>UnusedPrivateProperty:ReferencesPanel.kt$val loadMoreLinked = { if (!isLoadingLinked &amp;&amp; hasMoreLinked) { isLoadingLinked = true // Launch in a side effect or separate scope } }</ID>
+    <ID>UnusedPrivateProperty:SlashCommandHandler.kt$SlashCommandHandler$private val registeredCommands: StateFlow&lt;Map&lt;String, suspend (SlashCommand, CommandContext) -&gt; CommandResult&gt;&gt; = _registeredCommands.asStateFlow()</ID>
+    <ID>UnusedPrivateProperty:SlashCommandHandler.kt$SlashCommandHandler$private val scope: CoroutineScope</ID>
+    <ID>UnusedPrivateProperty:StelekitViewModel.kt$StelekitViewModel$// Debounce manager for block updates private val debounceManager = DebounceManager(scope, 300L)</ID>
+    <ID>UseCheckOrError:BacklinkRenamer.kt$BacklinkRenamer$throw IllegalStateException("Failed to move page file for '${page.name}' — disk and DB may be out of sync")</ID>
+    <ID>UseCheckOrError:BlockOperations.kt$BlockOperations$throw IllegalStateException("Block disappeared after merge")</ID>
+    <ID>UseCheckOrError:DriverFactory.android.kt$DriverFactory$throw IllegalStateException("DriverFactory not initialized with a Context.")</ID>
+    <ID>UseCheckOrError:MigrationRunner.kt$MigrationRunner$throw IllegalStateException( "Cannot baseline: migrations ${alreadyPresent.map { it.id }} already in changelog" )</ID>
+    <ID>UseCheckOrError:OtelProvider.android.kt$OtelProvider$throw IllegalStateException("OtelProvider not initialized — call initialize() first")</ID>
+    <ID>UseCheckOrError:OtelProvider.jvm.kt$OtelProvider$throw IllegalStateException("OtelProvider not initialized — call initialize() first")</ID>
+    <ID>UseCheckOrError:PlatformSettings.android.kt$SteleKitContext$throw IllegalStateException("SteleKitContext not initialized. Call init(context) first.")</ID>
+    <ID>UseCheckOrError:PlatformUtils.android.kt$PlatformUtils$throw IllegalStateException("DriverFactory must be initialized with a Context before calling PlatformUtils.getDatabaseDirectory().")</ID>
+    <ID>UseCheckOrError:SqlDelightBlockRepository.kt$SqlDelightBlockRepository$throw IllegalStateException("Failed to create new block during split")</ID>
+    <ID>UseRequire:MigrationRunner.kt$MigrationRunner$throw IllegalArgumentException("Migration '$baselineId' not found in registry")</ID>
+    <ID>UseRequire:OptimizedTextOperations.kt$OptimizedTextOperations$throw IllegalArgumentException("Content exceeds maximum length")</ID>
+    <ID>VariableNaming:BlockStateManager.kt$BlockStateManager$private val MAX_UNDO = 100</ID>
+  </CurrentIssues>
+</SmellBaseline>

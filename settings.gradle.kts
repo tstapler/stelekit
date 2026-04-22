@@ -15,6 +15,8 @@ pluginManagement {
         id("org.jetbrains.compose") version "1.7.3"
         id("app.cash.sqldelight") version "2.3.2"
         id("io.github.takahirom.roborazzi") version "1.59.0"
+        id("org.jetbrains.kotlinx.benchmark") version "0.4.13"
+        id("io.gitlab.arturbosch.detekt") version "1.23.7"
     }
 }
 

@@ -1,6 +1,10 @@
 // Copyright (c) 2026 Tyler Stapler
 // SPDX-License-Identifier: Elastic-2.0
 
+import java.io.File as IoFile
+import java.text.SimpleDateFormat
+import java.util.Date
+
 plugins {
     kotlin("multiplatform")
     kotlin("plugin.compose")
@@ -9,6 +13,8 @@ plugins {
     id("org.jetbrains.compose")
     id("app.cash.sqldelight")
     id("io.github.takahirom.roborazzi") version "1.59.0"
+    id("org.jetbrains.kotlinx.benchmark")
+    id("io.gitlab.arturbosch.detekt")
 }
 
 kotlin {
@@ -97,6 +103,7 @@ kotlin {
                 implementation(compose.desktop.currentOs)
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
                 implementation("app.cash.sqldelight:sqlite-driver:2.3.2")
+                implementation("org.jetbrains.kotlinx:kotlinx-benchmark-runtime:0.4.13")
 
                 // Ktor engine for JVM (used by coil-network-ktor3)
                 implementation("io.ktor:ktor-client-okhttp:3.1.3")
@@ -206,7 +213,7 @@ kotlin {
         }
 
         jvmTest.dependsOn(businessTest)
-        
+
         // Link iOS source sets
         // Access targets defined earlier in the kotlin block
         // targets.filter { it.platformType.name == "native" }.forEach {
@@ -215,6 +222,25 @@ kotlin {
         // }
     }
 }
+
+// ── kotlinx-benchmark configuration ────────────────────────────────────────────
+// Run with: ./gradlew jvmBenchmark
+// Results land in: kmp/build/reports/benchmarks/
+benchmark {
+    targets {
+        register("jvm")
+    }
+    configurations {
+        named("main") {
+            warmups = 3           // JVM warmup iterations (JIT stabilisation)
+            iterations = 5        // measurement iterations
+            iterationTime = 1     // seconds per iteration
+            iterationTimeUnit = "s"
+            // Output: ops/s (throughput) and ns/op (average time) per benchmark
+        }
+    }
+}
+
 
 // Skiko native/JVM version alignment: compose.desktop.currentOs pins the native runtime at
 // 0.8.18 (Compose plugin 1.7.3), but Coil 3 transitively pulls in compose.foundation 1.8.0
@@ -282,6 +308,132 @@ tasks.register<Test>("jvmTestFast") {
     }))
 }
 
+// ── graph load TTI profiling ────────────────────────────────────────────────
+// Runs GraphLoadTimingTest with JFR recording enabled.
+// Usage:  ./gradlew :kmp:jvmTestProfile -PgraphPath=/path/to/your/graph
+// Output: kmp/build/reports/graph-load.jfr
+//         kmp/build/reports/graph-load.collapsed  (CPU collapsed stacks — LLM-friendly, diffable)
+//         kmp/build/reports/flamegraph.html        (interactive flamegraph)
+tasks.register<Test>("jvmTestProfile") {
+    group = "verification"
+    description = "Profile graph load TTI with JFR. Usage: -PgraphPath=/your/graph"
+
+    classpath = tasks.named<Test>("jvmTest").get().classpath
+    testClassesDirs = tasks.named<Test>("jvmTest").get().testClassesDirs
+
+    val graphPath = (project.findProperty("graphPath") as? String).orEmpty()
+    systemProperty("STELEKIT_GRAPH_PATH", graphPath)
+    systemProperty("benchmark.output.dir", layout.buildDirectory.dir("reports").get().asFile.absolutePath)
+
+    filter {
+        includeTestsMatching("dev.stapler.stelekit.benchmark.GraphLoadTimingTest")
+    }
+
+    val jfrFile = layout.buildDirectory.file("reports/graph-load.jfr").get().asFile
+    jvmArgs(
+        "-Djava.awt.headless=true",
+        "-XX:+FlightRecorder",
+        "-XX:StartFlightRecording=filename=${jfrFile.absolutePath},settings=profile,dumponexit=true",
+    )
+
+    testLogging {
+        events("PASSED", "FAILED", "SKIPPED")
+        showStandardStreams = true
+    }
+
+    doLast {
+        val collapsedFile = jfrFile.resolveSibling("graph-load.collapsed")
+        val htmlFile = jfrFile.resolveSibling("flamegraph.html")
+        println("\n── JFR written to: ${jfrFile.absolutePath}")
+
+        // Auto-convert to collapsed stacks + HTML if jfrconv is available.
+        val jfrconvPath = listOf("jfrconv", "/opt/homebrew/bin/jfrconv", "/usr/local/bin/jfrconv")
+            .firstOrNull { cmd ->
+                runCatching { ProcessBuilder("which", cmd).start().waitFor() == 0 }.getOrDefault(false)
+            }
+
+        // alloc profile: most useful for this IO-bound workload (JDBC/SQLite object churn dominates)
+        val allocCollapsedFile = jfrFile.resolveSibling("graph-load-alloc.collapsed")
+        if (jfrconvPath != null) {
+            exec { commandLine(jfrconvPath, "--alloc", "-o", "collapsed", "$jfrFile", "$allocCollapsedFile"); isIgnoreExitValue = true }
+            exec { commandLine(jfrconvPath, "--alloc", "$jfrFile", "$htmlFile"); isIgnoreExitValue = true }
+            println("   Alloc stacks:    $allocCollapsedFile")
+            println("   Flamegraph HTML: $htmlFile")
+        } else {
+            println("   (Install async-profiler for auto-conversion: brew install async-profiler)")
+            println("   Manual: jfrconv --alloc -o collapsed $jfrFile $allocCollapsedFile")
+        }
+
+        // Generate timestamped benchmark summary JSON
+        val reportsDir = layout.buildDirectory.dir("reports").get().asFile
+        val scriptFile = IoFile(temporaryDir, "gen_benchmark_summary.py")
+        scriptFile.writeText("""
+import sys, json, os, subprocess, datetime, collections
+
+root_dir = sys.argv[1]
+reports_dir = sys.argv[2]
+
+data = {}
+for name in ["benchmark-load", "benchmark-jank"]:
+    f = os.path.join(reports_dir, f"{name}.json")
+    if os.path.exists(f):
+        with open(f) as fh: data.update(json.load(fh))
+
+# Allocation hotspots from alloc collapsed stacks.
+# Leaf frame = rightmost semicolon-delimited token (the actual allocating site).
+hotspots = []
+collapsed_file = os.path.join(reports_dir, "graph-load-alloc.collapsed")
+if os.path.exists(collapsed_file):
+    frame_counts = collections.Counter()
+    total = 0
+    with open(collapsed_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line: continue
+            parts = line.rsplit(" ", 1)
+            if len(parts) == 2:
+                stack, count_str = parts
+                try: count = int(count_str)
+                except ValueError: continue
+                leaf = stack.split(";")[-1]
+                frame_counts[leaf] += count
+                total += count
+    if total > 0:
+        for frame, count in frame_counts.most_common(10):
+            hotspots.append({"frame": frame, "samples": count, "pct": round(count * 100.0 / total, 1)})
+
+try:
+    sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=root_dir).decode().strip()
+except Exception:
+    sha = "unknown"
+try:
+    branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=root_dir).decode().strip()
+except Exception:
+    branch = "unknown"
+
+now = datetime.datetime.now(datetime.timezone.utc)
+timestamp = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+file_slug = now.strftime("%Y-%m-%d_%Hh%Mm%Ss")
+
+summary = {"timestamp": timestamp, "gitSha": sha, "branch": branch}
+summary.update(data)
+summary["allocHotspots"] = hotspots
+
+history_dir = os.path.join(root_dir, "benchmarks", "history")
+os.makedirs(history_dir, exist_ok=True)
+out_file = os.path.join(history_dir, f"{file_slug}_{sha}.json")
+with open(out_file, "w") as f:
+    json.dump(summary, f, indent=2)
+print(out_file)
+""".trimIndent())
+        exec {
+            commandLine("python3", scriptFile.absolutePath, project.rootDir.absolutePath, reportsDir.absolutePath)
+            isIgnoreExitValue = true
+        }
+        scriptFile.delete()
+    }
+}
+
 compose.desktop {
     application {
         mainClass = "dev.stapler.stelekit.desktop.MainKt"
@@ -308,6 +460,147 @@ compose.desktop {
 // Alias runApp to desktopRun for convenience
 tasks.register("runApp") {
     dependsOn("run")
+}
+
+// ── Detekt static analysis ──────────────────────────────────────────────────
+detekt {
+    config.setFrom(file("config/detekt/detekt.yml"))
+    buildUponDefaultConfig = true
+    baseline = file("config/detekt/baseline.xml")
+    // Analyse all KMP source sets; generated SQLDelight code is excluded via config
+    source.setFrom(
+        "src/commonMain/kotlin",
+        "src/jvmMain/kotlin",
+        "src/androidMain/kotlin",
+        "src/iosMain/kotlin",
+    )
+}
+
+tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+    reports {
+        html.required.set(true)
+        sarif.required.set(true)
+        txt.required.set(false)
+        xml.required.set(false)
+        md.required.set(false)
+    }
+}
+
+// Load the custom rule set compiled from buildSrc, plus Compose-specific rules
+dependencies {
+    detektPlugins(files("${rootProject.projectDir}/buildSrc/build/libs/buildSrc.jar"))
+    detektPlugins("io.nlopez.compose.rules:detekt:0.4.27")
+}
+
+// ── always-on JFR profiling for desktop run ─────────────────────────────────
+// Every `./gradlew :kmp:run` records a JFR session and converts it to collapsed
+// stacks (CPU + alloc) via a finalizer task that runs even on Ctrl+C.
+//
+// Output: kmp/build/profiles/run-<timestamp>.jfr
+//         kmp/build/profiles/run-<timestamp>-cpu.collapsed
+//         kmp/build/profiles/run-<timestamp>-alloc.collapsed
+//
+// convertLastProfile can also be invoked manually:
+//   ./gradlew :kmp:convertLastProfile
+afterEvaluate {
+    val profilesDir = layout.buildDirectory.dir("profiles").get().asFile
+    // Pointer file written by the run task's doFirst so the finalizer can find
+    // the JFR regardless of whether doLast ran.
+    val latestJfrPointer = IoFile(profilesDir, "latest.jfr.path")
+
+    val jfrconvPath = listOf("jfrconv", "/opt/homebrew/bin/jfrconv", "/usr/local/bin/jfrconv")
+        .firstOrNull { cmd -> runCatching { ProcessBuilder("which", cmd).start().waitFor() == 0 }.getOrDefault(false) }
+
+    val asyncProfilerLib = listOf(
+        "/home/linuxbrew/.linuxbrew/lib/libasyncProfiler.so",
+        "/usr/local/lib/libasyncProfiler.so",
+        "/opt/homebrew/lib/libasyncProfiler.so",
+        "/opt/homebrew/lib/libasyncProfiler.dylib",
+        // IntelliJ IDEA bundled async-profiler (JetBrains Toolbox install)
+        System.getProperty("user.home") + "/.local/share/JetBrains/Toolbox/apps/intellij-idea-ultimate/lib/async-profiler/amd64/libasyncProfiler.so",
+        System.getProperty("user.home") + "/.local/share/JetBrains/Toolbox/apps/intellij-idea-ce/lib/async-profiler/amd64/libasyncProfiler.so",
+    ).firstOrNull { IoFile(it).exists() }
+
+    // ── conversion finalizer (runs even on Ctrl+C) ───────────────────────────
+    val convertLastProfile = tasks.register("convertLastProfile") {
+        group = "profiling"
+        description = "Convert the most recent JFR profile to collapsed stacks. Runs automatically after :run."
+        doLast {
+            val jfr = latestJfrPointer.takeIf { it.exists() }
+                ?.readText()?.trim()?.let { IoFile(it) }
+                ?: (profilesDir.listFiles { f: IoFile -> f.extension == "jfr" }
+                    ?.maxByOrNull { it.name })
+            if (jfr == null || !jfr.exists()) {
+                println("── convertLastProfile: no JFR file found in $profilesDir")
+                return@doLast
+            }
+
+            println("── JFR saved: ${jfr.absolutePath}  (${jfr.length() / 1024}KB)")
+
+            if (jfrconvPath == null) {
+                println("── (Install async-profiler for conversion: brew install async-profiler)")
+                return@doLast
+            }
+
+            val stem = jfr.nameWithoutExtension
+            val cpuCollapsed   = jfr.resolveSibling("$stem-cpu.collapsed")
+            val allocCollapsed = jfr.resolveSibling("$stem-alloc.collapsed")
+
+            // --cpu reads profiler.ExecutionSample (async-profiler agent events).
+            // If the agent wasn't active the file will be empty — detect and warn.
+            exec { commandLine(jfrconvPath, "--cpu",   "-o", "collapsed", "$jfr", "$cpuCollapsed");   isIgnoreExitValue = true }
+            if (cpuCollapsed.length() == 0L) {
+                cpuCollapsed.delete()
+                println("── CPU stacks:   (empty — async-profiler agent was not active)")
+            } else {
+                println("── CPU stacks:   $cpuCollapsed")
+            }
+
+            exec { commandLine(jfrconvPath, "--alloc", "-o", "collapsed", "$jfr", "$allocCollapsed"); isIgnoreExitValue = true }
+            if (allocCollapsed.exists() && allocCollapsed.length() > 0) println("── Alloc stacks: $allocCollapsed")
+
+            // Prune: keep the 20 most recent .jfr files and their collapsed siblings.
+            val allJfr = (profilesDir.listFiles { f: IoFile -> f.extension == "jfr" } ?: emptyArray())
+                .sortedByDescending { it.name }
+            allJfr.drop(20).forEach { old ->
+                old.delete()
+                (profilesDir.listFiles { f: IoFile -> f.name.startsWith(old.nameWithoutExtension) && f != old } ?: emptyArray())
+                    .forEach { it.delete() }
+            }
+        }
+    }
+
+    tasks.named<JavaExec>("run") {
+        // finalizedBy runs convertLastProfile even if run fails or is cancelled (Ctrl+C).
+        finalizedBy(convertLastProfile)
+
+        doFirst {
+            val ts = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(Date())
+            val jfr = IoFile(profilesDir, "run-$ts.jfr").also { it.parentFile.mkdirs() }
+
+            // Write pointer file before the JVM starts so the finalizer can find
+            // the JFR path even if the process is killed before doLast.
+            latestJfrPointer.writeText(jfr.absolutePath)
+
+            val jfrArgs = mutableListOf(
+                "-XX:+FlightRecorder",
+                // disk=true writes repository chunks continuously — data survives SIGKILL.
+                "-XX:StartFlightRecording=filename=${jfr.absolutePath},settings=profile,disk=true,dumponexit=true",
+            )
+            if (asyncProfilerLib != null) {
+                // wall-clock sampling captures all threads regardless of CPU state,
+                // exposing DB waits, IO blocks, and lock contention that cpu-mode misses.
+                // jfrsync injects profiler.ExecutionSample into the JFR stream so
+                // jfrconv --cpu reads the wall samples alongside JFR built-in events.
+                jfrArgs += "-agentpath:$asyncProfilerLib=start,event=wall,jfrsync=profile"
+                println("── async-profiler wall-clock agent active")
+            } else {
+                println("── async-profiler not found; CPU profile will be empty (install: brew install async-profiler)")
+            }
+            jvmArgs(jfrArgs)
+            println("── JFR profiling active → ${jfr.absolutePath}")
+        }
+    }
 }
 
 sqldelight {

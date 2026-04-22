@@ -122,6 +122,35 @@ jobs:
             exit 1
           fi
 
+  # ── Detekt static analysis ────────────────────────────────────────────────
+  lint:
+    name: Lint (Detekt)
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-cleanup: true
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Run Detekt
+        run: ./gradlew :kmp:detekt --no-daemon --build-cache
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: detekt-report
+          path: kmp/build/reports/detekt/
+          retention-days: 7
+
   # JS / Web build is disabled in CI — the JS target compiles conditionally
   # (enableJs=true) but commonMain currently uses JVM-only APIs that don't
   # compile for Kotlin/JS. Re-enable once the target is multiplatform-clean.

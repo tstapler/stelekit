@@ -1,0 +1,141 @@
+name: Benchmark
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  benchmark:
+    name: Load Benchmark
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-cleanup: true
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Install async-profiler
+        run: |
+          wget -q -O ap.tar.gz https://github.com/async-profiler/async-profiler/releases/download/v4.4/async-profiler-4.4-linux-x64.tar.gz
+          tar xf ap.tar.gz
+          echo "$PWD/async-profiler-4.4-linux-x64/bin" >> $GITHUB_PATH
+
+      - name: Run benchmark
+        run: ./gradlew :kmp:jvmTestProfile --rerun-tasks --no-daemon
+
+      - name: Upload profiling artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: profiling-${{ github.sha }}
+          path: |
+            kmp/build/reports/graph-load-alloc.collapsed
+            kmp/build/reports/flamegraph.html
+          retention-days: 30
+
+      - name: Commit benchmark summary (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add benchmarks/history/
+          git diff --cached --quiet || git commit -m "chore(bench): benchmark summary ${{ github.sha }}"
+          git push
+
+      - name: Compare to baseline and post PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const histDir = 'benchmarks/history';
+            if (!fs.existsSync(histDir)) { console.log('No benchmark history'); return; }
+
+            const allFiles = fs.readdirSync(histDir).filter(f => f.endsWith('.json') && f !== '.gitkeep').sort();
+            if (allFiles.length === 0) { console.log('No previous benchmarks'); return; }
+
+            // New file: the one matching current sha
+            const sha = '${{ github.sha }}'.slice(0, 7);
+            const newFile = allFiles.filter(f => f.includes(sha)).pop() || allFiles[allFiles.length - 1];
+            // Baseline: the last committed file (last one not matching current sha)
+            const baseFile = allFiles.filter(f => !f.includes(sha)).pop();
+
+            if (!baseFile) { console.log('No baseline to compare against'); return; }
+
+            const curr = JSON.parse(fs.readFileSync(path.join(histDir, newFile)));
+            const base = JSON.parse(fs.readFileSync(path.join(histDir, baseFile)));
+
+            const delta = (a, b) => {
+              if (b === undefined || b === null) return '';
+              const d = a - b;
+              const sign = d > 0 ? '+' : '';
+              return ` (${sign}${d}ms)`;
+            };
+            const fmtJ = v => v === undefined ? 'n/a' : `${v}x`;
+
+            const hotspots = (curr.allocHotspots || []).slice(0, 5)
+              .map(h => `\`${h.pct}%\` ${h.frame}`)
+              .join('\n');
+
+            const body = [
+              '## Benchmark Results',
+              '',
+              `Comparing \`${curr.gitSha}\` (this PR) vs \`${base.gitSha}\` (baseline)  `,
+              `Graph config: \`${curr.graphConfig || 'SMALL'}\` — ${curr.pageCount || '?'} pages`,
+              '',
+              '| Metric | This PR | Baseline | Delta |',
+              '|--------|---------|----------|-------|',
+              `| Phase 1 TTI | ${curr.phase1TtiMs ?? 'n/a'}ms | ${base.phase1TtiMs ?? 'n/a'}ms | ${delta(curr.phase1TtiMs, base.phase1TtiMs)} |`,
+              `| Phase 2 | ${curr.phase2Ms ?? 'n/a'}ms | ${base.phase2Ms ?? 'n/a'}ms | ${delta(curr.phase2Ms, base.phase2Ms)} |`,
+              `| Phase 3 index | ${curr.phase3Ms ?? 'n/a'}ms | ${base.phase3Ms ?? 'n/a'}ms | ${delta(curr.phase3Ms, base.phase3Ms)} |`,
+              `| Total | ${curr.totalMs ?? 'n/a'}ms | ${base.totalMs ?? 'n/a'}ms | ${delta(curr.totalMs, base.totalMs)} |`,
+              `| Write p95 (baseline) | ${curr.jankBaselineP95Ms ?? 'n/a'}ms | ${base.jankBaselineP95Ms ?? 'n/a'}ms | - |`,
+              `| Write p95 (under load) | ${curr.jankLoadP95Ms ?? 'n/a'}ms | ${base.jankLoadP95Ms ?? 'n/a'}ms | - |`,
+              `| Jank factor | ${fmtJ(curr.jankFactor)} | ${fmtJ(base.jankFactor)} | - |`,
+              '',
+              '<details>',
+              '<summary>Top allocation hotspots (this PR)</summary>',
+              '',
+              hotspots || '_No collapsed stacks available_',
+              '',
+              '</details>',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.user.login === 'github-actions[bot]' && c.body.includes('## Benchmark Results'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body,
+              });
+            }
