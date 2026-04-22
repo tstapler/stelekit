@@ -6,6 +6,7 @@ package dev.stapler.stelekit.performance
  */
 actual object OtelProvider {
     actual val isInitialized: Boolean get() = false
+    actual val ringBuffer: RingBufferSpanExporter? get() = null
     actual fun initialize(config: OtelExporterConfig) { /* no-op */ }
     actual fun getTracer(instrumentationName: String): Any =
         throw UnsupportedOperationException("OpenTelemetry is not available on iOS")

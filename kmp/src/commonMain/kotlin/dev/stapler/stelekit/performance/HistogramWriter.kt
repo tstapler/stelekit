@@ -2,6 +2,8 @@ package dev.stapler.stelekit.performance
 
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.DatabaseWriteActor
+import dev.stapler.stelekit.db.DirectSqlWrite
+import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
 import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
@@ -35,33 +37,39 @@ class HistogramWriter(
     private val writeActor: DatabaseWriteActor? = null,
 ) {
     private val channel = Channel<HistogramSample>(capacity = Channel.BUFFERED)
+    private val restricted = RestrictedDatabaseQueries(database.steleDatabaseQueries)
 
     init {
-        scope.launch(PlatformDispatcher.IO) {
+        scope.launch(PlatformDispatcher.DB) {
             for (sample in channel) {
-                try {
-                    val bucket = classifyBucket(sample.durationMs)
-                    val writeOp: suspend () -> Result<Unit> = {
-                        runCatching {
-                            database.steleDatabaseQueries.transaction {
-                                database.steleDatabaseQueries.insertHistogramBucketIfAbsent(
-                                    operation_name = sample.operationName,
-                                    bucket_ms = bucket,
-                                    recorded_at = sample.recordedAt
-                                )
-                                database.steleDatabaseQueries.incrementHistogramBucketCount(
-                                    recorded_at = sample.recordedAt,
-                                    operation_name = sample.operationName,
-                                    bucket_ms = bucket
-                                )
-                            }
-                        }
+                processSample(sample)
+            }
+        }
+    }
+
+    @OptIn(DirectSqlWrite::class)
+    private suspend fun processSample(sample: HistogramSample) {
+        try {
+            val bucket = classifyBucket(sample.durationMs)
+            val writeOp: suspend () -> Result<Unit> = {
+                runCatching {
+                    restricted.transaction {
+                        restricted.insertHistogramBucketIfAbsent(
+                            operation_name = sample.operationName,
+                            bucket_ms = bucket,
+                            recorded_at = sample.recordedAt
+                        )
+                        restricted.incrementHistogramBucketCount(
+                            recorded_at = sample.recordedAt,
+                            operation_name = sample.operationName,
+                            bucket_ms = bucket
+                        )
                     }
-                    if (writeActor != null) writeActor.execute(writeOp) else writeOp()
-                } catch (e: Exception) {
-                    // A DB error must not kill the consumer coroutine — log and continue
                 }
             }
+            if (writeActor != null) writeActor.execute(op = writeOp) else writeOp()
+        } catch (e: Exception) {
+            // A DB error must not kill the consumer coroutine — log and continue
         }
     }
 

@@ -28,6 +28,8 @@ data class OtelExporterConfig(
  */
 expect object OtelProvider {
     val isInitialized: Boolean
+    /** The ring buffer wired into the OTel SDK span pipeline, or null if not initialized. */
+    val ringBuffer: RingBufferSpanExporter?
     fun initialize(config: OtelExporterConfig = OtelExporterConfig())
     /** Returns an `io.opentelemetry.api.trace.Tracer` on JVM/Android; throws on wasmJs. */
     fun getTracer(instrumentationName: String): Any

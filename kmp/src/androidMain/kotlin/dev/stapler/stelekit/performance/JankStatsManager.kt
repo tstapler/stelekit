@@ -5,8 +5,6 @@ import androidx.metrics.performance.JankStats
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
-data class FrameMetric(val lastFrameMs: Long = 0L, val isJank: Boolean = false)
-
 /**
  * Registers [JankStats] for an [Activity] and routes jank frames to [HistogramWriter].
  *

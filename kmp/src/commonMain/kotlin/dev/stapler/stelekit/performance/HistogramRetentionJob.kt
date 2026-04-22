@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.performance
 
+import dev.stapler.stelekit.db.DirectSqlWrite
+import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -24,13 +26,20 @@ class HistogramRetentionJob(
     private val retentionWindowMs: Long = RETENTION_WINDOW_MS,
     private val cleanupIntervalMs: Long = CLEANUP_INTERVAL_MS
 ) {
+    private val restricted = RestrictedDatabaseQueries(database.steleDatabaseQueries)
+
     fun start(scope: CoroutineScope) {
         scope.launch(PlatformDispatcher.IO) {
             while (true) {
                 val cutoff = HistogramWriter.epochMs() - retentionWindowMs
-                database.steleDatabaseQueries.deleteOldHistogramRows(cutoff)
+                deleteOldRows(cutoff)
                 delay(cleanupIntervalMs)
             }
         }
+    }
+
+    @OptIn(DirectSqlWrite::class)
+    private fun deleteOldRows(cutoff: Long) {
+        restricted.deleteOldHistogramRows(cutoff)
     }
 }

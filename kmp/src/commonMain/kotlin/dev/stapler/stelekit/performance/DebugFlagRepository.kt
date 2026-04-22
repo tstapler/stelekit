@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.performance
 
+import dev.stapler.stelekit.db.DirectSqlWrite
+import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
 
 /**
@@ -7,9 +9,11 @@ import dev.stapler.stelekit.db.SteleDatabase
  * All reads/writes are synchronous (called from Dispatchers.IO).
  */
 class DebugFlagRepository(private val database: SteleDatabase) {
+    private val restricted = RestrictedDatabaseQueries(database.steleDatabaseQueries)
 
+    @OptIn(DirectSqlWrite::class)
     fun setFlag(key: String, enabled: Boolean) {
-        database.steleDatabaseQueries.upsertDebugFlag(
+        restricted.upsertDebugFlag(
             key = key,
             value_ = if (enabled) 1L else 0L,
             updated_at = HistogramWriter.epochMs()

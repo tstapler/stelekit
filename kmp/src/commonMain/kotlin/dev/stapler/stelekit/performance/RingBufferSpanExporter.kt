@@ -9,7 +9,10 @@ data class SerializedSpan(
     val endEpochMs: Long,
     val durationMs: Long,
     val attributes: Map<String, String> = emptyMap(),
-    val statusCode: String = "OK"  // "OK", "ERROR", "UNSET"
+    val statusCode: String = "OK",  // "OK", "ERROR", "UNSET"
+    val traceId: String = "",
+    val spanId: String = "",
+    val parentSpanId: String = ""
 )
 
 /**
@@ -30,6 +33,13 @@ class RingBufferSpanExporter(val capacity: Int = 1000) {
     }
 
     fun snapshot(): List<SerializedSpan> = buffer.toList()
+
+    /** Returns all buffered spans and clears the buffer. */
+    fun drain(): List<SerializedSpan> {
+        val all = buffer.toList()
+        buffer.clear()
+        return all
+    }
 
     fun clear() = buffer.clear()
 }
