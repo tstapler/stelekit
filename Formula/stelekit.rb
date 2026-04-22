@@ -12,6 +12,8 @@ class Stelekit < Formula
   on_macos do
     url "https://github.com/tstapler/stelekit/releases/download/v#{version}/SteleKit-v#{version}-macos.dmg"
     sha256 "562662b292ffada648eab4f395503c516a86c3f19842b26b372d34953b2d4d64"
+
+    depends_on "openjdk"
   end
 
   def install
@@ -43,10 +45,13 @@ class Stelekit < Formula
       rm_rf "squashfs-root"
 
     elsif OS.mac?
-      system "hdiutil", "attach", "-quiet", "-nobrowse", "SteleKit-v#{version}-macos.dmg"
-      cp_r "/Volumes/stelekit/stelekit.app", prefix
-      system "hdiutil", "detach", "-quiet", "/Volumes/stelekit"
-      bin.write_exec_script "#{prefix}/stelekit.app/Contents/MacOS/stelekit"
+      cp_r "stelekit.app", prefix
+      # Replace the bundled JVM with Homebrew's openjdk for macOS compatibility.
+      # The Compose Desktop native launcher looks for the JVM at Contents/runtime/Contents/Home.
+      bundled_jvm = prefix/"stelekit.app/Contents/runtime/Contents/Home"
+      bundled_jvm.rmtree if bundled_jvm.exist?
+      bundled_jvm.make_relative_symlink Formula["openjdk"].opt_libexec/"openjdk.jdk/Contents/Home"
+      bin.write_exec_script prefix/"stelekit.app/Contents/MacOS/stelekit"
     end
   end
 

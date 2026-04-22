@@ -220,7 +220,7 @@ jobs:
       - name: Package desktop distributable
         run: |
           APP_VERSION="${{ needs.resolve-version.outputs.version }}"
-          ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache \
+          ./gradlew :kmp:clean :kmp:packageDistributionForCurrentOS --no-daemon \
             -PappVersion="${APP_VERSION#v}"
 
       - name: Rename distributable with version
