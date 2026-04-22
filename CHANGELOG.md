@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/tstapler/stelekit/compare/v0.8.0...v0.8.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* **macos:** use Homebrew openjdk and clean build for macOS 26 compat ([#18](https://github.com/tstapler/stelekit/issues/18)) ([d90968d](https://github.com/tstapler/stelekit/commit/d90968d94e202f5cdf705a36ef8eafec618239c8))
+
 ## [0.8.0](https://github.com/tstapler/stelekit/compare/v0.7.1...v0.8.0) (2026-04-22)
 
 
