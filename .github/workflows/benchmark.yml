@@ -22,13 +22,10 @@ jobs:
     if: github.event.pull_request.draft == false
 
     steps:
-      # Check out the real branch (not the synthetic merge commit) so we can
-      # push the flamegraph PNG back to the same branch later.
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
-          ref: ${{ github.head_ref || github.ref_name }}
 
       - uses: actions/setup-java@v4
         with:
@@ -55,11 +52,8 @@ jobs:
         if: always()
         run: |
           COLLAPSED=kmp/build/reports/graph-load-alloc.collapsed
-          TIMESTAMP=$(date -u +%Y-%m-%d_%Hh%Mm%Ss)
           SHORT_SHA="${{ github.sha }}"
           SHORT_SHA="${SHORT_SHA:0:9}"
-          PNG_NAME="${TIMESTAMP}_${SHORT_SHA}_flamegraph.png"
-          echo "PNG_NAME=${PNG_NAME}" >> $GITHUB_ENV
 
           if [ -f "$COLLAPSED" ]; then
             perl flamegraph.pl \
@@ -67,13 +61,25 @@ jobs:
               --title "Alloc flamegraph (${SHORT_SHA})" \
               --colors mem \
               "$COLLAPSED" > flamegraph.svg
-            rsvg-convert -w 1800 flamegraph.svg -o "benchmarks/history/${PNG_NAME}"
+            rsvg-convert -w 1800 flamegraph.svg -o flamegraph.png
             echo "PNG_GENERATED=true" >> $GITHUB_ENV
-            echo "PNG written to benchmarks/history/${PNG_NAME}"
           else
             echo "PNG_GENERATED=false" >> $GITHUB_ENV
             echo "No collapsed stacks found — skipping PNG generation"
           fi
+
+      - name: Upload flamegraph PNG to GitHub
+        if: github.event_name == 'pull_request' && env.PNG_GENERATED == 'true'
+        run: |
+          RESPONSE=$(curl -s \
+            -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            -F "data=@flamegraph.png" \
+            "https://uploads.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/assets")
+          echo "$RESPONSE"
+          IMAGE_URL=$(echo "$RESPONSE" | jq -r '.url // empty')
+          echo "FLAMEGRAPH_URL=${IMAGE_URL}" >> $GITHUB_ENV
 
       - name: Upload profiling artifacts
         uses: actions/upload-artifact@v4
@@ -83,10 +89,10 @@ jobs:
           path: |
             kmp/build/reports/graph-load-alloc.collapsed
             kmp/build/reports/flamegraph.html
-            benchmarks/history/*_flamegraph.png
+            flamegraph.png
           retention-days: 30
 
-      - name: Commit benchmark results (main only)
+      - name: Commit benchmark summary (main only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
@@ -94,15 +100,6 @@ jobs:
           git add benchmarks/history/
           git diff --cached --quiet || git commit -m "chore(bench): benchmark summary ${{ github.sha }}"
           git push
-
-      - name: Commit flamegraph PNG to PR branch
-        if: github.event_name == 'pull_request' && env.PNG_GENERATED == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "benchmarks/history/${{ env.PNG_NAME }}"
-          git diff --cached --quiet || git commit -m "chore(bench): flamegraph for ${{ github.sha }}"
-          git push origin HEAD:${{ github.head_ref }}
 
       - name: Compare to baseline and post PR comment
         if: github.event_name == 'pull_request'
@@ -139,13 +136,9 @@ jobs:
               .map(h => `\`${h.pct}%\` ${h.frame}`)
               .join('\n');
 
-            // PNG was committed to the PR branch; serve via raw.githubusercontent.com
-            // so it renders inline in the GitHub comment without auth.
-            const pngName = process.env.PNG_NAME || '';
-            const repo = '${{ github.repository }}';
-            const headRef = encodeURIComponent('${{ github.head_ref }}');
-            const flamegraphSection = pngName
-              ? `\n![Allocation flamegraph](https://raw.githubusercontent.com/${repo}/${headRef}/benchmarks/history/${pngName})\n`
+            const imageUrl = process.env.FLAMEGRAPH_URL || '';
+            const flamegraphSection = imageUrl
+              ? `\n![Allocation flamegraph](${imageUrl})\n`
               : '\n_Flamegraph not available_\n';
 
             const body = [
