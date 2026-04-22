@@ -12,4 +12,5 @@ actual object PlatformDispatcher {
     actual val IO: CoroutineDispatcher = Dispatchers.Default
     actual val Main: CoroutineDispatcher = Dispatchers.Main
     actual val Default: CoroutineDispatcher = Dispatchers.Default
+    actual val DB: CoroutineDispatcher = Dispatchers.Default
 }

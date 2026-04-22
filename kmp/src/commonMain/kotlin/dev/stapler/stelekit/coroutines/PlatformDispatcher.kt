@@ -10,4 +10,6 @@ expect object PlatformDispatcher {
     val IO: CoroutineDispatcher
     val Main: CoroutineDispatcher
     val Default: CoroutineDispatcher
+    /** Limited-parallelism dispatcher for SQLite operations. Caps JDBC connections on JVM. */
+    val DB: CoroutineDispatcher
 }
