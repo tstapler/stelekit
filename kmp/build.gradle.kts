@@ -492,6 +492,16 @@ dependencies {
     detektPlugins("io.nlopez.compose.rules:detekt:0.4.27")
 }
 
+// ── Local CI check ───────────────────────────────────────────────────────────
+// Mirrors the four Gradle jobs in .github/workflows/ci.yml.
+// README sync (scripts/generate-readme.sh) must be run separately.
+// On headless Linux, wrap with: xvfb-run --auto-servernum ./gradlew ciCheck
+tasks.register("ciCheck") {
+    group = "verification"
+    description = "Run all Gradle CI checks locally (detekt + jvmTest + Android unit tests + assembleDebug)"
+    dependsOn(":kmp:detekt", ":kmp:jvmTest", ":kmp:testDebugUnitTest", ":androidApp:assembleDebug")
+}
+
 // ── always-on JFR profiling for desktop run ─────────────────────────────────
 // Every `./gradlew :kmp:run` records a JFR session and converts it to collapsed
 // stacks (CPU + alloc) via a finalizer task that runs even on Ctrl+C.

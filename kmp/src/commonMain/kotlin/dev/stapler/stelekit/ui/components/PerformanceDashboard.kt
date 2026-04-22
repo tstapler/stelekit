@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -161,7 +162,7 @@ private fun SpansTab(spanRepository: SpanRepository?, ringBuffer: RingBufferSpan
 
     var paused by remember { mutableStateOf(false) }
     var frozenSpans by remember { mutableStateOf<List<SerializedSpan>?>(null) }
-    var maxDepth by remember { mutableStateOf(8) }
+    var maxDepth by remember { mutableIntStateOf(8) }
 
     val displaySpans = frozenSpans ?: liveSpans
     val traces = remember(displaySpans, maxDepth) { groupIntoTraces(displaySpans, maxDepth) }
