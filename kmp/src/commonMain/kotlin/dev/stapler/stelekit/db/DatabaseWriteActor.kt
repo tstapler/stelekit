@@ -1,18 +1,21 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.select
 
 /**
  * Serializes all database writes through a single coroutine, eliminating SQLite write-lock
@@ -21,9 +24,18 @@ import kotlinx.coroutines.launch
  * Each request carries a [CompletableDeferred] so callers can await the exact result of
  * their write and react to failures (log, retry, surface to UI) rather than silently losing data.
  *
- * Consecutive [WriteRequest.SaveBlocks] requests are coalesced into one transaction for
- * efficiency. If the combined transaction fails, each original request is retried individually
- * so partial successes are preserved and each caller gets accurate per-request feedback.
+ * ## Priority queue
+ * Two channels are maintained: [highPriority] for user-initiated writes (editor saves, deletes)
+ * and [lowPriority] for bulk background loads (graph import, index rebuild). The actor always
+ * drains the high-priority channel before touching the low-priority one, so a user typing during
+ * a 4,000-page load never waits behind bulk writes.
+ *
+ * ## Coalescing
+ * Consecutive [WriteRequest.SaveBlocks] requests on the same priority lane are coalesced into
+ * one transaction. While coalescing a low-priority batch the actor checks high-priority between
+ * each item; if anything urgent arrives it flushes the batch immediately and services the urgent
+ * request first. If the combined transaction fails, each original request is retried individually
+ * so partial successes are preserved.
  */
 @OptIn(DirectRepositoryWrite::class)
 class DatabaseWriteActor(
@@ -31,46 +43,84 @@ class DatabaseWriteActor(
     private val pageRepository: PageRepository,
     private val opLogger: OperationLogger? = null,
 ) {
+    private val logger = Logger("DatabaseWriteActor")
+    /** Controls which channel a write request enters. */
+    enum class Priority { HIGH, LOW }
+
     sealed class WriteRequest {
         abstract val deferred: CompletableDeferred<Result<Unit>>
+        abstract val priority: Priority
 
         class SavePage(
             val page: Page,
+            override val priority: Priority = Priority.HIGH,
+            override val deferred: CompletableDeferred<Result<Unit>> = CompletableDeferred(),
+        ) : WriteRequest()
+
+        class SavePages(
+            val pages: List<Page>,
+            override val priority: Priority = Priority.LOW,
             override val deferred: CompletableDeferred<Result<Unit>> = CompletableDeferred(),
         ) : WriteRequest()
 
         class SaveBlocks(
             val blocks: List<Block>,
+            override val priority: Priority = Priority.HIGH,
             override val deferred: CompletableDeferred<Result<Unit>> = CompletableDeferred(),
         ) : WriteRequest()
 
         class DeleteBlocksForPage(
             val pageUuid: String,
+            override val priority: Priority = Priority.HIGH,
+            override val deferred: CompletableDeferred<Result<Unit>> = CompletableDeferred(),
+        ) : WriteRequest()
+
+        class DeleteBlocksForPages(
+            val pageUuids: List<String>,
+            override val priority: Priority = Priority.LOW,
             override val deferred: CompletableDeferred<Result<Unit>> = CompletableDeferred(),
         ) : WriteRequest()
 
         class Execute(
             val op: suspend () -> Result<Unit>,
+            override val priority: Priority = Priority.HIGH,
             override val deferred: CompletableDeferred<Result<Unit>> = CompletableDeferred(),
         ) : WriteRequest()
     }
 
-    private val channel = Channel<WriteRequest>(capacity = Channel.UNLIMITED)
+    private val highPriority = Channel<WriteRequest>(capacity = Channel.UNLIMITED)
+    private val lowPriority = Channel<WriteRequest>(capacity = Channel.UNLIMITED)
+
+    private fun channelFor(priority: Priority) =
+        if (priority == Priority.HIGH) highPriority else lowPriority
 
     // Own scope so the actor loop survives Compose scope cancellation (e.g. key(activeGraphId)
     // graph switch). Callers must call close() to stop the actor.
-    private val actorScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val actorScope = CoroutineScope(SupervisorJob() + PlatformDispatcher.Default)
 
     init {
         actorScope.launch {
-            for (request in channel) {
-                try {
-                    processRequest(request)
-                } catch (e: Exception) {
-                    // Unexpected throw (e.g. OOM, assertion) — complete the caller's deferred
-                    // so it doesn't hang, then continue the loop rather than dying.
-                    request.deferred.complete(Result.failure(e))
+            try {
+                while (isActive) {
+                    // Prefer high-priority: non-blocking poll first, then suspend on either.
+                    val request = highPriority.tryReceive().getOrNull()
+                        ?: select {
+                            highPriority.onReceive { it }
+                            lowPriority.onReceive { it }
+                        }
+                    try {
+                        processRequest(request)
+                    } catch (e: Exception) {
+                        // Unexpected throw — complete deferred so caller doesn't hang.
+                        // Guard against double-completion: processRequest may have already
+                        // completed the deferred on its happy path before the exception escaped.
+                        if (!request.deferred.isCompleted) {
+                            request.deferred.complete(Result.failure(e))
+                        }
+                    }
                 }
+            } catch (_: Exception) {
+                // Channel closed or coroutine cancelled — exit cleanly.
             }
         }
     }
@@ -79,6 +129,8 @@ class DatabaseWriteActor(
         when (request) {
             is WriteRequest.SavePage ->
                 request.deferred.complete(pageRepository.savePage(request.page))
+            is WriteRequest.SavePages ->
+                request.deferred.complete(pageRepository.savePages(request.pages))
             is WriteRequest.DeleteBlocksForPage -> {
                 if (opLogger != null) {
                     try {
@@ -90,6 +142,19 @@ class DatabaseWriteActor(
                 }
                 request.deferred.complete(blockRepository.deleteBlocksForPage(request.pageUuid))
             }
+            is WriteRequest.DeleteBlocksForPages -> {
+                if (opLogger != null) {
+                    try {
+                        for (uuid in request.pageUuids) {
+                            val pageBlocks = blockRepository.getBlocksForPage(uuid).first().getOrNull()
+                            pageBlocks?.forEach { opLogger.logDelete(it) }
+                        }
+                    } catch (e: Exception) {
+                        logger.warn("Op log pre-delete read failed (non-fatal)", e)
+                    }
+                }
+                request.deferred.complete(blockRepository.deleteBlocksForPages(request.pageUuids))
+            }
             is WriteRequest.SaveBlocks -> processSaveBlocks(request)
             is WriteRequest.Execute ->
                 request.deferred.complete(request.op())
@@ -97,19 +162,26 @@ class DatabaseWriteActor(
     }
 
     private suspend fun processSaveBlocks(first: WriteRequest.SaveBlocks) {
-        // Drain all consecutive SaveBlocks from the channel — coalesce into one transaction.
+        val sourceChannel = channelFor(first.priority)
+        // Drain all consecutive same-priority SaveBlocks — coalesce into one transaction.
         val batch = mutableListOf(first)
-        var next = channel.tryReceive()
-        while (next.isSuccess) {
-            val value = next.getOrNull()!!
-            if (value is WriteRequest.SaveBlocks) {
-                batch.add(value)
-                next = channel.tryReceive()
+        while (true) {
+            // While building a low-priority batch, yield immediately if high-priority arrives.
+            if (first.priority == Priority.LOW) {
+                val urgent = highPriority.tryReceive().getOrNull()
+                if (urgent != null) {
+                    flushBatch(batch)
+                    processRequest(urgent)
+                    return
+                }
+            }
+            val next = sourceChannel.tryReceive().getOrNull() ?: break
+            if (next is WriteRequest.SaveBlocks) {
+                batch.add(next)
             } else {
-                // A non-SaveBlocks request interrupted the run. Flush the batch first,
-                // then handle the interrupting request.
+                // A non-SaveBlocks request interrupted the run — flush then handle it.
                 flushBatch(batch)
-                processRequest(value)
+                processRequest(next)
                 return
             }
         }
@@ -133,6 +205,10 @@ class DatabaseWriteActor(
             logSaveBlocks(allBlocks, existingByUuid)
             batch.forEach { it.deferred.complete(Result.success(Unit)) }
         } else {
+            logger.warn(
+                "Combined batch of ${allBlocks.size} blocks failed, retrying ${batch.size} requests individually",
+                batchResult.exceptionOrNull()
+            )
             // Combined transaction failed — retry each request individually so that
             // pages with valid blocks still succeed and each caller gets accurate feedback.
             batch.forEach { req ->
@@ -178,21 +254,35 @@ class DatabaseWriteActor(
         }
     }
 
-    suspend fun savePage(page: Page): Result<Unit> {
-        val req = WriteRequest.SavePage(page)
-        channel.send(req)
+    suspend fun savePage(page: Page, priority: Priority = Priority.HIGH): Result<Unit> {
+        val req = WriteRequest.SavePage(page, priority)
+        channelFor(priority).send(req)
         return req.deferred.await()
     }
 
-    suspend fun saveBlocks(blocks: List<Block>): Result<Unit> {
-        val req = WriteRequest.SaveBlocks(blocks)
-        channel.send(req)
+    suspend fun savePages(pages: List<Page>, priority: Priority = Priority.LOW): Result<Unit> {
+        if (pages.isEmpty()) return Result.success(Unit)
+        val req = WriteRequest.SavePages(pages, priority)
+        channelFor(priority).send(req)
         return req.deferred.await()
     }
 
-    suspend fun deleteBlocksForPage(pageUuid: String): Result<Unit> {
-        val req = WriteRequest.DeleteBlocksForPage(pageUuid)
-        channel.send(req)
+    suspend fun saveBlocks(blocks: List<Block>, priority: Priority = Priority.HIGH): Result<Unit> {
+        val req = WriteRequest.SaveBlocks(blocks, priority)
+        channelFor(priority).send(req)
+        return req.deferred.await()
+    }
+
+    suspend fun deleteBlocksForPage(pageUuid: String, priority: Priority = Priority.HIGH): Result<Unit> {
+        val req = WriteRequest.DeleteBlocksForPage(pageUuid, priority)
+        channelFor(priority).send(req)
+        return req.deferred.await()
+    }
+
+    suspend fun deleteBlocksForPages(pageUuids: List<String>, priority: Priority = Priority.LOW): Result<Unit> {
+        if (pageUuids.isEmpty()) return Result.success(Unit)
+        val req = WriteRequest.DeleteBlocksForPages(pageUuids, priority)
+        channelFor(priority).send(req)
         return req.deferred.await()
     }
 
@@ -200,9 +290,9 @@ class DatabaseWriteActor(
      * Execute an arbitrary write operation through the actor's serialized channel.
      * Use this for any write that doesn't have a dedicated typed method.
      */
-    suspend fun execute(op: suspend () -> Result<Unit>): Result<Unit> {
-        val req = WriteRequest.Execute(op)
-        channel.send(req)
+    suspend fun execute(priority: Priority = Priority.HIGH, op: suspend () -> Result<Unit>): Result<Unit> {
+        val req = WriteRequest.Execute(op, priority)
+        channelFor(priority).send(req)
         return req.deferred.await()
     }
 
@@ -230,11 +320,14 @@ class DatabaseWriteActor(
      * correlate start and end markers.
      */
     suspend fun executeBatch(batchId: String, block: suspend DatabaseWriteActor.() -> Unit) {
-        opLogger?.logBatchStart(batchId)
+        // Route markers through the actor channel so they share the serialized Lamport clock
+        // with the writes they bracket. Calling logBatchStart/End directly from the caller's
+        // coroutine would race with actor-channel writes and corrupt seq ordering.
+        execute { opLogger?.logBatchStart(batchId); Result.success(Unit) }
         try {
             this.block()
         } finally {
-            opLogger?.logBatchEnd(batchId)
+            execute { opLogger?.logBatchEnd(batchId); Result.success(Unit) }
         }
     }
 
@@ -242,7 +335,8 @@ class DatabaseWriteActor(
         execute { pageRepository.deletePage(pageUuid) }
 
     fun close() {
-        channel.close()
+        highPriority.close()
+        lowPriority.close()
         actorScope.cancel()
     }
 }
