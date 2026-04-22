@@ -1,11 +1,14 @@
 package dev.stapler.stelekit.repository
 
+import dev.stapler.stelekit.db.Blocks
+import dev.stapler.stelekit.db.SelectMostConnectedBlocks
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlin.Result.Companion.success
@@ -27,7 +30,7 @@ class SqlDelightReferenceRepository(
         } catch (e: Exception) {
             emit(Result.failure(e))
         }
-    }.flowOn(PlatformDispatcher.IO)
+    }.flowOn(PlatformDispatcher.DB)
 
     override fun getIncomingReferences(blockUuid: String): Flow<Result<List<Block>>> = flow {
         try {
@@ -36,7 +39,7 @@ class SqlDelightReferenceRepository(
         } catch (e: Exception) {
             emit(Result.failure(e))
         }
-    }.flowOn(PlatformDispatcher.IO)
+    }.flowOn(PlatformDispatcher.DB)
 
     override fun getAllReferences(blockUuid: String): Flow<Result<BlockReferences>> = flow {
         try {
@@ -46,25 +49,27 @@ class SqlDelightReferenceRepository(
         } catch (e: Exception) {
             emit(Result.failure(e))
         }
-    }.flowOn(PlatformDispatcher.IO)
+    }.flowOn(PlatformDispatcher.DB)
 
-    override suspend fun addReference(fromBlockUuid: String, toBlockUuid: String): Result<Unit> {
-        return try {
-            queries.insertBlockReference(fromBlockUuid, toBlockUuid, Clock.System.now().toEpochMilliseconds())
-            success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
+    override suspend fun addReference(fromBlockUuid: String, toBlockUuid: String): Result<Unit> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                queries.insertBlockReference(fromBlockUuid, toBlockUuid, Clock.System.now().toEpochMilliseconds())
+                success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
         }
-    }
 
-    override suspend fun removeReference(fromBlockUuid: String, toBlockUuid: String): Result<Unit> {
-        return try {
-            queries.deleteBlockReference(fromBlockUuid, toBlockUuid)
-            success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
+    override suspend fun removeReference(fromBlockUuid: String, toBlockUuid: String): Result<Unit> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                queries.deleteBlockReference(fromBlockUuid, toBlockUuid)
+                success(Unit)
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
         }
-    }
 
     override fun getOrphanedBlocks(): Flow<Result<List<Block>>> = flow {
         try {
@@ -73,7 +78,7 @@ class SqlDelightReferenceRepository(
         } catch (e: Exception) {
             emit(Result.failure(e))
         }
-    }.flowOn(PlatformDispatcher.IO)
+    }.flowOn(PlatformDispatcher.DB)
 
     override fun getMostConnectedBlocks(limit: Int): Flow<Result<List<BlockWithReferenceCount>>> = flow {
         try {
@@ -84,38 +89,44 @@ class SqlDelightReferenceRepository(
         } catch (e: Exception) {
             emit(Result.failure(e))
         }
-    }.flowOn(PlatformDispatcher.IO)
+    }.flowOn(PlatformDispatcher.DB)
 
-    private fun dev.stapler.stelekit.db.Blocks.toBlockModel(): Block {
-        return Block(
-            uuid = this.uuid,
-            pageUuid = this.page_uuid,
-            parentUuid = this.parent_uuid,
-            leftUuid = this.left_uuid,
-            content = this.content,
-            level = this.level.toInt(),
-            position = this.position.toInt(),
-            createdAt = Instant.fromEpochMilliseconds(this.created_at),
-            updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
-            version = this.version,
-            properties = emptyMap()
-        )
-    }
-    
-    // Explicit mapping for join result
-    private fun dev.stapler.stelekit.db.SelectMostConnectedBlocks.toBlockModel(): Block {
-        return Block(
-            uuid = this.uuid,
-            pageUuid = this.page_uuid,
-            parentUuid = this.parent_uuid,
-            leftUuid = this.left_uuid,
-            content = this.content,
-            level = this.level.toInt(),
-            position = this.position.toInt(),
-            createdAt = Instant.fromEpochMilliseconds(this.created_at),
-            updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
-            version = this.version,
-            properties = emptyMap()
-        )
-    }
+    // Shared mapping logic — properties are not loaded in reference queries (they require
+    // a separate join against the block_properties table, not needed for link traversal).
+    private fun toBlock(
+        uuid: String,
+        pageUuid: String,
+        parentUuid: String?,
+        leftUuid: String?,
+        content: String,
+        level: Long,
+        position: Long,
+        createdAt: Long,
+        updatedAt: Long,
+        version: Long?,
+    ): Block = Block(
+        uuid = uuid,
+        pageUuid = pageUuid,
+        parentUuid = parentUuid,
+        leftUuid = leftUuid,
+        content = content,
+        level = level.toInt(),
+        position = position.toInt(),
+        createdAt = Instant.fromEpochMilliseconds(createdAt),
+        updatedAt = Instant.fromEpochMilliseconds(updatedAt),
+        version = version ?: 0,
+        properties = emptyMap(),
+    )
+
+    private fun Blocks.toBlockModel(): Block = toBlock(
+        uuid = uuid, pageUuid = page_uuid, parentUuid = parent_uuid, leftUuid = left_uuid,
+        content = content, level = level, position = position,
+        createdAt = created_at, updatedAt = updated_at, version = version,
+    )
+
+    private fun SelectMostConnectedBlocks.toBlockModel(): Block = toBlock(
+        uuid = uuid, pageUuid = page_uuid, parentUuid = parent_uuid, leftUuid = left_uuid,
+        content = content, level = level, position = position,
+        createdAt = created_at, updatedAt = updated_at, version = version,
+    )
 }

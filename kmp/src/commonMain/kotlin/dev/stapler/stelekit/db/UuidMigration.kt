@@ -51,7 +51,10 @@ class UuidMigration(
         logger.info("UUID migration complete")
     }
 
+    @OptIn(DirectSqlWrite::class)
     private suspend fun migrate(db: SteleDatabase) {
+        val restricted = RestrictedDatabaseQueries(db.steleDatabaseQueries)
+
         // Load all blocks joined with their page file_path in one query.
         val allBlockRows = db.steleDatabaseQueries
             .selectAllBlocksWithPagePath()
@@ -59,7 +62,7 @@ class UuidMigration(
 
         if (allBlockRows.isEmpty()) {
             logger.info("UUID migration: no blocks found — marking as done")
-            db.steleDatabaseQueries.upsertMetadata("uuid_migration_v1", "done")
+            restricted.upsertMetadata("uuid_migration_v1", "done")
             return
         }
 
@@ -95,7 +98,7 @@ class UuidMigration(
 
         if (uuidRemap.isEmpty()) {
             logger.info("UUID migration: all UUIDs already correct — no changes needed")
-            db.steleDatabaseQueries.upsertMetadata("uuid_migration_v1", "done")
+            restricted.upsertMetadata("uuid_migration_v1", "done")
             return
         }
 
@@ -115,28 +118,28 @@ class UuidMigration(
 
         if (safeRemap.isEmpty()) {
             logger.info("UUID migration: no safe remaps remain after collision check — marking done")
-            db.steleDatabaseQueries.upsertMetadata("uuid_migration_v1", "done")
+            restricted.upsertMetadata("uuid_migration_v1", "done")
             return
         }
 
         writeActor.execute {
             try {
-                db.transaction {
+                restricted.transaction {
                     for ((oldUuid, newUuid) in safeRemap) {
                         // Update the block's own UUID
-                        db.steleDatabaseQueries.updateBlockUuidForMigration(newUuid, oldUuid)
+                        restricted.updateBlockUuidForMigration(newUuid, oldUuid)
                     }
 
                     // Update FK columns pointing to remapped UUIDs.
                     for ((oldUuid, newUuid) in safeRemap) {
-                        db.steleDatabaseQueries.updateParentUuidForMigration(newUuid, oldUuid)
-                        db.steleDatabaseQueries.updateLeftUuidForMigration(newUuid, oldUuid)
-                        db.steleDatabaseQueries.updateBlockReferencesFromForMigration(newUuid, oldUuid)
-                        db.steleDatabaseQueries.updateBlockReferencesToForMigration(newUuid, oldUuid)
-                        db.steleDatabaseQueries.updatePropertiesBlockUuidForMigration(newUuid, oldUuid)
+                        restricted.updateParentUuidForMigration(newUuid, oldUuid)
+                        restricted.updateLeftUuidForMigration(newUuid, oldUuid)
+                        restricted.updateBlockReferencesFromForMigration(newUuid, oldUuid)
+                        restricted.updateBlockReferencesToForMigration(newUuid, oldUuid)
+                        restricted.updatePropertiesBlockUuidForMigration(newUuid, oldUuid)
                     }
                 }
-                db.steleDatabaseQueries.upsertMetadata("uuid_migration_v1", "done")
+                restricted.upsertMetadata("uuid_migration_v1", "done")
                 Result.success(Unit)
             } catch (e: Exception) {
                 logger.error("UUID migration transaction failed", e)

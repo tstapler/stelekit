@@ -82,6 +82,27 @@ object MigrationRunner {
             )
         ),
         Migration(
+            name = "spans_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS spans (
+                    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                    trace_id         TEXT NOT NULL DEFAULT '',
+                    span_id          TEXT NOT NULL DEFAULT '',
+                    parent_span_id   TEXT NOT NULL DEFAULT '',
+                    name             TEXT NOT NULL,
+                    start_epoch_ms   INTEGER NOT NULL,
+                    end_epoch_ms     INTEGER NOT NULL,
+                    duration_ms      INTEGER NOT NULL,
+                    attributes_json  TEXT NOT NULL DEFAULT '{}',
+                    status_code      TEXT NOT NULL DEFAULT 'OK'
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS spans_start_epoch_ms_idx ON spans(start_epoch_ms DESC)",
+                "CREATE INDEX IF NOT EXISTS spans_trace_id_idx ON spans(trace_id)"
+            )
+        ),
+        Migration(
             name = "pages_fts_setup",
             statements = listOf(
                 """

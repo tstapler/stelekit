@@ -33,7 +33,7 @@ class SqlDelightPropertyRepository(
         } catch (e: Exception) {
             emit(Result.failure(e))
         }
-    }.flowOn(PlatformDispatcher.IO)
+    }.flowOn(PlatformDispatcher.DB)
 
     override fun getProperty(blockUuid: String, key: String): Flow<Result<Property?>> = flow {
         try {
@@ -47,9 +47,9 @@ class SqlDelightPropertyRepository(
         } catch (e: Exception) {
             emit(Result.failure(e))
         }
-    }.flowOn(PlatformDispatcher.IO)
+    }.flowOn(PlatformDispatcher.DB)
 
-    override suspend fun saveProperty(property: Property): Result<Unit> = withContext(PlatformDispatcher.IO) {
+    override suspend fun saveProperty(property: Property): Result<Unit> = withContext(PlatformDispatcher.DB) {
         try {
             val block = queries.selectBlockByUuid(property.blockUuid).executeAsOneOrNull()
             if (block != null) {
@@ -64,7 +64,7 @@ class SqlDelightPropertyRepository(
         }
     }
 
-    override suspend fun deleteProperty(blockUuid: String, key: String): Result<Unit> = withContext(PlatformDispatcher.IO) {
+    override suspend fun deleteProperty(blockUuid: String, key: String): Result<Unit> = withContext(PlatformDispatcher.DB) {
         try {
             val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
             if (block != null) {
@@ -88,7 +88,7 @@ class SqlDelightPropertyRepository(
         } catch (e: Exception) {
             emit(Result.failure(e))
         }
-    }.flowOn(PlatformDispatcher.IO)
+    }.flowOn(PlatformDispatcher.DB)
 
     override fun getBlocksWithPropertyValue(key: String, value: String): Flow<Result<List<Block>>> = flow {
         try {
@@ -99,7 +99,7 @@ class SqlDelightPropertyRepository(
         } catch (e: Exception) {
             emit(Result.failure(e))
         }
-    }.flowOn(PlatformDispatcher.IO)
+    }.flowOn(PlatformDispatcher.DB)
 
     private fun parseProperties(blockUuid: String, propertiesString: String?): List<Property> {
         return propertiesString?.split(",")?.mapNotNull {

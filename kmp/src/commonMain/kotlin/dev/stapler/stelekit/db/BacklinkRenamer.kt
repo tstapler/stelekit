@@ -125,7 +125,7 @@ class BacklinkRenamer(
 
             // 4. Move the page file on disk (old path → new path).
             val moved = graphWriter.renamePage(page, newName, graphPath)
-            if (!moved) throw IllegalStateException("Failed to move page file for '${page.name}' — disk and DB may be out of sync")
+            if (!moved) error("Failed to move page file for '${page.name}' — disk and DB may be out of sync")
 
             // 5. Rewrite all affected pages' files using up to 4 concurrent workers.
             coroutineScope {

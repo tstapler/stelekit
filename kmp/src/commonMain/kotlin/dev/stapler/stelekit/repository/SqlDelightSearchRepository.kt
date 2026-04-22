@@ -43,7 +43,7 @@ class SqlDelightSearchRepository(
         } catch (e: Exception) {
             emit(Result.failure(e))
         }
-    }.flowOn(PlatformDispatcher.IO)
+    }.flowOn(PlatformDispatcher.DB)
 
     override fun searchPagesByTitle(query: String, limit: Int): Flow<Result<List<Page>>> = flow {
         try {
@@ -70,7 +70,7 @@ class SqlDelightSearchRepository(
         } catch (e: Exception) {
             emit(Result.failure(e))
         }
-    }.flowOn(PlatformDispatcher.IO)
+    }.flowOn(PlatformDispatcher.DB)
 
     override fun findBlocksReferencing(blockUuid: String): Flow<Result<List<Block>>> = flow {
         try {
@@ -81,7 +81,7 @@ class SqlDelightSearchRepository(
         } catch (e: Exception) {
             emit(Result.failure(e))
         }
-    }.flowOn(PlatformDispatcher.IO)
+    }.flowOn(PlatformDispatcher.DB)
 
     override fun searchWithFilters(searchRequest: SearchRequest): Flow<Result<SearchResult>> = flow {
         try {
@@ -187,7 +187,7 @@ class SqlDelightSearchRepository(
         } catch (e: Exception) {
             emit(Result.failure(e))
         }
-    }.flowOn(PlatformDispatcher.IO)
+    }.flowOn(PlatformDispatcher.DB)
 
     // ── Scope helpers ──────────────────────────────────────────────────────
 
