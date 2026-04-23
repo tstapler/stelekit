@@ -365,9 +365,9 @@ class BlockStateManager(
      */
     fun unobservePage(pageUuid: String) {
         observationJobs.remove(pageUuid)?.cancel()
-        // Clear dirty entries for this page (blocks stay cached so re-navigation is instant)
         val blockUuids = _blocks.value[pageUuid]?.map { it.uuid } ?: emptyList()
         blockUuids.forEach { dirtyBlocks.remove(it) }
+        _blocks.update { it - pageUuid }
     }
 
     /**
