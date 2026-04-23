@@ -1,0 +1,69 @@
+{
+  "timestamp": "2026-04-23 22:50:06 UTC",
+  "gitSha": "ba30932",
+  "branch": "main",
+  "graphConfig": "small",
+  "pageCount": 0,
+  "journalCount": 30,
+  "phase1TtiMs": 9,
+  "phase2Ms": 4,
+  "phase3Ms": 15,
+  "totalMs": 27,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 27,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.04,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 124,
+      "pct": 59.9
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 26,
+      "pct": 12.6
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 6,
+      "pct": 2.9
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 6,
+      "pct": 2.9
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 4,
+      "pct": 1.9
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 4,
+      "pct": 1.9
+    },
+    {
+      "frame": "java.net.URL_[k]",
+      "samples": 3,
+      "pct": 1.4
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 3,
+      "pct": 1.4
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 3,
+      "pct": 1.4
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.MethodWriter_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ]
+}
