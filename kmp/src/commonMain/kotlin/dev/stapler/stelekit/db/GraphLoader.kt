@@ -317,6 +317,7 @@ class GraphLoader(
     }
 
     fun startWatching(graphPath: String) {
+        fileSystem.stopExternalChangeDetection()
         watcherJob?.cancel()
         watcherJob = parallelScope.launch {
             logger.info("Started watching graph for changes: $graphPath")
@@ -325,12 +326,25 @@ class GraphLoader(
                     delay(5000) // Poll every 5 seconds
                     val pagesDir = "$graphPath/pages"
                     val journalsDir = "$graphPath/journals"
-                    
+
                     checkDirectoryForChanges(pagesDir)
                     checkDirectoryForChanges(journalsDir)
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
                     logger.error("Error in graph watcher", e)
+                }
+            }
+        }
+        // Platform-native change detection (e.g. Android ContentObserver) for fast-path
+        // notification without waiting for the 5-second polling interval.
+        fileSystem.startExternalChangeDetection(parallelScope) {
+            parallelScope.launch {
+                try {
+                    checkDirectoryForChanges("$graphPath/pages")
+                    checkDirectoryForChanges("$graphPath/journals")
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    logger.error("Error in external change handler", e)
                 }
             }
         }
