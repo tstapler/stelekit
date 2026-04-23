@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2](https://github.com/tstapler/stelekit/compare/v0.9.1...v0.9.2) (2026-04-23)
+
+
+### Bug Fixes
+
+* **cache:** strengthen LruCache.class workaround for Linux CI ([59ae017](https://github.com/tstapler/stelekit/commit/59ae01737e0761cbc5f88dc913b2e798d771276b))
+
 ## [0.9.1](https://github.com/tstapler/stelekit/compare/v0.9.0...v0.9.1) (2026-04-23)
 
 
