@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.ui.state
 
 import dev.stapler.stelekit.db.GraphLoader
+import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.platform.FileSystem
@@ -11,12 +12,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.time.Clock
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class FakeFileSystem : FileSystem {
     override fun getDefaultGraphPath(): String = "/tmp"
@@ -230,5 +235,223 @@ class BlockStateManagerTest {
 
         // Focus should be on the new block
         assertNotNull(manager.editingBlockUuid.value)
+    }
+
+    // ── Pending disk write tracking ───────────────────────────────────────────
+
+    /**
+     * A minimal tracking filesystem for disk-write tests.
+     * Records paths that were written to disk so tests can assert the disk write
+     * did or did not fire.
+     */
+    private class TrackingFileSystem : FileSystem {
+        val writtenPaths = mutableListOf<String>()
+        override fun getDefaultGraphPath(): String = "/tmp"
+        override fun expandTilde(path: String) = path
+        override fun readFile(path: String): String? = null
+        override fun writeFile(path: String, content: String): Boolean {
+            writtenPaths.add(path)
+            return true
+        }
+        override fun listFiles(path: String): List<String> = emptyList()
+        override fun listDirectories(path: String): List<String> = emptyList()
+        override fun fileExists(path: String): Boolean = true
+        override fun directoryExists(path: String): Boolean = true
+        override fun createDirectory(path: String): Boolean = true
+        override fun deleteFile(path: String): Boolean = true
+        override fun pickDirectory(): String? = null
+        override fun getLastModifiedTime(path: String): Long = 1000L
+    }
+
+    private fun createPageWithFilePath(filePath: String) = Page(
+        uuid = pageUuid,
+        name = "Test Page",
+        filePath = filePath,
+        createdAt = now,
+        updatedAt = now
+    )
+
+    @Test
+    fun hasPendingDiskWrite_returns_false_when_no_save_queued() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val writer = GraphWriter(TrackingFileSystem())
+        writer.startAutoSave(scope)
+        val manager = BlockStateManager(
+            blockRepository = blockRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            graphWriter = writer,
+            pageRepository = pageRepo,
+            graphPathProvider = { "/graph" }
+        )
+
+        assertFalse(manager.hasPendingDiskWrite(pageUuid), "No pending write initially")
+    }
+
+    @Test
+    fun hasPendingDiskWrite_returns_true_after_block_edit_before_debounce_fires() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val writer = GraphWriter(TrackingFileSystem())
+        writer.startAutoSave(scope)
+        val manager = BlockStateManager(
+            blockRepository = blockRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            graphWriter = writer,
+            pageRepository = pageRepo,
+            graphPathProvider = { "/graph" }
+        )
+
+        pageRepo.savePage(createPageWithFilePath("/graph/pages/test-page.md"))
+        blockRepo.saveBlock(createBlock("b1", content = "original"))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        // Edit triggers queueDiskSave which schedules a debounced write
+        manager.updateBlockContent("b1", "edited", 1)
+        // Advance just enough for the outer scope.launch to register the job, not past the delay
+        advanceTimeBy(10)
+
+        assertTrue(manager.hasPendingDiskWrite(pageUuid),
+            "Pending disk write must be visible before debounce delay fires")
+    }
+
+    @Test
+    fun hasPendingDiskWrite_returns_false_after_debounce_fires() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val writer = GraphWriter(TrackingFileSystem())
+        writer.startAutoSave(scope)
+        val manager = BlockStateManager(
+            blockRepository = blockRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            graphWriter = writer,
+            pageRepository = pageRepo,
+            graphPathProvider = { "/graph" }
+        )
+
+        pageRepo.savePage(createPageWithFilePath("/graph/pages/test-page.md"))
+        blockRepo.saveBlock(createBlock("b1", content = "original"))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.updateBlockContent("b1", "edited", 1)
+        advanceTimeBy(10)
+        assertTrue(manager.hasPendingDiskWrite(pageUuid), "Should be pending before delay")
+
+        // Advance past the debounce delay (DebounceManager uses 300ms for BSM)
+        advanceTimeBy(400)
+        advanceUntilIdle()
+
+        assertFalse(manager.hasPendingDiskWrite(pageUuid),
+            "Must not be pending after debounce fires")
+    }
+
+    @Test
+    fun cancelPendingDiskSave_prevents_disk_write_from_firing() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val trackingFs = TrackingFileSystem()
+        val writer = GraphWriter(trackingFs)
+        writer.startAutoSave(scope)
+        val manager = BlockStateManager(
+            blockRepository = blockRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            graphWriter = writer,
+            pageRepository = pageRepo,
+            graphPathProvider = { "/graph" }
+        )
+
+        pageRepo.savePage(createPageWithFilePath("/graph/pages/test-page.md"))
+        blockRepo.saveBlock(createBlock("b1", content = "original"))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.updateBlockContent("b1", "edited", 1)
+        advanceTimeBy(10)
+        assertTrue(manager.hasPendingDiskWrite(pageUuid), "Should be pending before cancel")
+
+        // Cancel the pending write (simulates showing the conflict dialog)
+        manager.cancelPendingDiskSave(pageUuid)
+        assertFalse(manager.hasPendingDiskWrite(pageUuid), "Must not be pending after cancel")
+
+        // Advance well past the original debounce delay — write must not fire
+        advanceTimeBy(1000)
+        advanceUntilIdle()
+
+        assertTrue(trackingFs.writtenPaths.isEmpty(),
+            "Cancelled disk write must not fire even after the debounce delay has passed")
+    }
+
+    @Test
+    fun cancelPendingDiskSave_does_not_affect_other_page_writes() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val trackingFs = TrackingFileSystem()
+        val writer = GraphWriter(trackingFs)
+        writer.startAutoSave(scope)
+
+        val otherPageUuid = "other-page-uuid"
+        val manager = BlockStateManager(
+            blockRepository = blockRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            graphWriter = writer,
+            pageRepository = pageRepo,
+            graphPathProvider = { "/graph" }
+        )
+
+        // Set up two pages
+        pageRepo.savePage(createPageWithFilePath("/graph/pages/page-a.md"))
+        pageRepo.savePage(Page(
+            uuid = otherPageUuid,
+            name = "Other Page",
+            filePath = "/graph/pages/page-b.md",
+            createdAt = now,
+            updatedAt = now
+        ))
+        val blockB = Block(
+            uuid = "block-b",
+            pageUuid = otherPageUuid,
+            content = "other page content",
+            position = 0,
+            createdAt = now,
+            updatedAt = now
+        )
+        blockRepo.saveBlock(createBlock("block-a", content = "page a content"))
+        blockRepo.saveBlock(blockB)
+        manager.observePage(pageUuid)
+        manager.observePage(otherPageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+        manager.blocks.first { it.containsKey(otherPageUuid) }
+
+        // Queue writes for both pages
+        manager.updateBlockContent("block-a", "edited a", 1)
+        manager.updateBlockContent("block-b", "edited b", 1)
+        advanceTimeBy(10)
+
+        assertTrue(manager.hasPendingDiskWrite(pageUuid))
+        assertTrue(manager.hasPendingDiskWrite(otherPageUuid))
+
+        // Cancel only the first page's write
+        manager.cancelPendingDiskSave(pageUuid)
+
+        assertFalse(manager.hasPendingDiskWrite(pageUuid), "Cancelled page must not be pending")
+        assertTrue(manager.hasPendingDiskWrite(otherPageUuid),
+            "Unrelated page's write must still be pending")
     }
 }
