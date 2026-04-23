@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlin.time.Instant
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.math.abs
+import kotlin.math.exp
 import kotlin.Result.Companion.success
 
 /**
@@ -23,7 +26,8 @@ import kotlin.Result.Companion.success
  *
  * Block content is searched via FTS5 with BM25 ranking.
  * Page names are searched via FTS5 (pages_fts) with BM25 ranking.
- * Queries are built by [FtsQueryBuilder] which handles phrase search and multi-token OR.
+ * Queries are built by [FtsQueryBuilder] which handles phrase search and multi-token AND (with OR fallback).
+ * Page-title hits are boosted by [PAGE_BOOST] relative to block-content hits in [ranked] results.
  */
 class SqlDelightSearchRepository(
     private val database: SteleDatabase,
@@ -34,6 +38,15 @@ class SqlDelightSearchRepository(
     private val queries = database.steleDatabaseQueries
     private val spanEmitter = SpanEmitter(ringBuffer)
 
+    companion object {
+        /** Page-title hits are multiplied by this factor before ranking against block hits. */
+        const val PAGE_BOOST = 5.0
+        /** Results on a page directly linked to/from the current page get this multiplier. */
+        const val GRAPH_BOOST = 3.0
+        /** Recency half-life in days: a result edited this many days ago gets half the recency bonus. */
+        const val RECENCY_HALFLIFE_DAYS = 14.0
+    }
+
     override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Result<List<Block>>> = flow {
         try {
             val ftsQuery = FtsQueryBuilder.build(query)
@@ -43,11 +56,22 @@ class SqlDelightSearchRepository(
             val spanId = UuidGenerator.generateV7()
             CurrentSpanContext.set(ActiveSpanContext(traceId, spanId))
             val results = try {
-                queries.searchBlocksByContentFts(
+                val andResults = queries.searchBlocksByContentFts(
                     query = ftsQuery,
                     limit = limit.toLong(),
                     offset = offset.toLong()
-                ).executeAsList().map { it.toBlockModel() }
+                ).executeAsList()
+                if (andResults.isNotEmpty()) {
+                    andResults.map { it.toBlockModel() }
+                } else {
+                    val orQuery = FtsQueryBuilder.buildOr(query)
+                    if (orQuery.isEmpty()) emptyList()
+                    else queries.searchBlocksByContentFts(
+                        query = orQuery,
+                        limit = limit.toLong(),
+                        offset = offset.toLong()
+                    ).executeAsList().map { it.toBlockModel() }
+                }
             } finally {
                 CurrentSpanContext.set(null)
             }
@@ -150,13 +174,25 @@ class SqlDelightSearchRepository(
                 DataType.TITLES in dataTypes
             ) {
                 try {
-                    queries.searchPagesByNameFts(
+                    val andPages = queries.searchPagesByNameFts(
                         query = ftsQuery,
                         limit = searchRequest.limit.toLong()
-                    ).executeAsList().map { row ->
+                    ).executeAsList()
+                    val pageRows = if (andPages.isNotEmpty()) {
+                        andPages
+                    } else {
+                        val orQuery = FtsQueryBuilder.buildOr(rawQuery)
+                        if (orQuery.isEmpty()) emptyList()
+                        else queries.searchPagesByNameFts(
+                            query = orQuery,
+                            limit = searchRequest.limit.toLong()
+                        ).executeAsList()
+                    }
+                    pageRows.map { row ->
                         SearchedPage(
                             page = row.toPageModel(),
-                            snippet = row.highlight?.takeIf { it.isNotBlank() }
+                            snippet = row.highlight?.takeIf { it.isNotBlank() },
+                            bm25Score = row.bm25_score
                         )
                     }.applyPageScope(scope, searchRequest.pageUuid)
                 } catch (_: Exception) {
@@ -187,20 +223,34 @@ class SqlDelightSearchRepository(
                                 ).executeAsList().map { row ->
                                     SearchedBlock(
                                         block = row.toBlockModel(),
-                                        snippet = row.highlight?.takeIf { it.isNotBlank() }
+                                        snippet = row.highlight?.takeIf { it.isNotBlank() },
+                                        bm25Score = row.bm25_score
                                     )
                                 }
                             } else emptyList()
                         }
                         else -> {
-                            queries.searchBlocksByContentFts(
+                            val andBlocks = queries.searchBlocksByContentFts(
                                 query = ftsQuery,
                                 limit = searchRequest.limit.toLong(),
                                 offset = searchRequest.offset.toLong()
-                            ).executeAsList().map { row ->
+                            ).executeAsList()
+                            val blockRows = if (andBlocks.isNotEmpty()) {
+                                andBlocks
+                            } else {
+                                val orQuery = FtsQueryBuilder.buildOr(rawQuery)
+                                if (orQuery.isEmpty()) emptyList()
+                                else queries.searchBlocksByContentFts(
+                                    query = orQuery,
+                                    limit = searchRequest.limit.toLong(),
+                                    offset = searchRequest.offset.toLong()
+                                ).executeAsList()
+                            }
+                            blockRows.map { row ->
                                 SearchedBlock(
                                     block = row.toBlockModel(),
-                                    snippet = row.highlight?.takeIf { it.isNotBlank() }
+                                    snippet = row.highlight?.takeIf { it.isNotBlank() },
+                                    bm25Score = row.bm25_score
                                 )
                             }.applyBlockScope(scope)
                         }
@@ -210,18 +260,60 @@ class SqlDelightSearchRepository(
                 }
             } else emptyList()
 
+            val neighbourPageUuids = searchRequest.pageUuid
+                ?.let { runCatching { queries.selectNeighbourPageUuids(it).executeAsList().toSet() }.getOrDefault(emptySet()) }
+                ?: emptySet()
+            val nowMs = HistogramWriter.epochMs()
+            val ranked = buildRankedList(searchedPages, searchedBlocks, neighbourPageUuids, nowMs)
             emit(success(SearchResult(
                 blocks = searchedBlocks.map { it.block },
                 pages = searchedPages.map { it.page },
                 searchedBlocks = searchedBlocks,
                 searchedPages = searchedPages,
-                totalCount = searchedBlocks.size + searchedPages.size,
+                ranked = ranked,
+                totalCount = ranked.size,
                 hasMore = false
             )))
         } catch (e: Exception) {
             emit(Result.failure(e))
         }
     }.flowOn(PlatformDispatcher.DB)
+
+    // ── Ranking helpers ────────────────────────────────────────────────────
+
+    private fun buildRankedList(
+        pages: List<SearchedPage>,
+        blocks: List<SearchedBlock>,
+        neighbourPageUuids: Set<String>,
+        nowMs: Long,
+    ): List<RankedSearchHit> {
+        val pageHits = pages.map { sp ->
+            val bm25 = abs(sp.bm25Score)
+            val score = bm25 * PAGE_BOOST *
+                recencyMultiplier(sp.page.updatedAt.toEpochMilliseconds(), nowMs) *
+                graphMultiplier(sp.page.uuid, neighbourPageUuids)
+            RankedSearchHit.PageHit(sp.page, sp.snippet, score)
+        }
+        val blockHits = blocks.map { sb ->
+            val bm25 = abs(sb.bm25Score)
+            val score = bm25 *
+                recencyMultiplier(sb.block.updatedAt.toEpochMilliseconds(), nowMs) *
+                graphMultiplier(sb.block.pageUuid, neighbourPageUuids)
+            RankedSearchHit.BlockHit(sb.block, sb.snippet, score)
+        }
+        return (pageHits + blockHits).sortedByDescending { it.score }
+    }
+
+    /** Returns 1.0 + exp(-daysSinceEdit / halfLife) — between ~2.0 (today) and ~1.0 (old). */
+    private fun recencyMultiplier(updatedAtMs: Long, nowMs: Long): Double {
+        if (updatedAtMs <= 0) return 1.0
+        val daysSince = (nowMs - updatedAtMs).coerceAtLeast(0L) / 86_400_000.0
+        return 1.0 + exp(-daysSince / RECENCY_HALFLIFE_DAYS)
+    }
+
+    /** Returns GRAPH_BOOST if the page is a 1-hop neighbour of the current page, else 1.0. */
+    private fun graphMultiplier(pageUuid: String, neighbourPageUuids: Set<String>): Double =
+        if (pageUuid in neighbourPageUuids) GRAPH_BOOST else 1.0
 
     // ── Scope helpers ──────────────────────────────────────────────────────
 
