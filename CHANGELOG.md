@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/tstapler/stelekit/compare/v0.9.0...v0.9.1) (2026-04-23)
+
+
+### Bug Fixes
+
+* **cache:** work around Kotlin 2.3.10 K2 compiler bug in LruCache ([ba30932](https://github.com/tstapler/stelekit/commit/ba309320c4110970a5795b3325f0763324ed408d))
+
 ## [0.9.0](https://github.com/tstapler/stelekit/compare/v0.8.1...v0.9.0) (2026-04-23)
 
 
