@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0](https://github.com/tstapler/stelekit/compare/v0.8.1...v0.9.0) (2026-04-23)
+
+
+### Features
+
+* **observability:** comprehensive instrumentation, SLO monitoring, and perf export ([a9770de](https://github.com/tstapler/stelekit/commit/a9770de16026a95bc7d7ef28b7dc839df7f8070a))
+* **search:** AND semantics, field boosting, recency + graph distance ranking ([#22](https://github.com/tstapler/stelekit/issues/22)) ([8d23437](https://github.com/tstapler/stelekit/commit/8d2343751450d7c37098c8375a628a5564aa56c0))
+
+
+### Bug Fixes
+
+* **sync:** prevent data-loss races on mobile reload and external conflict handling ([#21](https://github.com/tstapler/stelekit/issues/21)) ([105928d](https://github.com/tstapler/stelekit/commit/105928d782b9d775ddb4a142206b41474f92c5bb))
+
 ## [0.8.1](https://github.com/tstapler/stelekit/compare/v0.8.0...v0.8.1) (2026-04-22)
 
 
