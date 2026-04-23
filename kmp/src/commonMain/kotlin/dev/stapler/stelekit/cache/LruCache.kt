@@ -58,6 +58,8 @@ class LruCache<K : Any, V>(
     // LruCache.class (Kotlin 2.3.10 bug — all-suspend public API suppresses outer class file).
     val capacity: Long get() = maxWeight
 
+    override fun toString(): String = "LruCache(maxWeight=$maxWeight)"
+
     suspend fun get(key: K): V? {
         mutex.lock()
         try {
