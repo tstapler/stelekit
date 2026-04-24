@@ -215,6 +215,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-home-cache-cleanup: true
+          gradle-home-cache-strict-match: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Package desktop distributable
