@@ -16,7 +16,7 @@ object SteleKitContext {
     }
 }
 
-actual class PlatformSettings actual constructor() {
+actual class PlatformSettings actual constructor() : Settings {
     private val prefs: SharedPreferences by lazy {
         try {
             val masterKey = MasterKey.Builder(SteleKitContext.context)
