@@ -402,20 +402,17 @@ class GraphLoader(
         }
     }
 
-    @OptIn(DirectRepositoryWrite::class)
     /**
-     * Flush chunk writes using typed actor calls rather than a single Execute lambda.
+     * Flush chunk writes with per-page atomicity.
      *
-     * The old Execute-wrapped approach held the actor for the entire chunk duration
-     * (savePages + deleteBlocks + saveBlocks for N pages in one atomic lambda). On Android
-     * with slow SQLite this could exceed 5 seconds, blocking any HIGH-priority write
-     * (user navigation parse, editor save) for the full duration.
-     *
-     * Using typed calls gives the actor an opportunity to service HIGH-priority requests
-     * between each step: after savePages, after deleteBlocksForPages, and between each
-     * page's saveBlocks (processSaveBlocks already checks highPriority between consecutive
-     * LOW SaveBlocks during coalescing).
+     * savePages runs as one typed LOW batch (HIGH can preempt after it completes).
+     * For each page, deleteBlocksForPages + saveBlocks run inside a single Execute(LOW)
+     * so a HIGH write cannot interleave between removing a page's old blocks and inserting
+     * its replacements — which would transiently leave the page with no blocks.
+     * HIGH requests can still preempt between pages (after each Execute completes),
+     * giving sub-page granularity rather than the old sub-chunk (10-page) granularity.
      */
+    @OptIn(DirectRepositoryWrite::class)
     private suspend fun flushChunkWritesPreemptible(
         pagesToSave: List<Page>,
         pageUuidsToDelete: Set<String>,
@@ -436,16 +433,17 @@ class GraphLoader(
             }
         }
 
-        val uuidsToDelete = pageUuidsToDelete.filter { it !in failedPageUuids }
-        if (uuidsToDelete.isNotEmpty()) {
-            writeActor.deleteBlocksForPages(uuidsToDelete, DatabaseWriteActor.Priority.LOW)
-        }
-
         for ((pageUuid, blocks) in blocksToSaveByPage) {
             if (pageUuid in failedPageUuids) continue
-            writeActor.saveBlocks(blocks, DatabaseWriteActor.Priority.LOW).onFailure { e ->
-                logger.error("saveBlocks failed for pageUuid=$pageUuid (${blocks.size} blocks)", e)
-                _writeErrors.tryEmit(WriteError(pageUuid, blocks.size, e))
+            val shouldDelete = pageUuid in pageUuidsToDelete
+            writeActor.execute(DatabaseWriteActor.Priority.LOW) {
+                if (shouldDelete) {
+                    blockRepository.deleteBlocksForPages(listOf(pageUuid))
+                }
+                blockRepository.saveBlocks(blocks).onFailure { e ->
+                    logger.error("saveBlocks failed for pageUuid=$pageUuid (${blocks.size} blocks)", e)
+                    _writeErrors.tryEmit(WriteError(pageUuid, blocks.size, e))
+                }
             }
         }
     }

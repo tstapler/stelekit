@@ -56,7 +56,7 @@ class PerfExporter(
         )
         val content = json.encodeToString(report)
         val timestamp = formatTimestamp(nowMs)
-        val dir = directory ?: fileSystem.getDownloadsPath()
+        val dir = directory?.takeIf { it.isNotBlank() } ?: fileSystem.getDownloadsPath()
         val path = "$dir/stelekit-perf-$timestamp.json"
         check(fileSystem.writeFile(path, content)) { "Failed to write perf report to $path" }
         path
