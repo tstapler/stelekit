@@ -24,6 +24,7 @@ import dev.stapler.stelekit.util.FileUtils
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlin.time.Clock
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -317,22 +318,44 @@ class GraphLoader(
     }
 
     fun startWatching(graphPath: String) {
+        fileSystem.stopExternalChangeDetection()
         watcherJob?.cancel()
+        val externalChangeTrigger = Channel<Unit>(Channel.CONFLATED)
         watcherJob = parallelScope.launch {
-            logger.info("Started watching graph for changes: $graphPath")
-            while (isActive) {
-                try {
-                    delay(5000) // Poll every 5 seconds
-                    val pagesDir = "$graphPath/pages"
-                    val journalsDir = "$graphPath/journals"
-                    
-                    checkDirectoryForChanges(pagesDir)
-                    checkDirectoryForChanges(journalsDir)
-                } catch (e: Exception) {
-                    if (e is CancellationException) throw e
-                    logger.error("Error in graph watcher", e)
+            // 5-second polling fallback
+            launch {
+                logger.info("Started watching graph for changes: $graphPath")
+                while (isActive) {
+                    try {
+                        delay(5000) // Poll every 5 seconds
+                        val pagesDir = "$graphPath/pages"
+                        val journalsDir = "$graphPath/journals"
+
+                        checkDirectoryForChanges(pagesDir)
+                        checkDirectoryForChanges(journalsDir)
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        logger.error("Error in graph watcher", e)
+                    }
                 }
             }
+            // Platform-native fast-path (e.g. Android ContentObserver).
+            // Channel.CONFLATED coalesces rapid callback storms into at most one
+            // pending scan so we never queue up redundant directory scans.
+            launch {
+                for (ignored in externalChangeTrigger) {
+                    try {
+                        checkDirectoryForChanges("$graphPath/pages")
+                        checkDirectoryForChanges("$graphPath/journals")
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        logger.error("Error in external change handler", e)
+                    }
+                }
+            }
+        }
+        fileSystem.startExternalChangeDetection(parallelScope) {
+            externalChangeTrigger.trySend(Unit)
         }
     }
 

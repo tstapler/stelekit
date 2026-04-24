@@ -123,6 +123,100 @@ class DebounceManagerTest {
         assertTrue(results.contains("b"))
     }
 
+    // ── cancel(key) ───────────────────────────────────────────────────────────
+
+    @Test
+    fun cancel_prevents_execution_for_specific_key() = runTest {
+        val manager = DebounceManager(this, delayMs = 100L)
+        var executed = 0
+
+        manager.debounce("key") { executed++ }
+        advanceTimeBy(10)
+
+        manager.cancel("key")
+        advanceTimeBy(500)
+        advanceUntilIdle()
+
+        assertEquals(0, executed, "Cancelled key must not execute")
+    }
+
+    @Test
+    fun cancel_specific_key_does_not_affect_other_keys() = runTest {
+        val manager = DebounceManager(this, delayMs = 100L)
+        var a = 0
+        var b = 0
+
+        manager.debounce("a") { a++ }
+        manager.debounce("b") { b++ }
+        advanceTimeBy(10)
+
+        manager.cancel("a")
+        advanceTimeBy(200)
+        advanceUntilIdle()
+
+        assertEquals(0, a, "Cancelled key 'a' must not execute")
+        assertEquals(1, b, "Unrelated key 'b' must still execute")
+    }
+
+    @Test
+    fun cancel_is_safe_when_key_does_not_exist() = runTest {
+        val manager = DebounceManager(this, delayMs = 100L)
+        // Must not throw
+        manager.cancel("nonexistent")
+    }
+
+    // ── hasPending(key) ───────────────────────────────────────────────────────
+
+    @Test
+    fun hasPending_returns_false_when_nothing_queued() = runTest {
+        val manager = DebounceManager(this, delayMs = 100L)
+        assertEquals(false, manager.hasPending("key"))
+    }
+
+    @Test
+    fun hasPending_returns_true_after_debounce_called_before_delay_fires() = runTest {
+        val manager = DebounceManager(this, delayMs = 100L)
+
+        manager.debounce("key") { /* no-op */ }
+        // Advance just enough for the outer scope.launch to register the job, but not past the delay
+        advanceTimeBy(10)
+
+        assertEquals(true, manager.hasPending("key"), "Pending job must be visible before delay fires")
+    }
+
+    @Test
+    fun hasPending_returns_false_after_delay_fires() = runTest {
+        val manager = DebounceManager(this, delayMs = 100L)
+
+        manager.debounce("key") { /* no-op */ }
+        advanceTimeBy(200)
+        advanceUntilIdle()
+
+        assertEquals(false, manager.hasPending("key"), "No longer pending after action executes")
+    }
+
+    @Test
+    fun hasPending_returns_false_after_cancel() = runTest {
+        val manager = DebounceManager(this, delayMs = 100L)
+
+        manager.debounce("key") { /* no-op */ }
+        advanceTimeBy(10)
+        manager.cancel("key")
+
+        assertEquals(false, manager.hasPending("key"), "Must not be pending after cancel")
+    }
+
+    @Test
+    fun hasPending_is_per_key_independent() = runTest {
+        val manager = DebounceManager(this, delayMs = 100L)
+
+        manager.debounce("a") { /* no-op */ }
+        advanceTimeBy(10)
+
+        assertEquals(true, manager.hasPending("a"))
+        assertEquals(false, manager.hasPending("b"), "Unqueued key must not show as pending")
+    }
+
     @Test
     fun flushAll_clears_state_so_nothing_fires_later() = runTest {
         val manager = DebounceManager(this, delayMs = 100L)

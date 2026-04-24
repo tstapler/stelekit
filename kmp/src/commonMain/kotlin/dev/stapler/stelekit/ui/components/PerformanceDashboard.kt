@@ -36,7 +36,7 @@ import dev.stapler.stelekit.performance.RingBufferSpanExporter
 import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.performance.SpanRepository
 import dev.stapler.stelekit.performance.TraceEvent
-import kotlinx.coroutines.Dispatchers
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -82,7 +82,7 @@ private fun HistogramsTab(histogramWriter: HistogramWriter?) {
     val summaries by produceState<Map<String, PercentileSummary>>(emptyMap(), histogramWriter) {
         while (true) {
             if (histogramWriter != null) {
-                val result = withContext(Dispatchers.IO) {
+                val result = withContext(PlatformDispatcher.IO) {
                     operations
                         .mapNotNull { op -> histogramWriter.queryPercentiles(op)?.let { op to it } }
                         .toMap()

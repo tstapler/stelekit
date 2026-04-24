@@ -65,8 +65,10 @@ class PerfExporter(
     private fun formatTimestamp(epochMs: Long): String {
         val local = Instant.fromEpochMilliseconds(epochMs)
             .toLocalDateTime(TimeZone.currentSystemDefault())
-        return "%04d-%02d-%02d-%02d%02d".format(
-            local.year, local.monthNumber, local.dayOfMonth, local.hour, local.minute
-        )
+        return "${local.year.toString().padStart(4, '0')}-" +
+            "${local.monthNumber.toString().padStart(2, '0')}-" +
+            "${local.dayOfMonth.toString().padStart(2, '0')}-" +
+            "${local.hour.toString().padStart(2, '0')}" +
+            local.minute.toString().padStart(2, '0')
     }
 }

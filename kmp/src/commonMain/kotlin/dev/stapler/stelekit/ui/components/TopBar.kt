@@ -19,7 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
-import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.platform.isDynamicColorSupported
 import dev.stapler.stelekit.ui.AppState
 import dev.stapler.stelekit.ui.LocalWindowSizeClass
@@ -33,7 +33,7 @@ import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 @Composable
 fun TopBar(
     appState: AppState,
-    platformSettings: PlatformSettings,
+    platformSettings: Settings,
     onSettingsClick: () -> Unit,
     onNewPageClick: () -> Unit,
     onNavigate: (Screen) -> Unit,
