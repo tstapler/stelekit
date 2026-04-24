@@ -1,0 +1,69 @@
+{
+  "timestamp": "2026-04-24 16:06:13 UTC",
+  "gitSha": "ea70c86",
+  "branch": "main",
+  "graphConfig": "small",
+  "pageCount": 0,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 4,
+  "phase3Ms": 14,
+  "totalMs": 27,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 29,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 116,
+      "pct": 57.1
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 18,
+      "pct": 8.9
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 9,
+      "pct": 4.4
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 7,
+      "pct": 3.4
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 6,
+      "pct": 3.0
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "long[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.io.File_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.lang.Object_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ]
+}
