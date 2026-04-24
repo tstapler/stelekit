@@ -5,7 +5,7 @@ import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.platform.PlatformFileSystem
-import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.ui.fixtures.InMemorySettings
 import dev.stapler.stelekit.repository.InMemorySearchRepository
 import dev.stapler.stelekit.ui.fixtures.FakeBlockRepository
 import dev.stapler.stelekit.ui.fixtures.FakeFileSystem
@@ -83,7 +83,7 @@ class DiskConflictResolutionTest {
             searchRepo,
             graphLoader,
             graphWriter,
-            PlatformSettings(),
+            InMemorySettings(),
             scope,
             blockStateManager = bsm
         ).also { viewModelRef = it }

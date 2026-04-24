@@ -4,7 +4,8 @@ import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.platform.PlatformFileSystem
-import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.ui.fixtures.InMemorySettings
 import dev.stapler.stelekit.repository.InMemorySearchRepository
 import dev.stapler.stelekit.ui.fixtures.FakeBlockRepository
 import dev.stapler.stelekit.ui.fixtures.FakeFileSystem
@@ -48,7 +49,7 @@ class RecentPagesTest {
      */
     private fun makeViewModel(
         pageRepo: FakePageRepository,
-        settings: PlatformSettings,
+        settings: Settings,
         graphPath: String
     ): StelekitViewModel {
         settings.putString("lastGraphPath", graphPath)
@@ -90,7 +91,7 @@ class RecentPagesTest {
         val key1 = "recent_pages_/tmp/rp-graph1"
         val key2 = "recent_pages_/tmp/rp-graph2"
 
-        val settings = PlatformSettings()
+        val settings = InMemorySettings()
         settings.putString(key1, "")
         settings.putString(key2, "")
 
@@ -100,7 +101,7 @@ class RecentPagesTest {
         vm1.navigateTo(Screen.PageView(pageA))
 
         // VM2 for graph2 — visit page B (separate ViewModel, different graph path)
-        val settings2 = PlatformSettings()
+        val settings2 = InMemorySettings()
         settings2.putString(key2, "")
         val pageRepo2 = FakePageRepository(listOf(pageB))
         val vm2 = makeViewModel(pageRepo2, settings2, "/tmp/rp-graph2")
@@ -123,7 +124,7 @@ class RecentPagesTest {
     @Test
     fun recentPages_display_is_capped_at_10() = runBlocking {
         val pages = (1..15).map { i -> makePage("uuid-$i", "Page $i") }
-        val settings = PlatformSettings()
+        val settings = InMemorySettings()
         settings.putString("recent_pages_/tmp/rp-cap", "")
 
         val pageRepo = FakePageRepository(pages)
@@ -143,7 +144,7 @@ class RecentPagesTest {
         val pageA = makePage("uuid-a", "Page A")
         val pageB = makePage("uuid-b", "Page B")
         val pageC = makePage("uuid-c", "Page C")
-        val settings = PlatformSettings()
+        val settings = InMemorySettings()
         settings.putString("recent_pages_/tmp/rp-dedup", "")
 
         val pageRepo = FakePageRepository(listOf(pageA, pageB, pageC))
@@ -168,7 +169,7 @@ class RecentPagesTest {
         val staleUuid = "uuid-stale"
         val key = "recent_pages_/tmp/rp-stale"
 
-        val settings = PlatformSettings()
+        val settings = InMemorySettings()
         // Pre-populate settings with a stale UUID followed by a valid UUID
         settings.putString(key, "$staleUuid,${validPage.uuid}")
 

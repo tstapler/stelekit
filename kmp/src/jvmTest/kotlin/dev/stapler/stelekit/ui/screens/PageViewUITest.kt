@@ -7,7 +7,7 @@ import androidx.compose.ui.test.onNodeWithText
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.platform.PlatformFileSystem
-import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.ui.fixtures.InMemorySettings
 import dev.stapler.stelekit.repository.InMemorySearchRepository
 import dev.stapler.stelekit.ui.StelekitViewModel
 import dev.stapler.stelekit.ui.fixtures.FakeFileSystem
@@ -57,7 +57,7 @@ class PageViewUITest {
             searchRepository = searchRepo,
             graphLoader = graphLoader,
             graphWriter = graphWriter,
-            platformSettings = PlatformSettings(),
+            platformSettings = InMemorySettings(),
             scope = scope,
             blockStateManager = bsm
         ).also { viewModelRef = it }
@@ -113,7 +113,7 @@ class PageViewUITest {
             searchRepository = searchRepo,
             graphLoader = graphLoader,
             graphWriter = graphWriter,
-            platformSettings = PlatformSettings(),
+            platformSettings = InMemorySettings(),
             scope = scope,
             blockStateManager = bsm2
         ).also { viewModelRef2 = it }

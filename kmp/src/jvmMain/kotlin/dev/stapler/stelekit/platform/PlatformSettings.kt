@@ -5,7 +5,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.Properties
 
-actual class PlatformSettings actual constructor() {
+actual class PlatformSettings actual constructor() : Settings {
     private val props = Properties()
     private val prefsFile: File
 
@@ -25,21 +25,21 @@ actual class PlatformSettings actual constructor() {
         }
     }
 
-    actual fun getBoolean(key: String, defaultValue: Boolean): Boolean {
+    actual override fun getBoolean(key: String, defaultValue: Boolean): Boolean {
         val value = props.getProperty(key)
         return value?.toBoolean() ?: defaultValue
     }
 
-    actual fun putBoolean(key: String, value: Boolean) {
+    actual override fun putBoolean(key: String, value: Boolean) {
         props.setProperty(key, value.toString())
         save()
     }
 
-    actual fun getString(key: String, defaultValue: String): String {
+    actual override fun getString(key: String, defaultValue: String): String {
         return props.getProperty(key, defaultValue)
     }
 
-    actual fun putString(key: String, value: String) {
+    actual override fun putString(key: String, value: String) {
         props.setProperty(key, value)
         save()
     }

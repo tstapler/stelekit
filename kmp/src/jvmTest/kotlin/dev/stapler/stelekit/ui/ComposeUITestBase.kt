@@ -4,7 +4,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.platform.PlatformFileSystem
-import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.ui.fixtures.InMemorySettings
 import dev.stapler.stelekit.repository.InMemorySearchRepository
 import dev.stapler.stelekit.ui.fixtures.FakeFileSystem
 import dev.stapler.stelekit.ui.fixtures.PopulatedFakeBlockRepository
@@ -44,7 +44,7 @@ open class ComposeUITestBase {
     val graphLoader = GraphLoader(fakeFileSystem, pageRepo, blockRepo)
     val graphWriter = GraphWriter(PlatformFileSystem())
     val searchRepo = InMemorySearchRepository()
-    val platformSettings = PlatformSettings()
+    val platformSettings = InMemorySettings()
 
     val blockStateManager = BlockStateManager(
         blockRepository = blockRepo,

@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.voice
 
-import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.platform.Settings
 
-class VoiceSettings(private val platformSettings: PlatformSettings) {
+class VoiceSettings(private val platformSettings: Settings) {
 
     fun getWhisperApiKey(): String? =
         platformSettings.getString(KEY_WHISPER, "").takeIf { it.isNotBlank() }
