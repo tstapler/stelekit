@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.3](https://github.com/tstapler/stelekit/compare/v0.9.2...v0.9.3) (2026-04-24)
+
+
+### Bug Fixes
+
+* **cache:** replace coroutine Mutex with synchronized in LruCache ([17345e4](https://github.com/tstapler/stelekit/commit/17345e46528fb5e89243f5bee7c6b57e4655b9dc))
+
 ## [0.9.2](https://github.com/tstapler/stelekit/compare/v0.9.1...v0.9.2) (2026-04-23)
 
 
