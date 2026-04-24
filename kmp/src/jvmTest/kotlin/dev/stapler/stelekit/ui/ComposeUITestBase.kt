@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.ui
 
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
@@ -67,5 +68,19 @@ open class ComposeUITestBase {
             scope = scope,
             blockStateManager = blockStateManager,
         )
+    }
+}
+
+/**
+ * Waits until [viewModel]'s isLoading is false and isFullyLoaded is true,
+ * or until [timeoutMillis] elapses. Use after triggering a graph load in an
+ * integration-style test to avoid asserting on intermediate loading state.
+ */
+fun ComposeTestRule.waitForViewModelReady(
+    viewModel: StelekitViewModel,
+    timeoutMillis: Long = 5_000,
+) {
+    waitUntil(timeoutMillis = timeoutMillis) {
+        !viewModel.uiState.value.isLoading && viewModel.uiState.value.isFullyLoaded
     }
 }
