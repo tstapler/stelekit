@@ -629,7 +629,7 @@ android {
     namespace = "dev.stapler.stelekit"
 
     defaultConfig {
-        minSdk = 24
+        minSdk = 26
     }
 
     compileOptions {
