@@ -5,9 +5,9 @@
 package dev.stapler.stelekit.cache
 
 /**
- * SAM interface for [LruCache] weighers. Callers may pass a plain lambda via SAM conversion.
+ * SAM interface for [SteleLruCache] weighers. Callers may pass a plain lambda via SAM conversion.
  */
-fun interface LruWeigher<K, V> {
+fun interface SteleLruWeigher<K, V> {
     fun weigh(key: K, value: V): Long
 }
 
@@ -23,23 +23,24 @@ fun interface LruWeigher<K, V> {
  * Pass a custom weigher to bound the cache by estimated byte footprint instead:
  *
  * ```kotlin
- * val blockCache = LruCache<String, Block>(
+ * val blockCache = SteleLruCache<String, Block>(
  *     maxWeight = 4_000_000L,  // ~4 MB
  *     weigher = { _, block -> 300L + block.content.length * 2 }
  * )
  * ```
  *
- * Thread-safety is achieved via `synchronized(this)` rather than a coroutine [Mutex].
- * All operations are O(1) and hold the lock for microseconds, so the brief thread-blocking
- * is acceptable — and avoids a Kotlin 2.3.10 K2 compiler bug where a class whose ALL
- * public members are `suspend fun` has its outer `.class` file silently dropped on Linux.
+ * Thread-safety is achieved via `synchronized(this)`.
+ * All operations are O(1) and hold the lock for microseconds.
+ *
+ * Named [SteleLruCache] (not LruCache) to avoid a Kotlin 2.3.10 K2 compiler bug where
+ * the class named exactly "LruCache" has its `.class` file silently dropped in packaged JARs.
  * See: https://youtrack.jetbrains.com/issue/KT-XXXXX
  */
-class LruCache<K : Any, V>(
+class SteleLruCache<K : Any, V>(
     val maxWeight: Long,
-    private val weigher: LruWeigher<K, V>,
+    private val weigher: SteleLruWeigher<K, V>,
 ) {
-    constructor(maxWeight: Long) : this(maxWeight, LruWeigher { _, _ -> 1L })
+    constructor(maxWeight: Long) : this(maxWeight, SteleLruWeigher { _, _ -> 1L })
 
     private val map = LinkedHashMap<K, V>()
     private var totalWeight = 0L
@@ -73,7 +74,7 @@ class LruCache<K : Any, V>(
 
     fun weight(): Long = synchronized(this) { totalWeight }
 
-    override fun toString(): String = "LruCache(maxWeight=$maxWeight)"
+    override fun toString(): String = "SteleLruCache(maxWeight=$maxWeight)"
 
     private fun evict() {
         val iter = map.entries.iterator()
@@ -84,3 +85,7 @@ class LruCache<K : Any, V>(
         }
     }
 }
+
+// Backwards-compatible type aliases so existing call sites need no changes.
+typealias LruCache<K, V> = SteleLruCache<K, V>
+typealias LruWeigher<K, V> = SteleLruWeigher<K, V>
