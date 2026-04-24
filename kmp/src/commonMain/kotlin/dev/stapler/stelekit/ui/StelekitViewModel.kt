@@ -15,7 +15,7 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.platform.FileSystem
-import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.JournalService
 import dev.stapler.stelekit.repository.SearchRepository
@@ -63,7 +63,7 @@ class StelekitViewModel(
     private val searchRepository: SearchRepository,
     private val graphLoader: GraphLoader,
     private val graphWriter: GraphWriter,
-    private val platformSettings: PlatformSettings,
+    private val platformSettings: Settings,
     // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
     // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
@@ -369,6 +369,14 @@ class StelekitViewModel(
                         )
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Normal structured-concurrency cancellation (e.g. scope shut down when
+                // GraphContent leaves composition). Reset loading state so the UI doesn't
+                // spin forever if this ViewModel is somehow still observed, then rethrow
+                // so the coroutine machinery can clean up correctly.
+                logger.info("loadGraph cancelled for path '$path' — scope is shutting down")
+                _uiState.update { it.copy(isLoading = false) }
+                throw e
             } catch (e: Exception) {
                 e.printStackTrace()
                 logger.error("Error loading graph", e)
