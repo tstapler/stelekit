@@ -36,15 +36,49 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+  # ── KMP JVM tests ──────────────────────────────────────────────────────────
+  # Runs on every push to main (not gated on a release). Executes the fast
+  # JVM test subset (excludes Roborazzi screenshot tests) with a virtual X
+  # display so Compose UI tests can render headlessly. A failure here blocks
+  # the resolve-version job and therefore all downstream build jobs.
+  test-kmp:
+    name: Test (KMP JVM)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-cleanup: true
+          gradle-home-cache-strict-match: true
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Install Xvfb (virtual display for Compose UI tests)
+        run: sudo apt-get install -y xvfb
+
+      - name: Run JVM tests (fast subset, no screenshots)
+        run: |
+          Xvfb :99 -screen 0 1280x720x24 &
+          sleep 1
+          DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 \
+            ./gradlew :kmp:jvmTestFast --no-daemon --build-cache
+
   # ── Resolve version ────────────────────────────────────────────────────────
   # Normalises the version string from either Release Please or workflow_dispatch
   # so all build jobs can reference a single output.
   resolve-version:
     name: Resolve version
     runs-on: ubuntu-latest
-    needs: release-please
+    needs: [release-please, test-kmp]
     if: |
-      always() && (
+      always() &&
+      (needs.test-kmp.result == 'success' || needs.test-kmp.result == 'skipped') && (
         (needs.release-please.result == 'success' && needs.release-please.outputs.release_created == 'true') ||
         (needs.release-please.result == 'skipped' && github.event_name == 'workflow_dispatch')
       )
