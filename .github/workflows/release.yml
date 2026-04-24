@@ -189,6 +189,34 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN=1 ARCH="$ARCH" /tmp/appimagetool "$APPDIR" \
             "kmp/build/compose/binaries/main/SteleKit-${APP_VERSION}-linux.AppImage"
 
+      - name: Smoke-test AppImage startup
+        run: |
+          sudo apt-get install -y xvfb
+
+          APPIMAGE=$(find kmp/build/compose/binaries/main -name "*.AppImage" | head -1)
+          chmod +x "$APPIMAGE"
+
+          Xvfb :99 -screen 0 1280x720x24 &
+          XVFB_PID=$!
+          sleep 2
+
+          APPIMAGE_EXTRACT_AND_RUN=1 DISPLAY=:99 "$APPIMAGE" >/tmp/stelekit-smoke.log 2>&1 &
+          APP_PID=$!
+
+          sleep 20
+
+          if kill -0 $APP_PID 2>/dev/null; then
+            echo "Smoke test passed — app still running after 20s"
+            kill $APP_PID 2>/dev/null || true
+          else
+            wait $APP_PID; EXIT_CODE=$?
+            echo "Smoke test FAILED — app exited with code $EXIT_CODE"
+            cat /tmp/stelekit-smoke.log || true
+            kill $XVFB_PID 2>/dev/null || true
+            exit 1
+          fi
+          kill $XVFB_PID 2>/dev/null || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-linux
@@ -231,6 +259,29 @@ jobs:
           DIST=$(find kmp/build/compose/binaries/main -type f -name "*.dmg" | head -1)
           mv "$DIST" "kmp/build/compose/binaries/main/SteleKit-${{ needs.resolve-version.outputs.version }}-macos.dmg"
 
+      - name: Smoke-test DMG startup
+        run: |
+          DMG=$(find kmp/build/compose/binaries/main -name "*-macos.dmg" | head -1)
+          hdiutil attach "$DMG" -mountpoint /tmp/stelekit-smoke -nobrowse -quiet
+          sudo xattr -rd com.apple.quarantine /tmp/stelekit-smoke/stelekit.app 2>/dev/null || true
+
+          /tmp/stelekit-smoke/stelekit.app/Contents/MacOS/stelekit >/tmp/stelekit-smoke.log 2>&1 &
+          APP_PID=$!
+
+          sleep 20
+
+          if kill -0 $APP_PID 2>/dev/null; then
+            echo "Smoke test passed — app still running after 20s"
+            kill $APP_PID 2>/dev/null || true
+          else
+            wait $APP_PID; EXIT_CODE=$?
+            echo "Smoke test FAILED — app exited with code $EXIT_CODE"
+            cat /tmp/stelekit-smoke.log || true
+            hdiutil detach /tmp/stelekit-smoke -quiet || true
+            exit 1
+          fi
+          hdiutil detach /tmp/stelekit-smoke -quiet || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-macos
@@ -263,13 +314,32 @@ jobs:
         shell: bash
         run: |
           APP_VERSION="${{ needs.resolve-version.outputs.version }}"
-          ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache \
+          ./gradlew :kmp:packageDistributionForCurrentOS :kmp:createDistributable --no-daemon --build-cache \
             -PappVersion="${APP_VERSION#v}"
+
+      - name: Smoke-test app startup
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Recurse "kmp\build\compose\binaries\main\app" -Filter "stelekit.exe" | Select-Object -First 1
+          if (-not $exe) { Write-Error "stelekit.exe not found"; exit 1 }
+
+          $proc = Start-Process -FilePath $exe.FullName -RedirectStandardError "$env:TEMP\stelekit-smoke.log" -PassThru
+          Start-Sleep 20
+
+          if (-not $proc.HasExited) {
+            Write-Host "Smoke test passed — app still running after 20s"
+            Stop-Process -Id $proc.Id -Force
+          } else {
+            Write-Host "Smoke test FAILED — app exited with code $($proc.ExitCode)"
+            Get-Content "$env:TEMP\stelekit-smoke.log" -ErrorAction SilentlyContinue
+            exit 1
+          }
 
       - name: Rename distributable with version
         shell: bash
         run: |
-          DIST=$(find kmp/build/compose/binaries/main -type f \( -name "*.msi" -o -name "*.exe" \) | head -1)
+          # Exclude the createDistributable app/ tree; only rename the installer produced by packageDistributionForCurrentOS
+          DIST=$(find kmp/build/compose/binaries/main -type f \( -name "*.msi" -o -name "*.exe" \) ! -path "*/app/*" | head -1)
           EXT="${DIST##*.}"
           mv "$DIST" "kmp/build/compose/binaries/main/SteleKit-${{ needs.resolve-version.outputs.version }}-windows.$EXT"
 
