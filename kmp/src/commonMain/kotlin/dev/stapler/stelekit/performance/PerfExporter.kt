@@ -19,11 +19,15 @@ class PerfExporter(
 ) {
     private val json = Json { prettyPrint = false; encodeDefaults = true }
 
+    /** Default directory for exports (platform Downloads folder). */
+    fun defaultExportDirectory(): String = fileSystem.getDownloadsPath()
+
     /**
-     * Exports all recent spans and histogram summaries to a JSON file in the platform
-     * Downloads directory. Returns the absolute file path on success.
+     * Exports all recent spans and histogram summaries to a JSON file.
+     * If [directory] is null the platform Downloads folder is used.
+     * Returns the absolute file path on success.
      */
-    suspend fun export(): String = withContext(PlatformDispatcher.IO) {
+    suspend fun export(directory: String? = null): String = withContext(PlatformDispatcher.IO) {
         val spans = spanRepository.getRecentSpans(limit = 10_000).first()
         val histograms = HistogramWriter.KNOWN_OPERATIONS
             .mapNotNull { op -> histogramWriter.queryPercentiles(op)?.let { op to it } }
@@ -52,7 +56,8 @@ class PerfExporter(
         )
         val content = json.encodeToString(report)
         val timestamp = formatTimestamp(nowMs)
-        val path = "${fileSystem.getDownloadsPath()}/stelekit-perf-$timestamp.json"
+        val dir = directory ?: fileSystem.getDownloadsPath()
+        val path = "$dir/stelekit-perf-$timestamp.json"
         check(fileSystem.writeFile(path, content)) { "Failed to write perf report to $path" }
         path
     }

@@ -403,20 +403,31 @@ class GraphLoader(
     }
 
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun flushChunkWrites(
+    /**
+     * Flush chunk writes using typed actor calls rather than a single Execute lambda.
+     *
+     * The old Execute-wrapped approach held the actor for the entire chunk duration
+     * (savePages + deleteBlocks + saveBlocks for N pages in one atomic lambda). On Android
+     * with slow SQLite this could exceed 5 seconds, blocking any HIGH-priority write
+     * (user navigation parse, editor save) for the full duration.
+     *
+     * Using typed calls gives the actor an opportunity to service HIGH-priority requests
+     * between each step: after savePages, after deleteBlocksForPages, and between each
+     * page's saveBlocks (processSaveBlocks already checks highPriority between consecutive
+     * LOW SaveBlocks during coalescing).
+     */
+    private suspend fun flushChunkWritesPreemptible(
         pagesToSave: List<Page>,
         pageUuidsToDelete: Set<String>,
         blocksToSaveByPage: Map<String, List<Block>>,
-        failedPageUuids: MutableSet<String>,
-    ): Result<Unit> = try {
+    ) {
+        val failedPageUuids = mutableSetOf<String>()
+
         if (pagesToSave.isNotEmpty()) {
-            val bulkResult = pageRepository.savePages(pagesToSave)
+            val bulkResult = writeActor.savePages(pagesToSave, DatabaseWriteActor.Priority.LOW)
             if (bulkResult.isFailure) {
-                // Bulk transaction failed — retry individually to track which pages failed.
                 for (page in pagesToSave) {
-                    val result = pageRepository.savePage(page)
-                    if (result.isFailure) {
-                        val e = result.exceptionOrNull()!!
+                    writeActor.savePage(page, DatabaseWriteActor.Priority.LOW).onFailure { e ->
                         logger.error("savePage failed for ${page.name}", e)
                         _writeErrors.tryEmit(WriteError(page.filePath ?: page.name, 0, e))
                         failedPageUuids.add(page.uuid)
@@ -424,22 +435,19 @@ class GraphLoader(
                 }
             }
         }
+
         val uuidsToDelete = pageUuidsToDelete.filter { it !in failedPageUuids }
         if (uuidsToDelete.isNotEmpty()) {
-            blockRepository.deleteBlocksForPages(uuidsToDelete)
+            writeActor.deleteBlocksForPages(uuidsToDelete, DatabaseWriteActor.Priority.LOW)
         }
+
         for ((pageUuid, blocks) in blocksToSaveByPage) {
             if (pageUuid in failedPageUuids) continue
-            val result = blockRepository.saveBlocks(blocks)
-            if (result.isFailure) {
-                val e = result.exceptionOrNull()!!
+            writeActor.saveBlocks(blocks, DatabaseWriteActor.Priority.LOW).onFailure { e ->
                 logger.error("saveBlocks failed for pageUuid=$pageUuid (${blocks.size} blocks)", e)
                 _writeErrors.tryEmit(WriteError(pageUuid, blocks.size, e))
             }
         }
-        Result.success(Unit)
-    } catch (e: Exception) {
-        Result.failure(e)
     }
 
     fun stopWatching() {
@@ -682,16 +690,9 @@ class GraphLoader(
                                 }
                             }
                             
-                            // Flush all writes for this chunk through the actor in a single dispatch.
-                            // Previously each savePage / deleteBlocks / saveBlocks was its own actor
-                            // call; with N chunks in flight that created O(N×chunk) queue depth and
-                            // made each batchDeleteBlocks wait behind all prior savePages.
-                            val failedPageUuids = mutableSetOf<String>()
                             if (pagesToSave.isNotEmpty() || pageUuidsToDelete.isNotEmpty()) {
                                 PerformanceMonitor.startTrace("batchDeleteBlocks")
-                                writeActor.execute(DatabaseWriteActor.Priority.LOW) {
-                                    flushChunkWrites(pagesToSave, pageUuidsToDelete, blocksToSaveByPage, failedPageUuids)
-                                }
+                                flushChunkWritesPreemptible(pagesToSave, pageUuidsToDelete, blocksToSaveByPage)
                                 PerformanceMonitor.endTrace("batchDeleteBlocks")
                             }
                             
