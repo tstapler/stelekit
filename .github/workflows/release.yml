@@ -78,6 +78,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-home-cache-cleanup: true
+          gradle-home-cache-strict-match: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Decode keystore
@@ -129,6 +130,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-home-cache-cleanup: true
+          gradle-home-cache-strict-match: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Install RPM toolchain
@@ -221,7 +223,7 @@ jobs:
       - name: Package desktop distributable
         run: |
           APP_VERSION="${{ needs.resolve-version.outputs.version }}"
-          ./gradlew :kmp:clean :kmp:packageDistributionForCurrentOS --no-daemon \
+          ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache \
             -PappVersion="${APP_VERSION#v}"
 
       - name: Rename distributable with version
@@ -254,6 +256,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-home-cache-cleanup: true
+          gradle-home-cache-strict-match: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Package desktop distributable
