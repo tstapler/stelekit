@@ -30,10 +30,24 @@ class VoiceSettings(private val platformSettings: PlatformSettings) {
     fun setLlmEnabled(enabled: Boolean) =
         platformSettings.putBoolean(KEY_LLM_ENABLED, enabled)
 
+    fun getUseDeviceStt(): Boolean =
+        platformSettings.getBoolean(KEY_USE_DEVICE_STT, false)
+
+    fun setUseDeviceStt(enabled: Boolean) =
+        platformSettings.putBoolean(KEY_USE_DEVICE_STT, enabled)
+
+    fun getUseDeviceLlm(): Boolean =
+        platformSettings.getBoolean(KEY_USE_DEVICE_LLM, false)
+
+    fun setUseDeviceLlm(enabled: Boolean) =
+        platformSettings.putBoolean(KEY_USE_DEVICE_LLM, enabled)
+
     companion object {
         private const val KEY_WHISPER = "voice.whisper_key"
         private const val KEY_ANTHROPIC = "voice.anthropic_key"
         private const val KEY_OPENAI = "voice.openai_key"
         private const val KEY_LLM_ENABLED = "voice.llm_enabled"
+        private const val KEY_USE_DEVICE_STT = "voice.use_device_stt"
+        private const val KEY_USE_DEVICE_LLM = "voice.use_device_llm"
     }
 }
