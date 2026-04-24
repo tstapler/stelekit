@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.4](https://github.com/tstapler/stelekit/compare/v0.9.3...v0.9.4) (2026-04-24)
+
+
+### Bug Fixes
+
+* **cache:** rename LruCache → SteleLruCache to bypass K2 compiler bug ([ea70c86](https://github.com/tstapler/stelekit/commit/ea70c865aa8765d4c394304101e94b563dca7b2f))
+
 ## [0.9.3](https://github.com/tstapler/stelekit/compare/v0.9.2...v0.9.3) (2026-04-24)
 
 
