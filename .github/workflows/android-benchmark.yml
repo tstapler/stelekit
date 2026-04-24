@@ -50,9 +50,7 @@ jobs:
           arch: x86_64
           profile: pixel_3a
           script: |
-            ./gradlew :kmp:connectedDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.class=dev.stapler.stelekit.benchmark.AndroidGraphBenchmark \
-              --no-daemon
+            ./gradlew :kmp:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.stapler.stelekit.benchmark.AndroidGraphBenchmark --no-daemon
             adb logcat -d -s ANDROID_BENCH:I > /tmp/android-bench-logcat.txt || true
 
       - name: Parse results and write summary
