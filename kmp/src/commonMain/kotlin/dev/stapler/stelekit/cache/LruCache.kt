@@ -4,15 +4,8 @@
 
 package dev.stapler.stelekit.cache
 
-import kotlinx.coroutines.sync.Mutex
-
 /**
- * SAM interface for [LruCache] weighers.
- *
- * Workaround: Kotlin 2.3.10 K2 compiler bug — [LruCache] with a `(K, V) -> Long` function
- * type constructor parameter does not have its outer .class emitted for the JVM target.
- * Using a `fun interface` breaks the buggy compiler path while preserving SAM-conversion
- * call sites (callers can still pass a lambda).
+ * SAM interface for [LruCache] weighers. Callers may pass a plain lambda via SAM conversion.
  */
 fun interface LruWeigher<K, V> {
     fun weigh(key: K, value: V): Long
@@ -36,92 +29,51 @@ fun interface LruWeigher<K, V> {
  * )
  * ```
  *
- * All public methods are suspend and protect the internal map with a [Mutex],
- * making this safe to call from multiple coroutines concurrently.
- *
- * **Kotlin 2.3.10 K2 workaround**: when ALL public members of a class are `suspend fun`,
- * the outer `.class` file is not emitted even though inner coroutine continuation classes
- * are written. [capacity] is a non-suspend property added solely to anchor the outer class.
+ * Thread-safety is achieved via `synchronized(this)` rather than a coroutine [Mutex].
+ * All operations are O(1) and hold the lock for microseconds, so the brief thread-blocking
+ * is acceptable — and avoids a Kotlin 2.3.10 K2 compiler bug where a class whose ALL
+ * public members are `suspend fun` has its outer `.class` file silently dropped on Linux.
  * See: https://youtrack.jetbrains.com/issue/KT-XXXXX
  */
 class LruCache<K : Any, V>(
-    private val maxWeight: Long,
+    val maxWeight: Long,
     private val weigher: LruWeigher<K, V>,
 ) {
     constructor(maxWeight: Long) : this(maxWeight, LruWeigher { _, _ -> 1L })
-    private val mutex = Mutex()
+
     private val map = LinkedHashMap<K, V>()
     private var totalWeight = 0L
 
-    /** The maximum weight this cache will hold (same as [maxWeight] ctor param). */
-    // Workaround anchor: having at least one non-suspend public member forces K2 to emit
-    // LruCache.class (Kotlin 2.3.10 bug — all-suspend public API suppresses outer class file).
-    val capacity: Long get() = maxWeight
+    fun get(key: K): V? = synchronized(this) {
+        val value = map.remove(key) ?: return null
+        map[key] = value  // re-insert at tail = mark as most recently used
+        value
+    }
+
+    fun put(key: K, value: V): Unit = synchronized(this) {
+        val old = map.remove(key)
+        if (old != null) totalWeight -= weigher.weigh(key, old)
+        map[key] = value
+        totalWeight += weigher.weigh(key, value)
+        evict()
+    }
+
+    fun remove(key: K): V? = synchronized(this) {
+        val old = map.remove(key)
+        if (old != null) totalWeight -= weigher.weigh(key, old)
+        old
+    }
+
+    fun invalidateAll(): Unit = synchronized(this) {
+        map.clear()
+        totalWeight = 0L
+    }
+
+    fun size(): Int = synchronized(this) { map.size }
+
+    fun weight(): Long = synchronized(this) { totalWeight }
 
     override fun toString(): String = "LruCache(maxWeight=$maxWeight)"
-
-    suspend fun get(key: K): V? {
-        mutex.lock()
-        try {
-            val value = map.remove(key) ?: return null
-            map[key] = value  // re-insert at tail = mark as most recently used
-            return value
-        } finally {
-            mutex.unlock()
-        }
-    }
-
-    suspend fun put(key: K, value: V) {
-        mutex.lock()
-        try {
-            val old = map.remove(key)
-            if (old != null) totalWeight -= weigher.weigh(key, old)
-            map[key] = value
-            totalWeight += weigher.weigh(key, value)
-            evict()
-        } finally {
-            mutex.unlock()
-        }
-    }
-
-    suspend fun remove(key: K): V? {
-        mutex.lock()
-        try {
-            val old = map.remove(key)
-            if (old != null) totalWeight -= weigher.weigh(key, old)
-            return old
-        } finally {
-            mutex.unlock()
-        }
-    }
-
-    suspend fun invalidateAll() {
-        mutex.lock()
-        try {
-            map.clear()
-            totalWeight = 0L
-        } finally {
-            mutex.unlock()
-        }
-    }
-
-    suspend fun size(): Int {
-        mutex.lock()
-        try {
-            return map.size
-        } finally {
-            mutex.unlock()
-        }
-    }
-
-    suspend fun weight(): Long {
-        mutex.lock()
-        try {
-            return totalWeight
-        } finally {
-            mutex.unlock()
-        }
-    }
 
     private fun evict() {
         val iter = map.entries.iterator()
