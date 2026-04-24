@@ -19,7 +19,7 @@ import dev.stapler.stelekit.ui.screens.JournalsViewModel
 import dev.stapler.stelekit.ui.state.BlockStateManager
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
-import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.ui.fixtures.InMemorySettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.junit.Rule
@@ -52,7 +52,7 @@ class DesktopScreenshotTest {
                     topBar = {
                         TopBar(
                             appState = AppState(currentScreen = Screen.Journals),
-                            platformSettings = PlatformSettings(),
+                            platformSettings = InMemorySettings(),
                             onSettingsClick = {},
                             onNewPageClick = {},
                             onNavigate = {},
@@ -102,7 +102,7 @@ class DesktopScreenshotTest {
                     topBar = {
                         TopBar(
                             appState = AppState(currentScreen = Screen.Journals),
-                            platformSettings = PlatformSettings(),
+                            platformSettings = InMemorySettings(),
                             onSettingsClick = {},
                             onNewPageClick = {},
                             onNavigate = {},

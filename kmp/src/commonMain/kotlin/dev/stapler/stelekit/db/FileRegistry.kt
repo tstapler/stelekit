@@ -2,6 +2,8 @@ package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.outliner.JournalUtils
 import dev.stapler.stelekit.platform.FileSystem
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Single source of truth for file metadata across all GraphLoader operations.
@@ -15,6 +17,10 @@ class FileRegistry(private val fileSystem: FileSystem) {
 
     private val modTimes = mutableMapOf<String, Long>()
     private val contentHashes = mutableMapOf<String, Int>()
+
+    // Serializes detectChanges so concurrent callers (polling loop + ContentObserver
+    // callback) cannot both read the same stale modTime and double-emit the same change.
+    private val detectMutex = Mutex()
 
     /** Cached scan results per directory. */
     private val scannedFiles = mutableMapOf<String, List<FileEntry>>()
@@ -79,8 +85,8 @@ class FileRegistry(private val fileSystem: FileSystem) {
      *
      * Returns a [ChangeSet] with new, changed, and deleted files.
      */
-    fun detectChanges(dirPath: String): ChangeSet {
-        if (!fileSystem.directoryExists(dirPath)) return ChangeSet.EMPTY
+    suspend fun detectChanges(dirPath: String): ChangeSet = detectMutex.withLock {
+        if (!fileSystem.directoryExists(dirPath)) return@withLock ChangeSet.EMPTY
 
         val currentFilesWithTimes = fileSystem.listFilesWithModTimes(dirPath)
             .filter { (name, _) -> name.endsWith(".md") }
@@ -120,7 +126,7 @@ class FileRegistry(private val fileSystem: FileSystem) {
             .toList()
         deletedPaths.forEach { modTimes.remove(it); contentHashes.remove(it) }
 
-        return ChangeSet(newFiles, changedFiles, deletedPaths)
+        ChangeSet(newFiles, changedFiles, deletedPaths)
     }
 
     // ---- Write Tracking ----

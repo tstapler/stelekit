@@ -1,0 +1,69 @@
+{
+  "timestamp": "2026-04-24 16:35:15 UTC",
+  "gitSha": "d9ff7b3",
+  "branch": "main",
+  "graphConfig": "small",
+  "pageCount": 0,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 3,
+  "phase3Ms": 12,
+  "totalMs": 24,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 31,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 135,
+      "pct": 66.2
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 20,
+      "pct": 9.8
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 6,
+      "pct": 2.9
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 6,
+      "pct": 2.9
+    },
+    {
+      "frame": "java.net.URL_[k]",
+      "samples": 4,
+      "pct": 2.0
+    },
+    {
+      "frame": "java.security.CodeSource_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "jdk.internal.util.StrongReferenceKey_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.lang.invoke.MemberName_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.util.zip.ZipFile$ZipFileInflaterInputStream_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ]
+}
