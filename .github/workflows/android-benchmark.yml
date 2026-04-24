@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  checks: write
-  contents: read
+  contents: write
+  pull-requests: write
 
 jobs:
   android-benchmark:
@@ -23,6 +23,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - uses: actions/setup-java@v4
         with:
@@ -46,20 +49,145 @@ jobs:
           api-level: 30
           arch: x86_64
           profile: pixel_3a
-          script: ./gradlew :kmp:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.stapler.stelekit.benchmark.AndroidGraphBenchmark --no-daemon
+          script: |
+            ./gradlew :kmp:connectedDebugAndroidTest \
+              -Pandroid.testInstrumentationRunnerArguments.class=dev.stapler.stelekit.benchmark.AndroidGraphBenchmark \
+              --no-daemon
+            adb logcat -d -s ANDROID_BENCH:I > /tmp/android-bench-logcat.txt || true
 
-      - name: Publish benchmark results
-        uses: mikepenz/action-junit-report@v4
-        if: always()
+      - name: Parse results and write summary
+        run: |
+          python3 - << 'EOF'
+          import json, os, subprocess, datetime, re
+
+          logcat_file = "/tmp/android-bench-logcat.txt"
+          results = {}
+          if os.path.exists(logcat_file):
+              for line in open(logcat_file):
+                  m = re.search(r'ANDROID_BENCH:\s*(\{.*\})', line)
+                  if m:
+                      try:
+                          obj = json.loads(m.group(1))
+                          results[obj.get("metric", "unknown")] = obj
+                      except Exception:
+                          pass
+
+          load = results.get("loadPhase", {})
+          jank = results.get("writeLatency", {})
+
+          try:
+              sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode().strip()
+          except Exception:
+              sha = "unknown"
+          try:
+              branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).decode().strip()
+          except Exception:
+              branch = "unknown"
+
+          now = datetime.datetime.now(datetime.timezone.utc)
+          summary = {
+              "timestamp": now.strftime("%Y-%m-%d %H:%M:%S UTC"),
+              "gitSha": sha,
+              "branch": branch,
+              "phase1Ms": load.get("phase1Ms"),
+              "phase3Ms": load.get("phase3Ms"),
+              "pageCount": load.get("pageCount"),
+              "baselineP95Ms": jank.get("baselineP95Ms"),
+              "phase3P95Ms": jank.get("phase3P95Ms"),
+              "jankFactor": jank.get("jankFactor"),
+              "writes": jank.get("writes"),
+          }
+
+          history_dir = os.path.join("benchmarks", "android-history")
+          os.makedirs(history_dir, exist_ok=True)
+          slug = now.strftime("%Y-%m-%d_%Hh%Mm%Ss")
+          out = os.path.join(history_dir, f"{slug}_{sha}.json")
+          with open(out, "w") as f:
+              json.dump(summary, f, indent=2)
+          print(out)
+          with open(os.environ.get("GITHUB_ENV", "/dev/null"), "a") as env:
+              env.write(f"ANDROID_BENCH_SUMMARY={out}\n")
+          EOF
+
+      - name: Commit benchmark summary (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add benchmarks/android-history/
+          git diff --cached --quiet || git commit -m "chore(bench): android benchmark summary ${{ github.sha }}"
+          git push
+
+      - name: Compare to baseline and post PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
         with:
-          report_paths: '**/build/outputs/androidTest-results/connected/**/*.xml'
-          fail_on_failure: true
-          check_name: Android Benchmark Results
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const histDir = 'benchmarks/android-history';
+            if (!fs.existsSync(histDir)) { console.log('No android benchmark history'); return; }
+
+            const allFiles = fs.readdirSync(histDir)
+              .filter(f => f.endsWith('.json') && f !== '.gitkeep')
+              .sort();
+            if (allFiles.length === 0) { console.log('No previous android benchmarks'); return; }
+
+            const sha = '${{ github.sha }}'.slice(0, 7);
+            const newFile = allFiles.filter(f => f.includes(sha)).pop() || allFiles[allFiles.length - 1];
+            const baseFile = allFiles.filter(f => !f.includes(sha)).pop();
+
+            if (!baseFile) { console.log('No baseline to compare against'); return; }
+
+            const curr = JSON.parse(fs.readFileSync(path.join(histDir, newFile)));
+            const base = JSON.parse(fs.readFileSync(path.join(histDir, baseFile)));
+
+            const delta = (a, b) => {
+              if (a == null || b == null) return '';
+              const d = a - b;
+              const sign = d > 0 ? '+' : '';
+              return ` (${sign}${d}ms)`;
+            };
+            const ms = v => v == null ? 'n/a' : `${v}ms`;
+            const fmt = v => v == null ? 'n/a' : v;
+
+            const body = [
+              '## Android Benchmark Results',
+              '',
+              `Comparing \`${curr.gitSha}\` (this PR) vs \`${base.gitSha}\` (baseline)  `,
+              `Device: API 30 x86_64 emulator — ${curr.pageCount ?? '?'} pages`,
+              '',
+              '| Metric | This PR | Baseline | Delta |',
+              '|--------|---------|----------|-------|',
+              `| Phase 1 TTI | ${ms(curr.phase1Ms)} | ${ms(base.phase1Ms)} | ${delta(curr.phase1Ms, base.phase1Ms)} |`,
+              `| Phase 3 index | ${ms(curr.phase3Ms)} | ${ms(base.phase3Ms)} | ${delta(curr.phase3Ms, base.phase3Ms)} |`,
+              `| Write p95 (baseline) | ${ms(curr.baselineP95Ms)} | ${ms(base.baselineP95Ms)} | - |`,
+              `| Write p95 (during phase 3) | ${ms(curr.phase3P95Ms)} | ${ms(base.phase3P95Ms)} | ${delta(curr.phase3P95Ms, base.phase3P95Ms)} |`,
+              `| Jank factor | ${fmt(curr.jankFactor)}x | ${fmt(base.jankFactor)}x | - |`,
+              `| Concurrent writes | ${fmt(curr.writes)} | ${fmt(base.writes)} | - |`,
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
+            });
+            const existing = comments.find(c =>
+              c.user.login === 'github-actions[bot]' && c.body.includes('## Android Benchmark Results'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body,
+              });
+            }
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: android-benchmark-results
+          name: android-benchmark-results-${{ github.sha }}
           path: |
-            **/build/outputs/androidTest-results/
+            /tmp/android-bench-logcat.txt
+            benchmarks/android-history/
           retention-days: 30

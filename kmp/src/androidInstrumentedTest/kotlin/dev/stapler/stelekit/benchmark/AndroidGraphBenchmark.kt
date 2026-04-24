@@ -77,7 +77,7 @@ class AndroidGraphBenchmark {
 
         val pageCount = repoSet.pageRepository.getAllPages().first().getOrNull()?.size ?: 0
 
-        android.util.Log.i("AndroidBench", "phase1=${phase1Ms}ms phase3=${phase3Ms}ms pages=$pageCount")
+        android.util.Log.i("ANDROID_BENCH", """{"metric":"loadPhase","phase1Ms":$phase1Ms,"phase3Ms":$phase3Ms,"pageCount":$pageCount}""")
 
         factory.close()
         dbFile.delete()
@@ -151,10 +151,7 @@ class AndroidGraphBenchmark {
         val phase3P95 = percentile(phase3Latencies, 95)
         val jankFactor = if (baselineP95 > 0) phase3P95.toDouble() / baselineP95 else 0.0
 
-        android.util.Log.i(
-            "AndroidBench",
-            "baseline_p95=${baselineP95}ms phase3_p95=${phase3P95}ms jank_factor=%.1fx".format(jankFactor),
-        )
+        android.util.Log.i("ANDROID_BENCH", """{"metric":"writeLatency","baselineP95Ms":$baselineP95,"phase3P95Ms":$phase3P95,"jankFactor":${"%.2f".format(jankFactor)},"writes":${phase3Latencies.size}}""")
 
         factory.close()
         dbFile.delete()
