@@ -1,7 +1,12 @@
 package dev.stapler.stelekit.platform
 
+import platform.Foundation.NSDate
 import platform.Foundation.NSDocumentDirectory
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSFileModificationDate
+import platform.Foundation.NSFileType
+import platform.Foundation.NSFileTypeDirectory
+import platform.Foundation.NSFileTypeRegular
 import platform.Foundation.NSUserDomainMask
 import platform.Foundation.NSURL
 
@@ -61,10 +66,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val fileManager = NSFileManager.defaultManager
             val contents = fileManager.contentsOfDirectoryAtPath(validatedPath, null)
             contents.mapNotNull { it as? String }.filter {
-                val fullPath = "$validatedPath/$it"
-                val exists = fileManager.fileExistsAtPath(fullPath)
-                val isDir = fileManager.fileExistsAtPath(fullPath) // Simplified check
-                exists && !isDir
+                fileTypeAtPath("$validatedPath/$it") == NSFileTypeRegular
             }.sorted()
         } catch (e: Exception) {
             emptyList()
@@ -78,9 +80,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val fileManager = NSFileManager.defaultManager
             val contents = fileManager.contentsOfDirectoryAtPath(validatedPath, null)
             contents.mapNotNull { it as? String }.filter {
-                val fullPath = "$validatedPath/$it"
-                val isDir = fileManager.fileExistsAtPath(fullPath) // Would need proper isDirectory check
-                true // Simplified
+                fileTypeAtPath("$validatedPath/$it") == NSFileTypeDirectory
             }.sorted()
         } catch (e: Exception) {
             emptyList()
@@ -102,9 +102,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return try {
             val expandedPath = expandTilde(path)
             val validatedPath = validatePath(expandedPath)
-            val fileManager = NSFileManager.defaultManager
-            val exists = fileManager.fileExistsAtPath(validatedPath)
-            exists // Would need proper directory check
+            fileTypeAtPath(validatedPath) == NSFileTypeDirectory
         } catch (e: Exception) {
             false
         }
@@ -142,14 +140,19 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     actual override fun getLastModifiedTime(path: String): Long? {
         return try {
-            // val expandedPath = expandTilde(path)
-            // val validatedPath = validatePath(expandedPath)
-            // val file = File(validatedPath) 
-            // For now, return null to avoid compile error if java.io.File is not available
-            null
+            val expandedPath = expandTilde(path)
+            val validatedPath = validatePath(expandedPath)
+            val attrs = NSFileManager.defaultManager.attributesOfItemAtPath(validatedPath, null) ?: return null
+            val modDate = attrs[NSFileModificationDate] as? NSDate ?: return null
+            (modDate.timeIntervalSince1970 * 1000).toLong()
         } catch (e: Exception) {
             null
         }
+    }
+
+    private fun fileTypeAtPath(path: String): String? {
+        val attrs = NSFileManager.defaultManager.attributesOfItemAtPath(path, null) ?: return null
+        return attrs[NSFileType] as? String
     }
 
     private fun validatePath(path: String): String {

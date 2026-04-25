@@ -37,6 +37,26 @@ class DebounceManager(
     }
 
     /**
+     * Cancel the pending debounced task for [key] without executing it.
+     * Other keys are unaffected.
+     */
+    suspend fun cancel(key: String) {
+        mutex.withLock {
+            jobs[key]?.cancel()
+            jobs.remove(key)
+            pendingActions.remove(key)
+        }
+    }
+
+    /**
+     * Returns true if a pending action exists for [key] (i.e. the debounce timer
+     * is still running and the action has not yet fired).
+     */
+    suspend fun hasPending(key: String): Boolean = mutex.withLock {
+        jobs.containsKey(key)
+    }
+
+    /**
      * Cancel all pending debounced tasks without executing them.
      */
     suspend fun cancelAll() {
