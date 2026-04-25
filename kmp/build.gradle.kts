@@ -193,6 +193,17 @@ kotlin {
             }
         }
 
+        val androidInstrumentedTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+                implementation("androidx.benchmark:benchmark-junit4:1.3.4")
+                implementation("androidx.test:runner:1.6.2")
+                implementation("androidx.test:core:1.6.1")
+                implementation("androidx.test.ext:junit:1.2.1")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+            }
+        }
+
         val iosMain by getting {
             dependencies {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
@@ -630,6 +641,7 @@ android {
 
     defaultConfig {
         minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {

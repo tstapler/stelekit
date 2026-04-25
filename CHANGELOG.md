@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.5](https://github.com/tstapler/stelekit/compare/v0.9.4...v0.9.5) (2026-04-25)
+
+
+### Bug Fixes
+
+* **resilience:** fix loading screen hang + isolate test settings ([dc1b51b](https://github.com/tstapler/stelekit/commit/dc1b51be926992ca348b9958d15f4721acb98bd9))
+
+
+### Performance Improvements
+
+* **android:** decompose Phase 3 chunk writes to allow HIGH-priority preemption ([#26](https://github.com/tstapler/stelekit/issues/26)) ([b5a51ab](https://github.com/tstapler/stelekit/commit/b5a51ab82e52b38ceb98662412956be692114803))
+
 ## [0.9.4](https://github.com/tstapler/stelekit/compare/v0.9.3...v0.9.4) (2026-04-24)
 
 

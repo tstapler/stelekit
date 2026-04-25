@@ -281,7 +281,7 @@ class StelekitViewModel(
     }
 
     fun loadGraph(path: String) {
-        scope.launch {
+        val job = scope.launch {
             try {
                 _uiState.update { it.copy(isLoading = true, isFullyLoaded = false, statusMessage = "Loading graph from $path...") }
 
@@ -381,6 +381,13 @@ class StelekitViewModel(
                 e.printStackTrace()
                 logger.error("Error loading graph", e)
                 _uiState.update { it.copy(isLoading = false, isFullyLoaded = true, statusMessage = "Error: ${e.message}") }
+            }
+        }
+        // Guarantee isLoading resets if the job is cancelled before reaching its first
+        // suspension point (i.e. scope.cancel() called before the coroutine starts running).
+        job.invokeOnCompletion { cause ->
+            if (cause is kotlinx.coroutines.CancellationException) {
+                _uiState.update { it.copy(isLoading = false) }
             }
         }
     }
