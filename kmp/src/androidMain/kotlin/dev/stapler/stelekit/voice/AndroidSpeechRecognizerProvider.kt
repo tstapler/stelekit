@@ -52,6 +52,13 @@ class AndroidSpeechRecognizerProvider(private val context: Context) : DirectSpee
                 recognizer = SpeechRecognizer.createSpeechRecognizer(context)
                 activeRecognizer = recognizer
 
+                // Guard against cancellation that fired before this post ran
+                if (!cont.isActive) {
+                    recognizer.destroy()
+                    activeRecognizer = null
+                    return@post
+                }
+
                 recognizer.setRecognitionListener(object : RecognitionListener {
                     override fun onReadyForSpeech(params: Bundle?) {}
                     override fun onBeginningOfSpeech() {}
