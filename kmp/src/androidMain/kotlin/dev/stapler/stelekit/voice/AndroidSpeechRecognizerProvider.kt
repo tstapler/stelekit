@@ -35,63 +35,74 @@ class AndroidSpeechRecognizerProvider(private val context: Context) : DirectSpee
     private val mainHandler = Handler(Looper.getMainLooper())
 
     override suspend fun listen(): TranscriptResult = suspendCancellableCoroutine { cont ->
-        mainHandler.post {
-            val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
-            activeRecognizer = recognizer
-
-            recognizer.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {}
-                override fun onBeginningOfSpeech() {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() {}
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-                override fun onPartialResults(partialResults: Bundle?) {}
-
-                override fun onRmsChanged(rmsdB: Float) {
-                    // Map roughly -2..10 dB → 0..1
-                    _amplitudeFlow.value = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
-                }
-
-                override fun onResults(results: Bundle?) {
-                    _amplitudeFlow.value = 0f
+        cont.invokeOnCancellation {
+            mainHandler.post {
+                activeRecognizer?.let {
+                    it.cancel()
+                    it.destroy()
                     activeRecognizer = null
-                    recognizer.destroy()
-                    if (!cont.isActive) return
-                    val text = results
-                        ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull()
-                    Log.d(TAG, "onResults: text=${text?.take(80)}")
-                    if (text.isNullOrBlank()) cont.resume(TranscriptResult.Empty)
-                    else cont.resume(TranscriptResult.Success(text))
                 }
-
-                override fun onError(error: Int) {
-                    _amplitudeFlow.value = 0f
-                    activeRecognizer = null
-                    recognizer.destroy()
-                    if (!cont.isActive) return
-                    Log.w(TAG, "onError: code=$error")
-                    cont.resume(mapError(error))
-                }
-            })
-
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3_000L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1_500L)
+                _amplitudeFlow.value = 0f
             }
-            recognizer.startListening(intent)
+        }
 
-            cont.invokeOnCancellation {
-                mainHandler.post {
-                    activeRecognizer?.let {
-                        it.cancel()
-                        it.destroy()
-                        activeRecognizer = null
+        mainHandler.post {
+            var recognizer: SpeechRecognizer? = null
+            try {
+                recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+                activeRecognizer = recognizer
+
+                recognizer.setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {}
+                    override fun onBeginningOfSpeech() {}
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+                    override fun onEndOfSpeech() {}
+                    override fun onEvent(eventType: Int, params: Bundle?) {}
+                    override fun onPartialResults(partialResults: Bundle?) {}
+
+                    override fun onRmsChanged(rmsdB: Float) {
+                        // Map roughly -2..10 dB → 0..1
+                        _amplitudeFlow.value = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
                     }
-                    _amplitudeFlow.value = 0f
+
+                    override fun onResults(results: Bundle?) {
+                        _amplitudeFlow.value = 0f
+                        activeRecognizer = null
+                        recognizer.destroy()
+                        if (!cont.isActive) return
+                        val text = results
+                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            ?.firstOrNull()
+                        Log.d(TAG, "onResults: text=${text?.take(80)}")
+                        if (text.isNullOrBlank()) cont.resume(TranscriptResult.Empty)
+                        else cont.resume(TranscriptResult.Success(text))
+                    }
+
+                    override fun onError(error: Int) {
+                        _amplitudeFlow.value = 0f
+                        activeRecognizer = null
+                        recognizer.destroy()
+                        if (!cont.isActive) return
+                        Log.w(TAG, "onError: code=$error")
+                        cont.resume(mapError(error))
+                    }
+                })
+
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3_000L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1_500L)
+                }
+                recognizer.startListening(intent)
+            } catch (t: Throwable) {
+                _amplitudeFlow.value = 0f
+                activeRecognizer = null
+                recognizer?.destroy()
+                Log.w(TAG, "Failed to start speech recognition", t)
+                if (cont.isActive) {
+                    cont.resume(mapError(SpeechRecognizer.ERROR_CLIENT))
                 }
             }
         }

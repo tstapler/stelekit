@@ -139,6 +139,9 @@ class MainActivity : ComponentActivity() {
                 if (deviceLlmAvailable && voiceSettings.getUseDeviceLlm()) mlKitProvider else null,
             )
             var voicePipeline by remember { mutableStateOf(buildPipeline()) }
+            LaunchedEffect(deviceLlmAvailable) {
+                voicePipeline = buildPipeline()
+            }
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = fileSystem.getDefaultGraphPath(),
