@@ -12,15 +12,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.domain.UrlFetcherAndroid
-import dev.stapler.stelekit.platform.SteleKitContext
 import dev.stapler.stelekit.platform.PlatformFileSystem
+import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.ui.StelekitApp
 import dev.stapler.stelekit.voice.AndroidAudioRecorder
 import dev.stapler.stelekit.voice.VoiceSettings
 import dev.stapler.stelekit.voice.buildVoicePipeline
-import dev.stapler.stelekit.platform.PlatformSettings
 import kotlinx.coroutines.CompletableDeferred
 
 class MainActivity : ComponentActivity() {
@@ -90,28 +88,27 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        SteleKitContext.init(this)
-        DriverFactory.setContext(this)
+        // Upgrade the Application's shared fileSystem with the folder-picker callback.
+        // SteleKitApplication already called init(applicationContext, null) — we add the
+        // picker so the main UI can launch ACTION_OPEN_DOCUMENT_TREE.
+        val app = application as SteleKitApplication
+        val fileSystem = app.fileSystem
+        fileSystem.init(this) {
+            val deferred = CompletableDeferred<String?>()
+            pendingFolderPick = deferred
+            val hintUri = fileSystem.getStoredTreeUri()
+            runOnUiThread { folderPickerLauncher.launch(hintUri) }
+            deferred.await()
+        }
 
         setContent {
-            val fileSystem = remember {
-                PlatformFileSystem().apply {
-                    init(this@MainActivity) {
-                        val deferred = CompletableDeferred<String?>()
-                        pendingFolderPick = deferred
-                        // Pre-fill the picker with the last known folder so "Reconnect" UX is smooth
-                        val hintUri = getStoredTreeUri()
-                        runOnUiThread { folderPickerLauncher.launch(hintUri) }
-                        deferred.await()
-                    }
-                }
-            }
             val audioRecorder = remember { AndroidAudioRecorder(this@MainActivity.applicationContext) }
             val voiceSettings = remember { VoiceSettings(PlatformSettings()) }
             var voicePipeline by remember { mutableStateOf(buildVoicePipeline(audioRecorder, voiceSettings)) }
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = fileSystem.getDefaultGraphPath(),
+                graphManager = app.graphManager,
                 urlFetcher = UrlFetcherAndroid(),
                 voicePipeline = voicePipeline,
                 voiceSettings = voiceSettings,

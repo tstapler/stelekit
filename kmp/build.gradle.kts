@@ -175,6 +175,11 @@ kotlin {
 
                 // Encrypted SharedPreferences for API key storage
                 implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+                // Jetpack Glance — Compose-based home screen widget API
+                // Use 1.1.1 (not 1.1.0) to pick up a protobuf security fix.
+                implementation("androidx.glance:glance-appwidget:1.1.1")
+                implementation("androidx.glance:glance-material3:1.1.1")
             }
         }
 
@@ -187,6 +192,7 @@ kotlin {
                 implementation("androidx.test.ext:junit:1.2.1")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
                 implementation("androidx.arch.core:core-testing:2.2.0")
+                implementation("androidx.glance:glance-appwidget-testing:1.1.1")
             }
         }
 
