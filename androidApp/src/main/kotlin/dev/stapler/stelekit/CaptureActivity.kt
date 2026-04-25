@@ -86,7 +86,7 @@ class CaptureActivity : ComponentActivity() {
 
         setContent {
             StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
-                if (app.graphManager == null) {
+                if (app.graphManager?.getActiveRepositorySet() == null) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         NoGraphPlaceholderContent()
                     }
@@ -141,10 +141,10 @@ class CaptureActivity : ComponentActivity() {
 
     private fun copyStreamToPrivateStorage(uri: android.net.Uri): String? = try {
         val outFile = java.io.File(cacheDir, "share_${System.currentTimeMillis()}.jpg")
-        contentResolver.openInputStream(uri)?.use { input ->
+        val copied = contentResolver.openInputStream(uri)?.use { input ->
             outFile.outputStream().use { output -> input.copyTo(output) }
         }
-        outFile.absolutePath
+        if (copied != null) outFile.absolutePath else null
     } catch (_: SecurityException) { null }
       catch (_: Exception) { null }
 

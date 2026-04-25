@@ -42,7 +42,7 @@ class CaptureWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         provideContent {
             val ctx = LocalContext.current
-            val hasGraph = (ctx.applicationContext as? SteleKitApplication)?.graphManager != null
+            val hasGraph = (ctx.applicationContext as? SteleKitApplication)?.graphManager?.getActiveRepositorySet() != null
             val size = LocalSize.current
 
             if (!hasGraph) {

@@ -36,7 +36,7 @@ class CaptureTileService : TileService() {
     override fun onClick() {
         super.onClick()
         val app = applicationContext as? SteleKitApplication
-        val targetClass = if (app?.graphManager != null) CaptureActivity::class.java
+        val targetClass = if (app?.graphManager?.getActiveRepositorySet() != null) CaptureActivity::class.java
                           else MainActivity::class.java
         val intent = Intent(this, targetClass).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

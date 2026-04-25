@@ -80,14 +80,14 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         val existingBlocks = repoSet.blockRepository
             .getBlocksForPage(page.uuid)
             .first()
-            .getOrElse { emptyList() }
+            .getOrThrow()
 
         val now = Clock.System.now()
         val newBlock = Block(
             uuid = UuidGenerator.generateV7(),
             pageUuid = page.uuid,
             content = text,
-            position = existingBlocks.size,
+            position = (existingBlocks.maxOfOrNull { it.position } ?: -1) + 1,
             createdAt = now,
             updatedAt = now,
         )
@@ -105,7 +105,10 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
             repoSet.blockRepository.saveBlock(newBlock).getOrThrow()
         }
 
-        // Bug 8 mitigation: flush the Markdown file after every actor write
-        GraphWriter(fileSystem).savePage(page, existingBlocks + newBlock, graphPath)
+        // Bug 8 mitigation: flush the Markdown file after every actor write.
+        // Pass writeActor so GraphWriter can persist filePath for newly created journal pages.
+        val writer = GraphWriter(fileSystem, writeActor = repoSet.writeActor)
+        writer.startAutoSave(viewModelScope)
+        writer.savePage(page, existingBlocks + newBlock, graphPath)
     }
 }
