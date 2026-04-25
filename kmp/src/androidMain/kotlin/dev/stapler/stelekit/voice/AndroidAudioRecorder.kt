@@ -55,12 +55,16 @@ class AndroidAudioRecorder(
     @Volatile private var pauseRequested = false
 
     override suspend fun startRecording(): PlatformAudioFile = withContext(Dispatchers.IO) {
+        stopRequested = false
+        pauseRequested = false
+
         if (requestMicPermission != null && !requestMicPermission()) {
             return@withContext PlatformAudioFile("")
         }
 
-        stopRequested = false
-        pauseRequested = false
+        if (stopRequested) {
+            return@withContext PlatformAudioFile("")
+        }
 
         val outputFile = File(context.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
