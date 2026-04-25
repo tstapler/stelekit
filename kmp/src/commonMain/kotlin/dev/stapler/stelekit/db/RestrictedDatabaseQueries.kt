@@ -102,6 +102,10 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
         queries.deleteBlocksByPageUuid(page_uuid)
 
     @DirectSqlWrite
+    fun deleteBlocksByPageUuids(page_uuids: Collection<String>): QueryResult<Long> =
+        queries.deleteBlocksByPageUuids(page_uuids)
+
+    @DirectSqlWrite
     fun deleteAllBlocks(): QueryResult<Long> =
         queries.deleteAllBlocks()
 

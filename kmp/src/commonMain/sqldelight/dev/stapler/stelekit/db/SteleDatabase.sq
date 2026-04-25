@@ -255,6 +255,9 @@ DELETE FROM blocks;
 deleteBlocksByPageUuid:
 DELETE FROM blocks WHERE page_uuid = ?;
 
+deleteBlocksByPageUuids:
+DELETE FROM blocks WHERE page_uuid IN ?;
+
 insertBlock:
 INSERT OR REPLACE INTO blocks (uuid, page_uuid, parent_uuid, left_uuid, content, level, position, created_at, updated_at, properties, version, content_hash, block_type)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
