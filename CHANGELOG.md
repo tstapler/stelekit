@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/tstapler/stelekit/compare/v0.9.5...v0.10.0) (2026-04-25)
+
+
+### Features
+
+* **fdroid:** fix repo version history and show version in Settings ([#33](https://github.com/tstapler/stelekit/issues/33)) ([9bb8a77](https://github.com/tstapler/stelekit/commit/9bb8a773b966cd7f79cf4c0a764a73cfb0b918b9))
+
 ## [0.9.5](https://github.com/tstapler/stelekit/compare/v0.9.4...v0.9.5) (2026-04-25)
 
 
