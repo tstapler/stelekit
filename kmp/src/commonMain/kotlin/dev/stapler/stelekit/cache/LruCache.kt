@@ -29,7 +29,8 @@ fun interface SteleLruWeigher<K, V> {
  * )
  * ```
  *
- * Thread-safety is achieved via `synchronized(this)`.
+ * Thread-safety is achieved via [PlatformLock] (ReentrantLock on JVM/Android, no-op on
+ * iOS/WASM where coroutine scheduling already provides mutual exclusion per dispatcher).
  * All operations are O(1) and hold the lock for microseconds.
  *
  * Named [SteleLruCache] (not LruCache) to avoid a Kotlin 2.3.10 K2 compiler bug where
@@ -42,16 +43,17 @@ class SteleLruCache<K : Any, V>(
 ) {
     constructor(maxWeight: Long) : this(maxWeight, SteleLruWeigher { _, _ -> 1L })
 
+    private val lock = PlatformLock()
     private val map = LinkedHashMap<K, V>()
     private var totalWeight = 0L
 
-    fun get(key: K): V? = synchronized(this) {
+    fun get(key: K): V? = lock.withLock {
         val value = map.remove(key) ?: return null
         map[key] = value  // re-insert at tail = mark as most recently used
         value
     }
 
-    fun put(key: K, value: V): Unit = synchronized(this) {
+    fun put(key: K, value: V): Unit = lock.withLock {
         val old = map.remove(key)
         if (old != null) totalWeight -= weigher.weigh(key, old)
         map[key] = value
@@ -59,20 +61,20 @@ class SteleLruCache<K : Any, V>(
         evict()
     }
 
-    fun remove(key: K): V? = synchronized(this) {
+    fun remove(key: K): V? = lock.withLock {
         val old = map.remove(key)
         if (old != null) totalWeight -= weigher.weigh(key, old)
         old
     }
 
-    fun invalidateAll(): Unit = synchronized(this) {
+    fun invalidateAll(): Unit = lock.withLock {
         map.clear()
         totalWeight = 0L
     }
 
-    fun size(): Int = synchronized(this) { map.size }
+    fun size(): Int = lock.withLock { map.size }
 
-    fun weight(): Long = synchronized(this) { totalWeight }
+    fun weight(): Long = lock.withLock { totalWeight }
 
     override fun toString(): String = "SteleLruCache(maxWeight=$maxWeight)"
 
