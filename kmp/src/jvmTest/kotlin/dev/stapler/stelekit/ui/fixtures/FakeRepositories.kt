@@ -37,7 +37,7 @@ class InMemorySettings : Settings {
     }
 }
 
-class FakeFileSystem : FileSystem {
+open class FakeFileSystem : FileSystem {
     override fun getDefaultGraphPath(): String = "/tmp/graph"
     override fun expandTilde(path: String) = path
     override fun readFile(path: String): String? = ""
