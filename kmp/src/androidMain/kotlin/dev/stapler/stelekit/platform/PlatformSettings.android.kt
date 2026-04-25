@@ -36,25 +36,25 @@ actual class PlatformSettings actual constructor() : Settings {
         }
     }
 
-    override fun getBoolean(key: String, defaultValue: Boolean): Boolean {
+    actual override fun getBoolean(key: String, defaultValue: Boolean): Boolean {
         return try {
             prefs.getBoolean(key, defaultValue)
         } catch (e: Exception) { defaultValue }
     }
 
-    override fun putBoolean(key: String, value: Boolean) {
+    actual override fun putBoolean(key: String, value: Boolean) {
         try {
             prefs.edit().putBoolean(key, value).apply()
         } catch (e: Exception) { }
     }
 
-    override fun getString(key: String, defaultValue: String): String {
+    actual override fun getString(key: String, defaultValue: String): String {
         return try {
             prefs.getString(key, defaultValue) ?: defaultValue
         } catch (e: Exception) { defaultValue }
     }
 
-    override fun putString(key: String, value: String) {
+    actual override fun putString(key: String, value: String) {
         try {
             prefs.edit().putString(key, value).apply()
         } catch (e: Exception) { }

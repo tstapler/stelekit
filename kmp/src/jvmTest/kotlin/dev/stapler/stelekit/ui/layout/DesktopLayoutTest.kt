@@ -2,9 +2,6 @@ package dev.stapler.stelekit.ui.layout
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import dev.stapler.stelekit.ui.MainLayout
 import org.junit.Rule

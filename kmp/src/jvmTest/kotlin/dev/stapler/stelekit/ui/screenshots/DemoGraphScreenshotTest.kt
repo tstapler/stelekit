@@ -1,6 +1,5 @@
 package dev.stapler.stelekit.ui.screenshots
 
-import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import io.github.takahirom.roborazzi.captureRoboImage
 import dev.stapler.stelekit.db.GraphLoader

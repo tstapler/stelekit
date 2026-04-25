@@ -1,4 +1,5 @@
 package dev.stapler.stelekit.ui
+import androidx.compose.ui.test.*
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -7,8 +8,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createComposeRule
 import kotlinx.coroutines.delay
 import org.junit.Rule
 import org.junit.Test

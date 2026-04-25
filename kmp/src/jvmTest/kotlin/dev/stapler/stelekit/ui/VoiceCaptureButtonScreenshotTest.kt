@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.ui
 
-import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import dev.stapler.stelekit.ui.components.VoiceCaptureButton
 import dev.stapler.stelekit.ui.theme.StelekitTheme

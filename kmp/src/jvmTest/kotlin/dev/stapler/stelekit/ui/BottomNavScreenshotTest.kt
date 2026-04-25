@@ -1,4 +1,5 @@
 package dev.stapler.stelekit.ui
+import androidx.compose.ui.test.*
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,10 +17,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onRoot
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import io.github.takahirom.roborazzi.captureRoboImage

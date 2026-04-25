@@ -1,12 +1,10 @@
 package dev.stapler.stelekit.ui.layout
+import androidx.compose.ui.test.*
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.ui.components.LeftSidebar
 import dev.stapler.stelekit.ui.AppState
