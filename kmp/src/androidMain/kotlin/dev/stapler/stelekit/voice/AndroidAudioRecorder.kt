@@ -25,7 +25,11 @@ import kotlin.math.sqrt
 
 private const val TAG = "AndroidAudioRecorder"
 
-class AndroidAudioRecorder(private val context: Context) : AudioRecorder {
+class AndroidAudioRecorder(
+    private val context: Context,
+    /** Called before recording starts; must return true if RECORD_AUDIO permission is granted. */
+    private val requestMicPermission: (suspend () -> Boolean)? = null,
+) : AudioRecorder {
 
     companion object {
         private const val SAMPLE_RATE = 16_000
@@ -53,6 +57,14 @@ class AndroidAudioRecorder(private val context: Context) : AudioRecorder {
     override suspend fun startRecording(): PlatformAudioFile = withContext(Dispatchers.IO) {
         stopRequested = false
         pauseRequested = false
+
+        if (requestMicPermission != null && !requestMicPermission()) {
+            return@withContext PlatformAudioFile("")
+        }
+
+        if (stopRequested) {
+            return@withContext PlatformAudioFile("")
+        }
 
         val outputFile = File(context.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager

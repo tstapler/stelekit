@@ -75,6 +75,9 @@ jobs:
         with:
           gradle-home-cache-cleanup: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          # Exclude Kotlin IC state — stale metadata across branches causes spurious
+          # expect/actual mismatch errors (e.g. PlatformSettings supertype mismatch).
+          gradle-home-cache-excludes: caches/kotlin-build-*
 
       - name: Run Android unit tests
         run: ./gradlew :kmp:testDebugUnitTest --no-daemon --build-cache

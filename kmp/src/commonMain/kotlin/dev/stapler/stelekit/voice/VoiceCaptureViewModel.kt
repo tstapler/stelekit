@@ -35,7 +35,8 @@ class VoiceCaptureViewModel(
         when (_state.value) {
             is VoiceCaptureState.Idle -> startPipeline()
             is VoiceCaptureState.Recording -> scope.launch {
-                pipeline.audioRecorder.stopRecording()
+                pipeline.directSpeechProvider?.stopListening()
+                    ?: pipeline.audioRecorder.stopRecording()
             }
             else -> Unit
         }
@@ -57,51 +58,55 @@ class VoiceCaptureViewModel(
 
     private fun startPipeline() {
         pipelineJob = scope.launch {
-            var file: PlatformAudioFile? = null
-            try {
-                _state.value = VoiceCaptureState.Recording
-                val result = pipeline.audioRecorder.startRecording()
-                file = result
-
-                if (result.isEmpty) {
+            _state.value = VoiceCaptureState.Recording
+            val transcriptResult = if (pipeline.directSpeechProvider != null) {
+                pipeline.directSpeechProvider.listen()
+            } else {
+                recordAndTranscribe()
+            }
+            when (transcriptResult) {
+                null -> return@launch  // error already set inside recordAndTranscribe
+                TranscriptResult.Empty -> {
+                    _state.value = VoiceCaptureState.Error(
+                        PipelineStage.TRANSCRIBING, "Nothing was captured — try again"
+                    )
+                }
+                is TranscriptResult.Failure.ApiError -> {
+                    _state.value = VoiceCaptureState.Error(
+                        PipelineStage.TRANSCRIBING, transcriptResult.message
+                    )
+                }
+                TranscriptResult.Failure.NetworkError -> {
+                    _state.value = VoiceCaptureState.Error(
+                        PipelineStage.TRANSCRIBING, "Network error — check your connection"
+                    )
+                }
+                TranscriptResult.Failure.PermissionDenied -> {
                     _state.value = VoiceCaptureState.Error(
                         PipelineStage.RECORDING, "Microphone permission denied"
                     )
-                    return@launch
                 }
-
-                _state.value = VoiceCaptureState.Transcribing
-                val audioData = pipeline.audioRecorder.readBytes(result)
-                when (val sttResult = pipeline.sttProvider.transcribe(audioData)) {
-                    TranscriptResult.Empty -> {
-                        _state.value = VoiceCaptureState.Error(
-                            PipelineStage.TRANSCRIBING, "Nothing was captured — try again"
-                        )
-                        return@launch
-                    }
-                    is TranscriptResult.Failure.ApiError -> {
-                        _state.value = VoiceCaptureState.Error(
-                            PipelineStage.TRANSCRIBING, sttResult.message
-                        )
-                        return@launch
-                    }
-                    TranscriptResult.Failure.NetworkError -> {
-                        _state.value = VoiceCaptureState.Error(
-                            PipelineStage.TRANSCRIBING, "Network error — check your connection"
-                        )
-                        return@launch
-                    }
-                    TranscriptResult.Failure.PermissionDenied -> {
-                        _state.value = VoiceCaptureState.Error(
-                            PipelineStage.RECORDING, "Microphone permission denied"
-                        )
-                        return@launch
-                    }
-                    is TranscriptResult.Success -> processTranscript(sttResult.text.trim())
-                }
-            } finally {
-                file?.takeIf { !it.isEmpty }?.let { pipeline.audioRecorder.deleteRecording(it) }
+                is TranscriptResult.Success -> processTranscript(transcriptResult.text.trim())
             }
+        }
+    }
+
+    /** Records via [AudioRecorder] then transcribes; returns null and sets error state on failure. */
+    private suspend fun recordAndTranscribe(): TranscriptResult? {
+        var file: PlatformAudioFile? = null
+        return try {
+            val result = pipeline.audioRecorder.startRecording()
+            file = result
+            if (result.isEmpty) {
+                _state.value = VoiceCaptureState.Error(
+                    PipelineStage.RECORDING, "Microphone permission denied"
+                )
+                return null
+            }
+            _state.value = VoiceCaptureState.Transcribing
+            pipeline.sttProvider.transcribe(pipeline.audioRecorder.readBytes(result))
+        } finally {
+            file?.takeIf { !it.isEmpty }?.let { pipeline.audioRecorder.deleteRecording(it) }
         }
     }
 
