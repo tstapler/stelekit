@@ -35,7 +35,7 @@ data class AppState(
     val rightSidebarExpanded: Boolean = false,
     val settingsVisible: Boolean = false,
     val isLoading: Boolean = false,
-    val isFullyLoaded: Boolean = true,  // True when all background loading is complete
+    val isFullyLoaded: Boolean = false,  // True when all background loading is complete
     val themeMode: StelekitThemeMode = StelekitThemeMode.SYSTEM,
     val language: Language = Language.ENGLISH,
     val onboardingCompleted: Boolean = false,
