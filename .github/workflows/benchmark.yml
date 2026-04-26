@@ -128,6 +128,8 @@ jobs:
             kmp/build/reports/graph-load-cpu.collapsed
             kmp/build/reports/flamegraph.html
             kmp/build/reports/benchmark-query-stats.json
+            kmp/build/reports/graph-load-wall.jfr
+            kmp/build/reports/graph-load.jfr
           retention-days: 30
 
       - name: Commit benchmark summary (main only)
