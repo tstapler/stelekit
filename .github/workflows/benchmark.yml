@@ -46,7 +46,9 @@ jobs:
           curl -sO https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl
 
       - name: Run benchmark
-        run: ./gradlew :kmp:jvmTestProfile --rerun-tasks --no-daemon
+        run: |
+          ./gradlew :kmp:jvmTestProfile --rerun-tasks --no-daemon \
+            -PapLib="$PWD/async-profiler-4.4-linux-x64/lib/libasyncProfiler.so"
 
       - name: Generate flamegraph PNGs
         if: always()
