@@ -179,6 +179,7 @@ kotlin {
                 // On-device LLM via Gemini Nano (Pixel 9+ and AICore-enabled OEM flagships)
                 implementation("com.google.mlkit:genai-prompt:1.0.0-beta2")
 
+
                 // Jetpack Glance — Compose-based home screen widget API
                 // Use 1.1.1 (not 1.1.0) to pick up a protobuf security fix.
                 implementation("androidx.glance:glance-appwidget:1.1.1")
@@ -346,8 +347,10 @@ tasks.register<Test>("jvmTestProfile") {
     classpath = tasks.named<Test>("jvmTest").get().classpath
     testClassesDirs = tasks.named<Test>("jvmTest").get().testClassesDirs
 
-    val graphPath = (project.findProperty("graphPath") as? String).orEmpty()
-    systemProperty("STELEKIT_GRAPH_PATH", graphPath)
+    val graphPath  = (project.findProperty("graphPath")  as? String).orEmpty()
+    val benchConfig = (project.findProperty("benchConfig") as? String) ?: "XLARGE"
+    systemProperty("STELEKIT_GRAPH_PATH",    graphPath)
+    systemProperty("STELEKIT_BENCH_CONFIG",  benchConfig)
     systemProperty("benchmark.output.dir", layout.buildDirectory.dir("reports").get().asFile.absolutePath)
 
     filter {
@@ -456,6 +459,28 @@ print(out_file)
             isIgnoreExitValue = true
         }
         scriptFile.delete()
+    }
+}
+
+// ── library stats ("Spotify Wrapped" for your knowledge graph) ─────────────
+// Usage: ./gradlew :kmp:graphStats -PgraphPath=/path/to/your/logseq
+tasks.register<Test>("graphStats") {
+    group = "verification"
+    description = "Print library stats. Usage: -PgraphPath=/your/logseq"
+
+    classpath = tasks.named<Test>("jvmTest").get().classpath
+    testClassesDirs = tasks.named<Test>("jvmTest").get().testClassesDirs
+
+    val graphPath = (project.findProperty("graphPath") as? String).orEmpty()
+    systemProperty("STELEKIT_GRAPH_PATH", graphPath)
+
+    filter {
+        includeTestsMatching("dev.stapler.stelekit.stats.LibraryWrappedTest")
+    }
+
+    testLogging {
+        events("PASSED", "FAILED", "SKIPPED")
+        showStandardStreams = true
     }
 }
 

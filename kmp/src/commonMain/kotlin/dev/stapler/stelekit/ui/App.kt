@@ -71,6 +71,10 @@ import dev.stapler.stelekit.ui.i18n.t
 import dev.stapler.stelekit.ui.onboarding.Onboarding
 import dev.stapler.stelekit.ui.screens.AllPagesScreen
 import dev.stapler.stelekit.ui.screens.AllPagesViewModel
+import dev.stapler.stelekit.ui.screens.LibraryStatsScreen
+import dev.stapler.stelekit.ui.screens.LibraryStatsViewModel
+import dev.stapler.stelekit.stats.LibraryStatsProvider
+import dev.stapler.stelekit.stats.NoOpLibraryStatsProvider
 import dev.stapler.stelekit.ui.screens.GlobalUnlinkedReferencesScreen
 import dev.stapler.stelekit.ui.screens.JournalsView
 import dev.stapler.stelekit.ui.screens.JournalsViewModel
@@ -107,6 +111,7 @@ fun StelekitApp(
     pluginHost: PluginHost = remember { PluginHost() },
     encryptionManager: EncryptionManager = remember { DefaultEncryptionManager() },
     urlFetcher: UrlFetcher = remember { NoOpUrlFetcher() },
+    libraryStatsProvider: LibraryStatsProvider = NoOpLibraryStatsProvider,
     voicePipeline: VoicePipelineConfig = remember { VoicePipelineConfig() },
     voiceSettings: VoiceSettings? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
@@ -262,6 +267,7 @@ fun StelekitApp(
             graphManager = graphManager,
             notificationManager = notificationManager,
             urlFetcher = urlFetcher,
+            libraryStatsProvider = libraryStatsProvider,
             voicePipeline = voicePipeline,
             voiceSettings = voiceSettings,
             onRebuildVoicePipeline = onRebuildVoicePipeline,
@@ -289,6 +295,7 @@ private fun GraphContent(
     graphManager: GraphManager,
     notificationManager: NotificationManager,
     urlFetcher: UrlFetcher = NoOpUrlFetcher(),
+    libraryStatsProvider: LibraryStatsProvider = NoOpLibraryStatsProvider,
     voicePipeline: VoicePipelineConfig = VoicePipelineConfig(),
     voiceSettings: VoiceSettings? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
@@ -460,6 +467,9 @@ private fun GraphContent(
     val allPagesViewModel = remember {
         AllPagesViewModel(repos.pageRepository, repos.blockRepository)
     }
+    val libraryStatsViewModel = remember {
+        LibraryStatsViewModel(libraryStatsProvider, graphManager.getActiveGraphInfo()?.path ?: "")
+    }
     val searchViewModel = remember {
         SearchViewModel(repos.searchRepository)
     }
@@ -472,6 +482,7 @@ private fun GraphContent(
             blockStateManager.close()
             journalsViewModel.close()
             allPagesViewModel.close()
+            libraryStatsViewModel.close()
             searchViewModel.close()
             voiceCaptureViewModel.close()
             viewModel.close()
@@ -654,6 +665,7 @@ private fun GraphContent(
                                 blockStateManager = blockStateManager,
                                 journalsViewModel = journalsViewModel,
                                 allPagesViewModel = allPagesViewModel,
+                                libraryStatsViewModel = libraryStatsViewModel,
                                 viewModel = viewModel,
                                 searchViewModel = searchViewModel,
                                 notificationManager = notificationManager,
@@ -773,6 +785,7 @@ private fun ScreenRouter(
     blockStateManager: dev.stapler.stelekit.ui.state.BlockStateManager,
     journalsViewModel: JournalsViewModel,
     allPagesViewModel: AllPagesViewModel,
+    libraryStatsViewModel: LibraryStatsViewModel,
     viewModel: StelekitViewModel,
     searchViewModel: SearchViewModel,
     notificationManager: NotificationManager,
@@ -846,6 +859,7 @@ private fun ScreenRouter(
                 onPageClick = { page -> viewModel.navigateTo(Screen.PageView(page)) },
                 onBulkDelete = { uuids -> viewModel.bulkDeletePages(uuids) }
             )
+            is Screen.LibraryStats -> LibraryStatsScreen(viewModel = libraryStatsViewModel)
             is Screen.Notifications -> {
                 NavigationTracingEffect("Notifications")
                 NotificationHistory(notificationManager)

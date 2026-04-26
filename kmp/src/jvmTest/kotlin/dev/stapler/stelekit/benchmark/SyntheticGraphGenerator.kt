@@ -10,16 +10,25 @@ import kotlin.random.Random
  * link density, and block hierarchy depth. All output is deterministic for a given seed.
  *
  * Usage:
- *   val gen = SyntheticGraphGenerator(SyntheticGraphGenerator.DENSE)
+ *   val gen = SyntheticGraphGenerator(SyntheticGraphGenerator.XLARGE)
  *   val stats = gen.generate(outputDir)
  *   // stats.graphDir contains pages/ and journals/ ready for GraphLoader
  *
  * Preset configs:
- *   TINY     — 50 pages,  14 journals, sparse links  (quick smoke test)
- *   SMALL    — 200 pages, 30 journals, moderate links (CI regression baseline)
- *   MEDIUM   — 500 pages, 90 journals, moderate links (realistic personal library)
- *   LARGE    — 2000 pages, 365 journals, dense links  (stress test)
- *   MESH     — 500 pages, 90 journals, 80% link density (worst-case Aho-Corasick)
+ *   TINY     — 50 pages,   14 journals, sparse links        (quick smoke test)
+ *   SMALL    — 200 pages,  30 journals, moderate links       (CI regression baseline)
+ *   MEDIUM   — 500 pages,  90 journals, moderate links       (realistic small library)
+ *   LARGE    — 2000 pages, 365 journals, dense links         (stress test)
+ *   XLARGE   — 7978 pages, 2930 journals, power-law topology (2× a real measured library)
+ *   MESH     — 500 pages,  90 journals, 80% link density     (worst-case Aho-Corasick)
+ *
+ * Hub pages (hubFraction > 0):
+ *   A fraction of pages are designated "hubs" — heavily-referenced pages like index
+ *   pages, MOCs, or frequently-linked concepts. They are picked as link targets with
+ *   hubLinkWeight× higher probability than leaf pages, and themselves contain more
+ *   blocks with higher outgoing link density. This mirrors real personal libraries
+ *   where a few pages (e.g. "Programming", "Health", "MOC-Projects") accumulate
+ *   hundreds of backlinks.
  */
 class SyntheticGraphGenerator(val config: Config = Config()) {
 
@@ -36,6 +45,14 @@ class SyntheticGraphGenerator(val config: Config = Config()) {
         val hierarchyDepth: Int = 3,
         /** Fraction of pages that use namespace notation ("Area/Topic"). */
         val namespaceFraction: Float = 0.15f,
+        /**
+         * Fraction of pages designated as "hubs". Hub pages are sampled as link
+         * targets with [hubLinkWeight]× higher probability than leaf pages, and
+         * contain more blocks with higher outgoing link density.
+         */
+        val hubFraction: Float = 0.0f,
+        /** Relative weight of hub pages vs. leaf pages in link-target selection. */
+        val hubLinkWeight: Float = 10.0f,
         /** Reproducible output — change to get a different graph shape. */
         val seed: Long = 42L,
     )
@@ -49,11 +66,25 @@ class SyntheticGraphGenerator(val config: Config = Config()) {
     )
 
     companion object {
-        val TINY   = Config(pageCount =   50, journalCount =  14, linkDensity = 0.05f, blocksPerPage = 2..8,  hierarchyDepth = 2)
-        val SMALL  = Config(pageCount =  200, journalCount =  30, linkDensity = 0.20f, blocksPerPage = 3..15, hierarchyDepth = 3)
-        val MEDIUM = Config(pageCount =  500, journalCount =  90, linkDensity = 0.25f, blocksPerPage = 4..20, hierarchyDepth = 4)
-        val LARGE  = Config(pageCount = 2000, journalCount = 365, linkDensity = 0.35f, blocksPerPage = 3..25, hierarchyDepth = 4)
-        val MESH   = Config(pageCount =  500, journalCount =  90, linkDensity = 0.80f, linksPerBlock = 3..8,  blocksPerPage = 4..15, hierarchyDepth = 3)
+        val TINY   = Config(pageCount =    50, journalCount =  14, linkDensity = 0.05f, blocksPerPage = 2..8,  hierarchyDepth = 2)
+        val SMALL  = Config(pageCount =   200, journalCount =  30, linkDensity = 0.20f, blocksPerPage = 3..15, hierarchyDepth = 3)
+        val MEDIUM = Config(pageCount =   500, journalCount =  90, linkDensity = 0.25f, blocksPerPage = 4..20, hierarchyDepth = 4)
+        val LARGE  = Config(pageCount =  2000, journalCount = 365, linkDensity = 0.35f, blocksPerPage = 3..25, hierarchyDepth = 4)
+        // Calibrated to 2× a real ~4k-page / 6-year personal library
+        // (measured via ./gradlew :kmp:graphStats -PgraphPath=~/Documents/personal-wiki/logseq).
+        // Real: 3989 pages, 1465 journals, 0.18 block-link density, p25/p75 blocks/page = 3..63.
+        val XLARGE = Config(
+            pageCount         = 7_978,
+            journalCount      = 2_930,
+            linkDensity       = 0.18f,
+            linksPerBlock     = 1..8,
+            blocksPerPage     = 3..63,
+            hierarchyDepth    = 4,
+            namespaceFraction = 0.20f,
+            hubFraction       = 0.05f,
+            hubLinkWeight     = 15.0f,
+        )
+        val MESH   = Config(pageCount =   500, journalCount =  90, linkDensity = 0.80f, linksPerBlock = 3..8,  blocksPerPage = 4..15, hierarchyDepth = 3)
     }
 
     // ── word pools for generating realistic page names ─────────────────────
@@ -113,15 +144,26 @@ class SyntheticGraphGenerator(val config: Config = Config()) {
     fun generate(outputDir: File): Stats {
         val rng = Random(config.seed)
         outputDir.mkdirs()
-        val pagesDir   = File(outputDir, "pages").also   { it.mkdirs() }
+        val pagesDir    = File(outputDir, "pages").also    { it.mkdirs() }
         val journalsDir = File(outputDir, "journals").also { it.mkdirs() }
 
         val pageNames = buildPageNames(rng)
+
+        // Designate first hubFraction of pages as hubs. Hub pages accumulate far more
+        // backlinks (they're sampled with hubLinkWeight× higher probability) and also
+        // have more outgoing links and blocks — mirroring MOC / index pages in real libs.
+        val hubCount = (config.pageCount * config.hubFraction).toInt()
+        val hubPages = pageNames.take(hubCount).toHashSet()
+
+        // Pre-build a weighted link pool so link-target selection is O(1) per block
+        // instead of O(n) (no more full shuffle of allPages per block).
+        val linkPool = buildLinkPool(pageNames, hubPages)
+
         var totalBlocks = 0
         var totalLinks  = 0
 
         for (name in pageNames) {
-            val (content, blocks, links) = generatePageContent(name, pageNames, rng)
+            val (content, blocks, links) = generatePageContent(name, linkPool, rng, isHub = name in hubPages)
             totalBlocks += blocks
             totalLinks  += links
             val fileName = name.replace('/', '%').replace(' ', '_') + ".md"
@@ -130,7 +172,7 @@ class SyntheticGraphGenerator(val config: Config = Config()) {
 
         for (i in 0 until config.journalCount) {
             val date = baseDate.minusDays(i)
-            val (content, blocks, links) = generateJournalContent(date, pageNames, rng)
+            val (content, blocks, links) = generateJournalContent(date, linkPool, rng)
             totalBlocks += blocks
             totalLinks  += links
             val fileName = "${date.year}_${date.month.toString().padStart(2, '0')}_${date.day.toString().padStart(2, '0')}.md"
@@ -176,20 +218,56 @@ class SyntheticGraphGenerator(val config: Config = Config()) {
         return names.take(config.pageCount).toList()
     }
 
+    /**
+     * Builds a weighted list used for O(1) link-target sampling.
+     * Hub pages are repeated [hubLinkWeight] times so random index lookups
+     * naturally pick them with the correct relative frequency.
+     */
+    private fun buildLinkPool(pageNames: List<String>, hubPages: Set<String>): List<String> {
+        if (hubPages.isEmpty()) return pageNames
+        val weight = config.hubLinkWeight.toInt().coerceAtLeast(1)
+        val pool = ArrayList<String>(pageNames.size + hubPages.size * (weight - 1))
+        for (name in pageNames) {
+            if (name in hubPages) repeat(weight) { pool.add(name) } else pool.add(name)
+        }
+        return pool
+    }
+
     private data class GeneratedContent(val markdown: String, val blockCount: Int, val linkCount: Int)
 
     private fun generatePageContent(
         pageName: String,
-        allPages: List<String>,
+        linkPool: List<String>,
         rng: Random,
+        isHub: Boolean = false,
     ): GeneratedContent {
+        // Hub pages get more blocks and higher outgoing-link density to simulate
+        // MOC/index pages that heavily reference the rest of the graph.
+        val effectiveBlocksPerPage = if (isHub)
+            (config.blocksPerPage.last)..(config.blocksPerPage.last * 3)
+        else
+            config.blocksPerPage
+        val effectiveLinkDensity = if (isHub)
+            (config.linkDensity * 2.5f).coerceAtMost(0.85f)
+        else
+            config.linkDensity
+        val effectiveLinksPerBlock = if (isHub)
+            config.linksPerBlock.first..(config.linksPerBlock.last * 2).coerceAtMost(20)
+        else
+            config.linksPerBlock
+
         val sb = StringBuilder()
-        val blockCount = config.blocksPerPage.random(rng)
+        val blockCount = effectiveBlocksPerPage.random(rng)
         var blocks = 0
         var links  = 0
 
         repeat(blockCount) { i ->
-            val (line, lineLinks) = generateBlock(pageName, allPages, rng, indent = 0, position = i)
+            val (line, lineLinks) = generateBlock(
+                pageName, linkPool, rng,
+                indent = 0, position = i,
+                effectiveLinkDensity = effectiveLinkDensity,
+                effectiveLinksPerBlock = effectiveLinksPerBlock,
+            )
             sb.append(line)
             links  += lineLinks
             blocks += 1
@@ -199,7 +277,12 @@ class SyntheticGraphGenerator(val config: Config = Config()) {
                 val childDepth = (1 until minOf(config.hierarchyDepth, 4)).random(rng)
                 val childCount = (1..3).random(rng)
                 repeat(childCount) { j ->
-                    val (child, childLinks) = generateBlock(pageName, allPages, rng, indent = childDepth, position = j)
+                    val (child, childLinks) = generateBlock(
+                        pageName, linkPool, rng,
+                        indent = childDepth, position = j,
+                        effectiveLinkDensity = effectiveLinkDensity,
+                        effectiveLinksPerBlock = effectiveLinksPerBlock,
+                    )
                     sb.append(child)
                     links  += childLinks
                     blocks += 1
@@ -212,7 +295,7 @@ class SyntheticGraphGenerator(val config: Config = Config()) {
 
     private fun generateJournalContent(
         date: SimpleDate,
-        allPages: List<String>,
+        linkPool: List<String>,
         rng: Random,
     ): GeneratedContent {
         val sb = StringBuilder()
@@ -221,7 +304,7 @@ class SyntheticGraphGenerator(val config: Config = Config()) {
         var links  = 0
 
         repeat(blockCount) { i ->
-            val (line, lineLinks) = generateBlock("journal-${date}", allPages, rng, indent = 0, position = i)
+            val (line, lineLinks) = generateBlock("journal-${date}", linkPool, rng, indent = 0, position = i)
             sb.append(line)
             links  += lineLinks
             blocks += 1
@@ -232,10 +315,12 @@ class SyntheticGraphGenerator(val config: Config = Config()) {
 
     private fun generateBlock(
         sourcePage: String,
-        allPages: List<String>,
+        linkPool: List<String>,
         rng: Random,
         indent: Int,
         position: Int,
+        effectiveLinkDensity: Float = config.linkDensity,
+        effectiveLinksPerBlock: IntRange = config.linksPerBlock,
     ): Pair<String, Int> {
         val prefix = "  ".repeat(indent) + "- "
         val fragment = sentenceFragments.random(rng)
@@ -246,12 +331,22 @@ class SyntheticGraphGenerator(val config: Config = Config()) {
         sb.append(prefix)
         sb.append("$fragment $filler")
 
-        if (rng.nextFloat() < config.linkDensity) {
-            val linkCount = config.linksPerBlock.random(rng)
-            val candidates = allPages.filter { it != sourcePage }.shuffled(rng)
-            for (k in 0 until minOf(linkCount, candidates.size)) {
-                sb.append(" [[${candidates[k]}]]")
-                links++
+        if (rng.nextFloat() < effectiveLinkDensity) {
+            val linkCount = effectiveLinksPerBlock.random(rng)
+            // O(1) random sampling from the pre-built weighted pool.
+            // Track seen names to avoid duplicates within a block.
+            val seen = mutableSetOf(sourcePage)
+            var k = 0
+            var attempts = 0
+            val maxAttempts = linkCount * 5
+            while (k < linkCount && attempts < maxAttempts) {
+                val candidate = linkPool[rng.nextInt(linkPool.size)]
+                if (seen.add(candidate)) {
+                    sb.append(" [[${candidate}]]")
+                    links++
+                    k++
+                }
+                attempts++
             }
         }
 

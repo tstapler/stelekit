@@ -20,6 +20,7 @@ sealed class Screen {
     @HelpPage(docs = AllPagesDocs::class)
     data object AllPages : Screen()
 
+    data object LibraryStats : Screen()
     data object Notifications : Screen()
     data object Logs : Screen()
     data object Performance : Screen()

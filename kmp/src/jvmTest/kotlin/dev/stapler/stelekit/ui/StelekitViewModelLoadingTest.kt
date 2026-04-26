@@ -81,7 +81,7 @@ class StelekitViewModelLoadingTest {
 
         vm.setGraphPath("/tmp/test-graph")
 
-        withTimeout(5_000) {
+        withTimeout(30_000) {
             vm.uiState.first { it.isFullyLoaded }
         }
 

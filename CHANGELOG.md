@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.14.0](https://github.com/tstapler/stelekit/compare/v0.13.0...v0.14.0) (2026-04-26)
+
+
+### Features
+
+* **android:** widget, tile, and share-sheet capture entry points ([e8394ae](https://github.com/tstapler/stelekit/commit/e8394ae18b4d2e89fa87b948df9f195b03903f1e))
+
+
+### Bug Fixes
+
+* **bench:** fix pageCount=0 in PR comments and clarify benchmark titles ([c66d0b7](https://github.com/tstapler/stelekit/commit/c66d0b79c84f9447337a34ee98e37226d96feacf))
+* **ci:** pull --rebase before push in benchmark workflows ([1979f4f](https://github.com/tstapler/stelekit/commit/1979f4f2497fea7719d564c21a39c4b090c66204))
+* **ci:** remove stray conflict marker from benchmark.yml ([a61a6d7](https://github.com/tstapler/stelekit/commit/a61a6d761ab280b9b21d57f1939176f369b29da3))
+* **ios:** replace String.format() with KMP-safe formatting helpers ([d4853d0](https://github.com/tstapler/stelekit/commit/d4853d0fe6dc51f6ab8576527b00827d6dcfe891))
+* **test:** make loadGraph set isFullyLoaded=false synchronously ([038637a](https://github.com/tstapler/stelekit/commit/038637a5d0c0006c26164d82196def75a9425394))
+
+## [0.13.0](https://github.com/tstapler/stelekit/compare/v0.12.0...v0.13.0) (2026-04-26)
+
+
+### Features
+
+* **db:** enforce @DirectRepositoryWrite on SpanRepository write methods ([768d616](https://github.com/tstapler/stelekit/commit/768d61690d3ae2fb0fe9bc0c7213aa4314a681a7))
+* **detekt:** rule enforcing @DirectRepositoryWrite on all *Repository write methods ([f645a9a](https://github.com/tstapler/stelekit/commit/f645a9ad39a4dd4230ff2f27f446037593ab0d94))
+* **detekt:** rule enforcing @DirectRepositoryWrite on all *Repository write methods ([c3a20c9](https://github.com/tstapler/stelekit/commit/c3a20c9f81e9bee2d2a941a6c9e27e6376c88037))
+
+
+### Bug Fixes
+
+* **desktop:** resolve SQLITE_BUSY and WindowInsets crash on startup ([f081157](https://github.com/tstapler/stelekit/commit/f0811574ea8e1028583655785e6bb6d7549b1756))
+* **desktop:** resolve SQLITE_BUSY and WindowInsets crash on startup ([7b93052](https://github.com/tstapler/stelekit/commit/7b93052f8aaab5f3655f14b552834f7f6bb1c72b))
+* **fdroid:** enforce latest version, add metadata, replace placeholder icons ([#42](https://github.com/tstapler/stelekit/issues/42)) ([cbc41ff](https://github.com/tstapler/stelekit/commit/cbc41ff9f39bb27f082c39bc795f8e8e1b3d23cb))
+
 ## [0.12.0](https://github.com/tstapler/stelekit/compare/v0.11.0...v0.12.0) (2026-04-26)
 
 
@@ -18,6 +50,7 @@
 ### Bug Fixes
 
 * **search:** create-page in link picker now inserts link and appears first ([2a85c6d](https://github.com/tstapler/stelekit/commit/2a85c6dc176324feaf50df0179ca646ac15f2000))
+
 
 ## [0.10.0](https://github.com/tstapler/stelekit/compare/v0.9.5...v0.10.0) (2026-04-25)
 
