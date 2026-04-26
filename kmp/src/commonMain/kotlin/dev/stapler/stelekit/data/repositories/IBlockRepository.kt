@@ -378,6 +378,7 @@ interface IBlockRepository {
      *
      * @return Result with validation report
      */
+    @DirectRepositoryWrite
     suspend fun validateIntegrity(): Result<ValidationReport>
 
     // ===== CACHING OPERATIONS =====
@@ -404,7 +405,6 @@ interface IBlockRepository {
      *
      * @return CacheStatistics with cache metrics
      */
-    @DirectRepositoryWrite
     suspend fun getCacheStatistics(): Result<CacheStatistics>
 
     // ===== ENCRYPTION OPERATIONS =====
