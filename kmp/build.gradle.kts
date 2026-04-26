@@ -436,6 +436,28 @@ print(out_file)
     }
 }
 
+// ── library stats ("Spotify Wrapped" for your knowledge graph) ─────────────
+// Usage: ./gradlew :kmp:graphStats -PgraphPath=/path/to/your/logseq
+tasks.register<Test>("graphStats") {
+    group = "verification"
+    description = "Print library stats. Usage: -PgraphPath=/your/logseq"
+
+    classpath = tasks.named<Test>("jvmTest").get().classpath
+    testClassesDirs = tasks.named<Test>("jvmTest").get().testClassesDirs
+
+    val graphPath = (project.findProperty("graphPath") as? String).orEmpty()
+    systemProperty("STELEKIT_GRAPH_PATH", graphPath)
+
+    filter {
+        includeTestsMatching("dev.stapler.stelekit.stats.LibraryWrappedTest")
+    }
+
+    testLogging {
+        events("PASSED", "FAILED", "SKIPPED")
+        showStandardStreams = true
+    }
+}
+
 compose.desktop {
     application {
         mainClass = "dev.stapler.stelekit.desktop.MainKt"
