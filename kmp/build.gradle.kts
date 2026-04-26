@@ -47,7 +47,7 @@ kotlin {
         val commonMain by getting {
             dependencies {
                 // Arrow
-                implementation(dependencies.platform("io.arrow-kt:arrow-stack:2.2.1.1"))
+                implementation(platform("io.arrow-kt:arrow-stack:2.2.1.1"))
                 implementation("io.arrow-kt:arrow-core")
                 implementation("io.arrow-kt:arrow-optics")
                 implementation("io.arrow-kt:arrow-fx-coroutines")

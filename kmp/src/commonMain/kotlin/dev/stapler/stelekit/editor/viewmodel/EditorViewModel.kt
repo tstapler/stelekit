@@ -616,7 +616,7 @@ class EditorViewModel(
                 
             } catch (e: Exception) {
                 _autoSaveStatus.value = AutoSaveStatus.Error(e.message ?: "Unknown error")
-                logger.error("Auto-save failed: ${e.message}")
+                logger.error("Auto-save failed", e)
                 
                 // Clear status after a delay
                 kotlinx.coroutines.delay(2000)

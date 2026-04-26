@@ -2,7 +2,6 @@ package dev.stapler.stelekit.platform
 
 import arrow.core.Either
 import arrow.core.left
-import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 actual object GitManagerFactory {
@@ -14,12 +13,12 @@ class JsGitManager : GitManager {
         return GitResult.Success("Commit not supported on Web")
     }
 
-    override suspend fun push(): GitEither<DomainError, Unit> {
-        return GitResult.Error("Push not supported on Web")
+    override suspend fun push(): Either<DomainError, Unit> {
+        return DomainError.NetworkError(UnsupportedOperationException("Push not supported on Web")).left()
     }
 
-    override suspend fun pull(): GitEither<DomainError, Unit> {
-        return GitResult.Error("Pull not supported on Web")
+    override suspend fun pull(): Either<DomainError, Unit> {
+        return DomainError.NetworkError(UnsupportedOperationException("Pull not supported on Web")).left()
     }
 
     override suspend fun status(): GitResult<String> {

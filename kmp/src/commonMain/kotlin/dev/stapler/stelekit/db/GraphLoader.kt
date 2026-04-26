@@ -335,7 +335,7 @@ class GraphLoader(
                     checkDirectoryForChanges(journalsDir)
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
-                    logger.error("Error in graph watcher: ${e.message}")
+                    logger.error("Error in graph watcher", e)
                 }
             }
         }

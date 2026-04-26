@@ -44,7 +44,7 @@ class UrlFetcherIos(
                 header(HttpHeaders.UserAgent, "Mozilla/5.0 (compatible; SteleKit/1.0)")
             }
 
-            if (!response.status.isRight()()) {
+            if (!response.status.isSuccess()) {
                 return FetchResult.Failure.HttpError(response.status.value)
             }
 

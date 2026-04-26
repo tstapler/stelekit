@@ -104,7 +104,7 @@ class UndoManager(
         val payload = try {
             json.decodeFromString(OperationLogger.OpPayload.serializer(), op.payload)
         } catch (e: Exception) {
-            logger.error("UndoManager: failed to parse payload for op ${op.op_id}: ${e.message}")
+            logger.error("UndoManager: failed to parse payload for op ${op.op_id}", e)
             return
         }
 
@@ -143,7 +143,7 @@ class UndoManager(
         val payload = try {
             json.decodeFromString(OperationLogger.OpPayload.serializer(), op.payload)
         } catch (e: Exception) {
-            logger.error("UndoManager: failed to parse payload for redo op ${op.op_id}: ${e.message}")
+            logger.error("UndoManager: failed to parse payload for redo op ${op.op_id}", e)
             return
         }
 
