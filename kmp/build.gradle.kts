@@ -321,8 +321,10 @@ tasks.register<Test>("jvmTestProfile") {
     classpath = tasks.named<Test>("jvmTest").get().classpath
     testClassesDirs = tasks.named<Test>("jvmTest").get().testClassesDirs
 
-    val graphPath = (project.findProperty("graphPath") as? String).orEmpty()
-    systemProperty("STELEKIT_GRAPH_PATH", graphPath)
+    val graphPath  = (project.findProperty("graphPath")  as? String).orEmpty()
+    val benchConfig = (project.findProperty("benchConfig") as? String) ?: "XLARGE"
+    systemProperty("STELEKIT_GRAPH_PATH",    graphPath)
+    systemProperty("STELEKIT_BENCH_CONFIG",  benchConfig)
     systemProperty("benchmark.output.dir", layout.buildDirectory.dir("reports").get().asFile.absolutePath)
 
     filter {
