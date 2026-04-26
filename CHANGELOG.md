@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.13.0](https://github.com/tstapler/stelekit/compare/v0.12.0...v0.13.0) (2026-04-26)
+
+
+### Features
+
+* **db:** enforce @DirectRepositoryWrite on SpanRepository write methods ([768d616](https://github.com/tstapler/stelekit/commit/768d61690d3ae2fb0fe9bc0c7213aa4314a681a7))
+* **detekt:** rule enforcing @DirectRepositoryWrite on all *Repository write methods ([f645a9a](https://github.com/tstapler/stelekit/commit/f645a9ad39a4dd4230ff2f27f446037593ab0d94))
+* **detekt:** rule enforcing @DirectRepositoryWrite on all *Repository write methods ([c3a20c9](https://github.com/tstapler/stelekit/commit/c3a20c9f81e9bee2d2a941a6c9e27e6376c88037))
+
+
+### Bug Fixes
+
+* **desktop:** resolve SQLITE_BUSY and WindowInsets crash on startup ([f081157](https://github.com/tstapler/stelekit/commit/f0811574ea8e1028583655785e6bb6d7549b1756))
+* **desktop:** resolve SQLITE_BUSY and WindowInsets crash on startup ([7b93052](https://github.com/tstapler/stelekit/commit/7b93052f8aaab5f3655f14b552834f7f6bb1c72b))
+* **fdroid:** enforce latest version, add metadata, replace placeholder icons ([#42](https://github.com/tstapler/stelekit/issues/42)) ([cbc41ff](https://github.com/tstapler/stelekit/commit/cbc41ff9f39bb27f082c39bc795f8e8e1b3d23cb))
+
 ## [0.12.0](https://github.com/tstapler/stelekit/compare/v0.11.0...v0.12.0) (2026-04-26)
 
 
