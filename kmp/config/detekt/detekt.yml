@@ -10,6 +10,10 @@ stelekit:
   active: true
   RegexInLambda:
     active: true
+  MissingDirectRepositoryWrite:
+    active: true
+  RepositoryWriteCallSite:
+    active: true
 
 # Compose Multiplatform rules (io.nlopez.compose.rules)
 Compose:

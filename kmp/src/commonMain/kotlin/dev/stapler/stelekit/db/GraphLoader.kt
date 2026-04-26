@@ -61,15 +61,22 @@ class GraphLoader(
     private inner class Span(val name: String, val traceId: String, val parentSpanId: String = "") {
         val spanId: String = genId()
         private val startMs: Long = Clock.System.now().toEpochMilliseconds()
+        @OptIn(DirectRepositoryWrite::class)
         suspend fun finish(statusCode: String = "OK", vararg attrs: Pair<String, String>) {
             val endMs = Clock.System.now().toEpochMilliseconds()
             val allAttrs = mapOf(*attrs) + ("session.id" to dev.stapler.stelekit.performance.AppSession.id)
-            spanRepository?.insertSpan(SerializedSpan(
+            val serialized = SerializedSpan(
                 name = name, startEpochMs = startMs, endEpochMs = endMs,
                 durationMs = endMs - startMs, attributes = allAttrs,
                 statusCode = statusCode, traceId = traceId,
                 spanId = spanId, parentSpanId = parentSpanId,
-            ))
+            )
+            if (spanRepository != null) {
+                writeActor.execute(DatabaseWriteActor.Priority.LOW) {
+                    spanRepository.insertSpan(serialized)
+                    Result.success(Unit)
+                }
+            }
         }
     }
 
@@ -425,21 +432,29 @@ class GraphLoader(
         }
     }
 
+    /**
+     * Flush chunk writes with per-page atomicity.
+     *
+     * savePages runs as one typed LOW batch (HIGH can preempt after it completes).
+     * For each page, deleteBlocksForPages + saveBlocks run inside a single Execute(LOW)
+     * so a HIGH write cannot interleave between removing a page's old blocks and inserting
+     * its replacements — which would transiently leave the page with no blocks.
+     * HIGH requests can still preempt between pages (after each Execute completes),
+     * giving sub-page granularity rather than the old sub-chunk (10-page) granularity.
+     */
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun flushChunkWrites(
+    private suspend fun flushChunkWritesPreemptible(
         pagesToSave: List<Page>,
         pageUuidsToDelete: Set<String>,
         blocksToSaveByPage: Map<String, List<Block>>,
-        failedPageUuids: MutableSet<String>,
-    ): Result<Unit> = try {
+    ) {
+        val failedPageUuids = mutableSetOf<String>()
+
         if (pagesToSave.isNotEmpty()) {
-            val bulkResult = pageRepository.savePages(pagesToSave)
+            val bulkResult = writeActor.savePages(pagesToSave, DatabaseWriteActor.Priority.LOW)
             if (bulkResult.isFailure) {
-                // Bulk transaction failed — retry individually to track which pages failed.
                 for (page in pagesToSave) {
-                    val result = pageRepository.savePage(page)
-                    if (result.isFailure) {
-                        val e = result.exceptionOrNull()!!
+                    writeActor.savePage(page, DatabaseWriteActor.Priority.LOW).onFailure { e ->
                         logger.error("savePage failed for ${page.name}", e)
                         _writeErrors.tryEmit(WriteError(page.filePath ?: page.name, 0, e))
                         failedPageUuids.add(page.uuid)
@@ -447,22 +462,20 @@ class GraphLoader(
                 }
             }
         }
-        val uuidsToDelete = pageUuidsToDelete.filter { it !in failedPageUuids }
-        if (uuidsToDelete.isNotEmpty()) {
-            blockRepository.deleteBlocksForPages(uuidsToDelete)
-        }
+
         for ((pageUuid, blocks) in blocksToSaveByPage) {
             if (pageUuid in failedPageUuids) continue
-            val result = blockRepository.saveBlocks(blocks)
-            if (result.isFailure) {
-                val e = result.exceptionOrNull()!!
-                logger.error("saveBlocks failed for pageUuid=$pageUuid (${blocks.size} blocks)", e)
-                _writeErrors.tryEmit(WriteError(pageUuid, blocks.size, e))
+            val shouldDelete = pageUuid in pageUuidsToDelete
+            writeActor.execute(DatabaseWriteActor.Priority.LOW) {
+                if (shouldDelete) {
+                    blockRepository.deleteBlocksForPages(listOf(pageUuid))
+                }
+                blockRepository.saveBlocks(blocks).onFailure { e ->
+                    logger.error("saveBlocks failed for pageUuid=$pageUuid (${blocks.size} blocks)", e)
+                    _writeErrors.tryEmit(WriteError(pageUuid, blocks.size, e))
+                }
             }
         }
-        Result.success(Unit)
-    } catch (e: Exception) {
-        Result.failure(e)
     }
 
     fun stopWatching() {
@@ -705,16 +718,9 @@ class GraphLoader(
                                 }
                             }
                             
-                            // Flush all writes for this chunk through the actor in a single dispatch.
-                            // Previously each savePage / deleteBlocks / saveBlocks was its own actor
-                            // call; with N chunks in flight that created O(N×chunk) queue depth and
-                            // made each batchDeleteBlocks wait behind all prior savePages.
-                            val failedPageUuids = mutableSetOf<String>()
                             if (pagesToSave.isNotEmpty() || pageUuidsToDelete.isNotEmpty()) {
                                 PerformanceMonitor.startTrace("batchDeleteBlocks")
-                                writeActor.execute(DatabaseWriteActor.Priority.LOW) {
-                                    flushChunkWrites(pagesToSave, pageUuidsToDelete, blocksToSaveByPage, failedPageUuids)
-                                }
+                                flushChunkWritesPreemptible(pagesToSave, pageUuidsToDelete, blocksToSaveByPage)
                                 PerformanceMonitor.endTrace("batchDeleteBlocks")
                             }
                             

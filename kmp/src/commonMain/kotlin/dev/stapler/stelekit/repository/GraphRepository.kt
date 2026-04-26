@@ -306,11 +306,13 @@ interface PropertyRepository {
     /**
      * Save a property (create or update)
      */
+    @DirectRepositoryWrite
     suspend fun saveProperty(property: Property): Result<Unit>
 
     /**
      * Delete a property
      */
+    @DirectRepositoryWrite
     suspend fun deleteProperty(blockUuid: String, key: String): Result<Unit>
 
     /**
@@ -349,11 +351,13 @@ interface ReferenceRepository {
     /**
      * Add a reference from one block to another
      */
+    @DirectRepositoryWrite
     suspend fun addReference(fromBlockUuid: String, toBlockUuid: String): Result<Unit>
 
     /**
      * Remove a reference between blocks
      */
+    @DirectRepositoryWrite
     suspend fun removeReference(fromBlockUuid: String, toBlockUuid: String): Result<Unit>
 
     /**

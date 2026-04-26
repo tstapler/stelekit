@@ -110,6 +110,8 @@ fun StelekitApp(
     voicePipeline: VoicePipelineConfig = remember { VoicePipelineConfig() },
     voiceSettings: VoiceSettings? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
+    deviceSttAvailable: Boolean = false,
+    deviceLlmAvailable: Boolean = false,
     spanRecorder: SpanRecorder = NoOpSpanRecorder,
 ) {
     val platformSettings = remember { PlatformSettings() }
@@ -241,6 +243,8 @@ fun StelekitApp(
             voicePipeline = voicePipeline,
             voiceSettings = voiceSettings,
             onRebuildVoicePipeline = onRebuildVoicePipeline,
+            deviceSttAvailable = deviceSttAvailable,
+            deviceLlmAvailable = deviceLlmAvailable,
             spanRecorder = spanRecorder,
         )
     }
@@ -266,6 +270,8 @@ private fun GraphContent(
     voicePipeline: VoicePipelineConfig = VoicePipelineConfig(),
     voiceSettings: VoiceSettings? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
+    deviceSttAvailable: Boolean = false,
+    deviceLlmAvailable: Boolean = false,
     spanRecorder: SpanRecorder = NoOpSpanRecorder,
 ) {
     CompositionLocalProvider(LocalSpanRecorder provides spanRecorder) {
@@ -659,7 +665,7 @@ private fun GraphContent(
                                         onTap = { voiceCaptureViewModel.onMicTapped() },
                                         onDismissError = { voiceCaptureViewModel.dismissError() },
                                         onAutoReset = { voiceCaptureViewModel.resetToIdle() },
-                                        amplitudeFlow = voicePipeline.audioRecorder.amplitudeFlow,
+                                        amplitudeFlow = voicePipeline.effectiveAmplitudeFlow,
                                     )
                                 },
                             )
@@ -674,6 +680,8 @@ private fun GraphContent(
                         fileSystem = fileSystem,
                         voiceSettings = voiceSettings,
                         onRebuildVoicePipeline = onRebuildVoicePipeline,
+                        deviceSttAvailable = deviceSttAvailable,
+                        deviceLlmAvailable = deviceLlmAvailable,
                         frameMetric = frameMetricState,
                         debugState = debugMenuState,
                         onDebugStateChange = { newState ->
@@ -875,6 +883,8 @@ private fun GraphDialogLayer(
     fileSystem: FileSystem,
     voiceSettings: VoiceSettings? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
+    deviceSttAvailable: Boolean = false,
+    deviceLlmAvailable: Boolean = false,
     frameMetric: kotlinx.coroutines.flow.StateFlow<dev.stapler.stelekit.performance.FrameMetric>,
     debugState: DebugMenuState = DebugMenuState(),
     onDebugStateChange: (DebugMenuState) -> Unit = {},
@@ -912,6 +922,8 @@ private fun GraphDialogLayer(
         onLeftHandedChange = { viewModel.setLeftHanded(it) },
         voiceSettings = voiceSettings,
         onRebuildVoicePipeline = onRebuildVoicePipeline,
+        deviceSttAvailable = deviceSttAvailable,
+        deviceLlmAvailable = deviceLlmAvailable,
     )
 
     appState.diskConflict?.let { conflict ->

@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.12.0](https://github.com/tstapler/stelekit/compare/v0.11.0...v0.12.0) (2026-04-26)
+
+
+### Features
+
+* **android/voice:** on-device STT and LLM via SpeechRecognizer + Gemini Nano ([#27](https://github.com/tstapler/stelekit/issues/27)) ([a275dbe](https://github.com/tstapler/stelekit/commit/a275dbe912fa5838f3715f44d9ed5115a27eb931))
+
+## [0.11.0](https://github.com/tstapler/stelekit/compare/v0.10.0...v0.11.0) (2026-04-26)
+
+
+### Features
+
+* **android:** extract Application class and share GraphManager across process lifecycle ([0e7915e](https://github.com/tstapler/stelekit/commit/0e7915e95a34f214ba9e3a19906e8a051b19fa24))
+
+
+### Bug Fixes
+
+* **search:** create-page in link picker now inserts link and appears first ([2a85c6d](https://github.com/tstapler/stelekit/commit/2a85c6dc176324feaf50df0179ca646ac15f2000))
+
+
+## [0.10.0](https://github.com/tstapler/stelekit/compare/v0.9.5...v0.10.0) (2026-04-25)
+
+
+### Features
+
+* **fdroid:** fix repo version history and show version in Settings ([#33](https://github.com/tstapler/stelekit/issues/33)) ([9bb8a77](https://github.com/tstapler/stelekit/commit/9bb8a773b966cd7f79cf4c0a764a73cfb0b918b9))
+
+## [0.9.5](https://github.com/tstapler/stelekit/compare/v0.9.4...v0.9.5) (2026-04-25)
+
+
+### Bug Fixes
+
+* **resilience:** fix loading screen hang + isolate test settings ([dc1b51b](https://github.com/tstapler/stelekit/commit/dc1b51be926992ca348b9958d15f4721acb98bd9))
+
+
+### Performance Improvements
+
+* **android:** decompose Phase 3 chunk writes to allow HIGH-priority preemption ([#26](https://github.com/tstapler/stelekit/issues/26)) ([b5a51ab](https://github.com/tstapler/stelekit/commit/b5a51ab82e52b38ceb98662412956be692114803))
+
 ## [0.9.4](https://github.com/tstapler/stelekit/compare/v0.9.3...v0.9.4) (2026-04-24)
 
 
