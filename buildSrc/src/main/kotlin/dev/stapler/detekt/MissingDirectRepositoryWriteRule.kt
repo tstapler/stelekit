@@ -26,8 +26,9 @@ import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
  * Reads return `Flow<>` and are exempt. Non-suspend functions are exempt.
  * Methods whose names begin with a read-only prefix (`get`, `find`, `is`, `has`, `count`,
  * `validate`, `check`, `calculate`, `select`) are also exempt — they are reads that happen
- * to use `suspend fun` rather than `Flow`. Use [RepositoryWriteCallSiteRule] to verify that
- * these exempt methods don't actually contain SQL write calls.
+ * to use `suspend fun` rather than `Flow`. Methods prefixed with `cache` are in-memory-only
+ * operations (e.g. `cacheEvictAll`, `cacheEvictPage`) with no database interaction.
+ * Use [RepositoryWriteCallSiteRule] to verify that these exempt methods don't contain SQL writes.
  *
  * Compliant:
  * ```kotlin
@@ -91,8 +92,8 @@ class MissingDirectRepositoryWriteRule(config: Config = Config.empty) : Rule(con
     companion object {
         private val READ_PREFIXES = setOf(
             "get", "find", "is", "has", "count", "validate", "check", "calculate", "select",
-            // In-memory cache management — no database interaction, no actor routing needed
-            "clear", "evict",
+            // In-memory cache management (cache* prefix) — no database interaction, no actor routing needed
+            "cache",
         )
     }
 }

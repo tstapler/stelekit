@@ -896,7 +896,7 @@ class StelekitViewModel(
                 if (currentPage.filePath != event.filePath) return@collect
 
                 // Evict only this page's hierarchy cache so unrelated pages stay warm.
-                blockStateManager?.evictPageCaches(currentPage.uuid)
+                blockStateManager?.cacheEvictPage(currentPage.uuid)
 
                 // Three-tier protection:
                 // 1. Actively editing a block right now.

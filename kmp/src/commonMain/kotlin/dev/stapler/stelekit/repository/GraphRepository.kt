@@ -74,18 +74,15 @@ interface BlockRepository {
     @DirectRepositoryWrite
     suspend fun clear()
 
-    /**
-     * Evict in-memory caches without touching the database.
-     * Default no-op for repositories with no in-memory cache.
-     */
-    suspend fun clearAllCaches() {}
+    /** Evict all in-memory caches without touching the database. No-op by default. */
+    suspend fun cacheEvictAll() {}
 
     /**
-     * Evict only the cache entries for a specific page.
+     * Evict in-memory cache entries for [pageUuid] only.
      * Called after external file changes so unrelated pages stay warm.
-     * Default no-op for repositories with no in-memory cache.
+     * No-op by default.
      */
-    suspend fun evictPageCaches(pageUuid: String) {}
+    suspend fun cacheEvictPage(pageUuid: String) {}
 
     /**
      * Save a new or updated block

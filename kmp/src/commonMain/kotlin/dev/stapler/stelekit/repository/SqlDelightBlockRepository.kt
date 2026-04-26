@@ -899,11 +899,11 @@ class SqlDelightBlockRepository(
         rootUuids?.forEach { hierarchyCache.remove(it) }
     }
 
-    override suspend fun evictPageCaches(pageUuid: String) {
+    override suspend fun cacheEvictPage(pageUuid: String) {
         evictHierarchyForPage(pageUuid)
     }
 
-    override suspend fun clearAllCaches() {
+    override suspend fun cacheEvictAll() {
         blockCache.invalidateAll()
         hierarchyCache.invalidateAll()
         ancestorsCache.invalidateAll()

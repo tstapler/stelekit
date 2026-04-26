@@ -147,11 +147,11 @@ class CacheInvalidationTest : BlockHoundTestBase() {
     }
 
     /**
-     * clearAllCaches nukes every cache tier. After clearing, a hierarchy that was previously
+     * cacheEvictAll nukes every cache tier. After clearing, a hierarchy that was previously
      * cached returns fresh DB data.
      */
     @Test
-    fun clearAllCaches_causes_fresh_hierarchy_read() = runBlocking {
+    fun cacheEvictAll_causes_fresh_hierarchy_read() = runBlocking {
         val (blockRepo, pageRepo) = buildRepo()
 
         val pageUuid = "page-clear"
@@ -168,15 +168,15 @@ class CacheInvalidationTest : BlockHoundTestBase() {
 
         // Stale cache: child is not visible yet
         val h2Stale = blockRepo.getBlockHierarchy(rootUuid).first().getOrNull()!!
-        assertEquals(1, h2Stale.size, "hierarchy should return stale cached result before clearAllCaches")
+        assertEquals(1, h2Stale.size, "hierarchy should return stale cached result before cacheEvictAll")
 
         // Nuke all caches
-        blockRepo.clearAllCaches()
+        blockRepo.cacheEvictAll()
 
         // Fresh read: child is now visible
         val h3Fresh = blockRepo.getBlockHierarchy(rootUuid).first().getOrNull()!!
         assertEquals(2, h3Fresh.size,
-            "after clearAllCaches, hierarchy must include the newly-added child block")
+            "after cacheEvictAll, hierarchy must include the newly-added child block")
     }
 
     /**

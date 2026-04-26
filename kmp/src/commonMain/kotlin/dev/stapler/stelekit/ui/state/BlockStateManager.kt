@@ -386,13 +386,10 @@ class BlockStateManager(
         }
     }
 
-    /**
-     * Evict in-memory caches for a specific page when an external file change fires.
-     * Only the changed page's hierarchy cache is cleared so unrelated pages stay warm.
-     */
-    fun evictPageCaches(pageUuid: String) {
+    /** Evict in-memory caches for [pageUuid] when an external file change fires. */
+    fun cacheEvictPage(pageUuid: String) {
         scope.launch {
-            blockRepository.evictPageCaches(pageUuid)
+            blockRepository.cacheEvictPage(pageUuid)
         }
     }
 
