@@ -36,6 +36,7 @@ import dev.stapler.stelekit.performance.RingBufferSpanExporter
 import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.performance.SpanRepository
 import dev.stapler.stelekit.performance.TraceEvent
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -82,7 +83,7 @@ private fun HistogramsTab(histogramWriter: HistogramWriter?) {
     val summaries by produceState<Map<String, PercentileSummary>>(emptyMap(), histogramWriter) {
         while (true) {
             if (histogramWriter != null) {
-                val result = withContext(PlatformDispatcher.IO) {
+                val result = withContext(PlatformDispatcher.DB) {
                     operations
                         .mapNotNull { op -> histogramWriter.queryPercentiles(op)?.let { op to it } }
                         .toMap()
@@ -150,6 +151,7 @@ private fun p99Color(p99Ms: Long): Color = when {
 
 private val durationPresets = listOf(0L, 50L, 100L, 250L, 500L)
 
+@OptIn(DirectRepositoryWrite::class)
 @Composable
 private fun SpansTab(
     spanRepository: SpanRepository?,
@@ -200,6 +202,7 @@ private fun SpansTab(
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        contentWindowInsets = WindowInsets(0),
     ) { padding ->
     Box(modifier = Modifier.fillMaxSize().padding(padding)) {
         Column(modifier = Modifier.fillMaxSize()) {

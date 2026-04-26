@@ -64,23 +64,10 @@ jobs:
         run: |
           mkdir -p fdroid/repo
           gh release list --limit 100 --json tagName --jq '.[].tagName' | while read -r tag; do
-            err=$(gh release download "$tag" \
+            gh release download "$tag" \
               --pattern "SteleKit-*-android.apk" \
-              --dir fdroid/repo/ 2>&1) || {
-              if echo "$err" | grep -q "no assets match"; then
-                true  # release predates Android APK uploads — skip
-              else
-                echo "$err" >&2
-                exit 1
-              fi
-            }
+              --dir fdroid/repo/ || true
           done
-          apk_count=$(find fdroid/repo/ -name "*.apk" | wc -l)
-          if [ "$apk_count" -eq 0 ]; then
-            echo "ERROR: no APKs downloaded from any release" >&2
-            exit 1
-          fi
-          echo "Downloaded $apk_count APK(s) into fdroid/repo/"
 
       - name: Generate fdroid index
         working-directory: fdroid

@@ -615,6 +615,7 @@ class InMemoryPageRepository : PageRepository {
     }
 }
 
+@OptIn(DirectRepositoryWrite::class)
 class InMemoryPropertyRepository : PropertyRepository {
     override fun getPropertiesForBlock(blockUuid: String): Flow<Result<List<Property>>> = flowOf(success(emptyList()))
     override fun getProperty(blockUuid: String, key: String): Flow<Result<Property?>> = flowOf(success(null))
@@ -624,6 +625,7 @@ class InMemoryPropertyRepository : PropertyRepository {
     override fun getBlocksWithPropertyValue(key: String, value: String): Flow<Result<List<Block>>> = flowOf(success(emptyList()))
 }
 
+@OptIn(DirectRepositoryWrite::class)
 class InMemoryReferenceRepository : ReferenceRepository {
     override fun getOutgoingReferences(blockUuid: String): Flow<Result<List<Block>>> = flowOf(success(emptyList()))
     override fun getIncomingReferences(blockUuid: String): Flow<Result<List<Block>>> = flowOf(success(emptyList()))

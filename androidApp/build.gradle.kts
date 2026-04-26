@@ -23,7 +23,7 @@ android {
 
     defaultConfig {
         applicationId = "dev.stapler.stelekit"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 36
         versionCode = computedVersionCode
         versionName = appVersionStr
@@ -76,4 +76,5 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.09.02"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
+
 }
