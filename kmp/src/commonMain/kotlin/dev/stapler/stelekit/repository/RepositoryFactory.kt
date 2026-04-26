@@ -135,6 +135,7 @@ class RepositoryFactoryImpl(
             writeActor = writeActor
         )
 
+    @OptIn(DirectRepositoryWrite::class)
     fun createRepositorySet(
         backend: GraphBackend,
         scope: CoroutineScope? = null,

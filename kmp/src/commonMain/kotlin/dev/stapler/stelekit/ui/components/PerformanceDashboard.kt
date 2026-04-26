@@ -36,6 +36,7 @@ import dev.stapler.stelekit.performance.RingBufferSpanExporter
 import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.performance.SpanRepository
 import dev.stapler.stelekit.performance.TraceEvent
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -150,6 +151,7 @@ private fun p99Color(p99Ms: Long): Color = when {
 
 private val durationPresets = listOf(0L, 50L, 100L, 250L, 500L)
 
+@OptIn(DirectRepositoryWrite::class)
 @Composable
 private fun SpansTab(
     spanRepository: SpanRepository?,
