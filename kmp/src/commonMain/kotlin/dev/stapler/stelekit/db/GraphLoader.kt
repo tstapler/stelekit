@@ -64,12 +64,18 @@ class GraphLoader(
         suspend fun finish(statusCode: String = "OK", vararg attrs: Pair<String, String>) {
             val endMs = Clock.System.now().toEpochMilliseconds()
             val allAttrs = mapOf(*attrs) + ("session.id" to dev.stapler.stelekit.performance.AppSession.id)
-            spanRepository?.insertSpan(SerializedSpan(
+            val serialized = SerializedSpan(
                 name = name, startEpochMs = startMs, endEpochMs = endMs,
                 durationMs = endMs - startMs, attributes = allAttrs,
                 statusCode = statusCode, traceId = traceId,
                 spanId = spanId, parentSpanId = parentSpanId,
-            ))
+            )
+            if (spanRepository != null) {
+                writeActor.execute(DatabaseWriteActor.Priority.LOW) {
+                    spanRepository.insertSpan(serialized)
+                    Result.success(Unit)
+                }
+            }
         }
     }
 
