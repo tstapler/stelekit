@@ -19,7 +19,7 @@ import kotlin.random.Random
  *   SMALL    — 200 pages,  30 journals, moderate links       (CI regression baseline)
  *   MEDIUM   — 500 pages,  90 journals, moderate links       (realistic small library)
  *   LARGE    — 2000 pages, 365 journals, dense links         (stress test)
- *   XLARGE   — 10000 pages, 730 journals, power-law topology (realistic large library)
+ *   XLARGE   — 20000 pages, 4380 journals, power-law topology (2× a real 6-year library)
  *   MESH     — 500 pages,  90 journals, 80% link density     (worst-case Aho-Corasick)
  *
  * Hub pages (hubFraction > 0):
@@ -70,9 +70,11 @@ class SyntheticGraphGenerator(val config: Config = Config()) {
         val SMALL  = Config(pageCount =   200, journalCount =  30, linkDensity = 0.20f, blocksPerPage = 3..15, hierarchyDepth = 3)
         val MEDIUM = Config(pageCount =   500, journalCount =  90, linkDensity = 0.25f, blocksPerPage = 4..20, hierarchyDepth = 4)
         val LARGE  = Config(pageCount =  2000, journalCount = 365, linkDensity = 0.35f, blocksPerPage = 3..25, hierarchyDepth = 4)
+        // 2× a real ~10k-page / 6-year library so benchmarks stay ahead of current reality.
+        // 6 years of daily journals ≈ 2190 entries × 2 = 4380; pages 10k × 2 = 20k.
         val XLARGE = Config(
-            pageCount        = 10_000,
-            journalCount     = 730,
+            pageCount        = 20_000,
+            journalCount     = 4_380,
             linkDensity      = 0.30f,
             linksPerBlock    = 1..8,
             blocksPerPage    = 3..30,
