@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 
+@OptIn(DirectRepositoryWrite::class)
 class DatascriptReferenceRepository : ReferenceRepository {
 
     private val references = MutableStateFlow<Map<String, Set<String>>>(emptyMap())

@@ -29,6 +29,7 @@ import dev.stapler.stelekit.util.FileUtils
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlin.time.Clock
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -65,15 +66,22 @@ class GraphLoader(
     private inner class Span(val name: String, val traceId: String, val parentSpanId: String = "") {
         val spanId: String = genId()
         private val startMs: Long = Clock.System.now().toEpochMilliseconds()
+        @OptIn(DirectRepositoryWrite::class)
         suspend fun finish(statusCode: String = "OK", vararg attrs: Pair<String, String>) {
             val endMs = Clock.System.now().toEpochMilliseconds()
             val allAttrs = mapOf(*attrs) + ("session.id" to dev.stapler.stelekit.performance.AppSession.id)
-            spanRepository?.insertSpan(SerializedSpan(
+            val serialized = SerializedSpan(
                 name = name, startEpochMs = startMs, endEpochMs = endMs,
                 durationMs = endMs - startMs, attributes = allAttrs,
                 statusCode = statusCode, traceId = traceId,
                 spanId = spanId, parentSpanId = parentSpanId,
-            ))
+            )
+            if (spanRepository != null) {
+                writeActor.execute(DatabaseWriteActor.Priority.LOW) {
+                    spanRepository.insertSpan(serialized)
+                    Unit.right()
+                }
+            }
         }
     }
 
@@ -322,22 +330,44 @@ class GraphLoader(
     }
 
     fun startWatching(graphPath: String) {
+        fileSystem.stopExternalChangeDetection()
         watcherJob?.cancel()
+        val externalChangeTrigger = Channel<Unit>(Channel.CONFLATED)
         watcherJob = parallelScope.launch {
-            logger.info("Started watching graph for changes: $graphPath")
-            while (isActive) {
-                try {
-                    delay(5000) // Poll every 5 seconds
-                    val pagesDir = "$graphPath/pages"
-                    val journalsDir = "$graphPath/journals"
-                    
-                    checkDirectoryForChanges(pagesDir)
-                    checkDirectoryForChanges(journalsDir)
-                } catch (e: Exception) {
-                    if (e is CancellationException) throw e
-                    logger.error("Error in graph watcher", e)
+            // 5-second polling fallback
+            launch {
+                logger.info("Started watching graph for changes: $graphPath")
+                while (isActive) {
+                    try {
+                        delay(5000) // Poll every 5 seconds
+                        val pagesDir = "$graphPath/pages"
+                        val journalsDir = "$graphPath/journals"
+
+                        checkDirectoryForChanges(pagesDir)
+                        checkDirectoryForChanges(journalsDir)
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        logger.error("Error in graph watcher", e)
+                    }
                 }
             }
+            // Platform-native fast-path (e.g. Android ContentObserver).
+            // Channel.CONFLATED coalesces rapid callback storms into at most one
+            // pending scan so we never queue up redundant directory scans.
+            launch {
+                for (ignored in externalChangeTrigger) {
+                    try {
+                        checkDirectoryForChanges("$graphPath/pages")
+                        checkDirectoryForChanges("$graphPath/journals")
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
+                        logger.error("Error in external change handler", e)
+                    }
+                }
+            }
+        }
+        fileSystem.startExternalChangeDetection(parallelScope) {
+            externalChangeTrigger.trySend(Unit)
         }
     }
 
@@ -407,21 +437,29 @@ class GraphLoader(
         }
     }
 
+    /**
+     * Flush chunk writes with per-page atomicity.
+     *
+     * savePages runs as one typed LOW batch (HIGH can preempt after it completes).
+     * For each page, deleteBlocksForPages + saveBlocks run inside a single Execute(LOW)
+     * so a HIGH write cannot interleave between removing a page's old blocks and inserting
+     * its replacements — which would transiently leave the page with no blocks.
+     * HIGH requests can still preempt between pages (after each Execute completes),
+     * giving sub-page granularity rather than the old sub-chunk (10-page) granularity.
+     */
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun flushChunkWrites(
+    private suspend fun flushChunkWritesPreemptible(
         pagesToSave: List<Page>,
         pageUuidsToDelete: Set<String>,
         blocksToSaveByPage: Map<String, List<Block>>,
-        failedPageUuids: MutableSet<String>,
-    ): Either<DomainError, Unit> = try {
+    ) {
+        val failedPageUuids = mutableSetOf<String>()
+
         if (pagesToSave.isNotEmpty()) {
-            val bulkResult = pageRepository.savePages(pagesToSave)
+            val bulkResult = writeActor.savePages(pagesToSave, DatabaseWriteActor.Priority.LOW)
             if (bulkResult.isLeft()) {
-                // Bulk transaction failed — retry individually to track which pages failed.
                 for (page in pagesToSave) {
-                    val result = pageRepository.savePage(page)
-                    if (result.isLeft()) {
-                        val e = result.leftOrNull()!!
+                    writeActor.savePage(page, DatabaseWriteActor.Priority.LOW).onLeft { e ->
                         logger.error("savePage failed for ${page.name}: ${e.message}")
                         _writeErrors.tryEmit(WriteError(page.filePath ?: page.name, 0, e))
                         failedPageUuids.add(page.uuid)
@@ -429,22 +467,20 @@ class GraphLoader(
                 }
             }
         }
-        val uuidsToDelete = pageUuidsToDelete.filter { it !in failedPageUuids }
-        if (uuidsToDelete.isNotEmpty()) {
-            blockRepository.deleteBlocksForPages(uuidsToDelete)
-        }
+
         for ((pageUuid, blocks) in blocksToSaveByPage) {
             if (pageUuid in failedPageUuids) continue
-            val result = blockRepository.saveBlocks(blocks)
-            if (result.isLeft()) {
-                val e = result.leftOrNull()!!
-                logger.error("saveBlocks failed for pageUuid=$pageUuid (${blocks.size} blocks): ${e.message}")
-                _writeErrors.tryEmit(WriteError(pageUuid, blocks.size, e))
+            val shouldDelete = pageUuid in pageUuidsToDelete
+            writeActor.execute(DatabaseWriteActor.Priority.LOW) {
+                if (shouldDelete) {
+                    blockRepository.deleteBlocksForPages(listOf(pageUuid))
+                }
+                blockRepository.saveBlocks(blocks).onLeft { e ->
+                    logger.error("saveBlocks failed for pageUuid=$pageUuid (${blocks.size} blocks): ${e.message}")
+                    _writeErrors.tryEmit(WriteError(pageUuid, blocks.size, e))
+                }
             }
         }
-        Unit.right()
-    } catch (e: Exception) {
-        DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
     }
 
     fun stopWatching() {
@@ -687,16 +723,9 @@ class GraphLoader(
                                 }
                             }
                             
-                            // Flush all writes for this chunk through the actor in a single dispatch.
-                            // Previously each savePage / deleteBlocks / saveBlocks was its own actor
-                            // call; with N chunks in flight that created O(N×chunk) queue depth and
-                            // made each batchDeleteBlocks wait behind all prior savePages.
-                            val failedPageUuids = mutableSetOf<String>()
                             if (pagesToSave.isNotEmpty() || pageUuidsToDelete.isNotEmpty()) {
                                 PerformanceMonitor.startTrace("batchDeleteBlocks")
-                                writeActor.execute(DatabaseWriteActor.Priority.LOW) {
-                                    flushChunkWrites(pagesToSave, pageUuidsToDelete, blocksToSaveByPage, failedPageUuids)
-                                }
+                                flushChunkWritesPreemptible(pagesToSave, pageUuidsToDelete, blocksToSaveByPage)
                                 PerformanceMonitor.endTrace("batchDeleteBlocks")
                             }
                             

@@ -1,0 +1,69 @@
+{
+  "timestamp": "2026-04-26 17:34:19 UTC",
+  "gitSha": "2a85c6d",
+  "branch": "main",
+  "graphConfig": "small",
+  "pageCount": 0,
+  "journalCount": 30,
+  "phase1TtiMs": 11,
+  "phase2Ms": 3,
+  "phase3Ms": 9,
+  "totalMs": 22,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 26,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.04,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 128,
+      "pct": 62.7
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 21,
+      "pct": 10.3
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 12,
+      "pct": 5.9
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 6,
+      "pct": 2.9
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.invoke.MemberName_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.invoke.LambdaForm$Name_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.Thread_[k]",
+      "samples": 1,
+      "pct": 0.5
+    },
+    {
+      "frame": "kotlinx.coroutines.scheduling.CoroutineScheduler$Worker_[k]",
+      "samples": 1,
+      "pct": 0.5
+    }
+  ]
+}

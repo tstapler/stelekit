@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.map
  * Datalog-style in-memory repository for properties.
  * Updated to use UUID-native storage.
  */
+@OptIn(DirectRepositoryWrite::class)
 class DatascriptPropertyRepository : PropertyRepository {
 
     private val properties = MutableStateFlow<Map<String, Map<String, Property>>>(emptyMap())

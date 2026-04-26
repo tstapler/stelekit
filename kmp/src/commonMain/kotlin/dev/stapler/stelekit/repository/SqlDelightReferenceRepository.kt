@@ -21,6 +21,7 @@ import kotlin.time.Instant
  * SQLDelight implementation of ReferenceRepository.
  * Updated to use UUID-native storage.
  */
+@OptIn(DirectRepositoryWrite::class)
 class SqlDelightReferenceRepository(
     private val database: SteleDatabase
 ) : ReferenceRepository {

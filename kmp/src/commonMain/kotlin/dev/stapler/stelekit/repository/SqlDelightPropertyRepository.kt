@@ -19,6 +19,7 @@ import kotlin.time.Instant
  * SQLDelight implementation of PropertyRepository.
  * Updated to use UUID-native storage.
  */
+@OptIn(DirectRepositoryWrite::class)
 class SqlDelightPropertyRepository(
     private val database: SteleDatabase
 ) : PropertyRepository {

@@ -14,6 +14,7 @@ import dev.stapler.stelekit.repository.DuplicateGroup
 import dev.stapler.stelekit.repository.BlockReferences
 import dev.stapler.stelekit.repository.BlockWithReferenceCount
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.Settings
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -21,7 +22,25 @@ import kotlinx.coroutines.flow.flowOf
 import kotlin.time.Clock
 import kotlinx.datetime.LocalDate
 
-class FakeFileSystem : FileSystem {
+class InMemorySettings : Settings {
+    private val store = mutableMapOf<String, String>()
+
+    override fun getBoolean(key: String, defaultValue: Boolean): Boolean =
+        store[key]?.toBoolean() ?: defaultValue
+
+    override fun putBoolean(key: String, value: Boolean) {
+        store[key] = value.toString()
+    }
+
+    override fun getString(key: String, defaultValue: String): String =
+        store.getOrDefault(key, defaultValue)
+
+    override fun putString(key: String, value: String) {
+        store[key] = value
+    }
+}
+
+open class FakeFileSystem : FileSystem {
     override fun getDefaultGraphPath(): String = "/tmp/graph"
     override fun expandTilde(path: String) = path
     override fun readFile(path: String): String? = ""

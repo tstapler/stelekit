@@ -307,11 +307,13 @@ interface PropertyRepository {
     /**
      * Save a property (create or update)
      */
+    @DirectRepositoryWrite
     suspend fun saveProperty(property: Property): Either<DomainError, Unit>
 
     /**
      * Delete a property
      */
+    @DirectRepositoryWrite
     suspend fun deleteProperty(blockUuid: String, key: String): Either<DomainError, Unit>
 
     /**
@@ -350,11 +352,13 @@ interface ReferenceRepository {
     /**
      * Add a reference from one block to another
      */
+    @DirectRepositoryWrite
     suspend fun addReference(fromBlockUuid: String, toBlockUuid: String): Either<DomainError, Unit>
 
     /**
      * Remove a reference between blocks
      */
+    @DirectRepositoryWrite
     suspend fun removeReference(fromBlockUuid: String, toBlockUuid: String): Either<DomainError, Unit>
 
     /**
@@ -473,29 +477,46 @@ data class DateRange(
     val endDate: kotlin.time.Instant? = null
 )
 
-/** A page result with an optional snippet from FTS5 highlight(). */
+/** A page result with an optional snippet and raw BM25 score from FTS5. */
 data class SearchedPage(
     val page: Page,
-    val snippet: String? = null
+    val snippet: String? = null,
+    val bm25Score: Double = 0.0
 )
 
-/** A block result with an optional snippet from FTS5 highlight(). */
+/** A block result with an optional snippet and raw BM25 score from FTS5. */
 data class SearchedBlock(
     val block: Block,
-    val snippet: String? = null
+    val snippet: String? = null,
+    val bm25Score: Double = 0.0
 )
+
+/**
+ * A search hit carrying an absolute relevance score suitable for cross-type ranking.
+ *
+ * BM25 returns negative values (more negative = more relevant). [score] is the
+ * absolute value, optionally multiplied by [SqlDelightSearchRepository.PAGE_BOOST]
+ * for page-title hits so they sort above body-text hits.
+ */
+sealed class RankedSearchHit {
+    abstract val score: Double
+    data class PageHit(val page: Page, val snippet: String?, override val score: Double) : RankedSearchHit()
+    data class BlockHit(val block: Block, val snippet: String?, override val score: Double) : RankedSearchHit()
+}
 
 /**
  * Search result with metadata.
  *
  * [searchedPages] and [searchedBlocks] carry BM25-ranked results with highlight snippets.
  * [blocks] / [pages] are kept for backward compatibility with callers that do not need snippets.
+ * [ranked] interleaves pages and blocks sorted by boosted relevance score (highest first).
  */
 data class SearchResult(
     val blocks: List<Block>,
     val pages: List<Page>,
     val searchedBlocks: List<SearchedBlock> = emptyList(),
     val searchedPages: List<SearchedPage> = emptyList(),
+    val ranked: List<RankedSearchHit> = emptyList(),
     val totalCount: Int,
     val hasMore: Boolean
 )

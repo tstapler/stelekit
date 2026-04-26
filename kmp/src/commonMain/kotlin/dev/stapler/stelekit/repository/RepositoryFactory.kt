@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.repository
 
+import arrow.core.right
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.OperationLogger
@@ -135,6 +136,7 @@ class RepositoryFactoryImpl(
             writeActor = writeActor
         )
 
+    @OptIn(DirectRepositoryWrite::class)
     fun createRepositorySet(
         backend: GraphBackend,
         scope: CoroutineScope? = null,
@@ -203,16 +205,27 @@ class RepositoryFactoryImpl(
             SpanLogSink(spanEmitter).also { LogManager.addSink(it) }
         } else null
 
-        // Background drain: every 5s flush in-memory ring buffer to SQLite and prune old data
+        // Background drain: every 5s flush in-memory ring buffer to SQLite and prune old data.
+        // Route through the actor so span inserts are serialized with all other DB writes and
+        // don't race with block saves on Dispatchers.IO (which causes SQLITE_BUSY at startup).
         if (scope != null && ringBuffer != null && spanRepository != null) {
             scope.launch {
                 val sevenDaysMs = 7L * 24 * 60 * 60 * 1000
                 while (true) {
                     delay(5_000)
                     val drained = ringBuffer.drain()
-                    drained.forEach { span -> spanRepository.insertSpan(span) }
-                    spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)
-                    spanRepository.deleteExcessSpans(10_000)
+                    if (actor != null) {
+                        actor.execute(DatabaseWriteActor.Priority.LOW) {
+                            drained.forEach { span -> spanRepository.insertSpan(span) }
+                            spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)
+                            spanRepository.deleteExcessSpans(10_000)
+                            Unit.right()
+                        }
+                    } else {
+                        drained.forEach { span -> spanRepository.insertSpan(span) }
+                        spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)
+                        spanRepository.deleteExcessSpans(10_000)
+                    }
                 }
             }
         }

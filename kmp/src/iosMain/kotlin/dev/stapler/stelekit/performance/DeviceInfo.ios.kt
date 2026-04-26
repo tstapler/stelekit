@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.performance
 
 import kotlinx.serialization.Serializable
+import platform.Foundation.NSBundle
 
 @Serializable
 actual class DeviceInfo actual constructor(
@@ -16,5 +17,5 @@ actual fun getDeviceInfo(): DeviceInfo = DeviceInfo(
     osVersion = "unknown",
     deviceModel = "unknown",
     availableRamMb = 0L,
-    appVersion = "1.0.0"
+    appVersion = NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String ?: "unknown"
 )

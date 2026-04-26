@@ -7,7 +7,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.ui.fixtures.InMemorySettings
 import dev.stapler.stelekit.ui.AppState
 import dev.stapler.stelekit.ui.Screen
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
@@ -31,7 +31,7 @@ class TopBarTest {
             MaterialTheme {
                 TopBar(
                     appState = defaultAppState,
-                    platformSettings = PlatformSettings(),
+                    platformSettings = InMemorySettings(),
                     onSettingsClick = {},
                     onNewPageClick = {},
                     onNavigate = {},
@@ -54,7 +54,7 @@ class TopBarTest {
             MaterialTheme {
                 TopBar(
                     appState = defaultAppState,
-                    platformSettings = PlatformSettings(),
+                    platformSettings = InMemorySettings(),
                     onSettingsClick = {},
                     onNewPageClick = {},
                     onNavigate = {},
@@ -76,7 +76,7 @@ class TopBarTest {
             MaterialTheme {
                 TopBar(
                     appState = defaultAppState,
-                    platformSettings = PlatformSettings(),
+                    platformSettings = InMemorySettings(),
                     onSettingsClick = {},
                     onNewPageClick = {},
                     onNavigate = {},

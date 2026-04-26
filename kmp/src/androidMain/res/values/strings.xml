@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shared across kmp/androidMain composables (widget, tile, CaptureActivity) -->
+    <string name="no_graph_title">No graph selected</string>
+    <string name="no_graph_body">Open SteleKit to set up your graph</string>
+    <string name="no_graph_action">Open SteleKit</string>
+</resources>

@@ -227,7 +227,12 @@ fun JournalsView(
                 onDismiss = { showLinkPicker = false },
                 onNavigateToPage = { /* not used in link picker mode */ },
                 onNavigateToBlock = { /* not used in link picker mode */ },
-                onCreatePage = { /* not used in link picker mode */ },
+                onCreatePage = { pageName ->
+                    linkPickerBlockUuid?.let { blockUuid ->
+                        viewModel.insertLinkAtCursor(blockUuid, pageName)
+                    }
+                    showLinkPicker = false
+                },
                 viewModel = searchViewModel,
                 onPageSelected = { pageName ->
                     linkPickerBlockUuid?.let { blockUuid ->

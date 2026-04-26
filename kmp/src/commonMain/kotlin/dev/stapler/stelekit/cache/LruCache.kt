@@ -4,8 +4,12 @@
 
 package dev.stapler.stelekit.cache
 
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+/**
+ * SAM interface for [SteleLruCache] weighers. Callers may pass a plain lambda via SAM conversion.
+ */
+fun interface SteleLruWeigher<K, V> {
+    fun weigh(key: K, value: V): Long
+}
 
 /**
  * Thread-safe LRU cache sized by weight rather than entry count.
@@ -19,58 +23,71 @@ import kotlinx.coroutines.sync.withLock
  * Pass a custom weigher to bound the cache by estimated byte footprint instead:
  *
  * ```kotlin
- * val blockCache = LruCache<String, Block>(
+ * val blockCache = SteleLruCache<String, Block>(
  *     maxWeight = 4_000_000L,  // ~4 MB
  *     weigher = { _, block -> 300L + block.content.length * 2 }
  * )
  * ```
  *
- * All public methods are suspend and protect the internal map with a [Mutex],
- * making this safe to call from multiple coroutines concurrently.
+ * Thread-safety is achieved via [PlatformLock] (ReentrantLock on JVM/Android, no-op on
+ * iOS/WASM where coroutine scheduling already provides mutual exclusion per dispatcher).
+ * All operations are O(1) and hold the lock for microseconds.
+ *
+ * Named [SteleLruCache] (not LruCache) to avoid a Kotlin 2.3.10 K2 compiler bug where
+ * the class named exactly "LruCache" has its `.class` file silently dropped in packaged JARs.
+ * See: https://youtrack.jetbrains.com/issue/KT-XXXXX
  */
-class LruCache<K, V>(
-    private val maxWeight: Long,
-    private val weigher: (K, V) -> Long = { _, _ -> 1L },
+class SteleLruCache<K : Any, V>(
+    val maxWeight: Long,
+    private val weigher: SteleLruWeigher<K, V>,
 ) {
-    private val mutex = Mutex()
+    constructor(maxWeight: Long) : this(maxWeight, SteleLruWeigher { _, _ -> 1L })
+
+    private val lock = PlatformLock()
     private val map = LinkedHashMap<K, V>()
     private var totalWeight = 0L
 
-    suspend fun get(key: K): V? = mutex.withLock {
-        val value = map.remove(key) ?: return@withLock null
+    fun get(key: K): V? = lock.withLock {
+        val value = map.remove(key) ?: return null
         map[key] = value  // re-insert at tail = mark as most recently used
         value
     }
 
-    suspend fun put(key: K, value: V) = mutex.withLock {
+    fun put(key: K, value: V): Unit = lock.withLock {
         val old = map.remove(key)
-        if (old != null) totalWeight -= weigher(key, old)
+        if (old != null) totalWeight -= weigher.weigh(key, old)
         map[key] = value
-        totalWeight += weigher(key, value)
+        totalWeight += weigher.weigh(key, value)
         evict()
     }
 
-    suspend fun remove(key: K): V? = mutex.withLock {
+    fun remove(key: K): V? = lock.withLock {
         val old = map.remove(key)
-        if (old != null) totalWeight -= weigher(key, old)
+        if (old != null) totalWeight -= weigher.weigh(key, old)
         old
     }
 
-    suspend fun invalidateAll() = mutex.withLock {
+    fun invalidateAll(): Unit = lock.withLock {
         map.clear()
         totalWeight = 0L
     }
 
-    suspend fun size(): Int = mutex.withLock { map.size }
+    fun size(): Int = lock.withLock { map.size }
 
-    suspend fun weight(): Long = mutex.withLock { totalWeight }
+    fun weight(): Long = lock.withLock { totalWeight }
+
+    override fun toString(): String = "SteleLruCache(maxWeight=$maxWeight)"
 
     private fun evict() {
         val iter = map.entries.iterator()
         while (totalWeight > maxWeight && iter.hasNext()) {
             val entry = iter.next()
-            totalWeight -= weigher(entry.key, entry.value)
+            totalWeight -= weigher.weigh(entry.key, entry.value)
             iter.remove()
         }
     }
 }
+
+// Backwards-compatible type aliases so existing call sites need no changes.
+typealias LruCache<K, V> = SteleLruCache<K, V>
+typealias LruWeigher<K, V> = SteleLruWeigher<K, V>
