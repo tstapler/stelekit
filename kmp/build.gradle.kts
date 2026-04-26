@@ -646,6 +646,13 @@ sqldelight {
     }
 }
 
+roborazzi {
+    // Store golden images in the source tree so they can be committed and used for regression detection.
+    // Record: ./gradlew :kmp:recordRoborazziDebug   → commit the generated PNGs
+    // Verify: ./gradlew :kmp:verifyRoborazziDebug   → CI uses this after goldens are committed
+    outputDir.set(file("src/androidUnitTest/snapshots/images"))
+}
+
 android {
     compileSdk = 36
     namespace = "dev.stapler.stelekit"
