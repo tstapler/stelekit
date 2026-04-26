@@ -178,6 +178,11 @@ kotlin {
 
                 // On-device LLM via Gemini Nano (Pixel 9+ and AICore-enabled OEM flagships)
                 implementation("com.google.mlkit:genai-prompt:1.0.0-beta2")
+
+                // Jetpack Glance — Compose-based home screen widget API
+                // Use 1.1.1 (not 1.1.0) to pick up a protobuf security fix.
+                implementation("androidx.glance:glance-appwidget:1.1.1")
+                implementation("androidx.glance:glance-material3:1.1.1")
             }
         }
 
@@ -190,6 +195,7 @@ kotlin {
                 implementation("androidx.test.ext:junit:1.2.1")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
                 implementation("androidx.arch.core:core-testing:2.2.0")
+                implementation("androidx.glance:glance-appwidget-testing:1.1.1")
             }
         }
 
