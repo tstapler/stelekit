@@ -33,6 +33,25 @@ class FakeFileSystem : FileSystem {
     override fun getLastModifiedTime(path: String): Long? = null
 }
 
+/** Counts readFile calls to detect when GraphLoader.loadFullPage reaches the disk-read step. */
+class CountingFakeFileSystem : FileSystem {
+    var readFileCallCount = 0
+        private set
+
+    override fun getDefaultGraphPath(): String = "/tmp"
+    override fun expandTilde(path: String) = path
+    override fun readFile(path: String): String? { readFileCallCount++; return null }
+    override fun writeFile(path: String, content: String): Boolean = true
+    override fun listFiles(path: String): List<String> = emptyList()
+    override fun listDirectories(path: String): List<String> = emptyList()
+    override fun fileExists(path: String): Boolean = false
+    override fun directoryExists(path: String): Boolean = true
+    override fun createDirectory(path: String): Boolean = true
+    override fun deleteFile(path: String): Boolean = true
+    override fun pickDirectory(): String? = null
+    override fun getLastModifiedTime(path: String): Long? = null
+}
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class BlockStateManagerTest {
 
@@ -54,9 +73,10 @@ class BlockStateManagerTest {
         updatedAt = now
     )
 
-    private fun createPage() = Page(
+    private fun createPage(filePath: String? = null) = Page(
         uuid = pageUuid,
         name = "Test Page",
+        filePath = filePath,
         createdAt = now,
         updatedAt = now
     )
@@ -189,7 +209,7 @@ class BlockStateManagerTest {
     // ---- Page observation lifecycle ----
 
     @Test
-    fun unobservePage_clears_state() = runTest {
+    fun unobservePage_stops_observation_and_keeps_cache() = runTest {
         val blockRepo = InMemoryBlockRepository()
         val pageRepo = InMemoryPageRepository()
         val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
@@ -203,8 +223,116 @@ class BlockStateManagerTest {
 
         assertEquals(1, manager.blocks.value[pageUuid]?.size)
 
+        // unobservePage cancels the observation job but keeps blocks cached for fast re-navigation
         manager.unobservePage(pageUuid)
-        assertNull(manager.blocks.value[pageUuid])
+        assertEquals(1, manager.blocks.value[pageUuid]?.size)
+    }
+
+    // ---- Cache persistence and disk-load suppression ----
+
+    /**
+     * Regression test for the production bug where individual pages had to reload from disk
+     * on every navigation. After [unobservePage], blocks remain in [BlockStateManager._blocks]
+     * as an in-memory cache. Re-navigating with [isContentLoaded]=false must skip [GraphLoader.loadFullPage]
+     * when blocks are already cached, so the user sees content instantly without a disk round-trip.
+     */
+    @Test
+    fun re_navigation_skips_disk_load_when_blocks_are_cached() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val fileSystem = CountingFakeFileSystem()
+        val graphLoader = GraphLoader(fileSystem, pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        // Page with a known filePath so loadFullPage would reach readFile if it were called
+        pageRepo.savePage(createPage(filePath = "/fake/test.md"))
+        blockRepo.saveBlock(createBlock("block-1", content = "hello"))
+
+        // First navigation: default isContentLoaded=true, no disk load attempted
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+        assertEquals(1, manager.blocks.value[pageUuid]?.size)
+
+        // Unobserve: job cancelled but blocks stay in _blocks as cache
+        manager.unobservePage(pageUuid)
+        assertEquals(1, manager.blocks.value[pageUuid]?.size, "blocks must remain cached after unobservePage")
+
+        val readCallsBefore = fileSystem.readFileCallCount
+
+        // Re-navigation with isContentLoaded=false (as happens when PageView navigates to a non-journal)
+        manager.observePage(pageUuid, isContentLoaded = false)
+
+        // alreadyCached=true → loadFullPage skipped → readFile never called
+        assertEquals(readCallsBefore, fileSystem.readFileCallCount,
+            "readFile must not be called when blocks are already cached in _blocks")
+        assertNotNull(manager.blocks.value[pageUuid], "cached blocks must still be accessible after re-navigation")
+
+        manager.unobservePage(pageUuid)
+    }
+
+    /**
+     * Complementary test: when [_blocks] has no entry for a page and [isContentLoaded]=false,
+     * [observePage] must call [GraphLoader.loadFullPage] so the page is fetched from disk.
+     */
+    @Test
+    fun first_navigation_triggers_disk_load_when_content_not_loaded() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val fileSystem = CountingFakeFileSystem()
+        val graphLoader = GraphLoader(fileSystem, pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        // Page with filePath but no blocks in repo or in _blocks (first-time navigation)
+        pageRepo.savePage(createPage(filePath = "/fake/test.md"))
+
+        assertEquals(0, fileSystem.readFileCallCount)
+
+        // Navigate for the first time with isContentLoaded=false
+        manager.observePage(pageUuid, isContentLoaded = false)
+
+        // loadFullPage must have been called: it finds the filePath, sees no loaded blocks,
+        // and calls readFile (which returns null from CountingFakeFileSystem but the call is recorded)
+        assertEquals(1, fileSystem.readFileCallCount,
+            "readFile must be called on first navigation with isContentLoaded=false and no cached blocks")
+
+        manager.unobservePage(pageUuid)
+    }
+
+    /**
+     * Verifies that [unobservePage] cancels the DB observation job while keeping the blocks
+     * in the in-memory cache — the contract that makes [re_navigation_skips_disk_load_when_blocks_are_cached] work.
+     */
+    @Test
+    fun unobservePage_cancels_observation_but_keeps_blocks_as_cache() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1"))
+        blockRepo.saveBlock(createBlock("b2", position = 1))
+
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+        assertEquals(2, manager.blocks.value[pageUuid]?.size)
+
+        manager.unobservePage(pageUuid)
+
+        // Blocks must remain in cache during keepalive window
+        assertEquals(2, manager.blocks.value[pageUuid]?.size,
+            "blocks must not be cleared from _blocks after unobservePage")
+
+        // Advance virtual time past the 5-second keepalive so the observation is actually cancelled
+        testScheduler.advanceTimeBy(5_001L)
+
+        // After keepalive expires, new DB changes must NOT update the stale cache
+        blockRepo.saveBlock(createBlock("b3", position = 2))
+        assertEquals(2, manager.blocks.value[pageUuid]?.size,
+            "DB changes after unobservePage must not update the stale cache entry")
     }
 
     // ---- addBlockToPage ----

@@ -102,6 +102,7 @@ kotlin {
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
+                // sqlite-jdbc 3.51.3+ bundled here (verified: 3.51.3.0) — fixes WAL data-race in 3.7.0–3.51.2
                 implementation("app.cash.sqldelight:sqlite-driver:2.3.2")
                 implementation("org.jetbrains.kotlinx:kotlinx-benchmark-runtime:0.4.13")
 
@@ -128,6 +129,8 @@ kotlin {
                 }
                 // Ktor MockEngine for unit-testing UrlFetcherJvm without real network calls
                 implementation("io.ktor:ktor-client-mock:3.1.3")
+                // BlockHound — detects blocking calls on coroutine scheduler threads
+                implementation("io.projectreactor.tools:blockhound:1.0.9.RELEASE")
             }
         }
 
@@ -258,6 +261,13 @@ configurations.all {
 
 // Configure JVM test task for Compose Desktop UI tests
 tasks.named<Test>("jvmTest") {
+    // BlockHound is installed programmatically via BlockHoundTestBase.installBlockHound().
+    // The -javaagent approach (reactor.blockhound:blockhound) crashes on Java 21+ due to
+    // ByteBuddy 1.12 JVMTI incompatibility. ByteBuddy's self-attach is used instead.
+    jvmArgs(
+        "-Djdk.attach.allowAttachSelf=true",
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+    )
     jvmArgs("-Djava.awt.headless=false")
     // Enable software rendering for CI environments
     environment("LIBGL_ALWAYS_SOFTWARE", System.getenv("LIBGL_ALWAYS_SOFTWARE") ?: "")
@@ -291,6 +301,10 @@ tasks.register<Test>("jvmTestFast") {
     classpath = tasks.named<Test>("jvmTest").get().classpath
     testClassesDirs = tasks.named<Test>("jvmTest").get().testClassesDirs
 
+    jvmArgs(
+        "-Djdk.attach.allowAttachSelf=true",
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+    )
     jvmArgs("-Djava.awt.headless=false")
     environment("LIBGL_ALWAYS_SOFTWARE", System.getenv("LIBGL_ALWAYS_SOFTWARE") ?: "")
     environment("GALLIUM_DRIVER", System.getenv("GALLIUM_DRIVER") ?: "")
@@ -354,14 +368,19 @@ tasks.register<Test>("jvmTestProfile") {
 
         // alloc profile: most useful for this IO-bound workload (JDBC/SQLite object churn dominates)
         val allocCollapsedFile = jfrFile.resolveSibling("graph-load-alloc.collapsed")
+        // cpu profile: method-level hotspots — which functions consume the most CPU time
+        val cpuCollapsedFile = jfrFile.resolveSibling("graph-load-cpu.collapsed")
         if (jfrconvPath != null) {
             exec { commandLine(jfrconvPath, "--alloc", "-o", "collapsed", "$jfrFile", "$allocCollapsedFile"); isIgnoreExitValue = true }
             exec { commandLine(jfrconvPath, "--alloc", "$jfrFile", "$htmlFile"); isIgnoreExitValue = true }
+            exec { commandLine(jfrconvPath, "-o", "collapsed", "$jfrFile", "$cpuCollapsedFile"); isIgnoreExitValue = true }
             println("   Alloc stacks:    $allocCollapsedFile")
+            println("   CPU stacks:      $cpuCollapsedFile")
             println("   Flamegraph HTML: $htmlFile")
         } else {
             println("   (Install async-profiler for auto-conversion: brew install async-profiler)")
             println("   Manual: jfrconv --alloc -o collapsed $jfrFile $allocCollapsedFile")
+            println("   Manual: jfrconv -o collapsed $jfrFile $cpuCollapsedFile")
         }
 
         // Generate timestamped benchmark summary JSON
@@ -379,14 +398,10 @@ for name in ["benchmark-load", "benchmark-jank"]:
     if os.path.exists(f):
         with open(f) as fh: data.update(json.load(fh))
 
-# Allocation hotspots from alloc collapsed stacks.
-# Leaf frame = rightmost semicolon-delimited token (the actual allocating site).
-hotspots = []
-collapsed_file = os.path.join(reports_dir, "graph-load-alloc.collapsed")
-if os.path.exists(collapsed_file):
+def parse_collapsed_stacks(filepath, top_n=10):
     frame_counts = collections.Counter()
     total = 0
-    with open(collapsed_file) as f:
+    with open(filepath) as f:
         for line in f:
             line = line.strip()
             if not line: continue
@@ -398,9 +413,28 @@ if os.path.exists(collapsed_file):
                 leaf = stack.split(";")[-1]
                 frame_counts[leaf] += count
                 total += count
+    result = []
     if total > 0:
-        for frame, count in frame_counts.most_common(10):
-            hotspots.append({"frame": frame, "samples": count, "pct": round(count * 100.0 / total, 1)})
+        for frame, count in frame_counts.most_common(top_n):
+            result.append({"frame": frame, "samples": count, "pct": round(count * 100.0 / total, 1)})
+    return result
+
+hotspots = []
+alloc_collapsed = os.path.join(reports_dir, "graph-load-alloc.collapsed")
+if os.path.exists(alloc_collapsed):
+    hotspots = parse_collapsed_stacks(alloc_collapsed)
+
+cpu_hotspots = []
+cpu_collapsed_file = os.path.join(reports_dir, "graph-load-cpu.collapsed")
+if os.path.exists(cpu_collapsed_file):
+    cpu_hotspots = parse_collapsed_stacks(cpu_collapsed_file)
+
+query_stats = []
+qs_file = os.path.join(reports_dir, "benchmark-query-stats.json")
+if os.path.exists(qs_file):
+    try:
+        with open(qs_file) as fh: query_stats = json.load(fh)
+    except Exception: pass
 
 try:
     sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=root_dir).decode().strip()
@@ -418,6 +452,8 @@ file_slug = now.strftime("%Y-%m-%d_%Hh%Mm%Ss")
 summary = {"timestamp": timestamp, "gitSha": sha, "branch": branch}
 summary.update(data)
 summary["allocHotspots"] = hotspots
+summary["cpuHotspots"] = cpu_hotspots
+summary["queryStats"] = query_stats
 
 history_dir = os.path.join(root_dir, "benchmarks", "history")
 os.makedirs(history_dir, exist_ok=True)

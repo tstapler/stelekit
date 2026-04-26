@@ -111,6 +111,8 @@ fun StelekitApp(
     voiceSettings: VoiceSettings? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
     spanRecorder: SpanRecorder = NoOpSpanRecorder,
+    /** Called once the GraphManager instance is ready. Used by the host Activity for onTrimMemory. */
+    onGraphManagerReady: ((GraphManager) -> Unit)? = null,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -122,6 +124,7 @@ fun StelekitApp(
     val graphManager = graphManager ?: remember {
         GraphManager(platformSettings, DriverFactory(), fileSystem)
     }
+    remember(graphManager) { onGraphManagerReady?.invoke(graphManager) }
 
     // Observe the active repository set
     val activeRepoSet by graphManager.activeRepositorySet.collectAsState()
@@ -273,7 +276,7 @@ private fun GraphContent(
             externalWriteActor = repos.writeActor,
             sidecarManager = sidecarManager,
             spanRepository = repos.spanRepository,
-        )
+        ).also { it.onBulkImportComplete = repos.onBulkImportComplete }
     }
     val graphWriter = remember {
         GraphWriter(

@@ -10,20 +10,22 @@ import dev.stapler.stelekit.util.UuidGenerator
  * A [SqlDriver] decorator that records SQL query durations as child [SerializedSpan]s whenever
  * a [ActiveSpanContext] is active on the calling thread (via [CurrentSpanContext]).
  *
- * When no context is active (the common case), every delegation call is a zero-cost
- * passthrough to [delegate].
+ * Stats collection via [statsCollector] is always-on (no span context required).
+ * The span-to-ring-buffer path is opt-in: requires both a non-null [ringBuffer] and an active
+ * [CurrentSpanContext].
  *
- * System tables (schema_migrations, perf_histogram_buckets, spans, debug_flags) are
- * excluded from tracing to avoid noisy/circular self-instrumentation.
+ * System tables (schema_migrations, perf_histogram_buckets, spans, debug_flags, query_stats) are
+ * excluded from instrumentation to avoid noisy/circular self-instrumentation.
  */
 class TimingDriverWrapper(
     private val delegate: SqlDriver,
-    private val ringBuffer: RingBufferSpanExporter,
+    private val ringBuffer: RingBufferSpanExporter? = null,
+    private val statsCollector: QueryStatsCollector? = null,
 ) : SqlDriver by delegate {
 
     private val excludedTables = setOf(
         "schema_migrations", "perf_histogram_buckets", "spans", "debug_flags",
-        "histogram_buckets",
+        "histogram_buckets", "query_stats",
     )
 
     override fun execute(
@@ -33,18 +35,22 @@ class TimingDriverWrapper(
         binders: (SqlPreparedStatement.() -> Unit)?,
     ): QueryResult<Long> {
         val ctx = CurrentSpanContext.get()
-            ?: return delegate.execute(identifier, sql, parameters, binders)
+        if (ctx == null && statsCollector == null) return delegate.execute(identifier, sql, parameters, binders)
         val (operation, table) = parseSql(sql)
         if (table in excludedTables)
             return delegate.execute(identifier, sql, parameters, binders)
         val startMs = HistogramWriter.epochMs()
+        var isError = false
         return try {
             val result = delegate.execute(identifier, sql, parameters, binders)
-            recordSpan(ctx, "sql.$operation", table, startMs, "OK")
+            if (ctx != null && ringBuffer != null) recordSpan(ctx, "sql.$operation", table, startMs, "OK")
             result
         } catch (e: Exception) {
-            recordSpan(ctx, "sql.$operation", table, startMs, "ERROR", e.message)
+            isError = true
+            if (ctx != null && ringBuffer != null) recordSpan(ctx, "sql.$operation", table, startMs, "ERROR", e.message)
             throw e
+        } finally {
+            statsCollector?.record(table, operation, HistogramWriter.epochMs() - startMs, isError)
         }
     }
 
@@ -56,18 +62,22 @@ class TimingDriverWrapper(
         binders: (SqlPreparedStatement.() -> Unit)?,
     ): QueryResult<R> {
         val ctx = CurrentSpanContext.get()
-            ?: return delegate.executeQuery(identifier, sql, mapper, parameters, binders)
+        if (ctx == null && statsCollector == null) return delegate.executeQuery(identifier, sql, mapper, parameters, binders)
         val (_, table) = parseSql(sql)
         if (table in excludedTables)
             return delegate.executeQuery(identifier, sql, mapper, parameters, binders)
         val startMs = HistogramWriter.epochMs()
+        var isError = false
         return try {
             val result = delegate.executeQuery(identifier, sql, mapper, parameters, binders)
-            recordSpan(ctx, "sql.select", table, startMs, "OK")
+            if (ctx != null && ringBuffer != null) recordSpan(ctx, "sql.select", table, startMs, "OK")
             result
         } catch (e: Exception) {
-            recordSpan(ctx, "sql.select", table, startMs, "ERROR", e.message)
+            isError = true
+            if (ctx != null && ringBuffer != null) recordSpan(ctx, "sql.select", table, startMs, "ERROR", e.message)
             throw e
+        } finally {
+            statsCollector?.record(table, "select", HistogramWriter.epochMs() - startMs, isError)
         }
     }
 
@@ -85,7 +95,7 @@ class TimingDriverWrapper(
             put("session.id", AppSession.id)
             if (errorMsg != null) put("error.message", errorMsg)
         }
-        ringBuffer.record(
+        ringBuffer!!.record(
             SerializedSpan(
                 name = name,
                 startEpochMs = startMs,

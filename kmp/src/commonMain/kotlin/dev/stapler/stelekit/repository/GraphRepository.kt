@@ -75,6 +75,19 @@ interface BlockRepository {
     suspend fun clear()
 
     /**
+     * Evict in-memory caches without touching the database.
+     * Default no-op for repositories with no in-memory cache.
+     */
+    suspend fun clearAllCaches() {}
+
+    /**
+     * Evict only the cache entries for a specific page.
+     * Called after external file changes so unrelated pages stay warm.
+     * Default no-op for repositories with no in-memory cache.
+     */
+    suspend fun evictPageCaches(pageUuid: String) {}
+
+    /**
      * Save a new or updated block
      */
     @DirectRepositoryWrite
@@ -550,4 +563,8 @@ data class RepositorySet(
     val spanEmitter: dev.stapler.stelekit.performance.SpanEmitter? = null,
     val sloChecker: dev.stapler.stelekit.performance.SloChecker? = null,
     val spanLogSink: dev.stapler.stelekit.performance.SpanLogSink? = null,
+    /** Callback that runs WAL checkpoint after bulk graph import. Pass to [GraphLoader.onBulkImportComplete]. */
+    val onBulkImportComplete: (suspend () -> Unit)? = null,
+    val queryStatsRepository: dev.stapler.stelekit.performance.QueryStatsRepository? = null,
+    val queryStatsCollector: dev.stapler.stelekit.performance.QueryStatsCollector? = null,
 )

@@ -48,38 +48,57 @@ jobs:
       - name: Run benchmark
         run: ./gradlew :kmp:jvmTestProfile --rerun-tasks --no-daemon
 
-      - name: Generate flamegraph PNG
+      - name: Generate flamegraph PNGs
         if: always()
         run: |
-          COLLAPSED=kmp/build/reports/graph-load-alloc.collapsed
           SHORT_SHA="${{ github.sha }}"
           SHORT_SHA="${SHORT_SHA:0:9}"
 
-          if [ -f "$COLLAPSED" ]; then
+          ALLOC_COLLAPSED=kmp/build/reports/graph-load-alloc.collapsed
+          if [ -f "$ALLOC_COLLAPSED" ]; then
             perl flamegraph.pl \
               --width 1800 \
               --title "Alloc flamegraph (${SHORT_SHA})" \
               --colors mem \
-              "$COLLAPSED" > flamegraph.svg
-            rsvg-convert -w 1800 flamegraph.svg -o flamegraph.png
-            echo "PNG_GENERATED=true" >> $GITHUB_ENV
+              "$ALLOC_COLLAPSED" > flamegraph-alloc.svg
+            rsvg-convert -w 1800 flamegraph-alloc.svg -o flamegraph-alloc.png
+            echo "ALLOC_PNG_GENERATED=true" >> $GITHUB_ENV
           else
-            echo "PNG_GENERATED=false" >> $GITHUB_ENV
-            echo "No collapsed stacks found — skipping PNG generation"
+            echo "ALLOC_PNG_GENERATED=false" >> $GITHUB_ENV
           fi
 
-      - name: Upload flamegraph PNG to GitHub
-        if: github.event_name == 'pull_request' && env.PNG_GENERATED == 'true'
+          CPU_COLLAPSED=kmp/build/reports/graph-load-cpu.collapsed
+          if [ -f "$CPU_COLLAPSED" ]; then
+            perl flamegraph.pl \
+              --width 1800 \
+              --title "CPU flamegraph (${SHORT_SHA})" \
+              --colors java \
+              "$CPU_COLLAPSED" > flamegraph-cpu.svg
+            rsvg-convert -w 1800 flamegraph-cpu.svg -o flamegraph-cpu.png
+            echo "CPU_PNG_GENERATED=true" >> $GITHUB_ENV
+          else
+            echo "CPU_PNG_GENERATED=false" >> $GITHUB_ENV
+          fi
+
+      - name: Upload flamegraph PNGs to GitHub
+        if: github.event_name == 'pull_request'
         run: |
-          RESPONSE=$(curl -s \
-            -X POST \
-            -H "Authorization: Bearer ${{ github.token }}" \
-            -H "Accept: application/vnd.github+json" \
-            -F "data=@flamegraph.png" \
-            "https://uploads.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/assets")
-          echo "$RESPONSE"
-          IMAGE_URL=$(echo "$RESPONSE" | jq -r '.url // empty')
-          echo "FLAMEGRAPH_URL=${IMAGE_URL}" >> $GITHUB_ENV
+          upload_png() {
+            local file="$1"
+            local env_var="$2"
+            if [ -f "$file" ]; then
+              RESPONSE=$(curl -s \
+                -X POST \
+                -H "Authorization: Bearer ${{ github.token }}" \
+                -H "Accept: application/vnd.github+json" \
+                -F "data=@${file}" \
+                "https://uploads.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/assets")
+              IMAGE_URL=$(echo "$RESPONSE" | jq -r '.url // empty')
+              echo "${env_var}=${IMAGE_URL}" >> $GITHUB_ENV
+            fi
+          }
+          upload_png flamegraph-alloc.png FLAMEGRAPH_ALLOC_URL
+          upload_png flamegraph-cpu.png FLAMEGRAPH_CPU_URL
 
       - name: Upload profiling artifacts
         uses: actions/upload-artifact@v4
@@ -88,8 +107,11 @@ jobs:
           name: profiling-${{ github.sha }}
           path: |
             kmp/build/reports/graph-load-alloc.collapsed
+            kmp/build/reports/graph-load-cpu.collapsed
             kmp/build/reports/flamegraph.html
-            flamegraph.png
+            kmp/build/reports/benchmark-query-stats.json
+            flamegraph-alloc.png
+            flamegraph-cpu.png
           retention-days: 30
 
       - name: Commit benchmark summary (main only)
@@ -132,14 +154,27 @@ jobs:
             };
             const fmtJ = v => v === undefined ? 'n/a' : `${v}x`;
 
-            const hotspots = (curr.allocHotspots || []).slice(0, 5)
+            const allocHotspots = (curr.allocHotspots || []).slice(0, 5)
               .map(h => `\`${h.pct}%\` ${h.frame}`)
               .join('\n');
 
-            const imageUrl = process.env.FLAMEGRAPH_URL || '';
-            const flamegraphSection = imageUrl
-              ? `\n![Allocation flamegraph](${imageUrl})\n`
-              : '\n_Flamegraph not available_\n';
+            const cpuHotspots = (curr.cpuHotspots || []).slice(0, 5)
+              .map(h => `\`${h.pct}%\` ${h.frame}`)
+              .join('\n');
+
+            const allocUrl = process.env.FLAMEGRAPH_ALLOC_URL || '';
+            const cpuUrl = process.env.FLAMEGRAPH_CPU_URL || '';
+            const allocSection = allocUrl
+              ? `\n![Allocation flamegraph](${allocUrl})\n`
+              : '\n_Alloc flamegraph not available_\n';
+            const cpuSection = cpuUrl
+              ? `\n![CPU flamegraph](${cpuUrl})\n`
+              : '\n_CPU flamegraph not available_\n';
+
+            const queryStats = curr.queryStats || [];
+            const queryStatsRows = queryStats.slice(0, 15).map(q =>
+              `| \`${q.table}:${q.op}\` | ${q.calls} | ${q.p50}ms | ${q.p99}ms | ${q.maxMs}ms | ${q.totalMs}ms |`
+            ).join('\n');
 
             const body = [
               '## Benchmark Results',
@@ -157,14 +192,38 @@ jobs:
               `| Write p95 (under load) | ${curr.jankLoadP95Ms ?? 'n/a'}ms | ${base.jankLoadP95Ms ?? 'n/a'}ms | - |`,
               `| Jank factor | ${fmtJ(curr.jankFactor)} | ${fmtJ(base.jankFactor)} | - |`,
               '',
-              flamegraphSection,
+              '<details>',
+              '<summary>Flamegraphs (this PR)</summary>',
+              '',
+              '**Allocation** — object allocation pressure (JDBC/SQLite churn)',
+              allocSection,
+              '**CPU** — method-level hotspots by on-CPU time',
+              cpuSection,
+              '</details>',
+              '',
+              queryStats.length > 0 ? '<details>' : '',
+              queryStats.length > 0 ? '<summary>Top SQL queries by total time (this PR)</summary>' : '',
+              queryStats.length > 0 ? '' : '',
+              queryStats.length > 0 ? '| table:operation | calls | p50 | p99 | max | total |' : '',
+              queryStats.length > 0 ? '|-----------------|-------|-----|-----|-----|-------|' : '',
+              queryStatsRows,
+              queryStats.length > 0 ? '' : '',
+              queryStats.length > 0 ? '</details>' : '',
+              '',
               '<details>',
               '<summary>Top allocation hotspots (this PR)</summary>',
               '',
-              hotspots || '_No collapsed stacks available_',
+              allocHotspots || '_No collapsed stacks available_',
               '',
               '</details>',
-            ].join('\n');
+              '',
+              '<details>',
+              '<summary>Top CPU hotspots (this PR)</summary>',
+              '',
+              cpuHotspots || '_No collapsed stacks available_',
+              '',
+              '</details>',
+            ].filter(line => line !== '').join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,

@@ -129,6 +129,20 @@ class GraphLoadTimingTest {
         return LoadTimingResult(phase1Ms, phase2Ms - phase1Ms, phase3Ms, loadMs + phase3Ms, pages)
     }
 
+    private fun writeQueryStatsJson(file: java.io.File, stats: List<dev.stapler.stelekit.performance.QueryStat>) {
+        try {
+            file.parentFile?.mkdirs()
+            val sb = StringBuilder("[\n")
+            stats.forEachIndexed { i, q ->
+                sb.append("""  {"table":"${q.tableName}","op":"${q.operation}","calls":${q.calls},"p50":${q.estimatePercentile(0.5)},"p99":${q.estimatePercentile(0.99)},"maxMs":${q.maxMs},"totalMs":${q.totalMs}}""")
+                if (i < stats.size - 1) sb.append(",")
+                sb.append("\n")
+            }
+            sb.append("]")
+            file.writeText(sb.toString())
+        } catch (_: Exception) {}
+    }
+
     private fun writeJson(file: java.io.File, data: Map<String, Any>) {
         try {
             file.parentFile?.mkdirs()
@@ -347,6 +361,25 @@ class GraphLoadTimingTest {
             val result = loadAndTime(dir.absolutePath, loader, "synthetic / SQLite") {
                 repoSet.pageRepository.getAllPages().first().getOrNull()?.size ?: 0
             }
+
+            // Drain accumulated query stats (periodic flush interval exceeds benchmark duration)
+            repoSet.queryStatsCollector?.drainNow()
+            val queryStats = repoSet.queryStatsRepository?.getTopByTotalMs("unknown", 20) ?: emptyList()
+            if (queryStats.isNotEmpty()) {
+                println("\n[synthetic/SQLite] Top SQL queries by total_ms:")
+                println("  %-42s %6s %8s %8s %8s %8s".format("table:operation", "calls", "p50ms", "p99ms", "maxMs", "totalMs"))
+                queryStats.forEach { q ->
+                    println("  %-42s %6d %8d %8d %8d %8d".format(
+                        "${q.tableName}:${q.operation}",
+                        q.calls,
+                        q.estimatePercentile(0.50),
+                        q.estimatePercentile(0.99),
+                        q.maxMs,
+                        q.totalMs,
+                    ))
+                }
+            }
+
             val outputDir = System.getProperty("benchmark.output.dir")?.let { java.io.File(it) } ?: java.io.File("build/reports")
             writeJson(
                 java.io.File(outputDir, "benchmark-load.json"),
@@ -360,6 +393,7 @@ class GraphLoadTimingTest {
                     "totalMs"      to result.totalMs,
                 ),
             )
+            writeQueryStatsJson(java.io.File(outputDir, "benchmark-query-stats.json"), queryStats)
             factory.close()
         } finally {
             scope.cancel()

@@ -32,12 +32,22 @@ class LruCache<K, V>(
     private val maxWeight: Long,
     private val weigher: (K, V) -> Long = { _, _ -> 1L },
 ) {
+    data class CacheStats(val hits: Long, val misses: Long, val evictions: Long)
+
     private val mutex = Mutex()
     private val map = LinkedHashMap<K, V>()
     private var totalWeight = 0L
+    private var hits = 0L
+    private var misses = 0L
+    private var evictions = 0L
 
     suspend fun get(key: K): V? = mutex.withLock {
-        val value = map.remove(key) ?: return@withLock null
+        val value = map.remove(key)
+        if (value == null) {
+            misses++
+            return@withLock null
+        }
+        hits++
         map[key] = value  // re-insert at tail = mark as most recently used
         value
     }
@@ -65,12 +75,20 @@ class LruCache<K, V>(
 
     suspend fun weight(): Long = mutex.withLock { totalWeight }
 
+    /** Snapshot and reset hit/miss/eviction counters atomically. */
+    suspend fun snapshotAndReset(): CacheStats = mutex.withLock {
+        val stats = CacheStats(hits, misses, evictions)
+        hits = 0L; misses = 0L; evictions = 0L
+        stats
+    }
+
     private fun evict() {
         val iter = map.entries.iterator()
         while (totalWeight > maxWeight && iter.hasNext()) {
             val entry = iter.next()
             totalWeight -= weigher(entry.key, entry.value)
             iter.remove()
+            evictions++
         }
     }
 }
