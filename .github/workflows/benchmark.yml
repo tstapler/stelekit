@@ -147,11 +147,14 @@ jobs:
               ? `\n![Allocation flamegraph](${imageUrl})\n`
               : '\n_Flamegraph not available_\n';
 
+            const pageCountStr = curr.pageCount != null ? curr.pageCount : 'n/a';
             const body = [
-              '## Benchmark Results',
+              '## JVM Load Benchmark (Desktop)',
+              '',
+              '_Synthetic in-memory benchmark measuring load performance for the desktop (JVM) app._',
               '',
               `Comparing \`${curr.gitSha}\` (this PR) vs \`${base.gitSha}\` (baseline)  `,
-              `Graph config: \`${curr.graphConfig || 'SMALL'}\` — ${curr.pageCount || '?'} pages`,
+              `Graph config: \`${curr.graphConfig || 'SMALL'}\` — ${pageCountStr} pages`,
               '',
               '| Metric | This PR | Baseline | Delta |',
               '|--------|---------|----------|-------|',
@@ -175,7 +178,7 @@ jobs:
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
             });
-            const existing = comments.find(c => c.user.login === 'github-actions[bot]' && c.body.includes('## Benchmark Results'));
+            const existing = comments.find(c => c.user.login === 'github-actions[bot]' && (c.body.includes('## JVM Load Benchmark') || c.body.includes('## Benchmark Results')));
             if (existing) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body,
