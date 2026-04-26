@@ -388,19 +388,39 @@ tasks.register<Test>("jvmTestProfile") {
 
         // alloc profile: most useful for this IO-bound workload (JDBC/SQLite object churn dominates)
         val allocCollapsedFile = jfrFile.resolveSibling("graph-load-alloc.collapsed")
-        // cpu profile: method-level hotspots — which functions consume the most CPU time
+        // cpu profile: method-level hotspots — filtered to benchmark threads only.
+        // jfrconv --threads emits "[ThreadName];frame1;frame2;... count" per line.
+        // We keep only DefaultDispatcher-worker-* (the Kotlin coroutine pool where all
+        // Default + IO dispatched work runs) and strip the "[ThreadName];" prefix so
+        // flamegraph.pl receives standard collapsed-stack format. This eliminates the
+        // Gradle test runner thread (Test worker #1) which carries Kryo serialization
+        // and test framework overhead that otherwise dominates the CPU flamegraph.
         val cpuCollapsedFile = jfrFile.resolveSibling("graph-load-cpu.collapsed")
+        val cpuThreadsFile   = jfrFile.resolveSibling("graph-load-cpu-threads.collapsed")
         if (jfrconvPath != null) {
             exec { commandLine(jfrconvPath, "--alloc", "-o", "collapsed", "$jfrFile", "$allocCollapsedFile"); isIgnoreExitValue = true }
             exec { commandLine(jfrconvPath, "--alloc", "$jfrFile", "$htmlFile"); isIgnoreExitValue = true }
-            exec { commandLine(jfrconvPath, "-o", "collapsed", "$jfrFile", "$cpuCollapsedFile"); isIgnoreExitValue = true }
+            exec { commandLine(jfrconvPath, "--threads", "-o", "collapsed", "$jfrFile", "$cpuThreadsFile"); isIgnoreExitValue = true }
+            if (cpuThreadsFile.exists()) {
+                val filtered = cpuThreadsFile.readLines()
+                    .filter { it.startsWith("[DefaultDispatcher-worker-") }
+                    .map { it.substringAfter("];") }
+                    .filter { it.isNotBlank() }
+                // Fall back to unfiltered if no matching threads found (different JVM/Gradle env).
+                if (filtered.isNotEmpty()) {
+                    cpuCollapsedFile.writeText(filtered.joinToString("\n"))
+                } else {
+                    cpuThreadsFile.copyTo(cpuCollapsedFile, overwrite = true)
+                }
+                cpuThreadsFile.delete()
+            }
             println("   Alloc stacks:    $allocCollapsedFile")
-            println("   CPU stacks:      $cpuCollapsedFile")
+            println("   CPU stacks:      $cpuCollapsedFile (benchmark threads only)")
             println("   Flamegraph HTML: $htmlFile")
         } else {
             println("   (Install async-profiler for auto-conversion: brew install async-profiler)")
             println("   Manual: jfrconv --alloc -o collapsed $jfrFile $allocCollapsedFile")
-            println("   Manual: jfrconv -o collapsed $jfrFile $cpuCollapsedFile")
+            println("   Manual: jfrconv --threads -o collapsed $jfrFile $cpuThreadsFile && grep '^\\[DefaultDispatcher-worker-' $cpuThreadsFile | sed 's/^\\[[^]]*\\];//' > $cpuCollapsedFile")
         }
 
         // Generate timestamped benchmark summary JSON
