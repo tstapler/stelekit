@@ -29,5 +29,56 @@
             </intent-filter>
         </activity>
 
+        <!-- Task 1.1 + 1.3: Translucent capture overlay; share target intent-filters added below -->
+        <activity
+            android:name="dev.stapler.stelekit.CaptureActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:excludeFromRecents="true"
+            android:windowSoftInputMode="stateAlwaysVisible|adjustResize"
+            android:theme="@style/Theme.SteleKit.Translucent">
+
+            <!-- Task 1.3: Share target for text content -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/html" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+        </activity>
+
+        <!-- Task 2.1: Quick Settings Tile (API 24+; PendingIntent overload used on API 34+) -->
+        <service
+            android:name="dev.stapler.stelekit.tile.CaptureTileService"
+            android:exported="true"
+            android:label="@string/tile_label_capture"
+            android:icon="@drawable/ic_tile_capture"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- Task 3.2: Home screen widget -->
+        <receiver
+            android:name="dev.stapler.stelekit.widget.CaptureWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/capture_widget_info" />
+        </receiver>
+
     </application>
 </manifest>

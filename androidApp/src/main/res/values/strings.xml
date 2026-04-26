@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">SteleKit</string>
+    <!-- no_graph_* strings duplicated here so androidApp R class can reference them -->
+    <!-- canonical definitions are in kmp/src/androidMain/res/values/strings.xml -->
+    <string name="no_graph_action">Open SteleKit</string>
+    <string name="tile_label_capture">SteleKit Capture</string>
+    <string name="widget_capture_button">Capture note</string>
+    <string name="widget_description">Quick note capture to today\'s journal</string>
 </resources>
