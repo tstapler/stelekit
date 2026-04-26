@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/tstapler/stelekit/compare/v0.11.0...v0.12.0) (2026-04-26)
+
+
+### Features
+
+* **android/voice:** on-device STT and LLM via SpeechRecognizer + Gemini Nano ([#27](https://github.com/tstapler/stelekit/issues/27)) ([a275dbe](https://github.com/tstapler/stelekit/commit/a275dbe912fa5838f3715f44d9ed5115a27eb931))
+
 ## [0.11.0](https://github.com/tstapler/stelekit/compare/v0.10.0...v0.11.0) (2026-04-26)
 
 
