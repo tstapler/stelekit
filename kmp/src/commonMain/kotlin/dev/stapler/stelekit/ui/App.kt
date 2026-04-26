@@ -110,6 +110,8 @@ fun StelekitApp(
     voicePipeline: VoicePipelineConfig = remember { VoicePipelineConfig() },
     voiceSettings: VoiceSettings? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
+    deviceSttAvailable: Boolean = false,
+    deviceLlmAvailable: Boolean = false,
     spanRecorder: SpanRecorder = NoOpSpanRecorder,
     /** Called once the GraphManager instance is ready. Used by the host Activity for onTrimMemory. */
     onGraphManagerReady: ((GraphManager) -> Unit)? = null,
@@ -133,15 +135,27 @@ fun StelekitApp(
 
     // Track whether the one-shot UUID migration has completed for the active graph.
     // Reset to false whenever the active graph changes so the gate re-applies.
+    // try/finally ensures migrationReady always returns to true even if the effect
+    // is cancelled mid-run (e.g. activeGraphId changes twice in quick succession),
+    // preventing the CircularProgressIndicator from spinning forever.
     var migrationReady by remember { mutableStateOf(false) }
     LaunchedEffect(activeGraphId) {
         migrationReady = false
-        graphManager.awaitPendingMigration()
-        migrationReady = true
+        try {
+            graphManager.awaitPendingMigration()
+        } finally {
+            migrationReady = true
+        }
     }
 
-    // Android SAF permission routing — reactive so state refreshes after folder pick
-    var currentGraphPath by remember { mutableStateOf(graphPath) }
+    // Android SAF permission routing — reactive so state refreshes after folder pick.
+    // Prefer the GraphManager's persisted active graph over the filesystem default so
+    // we don't force a graph switch (and an unnecessary migration cycle) on every launch
+    // when the user has already chosen a different graph.
+    var currentGraphPath by remember {
+        val persistedPath = graphManager.getActiveGraphInfo()?.path
+        mutableStateOf(if (!persistedPath.isNullOrEmpty()) persistedPath else graphPath)
+    }
     var permissionGranted by remember { mutableStateOf(fileSystem.hasStoragePermission()) }
     var folderPickError by remember { mutableStateOf<String?>(null) }
 
@@ -232,6 +246,8 @@ fun StelekitApp(
             voicePipeline = voicePipeline,
             voiceSettings = voiceSettings,
             onRebuildVoicePipeline = onRebuildVoicePipeline,
+            deviceSttAvailable = deviceSttAvailable,
+            deviceLlmAvailable = deviceLlmAvailable,
             spanRecorder = spanRecorder,
         )
     }
@@ -248,7 +264,7 @@ fun StelekitApp(
 private fun GraphContent(
     repos: RepositorySet,
     fileSystem: FileSystem,
-    platformSettings: PlatformSettings,
+    platformSettings: Settings,
     pluginHost: PluginHost,
     encryptionManager: EncryptionManager,
     graphManager: GraphManager,
@@ -257,6 +273,8 @@ private fun GraphContent(
     voicePipeline: VoicePipelineConfig = VoicePipelineConfig(),
     voiceSettings: VoiceSettings? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
+    deviceSttAvailable: Boolean = false,
+    deviceLlmAvailable: Boolean = false,
     spanRecorder: SpanRecorder = NoOpSpanRecorder,
 ) {
     CompositionLocalProvider(LocalSpanRecorder provides spanRecorder) {
@@ -650,7 +668,7 @@ private fun GraphContent(
                                         onTap = { voiceCaptureViewModel.onMicTapped() },
                                         onDismissError = { voiceCaptureViewModel.dismissError() },
                                         onAutoReset = { voiceCaptureViewModel.resetToIdle() },
-                                        amplitudeFlow = voicePipeline.audioRecorder.amplitudeFlow,
+                                        amplitudeFlow = voicePipeline.effectiveAmplitudeFlow,
                                     )
                                 },
                             )
@@ -665,6 +683,8 @@ private fun GraphContent(
                         fileSystem = fileSystem,
                         voiceSettings = voiceSettings,
                         onRebuildVoicePipeline = onRebuildVoicePipeline,
+                        deviceSttAvailable = deviceSttAvailable,
+                        deviceLlmAvailable = deviceLlmAvailable,
                         frameMetric = frameMetricState,
                         debugState = debugMenuState,
                         onDebugStateChange = { newState ->
@@ -866,6 +886,8 @@ private fun GraphDialogLayer(
     fileSystem: FileSystem,
     voiceSettings: VoiceSettings? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
+    deviceSttAvailable: Boolean = false,
+    deviceLlmAvailable: Boolean = false,
     frameMetric: kotlinx.coroutines.flow.StateFlow<dev.stapler.stelekit.performance.FrameMetric>,
     debugState: DebugMenuState = DebugMenuState(),
     onDebugStateChange: (DebugMenuState) -> Unit = {},
@@ -903,6 +925,8 @@ private fun GraphDialogLayer(
         onLeftHandedChange = { viewModel.setLeftHanded(it) },
         voiceSettings = voiceSettings,
         onRebuildVoicePipeline = onRebuildVoicePipeline,
+        deviceSttAvailable = deviceSttAvailable,
+        deviceLlmAvailable = deviceLlmAvailable,
     )
 
     appState.diskConflict?.let { conflict ->

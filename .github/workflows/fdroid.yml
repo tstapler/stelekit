@@ -58,25 +58,16 @@ jobs:
           keypass: ${FDROID_KEY_PASS}
           EOF
 
-      - name: Resolve release tag
-        id: tag
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ github.event.release.tag_name }}"
-          if [ -z "$TAG" ]; then
-            TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
-      - name: Download signed APK from release
+      - name: Download signed APKs from all releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p fdroid/repo
-          gh release download "${{ steps.tag.outputs.tag }}" \
-            --pattern "SteleKit-*-android.apk" \
-            --dir fdroid/repo/
+          gh release list --limit 100 --json tagName --jq '.[].tagName' | while read -r tag; do
+            gh release download "$tag" \
+              --pattern "SteleKit-*-android.apk" \
+              --dir fdroid/repo/ || true
+          done
 
       - name: Generate fdroid index
         working-directory: fdroid

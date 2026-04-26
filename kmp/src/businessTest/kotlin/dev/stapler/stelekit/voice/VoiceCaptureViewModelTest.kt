@@ -413,6 +413,82 @@ class VoiceCaptureViewModelTest {
         assertIs<VoiceCaptureState.Done>(vm.state.first())
     }
 
+    // --- DirectSpeechProvider path ---
+
+    @Test
+    fun `directSpeechProvider success path reaches Done state`() = runTest {
+        val transcript = "this is a test transcript with more than ten words total here"
+        val fakeDirectProvider = object : DirectSpeechProvider {
+            override suspend fun listen(): TranscriptResult = TranscriptResult.Success(transcript)
+        }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(directSpeechProvider = fakeDirectProvider),
+            makeJournalService(), this,
+        )
+
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        assertIs<VoiceCaptureState.Done>(vm.state.first())
+    }
+
+    @Test
+    fun `directSpeechProvider PermissionDenied emits Error at RECORDING`() = runTest {
+        val fakeDirectProvider = object : DirectSpeechProvider {
+            override suspend fun listen(): TranscriptResult = TranscriptResult.Failure.PermissionDenied
+        }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(directSpeechProvider = fakeDirectProvider),
+            makeJournalService(), this,
+        )
+
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        val state = vm.state.first()
+        assertIs<VoiceCaptureState.Error>(state)
+        assertEquals(PipelineStage.RECORDING, state.stage)
+    }
+
+    @Test
+    fun `directSpeechProvider Empty result emits Error at TRANSCRIBING`() = runTest {
+        val fakeDirectProvider = object : DirectSpeechProvider {
+            override suspend fun listen(): TranscriptResult = TranscriptResult.Empty
+        }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(directSpeechProvider = fakeDirectProvider),
+            makeJournalService(), this,
+        )
+
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        val state = vm.state.first()
+        assertIs<VoiceCaptureState.Error>(state)
+        assertEquals(PipelineStage.TRANSCRIBING, state.stage)
+    }
+
+    @Test
+    fun `directSpeechProvider cancel during Recording resets to Idle`() = runTest {
+        val fakeDirectProvider = object : DirectSpeechProvider {
+            override suspend fun listen(): TranscriptResult {
+                delay(10_000)
+                return TranscriptResult.Empty
+            }
+        }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(directSpeechProvider = fakeDirectProvider),
+            makeJournalService(), this,
+        )
+
+        vm.onMicTapped()
+        delay(1)
+        assertIs<VoiceCaptureState.Recording>(vm.state.first())
+
+        vm.cancel()
+        assertIs<VoiceCaptureState.Idle>(vm.state.first())
+    }
+
     @Test
     fun `transcript over 10000 chars is truncated before LLM`() = runTest {
         val longTranscript = "word ".repeat(2_500) // 12,500 chars

@@ -1,0 +1,69 @@
+{
+  "timestamp": "2026-04-24 14:50:19 UTC",
+  "gitSha": "8121f76",
+  "branch": "main",
+  "graphConfig": "small",
+  "pageCount": 0,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 4,
+  "phase3Ms": 11,
+  "totalMs": 24,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 36,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 122,
+      "pct": 60.4
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 25,
+      "pct": 12.4
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 7,
+      "pct": 3.5
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 4,
+      "pct": 2.0
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "long[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.Frame_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.ClassNotFoundException_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.net.URL_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ]
+}

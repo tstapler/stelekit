@@ -15,7 +15,7 @@ import dev.stapler.stelekit.migration.MigrationTamperedError
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.GraphRegistry
 import dev.stapler.stelekit.platform.FileSystem
-import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.RepositorySet
 import dev.stapler.stelekit.util.ContentHasher
@@ -39,7 +39,7 @@ import kotlinx.serialization.json.Json
  * Replaces the Repositories singleton with per-graph RepositorySets.
  */
 class GraphManager(
-    private val platformSettings: PlatformSettings,
+    private val platformSettings: Settings,
     private val driverFactory: DriverFactory,
     private val fileSystem: FileSystem,
     val defaultBackend: GraphBackend = GraphBackend.SQLDELIGHT,

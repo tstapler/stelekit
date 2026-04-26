@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.repository
 
 import dev.stapler.stelekit.cache.LruCache
+import dev.stapler.stelekit.cache.SteleLruCache
 import dev.stapler.stelekit.cache.RepoCacheConfig
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.logging.Logger
@@ -873,7 +874,7 @@ class SqlDelightBlockRepository(
         Clock.System.now().toEpochMilliseconds() - entry.cachedAtMs > hierarchyTtlMs
 
     /** Snapshot and reset hit/miss/eviction counters for all cache tiers. */
-    suspend fun cacheStats(): Map<String, LruCache.CacheStats> = mapOf(
+    suspend fun cacheStats(): Map<String, SteleLruCache.CacheStats> = mapOf(
         "block" to blockCache.snapshotAndReset(),
         "hierarchy" to hierarchyCache.snapshotAndReset(),
         "ancestors" to ancestorsCache.snapshotAndReset(),

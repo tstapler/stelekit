@@ -178,6 +178,14 @@ kotlin {
 
                 // Encrypted SharedPreferences for API key storage
                 implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+                // On-device LLM via Gemini Nano (Pixel 9+ and AICore-enabled OEM flagships)
+                implementation("com.google.mlkit:genai-prompt:1.0.0-beta2")
+
+                // Jetpack Glance — Compose-based home screen widget API
+                // Use 1.1.1 (not 1.1.0) to pick up a protobuf security fix.
+                implementation("androidx.glance:glance-appwidget:1.1.1")
+                implementation("androidx.glance:glance-material3:1.1.1")
             }
         }
 
@@ -190,6 +198,18 @@ kotlin {
                 implementation("androidx.test.ext:junit:1.2.1")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
                 implementation("androidx.arch.core:core-testing:2.2.0")
+                implementation("androidx.glance:glance-appwidget-testing:1.1.1")
+            }
+        }
+
+        val androidInstrumentedTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+                implementation("androidx.benchmark:benchmark-junit4:1.3.4")
+                implementation("androidx.test:runner:1.6.2")
+                implementation("androidx.test:core:1.6.1")
+                implementation("androidx.test.ext:junit:1.2.1")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
             }
         }
 
@@ -662,7 +682,8 @@ android {
     namespace = "dev.stapler.stelekit"
 
     defaultConfig {
-        minSdk = 24
+        minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {

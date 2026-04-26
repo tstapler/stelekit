@@ -352,6 +352,21 @@ UPDATE pages SET is_favorite = ? WHERE uuid = ?;
 deleteAllPages:
 DELETE FROM pages;
 
+-- All page UUIDs reachable in 1 hop from a given page (outgoing or incoming links).
+-- Used to compute graph-distance boost during search ranking.
+selectNeighbourPageUuids:
+SELECT DISTINCT to_b.page_uuid AS page_uuid
+FROM block_references br
+JOIN blocks from_b ON from_b.uuid = br.from_block_uuid
+JOIN blocks to_b   ON to_b.uuid   = br.to_block_uuid
+WHERE from_b.page_uuid = :pageUuid AND to_b.page_uuid != :pageUuid
+UNION
+SELECT DISTINCT from_b.page_uuid AS page_uuid
+FROM block_references br
+JOIN blocks from_b ON from_b.uuid = br.from_block_uuid
+JOIN blocks to_b   ON to_b.uuid   = br.to_block_uuid
+WHERE to_b.page_uuid = :pageUuid AND from_b.page_uuid != :pageUuid;
+
 -- Reference queries
 selectOutgoingReferences:
 SELECT b.* FROM blocks b
@@ -454,7 +469,8 @@ SELECT
     b.updated_at,
     b.properties,
     b.version,
-    highlight(blocks_fts, 0, '<em>', '</em>') AS highlight
+    highlight(blocks_fts, 0, '<em>', '</em>') AS highlight,
+    bm25(blocks_fts) AS bm25_score
 FROM blocks_fts bm
 JOIN blocks b ON b.id = bm.rowid
 WHERE blocks_fts MATCH :query
@@ -474,7 +490,8 @@ SELECT
     b.updated_at,
     b.properties,
     b.version,
-    highlight(blocks_fts, 0, '<em>', '</em>') AS highlight
+    highlight(blocks_fts, 0, '<em>', '</em>') AS highlight,
+    bm25(blocks_fts) AS bm25_score
 FROM blocks_fts bm
 JOIN blocks b ON b.id = bm.rowid
 WHERE blocks_fts MATCH :query
@@ -502,7 +519,8 @@ SELECT
     p.is_journal,
     p.journal_date,
     p.is_content_loaded,
-    highlight(pages_fts, 0, '<em>', '</em>') AS highlight
+    highlight(pages_fts, 0, '<em>', '</em>') AS highlight,
+    bm25(pages_fts) AS bm25_score
 FROM pages_fts pf
 JOIN pages p ON p.rowid = pf.rowid
 WHERE pages_fts MATCH :query

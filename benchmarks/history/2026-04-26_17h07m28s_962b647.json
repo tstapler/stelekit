@@ -1,0 +1,69 @@
+{
+  "timestamp": "2026-04-26 17:07:28 UTC",
+  "gitSha": "962b647",
+  "branch": "main",
+  "graphConfig": "small",
+  "pageCount": 0,
+  "journalCount": 30,
+  "phase1TtiMs": 8,
+  "phase2Ms": 2,
+  "phase3Ms": 8,
+  "totalMs": 18,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 23,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.04,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 126,
+      "pct": 61.2
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 30,
+      "pct": 14.6
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 8,
+      "pct": 3.9
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 5,
+      "pct": 2.4
+    },
+    {
+      "frame": "java.util.HashMap$Node_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.security.CodeSource_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.invoke.MemberName_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.invoke.MethodType_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ]
+}

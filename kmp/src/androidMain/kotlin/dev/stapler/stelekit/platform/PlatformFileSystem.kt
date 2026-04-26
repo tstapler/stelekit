@@ -315,6 +315,18 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         catch (e: IllegalArgumentException) { Log.w(TAG, "getLastModifiedTime: invalid URI for $path", e); null }
     }
 
+    override fun listFilesWithModTimes(path: String): List<Pair<String, Long>> {
+        if (!path.startsWith("saf://")) return super.listFilesWithModTimes(path)
+        return try {
+            val docUri = parseDocumentUri(path)
+            queryChildren(docUri)
+                .filter { it.mimeType != DocumentsContract.Document.MIME_TYPE_DIR }
+                .map { it.name to it.lastModified }
+                .sortedBy { it.first }
+        } catch (e: SecurityException) { Log.w(TAG, "listFilesWithModTimes: permission denied for $path", e); emptyList() }
+        catch (e: IllegalArgumentException) { Log.w(TAG, "listFilesWithModTimes: invalid URI for $path", e); emptyList() }
+    }
+
     actual override fun pickDirectory(): String? = null // Handled via pickDirectoryAsync on Android
 
     actual override suspend fun pickDirectoryAsync(): String? {
