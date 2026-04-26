@@ -58,7 +58,7 @@ class ClaudeLlmFormatterProvider(
         // If the breaker is open, protectEither returns Left(ExecutionRejected)
         // which we map to NetworkError to match the existing LlmResult contract.
         val protectedResult = circuitBreaker.protectEither {
-            httpCallInternal(transcript, systemPrompt, maxTokens)
+            httpCallInternal(systemPrompt, maxTokens)
         }
 
         return protectedResult.fold(
@@ -68,7 +68,6 @@ class ClaudeLlmFormatterProvider(
     }
 
     private suspend fun httpCallInternal(
-        transcript: String,
         systemPrompt: String,
         maxTokens: Int,
     ): LlmResult {
