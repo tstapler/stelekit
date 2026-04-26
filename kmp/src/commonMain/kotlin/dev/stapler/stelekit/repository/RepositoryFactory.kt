@@ -140,6 +140,7 @@ class RepositoryFactoryImpl(
             writeActor = writeActor
         )
 
+    @OptIn(DirectRepositoryWrite::class)
     fun createRepositorySet(
         backend: GraphBackend,
         scope: CoroutineScope? = null,
@@ -241,15 +242,25 @@ class RepositoryFactoryImpl(
 
         // Background drain: every 5s flush in-memory ring buffer to SQLite, prune old data,
         // and record cache hit/miss and pool wait-time stats into the histogram.
+        // Route through the actor so span inserts are serialized with all other DB writes and
+        // don't race with block saves on Dispatchers.IO (which causes SQLITE_BUSY at startup).
         if (scope != null && ringBuffer != null && spanRepository != null) {
             scope.launch {
                 val sevenDaysMs = 7L * 24 * 60 * 60 * 1000
                 while (true) {
                     delay(5_000)
                     val drained = ringBuffer.drain()
-                    drained.forEach { span -> spanRepository.insertSpan(span) }
-                    spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)
-                    spanRepository.deleteExcessSpans(10_000)
+                    val drainBlock: suspend () -> Result<Unit> = {
+                        drained.forEach { span -> spanRepository.insertSpan(span) }
+                        spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)
+                        spanRepository.deleteExcessSpans(10_000)
+                        Result.success(Unit)
+                    }
+                    if (actor != null) {
+                        actor.execute(DatabaseWriteActor.Priority.LOW, drainBlock)
+                    } else {
+                        drainBlock()
+                    }
                     if (sqlBlockRepo != null && histogramWriter != null) {
                         val stats = sqlBlockRepo.cacheStats()
                         stats.forEach { (name, s) ->

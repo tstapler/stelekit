@@ -6,6 +6,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.DirectSqlWrite
 import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.performance.SpanRepository
 import kotlinx.coroutines.flow.Flow
@@ -15,6 +16,7 @@ import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
+@OptIn(DirectRepositoryWrite::class)
 class SqlDelightSpanRepository(
     private val database: SteleDatabase,
 ) : SpanRepository {
