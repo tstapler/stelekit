@@ -19,6 +19,7 @@
 
 * **search:** create-page in link picker now inserts link and appears first ([2a85c6d](https://github.com/tstapler/stelekit/commit/2a85c6dc176324feaf50df0179ca646ac15f2000))
 
+
 ## [0.10.0](https://github.com/tstapler/stelekit/compare/v0.9.5...v0.10.0) (2026-04-25)
 
 
