@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.performance.NavigationTracingEffect
 import dev.stapler.stelekit.stats.GraphStatsReport
 import dev.stapler.stelekit.stats.NamespaceStat
+import kotlin.math.roundToInt
 
 @Composable
 fun LibraryStatsScreen(
@@ -80,7 +81,7 @@ private fun StatsContent(report: GraphStatsReport) {
             val span = if (report.firstJournalDate != null && report.lastJournalDate != null)
                 "${report.firstJournalDate} → ${report.lastJournalDate}" else "(no dated journals)"
             Text(
-                "%,d pages  ·  %,d journals  ·  %s".format(report.pageCount, report.journalCount, span),
+                "${report.pageCount.withCommas()} pages  ·  ${report.journalCount.withCommas()} journals  ·  $span",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -88,25 +89,25 @@ private fun StatsContent(report: GraphStatsReport) {
 
         item {
             StatsCard("Volume") {
-                StatRow("Pages", "%,d".format(report.pageCount))
-                StatRow("Journals", "%,d".format(report.journalCount))
-                StatRow("Total blocks", "%,d".format(report.totalBlocks))
-                StatRow("Avg blocks / page", "%.1f".format(report.avgBlocksPerPage))
-                StatRow("Empty pages", "%,d".format(report.pagesWithNoContent))
-                StatRow("Hashtags", "%,d".format(report.totalHashtags))
+                StatRow("Pages", report.pageCount.withCommas())
+                StatRow("Journals", report.journalCount.withCommas())
+                StatRow("Total blocks", report.totalBlocks.withCommas())
+                StatRow("Avg blocks / page", report.avgBlocksPerPage.fmt1dp())
+                StatRow("Empty pages", report.pagesWithNoContent.withCommas())
+                StatRow("Hashtags", report.totalHashtags.withCommas())
             }
         }
 
         item {
             StatsCard("Link Topology") {
-                StatRow("Total wiki links", "%,d".format(report.totalOutgoingLinks))
-                StatRow("Block link density", "%.0f%%".format(report.blockLinkDensity * 100))
-                StatRow("Pages with outgoing links", pagesPercent(report.pagesWithOutgoingLinks, report.pageCount))
-                StatRow("Pages with incoming links", pagesPercent(report.pagesWithIncomingLinks, report.pageCount))
-                StatRow("Avg outgoing / page", "%.1f".format(report.avgOutgoingLinksPerPage))
-                StatRow("Avg incoming / page", "%.1f".format(report.avgIncomingLinksPerPage))
-                StatRow("Max incoming links", "%,d".format(report.maxIncomingLinks))
-                StatRow("Max outgoing links", "%,d".format(report.maxOutgoingLinks))
+                StatRow("Total wiki links", report.totalOutgoingLinks.withCommas())
+                StatRow("Block link density", report.blockLinkDensity.pct())
+                StatRow("Pages with outgoing links", report.pagesWithOutgoingLinks.withPct(report.pageCount))
+                StatRow("Pages with incoming links", report.pagesWithIncomingLinks.withPct(report.pageCount))
+                StatRow("Avg outgoing / page", report.avgOutgoingLinksPerPage.fmt1dp())
+                StatRow("Avg incoming / page", report.avgIncomingLinksPerPage.fmt1dp())
+                StatRow("Max incoming links", report.maxIncomingLinks.withCommas())
+                StatRow("Max outgoing links", report.maxOutgoingLinks.withCommas())
             }
         }
 
@@ -116,20 +117,20 @@ private fun StatsContent(report: GraphStatsReport) {
                     report.topByIncomingLinks.take(10).forEachIndexed { i, p ->
                         Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                             Text(
-                                "%2d.".format(i + 1),
+                                "${i + 1}.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.width(28.dp),
                             )
                             Text(p.name.take(36), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                             Text(
-                                "← %,d".format(p.incomingLinks),
+                                "← ${p.incomingLinks.withCommas()}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.width(60.dp),
                             )
                             Text(
-                                "→ %,d".format(p.outgoingLinks),
+                                "→ ${p.outgoingLinks.withCommas()}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.width(60.dp),
@@ -151,7 +152,7 @@ private fun StatsContent(report: GraphStatsReport) {
         if (report.journalsByYear.isNotEmpty()) {
             item {
                 StatsCard("Journal Activity by Year") {
-                    StatRow("Fill rate", "%.0f%% of days".format(report.journalFillRate * 100))
+                    StatRow("Fill rate", "${(report.journalFillRate * 100).roundToInt()}% of days")
                     Spacer(Modifier.height(8.dp))
                     val maxCount = report.journalsByYear.values.maxOrNull()?.coerceAtLeast(1) ?: 1
                     report.journalsByYear.forEach { (year, count) ->
@@ -165,7 +166,7 @@ private fun StatsContent(report: GraphStatsReport) {
             item {
                 StatsCard("Top Namespaces") {
                     report.topNamespaces.forEach { ns: NamespaceStat ->
-                        StatRow(ns.namespace, "%,d pages".format(ns.count))
+                        StatRow(ns.namespace, "${ns.count.withCommas()} pages")
                     }
                 }
             }
@@ -229,13 +230,36 @@ private fun BarChartRow(label: String, count: Int, maxCount: Int, unit: String) 
             )
         }
         Text(
-            "%,d $unit".format(count),
-            modifier = Modifier.width(80.dp).padding(start = 8.dp),
+            "${count.withCommas()} $unit",
+            modifier = Modifier.width(88.dp).padding(start = 8.dp),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
-private fun pagesPercent(count: Int, total: Int): String =
-    "%,d  (%.0f%%)".format(count, count.toFloat() / total.coerceAtLeast(1) * 100)
+// ── KMP-safe number formatting helpers ──────────────────────────────────────
+
+private fun Int.withCommas(): String {
+    if (this < 0) return "-${(-this).withCommas()}"
+    if (this < 1000) return toString()
+    val s = toString()
+    val sb = StringBuilder()
+    s.reversed().forEachIndexed { i, c ->
+        if (i > 0 && i % 3 == 0) sb.append(',')
+        sb.append(c)
+    }
+    return sb.reverse().toString()
+}
+
+private fun Float.fmt1dp(): String {
+    val rounded = (this * 10).roundToInt()
+    return "${rounded / 10}.${rounded % 10}"
+}
+
+private fun Float.pct(): String = "${(this * 100).roundToInt()}%"
+
+private fun Int.withPct(total: Int): String {
+    val p = if (total > 0) (this * 100f / total).roundToInt() else 0
+    return "${withCommas()}  ($p%)"
+}
