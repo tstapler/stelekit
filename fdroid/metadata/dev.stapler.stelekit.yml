@@ -1,0 +1,23 @@
+Categories:
+  - Office
+License: Elastic-2.0
+Name: SteleKit
+Summary: Local-first Markdown outliner compatible with Logseq
+Description: |
+  SteleKit is a Kotlin Multiplatform note-taking app that reads and writes the
+  same Markdown files as Logseq. Open your existing Logseq graph on Android, or
+  switch freely between desktop and mobile without any sync service.
+
+  Features:
+  * Block-based outliner with nested bullets
+  * Page graph and backlinks
+  * Reads and writes standard Logseq-compatible Markdown files
+  * Local-first — your notes stay on your device
+  * No account or internet connection required
+
+WebSite: https://stelekit.stapler.dev
+SourceCode: https://github.com/tstapler/stelekit
+IssueTracker: https://github.com/tstapler/stelekit/issues
+
+AutoUpdateMode: None
+UpdateCheckMode: None

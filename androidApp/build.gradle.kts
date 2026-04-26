@@ -7,6 +7,16 @@ plugins {
     kotlin("plugin.compose")
 }
 
+val appVersionStr = (findProperty("appVersion") as? String ?: "0.1.0").removePrefix("v")
+val versionParts = appVersionStr.split(".")
+val vMajor = versionParts.getOrNull(0)?.toIntOrNull() ?: 0
+val vMinor = versionParts.getOrNull(1)?.toIntOrNull() ?: 0
+val vPatch = versionParts.getOrNull(2)?.toIntOrNull() ?: 0
+// Encode semver as a monotonically increasing integer F-Droid uses to determine the latest APK.
+// Formula: major*1_000_000 + minor*1_000 + patch (supports minor/patch up to 999).
+// Coerced to ≥2 so all future APKs outrank every historical APK that was built with versionCode=1.
+val computedVersionCode = (vMajor * 1_000_000 + vMinor * 1_000 + vPatch).coerceAtLeast(2)
+
 android {
     namespace = "dev.stapler.stelekit.app"
     compileSdk = 36
@@ -15,8 +25,8 @@ android {
         applicationId = "dev.stapler.stelekit"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = (findProperty("appVersion") as? String ?: "0.1.0")
+        versionCode = computedVersionCode
+        versionName = appVersionStr
     }
 
     signingConfigs {
