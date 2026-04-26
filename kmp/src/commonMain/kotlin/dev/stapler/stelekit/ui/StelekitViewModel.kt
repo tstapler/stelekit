@@ -281,10 +281,11 @@ class StelekitViewModel(
     }
 
     fun loadGraph(path: String) {
+        // Set loading state synchronously so callers observe isFullyLoaded=false immediately,
+        // eliminating the race where StateFlow.first{isFullyLoaded} catches the initial default.
+        _uiState.update { it.copy(isLoading = true, isFullyLoaded = false, statusMessage = "Loading graph from $path...") }
         val job = scope.launch {
             try {
-                _uiState.update { it.copy(isLoading = true, isFullyLoaded = false, statusMessage = "Loading graph from $path...") }
-
                 var graphExists = fileSystem.directoryExists(path)
 
                 if (!graphExists) {
