@@ -2,6 +2,7 @@ package dev.stapler.stelekit.ui.components
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.performClick
 import dev.stapler.stelekit.ui.fixtures.InMemorySettings
 import dev.stapler.stelekit.ui.AppState
