@@ -24,6 +24,10 @@ import org.jetbrains.kotlin.psi.psiUtil.containingClassOrObject
  * and forgets the annotation — which would silently allow direct writes to bypass the actor.
  *
  * Reads return `Flow<>` and are exempt. Non-suspend functions are exempt.
+ * Methods whose names begin with a read-only prefix (`get`, `find`, `is`, `has`, `count`,
+ * `validate`, `check`, `calculate`, `select`) are also exempt — they are reads that happen
+ * to use `suspend fun` rather than `Flow`. Use [RepositoryWriteCallSiteRule] to verify that
+ * these exempt methods don't actually contain SQL write calls.
  *
  * Compliant:
  * ```kotlin
@@ -63,6 +67,12 @@ class MissingDirectRepositoryWriteRule(config: Config = Config.empty) : Rule(con
         val returnType = function.typeReference?.text ?: ""
         if (returnType.startsWith("Flow")) return
 
+        // Methods with read-only name prefixes are exempt: they are reads that happen to use
+        // suspend fun instead of Flow. RepositoryWriteCallSiteRule provides a safety net by
+        // verifying that these methods don't actually contain SQL write calls.
+        val name = function.name ?: return
+        if (READ_PREFIXES.any { name.startsWith(it) }) return
+
         val hasAnnotation = function.annotationEntries.any {
             it.shortName?.asString() == "DirectRepositoryWrite"
         }
@@ -76,5 +86,11 @@ class MissingDirectRepositoryWriteRule(config: Config = Config.empty) : Rule(con
                 )
             )
         }
+    }
+
+    companion object {
+        private val READ_PREFIXES = setOf(
+            "get", "find", "is", "has", "count", "validate", "check", "calculate", "select",
+        )
     }
 }

@@ -12,6 +12,7 @@ class SteleKitRuleSetProvider : RuleSetProvider {
         listOf(
             RegexInLambdaRule(config),
             MissingDirectRepositoryWriteRule(config),
+            RepositoryWriteCallSiteRule(config),
         ),
     )
 }
