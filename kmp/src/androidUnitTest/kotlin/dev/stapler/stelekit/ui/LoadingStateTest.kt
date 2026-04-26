@@ -10,9 +10,11 @@ import dev.stapler.stelekit.repository.InMemorySearchRepository
 import dev.stapler.stelekit.repository.JournalService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -55,6 +57,14 @@ class LoadingStateTest {
         override fun getLastModifiedTime(path: String): Long? = null
     }
 
+    private val vmScopes = mutableListOf<CoroutineScope>()
+
+    @After
+    fun cancelScopes() {
+        vmScopes.forEach { it.cancel() }
+        vmScopes.clear()
+    }
+
     private fun makeViewModel(): StelekitViewModel {
         val pageRepo = InMemoryPageRepository()
         val blockRepo = InMemoryBlockRepository()
@@ -63,8 +73,8 @@ class LoadingStateTest {
         val graphLoader = GraphLoader(fileSystem, pageRepo, blockRepo)
         val graphWriter = GraphWriter(fileSystem)
         val journalService = JournalService(pageRepo, blockRepo)
-        // Use a standalone scope so the ViewModel's lifecycle is independent from runTest's scope.
         val vmScope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher())
+        vmScopes += vmScope
         return StelekitViewModel(
             fileSystem = fileSystem,
             pageRepository = pageRepo,

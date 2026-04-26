@@ -108,7 +108,7 @@ class MainActivity : ComponentActivity() {
         // picker so the main UI can launch ACTION_OPEN_DOCUMENT_TREE.
         val app = application as SteleKitApplication
         val fileSystem = app.fileSystem
-        fileSystem.init(this) {
+        fileSystem.init(applicationContext) {
             val deferred = CompletableDeferred<String?>()
             pendingFolderPick = deferred
             val hintUri = fileSystem.getStoredTreeUri()

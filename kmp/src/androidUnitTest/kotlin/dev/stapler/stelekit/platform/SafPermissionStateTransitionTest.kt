@@ -57,11 +57,11 @@ class SafPermissionStateTransitionTest {
         assertFalse(fs.hasStoragePermission(), "hasStoragePermission must return false for corrupt stored URI")
     }
 
-    // TC-002 / TC-005 note: testing hasStoragePermission == true requires DocumentFile.fromTreeUri()
-    // to return a non-null instance with exists() == true. In Robolectric, fromTreeUri() returns null
-    // because no ExternalStorageProvider is registered, so isSafPermissionValid always returns false
-    // even when a persistable grant is held. These scenarios require instrumented tests on a real
-    // emulator (see androidInstrumentedTest/SmokeTest.kt) for full coverage.
+    // TC-002 / TC-005 note: testing hasStoragePermission == true requires isSafPermissionValid to
+    // return true. In Robolectric, DocumentFile.fromTreeUri(...).exists() always returns false
+    // (no ExternalStorageProvider is registered), so the DocumentFile branch of isSafPermissionValid
+    // cannot pass even when a persistable grant is held via takePersistableUriPermission.
+    // These scenarios require instrumented tests on a real emulator for full coverage.
     //
     // The grant-check path (hasGrant in isSafPermissionValid) IS tested via the fast-fail path
     // in TC-003 and UpgradePathTest — those verify that missing grants are detected and prefs cleared.

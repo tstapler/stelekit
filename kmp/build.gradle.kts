@@ -199,9 +199,8 @@ kotlin {
                 // Roborazzi screenshot testing
                 implementation("io.github.takahirom.roborazzi:roborazzi:1.59.0")
                 implementation("io.github.takahirom.roborazzi:roborazzi-compose:1.59.0")
-                implementation("androidx.compose.ui:ui-test-junit4:1.8.0")
-                implementation("androidx.compose.ui:ui-test-manifest:1.8.0")
-                implementation("androidx.activity:activity-compose:1.10.1")
+                implementation("androidx.compose.ui:ui-test-junit4:1.10.6")
+                implementation("androidx.compose.ui:ui-test-manifest:1.10.6")
             }
         }
 
