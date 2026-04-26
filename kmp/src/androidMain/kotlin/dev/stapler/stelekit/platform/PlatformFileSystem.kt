@@ -56,6 +56,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         if (uriStr != null) {
             try {
                 val uri = Uri.parse(uriStr)
+                val held = context.contentResolver.persistedUriPermissions
+                Log.d(TAG, "init: ${held.size} persistable grants held: ${held.map { "${it.uri} r=${it.isReadPermission} w=${it.isWritePermission}" }}")
                 val valid = isSafPermissionValid(context, uri)
                 Log.d(TAG, "init: isSafPermissionValid($uri) = $valid")
                 if (valid) {
@@ -64,9 +66,6 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                     Log.d(TAG, "init: SAF restored — treeRootDocId=$treeRootDocId")
                 } else {
                     Log.w(TAG, "init: stored URI has no valid persistable permission — clearing")
-                    // Enumerate what permissions ARE held so we can see what's wrong
-                    val held = context.contentResolver.persistedUriPermissions
-                    Log.d(TAG, "init: ${held.size} persistable grants held: ${held.map { "${it.uri} r=${it.isReadPermission} w=${it.isWritePermission}" }}")
                     prefs.edit().remove(KEY_SAF_TREE_URI).apply()
                 }
             } catch (e: Exception) {

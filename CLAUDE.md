@@ -32,8 +32,8 @@ SteleKit is a Kotlin Multiplatform (KMP) migration of Logseq — a Markdown-base
 
 # Run all CI checks locally (detekt + jvmTest + Android unit tests + assembleDebug)
 ./gradlew ciCheck
-# On headless Linux (e.g. SSH), prefix with xvfb-run:
-# xvfb-run --auto-servernum ./gradlew ciCheck
+# If xvfb-run is installed (headless Linux / SSH), it is used automatically:
+# command -v xvfb-run >/dev/null && xvfb-run --auto-servernum ./gradlew ciCheck || ./gradlew ciCheck
 # README sync is not covered by ciCheck — run separately:
 # bash scripts/generate-readme.sh && git diff --exit-code README.md
 ```

@@ -79,6 +79,16 @@ jobs:
       - name: Run Android unit tests
         run: ./gradlew :kmp:testDebugUnitTest --no-daemon --build-cache
 
+      - name: Verify Roborazzi screenshots
+        run: ./gradlew :kmp:verifyRoborazziDebug --no-daemon --build-cache
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: roborazzi-diffs
+          path: kmp/src/androidUnitTest/snapshots/compare/
+          retention-days: 7
+
       - name: Build debug APK
         run: ./gradlew :androidApp:assembleDebug --no-daemon --build-cache
 
