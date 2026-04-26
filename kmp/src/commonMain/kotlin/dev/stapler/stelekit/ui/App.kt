@@ -126,7 +126,7 @@ fun StelekitApp(
     val graphManager = graphManager ?: remember {
         GraphManager(platformSettings, DriverFactory(), fileSystem)
     }
-    remember(graphManager) { onGraphManagerReady?.invoke(graphManager) }
+    LaunchedEffect(graphManager) { onGraphManagerReady?.invoke(graphManager) }
 
     // Observe the active repository set
     val activeRepoSet by graphManager.activeRepositorySet.collectAsState()

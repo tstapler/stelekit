@@ -376,6 +376,7 @@ class BlockStateManager(
      * blocks remain in [_blocks] as a stale cache for instant first-paint on slower re-navigation.
      */
     fun unobservePage(pageUuid: String) {
+        pendingUnobserve.remove(pageUuid)?.cancel()
         pendingUnobserve[pageUuid] = scope.launch {
             delay(5_000)
             pendingUnobserve.remove(pageUuid)

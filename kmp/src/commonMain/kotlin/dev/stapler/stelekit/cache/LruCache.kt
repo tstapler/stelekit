@@ -82,6 +82,8 @@ class SteleLruCache<K : Any, V>(
         totalWeight = 0L
     }
 
+    fun containsKey(key: K): Boolean = lock.withLock { map.containsKey(key) }
+
     fun size(): Int = lock.withLock { map.size }
 
     fun weight(): Long = lock.withLock { totalWeight }

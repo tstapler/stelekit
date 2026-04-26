@@ -123,7 +123,10 @@ class SqlDelightBlockRepository(
                 val pageUuid = resultList.firstOrNull()?.block?.pageUuid
                 if (pageUuid != null) {
                     hierarchyIndexMutex.withLock {
-                        hierarchyPageIndex.getOrPut(pageUuid) { mutableSetOf() }.add(rootUuid)
+                        val set = hierarchyPageIndex.getOrPut(pageUuid) { mutableSetOf() }
+                        // Prune stale entries (evicted by LRU) to keep the index bounded.
+                        set.removeAll { it != rootUuid && !hierarchyCache.containsKey(it) }
+                        set.add(rootUuid)
                     }
                 }
                 emit(success(resultList))

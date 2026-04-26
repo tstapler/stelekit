@@ -246,7 +246,7 @@ class DatabaseWriteActor(
         val batchResult = blockRepository.saveBlocks(allBlocks)
         if (batchResult.isSuccess) {
             logSaveBlocks(allBlocks, existingByUuid)
-            onWriteSuccess?.invoke(batch.first())
+            batch.forEach { onWriteSuccess?.invoke(it) }
             batch.forEach { it.deferred.complete(Result.success(Unit)) }
         } else {
             logger.warn(
