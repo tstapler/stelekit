@@ -36,6 +36,17 @@ SteleKit is a Kotlin Multiplatform (KMP) migration of Logseq — a Markdown-base
 # xvfb-run --auto-servernum ./gradlew ciCheck
 # README sync is not covered by ciCheck — run separately:
 # bash scripts/generate-readme.sh && git diff --exit-code README.md
+
+# Profile graph load TTI with JFR (requires async-profiler: brew install async-profiler)
+./gradlew :kmp:jvmTestProfile -PgraphPath=/path/to/your/graph
+# Outputs to kmp/build/reports/:
+#   graph-load.jfr              — raw JFR recording
+#   graph-load-alloc.collapsed  — allocation stacks (collapsed, flamegraph-ready)
+#   graph-load-cpu.collapsed    — CPU stacks filtered to DefaultDispatcher-worker-*
+#                                 (Kotlin coroutine pool only — Gradle/Kryo noise excluded)
+#   flamegraph.html             — interactive allocation flamegraph
+# CI uploads flamegraph-alloc.png and flamegraph-cpu.png as individual artifacts
+# viewable directly in the browser (no download required).
 ```
 
 ## Module Structure
