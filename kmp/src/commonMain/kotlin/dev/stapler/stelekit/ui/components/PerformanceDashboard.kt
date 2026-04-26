@@ -82,7 +82,7 @@ private fun HistogramsTab(histogramWriter: HistogramWriter?) {
     val summaries by produceState<Map<String, PercentileSummary>>(emptyMap(), histogramWriter) {
         while (true) {
             if (histogramWriter != null) {
-                val result = withContext(PlatformDispatcher.IO) {
+                val result = withContext(PlatformDispatcher.DB) {
                     operations
                         .mapNotNull { op -> histogramWriter.queryPercentiles(op)?.let { op to it } }
                         .toMap()

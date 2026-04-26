@@ -33,6 +33,8 @@ fun SettingsDialog(
     onLeftHandedChange: (Boolean) -> Unit = {},
     voiceSettings: VoiceSettings? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
+    deviceSttAvailable: Boolean = false,
+    deviceLlmAvailable: Boolean = false,
 ) {
     if (visible) {
         Dialog(
@@ -129,6 +131,8 @@ fun SettingsDialog(
                                     VoiceCaptureSettings(
                                         voiceSettings = voiceSettings,
                                         onRebuildPipeline = onRebuildVoicePipeline,
+                                        deviceSttAvailable = deviceSttAvailable,
+                                        deviceLlmAvailable = deviceLlmAvailable,
                                     )
                                 }
                             }

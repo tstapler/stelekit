@@ -20,4 +20,9 @@ class VoicePipelineConfig(
     val llmProvider: LlmFormatterProvider = NoOpLlmFormatterProvider(),
     val systemPrompt: String = DEFAULT_VOICE_SYSTEM_PROMPT,
     val minWordCount: Int = 10,
-)
+    /** When set, replaces the (record → STT) two-step path with a single integrated listen. */
+    val directSpeechProvider: DirectSpeechProvider? = null,
+) {
+    /** Amplitude flow for waveform animation: prefers directSpeechProvider, falls back to audioRecorder. */
+    val effectiveAmplitudeFlow get() = directSpeechProvider?.amplitudeFlow ?: audioRecorder.amplitudeFlow
+}

@@ -176,6 +176,9 @@ kotlin {
                 // Encrypted SharedPreferences for API key storage
                 implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
+                // On-device LLM via Gemini Nano (Pixel 9+ and AICore-enabled OEM flagships)
+                implementation("com.google.mlkit:genai-prompt:1.0.0-beta2")
+
                 // Jetpack Glance — Compose-based home screen widget API
                 // Use 1.1.1 (not 1.1.0) to pick up a protobuf security fix.
                 implementation("androidx.glance:glance-appwidget:1.1.1")
@@ -643,7 +646,7 @@ android {
     namespace = "dev.stapler.stelekit"
 
     defaultConfig {
-        minSdk = 24
+        minSdk = 26
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
