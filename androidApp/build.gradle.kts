@@ -13,7 +13,7 @@ android {
 
     defaultConfig {
         applicationId = "dev.stapler.stelekit"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 36
         versionCode = 1
         versionName = (findProperty("appVersion") as? String ?: "0.1.0")
