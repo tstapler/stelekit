@@ -174,7 +174,7 @@ class MainActivity : ComponentActivity() {
         super.onTrimMemory(level)
         if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
             lifecycleScope.launch {
-                graphManager?.activeRepositorySet?.value?.blockRepository?.clearAllCaches()
+                graphManager?.activeRepositorySet?.value?.blockRepository?.cacheEvictAll()
             }
         }
     }
