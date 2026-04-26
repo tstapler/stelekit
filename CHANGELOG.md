@@ -1,5 +1,84 @@
 # Changelog
 
+## [0.12.0](https://github.com/tstapler/stelekit/compare/v0.11.0...v0.12.0) (2026-04-26)
+
+
+### Features
+
+* **android/voice:** on-device STT and LLM via SpeechRecognizer + Gemini Nano ([#27](https://github.com/tstapler/stelekit/issues/27)) ([a275dbe](https://github.com/tstapler/stelekit/commit/a275dbe912fa5838f3715f44d9ed5115a27eb931))
+
+## [0.11.0](https://github.com/tstapler/stelekit/compare/v0.10.0...v0.11.0) (2026-04-26)
+
+
+### Features
+
+* **android:** extract Application class and share GraphManager across process lifecycle ([0e7915e](https://github.com/tstapler/stelekit/commit/0e7915e95a34f214ba9e3a19906e8a051b19fa24))
+
+
+### Bug Fixes
+
+* **search:** create-page in link picker now inserts link and appears first ([2a85c6d](https://github.com/tstapler/stelekit/commit/2a85c6dc176324feaf50df0179ca646ac15f2000))
+
+## [0.10.0](https://github.com/tstapler/stelekit/compare/v0.9.5...v0.10.0) (2026-04-25)
+
+
+### Features
+
+* **fdroid:** fix repo version history and show version in Settings ([#33](https://github.com/tstapler/stelekit/issues/33)) ([9bb8a77](https://github.com/tstapler/stelekit/commit/9bb8a773b966cd7f79cf4c0a764a73cfb0b918b9))
+
+## [0.9.5](https://github.com/tstapler/stelekit/compare/v0.9.4...v0.9.5) (2026-04-25)
+
+
+### Bug Fixes
+
+* **resilience:** fix loading screen hang + isolate test settings ([dc1b51b](https://github.com/tstapler/stelekit/commit/dc1b51be926992ca348b9958d15f4721acb98bd9))
+
+
+### Performance Improvements
+
+* **android:** decompose Phase 3 chunk writes to allow HIGH-priority preemption ([#26](https://github.com/tstapler/stelekit/issues/26)) ([b5a51ab](https://github.com/tstapler/stelekit/commit/b5a51ab82e52b38ceb98662412956be692114803))
+
+## [0.9.4](https://github.com/tstapler/stelekit/compare/v0.9.3...v0.9.4) (2026-04-24)
+
+
+### Bug Fixes
+
+* **cache:** rename LruCache → SteleLruCache to bypass K2 compiler bug ([ea70c86](https://github.com/tstapler/stelekit/commit/ea70c865aa8765d4c394304101e94b563dca7b2f))
+
+## [0.9.3](https://github.com/tstapler/stelekit/compare/v0.9.2...v0.9.3) (2026-04-24)
+
+
+### Bug Fixes
+
+* **cache:** replace coroutine Mutex with synchronized in LruCache ([17345e4](https://github.com/tstapler/stelekit/commit/17345e46528fb5e89243f5bee7c6b57e4655b9dc))
+
+## [0.9.2](https://github.com/tstapler/stelekit/compare/v0.9.1...v0.9.2) (2026-04-23)
+
+
+### Bug Fixes
+
+* **cache:** strengthen LruCache.class workaround for Linux CI ([59ae017](https://github.com/tstapler/stelekit/commit/59ae01737e0761cbc5f88dc913b2e798d771276b))
+
+## [0.9.1](https://github.com/tstapler/stelekit/compare/v0.9.0...v0.9.1) (2026-04-23)
+
+
+### Bug Fixes
+
+* **cache:** work around Kotlin 2.3.10 K2 compiler bug in LruCache ([ba30932](https://github.com/tstapler/stelekit/commit/ba309320c4110970a5795b3325f0763324ed408d))
+
+## [0.9.0](https://github.com/tstapler/stelekit/compare/v0.8.1...v0.9.0) (2026-04-23)
+
+
+### Features
+
+* **observability:** comprehensive instrumentation, SLO monitoring, and perf export ([a9770de](https://github.com/tstapler/stelekit/commit/a9770de16026a95bc7d7ef28b7dc839df7f8070a))
+* **search:** AND semantics, field boosting, recency + graph distance ranking ([#22](https://github.com/tstapler/stelekit/issues/22)) ([8d23437](https://github.com/tstapler/stelekit/commit/8d2343751450d7c37098c8375a628a5564aa56c0))
+
+
+### Bug Fixes
+
+* **sync:** prevent data-loss races on mobile reload and external conflict handling ([#21](https://github.com/tstapler/stelekit/issues/21)) ([105928d](https://github.com/tstapler/stelekit/commit/105928d782b9d775ddb4a142206b41474f92c5bb))
+
 ## [0.8.1](https://github.com/tstapler/stelekit/compare/v0.8.0...v0.8.1) (2026-04-22)
 
 

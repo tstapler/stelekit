@@ -36,7 +36,7 @@ import dev.stapler.stelekit.performance.RingBufferSpanExporter
 import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.performance.SpanRepository
 import dev.stapler.stelekit.performance.TraceEvent
-import kotlinx.coroutines.Dispatchers
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -82,7 +82,7 @@ private fun HistogramsTab(histogramWriter: HistogramWriter?) {
     val summaries by produceState<Map<String, PercentileSummary>>(emptyMap(), histogramWriter) {
         while (true) {
             if (histogramWriter != null) {
-                val result = withContext(Dispatchers.IO) {
+                val result = withContext(PlatformDispatcher.DB) {
                     operations
                         .mapNotNull { op -> histogramWriter.queryPercentiles(op)?.let { op to it } }
                         .toMap()
@@ -183,6 +183,10 @@ private fun SpansTab(
     // Detail panel state
     var selectedSpan by remember { mutableStateOf<SerializedSpan?>(null) }
 
+    // Export dialog state
+    var showExportDialog by remember { mutableStateOf(false) }
+    var exportDirectory by remember { mutableStateOf("") }
+
     val displaySpans = frozenSpans ?: liveSpans
     val allTraces = remember(displaySpans, maxDepth) { groupIntoTraces(displaySpans, maxDepth) }
     val traces = remember(allTraces, filterName, minDurationMs, errorsOnly) {
@@ -235,15 +239,8 @@ private fun SpansTab(
                 }
                 if (perfExporter != null) {
                     IconButton(onClick = {
-                        scope.launch {
-                            val msg = try {
-                                val path = perfExporter.export()
-                                "Exported to $path"
-                            } catch (e: Exception) {
-                                "Export failed: ${e.message}"
-                            }
-                            snackbarHostState.showSnackbar(msg)
-                        }
+                        exportDirectory = perfExporter.defaultExportDirectory()
+                        showExportDialog = true
                     }) {
                         Icon(Icons.Default.FileDownload, contentDescription = "Export JSON")
                     }
@@ -322,6 +319,39 @@ private fun SpansTab(
         }
     }
     } // Scaffold
+
+    if (showExportDialog && perfExporter != null) {
+        AlertDialog(
+            onDismissRequest = { showExportDialog = false },
+            title = { Text("Export Performance Report") },
+            text = {
+                OutlinedTextField(
+                    value = exportDirectory,
+                    onValueChange = { exportDirectory = it },
+                    label = { Text("Directory") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showExportDialog = false
+                    scope.launch {
+                        val msg = try {
+                            val path = perfExporter.export(directory = exportDirectory.trim())
+                            "Exported to $path"
+                        } catch (e: Exception) {
+                            "Export failed: ${e.message}"
+                        }
+                        snackbarHostState.showSnackbar(msg)
+                    }
+                }) { Text("Export") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExportDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
 }
 
 private data class TraceGroup(

@@ -15,7 +15,7 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.platform.FileSystem
-import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.JournalService
 import dev.stapler.stelekit.repository.SearchRepository
@@ -63,7 +63,7 @@ class StelekitViewModel(
     private val searchRepository: SearchRepository,
     private val graphLoader: GraphLoader,
     private val graphWriter: GraphWriter,
-    private val platformSettings: PlatformSettings,
+    private val platformSettings: Settings,
     // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
     // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
@@ -281,7 +281,7 @@ class StelekitViewModel(
     }
 
     fun loadGraph(path: String) {
-        scope.launch {
+        val job = scope.launch {
             try {
                 _uiState.update { it.copy(isLoading = true, isFullyLoaded = false, statusMessage = "Loading graph from $path...") }
 
@@ -369,10 +369,25 @@ class StelekitViewModel(
                         )
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Normal structured-concurrency cancellation (e.g. scope shut down when
+                // GraphContent leaves composition). Reset loading state so the UI doesn't
+                // spin forever if this ViewModel is somehow still observed, then rethrow
+                // so the coroutine machinery can clean up correctly.
+                logger.info("loadGraph cancelled for path '$path' — scope is shutting down")
+                _uiState.update { it.copy(isLoading = false) }
+                throw e
             } catch (e: Exception) {
                 e.printStackTrace()
                 logger.error("Error loading graph", e)
                 _uiState.update { it.copy(isLoading = false, isFullyLoaded = true, statusMessage = "Error: ${e.message}") }
+            }
+        }
+        // Guarantee isLoading resets if the job is cancelled before reaching its first
+        // suspension point (i.e. scope.cancel() called before the coroutine starts running).
+        job.invokeOnCompletion { cause ->
+            if (cause is kotlinx.coroutines.CancellationException) {
+                _uiState.update { it.copy(isLoading = false) }
             }
         }
     }
@@ -881,17 +896,27 @@ class StelekitViewModel(
                     ?: return@collect
                 if (currentPage.filePath != event.filePath) return@collect
 
-                // Two-tier protection: suppress if actively editing OR if the page has dirty
-                // (locally-modified but not yet disk-confirmed) blocks. Without the second
-                // tier, clicking away from a block while a sync daemon blanks the file would
-                // silently destroy the user's content (the 16:55 production incident).
+                // Three-tier protection:
+                // 1. Actively editing a block right now.
+                // 2. Page has dirty blocks (locally-modified, DB save confirmed but not yet
+                //    written to disk within the ~300ms debounce window).
+                // 3. A debounced disk write is pending — dirty flag was already cleared by DB
+                //    confirmation, but the file hasn't landed on disk yet. Without this tier
+                //    an external change arriving in that 300ms window bypasses the dialog and
+                //    silently overwrites local content.
                 val dirtyUuids = blockStateManager?.dirtyBlockUuids ?: emptySet()
                 val pageHasDirtyBlocks = blockStateManager
                     ?.blocks?.value?.get(currentPage.uuid)
                     ?.any { it.uuid in dirtyUuids }
                     ?: false
-                val shouldProtect = editingBlockUuid != null || pageHasDirtyBlocks
+                val hasPendingDiskWrite = blockStateManager?.hasPendingDiskWrite(currentPage.uuid) ?: false
+                val shouldProtect = editingBlockUuid != null || pageHasDirtyBlocks || hasPendingDiskWrite
                 if (!shouldProtect) return@collect
+
+                // Cancel the pending disk write so auto-save cannot overwrite the disk file
+                // while the conflict dialog is open. If the user picks "Keep Local", we
+                // re-queue the write explicitly in keepLocalChanges().
+                blockStateManager?.cancelPendingDiskSave(currentPage.uuid)
 
                 // Suppress GraphLoader's automatic re-import — we handle it via the dialog
                 event.suppress()
@@ -976,6 +1001,10 @@ class StelekitViewModel(
         _uiState.update { it.copy(diskConflict = null) }
         scope.launch {
             graphLoader.parseAndSavePage(conflict.filePath, conflict.diskContent, dev.stapler.stelekit.parsing.ParseMode.FULL)
+            // Flush the accepted disk content back to disk immediately. Without this,
+            // any auto-save that ran during the dialog would have written local content
+            // to disk, leaving disk/DB out of sync after we update the DB here.
+            blockStateManager?.savePageNow(conflict.pageUuid)
         }
     }
 

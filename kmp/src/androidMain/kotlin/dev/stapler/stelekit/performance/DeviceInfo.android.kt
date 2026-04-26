@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.performance
 
 import android.os.Build
+import dev.stapler.stelekit.platform.SteleKitContext
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -20,5 +21,8 @@ actual fun getDeviceInfo(): DeviceInfo = DeviceInfo(
         val rt = Runtime.getRuntime()
         (rt.maxMemory() - rt.totalMemory() + rt.freeMemory()) / (1024 * 1024)
     },
-    appVersion = "1.0.0"
+    appVersion = runCatching {
+        val ctx = SteleKitContext.context
+        ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "unknown"
+    }.getOrDefault("unknown")
 )

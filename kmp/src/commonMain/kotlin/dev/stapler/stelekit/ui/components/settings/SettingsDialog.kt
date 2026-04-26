@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import dev.stapler.stelekit.performance.getDeviceInfo
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.ui.i18n.Language
 import dev.stapler.stelekit.voice.VoiceSettings
@@ -32,6 +33,8 @@ fun SettingsDialog(
     onLeftHandedChange: (Boolean) -> Unit = {},
     voiceSettings: VoiceSettings? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
+    deviceSttAvailable: Boolean = false,
+    deviceLlmAvailable: Boolean = false,
 ) {
     if (visible) {
         Dialog(
@@ -72,6 +75,16 @@ fun SettingsDialog(
                                 onClick = { selectedCategory = category }
                             )
                         }
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        val appVersion = remember { getDeviceInfo().appVersion }
+                        Text(
+                            "v$appVersion",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
                     }
 
                     // Content
@@ -118,6 +131,8 @@ fun SettingsDialog(
                                     VoiceCaptureSettings(
                                         voiceSettings = voiceSettings,
                                         onRebuildPipeline = onRebuildVoicePipeline,
+                                        deviceSttAvailable = deviceSttAvailable,
+                                        deviceLlmAvailable = deviceLlmAvailable,
                                     )
                                 }
                             }

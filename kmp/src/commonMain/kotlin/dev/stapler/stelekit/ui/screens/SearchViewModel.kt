@@ -83,7 +83,7 @@ class SearchViewModel(
                                     it.page.name.equals(query, ignoreCase = true)
                             }
                             val withCreate = if (!exactPageMatch && query.isNotBlank()) {
-                                items + SearchResultItem.CreatePageItem(query)
+                                listOf(SearchResultItem.CreatePageItem(query)) + items
                             } else {
                                 items
                             }

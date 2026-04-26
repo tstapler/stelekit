@@ -365,9 +365,9 @@ class BlockStateManager(
      */
     fun unobservePage(pageUuid: String) {
         observationJobs.remove(pageUuid)?.cancel()
-        // Clear dirty entries for this page (blocks stay cached so re-navigation is instant)
         val blockUuids = _blocks.value[pageUuid]?.map { it.uuid } ?: emptyList()
         blockUuids.forEach { dirtyBlocks.remove(it) }
+        _blocks.update { it - pageUuid }
     }
 
     /**
@@ -529,6 +529,27 @@ class BlockStateManager(
      * Used by StelekitViewModel for conflict resolution.
      */
     fun queuePageSave(pageUuid: String) = queueDiskSave(pageUuid)
+
+    /**
+     * Returns true if a debounced disk write is pending for [pageUuid].
+     *
+     * Used by [observeExternalFileChanges] to extend conflict protection into the
+     * window between DB-save confirmation (dirty cleared) and the disk write
+     * actually firing (~300ms later). Without this check, an external file change
+     * arriving in that window silently overwrites local content with no dialog.
+     */
+    suspend fun hasPendingDiskWrite(pageUuid: String): Boolean =
+        diskWriteDebounce.hasPending("disk-$pageUuid")
+
+    /**
+     * Cancel any pending debounced disk write for [pageUuid] without executing it.
+     *
+     * Called when a conflict dialog is shown, so the pending auto-save cannot
+     * overwrite the disk file that the dialog is offering to restore.
+     */
+    suspend fun cancelPendingDiskSave(pageUuid: String) {
+        diskWriteDebounce.cancel("disk-$pageUuid")
+    }
 
     /**
      * Public: write [pageUuid] to disk immediately (no debounce).

@@ -19,17 +19,19 @@ class FtsQueryBuilderTest {
     @Test fun singleTokenCasePreserved() = assertEquals("Taxes*", build("Taxes"))
     @Test fun singleTokenStripsColon() = assertEquals("taxes*", build("taxes:"))
 
-    // ── Multi-token → OR semantics ────────────────────────────────────────
+    // ── Multi-token → AND semantics ──────────────────────────────────────
 
-    @Test fun twoTokensJoinedWithOr() = assertEquals("2025 OR taxes*", build("2025 taxes"))
-    @Test fun threeTokensJoinedWithOr() = assertEquals("meeting OR notes OR 2025*", build("meeting notes 2025"))
-    @Test fun extraWhitespaceNormalized() = assertEquals("2025 OR taxes*", build("  2025   taxes  "))
+    @Test fun twoTokensJoinedWithAnd() = assertEquals("2025* AND taxes*", build("2025 taxes"))
+    @Test fun threeTokensJoinedWithAnd() = assertEquals("meeting* AND notes* AND 2025*", build("meeting notes 2025"))
+    @Test fun extraWhitespaceNormalized() = assertEquals("2025* AND taxes*", build("  2025   taxes  "))
+    @Test fun wildcardOnAllTokens() = assertEquals("meet* AND tax*", build("meet tax"))
+    @Test fun andSemanticsThreeTokens() = assertEquals("a* AND b* AND c*", build("a b c"))
 
     // ── Phrase segments (balanced quotes) ────────────────────────────────
 
     @Test fun balancedPhrasePreserved() = assertEquals("\"meeting notes\"", build("\"meeting notes\""))
-    @Test fun phraseWithFollowingToken() = assertEquals("\"meeting notes\" OR taxes*", build("\"meeting notes\" taxes"))
-    @Test fun phraseWithPrecedingToken() = assertEquals("meeting* OR \"exact phrase\"", build("meeting \"exact phrase\"")) // last *token* (not phrase) gets prefix
+    @Test fun phraseWithFollowingToken() = assertEquals("\"meeting notes\" AND taxes*", build("\"meeting notes\" taxes"))
+    @Test fun phraseWithPrecedingToken() = assertEquals("meeting* AND \"exact phrase\"", build("meeting \"exact phrase\""))
 
     // ── Unbalanced quotes ────────────────────────────────────────────────
 
@@ -72,4 +74,10 @@ class FtsQueryBuilderTest {
         // Semicolon is not an FTS operator; it stays but shouldn't cause issues
         assertTrue(result.contains("taxes"), "Should still contain valid token: $result")
     }
+
+    // ── buildOr fallback ──────────────────────────────────────────────────
+
+    @Test fun buildOrTwoTokens() = assertEquals("2025* OR taxes*", FtsQueryBuilder.buildOr("2025 taxes"))
+    @Test fun buildOrSingleToken() = assertEquals("taxes*", FtsQueryBuilder.buildOr("taxes"))
+    @Test fun buildOrEmptyReturnsEmpty() = assertEquals("", FtsQueryBuilder.buildOr(""))
 }
