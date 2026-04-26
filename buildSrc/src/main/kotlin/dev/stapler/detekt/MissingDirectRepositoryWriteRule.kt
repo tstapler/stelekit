@@ -91,6 +91,8 @@ class MissingDirectRepositoryWriteRule(config: Config = Config.empty) : Rule(con
     companion object {
         private val READ_PREFIXES = setOf(
             "get", "find", "is", "has", "count", "validate", "check", "calculate", "select",
+            // In-memory cache management — no database interaction, no actor routing needed
+            "clear", "evict",
         )
     }
 }
