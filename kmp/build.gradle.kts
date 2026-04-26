@@ -381,12 +381,12 @@ tasks.register<Test>("jvmTestProfile") {
     //
     // Search order: -PapLib override → CI tarball path → Homebrew macOS → Linux system.
     // Pass -PapLib=/path/to/libasyncProfiler.so to override (also set by scripts/benchmark-local.sh).
-    val apLib = ((project.findProperty("apLib") as? String)?.let { java.io.File(it) }
+    val apLib = ((project.findProperty("apLib") as? String)?.let { IoFile(it) }
         ?: listOf(
-            java.io.File(rootProject.rootDir, "async-profiler-4.4-linux-x64/lib/libasyncProfiler.so"),
-            java.io.File("/opt/homebrew/lib/libasyncProfiler.dylib"),
-            java.io.File("/usr/local/lib/libasyncProfiler.dylib"),
-            java.io.File("/usr/local/lib/libasyncProfiler.so"),
+            IoFile(rootProject.rootDir, "async-profiler-4.4-linux-x64/lib/libasyncProfiler.so"),
+            IoFile("/opt/homebrew/lib/libasyncProfiler.dylib"),
+            IoFile("/usr/local/lib/libasyncProfiler.dylib"),
+            IoFile("/usr/local/lib/libasyncProfiler.so"),
         ).firstOrNull { it.exists() })
         ?.takeIf { it.exists() }
 
@@ -417,7 +417,7 @@ tasks.register<Test>("jvmTestProfile") {
 
         // Helper: filter per-thread collapsed stacks to DefaultDispatcher-worker-* only
         // and strip the "[ThreadName];" prefix so flamegraph.pl gets standard format.
-        fun filterToCoroutineThreads(threadsFile: java.io.File, out: java.io.File, fallback: () -> Unit) {
+        fun filterToCoroutineThreads(threadsFile: IoFile, out: IoFile, fallback: () -> Unit) {
             val filtered = threadsFile.readLines()
                 .filter { it.startsWith("[DefaultDispatcher-worker-") }
                 .map { it.substringAfter("];") }
