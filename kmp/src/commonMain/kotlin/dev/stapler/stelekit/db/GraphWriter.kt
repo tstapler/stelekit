@@ -227,7 +227,7 @@ class GraphWriter(
                     saga(
                         action = {
                             if (!fileSystem.writeFile(filePath, content)) {
-                                throw IllegalStateException("writeFile returned false for: $filePath")
+                                error("writeFile returned false for: $filePath")
                             }
                         },
                         compensation = { _ ->
