@@ -169,11 +169,15 @@ jobs:
             const curr = JSON.parse(fs.readFileSync(path.join(histDir, newFile)));
             const base = JSON.parse(fs.readFileSync(path.join(histDir, baseFile)));
 
-            const delta = (a, b) => {
-              if (b === undefined || b === null) return '';
+            const delta = (a, b, lowerIsBetter = true, unit = 'ms') => {
+              if (a == null || b == null) return '';
               const d = a - b;
+              if (d === 0) return `0 (0%)`;
               const sign = d > 0 ? '+' : '';
-              return ` (${sign}${d}ms)`;
+              const rounded = unit === 'ms' ? Math.round(d) : parseFloat(d.toFixed(2));
+              const pct = b !== 0 ? ` (${sign}${Math.round((d / b) * 100)}%)` : '';
+              const emoji = lowerIsBetter ? (d < 0 ? ' ✅' : ' ⚠️') : (d > 0 ? ' ✅' : ' ⚠️');
+              return `${sign}${rounded}${unit}${pct}${emoji}`;
             };
             const fmtJ = v => v === undefined ? 'n/a' : `${v}x`;
 
@@ -207,13 +211,14 @@ jobs:
               '',
               '| Metric | This PR | Baseline | Delta |',
               '|--------|---------|----------|-------|',
-              `| Phase 1 TTI | ${curr.phase1TtiMs ?? 'n/a'}ms | ${base.phase1TtiMs ?? 'n/a'}ms | ${delta(curr.phase1TtiMs, base.phase1TtiMs)} |`,
-              `| Phase 2 | ${curr.phase2Ms ?? 'n/a'}ms | ${base.phase2Ms ?? 'n/a'}ms | ${delta(curr.phase2Ms, base.phase2Ms)} |`,
-              `| Phase 3 index | ${curr.phase3Ms ?? 'n/a'}ms | ${base.phase3Ms ?? 'n/a'}ms | ${delta(curr.phase3Ms, base.phase3Ms)} |`,
-              `| Total | ${curr.totalMs ?? 'n/a'}ms | ${base.totalMs ?? 'n/a'}ms | ${delta(curr.totalMs, base.totalMs)} |`,
-              `| Write p95 (baseline) | ${curr.jankBaselineP95Ms ?? 'n/a'}ms | ${base.jankBaselineP95Ms ?? 'n/a'}ms | - |`,
-              `| Write p95 (under load) | ${curr.jankLoadP95Ms ?? 'n/a'}ms | ${base.jankLoadP95Ms ?? 'n/a'}ms | - |`,
-              `| Jank factor | ${fmtJ(curr.jankFactor)} | ${fmtJ(base.jankFactor)} | - |`,
+              `| Phase 1 TTI ↓ | ${curr.phase1TtiMs ?? 'n/a'}ms | ${base.phase1TtiMs ?? 'n/a'}ms | ${delta(curr.phase1TtiMs, base.phase1TtiMs)} |`,
+              `| Phase 2 ↓ | ${curr.phase2Ms ?? 'n/a'}ms | ${base.phase2Ms ?? 'n/a'}ms | ${delta(curr.phase2Ms, base.phase2Ms)} |`,
+              `| Phase 3 index ↓ | ${curr.phase3Ms ?? 'n/a'}ms | ${base.phase3Ms ?? 'n/a'}ms | ${delta(curr.phase3Ms, base.phase3Ms)} |`,
+              `| Total ↓ | ${curr.totalMs ?? 'n/a'}ms | ${base.totalMs ?? 'n/a'}ms | ${delta(curr.totalMs, base.totalMs)} |`,
+              `| Write p95 (baseline) ↓ | ${curr.jankBaselineP95Ms ?? 'n/a'}ms | ${base.jankBaselineP95Ms ?? 'n/a'}ms | ${delta(curr.jankBaselineP95Ms, base.jankBaselineP95Ms)} |`,
+              `| Write p95 (under load) ↓ | ${curr.jankLoadP95Ms ?? 'n/a'}ms | ${base.jankLoadP95Ms ?? 'n/a'}ms | ${delta(curr.jankLoadP95Ms, base.jankLoadP95Ms)} |`,
+              `| Jank factor ↓ | ${fmtJ(curr.jankFactor)} | ${fmtJ(base.jankFactor)} | ${delta(curr.jankFactor, base.jankFactor, true, 'x')} |`,
+              '_↓ lower is better_',
               '',
               '<details>',
               '<summary>Flamegraphs (this PR)</summary>',

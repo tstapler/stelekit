@@ -4,6 +4,8 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlCursor
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlPreparedStatement
+import dev.stapler.stelekit.cache.PlatformLock
+import dev.stapler.stelekit.cache.withLock
 import dev.stapler.stelekit.util.UuidGenerator
 
 /**
@@ -23,6 +25,11 @@ class TimingDriverWrapper(
     private val statsCollector: QueryStatsCollector? = null,
 ) : SqlDriver by delegate {
 
+    // Cache parseSql results keyed by prepared-statement identifier.
+    // Identifiers are stable (assigned at compile time), so after warm-up every call is a cache hit.
+    private val parseCacheLock = PlatformLock()
+    private val parseCache = HashMap<Int, Pair<String, String>>()
+
     private val excludedTables = setOf(
         "schema_migrations", "perf_histogram_buckets", "spans", "debug_flags",
         "histogram_buckets", "query_stats",
@@ -36,7 +43,7 @@ class TimingDriverWrapper(
     ): QueryResult<Long> {
         val ctx = CurrentSpanContext.get()
         if (ctx == null && statsCollector == null) return delegate.execute(identifier, sql, parameters, binders)
-        val (operation, table) = parseSql(sql)
+        val (operation, table) = parseSqlCached(identifier, sql)
         if (table in excludedTables)
             return delegate.execute(identifier, sql, parameters, binders)
         val startMs = HistogramWriter.epochMs()
@@ -63,7 +70,7 @@ class TimingDriverWrapper(
     ): QueryResult<R> {
         val ctx = CurrentSpanContext.get()
         if (ctx == null && statsCollector == null) return delegate.executeQuery(identifier, sql, mapper, parameters, binders)
-        val (_, table) = parseSql(sql)
+        val (_, table) = parseSqlCached(identifier, sql)
         if (table in excludedTables)
             return delegate.executeQuery(identifier, sql, mapper, parameters, binders)
         val startMs = HistogramWriter.epochMs()
@@ -108,6 +115,12 @@ class TimingDriverWrapper(
                 parentSpanId = ctx.parentSpanId,
             )
         )
+    }
+
+    private fun parseSqlCached(identifier: Int?, sql: String): Pair<String, String> {
+        if (identifier == null) return parseSql(sql)
+        return parseCacheLock.withLock { parseCache[identifier] }
+            ?: parseSql(sql).also { result -> parseCacheLock.withLock { parseCache[identifier] = result } }
     }
 
     private fun parseSql(sql: String): Pair<String, String> {
