@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
@@ -56,10 +61,10 @@ class JournalService(
 
     // ---- Journal queries ----
 
-    fun getJournalPageByDate(date: LocalDate): Flow<Result<Page?>> =
+    fun getJournalPageByDate(date: LocalDate): Flow<Either<DomainError, Page?>> =
         pageRepository.getJournalPageByDate(date)
 
-    fun getJournalPages(limit: Int, offset: Int): Flow<Result<List<Page>>> =
+    fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         pageRepository.getJournalPages(limit, offset)
 
     // ---- Today's journal creation ----

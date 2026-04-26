@@ -1,10 +1,14 @@
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
-import kotlin.Result.Companion.success
 
 class DatascriptReferenceRepository : ReferenceRepository {
 
@@ -20,25 +24,25 @@ class DatascriptReferenceRepository : ReferenceRepository {
         blocks.value = blocksMap
     }
 
-    override fun getOutgoingReferences(blockUuid: String): Flow<Result<List<Block>>> {
+    override fun getOutgoingReferences(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
         return outgoingIndex.map { index ->
             val referencedUuids = index[blockUuid] ?: emptySet()
             val allBlocks = blocks.value
             val referencedBlocks = referencedUuids.mapNotNull { allBlocks[it] }
-            success(referencedBlocks)
+            referencedBlocks.right()
         }
     }
 
-    override fun getIncomingReferences(blockUuid: String): Flow<Result<List<Block>>> {
+    override fun getIncomingReferences(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
         return incomingIndex.map { index ->
             val referencingUuids = index[blockUuid] ?: emptySet()
             val allBlocks = blocks.value
             val referencingBlocks = referencingUuids.mapNotNull { allBlocks[it] }
-            success(referencingBlocks)
+            referencingBlocks.right()
         }
     }
 
-    override fun getAllReferences(blockUuid: String): Flow<Result<BlockReferences>> {
+    override fun getAllReferences(blockUuid: String): Flow<Either<DomainError, BlockReferences>> {
         return references.map { refMap ->
             val outgoingUuids = refMap[blockUuid] ?: emptySet()
             val incomingUuids = refMap.entries
@@ -48,7 +52,7 @@ class DatascriptReferenceRepository : ReferenceRepository {
             val allBlocks = blocks.value
             val outgoing = outgoingUuids.mapNotNull { allBlocks[it] }
             val incoming = incomingUuids.mapNotNull { allBlocks[it] }
-            success(BlockReferences(outgoing, incoming))
+            BlockReferences(outgoing, incoming).right()
         }
     }
 
@@ -90,7 +94,7 @@ class DatascriptReferenceRepository : ReferenceRepository {
         incomingIndex.value = currentIncoming
     }
 
-    override suspend fun addReference(fromBlockUuid: String, toBlockUuid: String): Result<Unit> {
+    override suspend fun addReference(fromBlockUuid: String, toBlockUuid: String): Either<DomainError, Unit> {
         return try {
             val current = references.value.toMutableMap()
             val existing = current[fromBlockUuid]?.toMutableSet() ?: mutableSetOf()
@@ -99,16 +103,16 @@ class DatascriptReferenceRepository : ReferenceRepository {
             references.value = current
 
             updateIndexes(fromBlockUuid, toBlockUuid, add = true)
-            success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun removeReference(fromBlockUuid: String, toBlockUuid: String): Result<Unit> {
+    override suspend fun removeReference(fromBlockUuid: String, toBlockUuid: String): Either<DomainError, Unit> {
         return try {
             val current = references.value.toMutableMap()
-            val existing = current[fromBlockUuid]?.toMutableSet() ?: return success(Unit)
+            val existing = current[fromBlockUuid]?.toMutableSet() ?: return Unit.right()
             existing.remove(toBlockUuid)
             if (existing.isEmpty()) {
                 current.remove(fromBlockUuid)
@@ -118,21 +122,21 @@ class DatascriptReferenceRepository : ReferenceRepository {
             references.value = current
 
             updateIndexes(fromBlockUuid, toBlockUuid, add = false)
-            success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override fun getOrphanedBlocks(): Flow<Result<List<Block>>> {
+    override fun getOrphanedBlocks(): Flow<Either<DomainError, List<Block>>> {
         return references.map { refMap ->
             val allReferenced = refMap.values.flatten().toSet()
             val orphaned = blocks.value.values.filter { it.uuid !in allReferenced }
-            success(orphaned)
+            orphaned.right()
         }
     }
 
-    override fun getMostConnectedBlocks(limit: Int): Flow<Result<List<BlockWithReferenceCount>>> {
+    override fun getMostConnectedBlocks(limit: Int): Flow<Either<DomainError, List<BlockWithReferenceCount>>> {
         return references.map { refMap ->
             val referenceCounts = mutableMapOf<String, Int>()
             refMap.forEach { (from, toSet) ->
@@ -146,7 +150,7 @@ class DatascriptReferenceRepository : ReferenceRepository {
                 .mapNotNull { (uuid, count) -> allBlocks[uuid]?.let { BlockWithReferenceCount(it, count) } }
                 .sortedByDescending { it.referenceCount }
                 .take(limit)
-            success(sorted)
+            sorted.right()
         }
     }
 }

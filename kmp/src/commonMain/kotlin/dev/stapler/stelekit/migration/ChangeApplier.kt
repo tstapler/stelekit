@@ -44,9 +44,9 @@ class ChangeApplier(
                         val before = block
                         writeActor.execute {
                             val result = repoSet.blockRepository.saveBlock(updated)
-                            if (result.isSuccess) opLogger?.logUpdate(before, updated)
+                            if (result.isRight()) opLogger?.logUpdate(before, updated)
                             result
-                        }.getOrThrow()
+                        }.onLeft { e -> throw RuntimeException(e.message) }
                         applied++
                     }
 
@@ -61,9 +61,9 @@ class ChangeApplier(
                         val before = block
                         writeActor.execute {
                             val result = repoSet.blockRepository.saveBlock(updated)
-                            if (result.isSuccess) opLogger?.logUpdate(before, updated)
+                            if (result.isRight()) opLogger?.logUpdate(before, updated)
                             result
-                        }.getOrThrow()
+                        }.onLeft { e -> throw RuntimeException(e.message) }
                         applied++
                     }
 
@@ -78,9 +78,9 @@ class ChangeApplier(
                         val before = block
                         writeActor.execute {
                             val result = repoSet.blockRepository.saveBlock(updated)
-                            if (result.isSuccess) opLogger?.logUpdate(before, updated)
+                            if (result.isRight()) opLogger?.logUpdate(before, updated)
                             result
-                        }.getOrThrow()
+                        }.onLeft { e -> throw RuntimeException(e.message) }
                         applied++
                     }
 
@@ -93,18 +93,18 @@ class ChangeApplier(
                         }
                         writeActor.execute {
                             val result = repoSet.blockRepository.deleteBlock(change.blockUuid)
-                            if (result.isSuccess) opLogger?.logDelete(block)
+                            if (result.isRight()) opLogger?.logDelete(block)
                             result
-                        }.getOrThrow()
+                        }.onLeft { e -> throw RuntimeException(e.message) }
                         applied++
                     }
 
                     is BlockChange.InsertBlock -> {
                         writeActor.execute {
                             val result = repoSet.blockRepository.saveBlock(change.block)
-                            if (result.isSuccess) opLogger?.logInsert(change.block)
+                            if (result.isRight()) opLogger?.logInsert(change.block)
                             result
-                        }.getOrThrow()
+                        }.onLeft { e -> throw RuntimeException(e.message) }
                         applied++
                     }
 
@@ -118,7 +118,7 @@ class ChangeApplier(
                         val updated = page.copy(properties = page.properties + (change.key to change.value))
                         writeActor.execute {
                             repoSet.pageRepository.savePage(updated)
-                        }.getOrThrow()
+                        }.onLeft { e -> throw RuntimeException(e.message) }
                         applied++
                     }
 
@@ -132,7 +132,7 @@ class ChangeApplier(
                         val updated = page.copy(properties = page.properties - change.key)
                         writeActor.execute {
                             repoSet.pageRepository.savePage(updated)
-                        }.getOrThrow()
+                        }.onLeft { e -> throw RuntimeException(e.message) }
                         applied++
                     }
 
@@ -144,7 +144,7 @@ class ChangeApplier(
                     is BlockChange.DeletePage -> {
                         writeActor.execute {
                             repoSet.pageRepository.deletePage(change.pageUuid)
-                        }.getOrThrow()
+                        }.onLeft { e -> throw RuntimeException(e.message) }
                         applied++
                     }
                 }
@@ -166,13 +166,13 @@ class ChangeApplier(
             // 1. Rename the page row in DB.
             writeActor.execute {
                 repoSet.pageRepository.renamePage(change.pageUuid, change.newName)
-            }.getOrThrow()
+            }.onLeft { e -> throw RuntimeException(e.message) }
 
             // 2. Find all blocks that reference [[OldName]] and rewrite them.
             val affectedBlocks = repoSet.blockRepository
                 .getLinkedReferences(change.oldName)
                 .first()
-                .getOrDefault(emptyList())
+                .getOrNull() ?: emptyList()
 
             for (block in affectedBlocks) {
                 val updatedContent = replaceWikilink(block.content, change.oldName, change.newName)
@@ -180,9 +180,9 @@ class ChangeApplier(
                 val before = block
                 writeActor.execute {
                     val result = repoSet.blockRepository.saveBlock(updated)
-                    if (result.isSuccess) opLogger?.logUpdate(before, updated)
+                    if (result.isRight()) opLogger?.logUpdate(before, updated)
                     result
-                }.getOrThrow()
+                }.onLeft { e -> throw RuntimeException(e.message) }
             }
         }
     }

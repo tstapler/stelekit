@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.command
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,9 +26,9 @@ class UndoManager {
      * Executes a command and pushes it to the undo stack if successful.
      * Clears the redo stack.
      */
-    suspend fun <T> execute(command: Command<T>): Result<T> {
+    suspend fun <T> execute(command: Command<T>): Either<DomainError, T> {
         val result = command.execute()
-        if (result.isSuccess) {
+        if (result.isRight()) {
             _undoStack.addLast(command)
             _redoStack.clear()
             updateState()
@@ -34,11 +39,11 @@ class UndoManager {
     /**
      * Undoes the last executed command.
      */
-    suspend fun undo(): Result<Unit> {
-        val command = _undoStack.removeLastOrNull() ?: return Result.failure(Exception("Nothing to undo"))
+    suspend fun undo(): Either<DomainError, Unit> {
+        val command = _undoStack.removeLastOrNull() ?: return DomainError.DatabaseError.WriteFailed("Nothing to undo").left()
         
         val result = command.undo()
-        if (result.isSuccess) {
+        if (result.isRight()) {
             _redoStack.addLast(command)
             updateState()
         } else {
@@ -51,18 +56,17 @@ class UndoManager {
     /**
      * Redoes the last undone command.
      */
-    suspend fun redo(): Result<Unit> {
-        val command = _redoStack.removeLastOrNull() ?: return Result.failure(Exception("Nothing to redo"))
-        
-        // We ignore the result type T here because redo just restores state
+    suspend fun redo(): Either<DomainError, Unit> {
+        val command = _redoStack.removeLastOrNull() ?: return DomainError.DatabaseError.WriteFailed("Nothing to redo").left()
+
         val result = command.execute()
-        if (result.isSuccess) {
+        if (result.isRight()) {
             _undoStack.addLast(command)
             updateState()
-            return Result.success(Unit)
+            return Unit.right()
         } else {
             _redoStack.addLast(command)
-            return Result.failure(result.exceptionOrNull() ?: Exception("Redo failed"))
+            return (result.leftOrNull() ?: DomainError.DatabaseError.WriteFailed("Redo failed")).left()
         }
     }
     

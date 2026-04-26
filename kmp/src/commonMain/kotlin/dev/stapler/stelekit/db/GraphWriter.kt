@@ -1,5 +1,13 @@
 package dev.stapler.stelekit.db
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import arrow.fx.coroutines.Resource
+import arrow.fx.coroutines.resource
+import arrow.resilience.saga
+import arrow.resilience.transact
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
@@ -16,6 +24,9 @@ import kotlinx.coroutines.sync.withLock
  * Supports debounced auto-save to avoid excessive disk writes.
  *
  * Updated to use UUID-native storage and safety checks for large deletions.
+ *
+ * The multi-step save pipeline is modelled as an Arrow Saga for transactional rollback:
+ * if the DB update fails after the file has been written, the file content is restored.
  */
 class GraphWriter(
     private val fileSystem: FileSystem,
@@ -39,7 +50,7 @@ class GraphWriter(
     private val pendingMutex = Mutex()
     private var scope: CoroutineScope? = null
     private val debounceMs: Long = 500L
-    
+
     // Safety check: if more than this many blocks are deleted, require confirmation
     private val largeDeletionThreshold = 50
 
@@ -135,7 +146,7 @@ class GraphWriter(
             logger.error("Failed to read file for rename: $oldPath")
             return false
         }
-        
+
         if (fileSystem.writeFile(newPath, content)) {
             if (fileSystem.deleteFile(oldPath)) {
                 logger.debug("Renamed page from $oldPath to $newPath")
@@ -169,107 +180,180 @@ class GraphWriter(
         return success
     }
 
-    private suspend fun savePageInternal(page: Page, blocks: List<Block>, graphPath: String) = saveMutex.withLock {
-        // 3. Path Resolution
-        val filePath = if (!page.filePath.isNullOrBlank()) {
-            page.filePath
-        } else {
-            getPageFilePath(page, graphPath)
-        }
-
-        // 0. Safety Check for Large Deletions
-        if (fileSystem.fileExists(filePath)) {
-            val oldContent = fileSystem.readFile(filePath) ?: ""
-            // Count old blocks by looking for "- " lines (simplistic but works for md)
-            val oldBlockCount = oldContent.lines().count { it.trim().startsWith("- ") }
-            val newBlockCount = blocks.size
-            
-            if (oldBlockCount > largeDeletionThreshold && newBlockCount < oldBlockCount / 2) {
-                logger.error("Safety check triggered: Attempting to delete more than 50% of blocks on page '${page.name}' ($oldBlockCount -> $newBlockCount). Save aborted.")
-                // In a real app, we would trigger a UI confirmation here.
-                // For this headless implementation, we abort to be safe.
-                return@withLock
+    /**
+     * Internal save pipeline implemented as an Arrow Saga.
+     *
+     * Steps and their compensations:
+     * 1. Write markdown to disk — compensation: restore old content (or delete if new file)
+     * 2. Notify file-written observer — compensation: no-op (idempotent)
+     * 3. Write sidecar — compensation: no-op (non-critical)
+     * 4. Update DB filePath for new pages — compensation: no-op (best-effort)
+     *
+     * On any step failure the saga runs compensations in reverse order, ensuring the
+     * on-disk state is rolled back before the error propagates.
+     */
+    private suspend fun savePageInternal(page: Page, blocks: List<Block>, graphPath: String): Unit =
+        saveMutex.withLock {
+            val filePath = if (!page.filePath.isNullOrBlank()) {
+                page.filePath
+            } else {
+                getPageFilePath(page, graphPath)
             }
-        }
 
-        val content = buildString {
-            // 1. Page Properties
-            if (page.properties.isNotEmpty()) {
-                page.properties.forEach { (key, value) ->
-                    appendLine("$key:: $value")
+            // 0. Safety Check for Large Deletions
+            if (fileSystem.fileExists(filePath)) {
+                val oldContent = fileSystem.readFile(filePath) ?: ""
+                val oldBlockCount = oldContent.lines().count { it.trim().startsWith("- ") }
+                val newBlockCount = blocks.size
+
+                if (oldBlockCount > largeDeletionThreshold && newBlockCount < oldBlockCount / 2) {
+                    logger.error(
+                        "Safety check triggered: Attempting to delete more than 50% of blocks on page " +
+                            "'${page.name}' ($oldBlockCount -> $newBlockCount). Save aborted."
+                    )
+                    return@withLock
                 }
             }
 
-            // 2. Blocks
-            // Group blocks by parentUuid for tree reconstruction
-            val blocksByParent = blocks.groupBy { it.parentUuid }
+            val content = buildMarkdown(page, blocks)
 
-            // Recursive function to write blocks
-            fun writeBlocks(parentUuid: String?) {
-                val siblings = blocksByParent[parentUuid] ?: return
-                val sortedSiblings = siblings.sortedBy { it.position }
-
-                sortedSiblings.forEach { block ->
-                    // Indentation: tab per level (standard Logseq format)
-                    val indent = "\t".repeat(block.level)
-                    append(indent)
-                    append("- ")
-                    appendLine(block.content)
-
-                    // Block Properties
-                    if (block.properties.isNotEmpty()) {
-                        val propIndent = indent + "\t"
-                        block.properties.forEach { (key, value) ->
-                            append(propIndent)
-                            appendLine("$key:: $value")
+            // Run the saga — transact() throws on failure; runCatching logs and swallows.
+            // The saga { } builder annotates the block with @SagaDSLMarker so inner saga()
+            // calls resolve correctly via SagaScope. .transact() executes the pipeline.
+            runCatching {
+                saga {
+                    // Step 1: write markdown file — rollback restores previous content
+                    val oldContent = if (fileSystem.fileExists(filePath)) fileSystem.readFile(filePath) else null
+                    saga(
+                        action = {
+                            if (!fileSystem.writeFile(filePath, content)) {
+                                throw IllegalStateException("writeFile returned false for: $filePath")
+                            }
+                        },
+                        compensation = { _ ->
+                            try {
+                                if (oldContent != null) fileSystem.writeFile(filePath, oldContent)
+                                else fileSystem.deleteFile(filePath)
+                            } catch (e: Exception) {
+                                logger.error("Saga compensation: failed to restore $filePath", e)
+                            }
                         }
+                    )
+
+                    // Step 2: notify observer (suppresses external-change detection in GraphLoader)
+                    saga(
+                        action = { onFileWritten?.invoke(filePath) },
+                        compensation = { _ -> /* idempotent — no-op */ }
+                    )
+
+                    // Step 3: write sidecar (non-critical — failure is logged but not propagated)
+                    saga(
+                        action = {
+                            if (sidecarManager != null) {
+                                val pageSlug = FileUtils.sanitizeFileName(page.name)
+                                try {
+                                    sidecarManager.write(pageSlug, blocks)
+                                } catch (e: Exception) {
+                                    logger.error("Failed to write sidecar for page '${page.name}'", e)
+                                }
+                            }
+                        },
+                        compensation = { _ -> /* sidecar is non-critical — no rollback */ }
+                    )
+
+                    // Step 4: update filePath in DB for new pages (fire-and-forget via actor)
+                    saga(
+                        action = {
+                            if (page.filePath.isNullOrBlank()) {
+                                val updatedPage = page.copy(filePath = filePath)
+                                val currentScope = scope
+                                if (writeActor != null && currentScope != null) {
+                                    currentScope.launch { writeActor.savePage(updatedPage) }
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    @OptIn(DirectRepositoryWrite::class)
+                                    pageRepository?.savePage(updatedPage)
+                                }
+                            }
+                        },
+                        compensation = { _ -> /* DB update is best-effort — no rollback needed */ }
+                    )
+
+                    logger.debug("Saved page to: $filePath")
+                }.transact()
+            }.onFailure { e ->
+                logger.error("Failed to write file: $filePath", e)
+            }
+        }
+
+    private fun buildMarkdown(page: Page, blocks: List<Block>): String = buildString {
+        // 1. Page Properties
+        if (page.properties.isNotEmpty()) {
+            page.properties.forEach { (key, value) ->
+                appendLine("$key:: $value")
+            }
+        }
+
+        // 2. Blocks — reconstruct tree from flat list
+        val blocksByParent = blocks.groupBy { it.parentUuid }
+
+        fun writeBlocks(parentUuid: String?) {
+            val siblings = blocksByParent[parentUuid] ?: return
+            val sortedSiblings = siblings.sortedBy { it.position }
+
+            sortedSiblings.forEach { block ->
+                val indent = "\t".repeat(block.level)
+                append(indent)
+                append("- ")
+                appendLine(block.content)
+
+                if (block.properties.isNotEmpty()) {
+                    val propIndent = indent + "\t"
+                    block.properties.forEach { (key, value) ->
+                        append(propIndent)
+                        appendLine("$key:: $value")
                     }
-
-                    // Recursively write children
-                    writeBlocks(block.uuid)
                 }
-            }
 
-            // Start with root blocks (parentUuid = null)
-            writeBlocks(null)
+                writeBlocks(block.uuid)
+            }
         }
 
-        val success = fileSystem.writeFile(filePath, content)
-        if (success) {
-            logger.debug("Saved page to: $filePath")
-            // Notify GraphLoader so it suppresses treating this as an external change
-            onFileWritten?.invoke(filePath)
-            // Write sidecar so GraphLoader can recover stable UUIDs after a git pull
-            if (sidecarManager != null) {
-                val pageSlug = FileUtils.sanitizeFileName(page.name)
-                try {
-                    sidecarManager.write(pageSlug, blocks)
-                } catch (e: Exception) {
-                    logger.error("Failed to write sidecar for page '${page.name}'", e)
-                }
-            }
-            // Update filePath in DB for new pages
-            if (page.filePath.isNullOrBlank()) {
-                val updatedPage = page.copy(filePath = filePath)
-                val currentScope = scope
-                if (writeActor != null && currentScope != null) {
-                    currentScope.launch { writeActor.savePage(updatedPage) }
-                } else {
-                    @Suppress("DEPRECATION")
-                    @OptIn(DirectRepositoryWrite::class)
-                    pageRepository?.savePage(updatedPage)
-                }
-            }
-        } else {
-            logger.error("Failed to write file: $filePath")
-        }
+        writeBlocks(null)
     }
-    
+
     private fun getPageFilePath(page: Page, graphPath: String): String {
         val safeName = FileUtils.sanitizeFileName(page.name)
         val basePath = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
-        
         val folder = if (page.isJournal) "journals" else "pages"
         return "${basePath}$folder/$safeName.md"
+    }
+
+    companion object {
+        /**
+         * Creates a [Resource]-managed [GraphWriter].
+         * On release, flushes pending debounced saves and stops the auto-save scope,
+         * guaranteed even under [kotlinx.coroutines.CancellationException].
+         */
+        fun resource(
+            fileSystem: FileSystem,
+            writeActor: DatabaseWriteActor? = null,
+            onFileWritten: ((String) -> Unit)? = null,
+            pageRepository: PageRepository? = null,
+            sidecarManager: SidecarManager? = null,
+        ): Resource<GraphWriter> = resource {
+            val writer = GraphWriter(
+                fileSystem = fileSystem,
+                writeActor = writeActor,
+                onFileWritten = onFileWritten,
+                pageRepository = pageRepository,
+                sidecarManager = sidecarManager,
+            )
+            onRelease {
+                try { writer.flush() } catch (_: Exception) { /* best-effort flush */ }
+                writer.stopAutoSave()
+            }
+            writer
+        }
     }
 }

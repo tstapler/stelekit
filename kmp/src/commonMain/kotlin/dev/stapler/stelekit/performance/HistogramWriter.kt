@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.performance
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DirectSqlWrite
@@ -51,8 +56,8 @@ class HistogramWriter(
     private suspend fun processSample(sample: HistogramSample) {
         try {
             val bucket = classifyBucket(sample.durationMs)
-            val writeOp: suspend () -> Result<Unit> = {
-                runCatching {
+            val writeOp: suspend () -> Either<DomainError, Unit> = {
+                try {
                     restricted.transaction {
                         restricted.insertHistogramBucketIfAbsent(
                             operation_name = sample.operationName,
@@ -65,6 +70,9 @@ class HistogramWriter(
                             bucket_ms = bucket
                         )
                     }
+                    Unit.right()
+                } catch (e: Exception) {
+                    DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
                 }
             }
             if (writeActor != null) writeActor.execute(op = writeOp) else writeOp()

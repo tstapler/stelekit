@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
@@ -16,7 +21,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlin.time.Instant
-import kotlin.Result.Companion.success
 
 /**
  * SQLDelight implementation of SearchRepository.
@@ -34,10 +38,10 @@ class SqlDelightSearchRepository(
     private val queries = database.steleDatabaseQueries
     private val spanEmitter = SpanEmitter(ringBuffer)
 
-    override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Result<List<Block>>> = flow {
+    override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> = flow {
         try {
             val ftsQuery = FtsQueryBuilder.build(query)
-            if (ftsQuery.isEmpty()) { emit(success(emptyList())); return@flow }
+            if (ftsQuery.isEmpty()) { emit(emptyList<Block>().right()); return@flow }
             val startMs = HistogramWriter.epochMs()
             val traceId = UuidGenerator.generateV7()
             val spanId = UuidGenerator.generateV7()
@@ -64,16 +68,16 @@ class SqlDelightSearchRepository(
                     "duration.ms" to durationMs.toString(),
                 )
             )
-            emit(success(results))
+            emit(results.right())
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun searchPagesByTitle(query: String, limit: Int): Flow<Result<List<Page>>> = flow {
+    override fun searchPagesByTitle(query: String, limit: Int): Flow<Either<DomainError, List<Page>>> = flow {
         try {
             val ftsQuery = FtsQueryBuilder.build(query)
-            if (ftsQuery.isEmpty()) { emit(success(emptyList())); return@flow }
+            if (ftsQuery.isEmpty()) { emit(emptyList<Page>().right()); return@flow }
             val startMs = HistogramWriter.epochMs()
             val traceId = UuidGenerator.generateV7()
             val spanId = UuidGenerator.generateV7()
@@ -100,44 +104,44 @@ class SqlDelightSearchRepository(
                     "duration.ms" to durationMs.toString(),
                 )
             )
-            emit(success(results))
+            emit(results.right())
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun findBlocksReferencing(blockUuid: String): Flow<Result<List<Block>>> = flow {
+    override fun findBlocksReferencing(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flow {
         try {
             val results = queries.selectBlocksReferencing(blockUuid)
                 .executeAsList()
                 .map { it.toBlockModel() }
-            emit(success(results))
+            emit(results.right())
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun searchWithFilters(searchRequest: SearchRequest): Flow<Result<SearchResult>> = flow {
+    override fun searchWithFilters(searchRequest: SearchRequest): Flow<Either<DomainError, SearchResult>> = flow {
         try {
             val rawQuery = searchRequest.query
             if (rawQuery.isNullOrBlank()) {
-                emit(success(SearchResult(
+                emit(SearchResult(
                     blocks = emptyList(),
                     pages = emptyList(),
                     totalCount = 0,
                     hasMore = false
-                )))
+                ).right())
                 return@flow
             }
 
             val ftsQuery = FtsQueryBuilder.build(rawQuery)
             if (ftsQuery.isEmpty()) {
-                emit(success(SearchResult(
+                emit(SearchResult(
                     blocks = emptyList(),
                     pages = emptyList(),
                     totalCount = 0,
                     hasMore = false
-                )))
+                ).right())
                 return@flow
             }
 
@@ -210,16 +214,16 @@ class SqlDelightSearchRepository(
                 }
             } else emptyList()
 
-            emit(success(SearchResult(
+            emit(SearchResult(
                 blocks = searchedBlocks.map { it.block },
                 pages = searchedPages.map { it.page },
                 searchedBlocks = searchedBlocks,
                 searchedPages = searchedPages,
                 totalCount = searchedBlocks.size + searchedPages.size,
                 hasMore = false
-            )))
+            ).right())
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
 

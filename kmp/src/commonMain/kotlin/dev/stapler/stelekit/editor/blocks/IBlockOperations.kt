@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.editor.blocks
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.BlockWithDepth
@@ -42,7 +47,7 @@ interface IBlockOperations : BlockRepository {
         properties: Map<String, String> = emptyMap(),
         uuid: String? = null,
         createdAt: Instant? = null
-    ): Result<Block>
+    ): Either<DomainError, Block>
     
     /**
      * Update block content with validation and automatic timestamp update.
@@ -56,7 +61,7 @@ interface IBlockOperations : BlockRepository {
         blockUuid: String,
         content: String,
         properties: Map<String, String>? = null
-    ): Result<Block>
+    ): Either<DomainError, Block>
     
     /**
      * Update block properties with merge support.
@@ -70,7 +75,7 @@ interface IBlockOperations : BlockRepository {
         blockUuid: String,
         properties: Map<String, String>,
         mergeMode: Boolean = true
-    ): Result<Block>
+    ): Either<DomainError, Block>
     
     /**
      * Delete a block with enhanced child handling options.
@@ -82,7 +87,7 @@ interface IBlockOperations : BlockRepository {
     suspend fun deleteBlockEnhanced(
         blockUuid: String,
         deleteStrategy: DeleteStrategy = DeleteStrategy.DELETE_CHILDREN
-    ): Result<Unit>
+    ): Either<DomainError, Unit>
     
     // ===== ENHANCED HIERARCHICAL OPERATIONS =====
     
@@ -100,7 +105,7 @@ interface IBlockOperations : BlockRepository {
         targetParentUuid: String? = null,
         positioning: PositioningMode = PositioningMode.END,
         targetUuid: String? = null
-    ): Result<Unit>
+    ): Either<DomainError, Unit>
     
     /**
      * Indent a block with enhanced validation and options.
@@ -112,7 +117,7 @@ interface IBlockOperations : BlockRepository {
     suspend fun indentBlockEnhanced(
         blockUuid: String,
         indentMode: IndentMode = IndentMode.TO_PREVIOUS_SIBLING
-    ): Result<Unit>
+    ): Either<DomainError, Unit>
     
     /**
      * Outdent a block with enhanced validation and options.
@@ -124,7 +129,7 @@ interface IBlockOperations : BlockRepository {
     suspend fun outdentBlockEnhanced(
         blockUuid: String,
         targetLevel: Int? = null
-    ): Result<Unit>
+    ): Either<DomainError, Unit>
     
     // ===== BLOCK DUPLICATION OPERATIONS =====
     
@@ -142,7 +147,7 @@ interface IBlockOperations : BlockRepository {
         includeChildren: Boolean = false,
         targetPosition: PositioningMode = PositioningMode.AFTER,
         targetUuid: String? = null
-    ): Result<Block>
+    ): Either<DomainError, Block>
     
     /**
      * Duplicate an entire subtree.
@@ -156,7 +161,7 @@ interface IBlockOperations : BlockRepository {
         rootBlockUuid: String,
         targetParentUuid: String? = null,
         targetPosition: PositioningMode = PositioningMode.END
-    ): Result<Block>
+    ): Either<DomainError, Block>
     
     // ===== TEXT OPERATIONS =====
     
@@ -172,7 +177,7 @@ interface IBlockOperations : BlockRepository {
         blockUuid: String,
         cursorPosition: Int,
         keepContentInOriginal: Boolean = true
-    ): Result<Block>
+    ): Either<DomainError, Block>
     
     /**
      * Merge a block with its next sibling.
@@ -184,7 +189,7 @@ interface IBlockOperations : BlockRepository {
     suspend fun mergeWithNext(
         blockUuid: String,
         separator: String = " "
-    ): Result<Block>
+    ): Either<DomainError, Block>
     
     /**
      * Merge a block with its previous sibling.
@@ -196,7 +201,7 @@ interface IBlockOperations : BlockRepository {
     suspend fun mergeWithPrevious(
         blockUuid: String,
         separator: String = " "
-    ): Result<Block>
+    ): Either<DomainError, Block>
     
     // ===== TREE OPERATIONS =====
     
@@ -210,7 +215,7 @@ interface IBlockOperations : BlockRepository {
     suspend fun collapseSubtree(
         blockUuid: String,
         recursive: Boolean = false
-    ): Result<Unit>
+    ): Either<DomainError, Unit>
     
     /**
      * Expand a collapsed subtree.
@@ -222,7 +227,7 @@ interface IBlockOperations : BlockRepository {
     suspend fun expandSubtree(
         blockUuid: String,
         recursive: Boolean = false
-    ): Result<Unit>
+    ): Either<DomainError, Unit>
     
     /**
      * Promote a subtree (move all blocks up one level in hierarchy).
@@ -234,7 +239,7 @@ interface IBlockOperations : BlockRepository {
     suspend fun promoteSubtree(
         blockUuid: String,
         levels: Int = 1
-    ): Result<Unit>
+    ): Either<DomainError, Unit>
     
     /**
      * Demote a subtree (move all blocks down one level in hierarchy).
@@ -246,7 +251,7 @@ interface IBlockOperations : BlockRepository {
     suspend fun demoteSubtree(
         blockUuid: String,
         levels: Int = 1
-    ): Result<Unit>
+    ): Either<DomainError, Unit>
     
     // ===== BULK OPERATIONS =====
     
@@ -258,7 +263,7 @@ interface IBlockOperations : BlockRepository {
      */
     suspend fun applyBulkOperations(
         operations: List<BulkOperation>
-    ): Result<Unit>
+    ): Either<DomainError, Unit>
     
     /**
      * Reorder multiple blocks at once.
@@ -268,7 +273,7 @@ interface IBlockOperations : BlockRepository {
      */
     suspend fun reorderBlocks(
         blockUuids: List<String>
-    ): Result<Unit>
+    ): Either<DomainError, Unit>
     
     // ===== VALIDATION AND UTILITIES =====
     
@@ -280,22 +285,22 @@ interface IBlockOperations : BlockRepository {
      */
     suspend fun validateOperation(
         operation: BlockOperation
-    ): Result<ValidationResult>
+    ): Either<DomainError, ValidationResult>
     
     /**
      * Get operation history for undo/redo functionality.
      */
-    fun getOperationHistory(): Flow<Result<List<HistoricalOperation>>>
+    fun getOperationHistory(): Flow<Either<DomainError, List<HistoricalOperation>>>
     
     /**
      * Undo the last operation.
      */
-    suspend fun undo(): Result<Unit>
+    suspend fun undo(): Either<DomainError, Unit>
     
     /**
      * Redo the last undone operation.
      */
-    suspend fun redo(): Result<Unit>
+    suspend fun redo(): Either<DomainError, Unit>
 }
 
 // ===== ENUMS AND DATA CLASSES =====

@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.editor
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import androidx.compose.ui.input.key.KeyEvent
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.CursorState
@@ -45,7 +50,7 @@ interface IEditor {
      * @param page The page to load
      * @return Result indicating success or error
      */
-    suspend fun initialize(page: Page): Result<Unit>
+    suspend fun initialize(page: Page): Either<DomainError, Unit>
     
     /**
      * Dispose editor resources and clean up state.
@@ -70,7 +75,7 @@ interface IEditor {
      * @param command The command to execute
      * @return Result indicating success or error
      */
-    suspend fun executeCommand(command: EditorCommand): Result<Unit>
+    suspend fun executeCommand(command: EditorCommand): Either<DomainError, Unit>
     
     /**
      * Execute a command by ID with arguments.
@@ -79,7 +84,7 @@ interface IEditor {
      * @param args Command arguments
      * @return Result containing command result or error
      */
-    suspend fun executeCommand(commandId: String, args: Map<String, Any>): Result<Any?>
+    suspend fun executeCommand(commandId: String, args: Map<String, Any>): Either<DomainError, Any?>
 }
 
 /**
@@ -89,7 +94,7 @@ interface IFormatProcessor {
     /**
      * Get the active format at a specific position in the text
      */
-    fun getFormatAt(content: String, position: Int): Result<TextFormat>
+    fun getFormatAt(content: String, position: Int): Either<DomainError, TextFormat>
 
     /**
      * Parse markdown content into formatted segments (for rendering)

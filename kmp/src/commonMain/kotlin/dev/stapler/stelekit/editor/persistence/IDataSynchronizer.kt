@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.editor.persistence
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.Result
@@ -38,161 +43,161 @@ interface IDataSynchronizer {
     /**
      * Update synchronization configuration
      */
-    suspend fun updateConfig(newConfig: SyncConfig): Result<Unit>
+    suspend fun updateConfig(newConfig: SyncConfig): Either<DomainError, Unit>
     
     // ===== SYNC OPERATIONS =====
     
     /**
      * Start synchronization process
      */
-    suspend fun startSync(): Result<SyncSession>
+    suspend fun startSync(): Either<DomainError, SyncSession>
     
     /**
      * Stop active synchronization
      */
-    suspend fun stopSync(sessionId: String): Result<Unit>
+    suspend fun stopSync(sessionId: String): Either<DomainError, Unit>
     
     /**
      * Force immediate synchronization
      */
-    suspend fun forceSync(): Result<SyncResult>
+    suspend fun forceSync(): Either<DomainError, SyncResult>
     
     /**
      * Synchronize specific blocks
      */
-    suspend fun syncBlocks(blockUuids: List<String>): Result<List<SyncResult>>
+    suspend fun syncBlocks(blockUuids: List<String>): Either<DomainError, List<SyncResult>>
     
     /**
      * Synchronize all changes since last sync
      */
-    suspend fun syncIncremental(): Result<SyncResult>
+    suspend fun syncIncremental(): Either<DomainError, SyncResult>
     
     /**
      * Perform full synchronization (reconcile all data)
      */
-    suspend fun syncFull(): Result<SyncResult>
+    suspend fun syncFull(): Either<DomainError, SyncResult>
     
     // ===== CONFLICT DETECTION & RESOLUTION =====
     
     /**
      * Detect conflicts between local and remote data
      */
-    suspend fun detectConflicts(): Result<List<SyncConflict>>
+    suspend fun detectConflicts(): Either<DomainError, List<SyncConflict>>
     
     /**
      * Get conflicts by severity level
      */
-    suspend fun getConflictsBySeverity(severity: ConflictSeverity): Result<List<SyncConflict>>
+    suspend fun getConflictsBySeverity(severity: ConflictSeverity): Either<DomainError, List<SyncConflict>>
     
     /**
      * Resolve a specific conflict
      */
-    suspend fun resolveConflict(conflictId: String, resolution: ConflictResolution): Result<Unit>
+    suspend fun resolveConflict(conflictId: String, resolution: ConflictResolution): Either<DomainError, Unit>
     
     /**
      * Resolve multiple conflicts with the same strategy
      */
-    suspend fun resolveConflicts(conflictIds: List<String>, resolution: ConflictResolution): Result<Unit>
+    suspend fun resolveConflicts(conflictIds: List<String>, resolution: ConflictResolution): Either<DomainError, Unit>
     
     /**
      * Auto-resolve conflicts using configured strategies
      */
-    suspend fun autoResolveConflicts(): Result<List<ConflictResolutionResult>>
+    suspend fun autoResolveConflicts(): Either<DomainError, List<ConflictResolutionResult>>
     
     // ===== SYNC SESSION MANAGEMENT =====
     
     /**
      * Get active sync sessions
      */
-    suspend fun getActiveSessions(): Result<List<SyncSession>>
+    suspend fun getActiveSessions(): Either<DomainError, List<SyncSession>>
     
     /**
      * Get sync session details
      */
-    suspend fun getSession(sessionId: String): Result<SyncSession?>
+    suspend fun getSession(sessionId: String): Either<DomainError, SyncSession?>
     
     /**
      * Cancel a sync session
      */
-    suspend fun cancelSession(sessionId: String): Result<Unit>
+    suspend fun cancelSession(sessionId: String): Either<DomainError, Unit>
     
     /**
      * Retry failed sync operations
      */
-    suspend fun retrySync(sessionId: String): Result<SyncResult>
+    suspend fun retrySync(sessionId: String): Either<DomainError, SyncResult>
     
     // ===== REMOTE DATA MANAGEMENT =====
     
     /**
      * Get remote data status
      */
-    suspend fun getRemoteStatus(): Result<RemoteStatus>
+    suspend fun getRemoteStatus(): Either<DomainError, RemoteStatus>
     
     /**
      * Push local changes to remote
      */
-    suspend fun pushChanges(): Result<PushResult>
+    suspend fun pushChanges(): Either<DomainError, PushResult>
     
     /**
      * Pull changes from remote
      */
-    suspend fun pullChanges(): Result<PullResult>
+    suspend fun pullChanges(): Either<DomainError, PullResult>
     
     /**
      * Check if remote is available and accessible
      */
-    suspend fun checkRemoteConnectivity(): Result<Boolean>
+    suspend fun checkRemoteConnectivity(): Either<DomainError, Boolean>
     
     // ===== CHANGE TRACKING =====
     
     /**
      * Track local changes for synchronization
      */
-    suspend fun trackLocalChange(change: TrackedChange): Result<Unit>
+    suspend fun trackLocalChange(change: TrackedChange): Either<DomainError, Unit>
     
     /**
      * Get untracked local changes
      */
-    suspend fun getUntrackedChanges(): Result<List<TrackedChange>>
+    suspend fun getUntrackedChanges(): Either<DomainError, List<TrackedChange>>
     
     /**
      * Mark changes as synchronized
      */
-    suspend fun markChangesSynced(changeIds: List<String>): Result<Unit>
+    suspend fun markChangesSynced(changeIds: List<String>): Either<DomainError, Unit>
     
     /**
      * Get synchronization history for a block
      */
-    suspend fun getBlockSyncHistory(blockUuid: String): Result<List<SyncResult>>
+    suspend fun getBlockSyncHistory(blockUuid: String): Either<DomainError, List<SyncResult>>
     
     // ===== PERFORMANCE MONITORING =====
     
     /**
      * Get synchronization performance metrics
      */
-    suspend fun getPerformanceMetrics(): Result<SyncPerformanceMetrics>
+    suspend fun getPerformanceMetrics(): Either<DomainError, SyncPerformanceMetrics>
     
     /**
      * Enable or disable performance monitoring
      */
-    suspend fun setPerformanceMonitoring(enabled: Boolean): Result<Unit>
+    suspend fun setPerformanceMonitoring(enabled: Boolean): Either<DomainError, Unit>
     
     // ===== ERROR HANDLING =====
     
     /**
      * Get failed sync operations
      */
-    suspend fun getFailedSyncs(): Result<List<SyncResult>>
+    suspend fun getFailedSyncs(): Either<DomainError, List<SyncResult>>
     
     /**
      * Clear sync history
      */
-    suspend fun clearSyncHistory(): Result<Unit>
+    suspend fun clearSyncHistory(): Either<DomainError, Unit>
     
     /**
      * Reset synchronization state (use with caution)
      */
-    suspend fun resetSyncState(): Result<Unit>
+    suspend fun resetSyncState(): Either<DomainError, Unit>
 }
 
 /**

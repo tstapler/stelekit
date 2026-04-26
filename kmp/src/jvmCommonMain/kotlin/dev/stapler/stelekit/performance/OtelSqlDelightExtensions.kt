@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.performance
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import io.opentelemetry.api.trace.StatusCode
 import io.opentelemetry.api.trace.Tracer
@@ -15,7 +20,7 @@ import kotlin.coroutines.coroutineContext
  * ```kotlin
  * actor.tracedExecute("block.save", tracer, mapOf("page.uuid" to pageUuid)) {
  *     queries.insertBlock(...)
- *     success(Unit)
+ *     Unit.right()
  * }
  * ```
  */
@@ -23,8 +28,8 @@ suspend fun DatabaseWriteActor.tracedExecute(
     spanName: String,
     tracer: Tracer,
     attributes: Map<String, String> = emptyMap(),
-    block: suspend () -> Result<Unit>
-): Result<Unit> {
+    block: suspend () -> Either<DomainError, Unit>
+): Either<DomainError, Unit> {
     val parentSpan = coroutineContext.currentSpan
     val builder = tracer.spanBuilder(spanName)
         .setAttribute("db.system", "sqlite")
@@ -35,8 +40,8 @@ suspend fun DatabaseWriteActor.tracedExecute(
     return execute {
         try {
             block().also {
-                if (it.isFailure) {
-                    val msg = it.exceptionOrNull()?.message ?: "write failed"
+                if (it.isLeft()) {
+                    val msg = it.leftOrNull()?.message ?: "write failed"
                     span.setStatus(StatusCode.ERROR, msg)
                 }
             }

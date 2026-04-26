@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.search
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.repository.BlockRepository
@@ -7,7 +12,6 @@ import dev.stapler.stelekit.repository.PageRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlin.Result.Companion.success
 
 /**
  * Foundation for Datalog query engine in KMP.
@@ -68,8 +72,8 @@ class DatalogEngine {
      * Executes a Datalog query and returns the results.
      * Currently supports basic block and page filtering by mapping to SearchRequest.
      */
-    suspend fun execute(_query: DatalogQuery): Result<List<Any>> {
-        return success(emptyList())
+    suspend fun execute(_query: DatalogQuery): Either<DomainError, List<Any>> {
+        return emptyList<Any>().right()
     }
 
     /**
@@ -103,5 +107,5 @@ class VisualQueryBuilder {
  * Extension for SearchRepository to support Datalog queries
  */
 interface DatalogSearchSupport {
-    fun searchWithDatalog(query: String): Flow<Result<List<Any>>>
+    fun searchWithDatalog(query: String): Flow<Either<DomainError, List<Any>>>
 }

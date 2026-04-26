@@ -198,7 +198,7 @@ class StelekitViewModel(
 
         _uiState.update { it.copy(isLoadingMorePages = true) }
         scope.launch {
-            pageRepository.getPages(limit = pageSize, offset = currentOffset).first().onSuccess { newPages ->
+            pageRepository.getPages(limit = pageSize, offset = currentOffset).first().onRight { newPages ->
                 _uiState.update { state ->
                     val updatedList = if (reset) newPages else state.regularPages + newPages
                     state.copy(
@@ -208,7 +208,7 @@ class StelekitViewModel(
                         isLoadingMorePages = false
                     )
                 }
-            }.onFailure {
+            }.onLeft {
                 _uiState.update { it.copy(isLoadingMorePages = false) }
             }
         }
@@ -219,7 +219,7 @@ class StelekitViewModel(
         // Currently JournalsViewModel handles its own pagination, but StelekitViewModel 
         // also has journalPages in AppState for the sidebar/summary.
         scope.launch {
-            journalService.getJournalPages(limit = 20, offset = 0).first().onSuccess { pages ->
+            journalService.getJournalPages(limit = 20, offset = 0).first().onRight { pages ->
                 _uiState.update { it.copy(journalPages = pages) }
             }
         }
@@ -519,7 +519,7 @@ class StelekitViewModel(
 
     fun splitBlock(blockUuid: String, cursorPosition: Int) {
         scope.launch {
-            blockRepository.splitBlock(blockUuid, cursorPosition).onSuccess { newBlock ->
+            blockRepository.splitBlock(blockUuid, cursorPosition).onRight { newBlock ->
                 requestEditBlock(newBlock.uuid)
             }
         }
@@ -541,7 +541,7 @@ class StelekitViewModel(
 
             if (currentIndex > 0) {
                 val prevBlock = siblings[currentIndex - 1]
-                blockRepository.mergeBlocks(prevBlock.uuid, blockUuid, "").onSuccess {
+                blockRepository.mergeBlocks(prevBlock.uuid, blockUuid, "").onRight {
                     requestEditBlock(prevBlock.uuid, prevBlock.content.length)
                 }
             }
@@ -1303,9 +1303,9 @@ class StelekitViewModel(
             val service = exportService ?: return@launch
             val result = service.exportToClipboard(page, sortedBlocks, formatId)
             withContext(Dispatchers.Main) {
-                result.onSuccess {
+                result.onRight {
                     notificationManager?.show("Copied as ${formatDisplayName(formatId)}", NotificationType.SUCCESS)
-                }.onFailure { e ->
+                }.onLeft { e ->
                     notificationManager?.show("Export failed: ${e.message}", NotificationType.ERROR)
                 }
             }
@@ -1329,9 +1329,9 @@ class StelekitViewModel(
             val subtreeBlocks = service.subtreeBlocks(allBlocks, selectedUuids)
             val result = service.exportToClipboard(page, subtreeBlocks, formatId)
             withContext(Dispatchers.Main) {
-                result.onSuccess {
+                result.onRight {
                     notificationManager?.show("Copied as ${formatDisplayName(formatId)}", NotificationType.SUCCESS)
-                }.onFailure { e ->
+                }.onLeft { e ->
                     notificationManager?.show("Export failed: ${e.message}", NotificationType.ERROR)
                 }
             }

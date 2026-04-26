@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.editor.persistence
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Validation
 import dev.stapler.stelekit.ui.NotificationManager
 import kotlinx.coroutines.*
@@ -187,18 +192,18 @@ class PersistenceErrorHandler(
     /**
      * Clear all failed operations
      */
-    suspend fun clearFailedOperations(): Result<Unit> = try {
+    suspend fun clearFailedOperations(): Either<DomainError, Unit> = try {
         retryQueue.value = emptyList()
         logger.info("Cleared all failed operations")
-        Result.success(Unit)
+        Unit.right()
     } catch (e: Exception) {
-        Result.failure(e)
+        DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
     }
     
     /**
      * Create recovery backup
      */
-    suspend fun createRecoveryBackup(): Result<RecoveryBackup> = try {
+    suspend fun createRecoveryBackup(): Either<DomainError, RecoveryBackup> = try {
         val backup = RecoveryBackup(
             id = generateBackupId(),
             createdAt = Clock.System.now(),
@@ -207,22 +212,22 @@ class PersistenceErrorHandler(
         )
         
         logger.info("Created recovery backup: ${backup.id}")
-        Result.success(backup)
+        backup.right()
     } catch (e: Exception) {
-        Result.failure(e)
+        DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
     }
     
     /**
      * Restore from recovery backup
      */
-    suspend fun restoreFromBackup(backup: RecoveryBackup): Result<Unit> = try {
+    suspend fun restoreFromBackup(backup: RecoveryBackup): Either<DomainError, Unit> = try {
         retryQueue.value = backup.failedOperations
         restoreSystemState(backup.systemState)
         
         logger.info("Restored from recovery backup: ${backup.id}")
-        Result.success(Unit)
+        Unit.right()
     } catch (e: Exception) {
-        Result.failure(e)
+        DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
     }
     
     /**

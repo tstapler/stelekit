@@ -65,7 +65,7 @@ fun ReferencesPanel(
     LaunchedEffect(page.name, linkedOffset) {
         isLoadingLinked = true
         blockRepository.getLinkedReferences(page.name, limit = pageSize, offset = linkedOffset).collect { result ->
-            result.onSuccess { blocks ->
+            result.onRight { blocks ->
                 linkedBlocks = if (linkedOffset == 0) blocks else linkedBlocks + blocks
                 hasMoreLinked = blocks.size == pageSize
                 isLoadingLinked = false
@@ -76,7 +76,7 @@ fun ReferencesPanel(
     LaunchedEffect(page.name, unlinkedOffset) {
         isLoadingUnlinked = true
         blockRepository.getUnlinkedReferences(page.name, limit = pageSize, offset = unlinkedOffset).collect { result ->
-            result.onSuccess { blocks ->
+            result.onRight { blocks ->
                 unlinkedBlocks = if (unlinkedOffset == 0) blocks else unlinkedBlocks + blocks
                 hasMoreUnlinked = blocks.size == pageSize
                 isLoadingUnlinked = false

@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.db
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.ui.fixtures.FakeBlockRepository
@@ -51,7 +56,7 @@ class DatabaseWriteActorTest {
 
         val result = actor.savePage(page("p-1", "My Page"))
 
-        assertTrue(result.isSuccess)
+        assertTrue(result.isRight())
         val stored = pageRepo.getPageByUuid("p-1").first().getOrNull()
         assertNotNull(stored, "page should be stored")
         assertEquals("My Page", stored.name)
@@ -65,7 +70,7 @@ class DatabaseWriteActorTest {
 
         val result = actor.saveBlocks(listOf(block("b1"), block("b2"), block("b3")))
 
-        assertTrue(result.isSuccess)
+        assertTrue(result.isRight())
         listOf("b1", "b2", "b3").forEach { id ->
             assertNotNull(blockRepo.getBlockByUuid(id).first().getOrNull(), "$id should be stored")
         }
@@ -79,7 +84,7 @@ class DatabaseWriteActorTest {
 
         val result = actor.deleteBlocksForPage("page-1")
 
-        assertTrue(result.isSuccess)
+        assertTrue(result.isRight())
         val remaining = blockRepo.getBlocksForPage("page-1").first().getOrNull()
         assertTrue(remaining.isNullOrEmpty(), "all blocks should be deleted")
         actor.close()
@@ -91,14 +96,14 @@ class DatabaseWriteActorTest {
     fun `savePage failure is returned to caller`() = runBlocking {
         val error = RuntimeException("db full")
         val pageRepo = object : FakePageRepository() {
-            override suspend fun savePage(page: Page): Result<Unit> = Result.failure(error)
+            override suspend fun savePage(page: Page): Either<DomainError, Unit> = DomainError.DatabaseError.WriteFailed(error.toString()).left()
         }
         val actor = DatabaseWriteActor(FakeBlockRepository(), pageRepo)
 
         val result = actor.savePage(page("p-1"))
 
-        assertTrue(result.isFailure)
-        assertEquals(error, result.exceptionOrNull())
+        assertTrue(result.isLeft())
+        assertTrue(result.leftOrNull()?.message?.contains(error.message!!) == true)
         actor.close()
     }
 
@@ -106,15 +111,15 @@ class DatabaseWriteActorTest {
     fun `saveBlocks failure is returned to caller`() = runBlocking {
         val error = RuntimeException("constraint violation")
         val blockRepo = object : FakeBlockRepository() {
-            override suspend fun saveBlocks(blocks: List<Block>): Result<Unit> =
-                Result.failure(error)
+            override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> =
+                DomainError.DatabaseError.WriteFailed(error.toString()).left()
         }
         val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
         val result = actor.saveBlocks(listOf(block("b1")))
 
-        assertTrue(result.isFailure)
-        assertEquals(error, result.exceptionOrNull())
+        assertTrue(result.isLeft())
+        assertTrue(result.leftOrNull()?.message?.contains(error.message!!) == true)
         actor.close()
     }
 
@@ -122,15 +127,15 @@ class DatabaseWriteActorTest {
     fun `deleteBlocksForPage failure is returned to caller`() = runBlocking {
         val error = RuntimeException("locked")
         val blockRepo = object : FakeBlockRepository() {
-            override suspend fun deleteBlocksForPage(pageUuid: String): Result<Unit> =
-                Result.failure(error)
+            override suspend fun deleteBlocksForPage(pageUuid: String): Either<DomainError, Unit> =
+                DomainError.DatabaseError.WriteFailed(error.toString()).left()
         }
         val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
         val result = actor.deleteBlocksForPage("page-1")
 
-        assertTrue(result.isFailure)
-        assertEquals(error, result.exceptionOrNull())
+        assertTrue(result.isLeft())
+        assertTrue(result.leftOrNull()?.message?.contains(error.message!!) == true)
         actor.close()
     }
 
@@ -147,8 +152,8 @@ class DatabaseWriteActorTest {
         // Individual retries (1 block each) succeed. This is dispatcher-agnostic: whether the
         // actor coalesces or not, both blocks end up stored.
         val blockRepo = object : FakeBlockRepository() {
-            override suspend fun saveBlocks(blocks: List<Block>): Result<Unit> =
-                if (blocks.size > 1) Result.failure(RuntimeException("batch failed"))
+            override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> =
+                if (blocks.size > 1) DomainError.DatabaseError.WriteFailed("batch failed").left()
                 else super.saveBlocks(blocks)
         }
         val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
@@ -169,24 +174,24 @@ class DatabaseWriteActorTest {
         // Fail any combined batch (size > 1); on individual retries, page-fail blocks still fail.
         // This is dispatcher-agnostic: whether coalesced or not, page-ok succeeds and page-fail fails.
         val blockRepo = object : FakeBlockRepository() {
-            override suspend fun saveBlocks(blocks: List<Block>): Result<Unit> = when {
-                blocks.size > 1 -> Result.failure(RuntimeException("batch failed"))
+            override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> = when {
+                blocks.size > 1 -> DomainError.DatabaseError.WriteFailed("batch failed").left()
                 blocks.any { it.pageUuid == "page-fail" } ->
-                    Result.failure(RuntimeException("individual fail for page-fail"))
+                    DomainError.DatabaseError.WriteFailed("individual fail for page-fail").left()
                 else -> super.saveBlocks(blocks)
             }
         }
         val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
-        var r1: Result<Unit>? = null
-        var r2: Result<Unit>? = null
+        var r1: Either<DomainError, Unit>? = null
+        var r2: Either<DomainError, Unit>? = null
         val j1 = launch { r1 = actor.saveBlocks(listOf(block("b1", "page-ok"))) }
         val j2 = launch { r2 = actor.saveBlocks(listOf(block("b2", "page-fail"))) }
         joinAll(j1, j2)
 
         assertNotNull(r1); assertNotNull(r2)
-        assertTrue(r1!!.isSuccess, "page-ok should succeed on individual retry")
-        assertTrue(r2!!.isFailure, "page-fail should still fail on individual retry")
+        assertTrue(r1!!.isRight(), "page-ok should succeed on individual retry")
+        assertTrue(r2!!.isLeft(), "page-fail should still fail on individual retry")
         actor.close()
     }
 
@@ -203,7 +208,7 @@ class DatabaseWriteActorTest {
         }.map { it.await() }
 
         assertEquals(n, results.size)
-        assertTrue(results.all { it.isSuccess }, "all callers should receive success")
+        assertTrue(results.all { it.isRight() }, "all callers should receive success")
         (1..n).forEach { i ->
             assertNotNull(blockRepo.getBlockByUuid("b$i").first().getOrNull())
         }
@@ -224,7 +229,7 @@ class DatabaseWriteActorTest {
             async { actor.saveBlocks(listOf(block("b2", "p-2"))) },
         ).map { it.await() }
 
-        assertTrue(results.all { it.isSuccess })
+        assertTrue(results.all { it.isRight() })
         actor.close()
     }
 
@@ -238,7 +243,7 @@ class DatabaseWriteActorTest {
         val boom = RuntimeException("unexpected")
         var throwOnce = AtomicBoolean(true)
         val pageRepo = object : FakePageRepository() {
-            override suspend fun savePage(page: Page): Result<Unit> {
+            override suspend fun savePage(page: Page): Either<DomainError, Unit> {
                 if (throwOnce.getAndSet(false)) throw boom
                 return super.savePage(page)
             }
@@ -246,12 +251,12 @@ class DatabaseWriteActorTest {
         val actor = DatabaseWriteActor(FakeBlockRepository(), pageRepo)
 
         val r1 = actor.savePage(page("p-bad"))
-        assertTrue(r1.isFailure, "throwing request should surface as failure")
-        assertEquals(boom, r1.exceptionOrNull())
+        assertTrue(r1.isLeft(), "throwing request should surface as failure")
+        assertTrue(r1.leftOrNull()?.message?.contains(boom.message!!) == true)
 
         // Loop must still be alive — subsequent write goes through
         val r2 = withTimeout(2000) { actor.savePage(page("p-ok")) }
-        assertTrue(r2.isSuccess, "actor should continue processing after the exception")
+        assertTrue(r2.isRight(), "actor should continue processing after the exception")
 
         actor.close()
     }
@@ -262,7 +267,7 @@ class DatabaseWriteActorTest {
     fun `writes complete after actor is closed and recreated`() = runBlocking {
         val actor = DatabaseWriteActor(FakeBlockRepository(), FakePageRepository())
 
-        assertTrue(actor.savePage(page("p-1")).isSuccess, "pre-close write should succeed")
+        assertTrue(actor.savePage(page("p-1")).isRight(), "pre-close write should succeed")
 
         // close() is the only way to stop the actor now — simulates graph shutdown
         actor.close()
@@ -270,7 +275,7 @@ class DatabaseWriteActorTest {
         // A fresh actor picks up where the old one left off (new graph load)
         val actor2 = DatabaseWriteActor(FakeBlockRepository(), FakePageRepository())
         val result = withTimeout(2000) { actor2.savePage(page("p-2")) }
-        assertTrue(result.isSuccess, "new actor should process writes normally")
+        assertTrue(result.isRight(), "new actor should process writes normally")
 
         actor2.close()
     }
@@ -290,7 +295,7 @@ class DatabaseWriteActorTest {
 
         val result = actor.deleteBlocksForPages(listOf("page-1", "page-2"))
 
-        assertTrue(result.isSuccess)
+        assertTrue(result.isRight())
         assertTrue(blockRepo.getBlocksForPage("page-1").first().getOrNull().isNullOrEmpty())
         assertTrue(blockRepo.getBlocksForPage("page-2").first().getOrNull().isNullOrEmpty())
         assertNotNull(blockRepo.getBlockByUuid("b4").first().getOrNull(), "page-3 untouched")
@@ -301,7 +306,7 @@ class DatabaseWriteActorTest {
     fun `deleteBlocksForPages with empty list returns success without touching repository`() = runBlocking {
         var called = false
         val blockRepo = object : FakeBlockRepository() {
-            override suspend fun deleteBlocksForPages(pageUuids: List<String>): Result<Unit> {
+            override suspend fun deleteBlocksForPages(pageUuids: List<String>): Either<DomainError, Unit> {
                 called = true
                 return super.deleteBlocksForPages(pageUuids)
             }
@@ -310,7 +315,7 @@ class DatabaseWriteActorTest {
 
         val result = actor.deleteBlocksForPages(emptyList())
 
-        assertTrue(result.isSuccess)
+        assertTrue(result.isRight())
         assertTrue(!called, "repository should not be called for empty list")
         actor.close()
     }
@@ -319,15 +324,15 @@ class DatabaseWriteActorTest {
     fun `deleteBlocksForPages failure is returned to caller`() = runBlocking {
         val error = RuntimeException("disk error")
         val blockRepo = object : FakeBlockRepository() {
-            override suspend fun deleteBlocksForPages(pageUuids: List<String>): Result<Unit> =
-                Result.failure(error)
+            override suspend fun deleteBlocksForPages(pageUuids: List<String>): Either<DomainError, Unit> =
+                DomainError.DatabaseError.WriteFailed(error.toString()).left()
         }
         val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
         val result = actor.deleteBlocksForPages(listOf("page-1"))
 
-        assertTrue(result.isFailure)
-        assertEquals(error, result.exceptionOrNull())
+        assertTrue(result.isLeft())
+        assertTrue(result.leftOrNull()?.message?.contains(error.message!!) == true)
         actor.close()
     }
 
@@ -367,7 +372,7 @@ class DatabaseWriteActorTest {
         assertTrue(threw)
         // Actor must still be alive after the exception escaped executeBatch
         val result = withTimeout(2000) { actor.savePage(page("p-ok")) }
-        assertTrue(result.isSuccess, "actor should continue after executeBatch exception")
+        assertTrue(result.isRight(), "actor should continue after executeBatch exception")
         actor.close()
     }
 

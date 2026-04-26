@@ -3,6 +3,11 @@
 
 package dev.stapler.stelekit.migration
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
@@ -92,8 +97,8 @@ class NormalizeJournalNamesMigrationTest {
 
         harness.buildRunner().runPending("graph-1", harness.repoSet, "/tmp/test")
 
-        val undBlocks = harness.repoSet.blockRepository.getBlocksForPage("page-und").first().getOrDefault(emptyList())
-        val hypBlocks = harness.repoSet.blockRepository.getBlocksForPage("page-hyp").first().getOrDefault(emptyList())
+        val undBlocks = harness.repoSet.blockRepository.getBlocksForPage("page-und").first().getOrNull() ?: emptyList()
+        val hypBlocks = harness.repoSet.blockRepository.getBlocksForPage("page-hyp").first().getOrNull() ?: emptyList()
         val deletedHypPage = harness.repoSet.pageRepository.getPageByName(hyphenName).first().getOrNull()
 
         val undContents = undBlocks.map { it.content }.toSet()

@@ -445,7 +445,7 @@ class EditorViewModel(
                         )
                         val result = blockRepository.saveBlock(updatedBlock)
                         
-                        if (result.isSuccess) {
+                        if (result.isRight()) {
                             updateEditorState { 
                                 it
                                     .withUnsavedChanges(false)
@@ -453,7 +453,7 @@ class EditorViewModel(
                             }
                             logger.debug("Saved block: $blockUuid")
                         } else {
-                            handleError(EditorError.BlockSaveError("Failed to save block", result.exceptionOrNull()))
+                            handleError(EditorError.BlockSaveError("Failed to save block", result.leftOrNull()?.let { RuntimeException(it.message) }))
                         }
                     } else {
                          handleError(EditorError.BlockNotFoundError("Block not found: $blockUuid"))
@@ -495,7 +495,7 @@ class EditorViewModel(
                 
                 val result = blockRepository.saveBlock(newBlock)
                 
-                if (result.isSuccess) {
+                if (result.isRight()) {
                     updateEditorState { 
                         it
                             .withDocumentInfo(
@@ -508,7 +508,7 @@ class EditorViewModel(
                     }
                     logger.debug("Created new block: ${newBlock.uuid}")
                 } else {
-                    handleError(EditorError.BlockCreateError("Failed to create block", result.exceptionOrNull()))
+                    handleError(EditorError.BlockCreateError("Failed to create block", result.leftOrNull()?.let { RuntimeException(it.message) }))
                 }
             } catch (e: Exception) {
                 handleError(EditorError.BlockCreateError("Failed to create block", e))
@@ -592,7 +592,7 @@ class EditorViewModel(
                         )
                         val result = blockRepository.saveBlock(updatedBlock)
                         
-                        if (result.isSuccess) {
+                        if (result.isRight()) {
                             updateEditorState { 
                                 it
                                     .withUnsavedChanges(false)
@@ -601,7 +601,7 @@ class EditorViewModel(
                             _autoSaveStatus.value = AutoSaveStatus.Success
                             logger.debug("Auto-saved block: $blockUuid")
                         } else {
-                            _autoSaveStatus.value = AutoSaveStatus.Error(result.exceptionOrNull()?.message ?: "Unknown error")
+                            _autoSaveStatus.value = AutoSaveStatus.Error(result.leftOrNull()?.message ?: "Unknown error")
                         }
                     } else {
                         _autoSaveStatus.value = AutoSaveStatus.Error("Block not found")
@@ -616,7 +616,7 @@ class EditorViewModel(
                 
             } catch (e: Exception) {
                 _autoSaveStatus.value = AutoSaveStatus.Error(e.message ?: "Unknown error")
-                logger.error("Auto-save failed", e)
+                logger.error("Auto-save failed: ${e.message}")
                 
                 // Clear status after a delay
                 kotlinx.coroutines.delay(2000)

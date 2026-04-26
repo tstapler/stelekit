@@ -1,11 +1,15 @@
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Property
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
-import kotlin.Result.Companion.success
 
 /**
  * Datalog-style in-memory repository for properties.
@@ -21,58 +25,58 @@ class DatascriptPropertyRepository : PropertyRepository {
         blocks.value = blocksMap
     }
 
-    override fun getPropertiesForBlock(blockUuid: String): Flow<Result<List<Property>>> {
+    override fun getPropertiesForBlock(blockUuid: String): Flow<Either<DomainError, List<Property>>> {
         return properties.map { map ->
             val props = map[blockUuid]?.values?.toList() ?: emptyList()
-            success(props)
+            props.right()
         }
     }
 
-    override fun getProperty(blockUuid: String, key: String): Flow<Result<Property?>> {
+    override fun getProperty(blockUuid: String, key: String): Flow<Either<DomainError, Property?>> {
         return properties.map { map ->
             val prop = map[blockUuid]?.get(key)
-            success(prop)
+            prop.right()
         }
     }
 
-    override suspend fun saveProperty(property: Property): Result<Unit> {
+    override suspend fun saveProperty(property: Property): Either<DomainError, Unit> {
         return try {
             val current = properties.value.toMutableMap()
             val blockProps = current.getOrPut(property.blockUuid) { mutableMapOf() }.toMutableMap()
             blockProps[property.key] = property
             current[property.blockUuid] = blockProps
             properties.value = current
-            success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun deleteProperty(blockUuid: String, key: String): Result<Unit> {
+    override suspend fun deleteProperty(blockUuid: String, key: String): Either<DomainError, Unit> {
         return try {
             val current = properties.value.toMutableMap()
-            val blockProps = current[blockUuid]?.toMutableMap() ?: return success(Unit)
+            val blockProps = current[blockUuid]?.toMutableMap() ?: return Unit.right()
             blockProps.remove(key)
             current[blockUuid] = blockProps
             properties.value = current
-            success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override fun getBlocksWithPropertyKey(key: String): Flow<Result<List<Block>>> {
+    override fun getBlocksWithPropertyKey(key: String): Flow<Either<DomainError, List<Block>>> {
         return properties.map { map ->
             val blockUuids = map.filter { it.value.containsKey(key) }.keys
             val allBlocks = blocks.value
             val blocksWithKey = blockUuids.mapNotNull { uuid ->
                 allBlocks[uuid]
             }
-            success(blocksWithKey)
+            blocksWithKey.right()
         }
     }
 
-    override fun getBlocksWithPropertyValue(key: String, value: String): Flow<Result<List<Block>>> {
+    override fun getBlocksWithPropertyValue(key: String, value: String): Flow<Either<DomainError, List<Block>>> {
         return properties.map { map ->
             val blockUuids = map.filter { blockProps ->
                 blockProps.value[key]?.value == value
@@ -81,7 +85,7 @@ class DatascriptPropertyRepository : PropertyRepository {
             val blocksWithValue = blockUuids.mapNotNull { uuid ->
                 allBlocks[uuid]
             }
-            success(blocksWithValue)
+            blocksWithValue.right()
         }
     }
 }

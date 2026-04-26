@@ -2,6 +2,11 @@
 
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
@@ -87,7 +92,7 @@ class SearchRepositoryIntegrationTests {
         blockRepo.saveBlock(createTestBlock(generateUuid(3), pageUuid, "Another unrelated block", position = 3))
 
         val results = repository.searchBlocksByContent("hello").first()
-        assertTrue(results.isSuccess)
+        assertTrue(results.isRight())
         assertEquals(1, results.getOrNull()?.size)
         assertEquals(generateUuid(1), results.getOrNull()?.first()?.uuid)
     }
@@ -100,7 +105,7 @@ class SearchRepositoryIntegrationTests {
         blockRepo.saveBlock(createTestBlock(generateUuid(2), pageUuid, "kotlin is great", position = 2))
 
         val results = repository.searchBlocksByContent("kotlin").first()
-        assertTrue(results.isSuccess)
+        assertTrue(results.isRight())
         assertEquals(2, results.getOrNull()?.size)
     }
 
@@ -111,7 +116,7 @@ class SearchRepositoryIntegrationTests {
         pageRepo.savePage(createTestPage(generateUuid(3), "Python Programming"))
 
         val results = repository.searchPagesByTitle("kotlin").first()
-        assertTrue(results.isSuccess)
+        assertTrue(results.isRight())
         assertEquals(1, results.getOrNull()?.size)
         assertEquals("Kotlin Guide", results.getOrNull()?.first()?.name)
     }
@@ -132,7 +137,7 @@ class SearchRepositoryIntegrationTests {
         refRepo.addReference(refBlock2Uuid, targetBlockUuid)
 
         val results = repository.findBlocksReferencing(targetBlockUuid).first()
-        assertTrue(results.isSuccess)
+        assertTrue(results.isRight())
         assertEquals(2, results.getOrNull()?.size)
     }
 
@@ -150,7 +155,7 @@ class SearchRepositoryIntegrationTests {
         )
 
         val results = repository.searchWithFilters(request).first()
-        assertTrue(results.isSuccess)
+        assertTrue(results.isRight())
         // SQLDelight implementation currently only does basic content/title matching
         assertTrue(results.getOrNull()?.blocks?.any { it.uuid == generateUuid(1) } == true)
     }

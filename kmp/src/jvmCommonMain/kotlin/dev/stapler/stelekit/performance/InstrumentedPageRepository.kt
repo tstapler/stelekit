@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.performance
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
@@ -13,36 +18,36 @@ class InstrumentedPageRepository(
     private val tracer: Tracer
 ) : PageRepository {
 
-    override fun getPageByUuid(uuid: String): Flow<Result<Page?>> = delegate.getPageByUuid(uuid)
+    override fun getPageByUuid(uuid: String): Flow<Either<DomainError, Page?>> = delegate.getPageByUuid(uuid)
 
-    override fun getPageByName(name: String): Flow<Result<Page?>> = delegate.getPageByName(name)
+    override fun getPageByName(name: String): Flow<Either<DomainError, Page?>> = delegate.getPageByName(name)
 
-    override fun getPagesInNamespace(namespace: String): Flow<Result<List<Page>>> =
+    override fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>> =
         delegate.getPagesInNamespace(namespace)
 
-    override fun getPages(limit: Int, offset: Int): Flow<Result<List<Page>>> =
+    override fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         delegate.getPages(limit, offset)
 
-    override fun searchPages(query: String, limit: Int, offset: Int): Flow<Result<List<Page>>> =
+    override fun searchPages(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         delegate.searchPages(query, limit, offset)
 
-    override fun getAllPages(): Flow<Result<List<Page>>> = delegate.getAllPages()
+    override fun getAllPages(): Flow<Either<DomainError, List<Page>>> = delegate.getAllPages()
 
-    override fun getJournalPages(limit: Int, offset: Int): Flow<Result<List<Page>>> =
+    override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         delegate.getJournalPages(limit, offset)
 
-    override fun getJournalPageByDate(date: LocalDate): Flow<Result<Page?>> =
+    override fun getJournalPageByDate(date: LocalDate): Flow<Either<DomainError, Page?>> =
         delegate.getJournalPageByDate(date)
 
-    override fun getRecentPages(limit: Int): Flow<Result<List<Page>>> =
+    override fun getRecentPages(limit: Int): Flow<Either<DomainError, List<Page>>> =
         delegate.getRecentPages(limit)
 
-    override fun getUnloadedPages(): Flow<Result<List<Page>>> = delegate.getUnloadedPages()
+    override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> = delegate.getUnloadedPages()
 
-    override fun countPages(): Flow<Result<Long>> = delegate.countPages()
+    override fun countPages(): Flow<Either<DomainError, Long>> = delegate.countPages()
 
     @DirectRepositoryWrite
-    override suspend fun savePage(page: Page): Result<Unit> {
+    override suspend fun savePage(page: Page): Either<DomainError, Unit> {
         val span = tracer.spanBuilder("page.save")
             .setAttribute("page.uuid", page.uuid)
             .startSpan()
@@ -57,7 +62,7 @@ class InstrumentedPageRepository(
     }
 
     @DirectRepositoryWrite
-    override suspend fun savePages(pages: List<Page>): Result<Unit> {
+    override suspend fun savePages(pages: List<Page>): Either<DomainError, Unit> {
         val span = tracer.spanBuilder("page.savePages")
             .setAttribute("page.count", pages.size.toLong())
             .startSpan()
@@ -72,7 +77,7 @@ class InstrumentedPageRepository(
     }
 
     @DirectRepositoryWrite
-    override suspend fun toggleFavorite(pageUuid: String): Result<Unit> {
+    override suspend fun toggleFavorite(pageUuid: String): Either<DomainError, Unit> {
         val span = tracer.spanBuilder("page.toggleFavorite")
             .setAttribute("page.uuid", pageUuid)
             .startSpan()
@@ -87,7 +92,7 @@ class InstrumentedPageRepository(
     }
 
     @DirectRepositoryWrite
-    override suspend fun renamePage(pageUuid: String, newName: String): Result<Unit> {
+    override suspend fun renamePage(pageUuid: String, newName: String): Either<DomainError, Unit> {
         val span = tracer.spanBuilder("page.rename")
             .setAttribute("page.uuid", pageUuid)
             .startSpan()
@@ -102,7 +107,7 @@ class InstrumentedPageRepository(
     }
 
     @DirectRepositoryWrite
-    override suspend fun deletePage(pageUuid: String): Result<Unit> {
+    override suspend fun deletePage(pageUuid: String): Either<DomainError, Unit> {
         val span = tracer.spanBuilder("page.delete")
             .setAttribute("page.uuid", pageUuid)
             .startSpan()

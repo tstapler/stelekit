@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.cache
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
@@ -10,7 +15,6 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.Result.Companion.success
 
 /**
  * Page cache with LRU, TTL, and namespace indexing.
@@ -43,12 +47,12 @@ class PageCache(
     /**
      * Get page by UUID with cache.
      */
-    fun getPageByUuid(uuid: String): Flow<Result<Page?>> = flow {
+    fun getPageByUuid(uuid: String): Flow<Either<DomainError, Page?>> = flow {
         try {
             val cached = cache.get(Key.ByUuid(uuid))
             if (cached != null) {
                 metrics.value = metrics.value.withPageHit()
-                emit(success(cached.page))
+                emit(cached.page.right())
             } else {
                 metrics.value = metrics.value.withPageMiss()
                 delegate.getPageByUuid(uuid).collect { result ->
@@ -59,21 +63,21 @@ class PageCache(
                 }
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(Dispatchers.IO)
 
     /**
      * Get page by name with cache.
      */
-    fun getPageByName(name: String): Flow<Result<Page?>> = flow {
+    fun getPageByName(name: String): Flow<Either<DomainError, Page?>> = flow {
         try {
             val cachedUuid = nameIndex[name]
             if (cachedUuid != null) {
                 val cached = cache.get(Key.ByUuid(cachedUuid))
                 if (cached != null) {
                     metrics.value = metrics.value.withPageHit()
-                    emit(success(cached.page))
+                    emit(cached.page.right())
                     return@flow
                 }
             }
@@ -86,14 +90,14 @@ class PageCache(
                 emit(result)
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(Dispatchers.IO)
 
     /**
      * Get pages in namespace with cache.
      */
-    fun getPagesInNamespace(namespace: String): Flow<Result<List<Page>>> = flow {
+    fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>> = flow {
         try {
             val cachedUuids: List<String>? = namespaceIndex[namespace]
             if (cachedUuids != null && cachedUuids.isNotEmpty()) {
@@ -110,7 +114,7 @@ class PageCache(
                 }
                 if (allFound && cachedPages.size == cachedUuids.size) {
                     metrics.value = metrics.value.withPageHit()
-                    emit(success(cachedPages))
+                    emit(cachedPages.right())
                     return@flow
                 }
             }
@@ -119,86 +123,86 @@ class PageCache(
             delegate.getPagesInNamespace(namespace).collect { result ->
                 result.getOrNull()?.let { pages ->
                     pages.forEach { cachePage(it) }
-                    emit(success(pages))
+                    emit(pages.right())
                 } ?: emit(result)
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(Dispatchers.IO)
 
     /**
      * Get all pages with cache.
      */
-    fun getAllPages(): Flow<Result<List<Page>>> = flow {
+    fun getAllPages(): Flow<Either<DomainError, List<Page>>> = flow {
         try {
             metrics.value = metrics.value.withPageMiss()
             delegate.getAllPages().collect { result ->
                 result.getOrNull()?.let { pages ->
                     pages.forEach { cachePage(it) }
-                    emit(success(pages))
+                    emit(pages.right())
                 } ?: emit(result)
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(Dispatchers.IO)
 
     /**
      * Get recent pages with cache.
      */
-    fun getRecentPages(limit: Int): Flow<Result<List<Page>>> = flow {
+    fun getRecentPages(limit: Int): Flow<Either<DomainError, List<Page>>> = flow {
         try {
             metrics.value = metrics.value.withPageMiss()
             delegate.getRecentPages(limit).collect { result ->
                 result.getOrNull()?.let { pages ->
                     pages.forEach { cachePage(it) }
-                    emit(success(pages))
+                    emit(pages.right())
                 } ?: emit(result)
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(Dispatchers.IO)
 
     /**
      * Get pages with pagination.
      */
-    fun getPages(limit: Int, offset: Int): Flow<Result<List<Page>>> = flow {
+    fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> = flow {
         try {
             metrics.value = metrics.value.withPageMiss()
             delegate.getPages(limit, offset).collect { result ->
                 result.getOrNull()?.let { pages ->
                     pages.forEach { cachePage(it) }
-                    emit(success(pages))
+                    emit(pages.right())
                 } ?: emit(result)
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(Dispatchers.IO)
 
     /**
      * Search pages with pagination.
      */
-    fun searchPages(query: String, limit: Int, offset: Int): Flow<Result<List<Page>>> = flow {
+    fun searchPages(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> = flow {
         try {
             metrics.value = metrics.value.withPageMiss()
             delegate.searchPages(query, limit, offset).collect { result ->
                 result.getOrNull()?.let { pages ->
                     pages.forEach { cachePage(it) }
-                    emit(success(pages))
+                    emit(pages.right())
                 } ?: emit(result)
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(Dispatchers.IO)
 
     /**
      * Save page - invalidates cache.
      */
-    suspend fun savePage(page: Page): Result<Unit> {
+    suspend fun savePage(page: Page): Either<DomainError, Unit> {
         invalidatePage(page.uuid)
         return delegate.savePage(page)
     }
@@ -206,7 +210,7 @@ class PageCache(
     /**
      * Rename page - invalidates cache.
      */
-    suspend fun renamePage(pageUuid: String, newName: String): Result<Unit> {
+    suspend fun renamePage(pageUuid: String, newName: String): Either<DomainError, Unit> {
         invalidatePage(pageUuid)
         return delegate.renamePage(pageUuid, newName)
     }
@@ -214,7 +218,7 @@ class PageCache(
     /**
      * Delete page - invalidates cache.
      */
-    suspend fun deletePage(pageUuid: String): Result<Unit> {
+    suspend fun deletePage(pageUuid: String): Either<DomainError, Unit> {
         invalidatePage(pageUuid)
         return delegate.deletePage(pageUuid)
     }

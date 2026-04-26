@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.data.repositories
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.Property
@@ -26,7 +31,7 @@ interface IBlockRepository {
      * @param uuid The block UUID
      * @return Flow emitting Result with the block or null
      */
-    fun getBlockByUuid(uuid: String): Flow<Result<Block?>>
+    fun getBlockByUuid(uuid: String): Flow<Either<DomainError, Block?>>
     
     /**
      * Save a new or updated block.
@@ -34,7 +39,7 @@ interface IBlockRepository {
      * @param block The block to save
      * @return Result indicating success or error
      */
-    suspend fun saveBlock(block: Block): Result<Unit>
+    suspend fun saveBlock(block: Block): Either<DomainError, Unit>
     
     /**
      * Save multiple blocks in a batch operation.
@@ -42,7 +47,7 @@ interface IBlockRepository {
      * @param blocks List of blocks to save
      * @return Result indicating success or error
      */
-    suspend fun saveBlocks(blocks: List<Block>): Result<Unit>
+    suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit>
     
     /**
      * Delete a block and optionally its children.
@@ -51,7 +56,7 @@ interface IBlockRepository {
      * @param deleteChildren Whether to delete child blocks
      * @return Result indicating success or error
      */
-    suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean = false): Result<Unit>
+    suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean = false): Either<DomainError, Unit>
     
     // ===== HIERARCHICAL OPERATIONS =====
     
@@ -61,7 +66,7 @@ interface IBlockRepository {
      * @param blockUuid The parent block UUID
      * @return Flow emitting Result with list of child blocks
      */
-    fun getBlockChildren(blockUuid: String): Flow<Result<List<Block>>>
+    fun getBlockChildren(blockUuid: String): Flow<Either<DomainError, List<Block>>>
     
     /**
      * Get complete hierarchy starting from a root block (recursive).
@@ -70,7 +75,7 @@ interface IBlockRepository {
      * @param rootUuid The root block UUID
      * @return Flow emitting Result with list of blocks and their depths
      */
-    fun getBlockHierarchy(rootUuid: String): Flow<Result<List<BlockWithDepth>>>
+    fun getBlockHierarchy(rootUuid: String): Flow<Either<DomainError, List<BlockWithDepth>>>
     
     /**
      * Get all ancestors of a block (from immediate parent up to root).
@@ -78,7 +83,7 @@ interface IBlockRepository {
      * @param blockUuid The block UUID
      * @return Flow emitting Result with list of ancestor blocks
      */
-    fun getBlockAncestors(blockUuid: String): Flow<Result<List<Block>>>
+    fun getBlockAncestors(blockUuid: String): Flow<Either<DomainError, List<Block>>>
     
     /**
      * Get the immediate parent of a block.
@@ -86,7 +91,7 @@ interface IBlockRepository {
      * @param blockUuid The block UUID
      * @return Flow emitting Result with parent block or null
      */
-    fun getBlockParent(blockUuid: String): Flow<Result<Block?>>
+    fun getBlockParent(blockUuid: String): Flow<Either<DomainError, Block?>>
     
     /**
      * Get sibling blocks (blocks with same parent).
@@ -94,7 +99,7 @@ interface IBlockRepository {
      * @param blockUuid The block UUID
      * @return Flow emitting Result with list of sibling blocks
      */
-    fun getBlockSiblings(blockUuid: String): Flow<Result<List<Block>>>
+    fun getBlockSiblings(blockUuid: String): Flow<Either<DomainError, List<Block>>>
     
     // ===== PAGE-LEVEL OPERATIONS =====
     
@@ -104,7 +109,7 @@ interface IBlockRepository {
      * @param pageUuid The page UUID
      * @return Flow emitting Result with list of blocks
      */
-    fun getBlocksForPage(pageUuid: String): Flow<Result<List<Block>>>
+    fun getBlocksForPage(pageUuid: String): Flow<Either<DomainError, List<Block>>>
     
     /**
      * Get all blocks for a page in hierarchical order.
@@ -112,7 +117,7 @@ interface IBlockRepository {
      * @param pageUuid The page UUID
      * @return Flow emitting Result with list of blocks with depths
      */
-    fun getBlocksForPageHierarchy(pageUuid: String): Flow<Result<List<BlockWithDepth>>>
+    fun getBlocksForPageHierarchy(pageUuid: String): Flow<Either<DomainError, List<BlockWithDepth>>>
     
     /**
      * Delete all blocks associated with a specific page.
@@ -120,7 +125,7 @@ interface IBlockRepository {
      * @param pageUuid The page UUID
      * @return Result indicating success or error
      */
-    suspend fun deleteBlocksForPage(pageUuid: String): Result<Unit>
+    suspend fun deleteBlocksForPage(pageUuid: String): Either<DomainError, Unit>
     
     // ===== BLOCK MANIPULATION OPERATIONS =====
     
@@ -132,7 +137,7 @@ interface IBlockRepository {
      * @param newPosition The new position index
      * @return Result indicating success or error
      */
-    suspend fun moveBlock(blockUuid: String, newParentUuid: String?, newPosition: Int): Result<Unit>
+    suspend fun moveBlock(blockUuid: String, newParentUuid: String?, newPosition: Int): Either<DomainError, Unit>
     
     /**
      * Indent a block (move it to be a child of its preceding sibling).
@@ -140,7 +145,7 @@ interface IBlockRepository {
      * @param blockUuid The block UUID to indent
      * @return Result indicating success or error
      */
-    suspend fun indentBlock(blockUuid: String): Result<Unit>
+    suspend fun indentBlock(blockUuid: String): Either<DomainError, Unit>
     
     /**
      * Outdent a block (move it to be a sibling of its parent).
@@ -148,7 +153,7 @@ interface IBlockRepository {
      * @param blockUuid The block UUID to outdent
      * @return Result indicating success or error
      */
-    suspend fun outdentBlock(blockUuid: String): Result<Unit>
+    suspend fun outdentBlock(blockUuid: String): Either<DomainError, Unit>
     
     /**
      * Move a block up among its siblings.
@@ -156,7 +161,7 @@ interface IBlockRepository {
      * @param blockUuid The block UUID to move up
      * @return Result indicating success or error
      */
-    suspend fun moveBlockUp(blockUuid: String): Result<Unit>
+    suspend fun moveBlockUp(blockUuid: String): Either<DomainError, Unit>
     
     /**
      * Move a block down among its siblings.
@@ -164,7 +169,7 @@ interface IBlockRepository {
      * @param blockUuid The block UUID to move down
      * @return Result indicating success or error
      */
-    suspend fun moveBlockDown(blockUuid: String): Result<Unit>
+    suspend fun moveBlockDown(blockUuid: String): Either<DomainError, Unit>
     
     // ===== SEARCH AND QUERY OPERATIONS =====
     
@@ -175,7 +180,7 @@ interface IBlockRepository {
      * @param pageName The page name to search for
      * @return Flow emitting Result with list of blocks
      */
-    fun getLinkedReferences(pageName: String): Flow<Result<List<Block>>>
+    fun getLinkedReferences(pageName: String): Flow<Either<DomainError, List<Block>>>
     
     /**
      * Find all blocks that mention the page name as plain text.
@@ -184,7 +189,7 @@ interface IBlockRepository {
      * @param pageName The page name to search for
      * @return Flow emitting Result with list of blocks
      */
-    fun getUnlinkedReferences(pageName: String): Flow<Result<List<Block>>>
+    fun getUnlinkedReferences(pageName: String): Flow<Either<DomainError, List<Block>>>
     
     /**
      * Search blocks by content.
@@ -192,7 +197,7 @@ interface IBlockRepository {
      * @param query The search query
      * @return Flow emitting Result with list of blocks
      */
-    fun searchBlocksByContent(query: String): Flow<Result<List<Block>>>
+    fun searchBlocksByContent(query: String): Flow<Either<DomainError, List<Block>>>
     
     /**
      * Search blocks by content with pagination.
@@ -202,7 +207,7 @@ interface IBlockRepository {
      * @param offset Offset for pagination
      * @return Flow emitting Result with list of blocks
      */
-    fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Result<List<Block>>>
+    fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>>
     
     /**
      * Get blocks by content pattern.
@@ -210,7 +215,7 @@ interface IBlockRepository {
      * @param pattern The content pattern (supports regex)
      * @return Flow emitting Result with list of blocks
      */
-    fun getBlocksByContentPattern(pattern: String): Flow<Result<List<Block>>>
+    fun getBlocksByContentPattern(pattern: String): Flow<Either<DomainError, List<Block>>>
     
     // ===== BATCH OPERATIONS =====
     
@@ -220,7 +225,7 @@ interface IBlockRepository {
      * @param blocks List of blocks to create
      * @return Result indicating success or error
      */
-    suspend fun createBlocks(blocks: List<Block>): Result<Unit>
+    suspend fun createBlocks(blocks: List<Block>): Either<DomainError, Unit>
     
     /**
      * Update multiple blocks in a batch.
@@ -228,7 +233,7 @@ interface IBlockRepository {
      * @param blocks List of blocks to update
      * @return Result indicating success or error
      */
-    suspend fun updateBlocks(blocks: List<Block>): Result<Unit>
+    suspend fun updateBlocks(blocks: List<Block>): Either<DomainError, Unit>
     
     /**
      * Delete multiple blocks in a batch.
@@ -236,7 +241,7 @@ interface IBlockRepository {
      * @param blockUuids List of block UUIDs to delete
      * @return Result indicating success or error
      */
-    suspend fun deleteBlocks(blockUuids: List<String>): Result<Unit>
+    suspend fun deleteBlocks(blockUuids: List<String>): Either<DomainError, Unit>
     
     // ===== BLOCK METADATA OPERATIONS =====
     
@@ -246,7 +251,7 @@ interface IBlockRepository {
      * @param blockUuid The block UUID
      * @return Flow emitting Result with metadata map
      */
-    fun getBlockMetadata(blockUuid: String): Flow<Result<Map<String, String>>>
+    fun getBlockMetadata(blockUuid: String): Flow<Either<DomainError, Map<String, String>>>
     
     /**
      * Update block metadata.
@@ -255,7 +260,7 @@ interface IBlockRepository {
      * @param metadata The metadata to update
      * @return Result indicating success or error
      */
-    suspend fun updateBlockMetadata(blockUuid: String, metadata: Map<String, String>): Result<Unit>
+    suspend fun updateBlockMetadata(blockUuid: String, metadata: Map<String, String>): Either<DomainError, Unit>
     
     /**
      * Delete block metadata key.
@@ -264,7 +269,7 @@ interface IBlockRepository {
      * @param key The metadata key to delete
      * @return Result indicating success or error
      */
-    suspend fun deleteBlockMetadata(blockUuid: String, key: String): Result<Unit>
+    suspend fun deleteBlockMetadata(blockUuid: String, key: String): Either<DomainError, Unit>
     
     // ===== BLOCK PROPERTIES OPERATIONS =====
     
@@ -274,7 +279,7 @@ interface IBlockRepository {
      * @param blockUuid The block UUID
      * @return Flow emitting Result with list of properties
      */
-    fun getBlockProperties(blockUuid: String): Flow<Result<List<Property>>>
+    fun getBlockProperties(blockUuid: String): Flow<Either<DomainError, List<Property>>>
     
     /**
      * Get a specific property by block UUID and key.
@@ -283,7 +288,7 @@ interface IBlockRepository {
      * @param key The property key
      * @return Flow emitting Result with property or null
      */
-    fun getBlockProperty(blockUuid: String, key: String): Flow<Result<Property?>>
+    fun getBlockProperty(blockUuid: String, key: String): Flow<Either<DomainError, Property?>>
     
     /**
      * Save a block property (create or update).
@@ -291,7 +296,7 @@ interface IBlockRepository {
      * @param property The property to save
      * @return Result indicating success or error
      */
-    suspend fun saveBlockProperty(property: Property): Result<Unit>
+    suspend fun saveBlockProperty(property: Property): Either<DomainError, Unit>
     
     /**
      * Delete a block property.
@@ -300,7 +305,7 @@ interface IBlockRepository {
      * @param key The property key
      * @return Result indicating success or error
      */
-    suspend fun deleteBlockProperty(blockUuid: String, key: String): Result<Unit>
+    suspend fun deleteBlockProperty(blockUuid: String, key: String): Either<DomainError, Unit>
     
     // ===== BLOCK VERSIONING OPERATIONS =====
     
@@ -310,7 +315,7 @@ interface IBlockRepository {
      * @param blockUuid The block UUID
      * @return Flow emitting Result with list of block versions
      */
-    fun getBlockVersionHistory(blockUuid: String): Flow<Result<List<BlockVersion>>>
+    fun getBlockVersionHistory(blockUuid: String): Flow<Either<DomainError, List<BlockVersion>>>
     
     /**
      * Get a specific version of a block.
@@ -319,7 +324,7 @@ interface IBlockRepository {
      * @param version The version number
      * @return Flow emitting Result with block version or null
      */
-    fun getBlockVersion(blockUuid: String, version: Long): Flow<Result<BlockVersion?>>
+    fun getBlockVersion(blockUuid: String, version: Long): Flow<Either<DomainError, BlockVersion?>>
     
     /**
      * Create a new version of a block.
@@ -328,7 +333,7 @@ interface IBlockRepository {
      * @param changeDescription Description of the change
      * @return Result indicating success or error
      */
-    suspend fun createBlockVersion(blockUuid: String, changeDescription: String): Result<Unit>
+    suspend fun createBlockVersion(blockUuid: String, changeDescription: String): Either<DomainError, Unit>
     
     // ===== REPOSITORY MAINTENANCE =====
     
@@ -337,28 +342,28 @@ interface IBlockRepository {
      * 
      * @return Result indicating success or error
      */
-    suspend fun clear(): Result<Unit>
+    suspend fun clear(): Either<DomainError, Unit>
     
     /**
      * Get repository statistics.
      * 
      * @return BlockRepositoryStatistics with repository metrics
      */
-    suspend fun getStatistics(): Result<BlockRepositoryStatistics>
+    suspend fun getStatistics(): Either<DomainError, BlockRepositoryStatistics>
     
     /**
      * Optimize the repository.
      * 
      * @return Result indicating success or error
      */
-    suspend fun optimize(): Result<Unit>
+    suspend fun optimize(): Either<DomainError, Unit>
     
     /**
      * Validate repository integrity.
      * 
      * @return Result with validation report
      */
-    suspend fun validateIntegrity(): Result<ValidationReport>
+    suspend fun validateIntegrity(): Either<DomainError, ValidationReport>
     
     // ===== CACHING OPERATIONS =====
     
@@ -368,21 +373,21 @@ interface IBlockRepository {
      * @param enabled Whether to enable caching
      * @return Result indicating success or error
      */
-    suspend fun setCachingEnabled(enabled: Boolean): Result<Unit>
+    suspend fun setCachingEnabled(enabled: Boolean): Either<DomainError, Unit>
     
     /**
      * Clear cache.
      * 
      * @return Result indicating success or error
      */
-    suspend fun clearCache(): Result<Unit>
+    suspend fun clearCache(): Either<DomainError, Unit>
     
     /**
      * Get cache statistics.
      * 
      * @return CacheStatistics with cache metrics
      */
-    suspend fun getCacheStatistics(): Result<CacheStatistics>
+    suspend fun getCacheStatistics(): Either<DomainError, CacheStatistics>
     
     // ===== ENCRYPTION OPERATIONS =====
     
@@ -392,7 +397,7 @@ interface IBlockRepository {
      * @param encryptionManager The encryption manager
      * @return Result indicating success or error
      */
-    suspend fun setEncryptionManager(encryptionManager: EncryptionManager): Result<Unit>
+    suspend fun setEncryptionManager(encryptionManager: EncryptionManager): Either<DomainError, Unit>
     
     /**
      * Check if repository is encrypted.

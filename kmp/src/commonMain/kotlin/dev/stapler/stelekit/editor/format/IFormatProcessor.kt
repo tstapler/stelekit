@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.editor.format
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import kotlinx.coroutines.flow.Flow
 import kotlin.Result
@@ -17,7 +22,7 @@ interface IFormatProcessor {
      * @param formatType Target format (markdown, rich text, etc.)
      * @return Result containing formatted text or error
      */
-    suspend fun processText(text: String, formatType: FormatType): Result<FormattedText>
+    suspend fun processText(text: String, formatType: FormatType): Either<DomainError, FormattedText>
     
     /**
      * Parse formatted text back to raw text.
@@ -26,7 +31,7 @@ interface IFormatProcessor {
      * @param sourceFormat Source format type
      * @return Result containing raw text or error
      */
-    suspend fun parseFormattedText(formattedText: FormattedText, sourceFormat: FormatType): Result<String>
+    suspend fun parseFormattedText(formattedText: FormattedText, sourceFormat: FormatType): Either<DomainError, String>
     
     /**
      * Apply text formatting at specified range.
@@ -36,7 +41,7 @@ interface IFormatProcessor {
      * @param formatting Formatting to apply
      * @return Result containing formatted text or error
      */
-    suspend fun applyFormatting(text: String, range: TextRange, formatting: TextFormatting): Result<String>
+    suspend fun applyFormatting(text: String, range: TextRange, formatting: TextFormatting): Either<DomainError, String>
     
     /**
      * Remove formatting from text.
@@ -45,7 +50,7 @@ interface IFormatProcessor {
      * @param range Range to remove formatting (null for all)
      * @return Result containing plain text or error
      */
-    suspend fun removeFormatting(text: String, range: TextRange? = null): Result<String>
+    suspend fun removeFormatting(text: String, range: TextRange? = null): Either<DomainError, String>
     
     /**
      * Detect text formatting in a string.
@@ -53,7 +58,7 @@ interface IFormatProcessor {
      * @param text Text to analyze
      * @return Result containing detected formatting ranges
      */
-    suspend fun detectFormatting(text: String): Result<List<FormattedRange>>
+    suspend fun detectFormatting(text: String): Either<DomainError, List<FormattedRange>>
     
     /**
      * Convert between different text formats.
@@ -63,7 +68,7 @@ interface IFormatProcessor {
      * @param toFormat Target format
      * @return Result containing converted text or error
      */
-    suspend fun convertFormat(text: String, fromFormat: FormatType, toFormat: FormatType): Result<String>
+    suspend fun convertFormat(text: String, fromFormat: FormatType, toFormat: FormatType): Either<DomainError, String>
     
     /**
      * Validate text format syntax.
@@ -72,7 +77,7 @@ interface IFormatProcessor {
      * @param formatType Format to validate against
      * @return Result containing validation result
      */
-    suspend fun validateFormat(text: String, formatType: FormatType): Result<FormatValidation>
+    suspend fun validateFormat(text: String, formatType: FormatType): Either<DomainError, FormatValidation>
 }
 
 /**

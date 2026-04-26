@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.ui.screens
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.repository.SearchRepository
@@ -18,19 +23,19 @@ import kotlin.test.assertTrue
 class SearchViewModelTest {
 
     class FakeSearchRepository : SearchRepository {
-        override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Result<List<Block>>> {
-            return flowOf(Result.success(emptyList()))
+        override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> {
+            return flowOf(emptyList<Block>().right())
         }
 
-        override fun searchPagesByTitle(query: String, limit: Int): Flow<Result<List<Page>>> {
-            return flowOf(Result.success(emptyList()))
+        override fun searchPagesByTitle(query: String, limit: Int): Flow<Either<DomainError, List<Page>>> {
+            return flowOf(emptyList<Page>().right())
         }
 
-        override fun findBlocksReferencing(blockUuid: String): Flow<Result<List<Block>>> {
-            return flowOf(Result.success(emptyList()))
+        override fun findBlocksReferencing(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
+            return flowOf(emptyList<Block>().right())
         }
 
-        override fun searchWithFilters(searchRequest: SearchRequest): Flow<Result<SearchResult>> {
+        override fun searchWithFilters(searchRequest: SearchRequest): Flow<Either<DomainError, SearchResult>> {
             if (searchRequest.query == "test") {
                 val page = Page(
                     uuid = "uuid-1",
@@ -46,9 +51,9 @@ class SearchViewModelTest {
                     createdAt = Clock.System.now(),
                     updatedAt = Clock.System.now()
                 )
-                return flowOf(Result.success(SearchResult(listOf(block), listOf(page), totalCount = 2, hasMore = false)))
+                return flowOf(SearchResult(listOf(block), listOf(page), totalCount = 2, hasMore = false).right())
             }
-            return flowOf(Result.success(SearchResult(emptyList(), emptyList(), totalCount = 0, hasMore = false)))
+            return flowOf(SearchResult(emptyList(), emptyList(), totalCount = 0, hasMore = false).right())
         }
     }
 

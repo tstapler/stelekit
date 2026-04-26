@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.editor.text
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,80 +28,80 @@ class DefaultTextOperations : ITextOperations {
         return MutableStateFlow(null)
     }
 
-    override suspend fun insertText(blockId: String, text: String): Result<Unit> {
-        return Result.success(Unit)
+    override suspend fun insertText(blockId: String, text: String): Either<DomainError, Unit> {
+        return Unit.right()
     }
 
-    override suspend fun replaceText(blockId: String, range: TextRange, newText: String): Result<Unit> {
-        return Result.success(Unit)
+    override suspend fun replaceText(blockId: String, range: TextRange, newText: String): Either<DomainError, Unit> {
+        return Unit.right()
     }
 
-    override suspend fun deleteText(blockId: String, range: TextRange): Result<Unit> {
-        return Result.success(Unit)
+    override suspend fun deleteText(blockId: String, range: TextRange): Either<DomainError, Unit> {
+        return Unit.right()
     }
 
-    override suspend fun getText(blockId: String): Result<String> {
-        return Result.success("")
+    override suspend fun getText(blockId: String): Either<DomainError, String> {
+        return "".right()
     }
 
-    override suspend fun setCursor(blockId: String, position: Int): Result<Unit> {
-        return Result.success(Unit)
+    override suspend fun setCursor(blockId: String, position: Int): Either<DomainError, Unit> {
+        return Unit.right()
     }
 
-    override suspend fun setSelection(blockId: String, range: TextRange): Result<Unit> {
-        return Result.success(Unit)
+    override suspend fun setSelection(blockId: String, range: TextRange): Either<DomainError, Unit> {
+        return Unit.right()
     }
 
-    override suspend fun selectWord(blockId: String): Result<Unit> {
-        return Result.success(Unit)
+    override suspend fun selectWord(blockId: String): Either<DomainError, Unit> {
+        return Unit.right()
     }
 
-    override suspend fun selectLine(blockId: String): Result<Unit> {
-        return Result.success(Unit)
+    override suspend fun selectLine(blockId: String): Either<DomainError, Unit> {
+        return Unit.right()
     }
 
-    override suspend fun selectAll(blockId: String): Result<Unit> {
-        return Result.success(Unit)
+    override suspend fun selectAll(blockId: String): Either<DomainError, Unit> {
+        return Unit.right()
     }
 
-    override suspend fun cut(blockId: String): Result<String> {
-        return Result.success("")
+    override suspend fun cut(blockId: String): Either<DomainError, String> {
+        return "".right()
     }
 
-    override suspend fun copy(blockId: String): Result<String> {
-        return Result.success("")
+    override suspend fun copy(blockId: String): Either<DomainError, String> {
+        return "".right()
     }
 
-    override suspend fun paste(blockId: String): Result<Unit> {
-        return Result.success(Unit)
+    override suspend fun paste(blockId: String): Either<DomainError, Unit> {
+        return Unit.right()
     }
     
-    override suspend fun moveCursorToWordStart(blockId: String): Result<Unit> {
-        return Result.success(Unit)
+    override suspend fun moveCursorToWordStart(blockId: String): Either<DomainError, Unit> {
+        return Unit.right()
     }
 
-    override suspend fun moveCursorToWordEnd(blockId: String): Result<Unit> {
-        return Result.success(Unit)
+    override suspend fun moveCursorToWordEnd(blockId: String): Either<DomainError, Unit> {
+        return Unit.right()
     }
 
-    override suspend fun moveCursorToLineStart(blockId: String): Result<Unit> {
-        return Result.success(Unit)
+    override suspend fun moveCursorToLineStart(blockId: String): Either<DomainError, Unit> {
+        return Unit.right()
     }
 
-    override suspend fun moveCursorToLineEnd(blockId: String): Result<Unit> {
-        return Result.success(Unit)
+    override suspend fun moveCursorToLineEnd(blockId: String): Either<DomainError, Unit> {
+        return Unit.right()
     }
 
-    override suspend fun duplicate(blockId: String): Result<Unit> {
-        return Result.success(Unit)
+    override suspend fun duplicate(blockId: String): Either<DomainError, Unit> {
+        return Unit.right()
     }
 
-    override suspend fun applyFormat(blockId: String, range: TextRange, format: TextFormat): Result<Unit> {
-        return Result.success(Unit)
+    override suspend fun applyFormat(blockId: String, range: TextRange, format: TextFormat): Either<DomainError, Unit> {
+        return Unit.right()
     }
 
-    override suspend fun initializeBlock(blockId: String, content: String): Result<Unit> {
+    override suspend fun initializeBlock(blockId: String, content: String): Either<DomainError, Unit> {
         _textState.value = TextState(content = content)
-        return Result.success(Unit)
+        return Unit.right()
     }
 }

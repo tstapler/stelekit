@@ -1,11 +1,12 @@
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.Property
 import dev.stapler.stelekit.platform.EncryptionManager
 import kotlinx.coroutines.flow.Flow
-import kotlin.Result
 
 /**
  * Repository interfaces for graph database operations in Logseq.
@@ -22,51 +23,51 @@ interface BlockRepository {
     /**
      * Retrieve a single block by its UUID
      */
-    fun getBlockByUuid(uuid: String): Flow<Result<Block?>>
+    fun getBlockByUuid(uuid: String): Flow<Either<DomainError, Block?>>
 
     /**
      * Get all immediate children of a block (one level deep)
      */
-    fun getBlockChildren(blockUuid: String): Flow<Result<List<Block>>>
+    fun getBlockChildren(blockUuid: String): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Get complete hierarchy starting from a root block (recursive)
      * Returns all descendants with their depth in hierarchy
      */
-    fun getBlockHierarchy(rootUuid: String): Flow<Result<List<BlockWithDepth>>>
+    fun getBlockHierarchy(rootUuid: String): Flow<Either<DomainError, List<BlockWithDepth>>>
 
     /**
      * Get all ancestors of a block (from immediate parent up to root)
      */
-    fun getBlockAncestors(blockUuid: String): Flow<Result<List<Block>>>
+    fun getBlockAncestors(blockUuid: String): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Get the immediate parent of a block
      */
-    fun getBlockParent(blockUuid: String): Flow<Result<Block?>>
+    fun getBlockParent(blockUuid: String): Flow<Either<DomainError, Block?>>
 
     /**
      * Get sibling blocks (blocks with same parent)
      */
-    fun getBlockSiblings(blockUuid: String): Flow<Result<List<Block>>>
+    fun getBlockSiblings(blockUuid: String): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Get all blocks for a specific page
      */
-    fun getBlocksForPage(pageUuid: String): Flow<Result<List<Block>>>
+    fun getBlocksForPage(pageUuid: String): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Delete all blocks associated with a specific page
      */
     @DirectRepositoryWrite
-    suspend fun deleteBlocksForPage(pageUuid: String): Result<Unit>
+    suspend fun deleteBlocksForPage(pageUuid: String): Either<DomainError, Unit>
 
     /**
      * Delete all blocks for multiple pages in a single transaction.
      * Significantly faster than calling [deleteBlocksForPage] in a loop during bulk loads.
      */
     @DirectRepositoryWrite
-    suspend fun deleteBlocksForPages(pageUuids: List<String>): Result<Unit>
+    suspend fun deleteBlocksForPages(pageUuids: List<String>): Either<DomainError, Unit>
 
     /**
      * Clear all blocks from the repository
@@ -78,100 +79,100 @@ interface BlockRepository {
      * Save a new or updated block
      */
     @DirectRepositoryWrite
-    suspend fun saveBlock(block: Block): Result<Unit>
+    suspend fun saveBlock(block: Block): Either<DomainError, Unit>
 
     /**
      * Save multiple blocks in a batch operation
      */
     @DirectRepositoryWrite
-    suspend fun saveBlocks(blocks: List<Block>): Result<Unit>
+    suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit>
 
     /**
      * Delete a block and optionally its children
      */
     @DirectRepositoryWrite
-    suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean = false): Result<Unit>
+    suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean = false): Either<DomainError, Unit>
 
     /**
      * Delete multiple blocks and optionally their children in a single atomic operation.
      * Chain repair is performed for each deletion to maintain linked-list integrity.
      */
     @DirectRepositoryWrite
-    suspend fun deleteBulk(blockUuids: List<String>, deleteChildren: Boolean = true): Result<Unit>
+    suspend fun deleteBulk(blockUuids: List<String>, deleteChildren: Boolean = true): Either<DomainError, Unit>
 
     /**
      * Move a block to a new parent and/or position
      */
     @DirectRepositoryWrite
-    suspend fun moveBlock(blockUuid: String, newParentUuid: String?, newPosition: Int): Result<Unit>
+    suspend fun moveBlock(blockUuid: String, newParentUuid: String?, newPosition: Int): Either<DomainError, Unit>
 
     /**
      * Indent a block (move it to be a child of its preceding sibling)
      */
     @DirectRepositoryWrite
-    suspend fun indentBlock(blockUuid: String): Result<Unit>
+    suspend fun indentBlock(blockUuid: String): Either<DomainError, Unit>
 
     /**
      * Outdent a block (move it to be a sibling of its parent)
      */
     @DirectRepositoryWrite
-    suspend fun outdentBlock(blockUuid: String): Result<Unit>
+    suspend fun outdentBlock(blockUuid: String): Either<DomainError, Unit>
 
     /**
      * Move a block up among its siblings
      */
     @DirectRepositoryWrite
-    suspend fun moveBlockUp(blockUuid: String): Result<Unit>
+    suspend fun moveBlockUp(blockUuid: String): Either<DomainError, Unit>
 
     /**
      * Move a block down among its siblings
      */
     @DirectRepositoryWrite
-    suspend fun moveBlockDown(blockUuid: String): Result<Unit>
+    suspend fun moveBlockDown(blockUuid: String): Either<DomainError, Unit>
 
     /**
      * Merge two blocks atomically
      */
     @DirectRepositoryWrite
-    suspend fun mergeBlocks(blockUuid: String, nextBlockUuid: String, separator: String): Result<Unit>
+    suspend fun mergeBlocks(blockUuid: String, nextBlockUuid: String, separator: String): Either<DomainError, Unit>
 
     /**
      * Split a block into two atomically at the given cursor position
      */
     @DirectRepositoryWrite
-    suspend fun splitBlock(blockUuid: String, cursorPosition: Int): Result<Block>
+    suspend fun splitBlock(blockUuid: String, cursorPosition: Int): Either<DomainError, Block>
 
     /**
      * Find all blocks that contain a wiki link to the given page name
      * (i.e., blocks containing [[Page Name]])
      */
-    fun getLinkedReferences(pageName: String): Flow<Result<List<Block>>>
+    fun getLinkedReferences(pageName: String): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Find all blocks that contain a wiki link to the given page name with pagination.
      */
-    fun getLinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Result<List<Block>>>
+    fun getLinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Find all blocks that mention the page name as plain text
      * (not as a wiki link)
      */
-    fun getUnlinkedReferences(pageName: String): Flow<Result<List<Block>>>
+    fun getUnlinkedReferences(pageName: String): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Find all blocks that mention the page name as plain text with pagination.
      */
-    fun getUnlinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Result<List<Block>>>
+    fun getUnlinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Search blocks by content
      */
-    fun searchBlocksByContent(query: String, limit: Int = 50, offset: Int = 0): Flow<Result<List<Block>>>
+    fun searchBlocksByContent(query: String, limit: Int = 50, offset: Int = 0): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Count blocks that contain a wiki link to the given page name.
      */
-    fun countLinkedReferences(pageName: String): Flow<Result<Long>>
+    fun countLinkedReferences(pageName: String): Flow<Either<DomainError, Long>>
 
     /**
      * Find groups of blocks whose content is identical (potential duplicates).
@@ -184,7 +185,7 @@ interface BlockRepository {
      *
      * @param limit maximum number of distinct hash groups to inspect
      */
-    fun findDuplicateBlocks(limit: Int = 50): Flow<Result<List<DuplicateGroup>>>
+    fun findDuplicateBlocks(limit: Int = 50): Flow<Either<DomainError, List<DuplicateGroup>>>
 }
 
 /**
@@ -195,91 +196,91 @@ interface PageRepository {
     /**
      * Get a page by its UUID
      */
-    fun getPageByUuid(uuid: String): Flow<Result<Page?>>
+    fun getPageByUuid(uuid: String): Flow<Either<DomainError, Page?>>
 
     /**
      * Get a page by its name/title
      */
-    fun getPageByName(name: String): Flow<Result<Page?>>
+    fun getPageByName(name: String): Flow<Either<DomainError, Page?>>
 
     /**
      * Get all pages in a namespace
      */
-    fun getPagesInNamespace(namespace: String): Flow<Result<List<Page>>>
+    fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>>
 
     /**
      * Get all pages with pagination
      */
-    fun getPages(limit: Int, offset: Int): Flow<Result<List<Page>>>
+    fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>>
 
     /**
      * Search pages by name with pagination
      */
-    fun searchPages(query: String, limit: Int, offset: Int): Flow<Result<List<Page>>>
+    fun searchPages(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>>
 
     /**
      * Get all pages (unpaginated)
      */
-    fun getAllPages(): Flow<Result<List<Page>>>
+    fun getAllPages(): Flow<Either<DomainError, List<Page>>>
 
     /**
      * Get journal pages with pagination
      */
-    fun getJournalPages(limit: Int, offset: Int): Flow<Result<List<Page>>>
+    fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>>
 
     /**
      * Find a journal page by its date. Format-agnostic — always use this instead of
      * getPageByName for journal pages to avoid duplicate creation from name format differences
      * (e.g. "2026_04_11" on disk vs "2026-04-11" created in-app).
      */
-    fun getJournalPageByDate(date: kotlinx.datetime.LocalDate): Flow<Result<Page?>>
+    fun getJournalPageByDate(date: kotlinx.datetime.LocalDate): Flow<Either<DomainError, Page?>>
 
     /**
      * Get recently modified pages
      */
-    fun getRecentPages(limit: Int = 50): Flow<Result<List<Page>>>
+    fun getRecentPages(limit: Int = 50): Flow<Either<DomainError, List<Page>>>
 
     /**
      * Get all pages that haven't been fully loaded/indexed yet
      */
-    fun getUnloadedPages(): Flow<Result<List<Page>>>
+    fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>>
 
     /**
      * Save a new or updated page
      */
     @DirectRepositoryWrite
-    suspend fun savePage(page: Page): Result<Unit>
+    suspend fun savePage(page: Page): Either<DomainError, Unit>
 
     /**
      * Save multiple pages in a single transaction.
      * Significantly faster than calling [savePage] in a loop during bulk loads.
      */
     @DirectRepositoryWrite
-    suspend fun savePages(pages: List<Page>): Result<Unit>
+    suspend fun savePages(pages: List<Page>): Either<DomainError, Unit>
 
     /**
      * Toggle favorite status for a page
      */
     @DirectRepositoryWrite
-    suspend fun toggleFavorite(pageUuid: String): Result<Unit>
+    suspend fun toggleFavorite(pageUuid: String): Either<DomainError, Unit>
 
     /**
      * Rename a page
      * Updates the page name and associated indexes
      */
     @DirectRepositoryWrite
-    suspend fun renamePage(pageUuid: String, newName: String): Result<Unit>
+    suspend fun renamePage(pageUuid: String, newName: String): Either<DomainError, Unit>
 
     /**
      * Delete a page
      */
     @DirectRepositoryWrite
-    suspend fun deletePage(pageUuid: String): Result<Unit>
+    suspend fun deletePage(pageUuid: String): Either<DomainError, Unit>
 
     /**
      * Get total number of pages in the repository
      */
-    fun countPages(): Flow<Result<Long>>
+    fun countPages(): Flow<Either<DomainError, Long>>
 
     /**
      * Clear all pages from the repository
@@ -296,32 +297,32 @@ interface PropertyRepository {
     /**
      * Get all properties for a specific block
      */
-    fun getPropertiesForBlock(blockUuid: String): Flow<Result<List<Property>>>
+    fun getPropertiesForBlock(blockUuid: String): Flow<Either<DomainError, List<Property>>>
 
     /**
      * Get a specific property by block UUID and key
      */
-    fun getProperty(blockUuid: String, key: String): Flow<Result<Property?>>
+    fun getProperty(blockUuid: String, key: String): Flow<Either<DomainError, Property?>>
 
     /**
      * Save a property (create or update)
      */
-    suspend fun saveProperty(property: Property): Result<Unit>
+    suspend fun saveProperty(property: Property): Either<DomainError, Unit>
 
     /**
      * Delete a property
      */
-    suspend fun deleteProperty(blockUuid: String, key: String): Result<Unit>
+    suspend fun deleteProperty(blockUuid: String, key: String): Either<DomainError, Unit>
 
     /**
      * Get all blocks that have a specific property key
      */
-    fun getBlocksWithPropertyKey(key: String): Flow<Result<List<Block>>>
+    fun getBlocksWithPropertyKey(key: String): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Get all blocks that have a specific property value
      */
-    fun getBlocksWithPropertyValue(key: String, value: String): Flow<Result<List<Block>>>
+    fun getBlocksWithPropertyValue(key: String, value: String): Flow<Either<DomainError, List<Block>>>
 }
 
 // ===== REFERENCE & RELATIONSHIP INTERFACES =====
@@ -334,37 +335,37 @@ interface ReferenceRepository {
     /**
      * Get all blocks referenced by a specific block
      */
-    fun getOutgoingReferences(blockUuid: String): Flow<Result<List<Block>>>
+    fun getOutgoingReferences(blockUuid: String): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Get all blocks that reference a specific block
      */
-    fun getIncomingReferences(blockUuid: String): Flow<Result<List<Block>>>
+    fun getIncomingReferences(blockUuid: String): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Get all references (bidirectional) for a block
      */
-    fun getAllReferences(blockUuid: String): Flow<Result<BlockReferences>>
+    fun getAllReferences(blockUuid: String): Flow<Either<DomainError, BlockReferences>>
 
     /**
      * Add a reference from one block to another
      */
-    suspend fun addReference(fromBlockUuid: String, toBlockUuid: String): Result<Unit>
+    suspend fun addReference(fromBlockUuid: String, toBlockUuid: String): Either<DomainError, Unit>
 
     /**
      * Remove a reference between blocks
      */
-    suspend fun removeReference(fromBlockUuid: String, toBlockUuid: String): Result<Unit>
+    suspend fun removeReference(fromBlockUuid: String, toBlockUuid: String): Either<DomainError, Unit>
 
     /**
      * Get blocks that are not referenced by any other block (orphans)
      */
-    fun getOrphanedBlocks(): Flow<Result<List<Block>>>
+    fun getOrphanedBlocks(): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Get the most connected blocks (by reference count)
      */
-    fun getMostConnectedBlocks(limit: Int = 20): Flow<Result<List<BlockWithReferenceCount>>>
+    fun getMostConnectedBlocks(limit: Int = 20): Flow<Either<DomainError, List<BlockWithReferenceCount>>>
 }
 
 // ===== SEARCH & QUERY INTERFACES =====
@@ -377,22 +378,22 @@ interface SearchRepository {
     /**
      * Search blocks by content (full-text search)
      */
-    fun searchBlocksByContent(query: String, limit: Int = 50, offset: Int = 0): Flow<Result<List<Block>>>
+    fun searchBlocksByContent(query: String, limit: Int = 50, offset: Int = 0): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Search pages by title/name
      */
-    fun searchPagesByTitle(query: String, limit: Int = 20): Flow<Result<List<Page>>>
+    fun searchPagesByTitle(query: String, limit: Int = 20): Flow<Either<DomainError, List<Page>>>
 
     /**
      * Find blocks that reference specific content
      */
-    fun findBlocksReferencing(blockUuid: String): Flow<Result<List<Block>>>
+    fun findBlocksReferencing(blockUuid: String): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Advanced graph search with filters
      */
-    fun searchWithFilters(searchRequest: SearchRequest): Flow<Result<SearchResult>>
+    fun searchWithFilters(searchRequest: SearchRequest): Flow<Either<DomainError, SearchResult>>
 }
 
 // ===== DATA STRUCTURES =====

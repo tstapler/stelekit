@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.outliner.TreeOperations
@@ -10,7 +15,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlin.Result.Companion.success
 
 /**
  * Datalog-style in-memory repository that mirrors Datascript behavior.
@@ -32,23 +36,23 @@ class DatascriptBlockRepository : BlockRepository {
     private val byPageUuid = MutableStateFlow<Map<String, List<Block>>>(emptyMap())
     private val byParentUuid = MutableStateFlow<Map<String?, List<Block>>>(emptyMap())
 
-    override fun getBlockByUuid(uuid: String): Flow<Result<Block?>> {
+    override fun getBlockByUuid(uuid: String): Flow<Either<DomainError, Block?>> {
         return blocks.map { map ->
-            success(map[uuid])
+            map[uuid].right()
         }
     }
 
-    override fun getBlockChildren(blockUuid: String): Flow<Result<List<Block>>> {
+    override fun getBlockChildren(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
         return byParentUuid.map { map ->
-            success(map[blockUuid]?.sortedBy { it.position } ?: emptyList())
+            (map[blockUuid]?.sortedBy { it.position } ?: emptyList()).right()
         }
     }
 
-    override fun getBlockHierarchy(rootUuid: String): Flow<Result<List<BlockWithDepth>>> {
+    override fun getBlockHierarchy(rootUuid: String): Flow<Either<DomainError, List<BlockWithDepth>>> {
         return blocks.map { map ->
             val result = mutableListOf<BlockWithDepth>()
             collectHierarchy(map, rootUuid, 0, result)
-            success(result)
+            result.right()
         }
     }
 
@@ -66,7 +70,7 @@ class DatascriptBlockRepository : BlockRepository {
         }
     }
 
-    override fun getBlockAncestors(blockUuid: String): Flow<Result<List<Block>>> {
+    override fun getBlockAncestors(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
         return blocks.map { map ->
             val ancestors = mutableListOf<Block>()
             var currentUuid: String? = blockUuid
@@ -84,58 +88,58 @@ class DatascriptBlockRepository : BlockRepository {
                     break
                 }
             }
-            success(ancestors.reversed())
+            ancestors.reversed().right()
         }
     }
 
-    override fun getBlockParent(blockUuid: String): Flow<Result<Block?>> {
+    override fun getBlockParent(blockUuid: String): Flow<Either<DomainError, Block?>> {
         return blocks.map { map ->
-            val block = map[blockUuid] ?: return@map success(null)
+            val block = map[blockUuid] ?: return@map null.right()
             val parent = block.parentUuid?.let { map[it] }
-            success(parent)
+            parent.right()
         }
     }
 
-    override fun getBlockSiblings(blockUuid: String): Flow<Result<List<Block>>> {
+    override fun getBlockSiblings(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
         return blocks.map { map ->
-            val block = map[blockUuid] ?: return@map success(emptyList())
+            val block = map[blockUuid] ?: return@map emptyList<Block>().right()
             val siblings = if (block.parentUuid != null) {
                 map.values.filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid && it.uuid != blockUuid }
             } else {
                 map.values.filter { it.parentUuid == null && it.pageUuid == block.pageUuid && it.uuid != blockUuid }
             }
-            success(siblings.sortedBy { it.position })
+            siblings.sortedBy { it.position }.right()
         }
     }
 
-    override fun getBlocksForPage(pageUuid: String): Flow<Result<List<Block>>> {
+    override fun getBlocksForPage(pageUuid: String): Flow<Either<DomainError, List<Block>>> {
         return byPageUuid.map { map ->
             val blocks = map[pageUuid] ?: emptyList()
-            success(blocks.sortedBy { it.position })
+            blocks.sortedBy { it.position }.right()
         }
     }
 
-    override fun getLinkedReferences(pageName: String): Flow<Result<List<Block>>> {
+    override fun getLinkedReferences(pageName: String): Flow<Either<DomainError, List<Block>>> {
         val wikiLinkPattern = "\\[\\[${Regex.escape(pageName)}\\]\\]".toRegex(RegexOption.IGNORE_CASE)
         return blocks.map { map ->
             val linkedBlocks = map.values.filter { block ->
                 wikiLinkPattern.containsMatchIn(block.content)
             }
-            success(linkedBlocks.sortedBy { it.pageUuid })
+            linkedBlocks.sortedBy { it.pageUuid }.right()
         }
     }
 
-    override fun getLinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Result<List<Block>>> {
+    override fun getLinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> {
         val wikiLinkPattern = "\\[\\[${Regex.escape(pageName)}\\]\\]".toRegex(RegexOption.IGNORE_CASE)
         return blocks.map { map ->
             val linkedBlocks = map.values.filter { block ->
                 wikiLinkPattern.containsMatchIn(block.content)
             }
-            success(linkedBlocks.sortedBy { it.pageUuid }.drop(offset).take(limit))
+            linkedBlocks.sortedBy { it.pageUuid }.drop(offset).take(limit).right()
         }
     }
 
-    override fun getUnlinkedReferences(pageName: String): Flow<Result<List<Block>>> {
+    override fun getUnlinkedReferences(pageName: String): Flow<Either<DomainError, List<Block>>> {
         val wikiLinkPattern = "\\[\\[${Regex.escape(pageName)}\\]\\]".toRegex(RegexOption.IGNORE_CASE)
         val plainTextPattern = "\\b${Regex.escape(pageName)}\\b".toRegex(RegexOption.IGNORE_CASE)
         return blocks.map { map ->
@@ -143,11 +147,11 @@ class DatascriptBlockRepository : BlockRepository {
                 plainTextPattern.containsMatchIn(block.content) &&
                     !wikiLinkPattern.containsMatchIn(block.content)
             }
-            success(unlinkedBlocks.sortedBy { it.pageUuid })
+            unlinkedBlocks.sortedBy { it.pageUuid }.right()
         }
     }
 
-    override fun getUnlinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Result<List<Block>>> {
+    override fun getUnlinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> {
         val wikiLinkPattern = "\\[\\[${Regex.escape(pageName)}\\]\\]".toRegex(RegexOption.IGNORE_CASE)
         val plainTextPattern = "\\b${Regex.escape(pageName)}\\b".toRegex(RegexOption.IGNORE_CASE)
         return blocks.map { map ->
@@ -155,50 +159,50 @@ class DatascriptBlockRepository : BlockRepository {
                 plainTextPattern.containsMatchIn(block.content) &&
                     !wikiLinkPattern.containsMatchIn(block.content)
             }
-            success(unlinkedBlocks.sortedBy { it.pageUuid }.drop(offset).take(limit))
+            unlinkedBlocks.sortedBy { it.pageUuid }.drop(offset).take(limit).right()
         }
     }
 
-    override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Result<List<Block>>> {
+    override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> {
         return byUuid.map { map ->
             val matching = map.values.filter { it.content.contains(query, ignoreCase = true) }
                 .drop(offset)
                 .take(limit)
-            Result.success(matching)
+            matching.right()
         }
     }
 
-    override suspend fun saveBlocks(blocks: List<Block>): Result<Unit> {
+    override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val updateMap = blocks.associateBy { it.uuid }
                 batchUpdateBlocks(updateMap)
-                success(Unit)
+                Unit.right()
             } catch (e: Exception) {
                 logger.error("Failed to save batch blocks", e)
-                Result.failure(e)
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
         }
     }
 
-    override suspend fun saveBlock(block: Block): Result<Unit> {
+    override suspend fun saveBlock(block: Block): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val updateMap = mapOf(block.uuid to block)
                 batchUpdateBlocks(updateMap)
-                success(Unit)
+                Unit.right()
             } catch (e: Exception) {
                 logger.error("Failed to save block ${block.uuid}", e)
-                Result.failure(e)
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
         }
     }
 
-    override suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean): Result<Unit> {
+    override suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val current = blocks.value.toMutableMap()
-                if (!current.containsKey(blockUuid)) return@withLock success(Unit)
+                if (!current.containsKey(blockUuid)) return@withLock Unit.right()
 
                 if (deleteChildren) {
                     val uuidsToDelete = mutableListOf(blockUuid)
@@ -218,32 +222,32 @@ class DatascriptBlockRepository : BlockRepository {
                 
                 blocks.value = current
                 refreshIndexes(current)
-                success(Unit)
+                Unit.right()
             } catch (e: Exception) {
-                Result.failure(e)
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
         }
     }
 
-    override suspend fun deleteBulk(blockUuids: List<String>, deleteChildren: Boolean): Result<Unit> {
+    override suspend fun deleteBulk(blockUuids: List<String>, deleteChildren: Boolean): Either<DomainError, Unit> {
         blockUuids.forEach { uuid ->
             deleteBlock(uuid, deleteChildren)
         }
-        return Result.success(Unit)
+        return Unit.right()
     }
 
     override suspend fun moveBlock(
         blockUuid: String,
         newParentUuid: String?,
         newPosition: Int
-    ): Result<Unit> {
+    ): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val currentBlocks = blocks.value
-                val block = currentBlocks[blockUuid] ?: return@withLock success(Unit)
+                val block = currentBlocks[blockUuid] ?: return@withLock Unit.right()
 
                 if (block.parentUuid == newParentUuid && block.position == newPosition) {
-                    return@withLock success(Unit)
+                    return@withLock Unit.right()
                 }
 
                 val oldParentUuid = block.parentUuid
@@ -287,24 +291,24 @@ class DatascriptBlockRepository : BlockRepository {
                 }
 
                 batchUpdateBlocks(updatedBlocks)
-                success(Unit)
+                Unit.right()
             } catch (e: Exception) {
-                Result.failure(e)
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
         }
     }
 
-    override suspend fun indentBlock(blockUuid: String): Result<Unit> {
+    override suspend fun indentBlock(blockUuid: String): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val currentBlocks = blocks.value
-                val block = currentBlocks[blockUuid] ?: return@withLock success(Unit)
+                val block = currentBlocks[blockUuid] ?: return@withLock Unit.right()
                 val siblings = currentBlocks.values
                     .filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid }
                     .sortedBy { it.position }
 
                 val index = siblings.indexOfFirst { it.uuid == blockUuid }
-                if (index <= 0) return@withLock success(Unit)
+                if (index <= 0) return@withLock Unit.right()
 
                 val newParent = siblings[index - 1]
                 val newParentChildren = currentBlocks.values
@@ -329,22 +333,22 @@ class DatascriptBlockRepository : BlockRepository {
                     TreeOperations.reorderSiblings(newSiblings).forEach { updates[it.uuid] = it }
 
                     batchUpdateBlocks(updates)
-                    success(Unit)
+                    Unit.right()
                 } else {
-                    success(Unit)
+                    Unit.right()
                 }
             } catch (e: Exception) {
-                Result.failure(e)
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
         }
     }
 
-    override suspend fun outdentBlock(blockUuid: String): Result<Unit> {
+    override suspend fun outdentBlock(blockUuid: String): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val currentBlocks = blocks.value
-                val block = currentBlocks[blockUuid] ?: return@withLock success(Unit)
-                val parentUuid = block.parentUuid ?: return@withLock success(Unit)
+                val block = currentBlocks[blockUuid] ?: return@withLock Unit.right()
+                val parentUuid = block.parentUuid ?: return@withLock Unit.right()
 
                 val parent = currentBlocks[parentUuid]
 
@@ -371,28 +375,28 @@ class DatascriptBlockRepository : BlockRepository {
                     TreeOperations.reorderSiblings(newSiblingsList).forEach { updates[it.uuid] = it }
 
                     batchUpdateBlocks(updates)
-                    success(Unit)
+                    Unit.right()
                 } else {
-                    success(Unit)
+                    Unit.right()
                 }
             } catch (e: Exception) {
-                Result.failure(e)
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
         }
     }
 
-    override suspend fun moveBlockUp(blockUuid: String): Result<Unit> {
+    override suspend fun moveBlockUp(blockUuid: String): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val currentBlocks = blocks.value
-                val block = currentBlocks[blockUuid] ?: return@withLock success(Unit)
+                val block = currentBlocks[blockUuid] ?: return@withLock Unit.right()
                 val siblings = currentBlocks.values
                     .filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid }
                     .sortedBy { it.position }
                     .toMutableList()
 
                 val index = siblings.indexOfFirst { it.uuid == blockUuid }
-                if (index <= 0) return@withLock success(Unit)
+                if (index <= 0) return@withLock Unit.right()
 
                 val prev = siblings[index - 1]
                 siblings[index - 1] = siblings[index]
@@ -400,25 +404,25 @@ class DatascriptBlockRepository : BlockRepository {
 
                 val updates = TreeOperations.reorderSiblings(siblings).associateBy { it.uuid }
                 batchUpdateBlocks(updates)
-                success(Unit)
+                Unit.right()
             } catch (e: Exception) {
-                Result.failure(e)
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
         }
     }
 
-    override suspend fun moveBlockDown(blockUuid: String): Result<Unit> {
+    override suspend fun moveBlockDown(blockUuid: String): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val currentBlocks = blocks.value
-                val block = currentBlocks[blockUuid] ?: return@withLock success(Unit)
+                val block = currentBlocks[blockUuid] ?: return@withLock Unit.right()
                 val siblings = currentBlocks.values
                     .filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid }
                     .sortedBy { it.position }
                     .toMutableList()
 
                 val index = siblings.indexOfFirst { it.uuid == blockUuid }
-                if (index < 0 || index >= siblings.size - 1) return@withLock success(Unit)
+                if (index < 0 || index >= siblings.size - 1) return@withLock Unit.right()
 
                 val next = siblings[index + 1]
                 siblings[index + 1] = siblings[index]
@@ -426,22 +430,22 @@ class DatascriptBlockRepository : BlockRepository {
 
                 val updates = TreeOperations.reorderSiblings(siblings).associateBy { it.uuid }
                 batchUpdateBlocks(updates)
-                success(Unit)
+                Unit.right()
             } catch (e: Exception) {
-                Result.failure(e)
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
         }
     }
 
-    override suspend fun mergeBlocks(blockUuid: String, nextBlockUuid: String, separator: String): Result<Unit> {
-        return success(Unit)
+    override suspend fun mergeBlocks(blockUuid: String, nextBlockUuid: String, separator: String): Either<DomainError, Unit> {
+        return Unit.right()
     }
 
-    override suspend fun splitBlock(blockUuid: String, cursorPosition: Int): Result<Block> {
-        return Result.failure(NotImplementedError())
+    override suspend fun splitBlock(blockUuid: String, cursorPosition: Int): Either<DomainError, Block> {
+        return DomainError.DatabaseError.WriteFailed("splitBlock not implemented").left()
     }
 
-    override suspend fun deleteBlocksForPage(pageUuid: String): Result<Unit> {
+    override suspend fun deleteBlocksForPage(pageUuid: String): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val current = blocks.value.toMutableMap()
@@ -449,15 +453,15 @@ class DatascriptBlockRepository : BlockRepository {
                 toRemove.forEach { current.remove(it) }
                 blocks.value = current
                 refreshIndexes(current)
-                success(Unit)
+                Unit.right()
             } catch (e: Exception) {
-                Result.failure(e)
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
         }
     }
 
-    override suspend fun deleteBlocksForPages(pageUuids: List<String>): Result<Unit> {
-        if (pageUuids.isEmpty()) return success(Unit)
+    override suspend fun deleteBlocksForPages(pageUuids: List<String>): Either<DomainError, Unit> {
+        if (pageUuids.isEmpty()) return Unit.right()
         return writeMutex.withLock {
             try {
                 val uuidSet = pageUuids.toSet()
@@ -466,9 +470,9 @@ class DatascriptBlockRepository : BlockRepository {
                 toRemove.forEach { current.remove(it) }
                 blocks.value = current
                 refreshIndexes(current)
-                success(Unit)
+                Unit.right()
             } catch (e: Exception) {
-                Result.failure(e)
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
         }
     }
@@ -489,11 +493,11 @@ class DatascriptBlockRepository : BlockRepository {
         refreshIndexes(current)
     }
     
-    override fun countLinkedReferences(pageName: String): Flow<Result<Long>> =
-        flowOf(success(0L))
+    override fun countLinkedReferences(pageName: String): Flow<Either<DomainError, Long>> =
+        flowOf(0L.right())
 
-    override fun findDuplicateBlocks(limit: Int): Flow<Result<List<DuplicateGroup>>> =
-        flowOf(success(emptyList()))
+    override fun findDuplicateBlocks(limit: Int): Flow<Either<DomainError, List<DuplicateGroup>>> =
+        flowOf(emptyList<DuplicateGroup>().right())
 
     private fun refreshIndexes(currentBlocks: Map<String, Block>) {
         val allBlocks = currentBlocks.values

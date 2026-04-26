@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.cache
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.BlockWithDepth
@@ -11,7 +16,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.Result.Companion.success
 import kotlin.random.Random
 
 /**
@@ -44,12 +48,12 @@ class BlockCache(
     /**
      * Get block by UUID with cache.
      */
-    fun getBlockByUuid(uuid: String): Flow<Result<Block?>> = flow {
+    fun getBlockByUuid(uuid: String): Flow<Either<DomainError, Block?>> = flow {
         try {
             val cached = cache.get(uuid)
             if (cached != null) {
                 metrics.value = metrics.value.withBlockHit()
-                emit(success(cached.block))
+                emit(cached.block.right())
             } else {
                 metrics.value = metrics.value.withBlockMiss()
                 delegate.getBlockByUuid(uuid).collect { result ->
@@ -67,14 +71,14 @@ class BlockCache(
                 }
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(Dispatchers.IO)
 
     /**
      * Get block children with cache and prefetch.
      */
-    fun getBlockChildren(blockUuid: String): Flow<Result<List<Block>>> = flow {
+    fun getBlockChildren(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flow {
         try {
             var parentBlock: Block? = null
 
@@ -87,7 +91,7 @@ class BlockCache(
             }
 
             if (parentBlock == null) {
-                emit(success(emptyList()))
+                emit(emptyList<Block>().right())
                 return@flow
             }
 
@@ -99,7 +103,7 @@ class BlockCache(
                 }
                 if (cachedChildren.size == cachedChildrenUuids.size) {
                     metrics.value = metrics.value.withBlockHit()
-                    emit(success(cachedChildren))
+                    emit(cachedChildren.right())
                     return@flow
                 }
             }
@@ -132,23 +136,23 @@ class BlockCache(
                         }
                     }
 
-                    emit(success(cachedBlocks))
+                    emit(cachedBlocks.right())
                 } ?: emit(result)
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(Dispatchers.IO)
 
     /**
      * Get block hierarchy with cache.
      */
-    fun getBlockHierarchy(rootUuid: String): Flow<Result<List<BlockWithDepth>>> = flow {
+    fun getBlockHierarchy(rootUuid: String): Flow<Either<DomainError, List<BlockWithDepth>>> = flow {
         try {
             val cached = hierarchyCache.get(rootUuid)
             if (cached != null && !isHierarchyExpired(cached.timestamp)) {
                 metrics.value = metrics.value.withHierarchyHit()
-                emit(success(cached.blocks))
+                emit(cached.blocks.right())
             } else {
                 metrics.value = metrics.value.withHierarchyMiss()
                 delegate.getBlockHierarchy(rootUuid).collect { result ->
@@ -164,26 +168,26 @@ class BlockCache(
                             cache.put(block.uuid, CachedBlock(block))
                         }
 
-                        emit(success(hierarchy))
+                        emit(hierarchy.right())
                     } ?: emit(result)
                 }
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(Dispatchers.IO)
 
     /**
      * Get block parent with cache.
      */
-    fun getBlockParent(blockUuid: String): Flow<Result<Block?>> = flow {
+    fun getBlockParent(blockUuid: String): Flow<Either<DomainError, Block?>> = flow {
         try {
             val cached = cache.get(blockUuid)
             if (cached != null && cached.parentId != null) {
                 val parent = cache.get(cached.parentId)
                 if (parent != null) {
                     metrics.value = metrics.value.withBlockHit()
-                    emit(success(parent.block))
+                    emit(parent.block.right())
                     return@flow
                 }
             }
@@ -191,14 +195,14 @@ class BlockCache(
             metrics.value = metrics.value.withBlockMiss()
             delegate.getBlockParent(blockUuid).collect { emit(it) }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(Dispatchers.IO)
 
     /**
      * Get block ancestors with cache.
      */
-    fun getBlockAncestors(blockUuid: String): Flow<Result<List<Block>>> = flow {
+    fun getBlockAncestors(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flow {
         try {
             // Try to build from cache
             val cached = cache.get(blockUuid)
@@ -216,7 +220,7 @@ class BlockCache(
                 }
                 if (ancestors.isNotEmpty()) {
                     metrics.value = metrics.value.withBlockHit()
-                    emit(success(ancestors.reversed()))
+                    emit(ancestors.reversed().right())
                     return@flow
                 }
             }
@@ -224,14 +228,14 @@ class BlockCache(
             metrics.value = metrics.value.withBlockMiss()
             delegate.getBlockAncestors(blockUuid).collect { emit(it) }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(Dispatchers.IO)
 
     /**
      * Save block - invalidates cache.
      */
-    suspend fun saveBlock(block: Block): Result<Unit> {
+    suspend fun saveBlock(block: Block): Either<DomainError, Unit> {
         invalidateBlock(block.uuid)
         invalidateBlockHierarchy(block.uuid)
         return delegate.saveBlock(block)
@@ -240,13 +244,13 @@ class BlockCache(
     /**
      * Delete block - invalidates cache.
      */
-    suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean): Result<Unit> {
+    suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean): Either<DomainError, Unit> {
         invalidateBlockHierarchy(blockUuid)
         childrenIndex.remove(blockUuid)
         return delegate.deleteBlock(blockUuid, deleteChildren)
     }
 
-    suspend fun deleteBulk(blockUuids: List<String>, deleteChildren: Boolean): Result<Unit> {
+    suspend fun deleteBulk(blockUuids: List<String>, deleteChildren: Boolean): Either<DomainError, Unit> {
         blockUuids.forEach { uuid ->
             invalidateBlockHierarchy(uuid)
             childrenIndex.remove(uuid)
@@ -261,7 +265,7 @@ class BlockCache(
         blockUuid: String,
         newParentUuid: String?,
         newPosition: Int
-    ): Result<Unit> {
+    ): Either<DomainError, Unit> {
         invalidateBlockHierarchy(blockUuid)
         newParentUuid?.let { invalidateBlockHierarchy(it) }
         return delegate.moveBlock(blockUuid, newParentUuid, newPosition)
