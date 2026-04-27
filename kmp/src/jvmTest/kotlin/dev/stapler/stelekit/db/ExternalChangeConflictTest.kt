@@ -133,11 +133,13 @@ class ExternalChangeConflictTest {
     }
 
     /**
-     * After the B1 fix, loadGraph → scanDirectory initialises contentHashes.
-     * An mtime-only bump after startup must NOT be reported as an external change.
+     * scanDirectory no longer reads file content (avoids O(N) SAF IPC calls on Android).
+     * The first mtime bump after loadGraph is reported as a change (no hash baseline yet);
+     * a second mtime bump with identical content is correctly suppressed once the hash
+     * is stored from the first detection.
      */
     @Test
-    fun `mtime bump after loadGraph does not trigger re-parse when content is identical`() = runTest {
+    fun `mtime bump after loadGraph is reported once then suppressed after hash baseline is established`() = runTest {
         val (fs, _, loader) = harness()
         val filePath = "/graph/journals/2026_04_13.md"
 
@@ -148,10 +150,19 @@ class ExternalChangeConflictTest {
         val existing = fs.files[filePath]!!
         fs.files[filePath] = existing.copy(modTime = existing.modTime + 10_000L)
 
-        val changeSet = loader.fileRegistry.detectChanges("/graph/journals")
-        // B1 fix: contentHash is initialised in scanDirectory so the guard works
-        assertTrue(changeSet.changedFiles.isEmpty(),
-            "After B1 fix: mtime-only bump after loadGraph must NOT be treated as external change")
+        // First detection: no hash baseline → reported (hash stored as side-effect)
+        val changes1 = loader.fileRegistry.detectChanges("/graph/journals")
+        assertEquals(1, changes1.changedFiles.size,
+            "First mtime bump with no hash baseline must be reported (lazy init)")
+
+        // Touch again — content still unchanged, but hash is now stored
+        val updated = fs.files[filePath]!!
+        fs.files[filePath] = updated.copy(modTime = updated.modTime + 10_000L)
+
+        // Second detection: hash matches → correctly suppressed
+        val changes2 = loader.fileRegistry.detectChanges("/graph/journals")
+        assertTrue(changes2.changedFiles.isEmpty(),
+            "Second mtime-only bump with stored hash baseline must NOT be treated as external change")
     }
 
     // ── Suppress mechanism handshake ─────────────────────────────────────────

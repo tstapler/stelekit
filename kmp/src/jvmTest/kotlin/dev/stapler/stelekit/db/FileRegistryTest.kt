@@ -202,27 +202,38 @@ class FileRegistryTest {
     }
 
     /**
-     * After the B1 fix, scanDirectory now initialises contentHashes alongside modTimes.
-     * An mtime-only bump after startup must NOT be reported as an external change.
+     * scanDirectory no longer reads file content (avoids O(N) SAF IPC calls on Android).
+     * Content hashes are initialised lazily on the first detectChanges that sees a mtime bump.
+     *
+     * Consequence: an mtime-only bump on the FIRST detectChanges after startup is reported
+     * as a change (no baseline hash yet). On the SECOND detectChanges the hash is already
+     * stored and the same-content bump is correctly suppressed.
      */
     @Test
-    fun `scanDirectory initialises contentHash so mtime-only bump after startup is not re-parsed`() = runTest {
+    fun `mtime-only bump is reported once then suppressed after hash baseline is established`() = runTest {
         val fs = FakeFs()
         fs.externalWrite("/graph/journals/2026_04_13.md", "- Content")
         val registry = FileRegistry(fs)
 
-        // Simulate what loadGraph does: scan the directory
         registry.scanDirectory("/graph/journals")
 
         // Bump only the modtime (content unchanged — e.g. git sync, Dropbox, Logseq touch)
         val f = fs.files["/graph/journals/2026_04_13.md"]!!
         fs.files["/graph/journals/2026_04_13.md"] = f.copy(modTime = f.modTime + 5000L)
 
-        val changes = registry.detectChanges("/graph/journals")
-        // B1 fix: contentHash is now initialised in scanDirectory so the guard works
-        assertTrue(changes.changedFiles.isEmpty(),
-            "After B1 fix: mtime-only change after scanDirectory must NOT trigger re-parse " +
-            "(contentHash is now initialised in scanDirectory)")
+        // First detection: no hash baseline → reported as changed, hash stored as side-effect
+        val changes1 = registry.detectChanges("/graph/journals")
+        assertEquals(1, changes1.changedFiles.size,
+            "First mtime bump with no hash baseline must be reported (lazy init)")
+
+        // Bump mtime again without changing content
+        val f2 = fs.files["/graph/journals/2026_04_13.md"]!!
+        fs.files["/graph/journals/2026_04_13.md"] = f2.copy(modTime = f2.modTime + 5000L)
+
+        // Second detection: hash is now stored → same-content bump correctly suppressed
+        val changes2 = registry.detectChanges("/graph/journals")
+        assertTrue(changes2.changedFiles.isEmpty(),
+            "Second mtime-only bump with stored hash baseline must NOT trigger re-parse")
     }
 
     // ── Scenario 7: Own write followed immediately by external write ──────────
