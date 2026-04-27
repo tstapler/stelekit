@@ -5,6 +5,9 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
+import dev.stapler.stelekit.db.DatabaseWriteActor
+import dev.stapler.stelekit.db.DirectSqlWrite
+import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
@@ -17,6 +20,8 @@ import dev.stapler.stelekit.performance.RingBufferSpanExporter
 import dev.stapler.stelekit.performance.SpanEmitter
 import dev.stapler.stelekit.search.FtsQueryBuilder
 import dev.stapler.stelekit.util.UuidGenerator
+import app.cash.sqldelight.db.SqlDriver
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -32,14 +37,23 @@ import kotlin.math.exp
  * Page names are searched via FTS5 (pages_fts) with BM25 ranking.
  * Queries are built by [FtsQueryBuilder] which handles phrase search and multi-token AND (with OR fallback).
  * Page-title hits are boosted by [PAGE_BOOST] relative to block-content hits in [ranked] results.
+ *
+ * Visit-recency ranking: pages visited recently get a [visitRecencyMultiplier] applied to their
+ * score (max ×2.0 at t=0, decaying to ×1.0 with a [VISIT_HALFLIFE_DAYS] half-life).
+ *
+ * Exact-title-match guarantee: after scoring, any page whose name equals the query
+ * (case-insensitive, trimmed) is promoted to position 0.
  */
 class SqlDelightSearchRepository(
     private val database: SteleDatabase,
     private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
     ringBuffer: RingBufferSpanExporter? = null,
+    private val writeActor: DatabaseWriteActor? = null,
+    private val driver: SqlDriver? = null,
 ) : SearchRepository {
 
     private val queries = database.steleDatabaseQueries
+    private val restricted = RestrictedDatabaseQueries(queries)
     private val spanEmitter = SpanEmitter(ringBuffer)
 
     companion object {
@@ -49,6 +63,8 @@ class SqlDelightSearchRepository(
         const val GRAPH_BOOST = 3.0
         /** Recency half-life in days: a result edited this many days ago gets half the recency bonus. */
         const val RECENCY_HALFLIFE_DAYS = 14.0
+        /** Visit-recency half-life in days: 3-day decay for navigation recency signal. */
+        const val VISIT_HALFLIFE_DAYS = 3.0
     }
 
     override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> = flow {
@@ -268,7 +284,19 @@ class SqlDelightSearchRepository(
                 ?.let { runCatching { queries.selectNeighbourPageUuids(it).executeAsList().toSet() }.getOrDefault(emptySet()) }
                 ?: emptySet()
             val nowMs = HistogramWriter.epochMs()
-            val ranked = buildRankedList(searchedPages, searchedBlocks, neighbourPageUuids, nowMs)
+
+            // Batch-fetch visit data for all result UUIDs — single IN query, not N+1
+            val allResultUuids = searchedPages.map { it.page.uuid } +
+                searchedBlocks.map { it.block.pageUuid }
+            val visitMap: Map<String, Long> = if (allResultUuids.isEmpty()) emptyMap()
+            else runCatching {
+                queries.selectPageVisitsByUuids(allResultUuids.toSet())
+                    .executeAsList()
+                    .associate { it.page_uuid to it.last_visited_at }
+            }.getOrDefault(emptyMap())
+
+            val rankedRaw = buildRankedList(searchedPages, searchedBlocks, neighbourPageUuids, visitMap, nowMs)
+            val ranked = promoteExactTitleMatch(rankedRaw, rawQuery)
             emit(SearchResult(
                 blocks = searchedBlocks.map { it.block },
                 pages = searchedPages.map { it.page },
@@ -285,24 +313,29 @@ class SqlDelightSearchRepository(
 
     // ── Ranking helpers ────────────────────────────────────────────────────
 
-    private fun buildRankedList(
+    internal fun buildRankedList(
         pages: List<SearchedPage>,
         blocks: List<SearchedBlock>,
         neighbourPageUuids: Set<String>,
+        visitMap: Map<String, Long>,
         nowMs: Long,
     ): List<RankedSearchHit> {
         val pageHits = pages.map { sp ->
             val bm25 = abs(sp.bm25Score)
+            val lastVisited = visitMap[sp.page.uuid] ?: 0L
             val score = bm25 * PAGE_BOOST *
                 recencyMultiplier(sp.page.updatedAt.toEpochMilliseconds(), nowMs) *
-                graphMultiplier(sp.page.uuid, neighbourPageUuids)
+                graphMultiplier(sp.page.uuid, neighbourPageUuids) *
+                visitRecencyMultiplier(lastVisited, nowMs)
             RankedSearchHit.PageHit(sp.page, sp.snippet, score)
         }
         val blockHits = blocks.map { sb ->
             val bm25 = abs(sb.bm25Score)
+            val lastVisited = visitMap[sb.block.pageUuid] ?: 0L
             val score = bm25 *
                 recencyMultiplier(sb.block.updatedAt.toEpochMilliseconds(), nowMs) *
-                graphMultiplier(sb.block.pageUuid, neighbourPageUuids)
+                graphMultiplier(sb.block.pageUuid, neighbourPageUuids) *
+                visitRecencyMultiplier(lastVisited, nowMs)
             RankedSearchHit.BlockHit(sb.block, sb.snippet, score)
         }
         return (pageHits + blockHits).sortedByDescending { it.score }
@@ -318,6 +351,110 @@ class SqlDelightSearchRepository(
     /** Returns GRAPH_BOOST if the page is a 1-hop neighbour of the current page, else 1.0. */
     private fun graphMultiplier(pageUuid: String, neighbourPageUuids: Set<String>): Double =
         if (pageUuid in neighbourPageUuids) GRAPH_BOOST else 1.0
+
+    /**
+     * Returns 1.0 + exp(-daysSinceVisit / VISIT_HALFLIFE_DAYS).
+     * Range: ~2.0 for a visit at t=now, decaying toward 1.0 over time.
+     * Returns 1.0 when [lastVisitedMs] is 0 (page never visited).
+     */
+    internal fun visitRecencyMultiplier(lastVisitedMs: Long, nowMs: Long): Double {
+        if (lastVisitedMs <= 0L) return 1.0
+        val daysSince = (nowMs - lastVisitedMs).coerceAtLeast(0L) / 86_400_000.0
+        return 1.0 + exp(-daysSince / VISIT_HALFLIFE_DAYS)
+    }
+
+    /**
+     * Promotes the first page whose name equals [rawQuery] (case-insensitive, trimmed)
+     * to position 0. All other hits retain their relative order.
+     * Returns the list unchanged if no exact match or match is already first.
+     */
+    internal fun promoteExactTitleMatch(
+        ranked: List<RankedSearchHit>,
+        rawQuery: String,
+    ): List<RankedSearchHit> {
+        val trimmedQuery = rawQuery.trim()
+        val exactIdx = ranked.indexOfFirst { hit ->
+            hit is RankedSearchHit.PageHit &&
+                hit.page.name.trim().equals(trimmedQuery, ignoreCase = true)
+        }
+        if (exactIdx <= 0) return ranked // 0 = already first, -1 = not found
+        val exactHit = ranked[exactIdx]
+        return listOf(exactHit) + ranked.toMutableList().also { it.removeAt(exactIdx) }
+    }
+
+    // ── Write operations ───────────────────────────────────────────────────
+
+    /**
+     * Records a navigation to [pageUuid]. Uses two-step upsert matching the histogram pattern.
+     * Routes through [writeActor] if available, falls back to direct write for test DBs.
+     */
+    @DirectRepositoryWrite
+    @OptIn(DirectSqlWrite::class)
+    override suspend fun recordPageVisit(pageUuid: String): Either<DomainError, Unit> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                val nowMs = HistogramWriter.epochMs()
+                if (writeActor != null) {
+                    writeActor.execute {
+                        @OptIn(DirectSqlWrite::class)
+                        restricted.insertPageVisitIfAbsent(pageUuid, nowMs)
+                        @OptIn(DirectSqlWrite::class)
+                        restricted.updatePageVisit(nowMs, pageUuid)
+                        Unit.right()
+                    }
+                } else {
+                    // Fallback for in-memory test DBs without an actor
+                    @OptIn(DirectSqlWrite::class)
+                    restricted.insertPageVisitIfAbsent(pageUuid, nowMs)
+                    @OptIn(DirectSqlWrite::class)
+                    restricted.updatePageVisit(nowMs, pageUuid)
+                    Unit.right()
+                }
+            } catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    /**
+     * Rebuilds both FTS indexes using the FTS5 'rebuild' command.
+     * O(N) in row count; call from a non-blocking context.
+     * Requires [driver] to be passed at construction time; returns Right(Unit) if driver is absent.
+     */
+    override suspend fun rebuildFts(): Either<DomainError, Unit> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                val sqlDriver = driver ?: return@withContext Unit.right()
+                if (writeActor != null) {
+                    writeActor.execute {
+                        sqlDriver.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('rebuild')", 0)
+                        sqlDriver.execute(null, "INSERT INTO pages_fts(pages_fts) VALUES('rebuild')", 0)
+                        Unit.right()
+                    }
+                } else {
+                    sqlDriver.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('rebuild')", 0)
+                    sqlDriver.execute(null, "INSERT INTO pages_fts(pages_fts) VALUES('rebuild')", 0)
+                    Unit.right()
+                }
+            } catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed("FTS rebuild failed: ${e.message ?: "unknown"}").left()
+            }
+        }
+
+    /**
+     * Runs the FTS5 integrity check. Returns Right(Unit) if healthy.
+     * Requires [driver] to be passed at construction time; returns Right(Unit) if driver is absent.
+     */
+    override suspend fun integrityCheckFts(): Either<DomainError, Unit> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                val sqlDriver = driver ?: return@withContext Unit.right()
+                sqlDriver.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('integrity-check')", 0)
+                sqlDriver.execute(null, "INSERT INTO pages_fts(pages_fts) VALUES('integrity-check')", 0)
+                Unit.right()
+            } catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed("FTS integrity check failed: ${e.message ?: "unknown"}").left()
+            }
+        }
 
     // ── Scope helpers ──────────────────────────────────────────────────────
 

@@ -140,7 +140,7 @@ END;
 
 -- FTS5 triggers for pages_fts automatic index synchronization
 CREATE TRIGGER pages_ai AFTER INSERT ON pages BEGIN
-    INSERT INTO pages_fts(rowid, name) VALUES (last_insert_rowid(), new.name);
+    INSERT INTO pages_fts(rowid, name) VALUES (new.rowid, new.name);
 END;
 
 CREATE TRIGGER pages_ad AFTER DELETE ON pages BEGIN
@@ -151,6 +151,13 @@ CREATE TRIGGER pages_au AFTER UPDATE OF name ON pages BEGIN
     INSERT INTO pages_fts(pages_fts, rowid, name) VALUES('delete', old.rowid, old.name);
     INSERT INTO pages_fts(rowid, name) VALUES (new.rowid, new.name);
 END;
+
+-- Visit tracking table — one row per page, updated on each navigation
+CREATE TABLE IF NOT EXISTS page_visits (
+    page_uuid       TEXT NOT NULL PRIMARY KEY,
+    visit_count     INTEGER NOT NULL DEFAULT 0,
+    last_visited_at INTEGER NOT NULL   -- epoch milliseconds (Unix)
+);
 
 -- Repository queries
 
@@ -529,6 +536,26 @@ JOIN pages p ON p.rowid = pf.rowid
 WHERE pages_fts MATCH :query
 ORDER BY bm25(pages_fts)
 LIMIT :limit;
+
+-- Visit tracking queries — two-step upsert (same pattern as histogram buckets)
+insertPageVisitIfAbsent:
+INSERT OR IGNORE INTO page_visits (page_uuid, visit_count, last_visited_at)
+VALUES (?, 0, ?);
+
+updatePageVisit:
+UPDATE page_visits
+SET visit_count = visit_count + 1, last_visited_at = ?
+WHERE page_uuid = ?;
+
+selectPageVisitsByUuids:
+SELECT page_uuid, last_visited_at, visit_count
+FROM page_visits
+WHERE page_uuid IN ?;
+
+selectPageVisitByUuid:
+SELECT page_uuid, last_visited_at, visit_count
+FROM page_visits
+WHERE page_uuid = ?;
 
 -- Performance histogram storage
 -- Bucketed counters; bucket_ms is the upper bound of the bucket in milliseconds.
