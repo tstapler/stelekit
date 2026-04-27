@@ -113,8 +113,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add benchmarks/android-history/
-          git diff --cached --quiet || git commit -m "chore(bench): android benchmark summary ${{ github.sha }}"
-          git push
+          git diff --cached --quiet && exit 0
+          git commit -m "chore(bench): android benchmark summary ${{ github.sha }}"
+          for i in 1 2 3 4 5; do
+            git push && break
+            echo "Push attempt $i failed — rebasing and retrying..."
+            git pull --rebase origin main
+          done
 
       - name: Compare to baseline and post PR comment
         if: github.event_name == 'pull_request'
@@ -150,11 +155,14 @@ jobs:
             const ms = v => v == null ? 'n/a' : `${v}ms`;
             const fmt = v => v == null ? 'n/a' : v;
 
+            const pageCountStr = curr.pageCount != null ? curr.pageCount : 'n/a';
             const body = [
-              '## Android Benchmark Results',
+              '## Android Load Benchmark',
+              '',
+              '_Instrumented benchmark on an API 30 x86_64 emulator measuring load performance for the Android app._',
               '',
               `Comparing \`${curr.gitSha}\` (this PR) vs \`${base.gitSha}\` (baseline)  `,
-              `Device: API 30 x86_64 emulator — ${curr.pageCount ?? '?'} pages`,
+              `Device: API 30 x86_64 emulator — ${pageCountStr} pages`,
               '',
               '| Metric | This PR | Baseline | Delta |',
               '|--------|---------|----------|-------|',
@@ -170,7 +178,7 @@ jobs:
               owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
             });
             const existing = comments.find(c =>
-              c.user.login === 'github-actions[bot]' && c.body.includes('## Android Benchmark Results'));
+              c.user.login === 'github-actions[bot]' && (c.body.includes('## Android Load Benchmark') || c.body.includes('## Android Benchmark Results')));
             if (existing) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body,

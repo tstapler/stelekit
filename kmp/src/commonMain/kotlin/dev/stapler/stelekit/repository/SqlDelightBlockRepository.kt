@@ -875,9 +875,7 @@ class SqlDelightBlockRepository(
     override suspend fun deleteBlocksForPages(pageUuids: List<String>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         if (pageUuids.isEmpty()) return@withContext Unit.right()
         try {
-            queries.transaction {
-                pageUuids.forEach { queries.deleteBlocksByPageUuid(it) }
-            }
+            queries.deleteBlocksByPageUuids(pageUuids)
             Unit.right()
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()

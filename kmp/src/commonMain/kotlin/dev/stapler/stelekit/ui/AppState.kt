@@ -20,6 +20,7 @@ sealed class Screen {
     @HelpPage(docs = AllPagesDocs::class)
     data object AllPages : Screen()
 
+    data object LibraryStats : Screen()
     data object Notifications : Screen()
     data object Logs : Screen()
     data object Performance : Screen()
@@ -35,7 +36,7 @@ data class AppState(
     val rightSidebarExpanded: Boolean = false,
     val settingsVisible: Boolean = false,
     val isLoading: Boolean = false,
-    val isFullyLoaded: Boolean = true,  // True when all background loading is complete
+    val isFullyLoaded: Boolean = false,  // True when all background loading is complete
     val themeMode: StelekitThemeMode = StelekitThemeMode.SYSTEM,
     val language: Language = Language.ENGLISH,
     val onboardingCompleted: Boolean = false,

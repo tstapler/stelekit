@@ -352,7 +352,9 @@ class GraphLoadTimingTest {
                 java.io.File(outputDir, "benchmark-load.json"),
                 mapOf(
                     "graphConfig"  to System.getProperty("STELEKIT_BENCH_CONFIG", "SMALL").lowercase(),
-                    "pageCount"    to result.pageCount,
+                    // Use generator stats for accurate count — result.pageCount queries getAllPages()
+                    // before the async write actor drains, so it returns 0.
+                    "pageCount"    to (stats.pageCount + stats.journalCount),
                     "journalCount" to stats.journalCount,
                     "phase1TtiMs"  to result.phase1TtiMs,
                     "phase2Ms"     to result.phase2Ms,

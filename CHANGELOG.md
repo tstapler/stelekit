@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.14.0](https://github.com/tstapler/stelekit/compare/v0.13.0...v0.14.0) (2026-04-26)
+
+
+### Features
+
+* **android:** widget, tile, and share-sheet capture entry points ([e8394ae](https://github.com/tstapler/stelekit/commit/e8394ae18b4d2e89fa87b948df9f195b03903f1e))
+
+
+### Bug Fixes
+
+* **bench:** fix pageCount=0 in PR comments and clarify benchmark titles ([c66d0b7](https://github.com/tstapler/stelekit/commit/c66d0b79c84f9447337a34ee98e37226d96feacf))
+* **ci:** pull --rebase before push in benchmark workflows ([1979f4f](https://github.com/tstapler/stelekit/commit/1979f4f2497fea7719d564c21a39c4b090c66204))
+* **ci:** remove stray conflict marker from benchmark.yml ([a61a6d7](https://github.com/tstapler/stelekit/commit/a61a6d761ab280b9b21d57f1939176f369b29da3))
+* **ios:** replace String.format() with KMP-safe formatting helpers ([d4853d0](https://github.com/tstapler/stelekit/commit/d4853d0fe6dc51f6ab8576527b00827d6dcfe891))
+* **test:** make loadGraph set isFullyLoaded=false synchronously ([038637a](https://github.com/tstapler/stelekit/commit/038637a5d0c0006c26164d82196def75a9425394))
+
 ## [0.13.0](https://github.com/tstapler/stelekit/compare/v0.12.0...v0.13.0) (2026-04-26)
 
 
