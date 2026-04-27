@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/tstapler/stelekit/compare/v0.16.0...v0.16.1) (2026-04-27)
+
+
+### Bug Fixes
+
+* **ux:** surface live logs on all loading screens ([f1d7de5](https://github.com/tstapler/stelekit/commit/f1d7de5940bf68e3153abc30fc92cc960f3221e8))
+
 ## [0.16.0](https://github.com/tstapler/stelekit/compare/v0.15.0...v0.16.0) (2026-04-27)
 
 
