@@ -44,21 +44,8 @@ class TimingDriverWrapper(
         val ctx = CurrentSpanContext.get()
         if (ctx == null && statsCollector == null) return delegate.execute(identifier, sql, parameters, binders)
         val (operation, table) = parseSqlCached(identifier, sql)
-        if (table in excludedTables)
-            return delegate.execute(identifier, sql, parameters, binders)
-        val startMs = HistogramWriter.epochMs()
-        var isError = false
-        return try {
-            val result = delegate.execute(identifier, sql, parameters, binders)
-            if (ctx != null && ringBuffer != null) recordSpan(ctx, "sql.$operation", table, startMs, "OK")
-            result
-        } catch (e: Exception) {
-            isError = true
-            if (ctx != null && ringBuffer != null) recordSpan(ctx, "sql.$operation", table, startMs, "ERROR", e.message)
-            throw e
-        } finally {
-            statsCollector?.record(table, operation, HistogramWriter.epochMs() - startMs, isError)
-        }
+        if (table in excludedTables) return delegate.execute(identifier, sql, parameters, binders)
+        return timed(ctx, "sql.$operation", operation, table) { delegate.execute(identifier, sql, parameters, binders) }
     }
 
     override fun <R> executeQuery(
@@ -71,20 +58,23 @@ class TimingDriverWrapper(
         val ctx = CurrentSpanContext.get()
         if (ctx == null && statsCollector == null) return delegate.executeQuery(identifier, sql, mapper, parameters, binders)
         val (_, table) = parseSqlCached(identifier, sql)
-        if (table in excludedTables)
-            return delegate.executeQuery(identifier, sql, mapper, parameters, binders)
+        if (table in excludedTables) return delegate.executeQuery(identifier, sql, mapper, parameters, binders)
+        return timed(ctx, "sql.select", "select", table) { delegate.executeQuery(identifier, sql, mapper, parameters, binders) }
+    }
+
+    private inline fun <T> timed(ctx: ActiveSpanContext?, spanName: String, operation: String, table: String, block: () -> T): T {
         val startMs = HistogramWriter.epochMs()
         var isError = false
         return try {
-            val result = delegate.executeQuery(identifier, sql, mapper, parameters, binders)
-            if (ctx != null && ringBuffer != null) recordSpan(ctx, "sql.select", table, startMs, "OK")
+            val result = block()
+            if (ctx != null && ringBuffer != null) recordSpan(ctx, spanName, table, startMs, "OK")
             result
         } catch (e: Exception) {
             isError = true
-            if (ctx != null && ringBuffer != null) recordSpan(ctx, "sql.select", table, startMs, "ERROR", e.message)
+            if (ctx != null && ringBuffer != null) recordSpan(ctx, spanName, table, startMs, "ERROR", e.message)
             throw e
         } finally {
-            statsCollector?.record(table, "select", HistogramWriter.epochMs() - startMs, isError)
+            statsCollector?.record(table, operation, HistogramWriter.epochMs() - startMs, isError)
         }
     }
 

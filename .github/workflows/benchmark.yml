@@ -103,23 +103,23 @@ jobs:
           upload_png flamegraph-cpu.png FLAMEGRAPH_CPU_URL
 
       - name: Upload alloc flamegraph
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         if: always() && env.ALLOC_PNG_GENERATED == 'true'
         with:
+          name: flamegraph-alloc-${{ github.sha }}
           path: flamegraph-alloc.png
-          archive: false
           retention-days: 30
 
       - name: Upload CPU flamegraph
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         if: always() && env.CPU_PNG_GENERATED == 'true'
         with:
+          name: flamegraph-cpu-${{ github.sha }}
           path: flamegraph-cpu.png
-          archive: false
           retention-days: 30
 
       - name: Upload profiling data
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: profiling-data-${{ github.sha }}
@@ -170,7 +170,7 @@ jobs:
             const base = JSON.parse(fs.readFileSync(path.join(histDir, baseFile)));
 
             const delta = (a, b, lowerIsBetter = true, unit = 'ms') => {
-              if (a == null || b == null) return '';
+              if (a == null || b == null || a < 0 || b < 0) return '';
               const d = a - b;
               if (d === 0) return `0 (0%)`;
               const sign = d > 0 ? '+' : '';
@@ -179,7 +179,8 @@ jobs:
               const emoji = lowerIsBetter ? (d < 0 ? ' ✅' : ' ⚠️') : (d > 0 ? ' ✅' : ' ⚠️');
               return `${sign}${rounded}${unit}${pct}${emoji}`;
             };
-            const fmtJ = v => v === undefined ? 'n/a' : `${v}x`;
+            const fmtMs = v => (v == null || v < 0) ? 'n/a' : `${v}ms`;
+            const fmtJ = v => (v === undefined || v == null || v < 0) ? 'n/a' : `${v}x`;
 
             const allocHotspots = (curr.allocHotspots || []).slice(0, 5)
               .map(h => `\`${h.pct}%\` ${h.frame}`)
@@ -211,12 +212,12 @@ jobs:
               '',
               '| Metric | This PR | Baseline | Delta |',
               '|--------|---------|----------|-------|',
-              `| Phase 1 TTI ↓ | ${curr.phase1TtiMs ?? 'n/a'}ms | ${base.phase1TtiMs ?? 'n/a'}ms | ${delta(curr.phase1TtiMs, base.phase1TtiMs)} |`,
-              `| Phase 2 ↓ | ${curr.phase2Ms ?? 'n/a'}ms | ${base.phase2Ms ?? 'n/a'}ms | ${delta(curr.phase2Ms, base.phase2Ms)} |`,
-              `| Phase 3 index ↓ | ${curr.phase3Ms ?? 'n/a'}ms | ${base.phase3Ms ?? 'n/a'}ms | ${delta(curr.phase3Ms, base.phase3Ms)} |`,
-              `| Total ↓ | ${curr.totalMs ?? 'n/a'}ms | ${base.totalMs ?? 'n/a'}ms | ${delta(curr.totalMs, base.totalMs)} |`,
-              `| Write p95 (baseline) ↓ | ${curr.jankBaselineP95Ms ?? 'n/a'}ms | ${base.jankBaselineP95Ms ?? 'n/a'}ms | ${delta(curr.jankBaselineP95Ms, base.jankBaselineP95Ms)} |`,
-              `| Write p95 (under load) ↓ | ${curr.jankLoadP95Ms ?? 'n/a'}ms | ${base.jankLoadP95Ms ?? 'n/a'}ms | ${delta(curr.jankLoadP95Ms, base.jankLoadP95Ms)} |`,
+              `| Phase 1 TTI ↓ | ${fmtMs(curr.phase1TtiMs)} | ${fmtMs(base.phase1TtiMs)} | ${delta(curr.phase1TtiMs, base.phase1TtiMs)} |`,
+              `| Phase 2 background ↓ | ${fmtMs(curr.phase2Ms)} | ${fmtMs(base.phase2Ms)} | ${delta(curr.phase2Ms, base.phase2Ms)} |`,
+              `| Phase 3 index ↓ | ${fmtMs(curr.phase3Ms)} | ${fmtMs(base.phase3Ms)} | ${delta(curr.phase3Ms, base.phase3Ms)} |`,
+              `| Total ↓ | ${fmtMs(curr.totalMs)} | ${fmtMs(base.totalMs)} | ${delta(curr.totalMs, base.totalMs)} |`,
+              `| Write p95 (baseline) ↓ | ${fmtMs(curr.jankBaselineP95Ms)} | ${fmtMs(base.jankBaselineP95Ms)} | ${delta(curr.jankBaselineP95Ms, base.jankBaselineP95Ms)} |`,
+              `| Write p95 (under load) ↓ | ${fmtMs(curr.jankLoadP95Ms)} | ${fmtMs(base.jankLoadP95Ms)} | ${delta(curr.jankLoadP95Ms, base.jankLoadP95Ms)} |`,
               `| Jank factor ↓ | ${fmtJ(curr.jankFactor)} | ${fmtJ(base.jankFactor)} | ${delta(curr.jankFactor, base.jankFactor, true, 'x')} |`,
               '_↓ lower is better_',
               '',

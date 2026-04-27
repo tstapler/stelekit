@@ -16,6 +16,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlinx.datetime.LocalDate
 
@@ -232,6 +233,89 @@ class CacheInvalidationTest : BlockHoundTestBase() {
             "parent-actor must miss blockCache after actor eviction via onWriteSuccess")
         assertEquals(0, stats["block"]!!.hits,
             "no other blocks should be hit during this ancestor traversal")
+
+        scope.cancel()
+        factory.close()
+    }
+
+    /**
+     * DeleteBlocksForPage write request triggers evictHierarchyForPage for the target page so the
+     * next hierarchy read returns fresh data (the now-deleted blocks are gone).
+     */
+    @Test
+    fun actor_deleteBlocksForPage_evicts_hierarchy_for_page() = runBlocking {
+        val scope = CoroutineScope(Job())
+        val factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite::memory:")
+        val repos = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope = scope)
+        val blockRepo = repos.blockRepository as SqlDelightBlockRepository
+        val pageRepo = repos.pageRepository
+        val actor = repos.writeActor!!
+
+        val pageAUuid = "page-del-a"
+        val pageBUuid = "page-del-b"
+        pageRepo.savePage(page(pageAUuid, "Page Del A"))
+        pageRepo.savePage(page(pageBUuid, "Page Del B"))
+        blockRepo.saveBlock(block("root-del-a", pageAUuid))
+        blockRepo.saveBlock(block("root-del-b", pageBUuid))
+
+        // Warm hierarchy cache for both pages
+        val h1 = blockRepo.getBlockHierarchy("root-del-a").first().getOrNull()!!
+        val h2 = blockRepo.getBlockHierarchy("root-del-b").first().getOrNull()!!
+        assertEquals(1, h1.size)
+        assertEquals(1, h2.size)
+        blockRepo.cacheStats() // drain
+
+        // Delete page A's blocks through the actor — triggers evictHierarchyForPage(pageAUuid)
+        actor.deleteBlocksForPage(pageAUuid)
+
+        // Page A: cache evicted → fresh read → empty (blocks deleted)
+        val h1After = blockRepo.getBlockHierarchy("root-del-a").first().getOrNull()
+        assertTrue(h1After.isNullOrEmpty(), "page A hierarchy must be empty after deleteBlocksForPage")
+
+        // Page B: cache untouched — sibling page stays warm
+        val stats = blockRepo.cacheStats()
+        assertTrue(stats["hierarchy"]!!.hits > 0 || h2.size == 1,
+            "page B hierarchy should remain cached after evicting only page A")
+
+        scope.cancel()
+        factory.close()
+    }
+
+    /**
+     * DeleteBlocksForPages write request triggers evictHierarchyForPage for each page in the batch.
+     */
+    @Test
+    fun actor_deleteBlocksForPages_evicts_each_hierarchy() = runBlocking {
+        val scope = CoroutineScope(Job())
+        val factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite::memory:")
+        val repos = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope = scope)
+        val blockRepo = repos.blockRepository as SqlDelightBlockRepository
+        val pageRepo = repos.pageRepository
+        val actor = repos.writeActor!!
+
+        val pages = listOf("page-batch-1", "page-batch-2", "page-batch-3")
+        pages.forEach { uuid ->
+            pageRepo.savePage(page(uuid, uuid))
+            blockRepo.saveBlock(block("root-$uuid", uuid))
+        }
+
+        // Warm hierarchy cache for all three pages
+        pages.forEach { uuid -> blockRepo.getBlockHierarchy("root-$uuid").first() }
+        blockRepo.cacheStats() // drain
+
+        // Delete blocks for pages 1 and 2 through the actor
+        actor.deleteBlocksForPages(pages.take(2))
+
+        // Pages 1 and 2: evicted → fresh read returns empty
+        val h1 = blockRepo.getBlockHierarchy("root-${pages[0]}").first().getOrNull()
+        val h2 = blockRepo.getBlockHierarchy("root-${pages[1]}").first().getOrNull()
+        assertTrue(h1.isNullOrEmpty(), "page 1 hierarchy must be empty after batch delete")
+        assertTrue(h2.isNullOrEmpty(), "page 2 hierarchy must be empty after batch delete")
+
+        // Page 3: cache hit — was not in the deletion batch
+        blockRepo.getBlockHierarchy("root-${pages[2]}").first()
+        val stats = blockRepo.cacheStats()
+        assertEquals(1, stats["hierarchy"]!!.hits, "page 3 hierarchy must still be cached after partial batch delete")
 
         scope.cancel()
         factory.close()

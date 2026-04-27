@@ -21,6 +21,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import java.nio.file.Files
 import kotlin.test.Test
+import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.measureTime
 
@@ -361,6 +362,8 @@ class GraphLoadTimingTest {
             val result = loadAndTime(dir.absolutePath, loader, "synthetic / SQLite") {
                 repoSet.pageRepository.getAllPages().first().getOrNull()?.size ?: 0
             }
+            assertTrue(result.totalMs < 60_000L,
+                "SQLite synthetic load took ${result.totalMs}ms — catastrophic regression detected (> 60s)")
 
             // Drain accumulated query stats (periodic flush interval exceeds benchmark duration)
             repoSet.queryStatsCollector?.drainNow()

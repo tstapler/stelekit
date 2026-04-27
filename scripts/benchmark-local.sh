@@ -29,6 +29,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPORTS_DIR="$REPO_ROOT/kmp/build/reports"
 GRAPH_PATH="${1:-}"
 
+# ── prerequisites ────────────────────────────────────────────────────────────
+
+command -v perl &>/dev/null || { echo "Error: perl is required to generate flamegraphs (brew install perl)"; exit 1; }
+
 # ── flamegraph.pl ────────────────────────────────────────────────────────────
 
 FLAMEGRAPH_PL="${FLAMEGRAPH_PL:-/tmp/flamegraph.pl}"

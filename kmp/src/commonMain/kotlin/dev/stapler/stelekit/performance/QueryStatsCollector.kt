@@ -1,32 +1,40 @@
 package dev.stapler.stelekit.performance
 
+import dev.stapler.stelekit.cache.PlatformLock
+import dev.stapler.stelekit.cache.withLock
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/**
+ * Lock-guarded in-place SQL stats accumulator. Collects calls/errors/latencies per (table, operation)
+ * and flushes to [QueryStatsRepository] periodically (30 s default) or on [drainNow] demand.
+ *
+ * Uses a [PlatformLock]-guarded [HashMap] so [record] accumulates directly without heap allocation
+ * beyond the first call for a given key. The earlier channel-based design created two objects per
+ * SQL call (StatRecord + ChannelEvent.Stat) which caused measurable GC pressure on Android during
+ * graph-load benchmarks.
+ */
 class QueryStatsCollector(
     private val appVersion: String,
     scope: CoroutineScope,
     private val flushIntervalMs: Long = 30_000L,
 ) {
-    // Set after construction to break the circular dependency with database lazy init.
-    var repository: QueryStatsRepository? = null
+    private var repository: QueryStatsRepository? = null
 
-    private sealed class ChannelEvent {
-        data class Stat(val record: StatRecord) : ChannelEvent()
-        class DrainNow(val done: CompletableDeferred<Unit>) : ChannelEvent()
+    fun setRepository(repo: QueryStatsRepository) {
+        repository = repo
     }
 
-    private val channel = Channel<ChannelEvent>(capacity = Channel.BUFFERED)
-    private val accum = mutableMapOf<String, Accum>()
+    private val lock = PlatformLock()
+    private val accum = HashMap<String, Accum>()
 
     data class Accum(
         var calls: Long = 0,
         var errors: Long = 0,
         var totalMs: Long = 0,
-        var minMs: Long = 9999999,
+        var minMs: Long = Long.MAX_VALUE,
         var maxMs: Long = 0,
         var b1: Long = 0,
         var b5: Long = 0,
@@ -37,65 +45,48 @@ class QueryStatsCollector(
         var bInf: Long = 0,
     )
 
-    private data class StatRecord(
-        val table: String,
-        val operation: String,
-        val durationMs: Long,
-        val isError: Boolean,
-    )
-
     init {
         scope.launch(PlatformDispatcher.DB) {
-            var lastFlush = HistogramWriter.epochMs()
-            for (event in channel) {
-                when (event) {
-                    is ChannelEvent.Stat -> {
-                        val record = event.record
-                        val key = "${record.table}:${record.operation}"
-                        val a = accum.getOrPut(key) { Accum() }
-                        a.calls++
-                        if (record.isError) a.errors++
-                        a.totalMs += record.durationMs
-                        if (record.durationMs < a.minMs) a.minMs = record.durationMs
-                        if (record.durationMs > a.maxMs) a.maxMs = record.durationMs
-                        when {
-                            record.durationMs <= 1   -> a.b1++
-                            record.durationMs <= 5   -> a.b5++
-                            record.durationMs <= 16  -> a.b16++
-                            record.durationMs <= 50  -> a.b50++
-                            record.durationMs <= 100 -> a.b100++
-                            record.durationMs <= 500 -> a.b500++
-                            else                     -> a.bInf++
-                        }
-                        val now = HistogramWriter.epochMs()
-                        if (now - lastFlush >= flushIntervalMs && accum.isNotEmpty()) {
-                            flush()
-                            lastFlush = now
-                        }
-                    }
-                    is ChannelEvent.DrainNow -> {
-                        if (accum.isNotEmpty()) flush()
-                        event.done.complete(Unit)
-                    }
-                }
+            while (true) {
+                delay(flushIntervalMs)
+                drainNow()
             }
         }
     }
 
     fun record(table: String, operation: String, durationMs: Long, isError: Boolean) {
-        channel.trySend(ChannelEvent.Stat(StatRecord(table, operation, durationMs, isError)))
+        val key = "$table:$operation"
+        lock.withLock {
+            val a = accum.getOrPut(key) { Accum() }
+            a.calls++
+            if (isError) a.errors++
+            a.totalMs += durationMs
+            if (durationMs < a.minMs) a.minMs = durationMs
+            if (durationMs > a.maxMs) a.maxMs = durationMs
+            when {
+                durationMs <= 1   -> a.b1++
+                durationMs <= 5   -> a.b5++
+                durationMs <= 16  -> a.b16++
+                durationMs <= 50  -> a.b50++
+                durationMs <= 100 -> a.b100++
+                durationMs <= 500 -> a.b500++
+                else              -> a.bInf++
+            }
+        }
     }
 
     /** Flush accumulated stats to the repository immediately, bypassing the periodic timer. */
     suspend fun drainNow() {
-        val done = CompletableDeferred<Unit>()
-        channel.send(ChannelEvent.DrainNow(done))
-        done.await()
-    }
-
-    private suspend fun flush() {
-        val snapshot = accum.toMap()
-        accum.clear()
-        repository?.upsertBatch(snapshot, appVersion)
+        val snapshot = lock.withLock {
+            if (accum.isEmpty()) return
+            val s = accum.toMap()
+            accum.clear()
+            s
+        }
+        try {
+            repository?.upsertBatch(snapshot, appVersion)
+        } catch (_: Exception) {
+            // Stats are best-effort; DB failures (e.g. contention at startup) are silently dropped.
+        }
     }
 }

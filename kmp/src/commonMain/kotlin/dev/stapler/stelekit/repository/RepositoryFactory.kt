@@ -167,23 +167,7 @@ class RepositoryFactoryImpl(
             val sessionId = dev.stapler.stelekit.util.UuidGenerator.generateV7()
             val opLogger = if (backend == GraphBackend.SQLDELIGHT) OperationLogger(database, sessionId) else null
             val writeActor = DatabaseWriteActor(blockRepo, pageRepo, opLogger)
-            val sqlBlockRepo = blockRepo as? SqlDelightBlockRepository
-            if (sqlBlockRepo != null) {
-                writeActor.onWriteSuccess = { request ->
-                    when (request) {
-                        is DatabaseWriteActor.WriteRequest.SaveBlocks ->
-                            request.blocks.forEach { sqlBlockRepo.evictBlock(it.uuid) }
-                        is DatabaseWriteActor.WriteRequest.DeleteBlocksForPage ->
-                            sqlBlockRepo.evictHierarchyForPage(request.pageUuid)
-                        is DatabaseWriteActor.WriteRequest.DeleteBlocksForPages ->
-                            request.pageUuids.forEach { sqlBlockRepo.evictHierarchyForPage(it) }
-                        // Execute requests wrap arbitrary lambdas — no block UUID to extract.
-                        // Entries written via Execute (e.g. saveBlock) rely on TTL expiry for
-                        // cache invalidation rather than explicit eviction.
-                        else -> Unit
-                    }
-                }
-            }
+            wireCacheCallbacks(writeActor, blockRepo as? SqlDelightBlockRepository)
             val undo = if (opLogger != null) UndoManager(database, writeActor, sessionId) else null
             writeActor to undo
         } else {
@@ -193,7 +177,7 @@ class RepositoryFactoryImpl(
         val queryStatsRepo = if (backend == GraphBackend.SQLDELIGHT) {
             QueryStatsRepository(database, actor)
         } else null
-        collector?.repository = queryStatsRepo
+        if (queryStatsRepo != null) collector?.setRepository(queryStatsRepo)
 
         // Wire performance objects only for SQLDelight + a live scope (i.e. production graphs)
         val histogramWriter = if (backend == GraphBackend.SQLDELIGHT && scope != null) {
@@ -237,46 +221,15 @@ class RepositoryFactoryImpl(
             SpanLogSink(spanEmitter).also { LogManager.addSink(it) }
         } else null
 
-        val poolWaitMetrics = activeDriver as? dev.stapler.stelekit.performance.PoolWaitMetrics
         val sqlBlockRepo = blockRepo as? SqlDelightBlockRepository
+        val poolWaitMetrics = activeDriver as? dev.stapler.stelekit.performance.PoolWaitMetrics
 
         // Background drain: every 5s flush in-memory ring buffer to SQLite, prune old data,
         // and record cache hit/miss and pool wait-time stats into the histogram.
         // Route through the actor so span inserts are serialized with all other DB writes and
         // don't race with block saves on Dispatchers.IO (which causes SQLITE_BUSY at startup).
         if (scope != null && ringBuffer != null && spanRepository != null) {
-            scope.launch {
-                val sevenDaysMs = 7L * 24 * 60 * 60 * 1000
-                while (true) {
-                    delay(5_000)
-                    val drained = ringBuffer.drain()
-                    val drainBlock: suspend () -> Result<Unit> = {
-                        drained.forEach { span -> spanRepository.insertSpan(span) }
-                        spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)
-                        spanRepository.deleteExcessSpans(10_000)
-                        Result.success(Unit)
-                    }
-                    if (actor != null) {
-                        actor.execute(DatabaseWriteActor.Priority.LOW, drainBlock)
-                    } else {
-                        drainBlock()
-                    }
-                    if (sqlBlockRepo != null && histogramWriter != null) {
-                        val stats = sqlBlockRepo.cacheStats()
-                        stats.forEach { (name, s) ->
-                            val total = s.hits + s.misses
-                            if (total > 0) histogramWriter.record("cache_$name", (s.hits * 100L) / total)
-                            if (s.evictions > 0) histogramWriter.record("cache_${name}_evict", s.evictions)
-                        }
-                        // pool_wait is only non-null for in-memory DBs (where pool.take() blocks).
-                        // File-backed production DBs use a non-blocking poll() with overflow connections,
-                        // so pool contention is zero and drainPoolWaitStats() always returns null there.
-                        poolWaitMetrics?.drainPoolWaitStats()?.let { snap ->
-                            if (snap.count > 0) histogramWriter.record("pool_wait", snap.totalWaitMs / snap.count)
-                        }
-                    }
-                }
-            }
+            launchDrainLoop(scope, ringBuffer, actor, spanRepository, sqlBlockRepo, histogramWriter, poolWaitMetrics)
         }
 
         val walCallback: (suspend () -> Unit)? = sqlBlockRepo?.let { repo -> suspend { repo.walCheckpoint() } }
@@ -303,6 +256,67 @@ class RepositoryFactoryImpl(
             queryStatsRepository = queryStatsRepo,
             queryStatsCollector = collector,
         )
+    }
+
+    private fun wireCacheCallbacks(actor: DatabaseWriteActor, sqlBlockRepo: SqlDelightBlockRepository?) {
+        if (sqlBlockRepo == null) return
+        actor.onWriteSuccess = { request ->
+            when (request) {
+                is DatabaseWriteActor.WriteRequest.SaveBlocks ->
+                    request.blocks.forEach { sqlBlockRepo.evictBlock(it.uuid) }
+                is DatabaseWriteActor.WriteRequest.DeleteBlocksForPage ->
+                    sqlBlockRepo.evictHierarchyForPage(request.pageUuid)
+                is DatabaseWriteActor.WriteRequest.DeleteBlocksForPages ->
+                    request.pageUuids.forEach { sqlBlockRepo.evictHierarchyForPage(it) }
+                // Execute requests wrap arbitrary lambdas — no block UUID to extract.
+                // Entries written via Execute (e.g. saveBlock) rely on TTL expiry for
+                // cache invalidation rather than explicit eviction.
+                else -> Unit
+            }
+        }
+    }
+
+    private fun launchDrainLoop(
+        scope: CoroutineScope,
+        ringBuffer: dev.stapler.stelekit.performance.RingBufferSpanExporter,
+        actor: DatabaseWriteActor?,
+        spanRepository: SqlDelightSpanRepository,
+        sqlBlockRepo: SqlDelightBlockRepository?,
+        histogramWriter: dev.stapler.stelekit.performance.HistogramWriter?,
+        poolWaitMetrics: dev.stapler.stelekit.performance.PoolWaitMetrics?,
+    ) {
+        scope.launch {
+            val sevenDaysMs = 7L * 24L * 60L * 60L * 1000L
+            while (true) {
+                delay(5_000)
+                val drained = ringBuffer.drain()
+                val drainBlock: suspend () -> Result<Unit> = {
+                    drained.forEach { span -> spanRepository.insertSpan(span) }
+                    spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)
+                    spanRepository.deleteExcessSpans(10_000)
+                    Result.success(Unit)
+                }
+                if (actor != null) {
+                    actor.execute(DatabaseWriteActor.Priority.LOW, drainBlock)
+                } else {
+                    drainBlock()
+                }
+                if (sqlBlockRepo != null && histogramWriter != null) {
+                    val stats = sqlBlockRepo.cacheStats()
+                    stats.forEach { (name, s) ->
+                        val total = s.hits + s.misses
+                        if (total > 0) histogramWriter.record("cache_$name", (s.hits * 100L) / total)
+                        if (s.evictions > 0) histogramWriter.record("cache_${name}_evict", s.evictions)
+                    }
+                    // pool_wait is only non-null for in-memory DBs (where pool.take() blocks).
+                    // File-backed production DBs use a non-blocking poll() with overflow connections,
+                    // so pool contention is zero and drainPoolWaitStats() always returns null there.
+                    poolWaitMetrics?.drainPoolWaitStats()?.let { snap ->
+                        if (snap.count > 0) histogramWriter.record("pool_wait", snap.totalWaitMs / snap.count)
+                    }
+                }
+            }
+        }
     }
 
     /**
