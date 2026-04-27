@@ -10,6 +10,8 @@ import dev.stapler.stelekit.db.createDatabase
 import dev.stapler.stelekit.logging.LogManager
 import dev.stapler.stelekit.performance.HistogramWriter
 import dev.stapler.stelekit.performance.OtelProvider
+import dev.stapler.stelekit.performance.QueryStatsCollector
+import dev.stapler.stelekit.performance.QueryStatsRepository
 import dev.stapler.stelekit.performance.RingBufferSpanExporter
 import dev.stapler.stelekit.performance.SloChecker
 import dev.stapler.stelekit.performance.SpanEmitter
@@ -34,13 +36,16 @@ class RepositoryFactoryImpl(
     // Set by createRepositorySet before repositories are instantiated so constructors receive
     // the live perf objects. Fields are written once before first use — not thread-safe by design.
     internal var tracingRingBuffer: RingBufferSpanExporter? = null
+    internal var queryStatsCollector: QueryStatsCollector? = null
     private var searchRingBuffer: RingBufferSpanExporter? = null
     private var searchHistogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
 
     private val database: SteleDatabase by lazy {
         val driver = driverFactory.createDriver(jdbcUrl)
         activeDriver = driver
-        val effectiveDriver = tracingRingBuffer?.let { TimingDriverWrapper(driver, it) } ?: driver
+        val effectiveDriver = if (tracingRingBuffer != null || queryStatsCollector != null) {
+            TimingDriverWrapper(driver, tracingRingBuffer, queryStatsCollector)
+        } else driver
         SteleDatabase(effectiveDriver)
     }
 
@@ -151,17 +156,29 @@ class RepositoryFactoryImpl(
                 dev.stapler.stelekit.performance.RingBufferSpanExporter() else null
         if (ringBuffer != null) tracingRingBuffer = ringBuffer
 
+        // Create collector before database is first accessed so TimingDriverWrapper picks it up
+        val collector = if (scope != null && backend == GraphBackend.SQLDELIGHT) {
+            QueryStatsCollector(appVersion, scope)
+        } else null
+        if (collector != null) queryStatsCollector = collector
+
         val blockRepo = createBlockRepository(backend)
         val pageRepo = createPageRepository(backend)
         val (actor, undoManager) = if (scope != null) {
             val sessionId = dev.stapler.stelekit.util.UuidGenerator.generateV7()
             val opLogger = if (backend == GraphBackend.SQLDELIGHT) OperationLogger(database, sessionId) else null
             val writeActor = DatabaseWriteActor(blockRepo, pageRepo, opLogger)
+            wireCacheCallbacks(writeActor, blockRepo as? SqlDelightBlockRepository)
             val undo = if (opLogger != null) UndoManager(database, writeActor, sessionId) else null
             writeActor to undo
         } else {
             null to null
         }
+
+        val queryStatsRepo = if (backend == GraphBackend.SQLDELIGHT) {
+            QueryStatsRepository(database, actor)
+        } else null
+        if (queryStatsRepo != null) collector?.setRepository(queryStatsRepo)
 
         // Wire performance objects only for SQLDelight + a live scope (i.e. production graphs)
         val histogramWriter = if (backend == GraphBackend.SQLDELIGHT && scope != null) {
@@ -205,30 +222,18 @@ class RepositoryFactoryImpl(
             SpanLogSink(spanEmitter).also { LogManager.addSink(it) }
         } else null
 
-        // Background drain: every 5s flush in-memory ring buffer to SQLite and prune old data.
+        val sqlBlockRepo = blockRepo as? SqlDelightBlockRepository
+        val poolWaitMetrics = activeDriver as? dev.stapler.stelekit.performance.PoolWaitMetrics
+
+        // Background drain: every 5s flush in-memory ring buffer to SQLite, prune old data,
+        // and record cache hit/miss and pool wait-time stats into the histogram.
         // Route through the actor so span inserts are serialized with all other DB writes and
         // don't race with block saves on Dispatchers.IO (which causes SQLITE_BUSY at startup).
         if (scope != null && ringBuffer != null && spanRepository != null) {
-            scope.launch {
-                val sevenDaysMs = 7L * 24 * 60 * 60 * 1000
-                while (true) {
-                    delay(5_000)
-                    val drained = ringBuffer.drain()
-                    if (actor != null) {
-                        actor.execute(DatabaseWriteActor.Priority.LOW) {
-                            drained.forEach { span -> spanRepository.insertSpan(span) }
-                            spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)
-                            spanRepository.deleteExcessSpans(10_000)
-                            Unit.right()
-                        }
-                    } else {
-                        drained.forEach { span -> spanRepository.insertSpan(span) }
-                        spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)
-                        spanRepository.deleteExcessSpans(10_000)
-                    }
-                }
-            }
+            launchDrainLoop(scope, ringBuffer, actor, spanRepository, sqlBlockRepo, histogramWriter, poolWaitMetrics)
         }
+
+        val walCallback: (suspend () -> Unit)? = sqlBlockRepo?.let { repo -> suspend { repo.walCheckpoint() } }
 
         return RepositorySet(
             blockRepository = blockRepo,
@@ -248,7 +253,71 @@ class RepositoryFactoryImpl(
             spanEmitter = spanEmitter,
             sloChecker = sloChecker,
             spanLogSink = spanLogSink,
+            onBulkImportComplete = walCallback,
+            queryStatsRepository = queryStatsRepo,
+            queryStatsCollector = collector,
         )
+    }
+
+    private fun wireCacheCallbacks(actor: DatabaseWriteActor, sqlBlockRepo: SqlDelightBlockRepository?) {
+        if (sqlBlockRepo == null) return
+        actor.onWriteSuccess = { request ->
+            when (request) {
+                is DatabaseWriteActor.WriteRequest.SaveBlocks ->
+                    request.blocks.forEach { sqlBlockRepo.evictBlock(it.uuid) }
+                is DatabaseWriteActor.WriteRequest.DeleteBlocksForPage ->
+                    sqlBlockRepo.evictHierarchyForPage(request.pageUuid)
+                is DatabaseWriteActor.WriteRequest.DeleteBlocksForPages ->
+                    request.pageUuids.forEach { sqlBlockRepo.evictHierarchyForPage(it) }
+                // Execute requests wrap arbitrary lambdas — no block UUID to extract.
+                // Entries written via Execute (e.g. saveBlock) rely on TTL expiry for
+                // cache invalidation rather than explicit eviction.
+                else -> Unit
+            }
+        }
+    }
+
+    private fun launchDrainLoop(
+        scope: CoroutineScope,
+        ringBuffer: dev.stapler.stelekit.performance.RingBufferSpanExporter,
+        actor: DatabaseWriteActor?,
+        spanRepository: SqlDelightSpanRepository,
+        sqlBlockRepo: SqlDelightBlockRepository?,
+        histogramWriter: dev.stapler.stelekit.performance.HistogramWriter?,
+        poolWaitMetrics: dev.stapler.stelekit.performance.PoolWaitMetrics?,
+    ) {
+        scope.launch {
+            val sevenDaysMs = 7L * 24L * 60L * 60L * 1000L
+            while (true) {
+                delay(5_000)
+                val drained = ringBuffer.drain()
+                val drainBlock: suspend () -> Either<DomainError, Unit> = {
+                    drained.forEach { span -> spanRepository.insertSpan(span) }
+                    spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)
+                    spanRepository.deleteExcessSpans(10_000)
+                    Unit.right()
+                }
+                if (actor != null) {
+                    actor.execute(DatabaseWriteActor.Priority.LOW, drainBlock)
+                } else {
+                    drainBlock()
+                }
+                if (sqlBlockRepo != null && histogramWriter != null) {
+                    val stats = sqlBlockRepo.cacheStats()
+                    stats.forEach { (name, s) ->
+                        val total = s.hits + s.misses
+                        if (total > 0) histogramWriter.record("cache_$name", (s.hits * 100L) / total)
+                        if (s.evictions > 0) histogramWriter.record("cache_${name}_evict", s.evictions)
+                    }
+                    // pool_wait is only non-null for in-memory DBs (where pool.take() blocks).
+                    // File-backed production DBs use a non-blocking poll() with overflow connections,
+                    // so pool contention is zero and drainPoolWaitStats() always returns null there.
+                    poolWaitMetrics?.drainPoolWaitStats()?.let { snap ->
+                        if (snap.count > 0) histogramWriter.record("pool_wait", snap.totalWaitMs / snap.count)
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -266,6 +335,7 @@ class RepositoryFactoryImpl(
             // Driver might not be initialized or already closed
         }
         instances.clear()
+        queryStatsCollector = null
     }
 
     private inline fun <reified T : Any> getOrCreateInstance(key: String, factory: () -> T): T {

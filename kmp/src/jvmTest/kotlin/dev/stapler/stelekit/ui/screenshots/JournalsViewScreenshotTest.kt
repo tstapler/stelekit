@@ -24,6 +24,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlin.time.Clock
@@ -168,7 +169,7 @@ class JournalsViewScreenshotTest {
         println("=== DIAGNOSTIC === pages=${diagnosticState.pages.map { it.name }}")
         println("=== DIAGNOSTIC === blocks=${diagnosticBlocks.map { (k, v) -> "$k->${v.size}" }}")
         // Allow the IO→Main dispatch from collectAsState() to be queued and processed
-        Thread.sleep(1000)
+        runBlocking { delay(1000L) }
         composeTestRule.waitForIdle()
         composeTestRule.onRoot().captureRoboImage("build/outputs/roborazzi/journals_live.png")
     }

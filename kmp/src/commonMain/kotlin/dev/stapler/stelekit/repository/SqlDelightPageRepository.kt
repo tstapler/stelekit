@@ -44,7 +44,8 @@ class SqlDelightPageRepository(
         weigher = { _, p -> 300L + p.name.length * 2 + (p.filePath?.length ?: 0) * 2 }
     )
 
-    // Deduplicates concurrent identical getPageByName lookups (e.g. during parallel indexing).
+    // Deduplicates concurrent identical getPageBy* lookups (e.g. during parallel indexing).
+    private val byUuidCoalescer = RequestCoalescer<String, Page?>()
     private val byNameCoalescer = RequestCoalescer<String, Page?>()
 
     override fun getPageByUuid(uuid: String): Flow<Either<DomainError, Page?>> = flow {
@@ -53,7 +54,9 @@ class SqlDelightPageRepository(
             emit(cached.right())
             return@flow
         }
-        val page = queries.selectPageByUuid(uuid).executeAsOneOrNull()?.toModel()
+        val page = byUuidCoalescer.execute(uuid) {
+            queries.selectPageByUuid(uuid).executeAsOneOrNull()?.toModel()
+        }
         if (page != null) {
             pageByUuidCache.put(page.uuid, page)
             pageByNameCache.put(page.name.lowercase(), page)

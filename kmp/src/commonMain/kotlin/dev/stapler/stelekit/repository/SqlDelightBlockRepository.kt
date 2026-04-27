@@ -6,6 +6,7 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.cache.LruCache
+import dev.stapler.stelekit.cache.SteleLruCache
 import dev.stapler.stelekit.cache.RepoCacheConfig
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.logging.Logger
@@ -18,6 +19,8 @@ import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOne
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -50,8 +53,17 @@ class SqlDelightBlockRepository(
         weigher = { _, b -> 300L + b.content.length * 2L }
     )
     // Hierarchy and ancestors caches are bounded by entry count (lists — size varies too much to weigh accurately).
-    private val hierarchyCache = LruCache<String, List<BlockWithDepth>>(maxWeight = 500L)
+    // HierarchyCacheEntry bundles the TTL timestamp with the cached list under the same LruCache Mutex,
+    // eliminating the separate mutableMapOf<String, Long> that was a data race on Dispatchers.IO threads.
+    private data class HierarchyCacheEntry(val blocks: List<BlockWithDepth>, val cachedAtMs: Long)
+    private val hierarchyCache = LruCache<String, HierarchyCacheEntry>(maxWeight = 500L)
     private val ancestorsCache = LruCache<String, List<Block>>(maxWeight = 500L)
+
+    // Reverse index: pageUuid → set of rootBlockUuids stored in hierarchyCache for that page.
+    // Allows targeted per-page eviction without invalidating unrelated pages.
+    // Protected by its own Mutex because put/evict can run on concurrent Dispatchers.IO threads.
+    private val hierarchyIndexMutex = Mutex()
+    private val hierarchyPageIndex = mutableMapOf<String, MutableSet<String>>()
 
     private val hierarchyTtlMs = 120_000L // 2 minutes
 
@@ -77,9 +89,9 @@ class SqlDelightBlockRepository(
 
     override fun getBlockHierarchy(rootUuid: String): Flow<Either<DomainError, List<BlockWithDepth>>> = flow {
         try {
-            val cached = hierarchyCache.get(rootUuid)
-            if (cached != null && !isHierarchyCacheExpired(rootUuid)) {
-                emit(cached.right())
+            val entry = hierarchyCache.get(rootUuid)
+            if (entry != null && !isHierarchyCacheExpired(entry)) {
+                emit(entry.blocks.right())
                 return@flow
             }
 
@@ -111,8 +123,15 @@ class SqlDelightBlockRepository(
                     if (currentDepth > 100) break
                 }
 
-                hierarchyCache.put(rootUuid, resultList)
-                hierarchyCacheTimestamps[rootUuid] = Clock.System.now().toEpochMilliseconds()
+                hierarchyCache.put(rootUuid, HierarchyCacheEntry(resultList, Clock.System.now().toEpochMilliseconds()))
+                val pageUuid = resultList.firstOrNull()?.block?.pageUuid
+                if (pageUuid != null) {
+                    hierarchyIndexMutex.withLock {
+                        val set = hierarchyPageIndex.getOrPut(pageUuid) { mutableSetOf() }
+                        set.removeAll { it != rootUuid && !hierarchyCache.containsKey(it) }
+                        set.add(rootUuid)
+                    }
+                }
                 emit(resultList.right())
             }
         } catch (e: Exception) {
@@ -188,10 +207,11 @@ class SqlDelightBlockRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getBlocksForPage(pageUuid: String): Flow<Either<DomainError, List<Block>>> = 
+    override fun getBlocksForPage(pageUuid: String): Flow<Either<DomainError, List<Block>>> =
         queries.selectBlocksByPageUuidUnpaginated(pageUuid)
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
+            .conflate()
             .map { list -> list.map { it.toBlockModel() }.right() }
 
     override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
@@ -856,11 +876,41 @@ class SqlDelightBlockRepository(
         }?.filter { it.key.isNotBlank() } ?: emptyMap()
     }
 
-    private val hierarchyCacheTimestamps = mutableMapOf<String, Long>()
+    private fun isHierarchyCacheExpired(entry: HierarchyCacheEntry): Boolean =
+        Clock.System.now().toEpochMilliseconds() - entry.cachedAtMs > hierarchyTtlMs
 
-    private fun isHierarchyCacheExpired(rootUuid: String): Boolean {
-        val timestamp = hierarchyCacheTimestamps[rootUuid] ?: return true
-        return Clock.System.now().toEpochMilliseconds() - timestamp > hierarchyTtlMs
+    /** Snapshot and reset hit/miss/eviction counters for all cache tiers. */
+    suspend fun cacheStats(): Map<String, SteleLruCache.CacheStats> = mapOf(
+        "block" to blockCache.snapshotAndReset(),
+        "hierarchy" to hierarchyCache.snapshotAndReset(),
+        "ancestors" to ancestorsCache.snapshotAndReset(),
+    )
+
+    /** Fold WAL frames into the main database file, shrinking the WAL to near-zero. */
+    suspend fun walCheckpoint() = withContext(PlatformDispatcher.DB) {
+        try {
+            queries.pragmaWalCheckpointTruncate()
+        } catch (_: Exception) {
+            // Non-critical — WAL will be checkpointed automatically on next DB open
+        }
+    }
+
+    suspend fun evictBlock(uuid: String) { blockCache.remove(uuid) }
+
+    suspend fun evictHierarchyForPage(pageUuid: String) {
+        val rootUuids = hierarchyIndexMutex.withLock { hierarchyPageIndex.remove(pageUuid) }
+        rootUuids?.forEach { hierarchyCache.remove(it) }
+    }
+
+    override suspend fun cacheEvictPage(pageUuid: String) {
+        evictHierarchyForPage(pageUuid)
+    }
+
+    override suspend fun cacheEvictAll() {
+        blockCache.invalidateAll()
+        hierarchyCache.invalidateAll()
+        ancestorsCache.invalidateAll()
+        hierarchyIndexMutex.withLock { hierarchyPageIndex.clear() }
     }
 
     override suspend fun deleteBlocksForPage(pageUuid: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {

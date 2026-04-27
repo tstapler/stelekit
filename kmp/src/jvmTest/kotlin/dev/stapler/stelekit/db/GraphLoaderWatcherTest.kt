@@ -8,6 +8,7 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
@@ -59,7 +60,7 @@ class GraphLoaderWatcherTest {
             assertTrue(blocksBeforeTick.isEmpty(), "No blocks should exist before the watcher runs")
 
             // Touch file (change mtime without changing content)
-            Thread.sleep(50)
+            delay(50)
             File(pagePath).setLastModified(System.currentTimeMillis())
 
             // Verify repository state hasn't changed

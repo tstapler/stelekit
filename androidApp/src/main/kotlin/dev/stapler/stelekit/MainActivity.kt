@@ -1,6 +1,7 @@
 package dev.stapler.stelekit
 
 import android.Manifest
+import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -15,6 +16,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.lifecycleScope
+import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.domain.UrlFetcherAndroid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
@@ -27,9 +30,11 @@ import dev.stapler.stelekit.voice.MlKitLlmFormatterProvider
 import dev.stapler.stelekit.voice.VoiceSettings
 import dev.stapler.stelekit.voice.buildVoicePipeline
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
+    private var graphManager: GraphManager? = null
     private var pendingFolderPick: CompletableDeferred<String?>? = null
     private var pendingMicPermission: CompletableDeferred<Boolean>? = null
 
@@ -160,7 +165,17 @@ class MainActivity : ComponentActivity() {
                 onRebuildVoicePipeline = { voicePipeline = buildPipeline() },
                 deviceSttAvailable = deviceSttAvailable,
                 deviceLlmAvailable = deviceLlmAvailable,
+                onGraphManagerReady = { gm -> graphManager = gm },
             )
+        }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
+            lifecycleScope.launch {
+                graphManager?.activeRepositorySet?.value?.blockRepository?.cacheEvictAll()
+            }
         }
     }
 

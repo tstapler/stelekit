@@ -11,6 +11,7 @@ import dev.stapler.stelekit.ui.fixtures.FakeFileSystem
 import dev.stapler.stelekit.ui.fixtures.PopulatedFakeBlockRepository
 import dev.stapler.stelekit.ui.fixtures.PopulatedFakePageRepository
 import dev.stapler.stelekit.ui.state.BlockStateManager
+import dev.stapler.stelekit.testing.BlockHoundTestBase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.junit.Rule
@@ -33,7 +34,7 @@ import org.junit.Rule
  * }
  * ```
  */
-open class ComposeUITestBase {
+open class ComposeUITestBase : BlockHoundTestBase() {
 
     @get:Rule
     val composeTestRule = createComposeRule()

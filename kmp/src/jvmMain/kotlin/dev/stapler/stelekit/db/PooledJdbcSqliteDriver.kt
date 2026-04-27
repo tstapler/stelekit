@@ -2,12 +2,15 @@ package dev.stapler.stelekit.db
 
 import app.cash.sqldelight.Query
 import app.cash.sqldelight.driver.jdbc.JdbcDriver
+import dev.stapler.stelekit.performance.PoolWaitMetrics
+import dev.stapler.stelekit.performance.PoolWaitSnapshot
 import java.sql.Connection
 import java.sql.DriverManager
 import java.util.Properties
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicLong
 import java.util.logging.Logger
 
 /**
@@ -33,10 +36,8 @@ internal class PooledJdbcSqliteDriver(
     private val url: String,
     private val properties: Properties,
     poolSize: Int = 8,
-) : JdbcDriver() {
+) : JdbcDriver(), PoolWaitMetrics {
 
-    // Matches the standard `:memory:` form produced by DriverFactory. Does not match the
-    // shared-cache URI form `file::memory:?cache=shared` — don't use that form with this driver.
     private val log = Logger.getLogger("PooledJdbcSqliteDriver")
 
     // Matches the standard `:memory:` form produced by DriverFactory. Does not match the
@@ -50,6 +51,16 @@ internal class PooledJdbcSqliteDriver(
     // Thread-safe listener registry backing SQLDelight's reactive Flow invalidation.
     private val listeners = ConcurrentHashMap<String, CopyOnWriteArrayList<Query.Listener>>()
 
+    // Atomic counters for pool wait-time metrics. Thread-safe accumulation; drained every 5s.
+    private val poolWaitTotalMs = AtomicLong(0L)
+    private val poolWaitCallCount = AtomicLong(0L)
+
+    override fun drainPoolWaitStats(): PoolWaitSnapshot? {
+        val total = poolWaitTotalMs.getAndSet(0L)
+        val count = poolWaitCallCount.getAndSet(0L)
+        return if (count > 0L) PoolWaitSnapshot(total, count) else null
+    }
+
     // ── ConnectionManager ─────────────────────────────────────────────────────
 
     // Called by JdbcDriver before every statement and at transaction start.
@@ -58,7 +69,15 @@ internal class PooledJdbcSqliteDriver(
             // Block until the single pooled connection is available. Creating an overflow
             // connection for in-memory databases would return a fresh empty database with
             // no schema, causing "no such table" errors.
-            pool.take()
+            val t0 = System.nanoTime()
+            val conn = pool.take()
+            val waitNs = System.nanoTime() - t0
+            val waitMs = waitNs / 1_000_000L
+            if (waitMs >= 1L) {
+                poolWaitTotalMs.addAndGet(waitMs)
+                poolWaitCallCount.incrementAndGet()
+            }
+            conn
         } else {
             // Non-blocking poll: returns a pooled connection immediately or null if all are
             // checked out. Fallback creates a temporary connection that is closed after use.

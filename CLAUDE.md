@@ -36,6 +36,26 @@ SteleKit is a Kotlin Multiplatform (KMP) migration of Logseq — a Markdown-base
 # xvfb-run --auto-servernum ./gradlew ciCheck
 # README sync is not covered by ciCheck — run separately:
 # bash scripts/generate-readme.sh && git diff --exit-code README.md
+
+# Run benchmark locally — mirrors CI, generates flamegraph PNGs (requires async-profiler + librsvg)
+./scripts/benchmark-local.sh                        # synthetic graph only
+./scripts/benchmark-local.sh /path/to/your/graph   # include real-graph test
+
+# Or run the Gradle task directly (flamegraph PNGs require flamegraph.pl + rsvg-convert separately)
+./gradlew :kmp:jvmTestProfile -PgraphPath=/path/to/your/graph
+# Outputs to kmp/build/reports/:
+#   graph-load.jfr              — raw JFR recording (alloc events)
+#   graph-load-wall.jfr         — async-profiler wall-clock recording (all thread states)
+#   graph-load-alloc.collapsed  — allocation stacks (collapsed, flamegraph-ready)
+#   graph-load-cpu.collapsed    — wall-clock stacks filtered to DefaultDispatcher-worker-*
+#                                 (Kotlin coroutine pool, Gradle/Kryo noise excluded)
+#                                 Falls back to JFR CPU samples if async-profiler not found.
+#   flamegraph.html             — interactive allocation flamegraph
+#
+# Wall-clock mode (macOS): brew install async-profiler
+# Wall-clock mode (Linux): place async-profiler-4.4-linux-x64/ in repo root, or set AP_LIB=
+# CI uploads flamegraph-alloc.png and flamegraph-cpu.png as individual artifacts
+# viewable directly in the browser (no download required).
 ```
 
 ## Module Structure
