@@ -421,9 +421,9 @@ class BlockStateManager(
     // ---- Editing focus management ----
 
     fun requestEditBlock(blockUuid: String?, cursorIndex: Int? = null) {
+        if (blockUuid == null || blockUuid != _editingBlockUuid.value) _editingSelectionRange.value = null
         _editingBlockUuid.value = blockUuid
         _editingCursorIndex.value = cursorIndex
-        if (blockUuid == null) _editingSelectionRange.value = null
     }
 
     fun updateEditingSelection(range: IntRange?) {

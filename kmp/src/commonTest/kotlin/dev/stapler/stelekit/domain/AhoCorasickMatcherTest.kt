@@ -225,12 +225,13 @@ class AhoCorasickMatcherTest {
     fun stemVariant_exactEntryBeforeStemEntry_exactWins() {
         val exact = AhoCorasickMatcher.TrieEntry("running", "Running")
         val stem  = AhoCorasickMatcher.TrieEntry("running", "Run", reportedBaseLength = 3)
-        // The trie accumulates; last-added output at same node wins in nodeOutput.
-        // Test that both entries produce a span — exact should appear first in output list
         val matcher = AhoCorasickMatcher(listOf(exact, stem))
         val matches = matcher.findAll("running")
-        // At least one match; the first registered pattern's canonical should appear
         assertTrue(matches.isNotEmpty(), "Should have at least one match")
+        assertTrue(
+            matches.any { it.canonicalName == "Running" },
+            "Exact 'Running' entry must appear in results"
+        )
     }
 
     // -------------------------------------------------------------------------

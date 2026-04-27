@@ -29,7 +29,13 @@ class AhoCorasickMatcher(entries: List<TrieEntry>) {
         val pattern: String,
         val canonical: String,
         val reportedBaseLength: Int = pattern.length,
-    )
+    ) {
+        init {
+            require(reportedBaseLength in 0..pattern.length) {
+                "reportedBaseLength $reportedBaseLength out of range [0, ${pattern.length}] for pattern '$pattern'"
+            }
+        }
+    }
 
     data class MatchSpan(val start: Int, val end: Int, val canonicalName: String)
 

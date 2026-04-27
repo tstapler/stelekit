@@ -356,11 +356,12 @@ fun PageView(
             onLinkPicker = if (searchViewModel != null) {
                 {
                     val curBlockUuid = editingBlockUuid
-                    val curCursor = editingCursorIndex
                     // Read selection directly from StateFlow — avoids root-scope recomposition
                     val sel = blockStateManager.editingSelectionRange.value
                     linkPickerBlockUuid = curBlockUuid
-                    linkPickerCursorIndex = curCursor
+                    // editingCursorIndex is only set via requestEditBlock; fall back to
+                    // selection start so cursor-move link insertion lands at the caret
+                    linkPickerCursorIndex = editingCursorIndex ?: sel?.first
                     linkPickerSelectionRange = sel
                     linkPickerInitialQuery = if (sel != null && sel.first < sel.last && curBlockUuid != null) {
                         val block = allBlocks.values.flatten().find { it.uuid == curBlockUuid }

@@ -296,7 +296,7 @@ fun BlockList(
                     dropAbove = isDropTarget && currentDropZone == DropZone.ABOVE,
                     dropBelow = isDropTarget && currentDropZone == DropZone.BELOW,
                     dropAsChild = isDropTarget && currentDropZone == DropZone.CHILD,
-                    onSelectionChanged = if (onBlockSelectionChange != null) {
+                    onSelectionChange = if (onBlockSelectionChange != null) {
                         { range -> onBlockSelectionChange(block.uuid, range) }
                     } else null,
                     modifier = Modifier.onGloballyPositioned { coords ->

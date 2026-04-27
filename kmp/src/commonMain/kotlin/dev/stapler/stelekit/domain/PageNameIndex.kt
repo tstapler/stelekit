@@ -101,10 +101,11 @@ class PageNameIndex(
             }
         }
 
-        // Pass 3 — stem variants: for each page, add suffix forms pointing back to the canonical
+        // Pass 3 — stem variants: single-word pages only (multi-word names produce nonsensical
+        // variants like "meeting notess") pointing back to the canonical
         for ((_, canonical) in eligiblePages) {
             val base = canonical.lowercase()
-            if (base.length < MIN_STEM_BASE_LENGTH) continue
+            if (base.length < MIN_STEM_BASE_LENGTH || ' ' in base) continue
             for ((variant, baseLen) in stemVariants(base)) {
                 if (seenPatterns.add(variant)) {
                     result += AhoCorasickMatcher.TrieEntry(variant, canonical, baseLen)
