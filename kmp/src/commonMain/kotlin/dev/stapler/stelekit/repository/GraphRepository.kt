@@ -570,6 +570,8 @@ interface RepositoryFactory {
 data class RepositorySet(
     val blockRepository: BlockRepository,
     val pageRepository: PageRepository,
+    /** Write-only view of [pageRepository] with cache population disabled. For background indexing. */
+    val backgroundPageRepository: PageRepository = pageRepository,
     val propertyRepository: PropertyRepository,
     val referenceRepository: ReferenceRepository,
     val searchRepository: SearchRepository,

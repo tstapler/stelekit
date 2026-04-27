@@ -52,6 +52,8 @@ class GraphLoader(
     },
     val fileRegistry: FileRegistry = FileRegistry(fileSystem),
     externalWriteActor: DatabaseWriteActor? = null,
+    /** Background-safe variant of [pageRepository] that skips write-side cache population. */
+    private val backgroundPageRepository: PageRepository = pageRepository,
     private val sidecarManager: SidecarManager? = null,
     private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
     private val spanRepository: SpanRepository? = null,
@@ -498,10 +500,14 @@ class GraphLoader(
         val failedPageUuids = mutableSetOf<String>()
 
         if (pagesToSave.isNotEmpty()) {
-            val bulkResult = writeActor.savePages(pagesToSave, DatabaseWriteActor.Priority.LOW)
+            val bulkResult = writeActor.execute(DatabaseWriteActor.Priority.LOW) {
+                backgroundPageRepository.savePages(pagesToSave)
+            }
             if (bulkResult.isLeft()) {
                 for (page in pagesToSave) {
-                    writeActor.savePage(page, DatabaseWriteActor.Priority.LOW).onLeft { e ->
+                    writeActor.execute(DatabaseWriteActor.Priority.LOW) {
+                        backgroundPageRepository.savePage(page)
+                    }.onLeft { e ->
                         logger.error("savePage failed for ${page.name}: ${e.message}")
                         _writeErrors.tryEmit(WriteError(page.filePath ?: page.name, 0, e))
                         failedPageUuids.add(page.uuid)

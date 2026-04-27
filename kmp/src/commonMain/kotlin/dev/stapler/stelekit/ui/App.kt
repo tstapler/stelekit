@@ -324,6 +324,7 @@ private fun GraphContent(
             repos.blockRepository,
             repos.journalService,
             externalWriteActor = repos.writeActor,
+            backgroundPageRepository = repos.backgroundPageRepository,
             sidecarManager = sidecarManager,
             spanRepository = repos.spanRepository,
         ).also { it.onBulkImportComplete = repos.onBulkImportComplete }

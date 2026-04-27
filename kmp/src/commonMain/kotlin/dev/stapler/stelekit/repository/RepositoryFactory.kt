@@ -166,6 +166,9 @@ class RepositoryFactoryImpl(
 
         val blockRepo = createBlockRepository(backend)
         val pageRepo = createPageRepository(backend)
+        val backgroundPageRepo: PageRepository = if (backend == GraphBackend.SQLDELIGHT) {
+            SqlDelightPageRepository(database, cacheWrites = false)
+        } else pageRepo
         val (actor, undoManager) = if (scope != null) {
             val sessionId = dev.stapler.stelekit.util.UuidGenerator.generateV7()
             val opLogger = if (backend == GraphBackend.SQLDELIGHT) OperationLogger(database, sessionId) else null
@@ -240,6 +243,7 @@ class RepositoryFactoryImpl(
         return RepositorySet(
             blockRepository = blockRepo,
             pageRepository = pageRepo,
+            backgroundPageRepository = backgroundPageRepo,
             propertyRepository = createPropertyRepository(backend),
             referenceRepository = createReferenceRepository(backend),
             searchRepository = createSearchRepository(backend),

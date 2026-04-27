@@ -25,7 +25,8 @@ import kotlin.time.Instant
  */
 @OptIn(DirectRepositoryWrite::class)
 class SqlDelightPageRepository(
-    private val database: SteleDatabase
+    private val database: SteleDatabase,
+    private val cacheWrites: Boolean = true,
 ) : PageRepository {
 
     private val queries = database.steleDatabaseQueries
@@ -132,8 +133,10 @@ class SqlDelightPageRepository(
     override suspend fun savePage(page: Page): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             upsertPage(page)
-            pageByUuidCache.put(page.uuid, page)
-            pageByNameCache.put(page.name.lowercase(), page)
+            if (cacheWrites) {
+                pageByUuidCache.put(page.uuid, page)
+                pageByNameCache.put(page.name.lowercase(), page)
+            }
             Unit.right()
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
