@@ -29,16 +29,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPORTS_DIR="$REPO_ROOT/kmp/build/reports"
 GRAPH_PATH="${1:-}"
 
-# ── flamegraph.pl ────────────────────────────────────────────────────────────
-
-FLAMEGRAPH_PL="${FLAMEGRAPH_PL:-/tmp/flamegraph.pl}"
-if [[ ! -f "$FLAMEGRAPH_PL" ]]; then
-    echo "Downloading flamegraph.pl..."
-    curl -fsSL \
-        https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl \
-        -o "$FLAMEGRAPH_PL"
-fi
-
 # ── async-profiler library ───────────────────────────────────────────────────
 
 AP_LIB="${AP_LIB:-}"
@@ -90,16 +80,22 @@ svg_to_png() {
 SHORT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "local")
 
 if [[ -f "$REPORTS_DIR/graph-load-alloc.collapsed" ]]; then
-    perl "$FLAMEGRAPH_PL" --width 1800 \
-        --title "Alloc flamegraph ($SHORT_SHA)" --colors mem \
-        "$REPORTS_DIR/graph-load-alloc.collapsed" > "$REPORTS_DIR/flamegraph-alloc.svg"
+    ./gradlew -q --no-daemon :tools:flamegraph:run \
+        -Pfg.width=1800 \
+        "-Pfg.title=Alloc flamegraph ($SHORT_SHA)" \
+        -Pfg.colors=mem \
+        "-Pfg.input=$REPORTS_DIR/graph-load-alloc.collapsed" \
+        "-Pfg.output=$REPORTS_DIR/flamegraph-alloc.svg"
     svg_to_png "$REPORTS_DIR/flamegraph-alloc.svg" "$REPORTS_DIR/flamegraph-alloc.png"
 fi
 
 if [[ -f "$REPORTS_DIR/graph-load-cpu.collapsed" ]]; then
-    perl "$FLAMEGRAPH_PL" --width 1800 \
-        --title "CPU flamegraph — wall-clock, coroutine threads ($SHORT_SHA)" --colors java \
-        "$REPORTS_DIR/graph-load-cpu.collapsed" > "$REPORTS_DIR/flamegraph-cpu.svg"
+    ./gradlew -q --no-daemon :tools:flamegraph:run \
+        -Pfg.width=1800 \
+        "-Pfg.title=CPU flamegraph — wall-clock, coroutine threads ($SHORT_SHA)" \
+        -Pfg.colors=java \
+        "-Pfg.input=$REPORTS_DIR/graph-load-cpu.collapsed" \
+        "-Pfg.output=$REPORTS_DIR/flamegraph-cpu.svg"
     svg_to_png "$REPORTS_DIR/flamegraph-cpu.svg" "$REPORTS_DIR/flamegraph-cpu.png"
 fi
 

@@ -43,7 +43,6 @@ jobs:
           tar xf ap.tar.gz
           echo "$PWD/async-profiler-4.4-linux-x64/bin" >> $GITHUB_PATH
           sudo apt-get install -y librsvg2-bin
-          curl -sO https://raw.githubusercontent.com/brendangregg/FlameGraph/master/flamegraph.pl
 
       - name: Run benchmark
         run: |
@@ -58,11 +57,12 @@ jobs:
 
           ALLOC_COLLAPSED=kmp/build/reports/graph-load-alloc.collapsed
           if [ -f "$ALLOC_COLLAPSED" ]; then
-            perl flamegraph.pl \
-              --width 1800 \
-              --title "Alloc flamegraph (${SHORT_SHA})" \
-              --colors mem \
-              "$ALLOC_COLLAPSED" > flamegraph-alloc.svg
+            ./gradlew -q --no-daemon :tools:flamegraph:run \
+              -Pfg.width=1800 \
+              "-Pfg.title=Alloc flamegraph (${SHORT_SHA})" \
+              -Pfg.colors=mem \
+              "-Pfg.input=${ALLOC_COLLAPSED}" \
+              -Pfg.output=flamegraph-alloc.svg
             rsvg-convert -w 1800 flamegraph-alloc.svg -o flamegraph-alloc.png
             echo "ALLOC_PNG_GENERATED=true" >> $GITHUB_ENV
           else
@@ -71,11 +71,12 @@ jobs:
 
           CPU_COLLAPSED=kmp/build/reports/graph-load-cpu.collapsed
           if [ -f "$CPU_COLLAPSED" ]; then
-            perl flamegraph.pl \
-              --width 1800 \
-              --title "CPU flamegraph (${SHORT_SHA})" \
-              --colors java \
-              "$CPU_COLLAPSED" > flamegraph-cpu.svg
+            ./gradlew -q --no-daemon :tools:flamegraph:run \
+              -Pfg.width=1800 \
+              "-Pfg.title=CPU flamegraph (${SHORT_SHA})" \
+              -Pfg.colors=java \
+              "-Pfg.input=${CPU_COLLAPSED}" \
+              -Pfg.output=flamegraph-cpu.svg
             rsvg-convert -w 1800 flamegraph-cpu.svg -o flamegraph-cpu.png
             echo "CPU_PNG_GENERATED=true" >> $GITHUB_ENV
           else
@@ -108,6 +109,7 @@ jobs:
         with:
           name: flamegraph-alloc-${{ github.sha }}
           path: flamegraph-alloc.png
+          archive: false
           retention-days: 30
 
       - name: Upload CPU flamegraph
@@ -116,6 +118,7 @@ jobs:
         with:
           name: flamegraph-cpu-${{ github.sha }}
           path: flamegraph-cpu.png
+          archive: false
           retention-days: 30
 
       - name: Upload profiling data
