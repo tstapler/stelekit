@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.editor.persistence
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
@@ -102,7 +107,7 @@ class IntegratedPersistenceSystem(
     /**
      * Start the entire persistence system
      */
-    suspend fun start(): Result<Unit> = try {
+    suspend fun start(): Either<DomainError, Unit> = try {
         // Start components in order
         performanceMonitor.start()
         debouncer.start()
@@ -143,37 +148,37 @@ class IntegratedPersistenceSystem(
         }
         
         logger.info("Integrated persistence system started")
-        Result.success(Unit)
+        Unit.right()
         
     } catch (e: Exception) {
         logger.error("Failed to start integrated persistence system", e)
-        Result.failure(e)
+        DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
     }
     
     /**
      * Stop the entire persistence system
      */
-    suspend fun stop(force: Boolean = false): Result<Unit> = try {
+    suspend fun stop(force: Boolean = false): Either<DomainError, Unit> = try {
         debouncer.stop()
         persistenceManager.stop(force)
         performanceMonitor.stop()
         
         logger.info("Integrated persistence system stopped")
-        Result.success(Unit)
+        Unit.right()
         
     } catch (e: Exception) {
         logger.error("Failed to stop integrated persistence system", e)
-        Result.failure(e)
+        DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
     }
     
     /**
      * Save a block with full integration
      */
-    suspend fun saveBlockIntegrated(block: Block): Result<PersistenceResult> = try {
+    suspend fun saveBlockIntegrated(block: Block): Either<DomainError, PersistenceResult> = try {
         performanceMonitor.startOperation("saveBlock")
         
         val result = persistenceManager.saveBlock(block)
-        val persistenceResult = result.getOrThrow()
+        val persistenceResult = result.fold({ e -> throw RuntimeException(e.message) }, { it })
         
         if (persistenceResult.success) {
             performanceMonitor.endOperation("saveBlock", true, persistenceResult.duration)
@@ -195,7 +200,7 @@ class IntegratedPersistenceSystem(
             )
         }
         
-        Result.success(persistenceResult)
+        persistenceResult.right()
         
     } catch (e: Exception) {
         performanceMonitor.endOperation("saveBlock", false)
@@ -207,24 +212,24 @@ class IntegratedPersistenceSystem(
             context = PersistenceContext(sessionId = generateSessionId())
         )
         
-        Result.failure(e)
+        DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
     }
     
     /**
      * Queue block changes through debouncer
      */
-    suspend fun queueChangeIntegrated(change: BlockChange): Result<Unit> = try {
+    suspend fun queueChangeIntegrated(change: BlockChange): Either<DomainError, Unit> = try {
         performanceMonitor.startOperation("queueChange")
         
         // Queue through debouncer for batching
         debouncer.queueChange(change)
         
         performanceMonitor.endOperation("queueChange", true)
-        Result.success(Unit)
+        Unit.right()
         
     } catch (e: Exception) {
         performanceMonitor.endOperation("queueChange", false)
-        Result.failure(e)
+        DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
     }
     
     /**
@@ -396,10 +401,10 @@ object PersistenceExample {
         
         // Start the system
         val startResult = system.start()
-        if (startResult.isSuccess) {
+        if (startResult.isRight()) {
             println("Persistence system started successfully")
         } else {
-            println("Failed to start persistence system: ${startResult.exceptionOrNull()?.message}")
+            println("Failed to start persistence system: ${startResult.leftOrNull()?.message}")
             return
         }
         

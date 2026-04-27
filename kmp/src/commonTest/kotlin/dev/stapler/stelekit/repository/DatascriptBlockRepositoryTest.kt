@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
@@ -55,7 +60,7 @@ class DatascriptBlockRepositoryTest {
         val result = repository.indentBlock(uuid2)
         
         // Verify
-        assertTrue(result.isSuccess, "Indent failed: ${result.exceptionOrNull()}")
+        assertTrue(result.isRight(), "Indent failed: ${result.leftOrNull()?.let { RuntimeException(it.message) }}")
         
         // Fetch B2 to check parent
         val res = repository.getBlockByUuid(uuid2).first()
@@ -77,7 +82,7 @@ class DatascriptBlockRepositoryTest {
         
         // Action
         val result = repository.moveBlockUp(uuid2)
-        assertTrue(result.isSuccess)
+        assertTrue(result.isRight())
         
         // Verify positions
         val pageUuid = "00000000-0000-0000-0000-000000000001"
@@ -101,7 +106,7 @@ class DatascriptBlockRepositoryTest {
         
         // Action
         val result = repository.moveBlockDown(uuid1)
-        assertTrue(result.isSuccess)
+        assertTrue(result.isRight())
         
         // Verify positions
         val pageUuid = "00000000-0000-0000-0000-000000000001"

@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.cache.LruCache
 import dev.stapler.stelekit.cache.RepoCacheConfig
 import dev.stapler.stelekit.cache.RequestCoalescer
@@ -13,7 +18,6 @@ import app.cash.sqldelight.coroutines.mapToOneOrNull
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
 import kotlin.time.Instant
-import kotlin.Result.Companion.success
 
 /**
  * SQLDelight implementation of PageRepository.
@@ -44,10 +48,10 @@ class SqlDelightPageRepository(
     private val byUuidCoalescer = RequestCoalescer<String, Page?>()
     private val byNameCoalescer = RequestCoalescer<String, Page?>()
 
-    override fun getPageByUuid(uuid: String): Flow<Result<Page?>> = flow {
+    override fun getPageByUuid(uuid: String): Flow<Either<DomainError, Page?>> = flow {
         val cached = pageByUuidCache.get(uuid)
         if (cached != null) {
-            emit(success(cached))
+            emit(cached.right())
             return@flow
         }
         val page = byUuidCoalescer.execute(uuid) {
@@ -57,13 +61,13 @@ class SqlDelightPageRepository(
             pageByUuidCache.put(page.uuid, page)
             pageByNameCache.put(page.name.lowercase(), page)
         }
-        emit(success(page))
+        emit(page.right())
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getPageByName(name: String): Flow<Result<Page?>> = flow {
+    override fun getPageByName(name: String): Flow<Either<DomainError, Page?>> = flow {
         val cached = pageByNameCache.get(name.lowercase())
         if (cached != null) {
-            emit(success(cached))
+            emit(cached.right())
             return@flow
         }
         val page = byNameCoalescer.execute(name.lowercase()) {
@@ -73,71 +77,71 @@ class SqlDelightPageRepository(
             pageByNameCache.put(name.lowercase(), page)
             pageByUuidCache.put(page.uuid, page)
         }
-        emit(success(page))
+        emit(page.right())
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getPagesInNamespace(namespace: String): Flow<Result<List<Page>>> = 
+    override fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>> = 
         queries.selectPagesByNamespaceUnpaginated(namespace)
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
-            .map { list -> success(list.map { it.toModel() }) }
+            .map { list -> list.map { it.toModel() }.right() }
 
-    override fun getPages(limit: Int, offset: Int): Flow<Result<List<Page>>> = 
+    override fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> = 
         queries.selectAllPagesPaginated(limit.toLong(), offset.toLong())
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
-            .map { list -> success(list.map { it.toModel() }) }
+            .map { list -> list.map { it.toModel() }.right() }
 
-    override fun searchPages(query: String, limit: Int, offset: Int): Flow<Result<List<Page>>> = 
+    override fun searchPages(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> = 
         queries.selectPagesByNameLikePaginated("%$query%", limit.toLong(), offset.toLong())
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
-            .map { list -> success(list.map { it.toModel() }) }
+            .map { list -> list.map { it.toModel() }.right() }
 
-    override fun getAllPages(): Flow<Result<List<Page>>> =
+    override fun getAllPages(): Flow<Either<DomainError, List<Page>>> =
         queries.selectAllPages()
             .asFlow()
             .conflate()  // drop intermediate invalidations during bulk import to avoid O(N²) full-table scans
             .mapToList(PlatformDispatcher.DB)
-            .map { list -> success(list.map { it.toModel() }) }
+            .map { list -> list.map { it.toModel() }.right() }
 
-    override fun getJournalPages(limit: Int, offset: Int): Flow<Result<List<Page>>> =
+    override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectJournalPages(limit.toLong(), offset.toLong())
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
-            .map { list -> success(list.map { it.toModel() }) }
+            .map { list -> list.map { it.toModel() }.right() }
 
-    override fun getJournalPageByDate(date: kotlinx.datetime.LocalDate): Flow<Result<Page?>> =
+    override fun getJournalPageByDate(date: kotlinx.datetime.LocalDate): Flow<Either<DomainError, Page?>> =
         queries.selectJournalPageByDate(date.toString())
             .asFlow()
             .mapToOneOrNull(PlatformDispatcher.DB)
-            .map { success(it?.toModel()) }
+            .map { it?.toModel().right() }
 
-    override fun getRecentPages(limit: Int): Flow<Result<List<Page>>> = 
+    override fun getRecentPages(limit: Int): Flow<Either<DomainError, List<Page>>> = 
         queries.selectRecentlyUpdatedPages(limit.toLong())
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
-            .map { list -> success(list.map { it.toModel() }) }
+            .map { list -> list.map { it.toModel() }.right() }
 
-    override fun getUnloadedPages(): Flow<Result<List<Page>>> = 
+    override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> = 
         queries.selectUnloadedPages()
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
-            .map { list -> success(list.map { it.toModel() }) }
+            .map { list -> list.map { it.toModel() }.right() }
 
-    override suspend fun savePage(page: Page): Result<Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun savePage(page: Page): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             upsertPage(page)
             pageByUuidCache.put(page.uuid, page)
             pageByNameCache.put(page.name.lowercase(), page)
-            success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun savePages(pages: List<Page>): Result<Unit> = withContext(PlatformDispatcher.DB) {
-        if (pages.isEmpty()) return@withContext success(Unit)
+    override suspend fun savePages(pages: List<Page>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+        if (pages.isEmpty()) return@withContext Unit.right()
         try {
             queries.transaction {
                 pages.forEach { page -> upsertPage(page) }
@@ -146,9 +150,9 @@ class SqlDelightPageRepository(
                 pageByUuidCache.put(page.uuid, page)
                 pageByNameCache.put(page.name.lowercase(), page)
             }
-            success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
@@ -181,49 +185,49 @@ class SqlDelightPageRepository(
         )
     }
 
-    override suspend fun toggleFavorite(pageUuid: String): Result<Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun toggleFavorite(pageUuid: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             val page = queries.selectPageByUuid(pageUuid).executeAsOneOrNull()
             if (page != null) {
                 val newFavorite = if (page.is_favorite == 1L) 0L else 1L
                 queries.updatePageFavorite(newFavorite, pageUuid)
             }
-            success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun renamePage(pageUuid: String, newName: String): Result<Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun renamePage(pageUuid: String, newName: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             val old = pageByUuidCache.get(pageUuid)
             if (old != null) pageByNameCache.remove(old.name.lowercase())
             queries.updatePageName(newName, pageUuid)
             pageByUuidCache.remove(pageUuid)
-            success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun deletePage(pageUuid: String): Result<Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun deletePage(pageUuid: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             val old = pageByUuidCache.get(pageUuid)
             if (old != null) pageByNameCache.remove(old.name.lowercase())
             queries.deletePageByUuid(pageUuid)
             pageByUuidCache.remove(pageUuid)
-            success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override fun countPages(): Flow<Result<Long>> = flow {
+    override fun countPages(): Flow<Either<DomainError, Long>> = flow {
         try {
             val count = queries.countPages().executeAsOne()
-            emit(success(count))
+            emit(count.right())
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
 

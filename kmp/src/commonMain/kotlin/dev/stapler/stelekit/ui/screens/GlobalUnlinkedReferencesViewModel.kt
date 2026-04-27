@@ -177,7 +177,7 @@ class GlobalUnlinkedReferencesViewModel(
                 blockRepository.saveBlock(updatedBlock)
             }
 
-            if (result.isSuccess) {
+            if (result.isRight()) {
                 _state.update {
                     it.copy(
                         results = it.results - entry,
@@ -190,7 +190,7 @@ class GlobalUnlinkedReferencesViewModel(
                     _state.update { it.copy(successMessage = null) }
                 }
             } else {
-                val msg = result.exceptionOrNull()?.message ?: "Save failed"
+                val msg = result.leftOrNull()?.message ?: "Save failed"
                 _state.update { it.copy(errorMessage = msg) }
             }
         }

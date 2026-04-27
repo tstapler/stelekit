@@ -7,6 +7,7 @@ package dev.stapler.stelekit
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import arrow.core.getOrElse
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.model.Block
@@ -80,7 +81,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         val existingBlocks = repoSet.blockRepository
             .getBlocksForPage(page.uuid)
             .first()
-            .getOrThrow()
+            .getOrElse { error("Failed to load blocks: $it") }
 
         val now = Clock.System.now()
         val newBlock = Block(
@@ -96,13 +97,13 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
         val writeActor = repoSet.writeActor
         if (writeActor != null) {
             try {
-                writeActor.saveBlock(newBlock).getOrThrow()
+                writeActor.saveBlock(newBlock).getOrElse { error("Save failed: $it") }
             } catch (e: ClosedSendChannelException) {
                 throw IllegalStateException("Graph switched during save — please retry", e)
             }
         } else {
             @OptIn(DirectRepositoryWrite::class)
-            repoSet.blockRepository.saveBlock(newBlock).getOrThrow()
+            repoSet.blockRepository.saveBlock(newBlock).getOrElse { error("Save failed: $it") }
         }
 
         // Bug 8 mitigation: flush the Markdown file after every actor write.

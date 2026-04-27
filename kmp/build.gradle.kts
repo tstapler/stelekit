@@ -46,6 +46,12 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
+                // Arrow
+                implementation("io.arrow-kt:arrow-core:2.2.1.1")
+                implementation("io.arrow-kt:arrow-optics:2.2.1.1")
+                implementation("io.arrow-kt:arrow-fx-coroutines:2.2.1.1")
+                implementation("io.arrow-kt:arrow-resilience:2.2.1.1")
+
                 // Kotlinx libraries
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
                 implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.7.1")

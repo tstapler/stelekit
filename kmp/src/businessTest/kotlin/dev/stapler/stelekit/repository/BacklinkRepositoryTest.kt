@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import kotlinx.coroutines.flow.first
@@ -51,8 +56,8 @@ class BacklinkRepositoryTest {
 
         val result = repo.getLinkedReferences("A").first()
 
-        assertTrue(result.isSuccess)
-        val linked = result.getOrThrow()
+        assertTrue(result.isRight())
+        val linked = result.getOrNull()!!
         assertEquals(1, linked.size)
         assertEquals("block-b1", linked.first().uuid)
     }
@@ -64,8 +69,8 @@ class BacklinkRepositoryTest {
 
         val result = repo.getLinkedReferences("A").first()
 
-        assertTrue(result.isSuccess)
-        assertTrue(result.getOrThrow().isEmpty())
+        assertTrue(result.isRight())
+        assertTrue(result.getOrNull()!!.isEmpty())
     }
 
     @Test
@@ -77,8 +82,8 @@ class BacklinkRepositoryTest {
 
         val result = repo.getLinkedReferences("A").first()
 
-        assertTrue(result.isSuccess)
-        val linked = result.getOrThrow()
+        assertTrue(result.isRight())
+        val linked = result.getOrNull()!!
         // Self-reference IS included — the in-memory impl returns all matching blocks
         // regardless of which page they belong to.
         assertTrue(linked.any { it.uuid == "block-a1" })
@@ -94,8 +99,8 @@ class BacklinkRepositoryTest {
 
         val result = repo.getLinkedReferences("A").first()
 
-        assertTrue(result.isSuccess)
-        val linked = result.getOrThrow()
+        assertTrue(result.isRight())
+        val linked = result.getOrNull()!!
         assertEquals(2, linked.size)
         assertTrue(linked.any { it.uuid == "block-1" })
         assertTrue(linked.any { it.uuid == "block-2" })
@@ -111,8 +116,8 @@ class BacklinkRepositoryTest {
 
         val result = repo.getLinkedReferences("TargetPage").first()
 
-        assertTrue(result.isSuccess)
-        val linked = result.getOrThrow()
+        assertTrue(result.isRight())
+        val linked = result.getOrNull()!!
         assertEquals(2, linked.size)
         assertTrue(linked.any { it.uuid == "block-1" })
         assertTrue(linked.any { it.uuid == "block-2" })
@@ -126,8 +131,8 @@ class BacklinkRepositoryTest {
 
         val result = repo.getLinkedReferences("PageName").first()
 
-        assertTrue(result.isSuccess)
-        assertEquals(1, result.getOrThrow().size)
-        assertEquals("block-1", result.getOrThrow().first().uuid)
+        assertTrue(result.isRight())
+        assertEquals(1, result.getOrNull()!!.size)
+        assertEquals("block-1", result.getOrNull()!!.first().uuid)
     }
 }

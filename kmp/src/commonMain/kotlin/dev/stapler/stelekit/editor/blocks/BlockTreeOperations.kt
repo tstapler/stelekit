@@ -2,6 +2,11 @@
 
 package dev.stapler.stelekit.editor.blocks
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.repository.BlockWithDepth
 import dev.stapler.stelekit.repository.BlockRepository
@@ -11,8 +16,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import kotlin.time.Clock
-import kotlin.Result
-import kotlin.Result.Companion.success
 
 import dev.stapler.stelekit.editor.blocks.IBlockOperations
 import dev.stapler.stelekit.editor.blocks.DeleteStrategy
@@ -43,13 +46,13 @@ class BlockTreeOperations(
         rootUuid: String,
         includeCollapsed: Boolean = true,
         maxDepth: Int? = null
-    ): Result<List<BlockWithDepth>> {
+    ): Either<DomainError, List<BlockWithDepth>> {
         return try {
             val allBlocks = mutableListOf<BlockWithDepth>()
             collectSubtree(rootUuid, 0, allBlocks, includeCollapsed, maxDepth)
-            success(allBlocks)
+            allBlocks.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
@@ -59,7 +62,7 @@ class BlockTreeOperations(
     suspend fun getVisibleBlocks(
         pageUuid: String,
         includeCollapsed: Boolean = false
-    ): Result<List<BlockWithDepth>> {
+    ): Either<DomainError, List<BlockWithDepth>> {
         return try {
             // Get current blocks snapshot
             val pageBlocksResult = blockOperations.getBlocksForPage(pageUuid).first()
@@ -78,9 +81,9 @@ class BlockTreeOperations(
                 )
             }
             
-            success(visibleBlocks)
+            visibleBlocks.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
@@ -89,10 +92,10 @@ class BlockTreeOperations(
      */
     suspend fun findCommonAncestor(
         blockUuids: List<String>
-    ): Result<String?> {
+    ): Either<DomainError, String?> {
         return try {
-            if (blockUuids.isEmpty()) return success(null)
-            if (blockUuids.size == 1) return success(blockUuids.first())
+            if (blockUuids.isEmpty()) return null.right()
+            if (blockUuids.size == 1) return blockUuids.first().right()
             
             val ancestorPaths = blockUuids.map { uuid ->
                 getAncestorPath(uuid).getOrNull() ?: emptyList()
@@ -104,36 +107,36 @@ class BlockTreeOperations(
             }
             
             // Return the deepest common ancestor (last in the list)
-            success(commonPath.lastOrNull())
+            commonPath.lastOrNull().right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
     /**
      * Get the path from root to the specified block.
      */
-    suspend fun getAncestorPath(blockUuid: String): Result<List<String>> {
+    suspend fun getAncestorPath(blockUuid: String): Either<DomainError, List<String>> {
         return try {
             val ancestorsResult = blockOperations.getBlockAncestors(blockUuid).first()
             val ancestors = ancestorsResult.getOrNull() ?: emptyList()
-            success(ancestors.map { it.uuid } + blockUuid)
+            (ancestors.map { it.uuid } + blockUuid).right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
     /**
      * Count the total number of blocks in a subtree.
      */
-    suspend fun countSubtreeBlocks(rootUuid: String): Result<Int> {
+    suspend fun countSubtreeBlocks(rootUuid: String): Either<DomainError, Int> {
         return getSubtree(rootUuid).map { it.size }
     }
     
     /**
      * Get the maximum depth of a subtree.
      */
-    suspend fun getSubtreeMaxDepth(rootUuid: String): Result<Int> {
+    suspend fun getSubtreeMaxDepth(rootUuid: String): Either<DomainError, Int> {
         return getSubtree(rootUuid).map { blocks ->
             blocks.maxOfOrNull { it.depth } ?: 0
         }
@@ -144,7 +147,7 @@ class BlockTreeOperations(
     /**
      * Get all collapsed blocks in a page.
      */
-    suspend fun getCollapsedBlocks(pageUuid: String): Result<List<String>> {
+    suspend fun getCollapsedBlocks(pageUuid: String): Either<DomainError, List<String>> {
         return try {
             val pageBlocksResult = blockOperations.getBlocksForPage(pageUuid).first()
             val pageBlocks = pageBlocksResult.getOrNull() ?: emptyList()
@@ -154,20 +157,20 @@ class BlockTreeOperations(
                 block.properties["collapsed"] == "true"
             }
             
-            success(collapsed.map { it.uuid })
+            collapsed.map { it.uuid }.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
     /**
      * Toggle the collapse state of a block.
      */
-    suspend fun toggleCollapseState(blockUuid: String): Result<Unit> {
+    suspend fun toggleCollapseState(blockUuid: String): Either<DomainError, Unit> {
         return try {
             val blockResult = blockOperations.getBlockByUuid(blockUuid).first()
-            val block = blockResult.getOrNull() ?: return Result.failure(Exception("Block not found"))
-            
+            val block = blockResult.getOrNull() ?: return DomainError.DatabaseError.NotFound("block", blockUuid).left()
+
             val isCurrentlyCollapsed = block.properties["collapsed"] == "true"
             val newProperties = block.properties.toMutableMap().apply {
                 if (isCurrentlyCollapsed) {
@@ -180,7 +183,7 @@ class BlockTreeOperations(
             val updatedBlock = block.copy(properties = newProperties)
             blockOperations.saveBlock(updatedBlock)
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
@@ -194,11 +197,11 @@ class BlockTreeOperations(
         rootBlockUuid: String,
         targetParentUuid: String? = null,
         _targetPosition: PositioningMode = PositioningMode.END
-    ): Result<Block> {
+    ): Either<DomainError, Block> {
         return try {
             // 1. Get entire subtree
             val subtree = getSubtree(rootBlockUuid).getOrNull()
-                ?: return Result.failure(Exception("Subtree not found: $rootBlockUuid"))
+                ?: return DomainError.DatabaseError.NotFound("block", rootBlockUuid).left()
             
             // 2. Prepare mapping and new blocks list
             val oldToNewUuid = mutableMapOf<String, String>()
@@ -214,10 +217,10 @@ class BlockTreeOperations(
                 0
             } else {
                 val targetParent = blockOperations.getBlockByUuid(targetParentUuid).first().getOrNull()
-                    ?: return Result.failure(Exception("Target parent not found"))
+                    ?: return DomainError.DatabaseError.NotFound("block", targetParentUuid!!).left()
                 targetParent.level + 1
             }
-            
+
             // 4. Create new blocks with adjusted parent pointers and levels
             subtree.forEach { item ->
                 val oldBlock = item.block
@@ -247,9 +250,9 @@ class BlockTreeOperations(
             blockOperations.saveBlocks(newBlocks)
             
             // 6. Return the new root
-            Result.success(newBlocks.first { it.uuid == oldToNewUuid[rootBlockUuid] })
+            newBlocks.first { it.uuid == oldToNewUuid[rootBlockUuid] }.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
@@ -261,30 +264,30 @@ class BlockTreeOperations(
         targetParentUuid: String?,
         positioning: PositioningMode,
         targetUuid: String? = null
-    ): Result<Unit> {
+    ): Either<DomainError, Unit> {
         return try {
             // Basic validation - check if trying to move block into its own subtree
             if (targetParentUuid != null) {
-                val subtree = getSubtree(rootUuid).getOrNull() ?: return Result.failure(Exception("Failed to get subtree"))
+                val subtree = getSubtree(rootUuid).getOrNull() ?: return DomainError.DatabaseError.NotFound("block", rootUuid).left()
                 if (subtree.any { it.block.uuid == targetParentUuid }) {
-                    return Result.failure(Exception("Cannot move a block into its own subtree"))
+                    return DomainError.DatabaseError.WriteFailed("Cannot move a block into its own subtree").left()
                 }
             }
-            
+
             // Get all blocks in the subtree
-            val subtree = getSubtree(rootUuid).getOrNull() ?: return Result.failure(Exception("Failed to get subtree"))
-            
+            val subtree = getSubtree(rootUuid).getOrNull() ?: return DomainError.DatabaseError.NotFound("block", rootUuid).left()
+
             val targetLevel = if (targetParentUuid == null) {
                 0
             } else {
                 val targetParent = blockOperations.getBlockByUuid(targetParentUuid).first().getOrNull()
-                    ?: return Result.failure(Exception("Target parent not found"))
+                    ?: return DomainError.DatabaseError.NotFound("block", targetParentUuid).left()
                 targetParent.level + 1
             }
             
             // Move the root block first
-            blockOperations.moveBlockEnhanced(rootUuid, targetParentUuid, positioning, targetUuid)
-                .getOrNull() ?: return Result.failure(Exception("Failed to move root block"))
+            val moveResult = blockOperations.moveBlockEnhanced(rootUuid, targetParentUuid, positioning, targetUuid)
+            if (moveResult.isLeft()) return moveResult
             
             // Update levels for all descendants
             val descendants = subtree.filter { it.block.uuid != rootUuid }
@@ -296,9 +299,9 @@ class BlockTreeOperations(
                 blockOperations.saveBlocks(descendantsToUpdate)
             }
             
-            success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
@@ -308,18 +311,18 @@ class BlockTreeOperations(
     suspend fun promoteSubtree(
         rootUuid: String,
         levels: Int = 1
-    ): Result<Unit> {
+    ): Either<DomainError, Unit> {
         return try {
             val block = blockOperations.getBlockByUuid(rootUuid).first().getOrNull()
-                ?: return Result.failure(Exception("Block not found"))
-            
+                ?: return DomainError.DatabaseError.NotFound("block", rootUuid).left()
+
             if (block.parentUuid == null) {
-                return Result.failure(Exception("Cannot promote root-level block"))
+                return DomainError.DatabaseError.WriteFailed("Cannot promote root-level block").left()
             }
-            
+
             // Get the current parent and its parent
             val parent = blockOperations.getBlockParent(block.uuid).first().getOrNull()
-                ?: return Result.failure(Exception("Parent block not found"))
+                ?: return DomainError.DatabaseError.NotFound("block", block.parentUuid!!).left()
             
             val targetParent = if (levels == 1) {
                 blockOperations.getBlockParent(parent.uuid).first().getOrNull()
@@ -328,7 +331,7 @@ class BlockTreeOperations(
                 var currentParent = parent
                 repeat(levels) {
                     currentParent = blockOperations.getBlockParent(currentParent.uuid).first().getOrNull()
-                        ?: return Result.failure(Exception("Cannot promote that many levels"))
+                        ?: return DomainError.DatabaseError.WriteFailed("Cannot promote that many levels").left()
                 }
                 currentParent
             }
@@ -340,7 +343,7 @@ class BlockTreeOperations(
                 parent.uuid
             )
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
@@ -350,17 +353,17 @@ class BlockTreeOperations(
     suspend fun demoteSubtree(
         rootUuid: String,
         levels: Int = 1
-    ): Result<Unit> {
+    ): Either<DomainError, Unit> {
         return try {
             val block = blockOperations.getBlockByUuid(rootUuid).first().getOrNull()
-                ?: return Result.failure(Exception("Block not found"))
-            
+                ?: return DomainError.DatabaseError.NotFound("block", rootUuid).left()
+
             // Find the target parent by looking at siblings
             val siblings = blockOperations.getBlockSiblings(rootUuid).first().getOrNull() ?: emptyList()
             val precedingSiblings = siblings.filter { it.position < block.position }
             
             if (precedingSiblings.isEmpty()) {
-                return Result.failure(Exception("No preceding sibling to demote into"))
+                return DomainError.DatabaseError.WriteFailed("No preceding sibling to demote into").left()
             }
             
             val targetParent = precedingSiblings.last()
@@ -372,7 +375,7 @@ class BlockTreeOperations(
                 if (children.isNotEmpty()) {
                     finalTargetParent = children.last()
                 } else {
-                    return Result.failure(Exception("Cannot demote that many levels"))
+                    return DomainError.DatabaseError.WriteFailed("Cannot demote that many levels").left()
                 }
             }
             
@@ -382,7 +385,7 @@ class BlockTreeOperations(
                 PositioningMode.END
             )
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
@@ -451,7 +454,7 @@ object BlockOperationValidator {
         blockUuid: String,
         targetParentUuid: String?,
         blockOperations: IBlockOperations
-    ): Result<ValidationResult> {
+    ): Either<DomainError, ValidationResult> {
         return try {
             val errors = mutableListOf<String>()
             val warnings = mutableListOf<String>()
@@ -473,16 +476,16 @@ object BlockOperationValidator {
                 }
             }
             
-            success(ValidationResult(
+            ValidationResult(
                 isValid = errors.isEmpty(),
                 errors = errors,
                 warnings = warnings
-            ))
+            ).right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
-    
+
     /**
      * Validate that delete operation won't orphan important blocks.
      */
@@ -490,7 +493,7 @@ object BlockOperationValidator {
         blockUuid: String,
         deleteStrategy: DeleteStrategy,
         blockOperations: IBlockOperations
-    ): Result<ValidationResult> {
+    ): Either<DomainError, ValidationResult> {
         return try {
             val errors = mutableListOf<String>()
             val warnings = mutableListOf<String>()
@@ -508,19 +511,14 @@ object BlockOperationValidator {
                 else -> { /* Other strategies are generally safe */ }
             }
             
-            success(ValidationResult(
+            ValidationResult(
                 isValid = errors.isEmpty(),
                 errors = errors,
                 warnings = warnings
-            ))
+            ).right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 }
 
-// Helper to fix unresolved reference
-private fun <T> Result<T>.getOrNull(): T? = fold(
-    onSuccess = { it },
-    onFailure = { null }
-)

@@ -29,7 +29,7 @@ class PostMigrationFlusher(private val graphWriter: GraphWriter) {
             val page = repoSet.pageRepository.getPageByUuid(pageUuid)
                 .first().getOrNull() ?: continue
             val blocks = repoSet.blockRepository.getBlocksForPage(pageUuid)
-                .first().getOrDefault(emptyList())
+                .first().getOrNull() ?: emptyList()
             graphWriter.savePage(page, blocks, graphPath)
         }
     }

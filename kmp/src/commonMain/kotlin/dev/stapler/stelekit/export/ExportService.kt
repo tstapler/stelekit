@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.export
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.outliner.BlockSorter
@@ -34,8 +39,8 @@ class ExportService(
         page: Page,
         blocks: List<Block>,
         formatId: String
-    ): Result<Unit> = withContext(Dispatchers.Default) {
-        runCatching {
+    ): Either<DomainError, Unit> = withContext(Dispatchers.Default) {
+        try {
             val exporter = exporterMap[formatId]
                 ?: error("Unknown export format: $formatId")
             val resolvedRefs = resolveBlockRefs(collectBlockRefUuids(blocks))
@@ -48,6 +53,9 @@ class ExportService(
             } else {
                 clipboard.writeText(output)
             }
+            Unit.right()
+        } catch (e: Exception) {
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
@@ -59,12 +67,14 @@ class ExportService(
         page: Page,
         blocks: List<Block>,
         formatId: String
-    ): Result<String> = withContext(Dispatchers.Default) {
-        runCatching {
+    ): Either<DomainError, String> = withContext(Dispatchers.Default) {
+        try {
             val exporter = exporterMap[formatId]
                 ?: error("Unknown export format: $formatId")
             val resolvedRefs = resolveBlockRefs(collectBlockRefUuids(blocks))
-            exporter.export(page, blocks, resolvedRefs)
+            exporter.export(page, blocks, resolvedRefs).right()
+        } catch (e: Exception) {
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 

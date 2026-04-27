@@ -2,6 +2,11 @@
 
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
@@ -90,7 +95,7 @@ class SearchRepositoryIntegrationTests {
         blockRepo.saveBlock(createTestBlock(generateUuid(3), pageUuid, "Another unrelated block", position = 3))
 
         val results = repository.searchBlocksByContent("hello").first()
-        assertTrue(results.isSuccess)
+        assertTrue(results.isRight())
         assertEquals(1, results.getOrNull()?.size)
         assertEquals(generateUuid(1), results.getOrNull()?.first()?.uuid)
     }
@@ -103,7 +108,7 @@ class SearchRepositoryIntegrationTests {
         blockRepo.saveBlock(createTestBlock(generateUuid(2), pageUuid, "kotlin is great", position = 2))
 
         val results = repository.searchBlocksByContent("kotlin").first()
-        assertTrue(results.isSuccess)
+        assertTrue(results.isRight())
         assertEquals(2, results.getOrNull()?.size)
     }
 
@@ -114,7 +119,7 @@ class SearchRepositoryIntegrationTests {
         pageRepo.savePage(createTestPage(generateUuid(3), "Python Programming"))
 
         val results = repository.searchPagesByTitle("kotlin").first()
-        assertTrue(results.isSuccess)
+        assertTrue(results.isRight())
         assertEquals(1, results.getOrNull()?.size)
         assertEquals("Kotlin Guide", results.getOrNull()?.first()?.name)
     }
@@ -135,7 +140,7 @@ class SearchRepositoryIntegrationTests {
         refRepo.addReference(refBlock2Uuid, targetBlockUuid)
 
         val results = repository.findBlocksReferencing(targetBlockUuid).first()
-        assertTrue(results.isSuccess)
+        assertTrue(results.isRight())
         assertEquals(2, results.getOrNull()?.size)
     }
 
@@ -153,7 +158,7 @@ class SearchRepositoryIntegrationTests {
         )
 
         val results = repository.searchWithFilters(request).first()
-        assertTrue(results.isSuccess)
+        assertTrue(results.isRight())
         // SQLDelight implementation currently only does basic content/title matching
         assertTrue(results.getOrNull()?.blocks?.any { it.uuid == generateUuid(1) } == true)
     }
@@ -170,7 +175,7 @@ class SearchRepositoryIntegrationTests {
         blockRepo.saveBlock(createTestBlock(generateUuid(13), pageUuid, "2025 budget planning", position = 3))
 
         val results = repository.searchBlocksByContent("2025 tax").first()
-        assertTrue(results.isSuccess)
+        assertTrue(results.isRight())
         val uuids = results.getOrNull()?.map { it.uuid }.orEmpty()
         assertTrue(generateUuid(11) in uuids, "Block with both terms should match")
         assertFalse(generateUuid(12) in uuids, "Block with neither term should not match")
@@ -190,7 +195,7 @@ class SearchRepositoryIntegrationTests {
 
         val request = SearchRequest(query = "project alpha", limit = 10, offset = 0)
         val result = repository.searchWithFilters(request).first()
-        assertTrue(result.isSuccess)
+        assertTrue(result.isRight())
 
         val ranked = result.getOrNull()?.ranked.orEmpty()
         assertTrue(ranked.isNotEmpty(), "Expected ranked results")
@@ -209,7 +214,7 @@ class SearchRepositoryIntegrationTests {
         // "topics unrelated" should fail AND (neither block has both), then OR fallback
         // returns blocks containing either "topic*" or "unrelated*"
         val results = repository.searchBlocksByContent("topics unrelated").first()
-        assertTrue(results.isSuccess)
+        assertTrue(results.isRight())
         // At least one result should come back via OR fallback
         val uuids = results.getOrNull()?.map { it.uuid }.orEmpty()
         assertTrue(uuids.isNotEmpty(), "OR fallback should return results when AND finds nothing")
@@ -242,7 +247,7 @@ class SearchRepositoryIntegrationTests {
             offset = 0
         )
         val result = repository.searchWithFilters(request).first()
-        assertTrue(result.isSuccess)
+        assertTrue(result.isRight())
 
         val ranked = result.getOrNull()?.ranked.orEmpty()
         val linkedHit = ranked.filterIsInstance<RankedSearchHit.BlockHit>().firstOrNull { it.block.uuid == linkedBlockUuid }
@@ -291,7 +296,7 @@ class SearchRepositoryIntegrationTests {
 
         val request = SearchRequest(query = "kotlin guide", limit = 10, offset = 0)
         val result = repository.searchWithFilters(request).first()
-        assertTrue(result.isSuccess)
+        assertTrue(result.isRight())
 
         val ranked = result.getOrNull()?.ranked.orEmpty()
         val recentHit = ranked.filterIsInstance<RankedSearchHit.BlockHit>().firstOrNull { it.block.uuid == generateUuid(610) }

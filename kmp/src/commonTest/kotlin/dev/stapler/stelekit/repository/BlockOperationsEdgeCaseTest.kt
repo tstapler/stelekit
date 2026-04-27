@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -76,7 +81,7 @@ class BlockOperationsEdgeCaseTest {
 
         // Indent B into A (both on page 1)
         val result = repository.indentBlock(page1BlockB.uuid)
-        assertTrue(result.isSuccess)
+        assertTrue(result.isRight())
 
         // Verify B is now child of A
         val blockB = repository.getBlockByUuid(page1BlockB.uuid).first().getOrNull()
@@ -106,7 +111,7 @@ class BlockOperationsEdgeCaseTest {
 
         // Outdent child
         val result = repository.outdentBlock(child.uuid)
-        assertTrue(result.isSuccess)
+        assertTrue(result.isRight())
 
         // Verify child is now at root level of page 1
         val outdentedChild = repository.getBlockByUuid(child.uuid).first().getOrNull()
@@ -275,7 +280,7 @@ class BlockOperationsEdgeCaseTest {
 
         // Try to move A up (already at top)
         val result = repository.moveBlockUp(blockA.uuid)
-        assertTrue(result.isSuccess) // Should succeed but do nothing
+        assertTrue(result.isRight()) // Should succeed but do nothing
 
         // Verify order unchanged
         val page1Uuid = "00000000-0000-0000-0000-000000000001"
@@ -297,7 +302,7 @@ class BlockOperationsEdgeCaseTest {
 
         // Try to move B down (already at bottom)
         val result = repository.moveBlockDown(blockB.uuid)
-        assertTrue(result.isSuccess) // Should succeed but do nothing
+        assertTrue(result.isRight()) // Should succeed but do nothing
 
         // Verify order unchanged
         val page1Uuid = "00000000-0000-0000-0000-000000000001"

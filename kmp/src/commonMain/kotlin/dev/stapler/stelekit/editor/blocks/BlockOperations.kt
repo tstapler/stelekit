@@ -2,6 +2,11 @@
 
 package dev.stapler.stelekit.editor.blocks
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
@@ -12,7 +17,6 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.time.Instant
-import kotlin.Result
 
 /**
  * Implementation of block operations for Logseq KMP editor.
@@ -39,7 +43,7 @@ class BlockOperations(
         properties: Map<String, String>,
         uuid: String?,
         createdAt: Instant?
-    ): Result<Block> = operationMutex.withLock {
+    ): Either<DomainError, Block> = operationMutex.withLock {
         try {
             val traceId = PerformanceMonitor.startTrace("create-block")
             
@@ -57,11 +61,11 @@ class BlockOperations(
             )
             
             val result = blockRepository.saveBlock(newBlock)
-            
+
             PerformanceMonitor.endTrace(traceId)
-            if (result.isSuccess) Result.success(newBlock) else Result.failure(result.exceptionOrNull() ?: Exception("Unknown error"))
+            result.map { newBlock }
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
@@ -69,12 +73,12 @@ class BlockOperations(
         blockUuid: String,
         content: String,
         properties: Map<String, String>?
-    ): Result<Block> = operationMutex.withLock {
+    ): Either<DomainError, Block> = operationMutex.withLock {
         try {
             val traceId = PerformanceMonitor.startTrace("update-block")
-            
+
             val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
-                ?: return Result.failure(IllegalArgumentException("Block not found: $blockUuid"))
+                ?: return@withLock DomainError.DatabaseError.NotFound("block", blockUuid).left()
             
             val updatedBlock = block.copy(
                 content = content,
@@ -83,11 +87,11 @@ class BlockOperations(
             )
             
             val result = blockRepository.saveBlock(updatedBlock)
-            
+
             PerformanceMonitor.endTrace(traceId)
-            if (result.isSuccess) Result.success(updatedBlock) else Result.failure(result.exceptionOrNull() ?: Exception("Unknown error"))
+            result.map { updatedBlock }
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
@@ -95,11 +99,11 @@ class BlockOperations(
         blockUuid: String,
         properties: Map<String, String>,
         mergeMode: Boolean
-    ): Result<Block> = operationMutex.withLock {
+    ): Either<DomainError, Block> = operationMutex.withLock {
         try {
             val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
-                ?: return Result.failure(IllegalArgumentException("Block not found: $blockUuid"))
-                
+                ?: return@withLock DomainError.DatabaseError.NotFound("block", blockUuid).left()
+
             val newProperties = if (mergeMode) {
                 block.properties + properties
             } else {
@@ -112,16 +116,16 @@ class BlockOperations(
             )
             
             val result = blockRepository.saveBlock(updatedBlock)
-            if (result.isSuccess) Result.success(updatedBlock) else Result.failure(result.exceptionOrNull() ?: Exception("Unknown error"))
+            result.map { updatedBlock }
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
     override suspend fun deleteBlockEnhanced(
         blockUuid: String,
         deleteStrategy: DeleteStrategy
-    ): Result<Unit> = operationMutex.withLock {
+    ): Either<DomainError, Unit> = operationMutex.withLock {
         val deleteChildren = deleteStrategy == DeleteStrategy.DELETE_CHILDREN
         blockRepository.deleteBlock(blockUuid, deleteChildren)
     }
@@ -131,10 +135,10 @@ class BlockOperations(
         targetParentUuid: String?,
         positioning: PositioningMode,
         targetUuid: String?
-    ): Result<Unit> = operationMutex.withLock {
+    ): Either<DomainError, Unit> = operationMutex.withLock {
         try {
             val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
-                ?: return@withLock Result.failure(IllegalArgumentException("Block not found: $blockUuid"))
+                ?: return@withLock DomainError.DatabaseError.NotFound("block", blockUuid).left()
             
             // 1. Determine siblings and their positions
             val siblingsResult = if (targetParentUuid == null) {
@@ -176,21 +180,21 @@ class BlockOperations(
             // 4. Perform the move
             blockRepository.moveBlock(blockUuid, targetParentUuid, newPosition)
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
     override suspend fun indentBlockEnhanced(
         blockUuid: String,
         indentMode: IndentMode
-    ): Result<Unit> = operationMutex.withLock {
+    ): Either<DomainError, Unit> = operationMutex.withLock {
         blockRepository.indentBlock(blockUuid)
     }
 
     override suspend fun outdentBlockEnhanced(
         blockUuid: String,
         targetLevel: Int?
-    ): Result<Unit> = operationMutex.withLock {
+    ): Either<DomainError, Unit> = operationMutex.withLock {
         blockRepository.outdentBlock(blockUuid)
     }
 
@@ -199,10 +203,10 @@ class BlockOperations(
         includeChildren: Boolean,
         targetPosition: PositioningMode,
         targetUuid: String?
-    ): Result<Block> = operationMutex.withLock {
+    ): Either<DomainError, Block> = operationMutex.withLock {
         try {
             val originalBlock = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
-                ?: return Result.failure(IllegalArgumentException("Block not found: $blockUuid"))
+                ?: return@withLock DomainError.DatabaseError.NotFound("block", blockUuid).left()
             
             val duplicate = originalBlock.copy(
                 uuid = generateBlockUuid(),
@@ -213,10 +217,10 @@ class BlockOperations(
             )
             
             val result = blockRepository.saveBlock(duplicate)
-            
-            if (result.isSuccess) Result.success(duplicate) else Result.failure(result.exceptionOrNull() ?: Exception("Unknown error"))
+
+            result.map { duplicate }
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
@@ -224,24 +228,24 @@ class BlockOperations(
         rootBlockUuid: String,
         targetParentUuid: String?,
         targetPosition: PositioningMode
-    ): Result<Block> = treeOps.duplicateSubtree(rootBlockUuid, targetParentUuid, targetPosition)
+    ): Either<DomainError, Block> = treeOps.duplicateSubtree(rootBlockUuid, targetParentUuid, targetPosition)
 
     override suspend fun splitBlock(
         blockUuid: String,
         cursorPosition: Int,
         keepContentInOriginal: Boolean
-    ): Result<Block> = operationMutex.withLock {
+    ): Either<DomainError, Block> = operationMutex.withLock {
         blockRepository.splitBlock(blockUuid, cursorPosition)
     }
 
     override suspend fun mergeWithNext(
         blockUuid: String,
         separator: String
-    ): Result<Block> = operationMutex.withLock {
+    ): Either<DomainError, Block> = operationMutex.withLock {
         try {
             val currentBlock = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
-                ?: return Result.failure(IllegalArgumentException("Block not found: $blockUuid"))
-            
+                ?: return@withLock DomainError.DatabaseError.NotFound("block", blockUuid).left()
+
             val siblings = if (currentBlock.parentUuid == null) {
                 blockRepository.getBlocksForPage(currentBlock.pageUuid).first().getOrNull()?.filter { it.parentUuid == null } ?: emptyList()
             } else {
@@ -250,31 +254,28 @@ class BlockOperations(
 
             val currentIndex = siblings.indexOfFirst { it.uuid == blockUuid }
             if (currentIndex < 0 || currentIndex >= siblings.size - 1) {
-                return Result.failure(IllegalStateException("No next sibling to merge with"))
+                return@withLock DomainError.DatabaseError.WriteFailed("No next sibling to merge with").left()
             }
             
             val nextBlock = siblings[currentIndex + 1]
             val mergeResult = blockRepository.mergeBlocks(blockUuid, nextBlock.uuid, separator)
-            
-            if (mergeResult.isSuccess) {
-                blockRepository.getBlockByUuid(blockUuid).first()
-                    .map { it ?: error("Block disappeared after merge") }
-            } else {
-                Result.failure(mergeResult.exceptionOrNull() ?: Exception("Merge failed"))
-            }
+            if (mergeResult.isLeft()) return@withLock mergeResult.map { error("unreachable") as Block }
+            val merged = blockRepository.getBlockByUuid(blockUuid).first()
+            val b = merged.getOrNull()
+            b?.right() ?: DomainError.DatabaseError.NotFound("block", blockUuid).left()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
     override suspend fun mergeWithPrevious(
         blockUuid: String,
         separator: String
-    ): Result<Block> = operationMutex.withLock {
+    ): Either<DomainError, Block> = operationMutex.withLock {
         try {
             val currentBlock = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
-                ?: return Result.failure(IllegalArgumentException("Block not found: $blockUuid"))
-            
+                ?: return@withLock DomainError.DatabaseError.NotFound("block", blockUuid).left()
+
             val siblings = if (currentBlock.parentUuid == null) {
                 blockRepository.getBlocksForPage(currentBlock.pageUuid).first().getOrNull()?.filter { it.parentUuid == null } ?: emptyList()
             } else {
@@ -283,39 +284,36 @@ class BlockOperations(
 
             val currentIndex = siblings.indexOfFirst { it.uuid == blockUuid }
             if (currentIndex <= 0) {
-                return Result.failure(IllegalStateException("No previous sibling to merge with"))
+                return@withLock DomainError.DatabaseError.WriteFailed("No previous sibling to merge with").left()
             }
             
             val prevBlock = siblings[currentIndex - 1]
             val mergeResult = blockRepository.mergeBlocks(prevBlock.uuid, blockUuid, separator)
-            
-            if (mergeResult.isSuccess) {
-                blockRepository.getBlockByUuid(prevBlock.uuid).first()
-                    .map { it ?: error("Block disappeared after merge") }
-            } else {
-                Result.failure(mergeResult.exceptionOrNull() ?: Exception("Merge failed"))
-            }
+            if (mergeResult.isLeft()) return@withLock mergeResult.map { error("unreachable") as Block }
+            val merged = blockRepository.getBlockByUuid(prevBlock.uuid).first()
+            val b = merged.getOrNull()
+            b?.right() ?: DomainError.DatabaseError.NotFound("block", prevBlock.uuid).left()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun collapseSubtree(blockUuid: String, recursive: Boolean): Result<Unit> = Result.success(Unit)
-    override suspend fun expandSubtree(blockUuid: String, recursive: Boolean): Result<Unit> = Result.success(Unit)
-    override suspend fun promoteSubtree(blockUuid: String, levels: Int): Result<Unit> = treeOps.promoteSubtree(blockUuid, levels)
-    override suspend fun demoteSubtree(blockUuid: String, levels: Int): Result<Unit> = treeOps.demoteSubtree(blockUuid, levels)
+    override suspend fun collapseSubtree(blockUuid: String, recursive: Boolean): Either<DomainError, Unit> = Unit.right()
+    override suspend fun expandSubtree(blockUuid: String, recursive: Boolean): Either<DomainError, Unit> = Unit.right()
+    override suspend fun promoteSubtree(blockUuid: String, levels: Int): Either<DomainError, Unit> = treeOps.promoteSubtree(blockUuid, levels)
+    override suspend fun demoteSubtree(blockUuid: String, levels: Int): Either<DomainError, Unit> = treeOps.demoteSubtree(blockUuid, levels)
     
-    override suspend fun applyBulkOperations(operations: List<BulkOperation>): Result<Unit> = Result.success(Unit)
-    override suspend fun reorderBlocks(blockUuids: List<String>): Result<Unit> = Result.success(Unit)
+    override suspend fun applyBulkOperations(operations: List<BulkOperation>): Either<DomainError, Unit> = Unit.right()
+    override suspend fun reorderBlocks(blockUuids: List<String>): Either<DomainError, Unit> = Unit.right()
     
-    override suspend fun validateOperation(operation: BlockOperation): Result<ValidationResult> {
-        return Result.success(ValidationResult(true))
+    override suspend fun validateOperation(operation: BlockOperation): Either<DomainError, ValidationResult> {
+        return ValidationResult(true).right()
     }
     
-    override fun getOperationHistory(): Flow<Result<List<HistoricalOperation>>> {
-        return flowOf(Result.success(emptyList()))
+    override fun getOperationHistory(): Flow<Either<DomainError, List<HistoricalOperation>>> {
+        return flowOf(emptyList<HistoricalOperation>().right())
     }
     
-    override suspend fun undo(): Result<Unit> = Result.success(Unit)
-    override suspend fun redo(): Result<Unit> = Result.success(Unit)
+    override suspend fun undo(): Either<DomainError, Unit> = Unit.right()
+    override suspend fun redo(): Either<DomainError, Unit> = Unit.right()
 }

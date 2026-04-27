@@ -2,6 +2,11 @@
 
 package dev.stapler.stelekit.editor.text
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import androidx.compose.runtime.*
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import kotlinx.coroutines.CoroutineScope
@@ -14,7 +19,6 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import dev.stapler.stelekit.editor.TextFormat
-import kotlin.Result
 import kotlin.time.Duration.Companion.minutes
 
 /**
@@ -42,16 +46,16 @@ class OptimizedTextOperations(
             .stateIn(scope, SharingStarted.Eagerly, null)
     }
 
-    override suspend fun insertText(blockId: String, text: String): Result<Unit> = operationMutex.withLock {
+    override suspend fun insertText(blockId: String, text: String): Either<DomainError, Unit> = operationMutex.withLock {
         try {
             val traceId = PerformanceMonitor.startTrace("insert-text-optimized")
             
             // Security validation
             if (text.length > MAX_TEXT_LENGTH) {
-                return Result.failure(IllegalArgumentException("Text too long: ${text.length} > $MAX_TEXT_LENGTH"))
+                return DomainError.ValidationError.ConstraintViolation("Text too long: ${text.length} > $MAX_TEXT_LENGTH").left()
             }
             if (!isValidText(text)) {
-                return Result.failure(IllegalArgumentException("Invalid characters in text"))
+                return DomainError.ValidationError.ConstraintViolation("Invalid characters in text").left()
             }
             
             val currentState = _textStates.value[blockId] ?: TextState()
@@ -77,22 +81,22 @@ class OptimizedTextOperations(
             updateBlockContentOptimized(blockId, newText)
             
             PerformanceMonitor.endTrace(traceId)
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun replaceText(blockId: String, range: TextRange, newText: String): Result<Unit> = operationMutex.withLock {
+    override suspend fun replaceText(blockId: String, range: TextRange, newText: String): Either<DomainError, Unit> = operationMutex.withLock {
         try {
             val currentState = _textStates.value[blockId] ?: TextState()
             val content = currentState.content
             
             if (!isValidRange(range, content.length)) {
-                return Result.failure(IllegalArgumentException("Invalid range: $range"))
+                return DomainError.ValidationError.ConstraintViolation("Invalid range: $range").left()
             }
             if (!isValidText(newText)) {
-                return Result.failure(IllegalArgumentException("Invalid characters in text"))
+                return DomainError.ValidationError.ConstraintViolation("Invalid characters in text").left()
             }
             
             val prefix = content.substring(0, range.start)
@@ -102,7 +106,7 @@ class OptimizedTextOperations(
             val newContent = prefix + newText + suffix
             
             if (newContent.length > MAX_CONTENT_LENGTH) {
-                 return Result.failure(IllegalArgumentException("Content exceeds maximum length"))
+                 return DomainError.ValidationError.ConstraintViolation("Content exceeds maximum length").left()
             }
             
             val newCursorPos = range.start + newText.length
@@ -116,19 +120,19 @@ class OptimizedTextOperations(
             updateTextState(blockId, newState)
             updateBlockContentOptimized(blockId, newContent)
             
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun deleteText(blockId: String, range: TextRange): Result<Unit> = operationMutex.withLock {
+    override suspend fun deleteText(blockId: String, range: TextRange): Either<DomainError, Unit> = operationMutex.withLock {
         try {
             val currentState = _textStates.value[blockId] ?: TextState()
             val content = currentState.content
             
             if (!isValidRange(range, content.length)) {
-                return Result.failure(IllegalArgumentException("Invalid range: $range"))
+                return DomainError.ValidationError.ConstraintViolation("Invalid range: $range").left()
             }
             
             val prefix = content.substring(0, range.start)
@@ -146,22 +150,22 @@ class OptimizedTextOperations(
             updateTextState(blockId, newState)
             updateBlockContentOptimized(blockId, newContent)
             
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun getText(blockId: String): Result<String> {
+    override suspend fun getText(blockId: String): Either<DomainError, String> {
         val state = _textStates.value[blockId] ?: TextState()
-        return Result.success(state.content)
+        return state.content.right()
     }
 
-    override suspend fun setCursor(blockId: String, position: Int): Result<Unit> = operationMutex.withLock {
+    override suspend fun setCursor(blockId: String, position: Int): Either<DomainError, Unit> = operationMutex.withLock {
         try {
             val currentState = _textStates.value[blockId] ?: TextState()
             if (position < 0 || position > currentState.content.length) {
-                return Result.failure(IllegalArgumentException("Invalid cursor position"))
+                return DomainError.ValidationError.ConstraintViolation("Invalid cursor position").left()
             }
             
             val newState = currentState.copy(
@@ -169,17 +173,17 @@ class OptimizedTextOperations(
                 lastModified = kotlin.time.Clock.System.now()
             )
             updateTextState(blockId, newState)
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun setSelection(blockId: String, range: TextRange): Result<Unit> = operationMutex.withLock {
+    override suspend fun setSelection(blockId: String, range: TextRange): Either<DomainError, Unit> = operationMutex.withLock {
         try {
             val currentState = _textStates.value[blockId] ?: TextState()
             if (!isValidRange(range, currentState.content.length)) {
-                return Result.failure(IllegalArgumentException("Invalid range"))
+                return DomainError.ValidationError.ConstraintViolation("Invalid range").left()
             }
             
             val newState = currentState.copy(
@@ -187,13 +191,13 @@ class OptimizedTextOperations(
                 lastModified = kotlin.time.Clock.System.now()
             )
             updateTextState(blockId, newState)
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun moveCursorToWordStart(blockId: String): Result<Unit> = operationMutex.withLock {
+    override suspend fun moveCursorToWordStart(blockId: String): Either<DomainError, Unit> = operationMutex.withLock {
         try {
             val currentState = _textStates.value[blockId] ?: TextState()
             val newPos = findWordStartOptimized(currentState.content, currentState.cursorPosition)
@@ -203,13 +207,13 @@ class OptimizedTextOperations(
                 lastModified = kotlin.time.Clock.System.now()
             )
             updateTextState(blockId, newState)
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun moveCursorToWordEnd(blockId: String): Result<Unit> = operationMutex.withLock {
+    override suspend fun moveCursorToWordEnd(blockId: String): Either<DomainError, Unit> = operationMutex.withLock {
         try {
             val currentState = _textStates.value[blockId] ?: TextState()
             val newPos = findWordEndOptimized(currentState.content, currentState.cursorPosition)
@@ -219,13 +223,13 @@ class OptimizedTextOperations(
                 lastModified = kotlin.time.Clock.System.now()
             )
             updateTextState(blockId, newState)
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun moveCursorToLineStart(blockId: String): Result<Unit> = operationMutex.withLock {
+    override suspend fun moveCursorToLineStart(blockId: String): Either<DomainError, Unit> = operationMutex.withLock {
         try {
             val currentState = _textStates.value[blockId] ?: TextState()
             val newPos = findLineStartOptimized(currentState.content, currentState.cursorPosition)
@@ -235,13 +239,13 @@ class OptimizedTextOperations(
                 lastModified = kotlin.time.Clock.System.now()
             )
             updateTextState(blockId, newState)
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun moveCursorToLineEnd(blockId: String): Result<Unit> = operationMutex.withLock {
+    override suspend fun moveCursorToLineEnd(blockId: String): Either<DomainError, Unit> = operationMutex.withLock {
         try {
             val currentState = _textStates.value[blockId] ?: TextState()
             val newPos = findLineEndOptimized(currentState.content, currentState.cursorPosition)
@@ -251,13 +255,13 @@ class OptimizedTextOperations(
                 lastModified = kotlin.time.Clock.System.now()
             )
             updateTextState(blockId, newState)
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun selectWord(blockId: String): Result<Unit> = operationMutex.withLock {
+    override suspend fun selectWord(blockId: String): Either<DomainError, Unit> = operationMutex.withLock {
         try {
             val currentState = _textStates.value[blockId] ?: TextState()
             val start = findWordStartOptimized(currentState.content, currentState.cursorPosition)
@@ -269,13 +273,13 @@ class OptimizedTextOperations(
                 lastModified = kotlin.time.Clock.System.now()
             )
             updateTextState(blockId, newState)
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun selectLine(blockId: String): Result<Unit> = operationMutex.withLock {
+    override suspend fun selectLine(blockId: String): Either<DomainError, Unit> = operationMutex.withLock {
         try {
             val currentState = _textStates.value[blockId] ?: TextState()
             val start = findLineStartOptimized(currentState.content, currentState.cursorPosition)
@@ -287,13 +291,13 @@ class OptimizedTextOperations(
                 lastModified = kotlin.time.Clock.System.now()
             )
             updateTextState(blockId, newState)
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun selectAll(blockId: String): Result<Unit> = operationMutex.withLock {
+    override suspend fun selectAll(blockId: String): Either<DomainError, Unit> = operationMutex.withLock {
         try {
             val currentState = _textStates.value[blockId] ?: TextState()
             val length = currentState.content.length
@@ -304,16 +308,16 @@ class OptimizedTextOperations(
                 lastModified = kotlin.time.Clock.System.now()
             )
             updateTextState(blockId, newState)
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun cut(blockId: String): Result<String> = operationMutex.withLock {
+    override suspend fun cut(blockId: String): Either<DomainError, String> = operationMutex.withLock {
         try {
             val currentState = _textStates.value[blockId] ?: TextState()
-            if (!currentState.hasSelection) return Result.success("")
+            if (!currentState.hasSelection) return "".right()
             
             val text = currentState.selectedText
             val range = currentState.selection.range
@@ -332,18 +336,18 @@ class OptimizedTextOperations(
             updateTextState(blockId, newState)
             updateBlockContentOptimized(blockId, newContent)
             
-            Result.success(text)
+            text.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun copy(blockId: String): Result<String> {
+    override suspend fun copy(blockId: String): Either<DomainError, String> {
         val currentState = _textStates.value[blockId] ?: TextState()
-        return Result.success(currentState.selectedText)
+        return currentState.selectedText.right()
     }
 
-    override suspend fun paste(blockId: String): Result<Unit> = operationMutex.withLock {
+    override suspend fun paste(blockId: String): Either<DomainError, Unit> = operationMutex.withLock {
         try {
             val text = clipboardText
             val currentState = _textStates.value[blockId] ?: TextState()
@@ -367,13 +371,13 @@ class OptimizedTextOperations(
             updateTextState(blockId, newState)
             updateBlockContentOptimized(blockId, newContent)
             
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun duplicate(blockId: String): Result<Unit> = operationMutex.withLock {
+    override suspend fun duplicate(blockId: String): Either<DomainError, Unit> = operationMutex.withLock {
         try {
             val currentState = _textStates.value[blockId] ?: TextState()
             val text = currentState.content
@@ -404,20 +408,20 @@ class OptimizedTextOperations(
             updateTextState(blockId, newState)
             updateBlockContentOptimized(blockId, newText)
             
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun applyFormat(blockId: String, range: TextRange, format: TextFormat): Result<Unit> = operationMutex.withLock {
+    override suspend fun applyFormat(blockId: String, range: TextRange, format: TextFormat): Either<DomainError, Unit> = operationMutex.withLock {
         try {
             val currentState = _textStates.value[blockId] ?: TextState()
             val content = currentState.content
             
             // Validate range
             if (!isValidRange(range, content.length)) {
-                return Result.failure(IllegalArgumentException("Invalid range: $range"))
+                return DomainError.ValidationError.ConstraintViolation("Invalid range: $range").left()
             }
             
             // Assuming range.end is inclusive, so substring needs +1
@@ -449,9 +453,9 @@ class OptimizedTextOperations(
             updateTextState(blockId, newState)
             updateBlockContentOptimized(blockId, updatedContent)
             
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
@@ -536,7 +540,7 @@ class OptimizedTextOperations(
     // Platform-specific clipboard implementation would go here; returns placeholder for now.
     private val clipboardText: String = "[pasted text]"
 
-    override suspend fun initializeBlock(blockId: String, content: String): Result<Unit> {
+    override suspend fun initializeBlock(blockId: String, content: String): Either<DomainError, Unit> {
         return try {
             val existingState = _textStates.value[blockId]
             // Only initialize if not already present or content is different
@@ -548,9 +552,9 @@ class OptimizedTextOperations(
                 )
                 updateTextState(blockId, newState)
             }
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 

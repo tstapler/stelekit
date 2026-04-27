@@ -3,6 +3,11 @@
 
 package dev.stapler.stelekit.migration
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
@@ -144,13 +149,13 @@ class DryRunTest {
         val runner = buildRunner(db, repoSet, actor)
 
         // Snapshot repo state before
-        val pagesBefore = repoSet.pageRepository.getAllPages().first().getOrDefault(emptyList())
+        val pagesBefore = repoSet.pageRepository.getAllPages().first().getOrNull() ?: emptyList()
         val changelogBefore = ChangelogRepository(db).appliedIds("graph-dry-no-mod")
 
         runner.dryRun("graph-dry-no-mod", repoSet)
 
         // Snapshot repo state after
-        val pagesAfter = repoSet.pageRepository.getAllPages().first().getOrDefault(emptyList())
+        val pagesAfter = repoSet.pageRepository.getAllPages().first().getOrNull() ?: emptyList()
         val changelogAfter = ChangelogRepository(db).appliedIds("graph-dry-no-mod")
 
         assertEquals(pagesBefore.size, pagesAfter.size, "Page count should be unchanged after dry run")

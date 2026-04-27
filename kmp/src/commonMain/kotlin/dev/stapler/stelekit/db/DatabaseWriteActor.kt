@@ -1,5 +1,12 @@
 package dev.stapler.stelekit.db
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import arrow.fx.coroutines.Resource
+import arrow.fx.coroutines.resource
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
@@ -58,43 +65,43 @@ class DatabaseWriteActor(
     enum class Priority { HIGH, LOW }
 
     sealed class WriteRequest {
-        abstract val deferred: CompletableDeferred<Result<Unit>>
+        abstract val deferred: CompletableDeferred<Either<DomainError, Unit>>
         abstract val priority: Priority
 
         class SavePage(
             val page: Page,
             override val priority: Priority = Priority.HIGH,
-            override val deferred: CompletableDeferred<Result<Unit>> = CompletableDeferred(),
+            override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
         ) : WriteRequest()
 
         class SavePages(
             val pages: List<Page>,
             override val priority: Priority = Priority.LOW,
-            override val deferred: CompletableDeferred<Result<Unit>> = CompletableDeferred(),
+            override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
         ) : WriteRequest()
 
         class SaveBlocks(
             val blocks: List<Block>,
             override val priority: Priority = Priority.HIGH,
-            override val deferred: CompletableDeferred<Result<Unit>> = CompletableDeferred(),
+            override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
         ) : WriteRequest()
 
         class DeleteBlocksForPage(
             val pageUuid: String,
             override val priority: Priority = Priority.HIGH,
-            override val deferred: CompletableDeferred<Result<Unit>> = CompletableDeferred(),
+            override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
         ) : WriteRequest()
 
         class DeleteBlocksForPages(
             val pageUuids: List<String>,
             override val priority: Priority = Priority.LOW,
-            override val deferred: CompletableDeferred<Result<Unit>> = CompletableDeferred(),
+            override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
         ) : WriteRequest()
 
         class Execute(
-            val op: suspend () -> Result<Unit>,
+            val op: suspend () -> Either<DomainError, Unit>,
             override val priority: Priority = Priority.HIGH,
-            override val deferred: CompletableDeferred<Result<Unit>> = CompletableDeferred(),
+            override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
             val enqueueMs: Long = HistogramWriter.epochMs(),
         ) : WriteRequest()
     }
@@ -129,7 +136,7 @@ class DatabaseWriteActor(
                         // Guard against double-completion: processRequest may have already
                         // completed the deferred on its happy path before the exception escaped.
                         if (!request.deferred.isCompleted) {
-                            request.deferred.complete(Result.failure(e))
+                            request.deferred.complete(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
                         }
                     }
                 }
@@ -143,12 +150,12 @@ class DatabaseWriteActor(
         when (request) {
             is WriteRequest.SavePage -> {
                 val result = pageRepository.savePage(request.page)
-                if (result.isSuccess) onWriteSuccess?.invoke(request)
+                if (result.isRight()) onWriteSuccess?.invoke(request)
                 request.deferred.complete(result)
             }
             is WriteRequest.SavePages -> {
                 val result = pageRepository.savePages(request.pages)
-                if (result.isSuccess) onWriteSuccess?.invoke(request)
+                if (result.isRight()) onWriteSuccess?.invoke(request)
                 request.deferred.complete(result)
             }
             is WriteRequest.DeleteBlocksForPage -> {
@@ -161,7 +168,7 @@ class DatabaseWriteActor(
                     }
                 }
                 val result = blockRepository.deleteBlocksForPage(request.pageUuid)
-                if (result.isSuccess) onWriteSuccess?.invoke(request)
+                if (result.isRight()) onWriteSuccess?.invoke(request)
                 request.deferred.complete(result)
             }
             is WriteRequest.DeleteBlocksForPages -> {
@@ -176,7 +183,7 @@ class DatabaseWriteActor(
                     }
                 }
                 val result = blockRepository.deleteBlocksForPages(request.pageUuids)
-                if (result.isSuccess) onWriteSuccess?.invoke(request)
+                if (result.isRight()) onWriteSuccess?.invoke(request)
                 request.deferred.complete(result)
             }
             is WriteRequest.SaveBlocks -> processSaveBlocks(request)
@@ -234,7 +241,7 @@ class DatabaseWriteActor(
             val blocks = batch[0].blocks
             val existingByUuid = loadExistingBlocks(blocks)
             val result = blockRepository.saveBlocks(blocks)
-            if (result.isSuccess) {
+            if (result.isRight()) {
                 logSaveBlocks(blocks, existingByUuid)
                 onWriteSuccess?.invoke(batch[0])
             }
@@ -245,21 +252,22 @@ class DatabaseWriteActor(
         val allBlocks = batch.flatMap { it.blocks }
         val existingByUuid = loadExistingBlocks(allBlocks)
         val batchResult = blockRepository.saveBlocks(allBlocks)
-        if (batchResult.isSuccess) {
+        if (batchResult.isRight()) {
             logSaveBlocks(allBlocks, existingByUuid)
-            batch.forEach { onWriteSuccess?.invoke(it) }
-            batch.forEach { it.deferred.complete(Result.success(Unit)) }
+            batch.forEach {
+                onWriteSuccess?.invoke(it)
+                it.deferred.complete(Unit.right())
+            }
         } else {
             logger.warn(
-                "Combined batch of ${allBlocks.size} blocks failed, retrying ${batch.size} requests individually",
-                batchResult.exceptionOrNull()
+                "Combined batch of ${allBlocks.size} blocks failed (${batchResult.leftOrNull()?.message}), retrying ${batch.size} requests individually"
             )
             // Combined transaction failed — retry each request individually so that
             // pages with valid blocks still succeed and each caller gets accurate feedback.
             batch.forEach { req ->
                 val reqExisting = loadExistingBlocks(req.blocks)
                 val reqResult = blockRepository.saveBlocks(req.blocks)
-                if (reqResult.isSuccess) {
+                if (reqResult.isRight()) {
                     logSaveBlocks(req.blocks, reqExisting)
                     onWriteSuccess?.invoke(req)
                 }
@@ -302,33 +310,33 @@ class DatabaseWriteActor(
         }
     }
 
-    suspend fun savePage(page: Page, priority: Priority = Priority.HIGH): Result<Unit> {
+    suspend fun savePage(page: Page, priority: Priority = Priority.HIGH): Either<DomainError, Unit> {
         val req = WriteRequest.SavePage(page, priority)
         channelFor(priority).send(req)
         return req.deferred.await()
     }
 
-    suspend fun savePages(pages: List<Page>, priority: Priority = Priority.LOW): Result<Unit> {
-        if (pages.isEmpty()) return Result.success(Unit)
+    suspend fun savePages(pages: List<Page>, priority: Priority = Priority.LOW): Either<DomainError, Unit> {
+        if (pages.isEmpty()) return Unit.right()
         val req = WriteRequest.SavePages(pages, priority)
         channelFor(priority).send(req)
         return req.deferred.await()
     }
 
-    suspend fun saveBlocks(blocks: List<Block>, priority: Priority = Priority.HIGH): Result<Unit> {
+    suspend fun saveBlocks(blocks: List<Block>, priority: Priority = Priority.HIGH): Either<DomainError, Unit> {
         val req = WriteRequest.SaveBlocks(blocks, priority)
         channelFor(priority).send(req)
         return req.deferred.await()
     }
 
-    suspend fun deleteBlocksForPage(pageUuid: String, priority: Priority = Priority.HIGH): Result<Unit> {
+    suspend fun deleteBlocksForPage(pageUuid: String, priority: Priority = Priority.HIGH): Either<DomainError, Unit> {
         val req = WriteRequest.DeleteBlocksForPage(pageUuid, priority)
         channelFor(priority).send(req)
         return req.deferred.await()
     }
 
-    suspend fun deleteBlocksForPages(pageUuids: List<String>, priority: Priority = Priority.LOW): Result<Unit> {
-        if (pageUuids.isEmpty()) return Result.success(Unit)
+    suspend fun deleteBlocksForPages(pageUuids: List<String>, priority: Priority = Priority.LOW): Either<DomainError, Unit> {
+        if (pageUuids.isEmpty()) return Unit.right()
         val req = WriteRequest.DeleteBlocksForPages(pageUuids, priority)
         channelFor(priority).send(req)
         return req.deferred.await()
@@ -338,16 +346,16 @@ class DatabaseWriteActor(
      * Execute an arbitrary write operation through the actor's serialized channel.
      * Use this for any write that doesn't have a dedicated typed method.
      */
-    suspend fun execute(priority: Priority = Priority.HIGH, op: suspend () -> Result<Unit>): Result<Unit> {
+    suspend fun execute(priority: Priority = Priority.HIGH, op: suspend () -> Either<DomainError, Unit>): Either<DomainError, Unit> {
         val req = WriteRequest.Execute(op, priority)
         channelFor(priority).send(req)
         return req.deferred.await()
     }
 
-    suspend fun saveBlock(block: Block): Result<Unit> =
+    suspend fun saveBlock(block: Block): Either<DomainError, Unit> =
         execute { blockRepository.saveBlock(block) }
 
-    suspend fun deleteBlock(blockUuid: String): Result<Unit> =
+    suspend fun deleteBlock(blockUuid: String): Either<DomainError, Unit> =
         execute {
             if (opLogger != null) {
                 try {
@@ -371,20 +379,44 @@ class DatabaseWriteActor(
         // Route markers through the actor channel so they share the serialized Lamport clock
         // with the writes they bracket. Calling logBatchStart/End directly from the caller's
         // coroutine would race with actor-channel writes and corrupt seq ordering.
-        execute { opLogger?.logBatchStart(batchId); Result.success(Unit) }
+        execute { opLogger?.logBatchStart(batchId); Unit.right() }
         try {
             this.block()
         } finally {
-            execute { opLogger?.logBatchEnd(batchId); Result.success(Unit) }
+            execute { opLogger?.logBatchEnd(batchId); Unit.right() }
         }
     }
 
-    suspend fun deletePage(pageUuid: String): Result<Unit> =
+    suspend fun deletePage(pageUuid: String): Either<DomainError, Unit> =
         execute { pageRepository.deletePage(pageUuid) }
 
     fun close() {
         highPriority.close()
         lowPriority.close()
         actorScope.cancel()
+    }
+
+    companion object {
+        /**
+         * Creates a [Resource]-managed [DatabaseWriteActor].
+         * The actor's [close] method is guaranteed to be called when the resource is released,
+         * even on [kotlinx.coroutines.CancellationException] or exceptions.
+         *
+         * Usage:
+         * ```kotlin
+         * DatabaseWriteActor.resource(blockRepo, pageRepo).use { actor ->
+         *     actor.saveBlocks(blocks)
+         * }
+         * ```
+         */
+        fun resource(
+            blockRepository: BlockRepository,
+            pageRepository: PageRepository,
+            opLogger: OperationLogger? = null,
+        ): Resource<DatabaseWriteActor> = resource {
+            val actor = DatabaseWriteActor(blockRepository, pageRepository, opLogger)
+            onRelease { actor.close() }
+            actor
+        }
     }
 }

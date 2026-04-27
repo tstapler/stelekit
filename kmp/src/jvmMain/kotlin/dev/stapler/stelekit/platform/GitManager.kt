@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.platform
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.logging.Logger
 
 /**
@@ -21,14 +26,14 @@ class JvmGitManager : GitManager {
         return GitResult.Success("Commit hash placeholder")
     }
 
-    override suspend fun push(): GitResult<Unit> {
+    override suspend fun push(): Either<DomainError, Unit> {
         logger.info("JVM Git push")
-        return GitResult.Success(Unit)
+        return Unit.right()
     }
 
-    override suspend fun pull(): GitResult<Unit> {
+    override suspend fun pull(): Either<DomainError, Unit> {
         logger.info("JVM Git pull")
-        return GitResult.Success(Unit)
+        return Unit.right()
     }
 
     override suspend fun status(): GitResult<String> {

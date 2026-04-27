@@ -4,6 +4,9 @@
 
 package dev.stapler.stelekit.db
 
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.util.UuidGenerator
 
@@ -140,10 +143,10 @@ class UuidMigration(
                     }
                 }
                 restricted.upsertMetadata("uuid_migration_v1", "done")
-                Result.success(Unit)
+                Unit.right()
             } catch (e: Exception) {
                 logger.error("UUID migration transaction failed", e)
-                Result.failure(e)
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
         }
     }

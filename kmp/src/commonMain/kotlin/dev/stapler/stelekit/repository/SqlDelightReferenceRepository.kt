@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.db.Blocks
 import dev.stapler.stelekit.db.SelectMostConnectedBlocks
 import dev.stapler.stelekit.db.SteleDatabase
@@ -11,7 +16,6 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import kotlin.time.Instant
-import kotlin.Result.Companion.success
 
 /**
  * SQLDelight implementation of ReferenceRepository.
@@ -24,71 +28,71 @@ class SqlDelightReferenceRepository(
 
     private val queries = database.steleDatabaseQueries
 
-    override fun getOutgoingReferences(blockUuid: String): Flow<Result<List<Block>>> = flow {
+    override fun getOutgoingReferences(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flow {
         try {
             val results = queries.selectOutgoingReferences(blockUuid).executeAsList().map { it.toBlockModel() }
-            emit(success(results))
+            emit(results.right())
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getIncomingReferences(blockUuid: String): Flow<Result<List<Block>>> = flow {
+    override fun getIncomingReferences(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flow {
         try {
             val results = queries.selectIncomingReferences(blockUuid).executeAsList().map { it.toBlockModel() }
-            emit(success(results))
+            emit(results.right())
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getAllReferences(blockUuid: String): Flow<Result<BlockReferences>> = flow {
+    override fun getAllReferences(blockUuid: String): Flow<Either<DomainError, BlockReferences>> = flow {
         try {
             val outgoing = queries.selectOutgoingReferences(blockUuid).executeAsList().map { it.toBlockModel() }
             val incoming = queries.selectIncomingReferences(blockUuid).executeAsList().map { it.toBlockModel() }
-            emit(success(BlockReferences(outgoing, incoming)))
+            emit(BlockReferences(outgoing, incoming).right())
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override suspend fun addReference(fromBlockUuid: String, toBlockUuid: String): Result<Unit> =
+    override suspend fun addReference(fromBlockUuid: String, toBlockUuid: String): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {
             try {
                 queries.insertBlockReference(fromBlockUuid, toBlockUuid, Clock.System.now().toEpochMilliseconds())
-                success(Unit)
+                Unit.right()
             } catch (e: Exception) {
-                Result.failure(e)
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
         }
 
-    override suspend fun removeReference(fromBlockUuid: String, toBlockUuid: String): Result<Unit> =
+    override suspend fun removeReference(fromBlockUuid: String, toBlockUuid: String): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {
             try {
                 queries.deleteBlockReference(fromBlockUuid, toBlockUuid)
-                success(Unit)
+                Unit.right()
             } catch (e: Exception) {
-                Result.failure(e)
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
         }
 
-    override fun getOrphanedBlocks(): Flow<Result<List<Block>>> = flow {
+    override fun getOrphanedBlocks(): Flow<Either<DomainError, List<Block>>> = flow {
         try {
             val results = queries.selectOrphanedBlocks().executeAsList().map { it.toBlockModel() }
-            emit(success(results))
+            emit(results.right())
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getMostConnectedBlocks(limit: Int): Flow<Result<List<BlockWithReferenceCount>>> = flow {
+    override fun getMostConnectedBlocks(limit: Int): Flow<Either<DomainError, List<BlockWithReferenceCount>>> = flow {
         try {
             val results = queries.selectMostConnectedBlocks(limit.toLong()).executeAsList().map {
                 BlockWithReferenceCount(it.toBlockModel(), it.reference_count.toInt())
             }
-            emit(success(results))
+            emit(results.right())
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
 

@@ -2,6 +2,11 @@
 
 package dev.stapler.stelekit.editor.persistence
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.model.Block
@@ -60,10 +65,10 @@ class PersistenceManager(
     private var isStarted = false
     private var isPaused = false
     
-    override suspend fun start(): Result<Unit> {
+    override suspend fun start(): Either<DomainError, Unit> {
         try {
             if (isStarted) {
-                return Result.success(Unit)
+                return Unit.right()
             }
             
             logger.info("Starting persistence manager with config: ${_config.value}")
@@ -80,17 +85,17 @@ class PersistenceManager(
             _state.update { it.copy(isEnabled = true, isAutoSaveActive = true) }
             
             logger.info("Persistence manager started successfully")
-            return Result.success(Unit)
+            return Unit.right()
         } catch (e: Exception) {
             logger.error("Failed to start persistence manager", e)
-            return Result.failure(e)
+            return DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun stop(force: Boolean): Result<Unit> {
+    override suspend fun stop(force: Boolean): Either<DomainError, Unit> {
         try {
             if (!isStarted) {
-                return Result.success(Unit)
+                return Unit.right()
             }
             
             logger.info("Stopping persistence manager (force=$force)")
@@ -108,44 +113,44 @@ class PersistenceManager(
             _state.update { it.copy(isEnabled = false, isAutoSaveActive = false) }
             
             logger.info("Persistence manager stopped")
-            return Result.success(Unit)
+            return Unit.right()
         } catch (e: Exception) {
             logger.error("Failed to stop persistence manager", e)
-            return Result.failure(e)
+            return DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun pause(): Result<Unit> {
+    override suspend fun pause(): Either<DomainError, Unit> {
         try {
-            if (!isStarted) return Result.failure(IllegalStateException("Manager not started"))
+            if (!isStarted) return DomainError.DatabaseError.WriteFailed("Manager not started").left()
             
             isPaused = true
             autoSaveJob?.cancel()
             _state.update { it.copy(isAutoSaveActive = false) }
             
             logger.info("Persistence manager paused")
-            return Result.success(Unit)
+            return Unit.right()
         } catch (e: Exception) {
-            return Result.failure(e)
+            return DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun resume(): Result<Unit> {
+    override suspend fun resume(): Either<DomainError, Unit> {
         try {
-            if (!isStarted) return Result.failure(IllegalStateException("Manager not started"))
+            if (!isStarted) return DomainError.DatabaseError.WriteFailed("Manager not started").left()
             
             isPaused = false
             startAutoSaveJob()
             _state.update { it.copy(isAutoSaveActive = true) }
             
             logger.info("Persistence manager resumed")
-            return Result.success(Unit)
+            return Unit.right()
         } catch (e: Exception) {
-            return Result.failure(e)
+            return DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun updateConfig(newConfig: PersistenceConfig): Result<Unit> {
+    override suspend fun updateConfig(newConfig: PersistenceConfig): Either<DomainError, Unit> {
         return try {
             Validation.validateContent(newConfig.toString()) // Basic validation
             
@@ -168,13 +173,13 @@ class PersistenceManager(
             _state.update { it.copy(autoSaveInterval = newConfig.autoSaveInterval) }
             
             logger.info("Persistence config updated")
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun queueChange(change: BlockChange): Result<Unit> {
+    override suspend fun queueChange(change: BlockChange): Either<DomainError, Unit> {
         return try {
             Validation.validateUuid(change.blockUuid)
             
@@ -197,13 +202,13 @@ class PersistenceManager(
             }
             
             updateStats()
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun queueChanges(changes: List<BlockChange>): Result<Unit> {
+    override suspend fun queueChanges(changes: List<BlockChange>): Either<DomainError, Unit> {
         return try {
             changes.forEach { change ->
                 Validation.validateUuid(change.blockUuid)
@@ -224,13 +229,13 @@ class PersistenceManager(
             }
             
             updateStats()
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun markDirty(blockUuid: String, currentContent: String): Result<Unit> {
+    override suspend fun markDirty(blockUuid: String, currentContent: String): Either<DomainError, Unit> {
         return try {
             Validation.validateUuid(blockUuid)
             Validation.validateContent(currentContent)
@@ -255,13 +260,13 @@ class PersistenceManager(
                 ))
             }
             
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun markDirty(blockUuids: List<String>, currentContent: Map<String, String>): Result<Unit> {
+    override suspend fun markDirty(blockUuids: List<String>, currentContent: Map<String, String>): Either<DomainError, Unit> {
         return try {
             blockUuids.forEach { Validation.validateUuid(it) }
             currentContent.values.forEach { Validation.validateContent(it) }
@@ -295,33 +300,33 @@ class PersistenceManager(
                 queueChanges(changes)
             }
             
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun isDirty(blockUuid: String): Result<Boolean> {
+    override suspend fun isDirty(blockUuid: String): Either<DomainError, Boolean> {
         return try {
             Validation.validateUuid(blockUuid)
             
             val saveState = blockSaveStates[blockUuid]
-            Result.success(saveState?.isDirty ?: false)
+            (saveState?.isDirty ?: false).right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun getBlockSaveState(blockUuid: String): Result<BlockSaveState?> {
+    override suspend fun getBlockSaveState(blockUuid: String): Either<DomainError, BlockSaveState?> {
         return try {
             Validation.validateUuid(blockUuid)
-            Result.success(blockSaveStates[blockUuid])
+            blockSaveStates[blockUuid].right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun forceSave(): Result<Unit> {
+    override suspend fun forceSave(): Either<DomainError, Unit> {
         try {
             val changesToProcess = mutex.withLock {
                 val changes = changeQueue.toList()
@@ -331,7 +336,7 @@ class PersistenceManager(
             }
             
             if (changesToProcess.isEmpty()) {
-                return Result.success(Unit)
+                return Unit.right()
             }
             
             logger.info("Force saving ${changesToProcess.size} changes")
@@ -357,14 +362,14 @@ class PersistenceManager(
                 logger.info("Successfully saved $successCount blocks")
             }
             
-            return Result.success(Unit)
+            return Unit.right()
         } catch (e: Exception) {
             logger.error("Force save failed", e)
-            return Result.failure(e)
+            return DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun forceSaveBlocks(blockUuids: List<String>): Result<Unit> {
+    override suspend fun forceSaveBlocks(blockUuids: List<String>): Either<DomainError, Unit> {
         try {
             blockUuids.forEach { Validation.validateUuid(it) }
             
@@ -376,7 +381,7 @@ class PersistenceManager(
             }
             
             if (changesToProcess.isEmpty()) {
-                return Result.success(Unit)
+                return Unit.right()
             }
             
             val results = processChanges(changesToProcess)
@@ -387,13 +392,13 @@ class PersistenceManager(
                 logger.warn("$failureCount out of ${results.size} forced saves failed")
             }
             
-            return Result.success(Unit)
+            return Unit.right()
         } catch (e: Exception) {
-            return Result.failure(e)
+            return DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun saveBlock(block: Block): Result<PersistenceResult> {
+    override suspend fun saveBlock(block: Block): Either<DomainError, PersistenceResult> {
         return try {
             val startTime = Clock.System.now().toEpochMilliseconds()
             
@@ -430,13 +435,13 @@ class PersistenceManager(
                 
                 failedOperations.add(result)
                 PerformanceMonitor.endTrace("saveBlock")
-                return Result.success(result)
+                return result.right()
             }
             
             // Save block to repository
             val saveResult = blockRepository.saveBlock(block)
             
-            if (saveResult.isSuccess) {
+            if (saveResult.isRight()) {
                 // Update save state
                 blockSaveStates[block.uuid] = BlockSaveState(
                     blockUuid = block.uuid,
@@ -456,7 +461,7 @@ class PersistenceManager(
                 
                 addRecentResult(result)
                 PerformanceMonitor.endTrace("saveBlock")
-                Result.success(result)
+                result.right()
             } else {
                 val result = PersistenceResult.failure(
                     "saveBlock",
@@ -469,7 +474,7 @@ class PersistenceManager(
                 failedOperations.add(result)
                 addRecentResult(result)
                 PerformanceMonitor.endTrace("saveBlock")
-                Result.success(result)
+                result.right()
             }
         } catch (e: Exception) {
             val result = PersistenceResult.failure(
@@ -482,20 +487,25 @@ class PersistenceManager(
             
             failedOperations.add(result)
             addRecentResult(result)
-            Result.success(result)
+            result.right()
         }
     }
     
-    override suspend fun saveBlocks(blocks: List<Block>): Result<List<PersistenceResult>> {
+    override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, List<PersistenceResult>> {
         return try {
-            val results = blocks.map { saveBlock(it) }
-            Result.success(results.map { it.getOrThrow() })
+            val results = mutableListOf<PersistenceResult>()
+            for (block in blocks) {
+                val r = saveBlock(block)
+                r.onRight { results.add(it) }
+                if (r.isLeft()) return r.map { listOf() }
+            }
+            results.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun deleteBlock(blockUuid: String): Result<PersistenceResult> {
+    override suspend fun deleteBlock(blockUuid: String): Either<DomainError, PersistenceResult> {
         return try {
             Validation.validateUuid(blockUuid)
             
@@ -514,7 +524,7 @@ class PersistenceManager(
             // Delete from repository
             val deleteResult = blockRepository.deleteBlock(blockUuid, true)
             
-            val result = if (deleteResult.isSuccess) {
+            val result = if (deleteResult.isRight()) {
                 PersistenceResult.success(
                     "deleteBlock",
                     blockUuid,
@@ -532,7 +542,7 @@ class PersistenceManager(
             
             addRecentResult(result)
             PerformanceMonitor.endTrace("saveBlock")
-            Result.success(result)
+            result.right()
         } catch (e: Exception) {
             val result = PersistenceResult.failure(
                 "deleteBlock",
@@ -543,21 +553,21 @@ class PersistenceManager(
             )
             
             addRecentResult(result)
-            Result.success(result)
+            result.right()
         }
     }
     
-    override suspend fun getPendingChanges(): Result<List<BlockChange>> {
+    override suspend fun getPendingChanges(): Either<DomainError, List<BlockChange>> {
         return try {
             mutex.withLock {
-                Result.success(changeQueue.toList())
+                changeQueue.toList().right()
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun cancelPendingChanges(blockUuids: List<String>): Result<Unit> {
+    override suspend fun cancelPendingChanges(blockUuids: List<String>): Either<DomainError, Unit> {
         return try {
             blockUuids.forEach { Validation.validateUuid(it) }
             
@@ -566,26 +576,26 @@ class PersistenceManager(
                 _queueSize.value = changeQueue.size
             }
             
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun clearPendingChanges(): Result<Unit> {
+    override suspend fun clearPendingChanges(): Either<DomainError, Unit> {
         return try {
             mutex.withLock {
                 changeQueue.clear()
                 _queueSize.value = 0
             }
             
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun retryFailedOperations(): Result<Unit> {
+    override suspend fun retryFailedOperations(): Either<DomainError, Unit> {
         return try {
             val failed = failedOperations.toList()
             failedOperations.clear()
@@ -608,50 +618,50 @@ class PersistenceManager(
                 }
             }
             
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun getFailedOperations(): Result<List<PersistenceResult>> {
+    override suspend fun getFailedOperations(): Either<DomainError, List<PersistenceResult>> {
         return try {
-            Result.success(failedOperations.toList())
+            failedOperations.toList().right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun clearFailedOperations(): Result<Unit> {
+    override suspend fun clearFailedOperations(): Either<DomainError, Unit> {
         return try {
             failedOperations.clear()
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun detectConflicts(): Result<List<ConflictInfo>> {
+    override suspend fun detectConflicts(): Either<DomainError, List<ConflictInfo>> {
         return try {
             val pendingChanges = mutex.withLock { changeQueue.toList() }
             val conflicts = conflictDetector.detectChangeConflicts(pendingChanges)
-            Result.success(conflicts)
+            conflicts.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun resolveConflict(conflictId: String, strategy: ConflictResolutionStrategy): Result<Unit> {
+    override suspend fun resolveConflict(conflictId: String, strategy: ConflictResolutionStrategy): Either<DomainError, Unit> {
         return try {
             // This would integrate with ConflictResolver
             // Implementation depends on the specific resolution requirements
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun createBackup(): Result<BackupInfo> {
+    override suspend fun createBackup(): Either<DomainError, BackupInfo> {
         return try {
             val backupId = "backup_${Clock.System.now().epochSeconds}"
             val backupInfo = BackupInfo(
@@ -663,41 +673,41 @@ class PersistenceManager(
             )
             
             logger.info("Created backup: $backupId")
-            Result.success(backupInfo)
+            backupInfo.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun restoreFromBackup(backupId: String): Result<Unit> {
+    override suspend fun restoreFromBackup(backupId: String): Either<DomainError, Unit> {
         return try {
             // Implementation depends on backup storage strategy
             logger.info("Restored from backup: $backupId")
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun getAvailableBackups(): Result<List<BackupInfo>> {
+    override suspend fun getAvailableBackups(): Either<DomainError, List<BackupInfo>> {
         return try {
             // Implementation depends on backup storage strategy
-            Result.success(emptyList())
+            emptyList<BackupInfo>().right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun cleanupBackups(): Result<Unit> {
+    override suspend fun cleanupBackups(): Either<DomainError, Unit> {
         return try {
             // Remove old backups beyond maxBackupFiles limit
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun getPerformanceMetrics(): Result<PersistencePerformanceMetrics> {
+    override suspend fun getPerformanceMetrics(): Either<DomainError, PersistencePerformanceMetrics> {
         return try {
             val stats = _stats.value
             val metrics = PersistencePerformanceMetrics(
@@ -713,18 +723,18 @@ class PersistenceManager(
                 uptime = 0L // Calculate actual uptime
             )
             
-            Result.success(metrics)
+            metrics.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
-    override suspend fun setPerformanceMonitoring(enabled: Boolean): Result<Unit> {
+    override suspend fun setPerformanceMonitoring(enabled: Boolean): Either<DomainError, Unit> {
         return try {
             // Enable/disable performance monitoring
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
     
@@ -814,7 +824,7 @@ class PersistenceManager(
             
             // Save updated block
             val saveResult = saveBlock(updatedBlock)
-            results.add(saveResult.getOrThrow())
+            saveResult.onRight { results.add(it) }
         }
         
         return results

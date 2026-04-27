@@ -98,7 +98,7 @@ class BacklinkRenamer(
      * Used by both [preview] and [execute] so their counts always agree.
      */
     private suspend fun affectedBlocksForRename(pageName: String): List<dev.stapler.stelekit.model.Block> {
-        val wikiBlocks = blockRepository.getLinkedReferences(pageName).first().getOrDefault(emptyList())
+        val wikiBlocks = blockRepository.getLinkedReferences(pageName).first().getOrNull() ?: emptyList()
         // getLinkedReferences now includes hashtag matches, so no extra query needed.
         return wikiBlocks
     }
@@ -114,7 +114,8 @@ class BacklinkRenamer(
             val affectedPageUuids = affectedBlocks.map { it.pageUuid }.distinct()
 
             // 2. Rename the page row in the DB.
-            writeActor.execute { pageRepository.renamePage(page.uuid, newName) }.getOrThrow()
+            writeActor.execute { pageRepository.renamePage(page.uuid, newName) }
+                .onLeft { e -> throw RuntimeException(e.message) }
 
             // 3. Rewrite block content in DB: [[OldName]] → [[NewName]] (aliases included)
             //    and #OldName / #[[OldName]] → #NewName / #[[NewName]].
@@ -156,7 +157,7 @@ class BacklinkRenamer(
             logger.error("Page not found for backlink file rewrite: $pageUuid")
             return
         }
-        val blocks = blockRepository.getBlocksForPage(pageUuid).first().getOrDefault(emptyList())
+        val blocks = blockRepository.getBlocksForPage(pageUuid).first().getOrNull() ?: emptyList()
         // For the renamed page, clear filePath so GraphWriter recalculates the new path.
         val pageForSave = if (pageUuid == renamedPageUuid) page.copy(filePath = null) else page
         graphWriter.savePage(pageForSave, blocks, graphPath)

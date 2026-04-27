@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.editor.persistence
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,88 +44,88 @@ interface IPersistenceManager {
     /**
      * Update the persistence configuration
      */
-    suspend fun updateConfig(newConfig: PersistenceConfig): Result<Unit>
+    suspend fun updateConfig(newConfig: PersistenceConfig): Either<DomainError, Unit>
     
     // ===== LIFECYCLE MANAGEMENT =====
     
     /**
      * Start the persistence manager
      */
-    suspend fun start(): Result<Unit>
+    suspend fun start(): Either<DomainError, Unit>
     
     /**
      * Stop the persistence manager and save any pending changes
      */
-    suspend fun stop(force: Boolean = false): Result<Unit>
+    suspend fun stop(force: Boolean = false): Either<DomainError, Unit>
     
     /**
      * Pause auto-save operations
      */
-    suspend fun pause(): Result<Unit>
+    suspend fun pause(): Either<DomainError, Unit>
     
     /**
      * Resume auto-save operations
      */
-    suspend fun resume(): Result<Unit>
+    suspend fun resume(): Either<DomainError, Unit>
     
     // ===== CHANGE TRACKING =====
     
     /**
      * Queue a block change for persistence
      */
-    suspend fun queueChange(change: BlockChange): Result<Unit>
+    suspend fun queueChange(change: BlockChange): Either<DomainError, Unit>
     
     /**
      * Queue multiple block changes for batch persistence
      */
-    suspend fun queueChanges(changes: List<BlockChange>): Result<Unit>
+    suspend fun queueChanges(changes: List<BlockChange>): Either<DomainError, Unit>
     
     /**
      * Mark a block as dirty (needs saving)
      */
-    suspend fun markDirty(blockUuid: String, currentContent: String): Result<Unit>
+    suspend fun markDirty(blockUuid: String, currentContent: String): Either<DomainError, Unit>
     
     /**
      * Mark multiple blocks as dirty
      */
-    suspend fun markDirty(blockUuids: List<String>, currentContent: Map<String, String>): Result<Unit>
+    suspend fun markDirty(blockUuids: List<String>, currentContent: Map<String, String>): Either<DomainError, Unit>
     
     /**
      * Check if a block has unsaved changes
      */
-    suspend fun isDirty(blockUuid: String): Result<Boolean>
+    suspend fun isDirty(blockUuid: String): Either<DomainError, Boolean>
     
     /**
      * Get the save state of a specific block
      */
-    suspend fun getBlockSaveState(blockUuid: String): Result<BlockSaveState?>
+    suspend fun getBlockSaveState(blockUuid: String): Either<DomainError, BlockSaveState?>
     
     // ===== PERSISTENCE OPERATIONS =====
     
     /**
      * Force save all pending changes immediately
      */
-    suspend fun forceSave(): Result<Unit>
+    suspend fun forceSave(): Either<DomainError, Unit>
     
     /**
      * Force save changes for specific blocks
      */
-    suspend fun forceSaveBlocks(blockUuids: List<String>): Result<Unit>
+    suspend fun forceSaveBlocks(blockUuids: List<String>): Either<DomainError, Unit>
     
     /**
      * Save a single block immediately
      */
-    suspend fun saveBlock(block: Block): Result<PersistenceResult>
+    suspend fun saveBlock(block: Block): Either<DomainError, PersistenceResult>
     
     /**
      * Save multiple blocks in a batch
      */
-    suspend fun saveBlocks(blocks: List<Block>): Result<List<PersistenceResult>>
+    suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, List<PersistenceResult>>
     
     /**
      * Delete a block and its state
      */
-    suspend fun deleteBlock(blockUuid: String): Result<PersistenceResult>
+    suspend fun deleteBlock(blockUuid: String): Either<DomainError, PersistenceResult>
     
     // ===== QUEUE MANAGEMENT =====
     
@@ -132,80 +137,80 @@ interface IPersistenceManager {
     /**
      * Get list of pending changes
      */
-    suspend fun getPendingChanges(): Result<List<BlockChange>>
+    suspend fun getPendingChanges(): Either<DomainError, List<BlockChange>>
     
     /**
      * Cancel pending changes for specific blocks
      */
-    suspend fun cancelPendingChanges(blockUuids: List<String>): Result<Unit>
+    suspend fun cancelPendingChanges(blockUuids: List<String>): Either<DomainError, Unit>
     
     /**
      * Clear all pending changes
      */
-    suspend fun clearPendingChanges(): Result<Unit>
+    suspend fun clearPendingChanges(): Either<DomainError, Unit>
     
     // ===== ERROR HANDLING & RECOVERY =====
     
     /**
      * Retry failed operations
      */
-    suspend fun retryFailedOperations(): Result<Unit>
+    suspend fun retryFailedOperations(): Either<DomainError, Unit>
     
     /**
      * Get failed operations that can be retried
      */
-    suspend fun getFailedOperations(): Result<List<PersistenceResult>>
+    suspend fun getFailedOperations(): Either<DomainError, List<PersistenceResult>>
     
     /**
      * Clear failed operations history
      */
-    suspend fun clearFailedOperations(): Result<Unit>
+    suspend fun clearFailedOperations(): Either<DomainError, Unit>
     
     // ===== CONFLICT MANAGEMENT =====
     
     /**
      * Detect conflicts between queued changes and saved state
      */
-    suspend fun detectConflicts(): Result<List<ConflictInfo>>
+    suspend fun detectConflicts(): Either<DomainError, List<ConflictInfo>>
     
     /**
      * Resolve a conflict using the specified strategy
      */
-    suspend fun resolveConflict(conflictId: String, strategy: ConflictResolutionStrategy): Result<Unit>
+    suspend fun resolveConflict(conflictId: String, strategy: ConflictResolutionStrategy): Either<DomainError, Unit>
     
     // ===== BACKUP & RECOVERY =====
     
     /**
      * Create a backup of current state
      */
-    suspend fun createBackup(): Result<BackupInfo>
+    suspend fun createBackup(): Either<DomainError, BackupInfo>
     
     /**
      * Restore from a backup
      */
-    suspend fun restoreFromBackup(backupId: String): Result<Unit>
+    suspend fun restoreFromBackup(backupId: String): Either<DomainError, Unit>
     
     /**
      * Get available backups
      */
-    suspend fun getAvailableBackups(): Result<List<BackupInfo>>
+    suspend fun getAvailableBackups(): Either<DomainError, List<BackupInfo>>
     
     /**
      * Clean up old backups
      */
-    suspend fun cleanupBackups(): Result<Unit>
+    suspend fun cleanupBackups(): Either<DomainError, Unit>
     
     // ===== PERFORMANCE MONITORING =====
     
     /**
      * Get performance metrics for the persistence system
      */
-    suspend fun getPerformanceMetrics(): Result<PersistencePerformanceMetrics>
+    suspend fun getPerformanceMetrics(): Either<DomainError, PersistencePerformanceMetrics>
     
     /**
      * Enable or disable performance monitoring
      */
-    suspend fun setPerformanceMonitoring(enabled: Boolean): Result<Unit>
+    suspend fun setPerformanceMonitoring(enabled: Boolean): Either<DomainError, Unit>
 }
 
 /**

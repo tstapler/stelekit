@@ -698,7 +698,7 @@ class BlockStateManager(
         val block = blockRepository.getBlockByUuid(currentBlockUuid).first().getOrNull() ?: return@launch
         val pageUuid = block.pageUuid
         val before = takePageSnapshot(pageUuid)
-        blockRepository.splitBlock(currentBlockUuid, block.content.length).onSuccess { newBlock ->
+        blockRepository.splitBlock(currentBlockUuid, block.content.length).onRight { newBlock ->
             requestEditBlock(newBlock.uuid)
             queueDiskSave(pageUuid)
             val after = takePageSnapshot(pageUuid)
@@ -712,7 +712,7 @@ class BlockStateManager(
     fun splitBlock(blockUuid: String, cursorPosition: Int): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
-        blockRepository.splitBlock(blockUuid, cursorPosition).onSuccess { newBlock ->
+        blockRepository.splitBlock(blockUuid, cursorPosition).onRight { newBlock ->
             requestEditBlock(newBlock.uuid)
             queueDiskSave(pageUuid)
             val after = takePageSnapshot(pageUuid)
@@ -764,7 +764,7 @@ class BlockStateManager(
 
         if (currentIndex > 0) {
             val prevBlock = siblings[currentIndex - 1]
-            blockRepository.mergeBlocks(prevBlock.uuid, blockUuid, "").onSuccess {
+            blockRepository.mergeBlocks(prevBlock.uuid, blockUuid, "").onRight {
                 requestEditBlock(prevBlock.uuid, prevBlock.content.length)
                 queueDiskSave(pageUuid)
                 val after = takePageSnapshot(pageUuid)
@@ -800,7 +800,7 @@ class BlockStateManager(
 
         if (currentIndex > 0) {
             val prevBlock = siblings[currentIndex - 1]
-            blockRepository.mergeBlocks(prevBlock.uuid, blockUuid, "").onSuccess {
+            blockRepository.mergeBlocks(prevBlock.uuid, blockUuid, "").onRight {
                 afterOp(prevBlock.uuid, prevBlock.content.length)
             }
         } else if (currentBlock.parentUuid != null) {
@@ -810,7 +810,7 @@ class BlockStateManager(
                     blockRepository.deleteBlock(blockUuid)
                     afterOp(parent.uuid, parent.content.length)
                 } else {
-                    blockRepository.mergeBlocks(parent.uuid, blockUuid, "").onSuccess {
+                    blockRepository.mergeBlocks(parent.uuid, blockUuid, "").onRight {
                         afterOp(parent.uuid, parent.content.length)
                     }
                 }

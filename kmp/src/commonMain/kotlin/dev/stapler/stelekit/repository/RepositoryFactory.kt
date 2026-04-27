@@ -1,6 +1,9 @@
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
+import arrow.core.right
 import dev.stapler.stelekit.db.DatabaseWriteActor
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.OperationLogger
 import dev.stapler.stelekit.db.SteleDatabase
@@ -290,11 +293,11 @@ class RepositoryFactoryImpl(
             while (true) {
                 delay(5_000)
                 val drained = ringBuffer.drain()
-                val drainBlock: suspend () -> Result<Unit> = {
+                val drainBlock: suspend () -> Either<DomainError, Unit> = {
                     drained.forEach { span -> spanRepository.insertSpan(span) }
                     spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)
                     spanRepository.deleteExcessSpans(10_000)
-                    Result.success(Unit)
+                    Unit.right()
                 }
                 if (actor != null) {
                     actor.execute(DatabaseWriteActor.Priority.LOW, drainBlock)

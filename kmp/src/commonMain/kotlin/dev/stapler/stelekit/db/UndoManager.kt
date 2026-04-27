@@ -112,23 +112,23 @@ class UndoManager(
             OperationLogger.OpType.UPDATE_BLOCK.name -> {
                 val before = payload.before ?: return
                 val restored = snapshotToBlock(before, op.page_uuid ?: return)
-                writeActor.saveBlock(restored).onFailure { e ->
-                    logger.error("UndoManager: failed to restore block ${before.uuid}", e)
+                writeActor.saveBlock(restored).onLeft { e ->
+                    logger.error("UndoManager: failed to restore block ${before.uuid}: ${e.message}")
                 }
             }
             OperationLogger.OpType.INSERT_BLOCK.name -> {
                 // Undo of insert = delete
                 val after = payload.after ?: return
-                writeActor.deleteBlock(after.uuid).onFailure { e ->
-                    logger.error("UndoManager: failed to delete block ${after.uuid}", e)
+                writeActor.deleteBlock(after.uuid).onLeft { e ->
+                    logger.error("UndoManager: failed to delete block ${after.uuid}: ${e.message}")
                 }
             }
             OperationLogger.OpType.DELETE_BLOCK.name -> {
                 // Undo of delete = re-insert
                 val before = payload.before ?: return
                 val restored = snapshotToBlock(before, op.page_uuid ?: return)
-                writeActor.saveBlock(restored).onFailure { e ->
-                    logger.error("UndoManager: failed to restore deleted block ${before.uuid}", e)
+                writeActor.saveBlock(restored).onLeft { e ->
+                    logger.error("UndoManager: failed to restore deleted block ${before.uuid}: ${e.message}")
                 }
             }
             OperationLogger.OpType.BATCH_START.name,

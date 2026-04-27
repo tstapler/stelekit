@@ -1,11 +1,15 @@
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Page
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
-import kotlin.Result.Companion.success
 
 /**
  * Datalog-style in-memory repository for pages that mirrors Datascript behavior.
@@ -26,135 +30,135 @@ class DatascriptPageRepository : PageRepository {
     private val byName = MutableStateFlow<Map<String, Page>>(emptyMap())
     private val byNamespace = MutableStateFlow<Map<String, List<Page>>>(emptyMap())
 
-    override fun getPageByUuid(uuid: String): Flow<Result<Page?>> {
+    override fun getPageByUuid(uuid: String): Flow<Either<DomainError, Page?>> {
         return pages.map { map ->
-            success(map[uuid])
+            map[uuid].right()
         }
     }
 
-    override fun getPageByName(name: String): Flow<Result<Page?>> {
+    override fun getPageByName(name: String): Flow<Either<DomainError, Page?>> {
         return byName.map { map ->
-            success(map[name])
+            map[name].right()
         }
     }
 
-    override fun getPagesInNamespace(namespace: String): Flow<Result<List<Page>>> {
+    override fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>> {
         return byNamespace.map { map ->
-            success(map[namespace] ?: emptyList())
+            (map[namespace] ?: emptyList()).right()
         }
     }
 
-    override fun getPages(limit: Int, offset: Int): Flow<Result<List<Page>>> {
+    override fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
             val result = map.values.sortedBy { it.name }.drop(offset).take(limit)
-            success(result)
+            result.right()
         }
     }
 
-    override fun searchPages(query: String, limit: Int, offset: Int): Flow<Result<List<Page>>> {
+    override fun searchPages(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
             val result = map.values
                 .filter { it.name.contains(query, ignoreCase = true) }
                 .sortedBy { it.name }
                 .drop(offset)
                 .take(limit)
-            success(result)
+            result.right()
         }
     }
 
-    override fun getAllPages(): Flow<Result<List<Page>>> {
+    override fun getAllPages(): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
-            success(map.values.toList())
+            map.values.toList().right()
         }
     }
 
-    override fun getJournalPages(limit: Int, offset: Int): Flow<Result<List<Page>>> {
+    override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
             val journals = map.values
                 .filter { it.isJournal && it.journalDate != null }
                 .sortedByDescending { it.journalDate }
                 .drop(offset)
                 .take(limit)
-            success(journals)
+            journals.right()
         }
     }
 
-    override fun getJournalPageByDate(date: kotlinx.datetime.LocalDate): Flow<Result<Page?>> {
+    override fun getJournalPageByDate(date: kotlinx.datetime.LocalDate): Flow<Either<DomainError, Page?>> {
         return pages.map { map ->
-            success(map.values.find { it.journalDate == date })
+            map.values.find { it.journalDate == date }.right()
         }
     }
 
-    override fun getRecentPages(limit: Int): Flow<Result<List<Page>>> {
+    override fun getRecentPages(limit: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
-            success(map.values.sortedByDescending { it.updatedAt }.take(limit))
+            map.values.sortedByDescending { it.updatedAt }.take(limit).right()
         }
     }
 
-    override fun getUnloadedPages(): Flow<Result<List<Page>>> {
+    override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
-            success(map.values.filter { !it.isContentLoaded })
+            map.values.filter { !it.isContentLoaded }.right()
         }
     }
 
-    override suspend fun savePage(page: Page): Result<Unit> {
+    override suspend fun savePage(page: Page): Either<DomainError, Unit> {
         return try {
             val current = pages.value.toMutableMap()
             current[page.uuid] = page
             pages.value = current
             refreshIndexes(current)
-            success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun savePages(pageList: List<Page>): Result<Unit> {
+    override suspend fun savePages(pageList: List<Page>): Either<DomainError, Unit> {
         return try {
             val current = pages.value.toMutableMap()
             pageList.forEach { current[it.uuid] = it }
             pages.value = current
             refreshIndexes(current)
-            success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun toggleFavorite(pageUuid: String): Result<Unit> {
+    override suspend fun toggleFavorite(pageUuid: String): Either<DomainError, Unit> {
         return try {
-            val page = pages.value[pageUuid] ?: return Result.failure(Exception("Page not found"))
+            val page = pages.value[pageUuid] ?: return DomainError.DatabaseError.NotFound("page", pageUuid).left()
             val newPage = page.copy(isFavorite = !page.isFavorite)
             savePage(newPage)
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun renamePage(pageUuid: String, newName: String): Result<Unit> {
+    override suspend fun renamePage(pageUuid: String, newName: String): Either<DomainError, Unit> {
         return try {
-            val page = pages.value[pageUuid] ?: return Result.failure(Exception("Page not found"))
+            val page = pages.value[pageUuid] ?: return DomainError.DatabaseError.NotFound("page", pageUuid).left()
             val newPage = page.copy(name = newName, updatedAt = kotlin.time.Clock.System.now())
             savePage(newPage)
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun deletePage(pageUuid: String): Result<Unit> {
+    override suspend fun deletePage(pageUuid: String): Either<DomainError, Unit> {
         return try {
             val current = pages.value.toMutableMap()
             current.remove(pageUuid)
             pages.value = current
             refreshIndexes(current)
-            success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override fun countPages(): Flow<Result<Long>> {
-        return pages.map { success(it.size.toLong()) }
+    override fun countPages(): Flow<Either<DomainError, Long>> {
+        return pages.map { it.size.toLong().right() }
     }
 
     override suspend fun clear() {

@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Property
@@ -9,7 +14,6 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import kotlin.time.Instant
-import kotlin.Result.Companion.success
 
 /**
  * SQLDelight implementation of PropertyRepository.
@@ -22,35 +26,35 @@ class SqlDelightPropertyRepository(
 
     private val queries = database.steleDatabaseQueries
 
-    override fun getPropertiesForBlock(blockUuid: String): Flow<Result<List<Property>>> = flow {
+    override fun getPropertiesForBlock(blockUuid: String): Flow<Either<DomainError, List<Property>>> = flow {
         try {
             val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
             if (block == null) {
-                emit(success(emptyList()))
+                emit(emptyList<Property>().right())
             } else {
                 val properties = parseProperties(block.uuid, block.properties)
-                emit(success(properties))
+                emit(properties.right())
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getProperty(blockUuid: String, key: String): Flow<Result<Property?>> = flow {
+    override fun getProperty(blockUuid: String, key: String): Flow<Either<DomainError, Property?>> = flow {
         try {
             val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
             if (block == null) {
-                emit(success(null))
+                emit(null.right())
             } else {
                 val property = parseProperties(block.uuid, block.properties).find { it.key == key }
-                emit(success(property))
+                emit(property.right())
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override suspend fun saveProperty(property: Property): Result<Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun saveProperty(property: Property): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             val block = queries.selectBlockByUuid(property.blockUuid).executeAsOneOrNull()
             if (block != null) {
@@ -59,13 +63,13 @@ class SqlDelightPropertyRepository(
                 val updatedString = existing.entries.joinToString(",") { "${it.key}:${it.value}" }
                 queries.updateBlockProperties(updatedString, block.uuid)
             }
-            success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun deleteProperty(blockUuid: String, key: String): Result<Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun deleteProperty(blockUuid: String, key: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
             if (block != null) {
@@ -74,31 +78,31 @@ class SqlDelightPropertyRepository(
                 val updatedString = existing.entries.joinToString(",") { "${it.key}:${it.value}" }
                 queries.updateBlockProperties(updatedString, block.uuid)
             }
-            success(Unit)
+            Unit.right()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override fun getBlocksWithPropertyKey(key: String): Flow<Result<List<Block>>> = flow {
+    override fun getBlocksWithPropertyKey(key: String): Flow<Either<DomainError, List<Block>>> = flow {
         try {
             val results = queries.selectAllBlocks().executeAsList()
                 .filter { it.properties?.contains(key) == true }
                 .map { it.toBlockModel() }
-            emit(success(results))
+            emit(results.right())
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getBlocksWithPropertyValue(key: String, value: String): Flow<Result<List<Block>>> = flow {
+    override fun getBlocksWithPropertyValue(key: String, value: String): Flow<Either<DomainError, List<Block>>> = flow {
         try {
             val results = queries.selectAllBlocks().executeAsList()
                 .filter { it.properties?.contains("$key:$value") == true }
                 .map { it.toBlockModel() }
-            emit(success(results))
+            emit(results.right())
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
 

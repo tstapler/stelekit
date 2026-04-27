@@ -590,7 +590,7 @@ private fun GraphContent(
                             value = emptyList()
                         } else {
                             repos.blockRepository.getLinkedReferences(pageName)
-                                .collect { result -> value = result.getOrElse { emptyList() } }
+                                .collect { result -> value = result.getOrNull() ?: emptyList() }
                         }
                     }
 

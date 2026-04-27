@@ -2,6 +2,11 @@
 
 package dev.stapler.stelekit.editor
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import androidx.compose.runtime.*
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import androidx.compose.ui.input.key.key
@@ -24,7 +29,6 @@ import dev.stapler.stelekit.editor.format.IFormatProcessor
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlin.Result
 
 /**
  * Main editor implementation that orchestrates all editing operations.
@@ -48,7 +52,7 @@ class Editor(
 
     override val config: EditorConfig = EditorConfig()
 
-    override suspend fun initialize(page: Page): Result<Unit> {
+    override suspend fun initialize(page: Page): Either<DomainError, Unit> {
         return try {
             val traceId = dev.stapler.stelekit.performance.PerformanceMonitor.startTrace("editor-initialize")
             
@@ -71,10 +75,10 @@ class Editor(
             }
             
             dev.stapler.stelekit.performance.PerformanceMonitor.endTrace(traceId)
-            Result.success(Unit)
+            Unit.right()
         } catch (e: Exception) {
             _editorState.update { it.copy(isLoading = false) }
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
@@ -127,7 +131,7 @@ class Editor(
         return false
     }
 
-    override suspend fun executeCommand(command: EditorCommand): Result<Unit> {
+    override suspend fun executeCommand(command: EditorCommand): Either<DomainError, Unit> {
         return try {
             val traceId = dev.stapler.stelekit.performance.PerformanceMonitor.startTrace("execute-command")
             
@@ -149,13 +153,13 @@ class Editor(
             val result = command.execute(context)
             
             dev.stapler.stelekit.performance.PerformanceMonitor.endTrace(traceId)
-            if (result is CommandResult.Success) Result.success(Unit) else Result.failure(Exception((result as CommandResult.Error).message))
+            if (result is CommandResult.Success) Unit.right() else DomainError.DatabaseError.WriteFailed((result as CommandResult.Error).message).left()
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
-    override suspend fun executeCommand(commandId: String, args: Map<String, Any>): Result<Any?> {
+    override suspend fun executeCommand(commandId: String, args: Map<String, Any>): Either<DomainError, Any?> {
         return try {
             val currentBlockUuid = _cursorState.value.blockId
             val textState = currentBlockUuid?.let { textOperations.getTextState(it).value }
@@ -176,28 +180,28 @@ class Editor(
             val result = commandSystem.executeCommand(commandId, context)
             
             when (result) {
-                is CommandResult.Success -> Result.success(result.data)
-                is CommandResult.Error -> Result.failure(result.exception ?: Exception(result.message))
-                is CommandResult.Partial -> Result.success(mapOf("completed" to result.completed, "total" to result.total))
-                is CommandResult.Nothing -> Result.success(null)
+                is CommandResult.Success -> result.data.right()
+                is CommandResult.Error -> DomainError.DatabaseError.WriteFailed(result.message).left()
+                is CommandResult.Partial -> mapOf("completed" to result.completed, "total" to result.total).right()
+                is CommandResult.Nothing -> null.right()
             }
         } catch (e: Exception) {
-            Result.failure(e)
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
 
     // Editor-specific helper methods
 
-    suspend fun insertText(text: String): Result<Unit> {
+    suspend fun insertText(text: String): Either<DomainError, Unit> {
         val currentBlockUuid = _cursorState.value.blockId
         return if (currentBlockUuid != null) {
             textOperations.insertText(currentBlockUuid, text)
         } else {
-            Result.failure(IllegalStateException("No block focused"))
+            DomainError.DatabaseError.WriteFailed("No block focused").left()
         }
     }
 
-    suspend fun createNewBlock(content: String = ""): Result<Block> {
+    suspend fun createNewBlock(content: String = ""): Either<DomainError, Block> {
         val currentPage = _currentPage.value
         val focusedBlockUuid = _cursorState.value.blockId
         
@@ -216,7 +220,7 @@ class Editor(
                 content = content,
                 parentId = parentUuid
             ).also { result ->
-                if (result.isSuccess) {
+                if (result.isRight()) {
                     // Update editor state
                     val newBlock = result.getOrNull()
                     if (newBlock != null) {
@@ -234,15 +238,15 @@ class Editor(
                 }
             }
         } else {
-            Result.failure(IllegalStateException("No page loaded"))
+            DomainError.DatabaseError.WriteFailed("No page loaded").left()
         }
     }
 
-    suspend fun deleteCurrentBlock(): Result<Unit> {
+    suspend fun deleteCurrentBlock(): Either<DomainError, Unit> {
         val currentBlockUuid = _cursorState.value.blockId
         return if (currentBlockUuid != null) {
             blockOperations.deleteBlock(currentBlockUuid, false).also { result ->
-                if (result.isSuccess) {
+                if (result.isRight()) {
                     // Update editor state
                     _editorState.update { current ->
                         current.copy(
@@ -254,69 +258,69 @@ class Editor(
                 }
             }
         } else {
-            Result.failure(IllegalStateException("No block focused"))
+            DomainError.DatabaseError.WriteFailed("No block focused").left()
         }
     }
 
-    suspend fun indentCurrentBlock(): Result<Unit> {
+    suspend fun indentCurrentBlock(): Either<DomainError, Unit> {
         val currentBlockUuid = _cursorState.value.blockId
         return if (currentBlockUuid != null) {
             blockOperations.indentBlock(currentBlockUuid).also { result ->
-                if (result.isSuccess) {
+                if (result.isRight()) {
                     refreshBlocks()
                 }
             }
         } else {
-            Result.failure(IllegalStateException("No block focused"))
+            DomainError.DatabaseError.WriteFailed("No block focused").left()
         }
     }
 
-    suspend fun outdentCurrentBlock(): Result<Unit> {
+    suspend fun outdentCurrentBlock(): Either<DomainError, Unit> {
         val currentBlockUuid = _cursorState.value.blockId
         return if (currentBlockUuid != null) {
             blockOperations.outdentBlock(currentBlockUuid).also { result ->
-                if (result.isSuccess) {
+                if (result.isRight()) {
                     refreshBlocks()
                 }
             }
         } else {
-            Result.failure(IllegalStateException("No block focused"))
+            DomainError.DatabaseError.WriteFailed("No block focused").left()
         }
     }
 
-    suspend fun moveBlockUp(): Result<Unit> {
+    suspend fun moveBlockUp(): Either<DomainError, Unit> {
         val currentBlockUuid = _cursorState.value.blockId
         return if (currentBlockUuid != null) {
             blockOperations.moveBlockUp(currentBlockUuid).also { result ->
-                if (result.isSuccess) {
+                if (result.isRight()) {
                     refreshBlocks()
                 }
             }
         } else {
-            Result.failure(IllegalStateException("No block focused"))
+            DomainError.DatabaseError.WriteFailed("No block focused").left()
         }
     }
 
-    suspend fun moveBlockDown(): Result<Unit> {
+    suspend fun moveBlockDown(): Either<DomainError, Unit> {
         val currentBlockUuid = _cursorState.value.blockId
         return if (currentBlockUuid != null) {
             blockOperations.moveBlockDown(currentBlockUuid).also { result ->
-                if (result.isSuccess) {
+                if (result.isRight()) {
                     refreshBlocks()
                 }
             }
         } else {
-            Result.failure(IllegalStateException("No block focused"))
+            DomainError.DatabaseError.WriteFailed("No block focused").left()
         }
     }
 
-    suspend fun splitCurrentBlock(): Result<Block> {
+    suspend fun splitCurrentBlock(): Either<DomainError, Block> {
         val currentBlockUuid = _cursorState.value.blockId
         val position = _cursorState.value.position
         
         return if (currentBlockUuid != null) {
             blockOperations.splitBlock(currentBlockUuid, position).also { result ->
-                if (result.isSuccess) {
+                if (result.isRight()) {
                     refreshBlocks()
                     // Focus the new block
                     val newBlock = result.getOrNull()
@@ -329,7 +333,7 @@ class Editor(
                 }
             }
         } else {
-            Result.failure(IllegalStateException("No block focused"))
+            DomainError.DatabaseError.WriteFailed("No block focused").left()
         }
     }
 

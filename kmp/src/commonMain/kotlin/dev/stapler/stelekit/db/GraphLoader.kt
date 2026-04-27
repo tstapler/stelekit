@@ -1,5 +1,10 @@
 package dev.stapler.stelekit.db
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.ParsedBlock
@@ -77,7 +82,7 @@ class GraphLoader(
             if (spanRepository != null) {
                 writeActor.execute(DatabaseWriteActor.Priority.LOW) {
                     spanRepository.insertSpan(serialized)
-                    Result.success(Unit)
+                    Unit.right()
                 }
             }
         }
@@ -456,10 +461,10 @@ class GraphLoader(
 
         if (pagesToSave.isNotEmpty()) {
             val bulkResult = writeActor.savePages(pagesToSave, DatabaseWriteActor.Priority.LOW)
-            if (bulkResult.isFailure) {
+            if (bulkResult.isLeft()) {
                 for (page in pagesToSave) {
-                    writeActor.savePage(page, DatabaseWriteActor.Priority.LOW).onFailure { e ->
-                        logger.error("savePage failed for ${page.name}", e)
+                    writeActor.savePage(page, DatabaseWriteActor.Priority.LOW).onLeft { e ->
+                        logger.error("savePage failed for ${page.name}: ${e.message}")
                         _writeErrors.tryEmit(WriteError(page.filePath ?: page.name, 0, e))
                         failedPageUuids.add(page.uuid)
                     }
@@ -474,8 +479,8 @@ class GraphLoader(
                 if (shouldDelete) {
                     blockRepository.deleteBlocksForPages(listOf(pageUuid))
                 }
-                blockRepository.saveBlocks(blocks).onFailure { e ->
-                    logger.error("saveBlocks failed for pageUuid=$pageUuid (${blocks.size} blocks)", e)
+                blockRepository.saveBlocks(blocks).onLeft { e ->
+                    logger.error("saveBlocks failed for pageUuid=$pageUuid (${blocks.size} blocks): ${e.message}")
                     _writeErrors.tryEmit(WriteError(pageUuid, blocks.size, e))
                 }
             }
@@ -562,7 +567,7 @@ class GraphLoader(
                     parseAndSavePage(entry.filePath, content, ParseMode.FULL)
                     loadedCount++
                 } catch (e: Exception) {
-                    logger.error("Failed to parse journal: ${entry.filePath}", e)
+                    logger.error("Failed to parse journal: ${entry.filePath}: ${e.message}")
                 }
             }
             return loadedCount
@@ -594,7 +599,7 @@ class GraphLoader(
                                 parseAndSavePage(entry.filePath, content, ParseMode.METADATA_ONLY)
                                 true
                             } catch (e: Exception) {
-                                logger.error("Failed to parse journal: ${entry.filePath}", e)
+                                logger.error("Failed to parse journal: ${entry.filePath}: ${e.message}")
                                 false
                             }
                         }
@@ -634,7 +639,7 @@ class GraphLoader(
                             }
                         }
                     } catch (e: Exception) {
-                        logger.error("Error sanitizing file: $oldPath", e)
+                        logger.error("Error sanitizing file: $oldPath: ${e.message}")
                     }
                 }
             }
@@ -717,7 +722,7 @@ class GraphLoader(
                                     pageUuidsToDelete.add(updatedPage.uuid)
                                     true
                                 } catch (e: Exception) {
-                                    logger.error("Failed to parse file: $filePath", e)
+                                    logger.error("Failed to parse file: $filePath: ${e.message}")
                                     false
                                 }
                             }
@@ -896,7 +901,7 @@ class GraphLoader(
                     logger.error("Git conflict markers detected in '$filePath' — import suppressed")
                     _writeErrors.tryEmit(WriteError(
                         filePath, 0,
-                        IllegalStateException("Git conflict markers detected — resolve conflicts before importing")
+                        dev.stapler.stelekit.error.DomainError.ParseError.InvalidSyntax("Git conflict markers detected in '$filePath' — resolve conflicts before importing")
                     ))
                     return@withLock
                 }
@@ -974,9 +979,9 @@ class GraphLoader(
                 val savePageSpan = Span("db.savePage", traceId, rootSpan.spanId)
                 val savePageResult = writeActor.savePage(page, priority)
                 savePageSpan.finish()
-                if (savePageResult.isFailure) {
-                    val e = savePageResult.exceptionOrNull()!!
-                    logger.error("savePage failed for $filePath — skipping block writes to prevent FK violation", e)
+                if (savePageResult.isLeft()) {
+                    val e = savePageResult.leftOrNull()!!
+                    logger.error("savePage failed for $filePath — skipping block writes to prevent FK violation: ${e.message}")
                     _writeErrors.tryEmit(WriteError(filePath, 0, e))
                     return@withLock
                 }
@@ -988,8 +993,8 @@ class GraphLoader(
                     createStubBlocks(rootBlocks, filePath, pageUuid, null, 0, updatedAt, stubs)
                     if (stubs.isNotEmpty()) {
                         writeActor.deleteBlocksForPage(pageUuid, priority)
-                        writeActor.saveBlocks(stubs, priority).onFailure { e ->
-                            logger.error("saveBlocks (stubs) failed for $filePath (${stubs.size} blocks)", e)
+                        writeActor.saveBlocks(stubs, priority).onLeft { e ->
+                            logger.error("saveBlocks (stubs) failed for $filePath (${stubs.size} blocks): ${e.message}")
                             _writeErrors.tryEmit(WriteError(filePath, stubs.size, e))
                         }
                     }
@@ -1044,7 +1049,7 @@ class GraphLoader(
                         )
                         _writeErrors.tryEmit(WriteError(
                             filePath, existingBlockCount,
-                            IllegalStateException("Blank external overwrite suppressed to prevent data loss")
+                            dev.stapler.stelekit.error.DomainError.FileSystemError.WriteFailed(filePath, "Blank external overwrite suppressed to prevent data loss")
                         ))
                     } else {
                         // FULL mode: diff-based merge instead of delete-all + insert-all
@@ -1057,16 +1062,16 @@ class GraphLoader(
 
                         // Delete blocks no longer present
                         diff.toDelete.forEach { uuid ->
-                            writeActor.deleteBlock(uuid).onFailure { e ->
-                                logger.error("deleteBlock failed for $uuid in $filePath", e)
+                            writeActor.deleteBlock(uuid).onLeft { e ->
+                                logger.error("deleteBlock failed for $uuid in $filePath: ${e.message}")
                             }
                         }
                         // Save new and changed blocks together
                         val blocksToWrite = diff.toInsert + diff.toUpdate
                         if (blocksToWrite.isNotEmpty()) {
                             val saveBlocksSpan = Span("db.saveBlocks", traceId, rootSpan.spanId)
-                            writeActor.saveBlocks(blocksToWrite, priority).onFailure { e ->
-                                logger.error("saveBlocks failed for $filePath (${blocksToWrite.size} blocks)", e)
+                            writeActor.saveBlocks(blocksToWrite, priority).onLeft { e ->
+                                logger.error("saveBlocks failed for $filePath (${blocksToWrite.size} blocks): ${e.message}")
                                 _writeErrors.tryEmit(WriteError(filePath, blocksToWrite.size, e))
                             }
                             saveBlocksSpan.finish("OK", "block.count" to blocksToWrite.size.toString())
@@ -1074,8 +1079,8 @@ class GraphLoader(
                     }
                 } else if (blocksToSave.isNotEmpty()) {
                     writeActor.deleteBlocksForPage(pageUuid, priority)
-                    writeActor.saveBlocks(blocksToSave, priority).onFailure { e ->
-                        logger.error("saveBlocks failed for $filePath (${blocksToSave.size} blocks)", e)
+                    writeActor.saveBlocks(blocksToSave, priority).onLeft { e ->
+                        logger.error("saveBlocks failed for $filePath (${blocksToSave.size} blocks): ${e.message}")
                         _writeErrors.tryEmit(WriteError(filePath, blocksToSave.size, e))
                     }
                 }
@@ -1226,10 +1231,10 @@ data class ExternalFileChange(
  *
  * @param filePath   Source markdown file path, or page UUID if a file path is unavailable.
  * @param blockCount Number of blocks that could not be saved (0 for page-level failures).
- * @param cause      The underlying exception.
+ * @param cause      The domain error.
  */
 data class WriteError(
     val filePath: String,
     val blockCount: Int,
-    val cause: Throwable,
+    val cause: dev.stapler.stelekit.error.DomainError,
 )
