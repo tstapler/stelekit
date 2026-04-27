@@ -54,6 +54,9 @@ class GraphLoader(
     private val logger = Logger("GraphLoader")
     private val markdownParser = MarkdownParser()
 
+    /** Called after a full bulk import completes. Used to trigger WAL checkpoint. */
+    var onBulkImportComplete: (suspend () -> Unit)? = null
+
     // Lightweight span tracking for the Spans waterfall tab.
     private fun genId(): String =
         kotlin.random.Random.nextLong().toULong().toString(16).padStart(16, '0')
@@ -310,6 +313,7 @@ class GraphLoader(
             histogramWriter?.record("graph_load", totalDuration.inWholeMilliseconds)
             onProgress("Graph loaded completely.")
             onFullyLoaded()
+            onBulkImportComplete?.invoke()
 
             // Start watching after initial load
             startWatching(graphPath)

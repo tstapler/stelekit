@@ -7,6 +7,7 @@ pluginManagement {
     }
     plugins {
         kotlin("multiplatform") version "2.3.10"
+        kotlin("jvm") version "2.3.10"
         kotlin("android") version "2.3.10"
         kotlin("plugin.compose") version "2.3.10"
         kotlin("plugin.serialization") version "2.3.10"
@@ -68,3 +69,4 @@ rootProject.name = "stelekit"
 
 include(":kmp")
 include(":androidApp")
+include(":tools:flamegraph")

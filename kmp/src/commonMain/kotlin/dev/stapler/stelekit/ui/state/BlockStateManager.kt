@@ -15,6 +15,7 @@ import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -49,12 +50,11 @@ class BlockStateManager(
     // Default scope owns its own lifecycle so callers stored in remember{} don't pass
     // rememberCoroutineScope(), which is cancelled when the composable leaves composition.
     // Tests inject a TestCoroutineScope for deterministic scheduling.
-    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     private val graphWriter: GraphWriter? = null,
     private val pageRepository: PageRepository? = null,
     private val graphPathProvider: () -> String = { "" }
 ) {
-    private val scope = scope
     private val logger = Logger("BlockStateManager")
     private val diskWriteDebounce = DebounceManager(scope, 300L)
 
@@ -70,6 +70,9 @@ class BlockStateManager(
     val dirtyBlockUuids: Set<String> get() = dirtyBlocks.keys.toSet()
 
     private val observationJobs = mutableMapOf<String, Job>()
+    // Delayed-cancellation jobs: unobservePage schedules cancellation after a keepalive window
+    // so quick back-navigation reuses the live observation instead of cold-starting.
+    private val pendingUnobserve = mutableMapOf<String, Job>()
 
     // ---- Editing focus ----
 
@@ -336,10 +339,15 @@ class BlockStateManager(
      * the block is NOT dirty (i.e., has no unconfirmed local edit).
      */
     fun observePage(pageUuid: String, isContentLoaded: Boolean = true) {
+        // Cancel pending unobserve on re-navigation within the keepalive window
+        pendingUnobserve.remove(pageUuid)?.cancel()
         if (pageUuid in observationJobs) return
 
         observationJobs[pageUuid] = scope.launch {
-            if (!isContentLoaded) {
+            // Skip disk load if blocks are already in the state cache (e.g. re-navigation after unobservePage).
+            // unobservePage keeps blocks in _blocks so back-navigation is instant without a disk round-trip.
+            val alreadyCached = _blocks.value[pageUuid]?.isNotEmpty() == true
+            if (!isContentLoaded && !alreadyCached) {
                 _loadingPageUuids.update { it + pageUuid }
                 try {
                     graphLoader.loadFullPage(pageUuid)
@@ -360,14 +368,29 @@ class BlockStateManager(
     }
 
     /**
-     * Stop observing blocks for a page and remove its state.
-     * Clears any dirty entries for blocks on that page.
+     * Schedule cancellation of the page observation after a 5-second keepalive window.
+     *
+     * If [observePage] is called again within the window the pending cancellation is cancelled
+     * and the existing observation job reused — zero cold-start latency on quick back-navigation.
+     * After the window expires the observation job is cancelled and dirty entries are cleared;
+     * blocks remain in [_blocks] as a stale cache for instant first-paint on slower re-navigation.
      */
     fun unobservePage(pageUuid: String) {
-        observationJobs.remove(pageUuid)?.cancel()
-        val blockUuids = _blocks.value[pageUuid]?.map { it.uuid } ?: emptyList()
-        blockUuids.forEach { dirtyBlocks.remove(it) }
-        _blocks.update { it - pageUuid }
+        pendingUnobserve.remove(pageUuid)?.cancel()
+        pendingUnobserve[pageUuid] = scope.launch {
+            delay(5_000)
+            pendingUnobserve.remove(pageUuid)
+            observationJobs.remove(pageUuid)?.cancel()
+            val blockUuids = _blocks.value[pageUuid]?.map { it.uuid } ?: emptyList()
+            blockUuids.forEach { dirtyBlocks.remove(it) }
+        }
+    }
+
+    /** Evict in-memory caches for [pageUuid] when an external file change fires. */
+    fun cacheEvictPage(pageUuid: String) {
+        scope.launch {
+            blockRepository.cacheEvictPage(pageUuid)
+        }
     }
 
     /**

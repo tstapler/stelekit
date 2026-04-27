@@ -41,14 +41,24 @@ class SteleLruCache<K : Any, V>(
     val maxWeight: Long,
     private val weigher: SteleLruWeigher<K, V>,
 ) {
+    data class CacheStats(val hits: Long, val misses: Long, val evictions: Long)
+
     constructor(maxWeight: Long) : this(maxWeight, SteleLruWeigher { _, _ -> 1L })
 
     private val lock = PlatformLock()
     private val map = LinkedHashMap<K, V>()
     private var totalWeight = 0L
+    private var hits = 0L
+    private var misses = 0L
+    private var evictions = 0L
 
     fun get(key: K): V? = lock.withLock {
-        val value = map.remove(key) ?: return null
+        val value = map.remove(key)
+        if (value == null) {
+            misses++
+            return@withLock null
+        }
+        hits++
         map[key] = value  // re-insert at tail = mark as most recently used
         value
     }
@@ -72,11 +82,20 @@ class SteleLruCache<K : Any, V>(
         totalWeight = 0L
     }
 
+    fun containsKey(key: K): Boolean = lock.withLock { map.containsKey(key) }
+
     fun size(): Int = lock.withLock { map.size }
 
     fun weight(): Long = lock.withLock { totalWeight }
 
     override fun toString(): String = "SteleLruCache(maxWeight=$maxWeight)"
+
+    /** Snapshot and reset hit/miss/eviction counters atomically. */
+    fun snapshotAndReset(): CacheStats = lock.withLock {
+        val stats = CacheStats(hits, misses, evictions)
+        hits = 0L; misses = 0L; evictions = 0L
+        stats
+    }
 
     private fun evict() {
         val iter = map.entries.iterator()
@@ -84,6 +103,7 @@ class SteleLruCache<K : Any, V>(
             val entry = iter.next()
             totalWeight -= weigher.weigh(entry.key, entry.value)
             iter.remove()
+            evictions++
         }
     }
 }

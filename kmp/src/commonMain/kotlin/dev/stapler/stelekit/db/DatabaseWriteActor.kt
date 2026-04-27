@@ -12,6 +12,7 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.util.UuidGenerator
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -49,6 +50,10 @@ class DatabaseWriteActor(
     private val opLogger: OperationLogger? = null,
 ) {
     private val logger = Logger("DatabaseWriteActor")
+
+    /** Called after a successful write, before the caller's deferred is completed. */
+    @Volatile var onWriteSuccess: (suspend (WriteRequest) -> Unit)? = null
+
     /** Controls which channel a write request enters. */
     enum class Priority { HIGH, LOW }
 
@@ -94,8 +99,8 @@ class DatabaseWriteActor(
         ) : WriteRequest()
     }
 
-    /** Set after construction once the ring buffer is available. Not thread-safe — set once before use. */
-    var ringBuffer: RingBufferSpanExporter? = null
+    /** Set after construction once the ring buffer is available. Written once before first channel send. */
+    @Volatile var ringBuffer: RingBufferSpanExporter? = null
 
     private val highPriority = Channel<WriteRequest>(capacity = Channel.UNLIMITED)
     private val lowPriority = Channel<WriteRequest>(capacity = Channel.UNLIMITED)
@@ -136,10 +141,16 @@ class DatabaseWriteActor(
 
     private suspend fun processRequest(request: WriteRequest) {
         when (request) {
-            is WriteRequest.SavePage ->
-                request.deferred.complete(pageRepository.savePage(request.page))
-            is WriteRequest.SavePages ->
-                request.deferred.complete(pageRepository.savePages(request.pages))
+            is WriteRequest.SavePage -> {
+                val result = pageRepository.savePage(request.page)
+                if (result.isSuccess) onWriteSuccess?.invoke(request)
+                request.deferred.complete(result)
+            }
+            is WriteRequest.SavePages -> {
+                val result = pageRepository.savePages(request.pages)
+                if (result.isSuccess) onWriteSuccess?.invoke(request)
+                request.deferred.complete(result)
+            }
             is WriteRequest.DeleteBlocksForPage -> {
                 if (opLogger != null) {
                     try {
@@ -149,7 +160,9 @@ class DatabaseWriteActor(
                         // Non-fatal: op log failure must not block the delete
                     }
                 }
-                request.deferred.complete(blockRepository.deleteBlocksForPage(request.pageUuid))
+                val result = blockRepository.deleteBlocksForPage(request.pageUuid)
+                if (result.isSuccess) onWriteSuccess?.invoke(request)
+                request.deferred.complete(result)
             }
             is WriteRequest.DeleteBlocksForPages -> {
                 if (opLogger != null) {
@@ -162,7 +175,9 @@ class DatabaseWriteActor(
                         logger.warn("Op log pre-delete read failed (non-fatal)", e)
                     }
                 }
-                request.deferred.complete(blockRepository.deleteBlocksForPages(request.pageUuids))
+                val result = blockRepository.deleteBlocksForPages(request.pageUuids)
+                if (result.isSuccess) onWriteSuccess?.invoke(request)
+                request.deferred.complete(result)
             }
             is WriteRequest.SaveBlocks -> processSaveBlocks(request)
             is WriteRequest.Execute -> {
@@ -219,7 +234,10 @@ class DatabaseWriteActor(
             val blocks = batch[0].blocks
             val existingByUuid = loadExistingBlocks(blocks)
             val result = blockRepository.saveBlocks(blocks)
-            if (result.isSuccess) logSaveBlocks(blocks, existingByUuid)
+            if (result.isSuccess) {
+                logSaveBlocks(blocks, existingByUuid)
+                onWriteSuccess?.invoke(batch[0])
+            }
             batch[0].deferred.complete(result)
             return
         }
@@ -229,6 +247,7 @@ class DatabaseWriteActor(
         val batchResult = blockRepository.saveBlocks(allBlocks)
         if (batchResult.isSuccess) {
             logSaveBlocks(allBlocks, existingByUuid)
+            batch.forEach { onWriteSuccess?.invoke(it) }
             batch.forEach { it.deferred.complete(Result.success(Unit)) }
         } else {
             logger.warn(
@@ -240,7 +259,10 @@ class DatabaseWriteActor(
             batch.forEach { req ->
                 val reqExisting = loadExistingBlocks(req.blocks)
                 val reqResult = blockRepository.saveBlocks(req.blocks)
-                if (reqResult.isSuccess) logSaveBlocks(req.blocks, reqExisting)
+                if (reqResult.isSuccess) {
+                    logSaveBlocks(req.blocks, reqExisting)
+                    onWriteSuccess?.invoke(req)
+                }
                 req.deferred.complete(reqResult)
             }
         }

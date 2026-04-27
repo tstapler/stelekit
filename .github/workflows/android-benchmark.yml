@@ -146,11 +146,15 @@ jobs:
             const curr = JSON.parse(fs.readFileSync(path.join(histDir, newFile)));
             const base = JSON.parse(fs.readFileSync(path.join(histDir, baseFile)));
 
-            const delta = (a, b) => {
+            const delta = (a, b, lowerIsBetter = true, unit = 'ms') => {
               if (a == null || b == null) return '';
               const d = a - b;
+              if (d === 0) return `0 (0%)`;
               const sign = d > 0 ? '+' : '';
-              return ` (${sign}${d}ms)`;
+              const rounded = unit === 'ms' ? Math.round(d) : parseFloat(d.toFixed(2));
+              const pct = b !== 0 ? ` (${sign}${Math.round((d / b) * 100)}%)` : '';
+              const emoji = lowerIsBetter ? (d < 0 ? ' ✅' : ' ⚠️') : (d > 0 ? ' ✅' : ' ⚠️');
+              return `${sign}${rounded}${unit}${pct}${emoji}`;
             };
             const ms = v => v == null ? 'n/a' : `${v}ms`;
             const fmt = v => v == null ? 'n/a' : v;
@@ -166,12 +170,13 @@ jobs:
               '',
               '| Metric | This PR | Baseline | Delta |',
               '|--------|---------|----------|-------|',
-              `| Phase 1 TTI | ${ms(curr.phase1Ms)} | ${ms(base.phase1Ms)} | ${delta(curr.phase1Ms, base.phase1Ms)} |`,
-              `| Phase 3 index | ${ms(curr.phase3Ms)} | ${ms(base.phase3Ms)} | ${delta(curr.phase3Ms, base.phase3Ms)} |`,
-              `| Write p95 (baseline) | ${ms(curr.baselineP95Ms)} | ${ms(base.baselineP95Ms)} | - |`,
-              `| Write p95 (during phase 3) | ${ms(curr.phase3P95Ms)} | ${ms(base.phase3P95Ms)} | ${delta(curr.phase3P95Ms, base.phase3P95Ms)} |`,
-              `| Jank factor | ${fmt(curr.jankFactor)}x | ${fmt(base.jankFactor)}x | - |`,
-              `| Concurrent writes | ${fmt(curr.writes)} | ${fmt(base.writes)} | - |`,
+              `| Phase 1 TTI ↓ | ${ms(curr.phase1Ms)} | ${ms(base.phase1Ms)} | ${delta(curr.phase1Ms, base.phase1Ms)} |`,
+              `| Phase 3 index ↓ | ${ms(curr.phase3Ms)} | ${ms(base.phase3Ms)} | ${delta(curr.phase3Ms, base.phase3Ms)} |`,
+              `| Write p95 (baseline) ↓ | ${ms(curr.baselineP95Ms)} | ${ms(base.baselineP95Ms)} | ${delta(curr.baselineP95Ms, base.baselineP95Ms)} |`,
+              `| Write p95 (during phase 3) ↓ | ${ms(curr.phase3P95Ms)} | ${ms(base.phase3P95Ms)} | ${delta(curr.phase3P95Ms, base.phase3P95Ms)} |`,
+              `| Jank factor ↓ | ${fmt(curr.jankFactor)}x | ${fmt(base.jankFactor)}x | ${delta(curr.jankFactor, base.jankFactor, true, 'x')} |`,
+              `| Concurrent writes ↑ | ${fmt(curr.writes)} | ${fmt(base.writes)} | ${delta(curr.writes, base.writes, false)} |`,
+              '_↓ lower is better · ↑ higher is better_',
             ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({

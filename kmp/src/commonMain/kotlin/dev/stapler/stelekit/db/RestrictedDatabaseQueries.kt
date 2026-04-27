@@ -361,4 +361,29 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     @DirectSqlWrite
     fun updatePropertiesBlockUuidForMigration(block_uuid: String, block_uuid_: String): QueryResult<Long> =
         queries.updatePropertiesBlockUuidForMigration(block_uuid, block_uuid_)
+
+    // ── Query stats writes ────────────────────────────────────────────────────
+
+    @DirectSqlWrite
+    fun insertQueryStatIfAbsent(app_version: String, table_name: String, operation: String, first_seen: Long, last_seen: Long): QueryResult<Long> =
+        queries.insertQueryStatIfAbsent(app_version, table_name, operation, first_seen, last_seen)
+
+    @DirectSqlWrite
+    fun mergeQueryStat(
+        calls: Long, errors: Long, total_ms: Long,
+        min_ms: Long, max_ms: Long,
+        b1: Long, b5: Long, b16: Long, b50: Long, b100: Long, b500: Long, b_inf: Long,
+        last_seen: Long,
+        app_version: String, table_name: String, operation: String,
+    ): QueryResult<Long> =
+        queries.mergeQueryStat(calls, errors, total_ms, min_ms, max_ms, b1, b5, b16, b50, b100, b500, b_inf, last_seen, app_version, table_name, operation)
+
+    @DirectSqlWrite
+    fun deleteQueryStatsForVersion(app_version: String): QueryResult<Long> =
+        queries.deleteQueryStatsForVersion(app_version)
+
+    // ── Maintenance ───────────────────────────────────────────────────────────
+
+    @DirectSqlWrite
+    fun pragmaWalCheckpointTruncate() = queries.pragmaWalCheckpointTruncate()
 }
