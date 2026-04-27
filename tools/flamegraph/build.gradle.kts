@@ -13,6 +13,8 @@ application {
 //     -Pfg.width=1800 "-Pfg.title=Alloc flamegraph (abc1234)" \
 //     -Pfg.colors=mem -Pfg.input=alloc.collapsed -Pfg.output=alloc.svg
 tasks.named<JavaExec>("run") {
+    // Run from repo root so relative file paths (e.g. kmp/build/reports/...) resolve correctly.
+    workingDir = rootProject.projectDir
     project.properties
         .filterKeys { it.startsWith("fg.") }
         .forEach { (k, v) -> if (v is String) systemProperty(k, v) }
