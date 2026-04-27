@@ -103,7 +103,7 @@ jobs:
           upload_png flamegraph-cpu.png FLAMEGRAPH_CPU_URL
 
       - name: Upload alloc flamegraph
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always() && env.ALLOC_PNG_GENERATED == 'true'
         with:
           name: flamegraph-alloc-${{ github.sha }}
@@ -111,7 +111,7 @@ jobs:
           retention-days: 30
 
       - name: Upload CPU flamegraph
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always() && env.CPU_PNG_GENERATED == 'true'
         with:
           name: flamegraph-cpu-${{ github.sha }}
@@ -119,7 +119,7 @@ jobs:
           retention-days: 30
 
       - name: Upload profiling data
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: profiling-data-${{ github.sha }}
