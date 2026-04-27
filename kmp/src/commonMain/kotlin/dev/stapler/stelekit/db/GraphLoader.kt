@@ -318,7 +318,9 @@ class GraphLoader(
                 onProgress("Ready")
                 onPhase1Complete()
                 val warmSpan = Span("graph_load.warm_reconcile", traceId, rootSpan.spanId)
-                parallelScope.launch {
+                // Track in backgroundIndexJob so cancelBackgroundWork() (called from onTrimMemory)
+                // cancels this job before it can write to a closed DB or exhaust memory.
+                backgroundIndexJob = parallelScope.launch {
                     try {
                         loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
                         coroutineScope {
@@ -334,6 +336,8 @@ class GraphLoader(
                         startWatching(graphPath)
                     } catch (e: Exception) {
                         warmSpan.finish("ERROR", "error.message" to (e.message ?: "unknown"))
+                    } finally {
+                        backgroundIndexJob = null
                     }
                 }
                 rootSpan.finish("OK", "graph.path" to graphPath, "warm_start" to "true")
