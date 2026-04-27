@@ -871,9 +871,7 @@ class SqlDelightBlockRepository(
     override suspend fun deleteBlocksForPages(pageUuids: List<String>): Result<Unit> = withContext(PlatformDispatcher.DB) {
         if (pageUuids.isEmpty()) return@withContext success(Unit)
         try {
-            queries.transaction {
-                pageUuids.forEach { queries.deleteBlocksByPageUuid(it) }
-            }
+            queries.deleteBlocksByPageUuids(pageUuids)
             success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

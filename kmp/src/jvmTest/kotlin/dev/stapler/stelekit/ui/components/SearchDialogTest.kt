@@ -1,10 +1,8 @@
 package dev.stapler.stelekit.ui.components
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createComposeRule
 
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performTextInput
 import dev.stapler.stelekit.repository.InMemorySearchRepository
 import dev.stapler.stelekit.ui.fixtures.PopulatedFakePageRepository
 import dev.stapler.stelekit.ui.fixtures.PopulatedFakeBlockRepository
