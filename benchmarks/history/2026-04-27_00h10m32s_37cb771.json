@@ -1,0 +1,69 @@
+{
+  "timestamp": "2026-04-27 00:10:32 UTC",
+  "gitSha": "37cb771",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 13,
+  "phase2Ms": 3,
+  "phase3Ms": 10,
+  "totalMs": 25,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 35,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 123,
+      "pct": 66.5
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 11,
+      "pct": 5.9
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 8,
+      "pct": 4.3
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.util.HashMap$Node[]_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node[]_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 2,
+      "pct": 1.1
+    }
+  ]
+}
