@@ -200,6 +200,11 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
                 implementation("androidx.arch.core:core-testing:2.2.0")
                 implementation("androidx.glance:glance-appwidget-testing:1.1.1")
+                // Roborazzi screenshot testing
+                implementation("io.github.takahirom.roborazzi:roborazzi:1.59.0")
+                implementation("io.github.takahirom.roborazzi:roborazzi-compose:1.59.0")
+                implementation("androidx.compose.ui:ui-test-junit4:1.10.6")
+                implementation("androidx.compose.ui:ui-test-manifest:1.10.6")
             }
         }
 
@@ -758,6 +763,7 @@ sqldelight {
         }
     }
 }
+
 
 android {
     compileSdk = 36

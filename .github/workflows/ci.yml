@@ -82,6 +82,20 @@ jobs:
       - name: Run Android unit tests
         run: ./gradlew :kmp:testDebugUnitTest --no-daemon --build-cache
 
+      # Record screenshots in CI and upload as artifacts for visual review.
+      # Goldens are intentionally not committed — rendering differs between machines.
+      # To enable regression detection: download artifacts from a baseline CI run,
+      # commit to kmp/src/androidUnitTest/snapshots/images/, then switch to verifyRoborazziDebug.
+      - name: Record Roborazzi screenshots
+        run: ./gradlew :kmp:recordRoborazziDebug --no-daemon --build-cache
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: roborazzi-screenshots
+          path: kmp/src/androidUnitTest/snapshots/
+          retention-days: 14
+
       - name: Build debug APK
         run: ./gradlew :androidApp:assembleDebug --no-daemon --build-cache
 
@@ -153,6 +167,58 @@ jobs:
           name: detekt-report
           path: kmp/build/reports/detekt/
           retention-days: 7
+
+  # ── Android emulator smoke tests ─────────────────────────────────────────
+  android-smoke:
+    name: Android Smoke Tests (Emulator)
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Enable KVM for hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-cleanup: true
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          gradle-home-cache-excludes: caches/kotlin-build-*
+
+      - name: Run smoke tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          target: default
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 2048
+          disable-animations: true
+          script: ./gradlew :androidApp:connectedDebugAndroidTest --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-test-results
+          path: androidApp/build/reports/androidTests/connected/
+          retention-days: 14
+
+      - name: Publish smoke test report
+        uses: mikepenz/action-junit-report@v4
+        if: always()
+        with:
+          report_paths: 'androidApp/build/outputs/androidTest-results/connected/**/*.xml'
+          fail_on_failure: true
+          check_name: Android Smoke Test Results
 
   # JS / Web build is disabled in CI — the JS target compiles conditionally
   # (enableJs=true) but commonMain currently uses JVM-only APIs that don't

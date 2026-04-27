@@ -167,6 +167,28 @@ fun StelekitApp(
     val appLogger = remember { Logger("StelekitApp") }
     val isSafPath = currentGraphPath.startsWith("saf://")
 
+    // ON_RESUME re-check: detect permission revoked mid-session (e.g. user cleared app storage
+    // from Android Settings while the app was backgrounded). The wasGrantedBeforePause guard
+    // prevents a spurious PermissionRecoveryScreen flash when returning from the folder picker,
+    // which also causes an ON_PAUSE → ON_RESUME cycle.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        var wasGrantedBeforePause = permissionGranted
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> wasGrantedBeforePause = permissionGranted
+                Lifecycle.Event.ON_RESUME -> {
+                    if (wasGrantedBeforePause) {
+                        permissionGranted = fileSystem.hasStoragePermission()
+                    }
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     // Suspend callback used by both setup and recovery screens
     val onFolderPicked: suspend () -> Unit = {
         folderPickError = null
@@ -774,6 +796,14 @@ private fun ScreenRouter(
     graphWriter: GraphWriter,
     urlFetcher: UrlFetcher = NoOpUrlFetcher(),
 ) {
+    if (appState.isLoading) {
+        LoadingOverlay(
+            message = if (appState.statusMessage.isNotEmpty()) appState.statusMessage
+                      else "Loading your notes…"
+        )
+        return
+    }
+
     val suggestionMatcher by viewModel.suggestionMatcher.collectAsState()
 
     // Track navigation direction for slide transition orientation.

@@ -72,7 +72,7 @@ fun PermissionRecoveryScreen(
             Spacer(modifier = Modifier.height(12.dp))
             val folderDesc = if (folderName != null) "\"$folderName\"" else "your notes folder"
             Text(
-                text = "SteleKit no longer has permission to read $folderDesc. This can happen if permissions were reset or the app was reinstalled.",
+                text = "SteleKit no longer has permission to read $folderDesc. This usually happens after reinstalling the app, switching between F-Droid and a directly installed APK, or clearing app storage. Your notes are safe — only the folder permission needs to be re-granted.",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
