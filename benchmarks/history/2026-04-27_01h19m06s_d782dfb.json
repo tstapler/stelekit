@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-04-27 01:19:06 UTC",
+  "gitSha": "d782dfb",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 4,
+  "phase3Ms": 14,
+  "totalMs": 27,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 39,
+  "jankLoadP50Ms": 2,
+  "jankLoadP95Ms": 2,
+  "jankFactor": 0.05,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 137,
+      "pct": 68.5
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 12,
+      "pct": 6.0
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 5,
+      "pct": 2.5
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 5,
+      "pct": 2.5
+    },
+    {
+      "frame": "java.lang.Class[]_[k]",
+      "samples": 4,
+      "pct": 2.0
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.Label_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.lang.invoke.MemberName_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.net.URL_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "char[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2104,
+      "pct": 99.3
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "java/lang/String.encodeUTF8_UTF16_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/invoke/LambdaForm$MH.0x00007f994c000800.invoke_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pthread_cond_broadcast",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ConstantPool::klass_at_impl",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "inflate_fast",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SymbolTable::new_symbol",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/nio/DirectByteBuffer.<init>_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "sem_post",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 0,
+      "totalMs": 0
+    }
+  ]
+}
