@@ -19,6 +19,7 @@
     <ID>ComposableParamOrder:Sidebar.kt$GraphSwitcher</ID>
     <ID>ComposableParamOrder:Sidebar.kt$LeftSidebar</ID>
     <ID>ComposableParamOrder:Sidebar.kt$RightSidebar</ID>
+    <ID>CompositionLocalAllowlist:AppState.kt$LocalOpenSearchWithText</ID>
     <ID>CompositionLocalAllowlist:GraphRootPathProvider.kt$LocalGraphRootPath</ID>
     <ID>CompositionLocalAllowlist:I18n.kt$LocalI18n</ID>
     <ID>CompositionLocalAllowlist:OtelComposeTracking.kt$LocalSpanRecorder</ID>
@@ -301,6 +302,7 @@
     <ID>UnusedParameter:GlobalUnlinkedReferencesScreen.kt$graphPath: String</ID>
     <ID>UnusedParameter:GlobalUnlinkedReferencesScreen.kt$onNavigateTo: (Screen) -&gt; Unit</ID>
     <ID>UnusedParameter:GlobalUnlinkedReferencesScreen.kt$suggestionMatcher: AhoCorasickMatcher?</ID>
+    <ID>UnusedParameter:GraphLoader.kt$GraphLoader$pageUuid: String</ID>
     <ID>UnusedParameter:InlineParser.kt$InlineParser$token: Token</ID>
     <ID>UnusedParameter:JournalsView.kt$blockRepository: BlockRepository</ID>
     <ID>UnusedParameter:MigrationRunner.kt$MigrationRunner$repoSet: RepositorySet</ID>

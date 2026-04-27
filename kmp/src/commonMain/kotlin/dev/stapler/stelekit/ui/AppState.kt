@@ -1,6 +1,6 @@
 package dev.stapler.stelekit.ui
 
-import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.staticCompositionLocalOf
 import dev.stapler.stelekit.docs.AllPagesDocs
 import dev.stapler.stelekit.docs.FlashcardsDocs
 import dev.stapler.stelekit.docs.HelpPage
@@ -86,7 +86,7 @@ data class AppState(
 }
 
 /** Opens the global search dialog pre-filled with the given text. */
-val LocalOpenSearchWithText = compositionLocalOf<(String) -> Unit> { {} }
+val LocalOpenSearchWithText = staticCompositionLocalOf<(String) -> Unit> { { _ -> } }
 
 data class Command(
     val id: String,
