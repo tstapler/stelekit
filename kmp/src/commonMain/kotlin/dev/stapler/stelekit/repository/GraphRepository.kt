@@ -297,6 +297,9 @@ interface PageRepository {
      */
     @DirectRepositoryWrite
     suspend fun clear()
+
+    /** Evict all in-memory caches without touching the database. No-op by default. */
+    suspend fun cacheEvictAll() {}
 }
 
 /**

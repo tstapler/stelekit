@@ -39,11 +39,11 @@ class FileRegistry(private val fileSystem: FileSystem) {
             .map { (fileName, modTime) ->
                 val filePath = "$dirPath/$fileName"
                 modTimes[filePath] = modTime
-                // Initialise content hash so the guard in detectChanges has a baseline.
-                // Without this, any mtime change after startup bypasses the hash guard
-                // (null != actualHash is always true), causing own-write false positives.
-                val content = fileSystem.readFile(filePath)
-                if (content != null) contentHashes[filePath] = content.hashCode()
+                // Content hashes are populated lazily by detectChanges when a file change is
+                // detected. Reading every file here to pre-populate hashes costs O(N) SAF IPC
+                // calls on Android (thousands of round-trips for large graphs), adding 15-30s
+                // to startup. The markWrittenByUs mechanism is the primary own-write guard;
+                // the hash check is a belt-and-suspenders fallback that can tolerate lazy init.
                 FileEntry(fileName, filePath, modTime)
             }
 

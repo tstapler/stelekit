@@ -111,6 +111,18 @@ class GraphLoader(
     // Watcher job
     private var watcherJob: Job? = null
 
+    // Tracks the in-flight background indexing job so it can be cancelled under memory pressure.
+    private var backgroundIndexJob: Job? = null
+
+    /**
+     * Cancels any in-flight background indexing (Phase 2) immediately.
+     * Safe to call from any thread. No-op if no indexing is running.
+     */
+    fun cancelBackgroundWork() {
+        backgroundIndexJob?.cancel()
+        backgroundIndexJob = null
+    }
+
     /**
      * Called by GraphWriter after it writes a file, so the watcher doesn't treat
      * our own write as an external change.
@@ -378,37 +390,63 @@ class GraphLoader(
     /**
      * Finds and fully indexes all pages that were only partially loaded (METADATA_ONLY).
      * This should be run in the background after Phase 1 completion.
+     *
+     * Mirrors loadDirectory's batch-write pattern: parse all pages in a chunk in parallel,
+     * then flush all DB writes for the chunk in a single flushChunkWritesPreemptible call.
+     * This reduces DatabaseWriteActor round-trips by ~90% vs. one-at-a-time parseAndSavePage.
      */
     suspend fun indexRemainingPages(onProgress: (String) -> Unit) {
+        // Track the calling coroutine's job so cancelBackgroundWork() can cancel it.
+        backgroundIndexJob = currentCoroutineContext()[Job]
         PerformanceMonitor.startTrace("indexRemainingPages")
         try {
             val unloadedPages = pageRepository.getUnloadedPages().first().getOrNull() ?: emptyList()
             if (unloadedPages.isEmpty()) return
 
             logger.info("Background indexing ${unloadedPages.size} pages...")
-            
+
             coroutineScope {
                 var processed = 0
                 val total = unloadedPages.size
-                
+
                 unloadedPages.chunked(10).forEach { chunk ->
+                    val pagesToSave = mutableListOf<Page>()
+                    val blocksToSaveByPage = mutableMapOf<String, MutableList<Block>>()
+                    val pageUuidsToDelete = mutableSetOf<String>()
+
                     chunk.map { page ->
                         async(backgroundIndexDispatcher) {
                             val path = page.filePath ?: resolvePageFilePath(page.name)
-                            if (path != null) {
-                                val content = fileSystem.readFile(path)
-                                if (content != null) {
-                                    parseAndSavePage(path, content, ParseMode.FULL, DatabaseWriteActor.Priority.LOW)
-                                }
+                            if (path == null) return@async null
+                            val content = fileSystem.readFile(path) ?: return@async null
+                            try {
+                                parsePageWithoutSaving(path, content, ParseMode.FULL)
+                            } catch (e: Exception) {
+                                logger.error("Failed to parse file: $path: ${e.message}")
+                                null
                             }
                         }
-                    }.awaitAll()
+                    }.awaitAll().forEach { result ->
+                        if (result != null) {
+                            pagesToSave.add(result.page)
+                            if (result.blocks.isNotEmpty()) {
+                                blocksToSaveByPage[result.page.uuid] = result.blocks.toMutableList()
+                            }
+                            pageUuidsToDelete.add(result.page.uuid)
+                        }
+                    }
+
+                    if (pagesToSave.isNotEmpty() || pageUuidsToDelete.isNotEmpty()) {
+                        flushChunkWritesPreemptible(pagesToSave, pageUuidsToDelete, blocksToSaveByPage)
+                    }
+
                     processed += chunk.size
                     onProgress("Indexing pages... ($processed/$total)")
                 }
             }
             logger.info("Background indexing complete.")
         } finally {
+            backgroundIndexJob = null
             PerformanceMonitor.endTrace("indexRemainingPages")
         }
     }
@@ -875,6 +913,198 @@ class GraphLoader(
         return ParseResult(page = pageWithMetadata, blocks = blocksList)
     }
     
+    /**
+     * Result type for [lookupExistingPageAndCheckFreshness].
+     * [skip] = true means the caller should bail out (page is already up-to-date).
+     * [existingPage] and [cachedBlocks] are populated when [skip] = false.
+     */
+    private data class PageLookupResult(
+        val skip: Boolean,
+        val existingPage: Page? = null,
+        val cachedBlocks: List<Block>? = null,
+    )
+
+    /**
+     * Looks up the existing page record, performs the METADATA_ONLY early-exit check,
+     * and (for FULL mode) fetches cached blocks + the freshness check so we can skip
+     * re-parsing files that haven't changed on disk.
+     */
+    private suspend fun lookupExistingPageAndCheckFreshness(
+        filePath: String,
+        name: String,
+        isJournal: Boolean,
+        journalDate: kotlinx.datetime.LocalDate?,
+        mode: ParseMode,
+        traceId: String,
+        parentSpanId: String,
+    ): PageLookupResult {
+        val lookupSpan = Span("db.lookupPage", traceId, parentSpanId)
+        val existingPage = if (isJournal && journalDate != null) {
+            journalDateResolver.getPageByJournalDate(journalDate)
+        } else {
+            pageRepository.getPageByName(name).first().getOrNull()
+        }
+        lookupSpan.finish("OK", "page.name" to name, "page.found" to (existingPage != null).toString())
+
+        // Skip METADATA_ONLY if page is already fully loaded (don't overwrite full content)
+        if (mode == ParseMode.METADATA_ONLY && existingPage != null) {
+            return PageLookupResult(skip = true)
+        }
+
+        // OPTIMIZATION: If mode is FULL, but page is already loaded and fresh, skip.
+        // Blocks are cached here to avoid a second DB round-trip at the diff-merge step.
+        if (mode == ParseMode.FULL && existingPage != null) {
+            val fileModTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
+            val getBlocksSpan = Span("db.getBlocks", traceId, parentSpanId)
+            val blocks = blockRepository.getBlocksForPage(existingPage.uuid).first().getOrNull() ?: emptyList()
+            getBlocksSpan.finish("OK", "block.count" to blocks.size.toString())
+            val allBlocksLoaded = blocks.isNotEmpty() && blocks.all { it.isLoaded }
+            if (fileModTime != 0L &&
+                existingPage.updatedAt.toEpochMilliseconds() >= fileModTime &&
+                allBlocksLoaded) {
+                return PageLookupResult(skip = true)
+            }
+            return PageLookupResult(skip = false, existingPage = existingPage, cachedBlocks = blocks)
+        }
+
+        return PageLookupResult(skip = false, existingPage = existingPage, cachedBlocks = null)
+    }
+
+    /**
+     * Constructs the [Page] model and extracts page-level properties from the first
+     * (property) block when applicable.  Returns the built [Page] and whether the
+     * property block was consumed (firstBlockSkipped).
+     */
+    private fun buildPageModel(
+        filePath: String,
+        name: String,
+        isJournal: Boolean,
+        journalDate: kotlinx.datetime.LocalDate?,
+        existingPage: Page?,
+        now: kotlin.time.Instant,
+        mode: ParseMode,
+        parsedPage: dev.stapler.stelekit.model.ParsedPage,
+    ): Pair<Page, Boolean> {
+        val fileModTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
+        val updatedAt = if (fileModTime != 0L) Instant.fromEpochMilliseconds(fileModTime) else now
+        val createdAt = existingPage?.createdAt ?: updatedAt
+
+        var page = Page(
+            uuid = existingPage?.uuid ?: UuidGenerator.generateV7(),
+            name = name,
+            createdAt = createdAt,
+            updatedAt = updatedAt,
+            version = existingPage?.version ?: 0L,
+            properties = emptyMap(),
+            isJournal = isJournal,
+            journalDate = journalDate,
+            filePath = filePath,
+            isContentLoaded = mode == ParseMode.FULL
+        )
+
+        var firstBlockSkipped = false
+        if (parsedPage.blocks.isNotEmpty()) {
+            val firstBlock = parsedPage.blocks.first()
+            if (firstBlock.content.trim().isEmpty() && firstBlock.properties.isNotEmpty()) {
+                page = page.copy(properties = firstBlock.properties)
+                firstBlockSkipped = true
+            }
+        }
+
+        return Pair(page, firstBlockSkipped)
+    }
+
+    /**
+     * Handles the METADATA_ONLY write path: creates stub blocks and dispatches them to
+     * the write actor.
+     */
+    private suspend fun saveMetadataOnlyBlocks(
+        filePath: String,
+        pageUuid: String,
+        updatedAt: kotlin.time.Instant,
+        rootBlocks: List<ParsedBlock>,
+        priority: DatabaseWriteActor.Priority,
+    ) {
+        val stubs = mutableListOf<Block>()
+        createStubBlocks(rootBlocks, filePath, pageUuid, null, 0, updatedAt, stubs)
+        if (stubs.isNotEmpty()) {
+            writeActor.deleteBlocksForPage(pageUuid, priority)
+            writeActor.saveBlocks(stubs, priority).onLeft { e ->
+                logger.error("saveBlocks (stubs) failed for $filePath (${stubs.size} blocks): ${e.message}")
+                _writeErrors.tryEmit(WriteError(filePath, stubs.size, e))
+            }
+        }
+    }
+
+    /**
+     * Handles the FULL-mode block write path: applies the diff-merge strategy and
+     * dispatches deletes + inserts/updates to the write actor.  Includes safety guards
+     * for empty-parse and blank-file scenarios.
+     */
+    private suspend fun dispatchFullBlockWrites(
+        filePath: String,
+        content: String,
+        pageUuid: String,
+        existingBlocks: List<Block>,
+        blocksToSave: List<Block>,
+        priority: DatabaseWriteActor.Priority,
+        traceId: String,
+        parentSpanId: String,
+    ) {
+        val fileHasContent = content.trim().isNotEmpty()
+        val existingBlockCount = existingBlocks.size
+        when {
+            blocksToSave.isEmpty() && fileHasContent -> {
+                logger.error(
+                    "Parser returned no blocks for non-empty file '$filePath' " +
+                    "(${content.length} chars) — skipping block update to prevent data loss"
+                )
+            }
+            blocksToSave.isEmpty() && !fileHasContent && existingBlockCount > 0 -> {
+                // Blank-file guard: refuse to destroy non-empty in-memory state with an
+                // empty file. This is the B2 fix for the 16:55 production incident where
+                // an external process blanked the file and parseAndSavePage wiped the page.
+                logger.warn(
+                    "Blank-file parse for '$filePath' would destroy $existingBlockCount " +
+                    "existing block(s) — skipping destructive write to prevent data loss"
+                )
+                _writeErrors.tryEmit(WriteError(
+                    filePath, existingBlockCount,
+                    dev.stapler.stelekit.error.DomainError.FileSystemError.WriteFailed(
+                        filePath, "Blank external overwrite suppressed to prevent data loss"
+                    )
+                ))
+            }
+            else -> {
+                // FULL mode: diff-based merge instead of delete-all + insert-all
+                val existingSummaries = existingBlocks.map { b ->
+                    DiffMerge.ExistingBlockSummary(uuid = b.uuid, contentHash = b.contentHash, isLoaded = b.isLoaded)
+                }
+                val diffSpan = Span("diff", traceId, parentSpanId)
+                val diff = DiffMerge.diff(existingSummaries, blocksToSave)
+                diffSpan.finish(
+                    "OK",
+                    "to.insert" to diff.toInsert.size.toString(),
+                    "to.delete" to diff.toDelete.size.toString()
+                )
+                diff.toDelete.forEach { uuid ->
+                    writeActor.deleteBlock(uuid).onLeft { e ->
+                        logger.error("deleteBlock failed for $uuid in $filePath: ${e.message}")
+                    }
+                }
+                val blocksToWrite = diff.toInsert + diff.toUpdate
+                if (blocksToWrite.isNotEmpty()) {
+                    val saveBlocksSpan = Span("db.saveBlocks", traceId, parentSpanId)
+                    writeActor.saveBlocks(blocksToWrite, priority).onLeft { e ->
+                        logger.error("saveBlocks failed for $filePath (${blocksToWrite.size} blocks): ${e.message}")
+                        _writeErrors.tryEmit(WriteError(filePath, blocksToWrite.size, e))
+                    }
+                    saveBlocksSpan.finish("OK", "block.count" to blocksToWrite.size.toString())
+                }
+            }
+        }
+    }
+
     suspend fun parseAndSavePage(
         filePath: String,
         content: String,
@@ -901,81 +1131,35 @@ class GraphLoader(
                     logger.error("Git conflict markers detected in '$filePath' — import suppressed")
                     _writeErrors.tryEmit(WriteError(
                         filePath, 0,
-                        dev.stapler.stelekit.error.DomainError.ParseError.InvalidSyntax("Git conflict markers detected in '$filePath' — resolve conflicts before importing")
+                        dev.stapler.stelekit.error.DomainError.ParseError.InvalidSyntax(
+                            "Git conflict markers detected in '$filePath' — resolve conflicts before importing"
+                        )
                     ))
                     return@withLock
                 }
+
                 val name = title
                 val journalDate = JournalUtils.parseJournalDate(title)
                 val isJournal = journalDate != null || filePath.contains("/journals/")
-                
                 val now = Clock.System.now()
-                
-                val lookupSpan = Span("db.lookupPage", traceId, rootSpan.spanId)
-                val existingPage = if (isJournal && journalDate != null) {
-                    journalDateResolver.getPageByJournalDate(journalDate)
-                } else {
-                    pageRepository.getPageByName(name).first().getOrNull()
-                }
-                lookupSpan.finish("OK", "page.name" to name, "page.found" to (existingPage != null).toString())
 
-                // Skip METADATA_ONLY if page is already fully loaded (don't overwrite full content)
-                if (mode == ParseMode.METADATA_ONLY && existingPage != null) {
-                    return
-                }
-
-                // OPTIMIZATION: If mode is FULL, but page is already loaded and fresh (checked inside lock), skip.
-                // Blocks are cached here to avoid a second DB round-trip at the diff-merge step below.
-                var cachedExistingBlocks: List<Block>? = null
-                if (mode == ParseMode.FULL && existingPage != null) {
-                     val fileModTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
-
-                     val getBlocksSpan = Span("db.getBlocks", traceId, rootSpan.spanId)
-                     val blocksResult = blockRepository.getBlocksForPage(existingPage.uuid).first()
-                     val blocks = blocksResult.getOrNull() ?: emptyList()
-                     cachedExistingBlocks = blocks
-                     getBlocksSpan.finish("OK", "block.count" to blocks.size.toString())
-                     // A page is only fully up-to-date if blocks are present (or the file is empty)
-                     // and all blocks are loaded.
-                     val allBlocksLoaded = blocks.isNotEmpty() && blocks.all { it.isLoaded }
-
-                     if (fileModTime != 0L &&
-                         existingPage.updatedAt.toEpochMilliseconds() >= fileModTime &&
-                         allBlocksLoaded) return
-                }
-
-                val pageUuid = existingPage?.uuid ?: UuidGenerator.generateV7()
-                val fileModTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
-                val updatedAt = if (fileModTime != 0L) Instant.fromEpochMilliseconds(fileModTime) else now
-                val createdAt = existingPage?.createdAt ?: updatedAt
-                
-                var page = Page(
-                    uuid = pageUuid,
-                    name = name,
-                    createdAt = createdAt,
-                    updatedAt = updatedAt,
-                    version = existingPage?.version ?: 0L,
-                    properties = emptyMap(),
-                    isJournal = isJournal,
-                    journalDate = journalDate,
-                    filePath = filePath,
-                    isContentLoaded = mode == ParseMode.FULL
+                val lookup = lookupExistingPageAndCheckFreshness(
+                    filePath, name, isJournal, journalDate, mode, traceId, rootSpan.spanId
                 )
-                
+                if (lookup.skip) return@withLock
+
+                val existingPage = lookup.existingPage
+
                 val parseSpan = Span("parse.markdown", traceId, rootSpan.spanId)
                 val parsedPage = markdownParser.parsePage(content)
                 parseSpan.finish("OK", "content.bytes" to content.length.toString())
-                val blocksToSave = mutableListOf<Block>()
-                var firstBlockSkipped = false
-                
-                if (parsedPage.blocks.isNotEmpty()) {
-                    val firstBlock = parsedPage.blocks.first()
-                    if (firstBlock.content.trim().isEmpty() && firstBlock.properties.isNotEmpty()) {
-                        page = page.copy(properties = firstBlock.properties)
-                        firstBlockSkipped = true
-                    }
-                }
-                
+
+                val (page, firstBlockSkipped) = buildPageModel(
+                    filePath, name, isJournal, journalDate, existingPage, now, mode, parsedPage
+                )
+                val pageUuid = page.uuid
+                val updatedAt = page.updatedAt
+
                 val savePageSpan = Span("db.savePage", traceId, rootSpan.spanId)
                 val savePageResult = writeActor.savePage(page, priority)
                 savePageSpan.finish()
@@ -986,22 +1170,16 @@ class GraphLoader(
                     return@withLock
                 }
 
+                val rootBlocks = if (firstBlockSkipped) parsedPage.blocks.drop(1) else parsedPage.blocks
+
                 // For METADATA_ONLY, save lightweight stub blocks and return.
                 if (mode == ParseMode.METADATA_ONLY) {
-                    val rootBlocks = if (firstBlockSkipped) parsedPage.blocks.drop(1) else parsedPage.blocks
-                    val stubs = mutableListOf<Block>()
-                    createStubBlocks(rootBlocks, filePath, pageUuid, null, 0, updatedAt, stubs)
-                    if (stubs.isNotEmpty()) {
-                        writeActor.deleteBlocksForPage(pageUuid, priority)
-                        writeActor.saveBlocks(stubs, priority).onLeft { e ->
-                            logger.error("saveBlocks (stubs) failed for $filePath (${stubs.size} blocks): ${e.message}")
-                            _writeErrors.tryEmit(WriteError(filePath, stubs.size, e))
-                        }
-                    }
+                    saveMetadataOnlyBlocks(filePath, pageUuid, updatedAt, rootBlocks, priority)
                     return@withLock
                 }
 
-                val existingBlocks = cachedExistingBlocks
+                // FULL mode: fetch existing blocks (may already be cached from freshness check)
+                val existingBlocks = lookup.cachedBlocks
                     ?: blockRepository.getBlocksForPage(pageUuid).first().getOrNull() ?: emptyList()
                 val existingVersions = existingBlocks.associate { it.uuid to it.version }
                 val existingContent = existingBlocks.associate { it.uuid to it.content }
@@ -1010,7 +1188,7 @@ class GraphLoader(
                 val pageSlug = FileUtils.sanitizeFileName(name)
                 val sidecarMap = sidecarManager?.read(pageSlug)
 
-                val rootBlocks = if (firstBlockSkipped) parsedPage.blocks.drop(1) else parsedPage.blocks
+                val blocksToSave = mutableListOf<Block>()
                 val processBlocksSpan = Span("parse.processBlocks", traceId, rootSpan.spanId)
                 processParsedBlocks(
                     parsedBlocks = rootBlocks,
@@ -1027,64 +1205,10 @@ class GraphLoader(
                 )
                 processBlocksSpan.finish("OK", "block.count" to blocksToSave.size.toString())
 
-                // Clear and update blocks if mode is FULL.
-                // Safety guard: if the file has content but the parser returned no blocks,
-                // the parser likely failed. Do NOT wipe existing blocks in this case —
-                // that would cause a blank journal from a transient parse error.
-                if (mode == ParseMode.FULL) {
-                    val fileHasContent = content.trim().isNotEmpty()
-                    val existingBlockCount = existingBlocks.size
-                    if (blocksToSave.isEmpty() && fileHasContent) {
-                        logger.error(
-                            "Parser returned no blocks for non-empty file '$filePath' " +
-                            "(${content.length} chars) — skipping block update to prevent data loss"
-                        )
-                    } else if (blocksToSave.isEmpty() && !fileHasContent && existingBlockCount > 0) {
-                        // Blank-file guard: refuse to destroy non-empty in-memory state with an
-                        // empty file. This is the B2 fix for the 16:55 production incident where
-                        // an external process blanked the file and parseAndSavePage wiped the page.
-                        logger.warn(
-                            "Blank-file parse for '$filePath' would destroy $existingBlockCount " +
-                            "existing block(s) — skipping destructive write to prevent data loss"
-                        )
-                        _writeErrors.tryEmit(WriteError(
-                            filePath, existingBlockCount,
-                            dev.stapler.stelekit.error.DomainError.FileSystemError.WriteFailed(filePath, "Blank external overwrite suppressed to prevent data loss")
-                        ))
-                    } else {
-                        // FULL mode: diff-based merge instead of delete-all + insert-all
-                        val existingSummaries = existingBlocks.map { b ->
-                            DiffMerge.ExistingBlockSummary(uuid = b.uuid, contentHash = b.contentHash, isLoaded = b.isLoaded)
-                        }
-                        val diffSpan = Span("diff", traceId, rootSpan.spanId)
-                        val diff = DiffMerge.diff(existingSummaries, blocksToSave)
-                        diffSpan.finish("OK", "to.insert" to diff.toInsert.size.toString(), "to.delete" to diff.toDelete.size.toString())
+                dispatchFullBlockWrites(
+                    filePath, content, pageUuid, existingBlocks, blocksToSave, priority, traceId, rootSpan.spanId
+                )
 
-                        // Delete blocks no longer present
-                        diff.toDelete.forEach { uuid ->
-                            writeActor.deleteBlock(uuid).onLeft { e ->
-                                logger.error("deleteBlock failed for $uuid in $filePath: ${e.message}")
-                            }
-                        }
-                        // Save new and changed blocks together
-                        val blocksToWrite = diff.toInsert + diff.toUpdate
-                        if (blocksToWrite.isNotEmpty()) {
-                            val saveBlocksSpan = Span("db.saveBlocks", traceId, rootSpan.spanId)
-                            writeActor.saveBlocks(blocksToWrite, priority).onLeft { e ->
-                                logger.error("saveBlocks failed for $filePath (${blocksToWrite.size} blocks): ${e.message}")
-                                _writeErrors.tryEmit(WriteError(filePath, blocksToWrite.size, e))
-                            }
-                            saveBlocksSpan.finish("OK", "block.count" to blocksToWrite.size.toString())
-                        }
-                    }
-                } else if (blocksToSave.isNotEmpty()) {
-                    writeActor.deleteBlocksForPage(pageUuid, priority)
-                    writeActor.saveBlocks(blocksToSave, priority).onLeft { e ->
-                        logger.error("saveBlocks failed for $filePath (${blocksToSave.size} blocks): ${e.message}")
-                        _writeErrors.tryEmit(WriteError(filePath, blocksToSave.size, e))
-                    }
-                }
-                
                 // Update mod time in watcher cache so we don't re-trigger from our own write
                 val updatedModTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
                 if (updatedModTime != 0L) {

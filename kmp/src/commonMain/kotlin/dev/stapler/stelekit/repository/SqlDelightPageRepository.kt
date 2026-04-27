@@ -231,6 +231,11 @@ class SqlDelightPageRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
+    override suspend fun cacheEvictAll(): Unit = withContext(PlatformDispatcher.DB) {
+        pageByUuidCache.invalidateAll()
+        pageByNameCache.invalidateAll()
+    }
+
     override suspend fun clear(): Unit = withContext(PlatformDispatcher.DB) {
         queries.deleteAllPages()
         pageByUuidCache.invalidateAll()

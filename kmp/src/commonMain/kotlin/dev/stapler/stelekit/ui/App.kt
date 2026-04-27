@@ -120,6 +120,12 @@ fun StelekitApp(
     spanRecorder: SpanRecorder = NoOpSpanRecorder,
     /** Called once the GraphManager instance is ready. Used by the host Activity for onTrimMemory. */
     onGraphManagerReady: ((GraphManager) -> Unit)? = null,
+    /**
+     * Registers a memory-pressure handler. The lambda receives a [() -> Unit] callback;
+     * the host Activity should store it and invoke it when onTrimMemory fires. Mirrors the
+     * [onGraphManagerReady] pattern.
+     */
+    onMemoryPressure: (((() -> Unit) -> Unit))? = null,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -272,6 +278,7 @@ fun StelekitApp(
             deviceSttAvailable = deviceSttAvailable,
             deviceLlmAvailable = deviceLlmAvailable,
             spanRecorder = spanRecorder,
+            onMemoryPressure = onMemoryPressure,
         )
     }
 }
@@ -300,6 +307,7 @@ private fun GraphContent(
     deviceSttAvailable: Boolean = false,
     deviceLlmAvailable: Boolean = false,
     spanRecorder: SpanRecorder = NoOpSpanRecorder,
+    onMemoryPressure: (((() -> Unit) -> Unit))? = null,
 ) {
     CompositionLocalProvider(LocalSpanRecorder provides spanRecorder) {
     val scope = rememberCoroutineScope()
@@ -385,6 +393,11 @@ private fun GraphContent(
     // (e.g. after an activity recreation on Android).
     LaunchedEffect(clipboardProvider) {
         viewModel.setClipboardProvider(clipboardProvider)
+    }
+
+    // Register the memory-pressure handler so the host Activity can invoke it.
+    LaunchedEffect(viewModel) {
+        onMemoryPressure?.invoke { viewModel.onMemoryPressure() }
     }
 
     // Bootstrap loadGraph when the ViewModel has no persisted path but GraphManager has an
