@@ -222,6 +222,12 @@ kotlin {
                 implementation("androidx.test:core:1.6.1")
                 implementation("androidx.test.ext:junit:1.2.1")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+                // Compose UI test rules + finders — same version as androidMain's Compose
+                implementation("androidx.compose.ui:ui-test-junit4:1.10.6")
+                // Provides ComponentActivity in the test APK manifest so createComposeRule() works
+                implementation("androidx.compose.ui:ui-test-manifest:1.10.6")
+                // Needed to host the Compose activity under test
+                implementation("androidx.activity:activity-compose:1.9.2")
             }
         }
 
