@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-04-27 15:50:29 UTC",
+  "gitSha": "31810d7",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 4,
+  "phase3Ms": 14,
+  "totalMs": 27,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 43,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.02,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 127,
+      "pct": 67.2
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 19,
+      "pct": 10.1
+    },
+    {
+      "frame": "long[]_[k]",
+      "samples": 5,
+      "pct": 2.6
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 5,
+      "pct": 2.6
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 5,
+      "pct": 2.6
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.net.URL_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 2,
+      "pct": 1.1
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2090,
+      "pct": 99.3
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-601b42fe-025d-4c66-9a23-5d0be3105428-libsqlitejdbc.so",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "kotlin/coroutines/CombinedContext.get_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "I2C/C2I adapters(0xb)",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "dev/stapler/stelekit/util/ContentHasher.sha256_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ClassVerifier::verify_field_instructions",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pthread_cond_broadcast",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/util/zip/ZipUtils.SH_[i]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlin/collections/AbstractCollection.<init>_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/scheduling/CoroutineScheduler.getControlState$volatile$FU_[1]",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}
