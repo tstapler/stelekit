@@ -304,6 +304,42 @@ class GraphLoader(
             sanitizeDirectory(pagesDir)
             sanitizeDirectory(journalsDir)
 
+            // Warm-start fast path: DB already has journals from a previous session on the
+            // same graph (ViewModel clears the DB before calling us when the graph path changes,
+            // so a non-empty result here always means "same graph, valid cached data").
+            // Signal Phase 1 complete immediately so the UI is interactive in <100ms, then
+            // reconcile the filesystem in the background. Any changed files are re-parsed and
+            // written to DB; the reactive flows in the repository layer push updates to the UI
+            // automatically — no explicit refresh needed.
+            val warmStartJournals = pageRepository.getJournalPages(immediateJournalCount, 0)
+                .first().getOrNull().orEmpty()
+            if (warmStartJournals.isNotEmpty()) {
+                logger.info("Warm start: ${warmStartJournals.size} journals in DB — skipping blocking Phase 1")
+                onProgress("Ready")
+                onPhase1Complete()
+                val warmSpan = Span("graph_load.warm_reconcile", traceId, rootSpan.spanId)
+                parallelScope.launch {
+                    try {
+                        loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
+                        coroutineScope {
+                            launch { loadRemainingJournals(journalsDir, immediateJournalCount, onProgress) }
+                            launch { loadDirectory(pagesDir, onProgress, ParseMode.METADATA_ONLY) }
+                        }
+                        val totalDuration = Clock.System.now() - startTime
+                        logger.info("Warm reconcile complete. Duration: $totalDuration")
+                        histogramWriter?.record("graph_load", totalDuration.inWholeMilliseconds)
+                        warmSpan.finish("OK", "duration.ms" to totalDuration.inWholeMilliseconds.toString())
+                        onFullyLoaded()
+                        onBulkImportComplete?.invoke()
+                        startWatching(graphPath)
+                    } catch (e: Exception) {
+                        warmSpan.finish("ERROR", "error.message" to (e.message ?: "unknown"))
+                    }
+                }
+                rootSpan.finish("OK", "graph.path" to graphPath, "warm_start" to "true")
+                return
+            }
+
             val phase1Start = Clock.System.now()
             val phase1Span = Span("graph_load.phase1_journals", traceId, rootSpan.spanId)
             val loadedImmediateCount = loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
