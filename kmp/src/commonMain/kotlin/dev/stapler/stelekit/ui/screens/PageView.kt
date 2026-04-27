@@ -257,7 +257,7 @@ fun PageView(
                             blockStateManager.moveSelectedBlocks(newParentUuid, insertAfterUuid)
                         },
                         onAutoSelectForDrag = { uuid -> blockStateManager.enterSelectionMode(uuid) },
-                        onBlockSelectionChanged = { blockUuid, range ->
+                        onBlockSelectionChange = { blockUuid, range ->
                             blockStateManager.updateEditingSelection(
                                 if (blockUuid == editingBlockUuid) range else null
                             )

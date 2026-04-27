@@ -169,7 +169,7 @@ fun JournalsView(
                         navigatorSuggestions = suggestions
                         navigatorIndex = 0
                     },
-                    onBlockSelectionChanged = { blockUuid, range ->
+                    onBlockSelectionChange = { blockUuid, range ->
                         viewModel.updateEditingSelection(
                             if (blockUuid == editingBlockUuid) range else null
                         )
@@ -329,7 +329,7 @@ private fun JournalEntry(
     formatEvents: kotlinx.coroutines.flow.SharedFlow<FormatAction>? = null,
     suggestionMatcher: AhoCorasickMatcher? = null,
     onNavigateAllSuggestions: ((List<SuggestionItem>) -> Unit)? = null,
-    onBlockSelectionChanged: ((blockUuid: String, range: IntRange?) -> Unit)? = null,
+    onBlockSelectionChange: ((blockUuid: String, range: IntRange?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
@@ -405,7 +405,7 @@ private fun JournalEntry(
                 formatEvents = formatEvents,
                 suggestionMatcher = suggestionMatcher,
                 onNavigateAllSuggestions = onNavigateAllSuggestions,
-                onBlockSelectionChanged = onBlockSelectionChanged,
+                onBlockSelectionChange = onBlockSelectionChange,
             )
 
             // Clickable area below blocks to append new block

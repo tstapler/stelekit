@@ -78,7 +78,7 @@ internal fun BlockItem(
     suggestionMatcher: AhoCorasickMatcher? = null,
     /** Called when the user requests to navigate all suggestions on screen (via context menu). */
     onNavigateAllSuggestions: (() -> Unit)? = null,
-    onSelectionChanged: ((IntRange?) -> Unit)? = null,
+    onSelectionChange: ((IntRange?) -> Unit)? = null,
     onDragStart: (uuid: String, startY: Float) -> Unit = { _, _ -> },
     onDrag: (deltaY: Float) -> Unit = {},
     onDragEnd: () -> Unit = {},
@@ -216,7 +216,7 @@ internal fun BlockItem(
             formatEvents.collect { action ->
                 applyFormatAction(
                     action, textFieldValue,
-                    onTextFieldValueChange = { textFieldValue = it; onSelectionChanged?.invoke(IntRange(it.selection.min, it.selection.max)) },
+                    onTextFieldValueChange = { textFieldValue = it; onSelectionChange?.invoke(IntRange(it.selection.min, it.selection.max)) },
                     onLocalVersionIncrement = { ++localVersion },
                     onContentChange = onContentChange
                 )
@@ -312,7 +312,7 @@ internal fun BlockItem(
                 // Edit mode
                 BlockEditor(
                     textFieldValue = textFieldValue,
-                    onTextFieldValueChange = { textFieldValue = it; onSelectionChanged?.invoke(IntRange(it.selection.min, it.selection.max)) },
+                    onTextFieldValueChange = { textFieldValue = it; onSelectionChange?.invoke(IntRange(it.selection.min, it.selection.max)) },
                     focusRequester = focusRequester,
                     isEditing = isEditing,
                     hasFocused = hasFocused,
@@ -481,7 +481,7 @@ internal fun BlockItem(
                         searchResults = filteredResults,
                         selectedIndex = filteredResults.indexOf(item).coerceAtLeast(0),
                         textFieldValue = textFieldValue,
-                        onTextFieldValueChange = { textFieldValue = it; onSelectionChanged?.invoke(IntRange(it.selection.min, it.selection.max)) },
+                        onTextFieldValueChange = { textFieldValue = it; onSelectionChange?.invoke(IntRange(it.selection.min, it.selection.max)) },
                         autocompleteState = autocompleteState!!,
                         onAutocompleteStateChange = { autocompleteState = it },
                         onLocalVersionIncrement = { ++localVersion },
