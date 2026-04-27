@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-04-27 14:03:43 UTC",
+  "gitSha": "c40df70",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 7,
+  "phase2Ms": 3,
+  "phase3Ms": 13,
+  "totalMs": 22,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 21,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.05,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 134,
+      "pct": 69.8
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 6,
+      "pct": 3.1
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 6,
+      "pct": 3.1
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 6,
+      "pct": 3.1
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 4,
+      "pct": 2.1
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 4,
+      "pct": 2.1
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "short[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.ClassNotFoundException_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.util.HashMap$Node[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2272,
+      "pct": 99.5
+    },
+    {
+      "frame": "SymbolTable::do_lookup",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "kotlinx/coroutines/channels/BufferedChannel.registerSelectForReceive_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "inflate",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "app/cash/sqldelight/internal/CurrentThreadIdKt.currentThreadId_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "org/sqlite/core/NativeDB.column_name_utf8_[j]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__xstat64",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "InstanceKlass::find_method_index",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "sem_post",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}
