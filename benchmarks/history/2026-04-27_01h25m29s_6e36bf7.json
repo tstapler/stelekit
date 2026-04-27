@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-04-27 01:25:29 UTC",
+  "gitSha": "6e36bf7",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 9,
+  "phase2Ms": 3,
+  "phase3Ms": 12,
+  "totalMs": 24,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 32,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 131,
+      "pct": 70.8
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 7,
+      "pct": 3.8
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 7,
+      "pct": 3.8
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 6,
+      "pct": 3.2
+    },
+    {
+      "frame": "java.util.ArrayList$Itr_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "jdk.internal.util.StrongReferenceKey_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.io.File_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "kotlin.Pair_[k]",
+      "samples": 2,
+      "pct": 1.1
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2106,
+      "pct": 99.4
+    },
+    {
+      "frame": "UTF8::is_legal_utf8",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "org/sqlite/core/NativeDB.column_name_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "I2C/C2I adapters(0xbbeab)",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlin/coroutines/jvm/internal/ContinuationImpl.releaseIntercepted_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "Dictionary::find",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "HandleArea::real_allocate_handle",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SymbolTable::do_lookup",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/util/concurrent/atomic/AtomicReferenceFieldUpdater$AtomicReferenceFieldUpdaterImpl.accessCheck_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SymbolTable::lookup_shared",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}
