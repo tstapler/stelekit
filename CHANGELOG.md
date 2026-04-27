@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.3](https://github.com/tstapler/stelekit/compare/v0.16.2...v0.16.3) (2026-04-27)
+
+
+### Bug Fixes
+
+* **startup:** track warm reconcile job in backgroundIndexJob ([833296a](https://github.com/tstapler/stelekit/commit/833296a6620b0cf6322dd16ae007486952442d8a))
+* **writer:** surface writeFile exceptions and fix misleading success log ([ca898c7](https://github.com/tstapler/stelekit/commit/ca898c77098c992f877fcaa75f3cd7ea26008ab1))
+
 ## [0.16.2](https://github.com/tstapler/stelekit/compare/v0.16.1...v0.16.2) (2026-04-27)
 
 
