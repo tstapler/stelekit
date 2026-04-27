@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.16.0](https://github.com/tstapler/stelekit/compare/v0.15.0...v0.16.0) (2026-04-27)
+
+
+### Features
+
+* **arrow:** full Arrow 2.x integration — typed errors, optics, saga, and resilience ([016bdf5](https://github.com/tstapler/stelekit/commit/016bdf532dc93e322e2e91e3585f49d3549ff730))
+
+
+### Bug Fixes
+
+* **build:** resolve Either/Result type mismatches after merging main ([1103a14](https://github.com/tstapler/stelekit/commit/1103a14fdeb5a301397f58bcb34402addacc6841))
+
 ## [0.15.0](https://github.com/tstapler/stelekit/compare/v0.14.0...v0.15.0) (2026-04-27)
 
 
