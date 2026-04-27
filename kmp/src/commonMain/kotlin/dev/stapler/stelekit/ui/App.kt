@@ -559,7 +559,10 @@ private fun GraphContent(
                     val windowSizeClass = windowSizeClassFor(maxWidth)
                     val isMobile = windowSizeClass.isMobile
 
-                    CompositionLocalProvider(LocalWindowSizeClass provides windowSizeClass) {
+                    CompositionLocalProvider(
+                        LocalWindowSizeClass provides windowSizeClass,
+                        LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) }
+                    ) {
 
                     // Auto-manage sidebar based on layout: open on desktop, closed on mobile.
                     // Fires once per isMobile change — handles fold/unfold transitions too.
@@ -960,7 +963,8 @@ private fun GraphDialogLayer(
         onDismiss = { viewModel.setSearchDialogVisible(false) },
         onNavigateToPage = { viewModel.navigateToPageByUuid(it) },
         onNavigateToBlock = { viewModel.navigateToBlock(it) },
-        onCreatePage = { viewModel.navigateToPageByName(it) }
+        onCreatePage = { viewModel.navigateToPageByName(it) },
+        initialQuery = appState.searchDialogInitialQuery
     )
 
     SettingsDialog(

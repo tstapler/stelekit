@@ -15,6 +15,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.ui.LocalOpenSearchWithText
 import dev.stapler.stelekit.ui.screens.FormatAction
 import dev.stapler.stelekit.ui.screens.SearchResultItem
 
@@ -57,6 +58,7 @@ internal fun BlockEditor(
     modifier: Modifier = Modifier,
 ) {
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val openSearchWithText = LocalOpenSearchWithText.current
 
     BasicTextField(
         value = textFieldValue,
@@ -133,6 +135,7 @@ internal fun BlockEditor(
                     onMoveDown = onMoveDown,
                     onFocusUp = onFocusUp,
                     onFocusDown = onFocusDown,
+                    onOpenSearchWithText = openSearchWithText,
                 )
             }
             .onFocusChanged { focusState ->
@@ -184,6 +187,7 @@ private fun handleKeyEvent(
     onMoveDown: () -> Unit,
     onFocusUp: () -> Unit,
     onFocusDown: () -> Unit,
+    onOpenSearchWithText: (String) -> Unit = {},
 ): Boolean {
     // Autocomplete keyboard navigation
     if (autocompleteState != null && searchResults.isNotEmpty()) {
@@ -244,12 +248,18 @@ private fun handleKeyEvent(
 
     // Formatting keyboard shortcuts (Ctrl+B, Ctrl+I, etc.)
     if (event.type == KeyEventType.KeyDown && (event.isCtrlPressed || event.isMetaPressed)) {
+        // Cmd+K with selection: open global search pre-filled with the selected text.
+        // Without a selection, fall through to the global Cmd+K handler.
+        if (event.key == Key.K && !textFieldValue.selection.collapsed) {
+            val selectedText = textFieldValue.text.substring(
+                textFieldValue.selection.min, textFieldValue.selection.max
+            )
+            onOpenSearchWithText(selectedText)
+            return true
+        }
         val formatAction = when (event.key) {
             Key.B -> FormatAction.BOLD
             Key.I -> FormatAction.ITALIC
-            // Only consume Cmd+K for link wrapping when text is selected; without a selection
-            // the event falls through to the global Cmd+K handler (open search).
-            Key.K -> if (!textFieldValue.selection.collapsed) FormatAction.LINK else null
             Key.S -> FormatAction.STRIKETHROUGH
             Key.H -> FormatAction.HIGHLIGHT
             Key.E -> FormatAction.CODE

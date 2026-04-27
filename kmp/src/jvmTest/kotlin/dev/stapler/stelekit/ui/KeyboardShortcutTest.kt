@@ -11,8 +11,6 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
-import dev.stapler.stelekit.ui.components.applyFormatAction
-import dev.stapler.stelekit.ui.screens.FormatAction
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -26,22 +24,22 @@ import org.junit.Test
  *
  * The production topology:
  *   App.kt  →  .onKeyEvent (bubble phase, fires AFTER children)  →  opens search
- *   BlockEditor.kt  →  .onPreviewKeyEvent (tunnel phase, fires BEFORE focus target)  →  link format
+ *   BlockEditor.kt  →  .onPreviewKeyEvent (tunnel phase, fires BEFORE focus target)
  *
- * Before the fix, BlockEditor consumed Cmd+K unconditionally via onPreviewKeyEvent,
- * so App's onKeyEvent never fired. After the fix, BlockEditor only consumes Cmd+K
- * when text is selected — allowing the global handler to fire when nothing is selected.
+ * Behaviour:
+ *   - No selection: Cmd+K falls through to global handler → opens search
+ *   - Selection: Cmd+K consumed by BlockEditor → opens search pre-filled with selected text
  */
 class KeyboardShortcutTest {
 
     @get:Rule
     val composeTestRule = createComposeRule()
 
-    // Mirrors the Block editor / App key event topology with minimal dependencies.
+    // Mirrors the BlockEditor / App key event topology with minimal dependencies.
     @Composable
     private fun ShortcutTestHarness(
-        initialText: TextFieldValue = TextFieldValue(""),
         onGlobalSearch: () -> Unit,
+        onOpenSearchWithText: (String) -> Unit = {},
         onTextChanged: (TextFieldValue) -> Unit,
         textState: TextFieldValue,
     ) {
@@ -64,21 +62,19 @@ class KeyboardShortcutTest {
                 onValueChange = onTextChanged,
                 modifier = Modifier
                     .testTag("editor")
-                    // Mirrors BlockEditor.kt: link format on tunnel (onPreviewKeyEvent) phase.
-                    // Only consumes Cmd+K when text is selected — the fix.
+                    // Mirrors BlockEditor.kt: Cmd+K with selection opens search pre-filled;
+                    // without selection the event falls through to the global handler.
                     .onPreviewKeyEvent { event ->
                         if (event.type == KeyEventType.KeyDown &&
                             (event.isMetaPressed || event.isCtrlPressed) &&
                             event.key == Key.K
                         ) {
                             if (!textState.selection.collapsed) {
-                                applyFormatAction(
-                                    FormatAction.LINK,
-                                    textState,
-                                    onTextChanged,
-                                    { 0L },
-                                    { _, _ -> }
+                                val selectedText = textState.text.substring(
+                                    textState.selection.min, textState.selection.max
                                 )
+                                onOpenSearchWithText(selectedText)
+                                true
                             } else {
                                 false // no selection — pass through to global handler
                             }
@@ -89,7 +85,7 @@ class KeyboardShortcutTest {
     }
 
     @Test
-    fun `Cmd+K without text selection fires global search, not link format`() {
+    fun `Cmd+K without text selection fires global search`() {
         var globalSearchFired = false
         var textState by mutableStateOf(TextFieldValue(""))
 
@@ -113,12 +109,13 @@ class KeyboardShortcutTest {
         composeTestRule.waitForIdle()
 
         assertTrue(globalSearchFired, "Global search should fire when Cmd+K pressed with no selection")
-        assertEquals("", textState.text, "No link should be inserted when no text is selected")
+        assertEquals("", textState.text, "Text should be unchanged when no selection")
     }
 
     @Test
-    fun `Cmd+K with text selected wraps selection as link and does not open global search`() {
+    fun `Cmd+K with text selected opens search pre-filled with selected text`() {
         var globalSearchFired = false
+        var searchWithTextArg: String? = null
         var textState by mutableStateOf(
             TextFieldValue("hello world", selection = TextRange(0, 5))
         )
@@ -127,6 +124,7 @@ class KeyboardShortcutTest {
             ShortcutTestHarness(
                 textState = textState,
                 onGlobalSearch = { globalSearchFired = true },
+                onOpenSearchWithText = { searchWithTextArg = it },
                 onTextChanged = { textState = it },
             )
         }
@@ -148,18 +146,15 @@ class KeyboardShortcutTest {
         }
         composeTestRule.waitForIdle()
 
-        assertFalse(globalSearchFired, "Global search should NOT fire when text is selected")
-        assertTrue(
-            textState.text.contains("[[hello]]"),
-            "Selected text should be wrapped as a wiki link, got: '${textState.text}'"
-        )
+        assertFalse(globalSearchFired, "Global handler should NOT fire — event consumed by BlockEditor")
+        assertEquals("hello", searchWithTextArg, "Search should open pre-filled with selected text")
+        assertEquals("hello world", textState.text, "Text should not be modified (no link wrapping)")
     }
 
     @Test
     fun `Cmd+K in non-editor input (no preview handler) reaches global handler`() {
-        // Simulates focus in a text field that is NOT a block editor — e.g. the search bar
-        // or any other input without BlockEditor's onPreviewKeyEvent. The global handler
-        // should still fire because the event bubbles up unobstructed.
+        // Simulates focus in a text field without BlockEditor's onPreviewKeyEvent.
+        // The global handler should still fire because the event bubbles up unobstructed.
         var globalSearchFired = false
         var textState by mutableStateOf(TextFieldValue(""))
 
@@ -177,7 +172,6 @@ class KeyboardShortcutTest {
                         } else false
                     }
             ) {
-                // Plain BasicTextField with NO onPreviewKeyEvent — does not intercept Cmd+K
                 BasicTextField(
                     value = textState,
                     onValueChange = { textState = it },

@@ -1120,8 +1120,11 @@ class StelekitViewModel(
         _uiState.update { it.copy(commandPaletteVisible = visible) }
     }
     
-    fun setSearchDialogVisible(visible: Boolean) {
-        _uiState.update { it.copy(searchDialogVisible = visible) }
+    fun setSearchDialogVisible(visible: Boolean, initialQuery: String = "") {
+        _uiState.update { it.copy(
+            searchDialogVisible = visible,
+            searchDialogInitialQuery = if (visible) initialQuery else ""
+        )}
     }
 
     fun setThemeMode(mode: StelekitThemeMode) {
