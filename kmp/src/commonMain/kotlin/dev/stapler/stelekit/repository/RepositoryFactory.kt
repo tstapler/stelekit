@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.repository
 
+import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.db.DatabaseWriteActor
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.OperationLogger
 import dev.stapler.stelekit.db.SteleDatabase

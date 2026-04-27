@@ -1,10 +1,14 @@
 package dev.stapler.stelekit.performance
 
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DirectSqlWrite
 import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.error.DomainError
 import kotlinx.coroutines.withContext
 
 data class QueryStat(
@@ -51,8 +55,8 @@ class QueryStatsRepository(
     suspend fun upsertBatch(stats: Map<String, QueryStatsCollector.Accum>, appVersion: String) {
         if (stats.isEmpty()) return
         val now = HistogramWriter.epochMs()
-        val writeOp: suspend () -> Result<Unit> = {
-            runCatching {
+        val writeOp: suspend () -> Either<DomainError, Unit> = {
+            try {
                 withContext(PlatformDispatcher.DB) {
                     restricted.transaction {
                         for ((key, a) in stats) {
@@ -87,6 +91,9 @@ class QueryStatsRepository(
                         }
                     }
                 }
+                Unit.right()
+            } catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
         }
         if (writeActor != null) writeActor.execute(op = writeOp) else writeOp()
@@ -105,12 +112,15 @@ class QueryStatsRepository(
         queries.selectAllQueryStatVersions().executeAsList()
 
     suspend fun deleteVersion(appVersion: String) {
-        val writeOp: suspend () -> Result<Unit> = {
-            runCatching {
+        val writeOp: suspend () -> Either<DomainError, Unit> = {
+            try {
                 withContext(PlatformDispatcher.DB) {
                     @OptIn(DirectSqlWrite::class)
                     restricted.deleteQueryStatsForVersion(appVersion)
                 }
+                Unit.right()
+            } catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
         }
         if (writeActor != null) writeActor.execute(op = writeOp) else writeOp()

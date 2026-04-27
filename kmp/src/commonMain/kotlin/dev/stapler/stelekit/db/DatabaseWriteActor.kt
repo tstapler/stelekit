@@ -150,12 +150,12 @@ class DatabaseWriteActor(
         when (request) {
             is WriteRequest.SavePage -> {
                 val result = pageRepository.savePage(request.page)
-                if (result.isSuccess) onWriteSuccess?.invoke(request)
+                if (result.isRight()) onWriteSuccess?.invoke(request)
                 request.deferred.complete(result)
             }
             is WriteRequest.SavePages -> {
                 val result = pageRepository.savePages(request.pages)
-                if (result.isSuccess) onWriteSuccess?.invoke(request)
+                if (result.isRight()) onWriteSuccess?.invoke(request)
                 request.deferred.complete(result)
             }
             is WriteRequest.DeleteBlocksForPage -> {
@@ -168,7 +168,7 @@ class DatabaseWriteActor(
                     }
                 }
                 val result = blockRepository.deleteBlocksForPage(request.pageUuid)
-                if (result.isSuccess) onWriteSuccess?.invoke(request)
+                if (result.isRight()) onWriteSuccess?.invoke(request)
                 request.deferred.complete(result)
             }
             is WriteRequest.DeleteBlocksForPages -> {
@@ -183,7 +183,7 @@ class DatabaseWriteActor(
                     }
                 }
                 val result = blockRepository.deleteBlocksForPages(request.pageUuids)
-                if (result.isSuccess) onWriteSuccess?.invoke(request)
+                if (result.isRight()) onWriteSuccess?.invoke(request)
                 request.deferred.complete(result)
             }
             is WriteRequest.SaveBlocks -> processSaveBlocks(request)
