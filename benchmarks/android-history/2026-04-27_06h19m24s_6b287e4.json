@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-04-27 06:19:24 UTC",
+  "gitSha": "6b287e4",
+  "branch": "main",
+  "phase1Ms": 105,
+  "phase3Ms": 55,
+  "pageCount": 25,
+  "baselineP95Ms": 3,
+  "phase3P95Ms": 1,
+  "jankFactor": 0.33,
+  "writes": 1
+}
