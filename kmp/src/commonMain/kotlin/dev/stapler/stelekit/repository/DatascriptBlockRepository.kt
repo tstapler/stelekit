@@ -198,6 +198,33 @@ class DatascriptBlockRepository : BlockRepository {
         }
     }
 
+    override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> {
+        return writeMutex.withLock {
+            try {
+                val current = blocks.value.toMutableMap()
+                val existing = current[blockUuid] ?: return@withLock Unit.right()
+                val updated = existing.copy(content = content, version = existing.version + 1)
+                batchUpdateBlocks(mapOf(blockUuid to updated))
+                Unit.right()
+            } catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            }
+        }
+    }
+
+    override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> {
+        return writeMutex.withLock {
+            try {
+                val current = blocks.value.toMutableMap()
+                val existing = current[blockUuid] ?: return@withLock Unit.right()
+                batchUpdateBlocks(mapOf(blockUuid to existing.copy(properties = properties)))
+                Unit.right()
+            } catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            }
+        }
+    }
+
     override suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {

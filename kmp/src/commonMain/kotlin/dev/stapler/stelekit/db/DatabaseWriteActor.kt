@@ -355,6 +355,12 @@ class DatabaseWriteActor(
     suspend fun saveBlock(block: Block): Either<DomainError, Unit> =
         execute { blockRepository.saveBlock(block) }
 
+    suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> =
+        execute { blockRepository.updateBlockContentOnly(blockUuid, content) }
+
+    suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> =
+        execute { blockRepository.updateBlockPropertiesOnly(blockUuid, properties) }
+
     suspend fun deleteBlock(blockUuid: String): Either<DomainError, Unit> =
         execute {
             if (opLogger != null) {

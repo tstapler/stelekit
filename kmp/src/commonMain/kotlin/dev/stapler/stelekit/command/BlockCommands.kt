@@ -102,11 +102,8 @@ class UpdateBlockContentCommand(
         return updateContent(oldContent)
     }
     
-    private suspend fun updateContent(content: String): Either<DomainError, Unit> {
-        val blockResult = repository.getBlockByUuid(blockUuid).first()
-        val block = blockResult.getOrNull() ?: return DomainError.DatabaseError.NotFound("block", blockUuid).left()
-        return repository.saveBlock(block.copy(content = content))
-    }
+    private suspend fun updateContent(content: String): Either<DomainError, Unit> =
+        repository.updateBlockContentOnly(blockUuid, content)
 }
 
 class SplitBlockCommand(
@@ -120,13 +117,10 @@ class SplitBlockCommand(
     override val description = "Split Block"
 
     override suspend fun execute(): Either<DomainError, Unit> {
-        // 1. Update original block
-        val originalBlockResult = repository.getBlockByUuid(originalBlockUuid).first()
-        val originalBlock = originalBlockResult.getOrNull() ?: return DomainError.DatabaseError.NotFound("block", originalBlockUuid).left()
-
-        val updateResult = repository.saveBlock(originalBlock.copy(content = newContentForOriginal))
+        // 1. Update original block content
+        val updateResult = repository.updateBlockContentOnly(originalBlockUuid, newContentForOriginal)
         if (updateResult.isLeft()) return updateResult
-        
+
         // 2. Shift siblings and add new block
         val updatedSiblings = siblingsToShift.map { it.copy(position = it.position + 1) }
         val blocksToSave = updatedSiblings + newBlock
@@ -141,12 +135,9 @@ class SplitBlockCommand(
         // 2. Restore siblings
         val restoreSiblingsResult = repository.saveBlocks(siblingsToShift)
         if (restoreSiblingsResult.isLeft()) return restoreSiblingsResult
-        
-        // 3. Restore original block content
-        val originalBlockResult = repository.getBlockByUuid(originalBlockUuid).first()
-        val originalBlock = originalBlockResult.getOrNull() ?: return DomainError.DatabaseError.NotFound("block", originalBlockUuid).left()
 
-        return repository.saveBlock(originalBlock.copy(content = originalContent))
+        // 3. Restore original block content
+        return repository.updateBlockContentOnly(originalBlockUuid, originalContent)
     }
 }
 
@@ -165,29 +156,26 @@ class MergeBlockCommand(
 
     override suspend fun execute(): Either<DomainError, Unit> {
         // 1. Update target block content
-        val targetBlockResult = repository.getBlockByUuid(targetBlockUuid).first()
-        val targetBlock = targetBlockResult.getOrNull() ?: return DomainError.DatabaseError.NotFound("block", targetBlockUuid).left()
-
-        val updateResult = repository.saveBlock(targetBlock.copy(content = targetNewContent))
+        val updateResult = repository.updateBlockContentOnly(targetBlockUuid, targetNewContent)
         if (updateResult.isLeft()) return updateResult
 
         // 2. Delete merged block (capture state first)
         val hierarchyResult = repository.getBlockHierarchy(mergedBlockUuid).first()
         val hierarchy = hierarchyResult.getOrNull() ?: return DomainError.DatabaseError.NotFound("block", mergedBlockUuid).left()
-        
+
         val blocks = hierarchy.map { it.block }
         deletedBlock = blocks.find { it.uuid == mergedBlockUuid }
         deletedChildren = blocks.filter { it.uuid != mergedBlockUuid }
-        
+
         val deleteResult = repository.deleteBlock(mergedBlockUuid, deleteChildren = true)
         if (deleteResult.isLeft()) return deleteResult
-        
+
         // 3. Shift siblings up
         val shiftedSiblings = siblingsToShiftUp.map { it.copy(position = it.position - 1) }
         if (shiftedSiblings.isNotEmpty()) {
             return repository.saveBlocks(shiftedSiblings)
         }
-        
+
         return Unit.right()
     }
 
@@ -197,18 +185,15 @@ class MergeBlockCommand(
             val restoreSiblingsResult = repository.saveBlocks(siblingsToShiftUp)
             if (restoreSiblingsResult.isLeft()) return restoreSiblingsResult
         }
-        
+
         // 2. Restore deleted block
         val block = deletedBlock ?: return DomainError.DatabaseError.WriteFailed("No block to restore").left()
         val allToRestore = listOf(block) + deletedChildren
         val restoreBlockResult = repository.saveBlocks(allToRestore)
         if (restoreBlockResult.isLeft()) return restoreBlockResult
-        
-        // 3. Restore target block content
-        val targetBlockResult = repository.getBlockByUuid(targetBlockUuid).first()
-        val targetBlock = targetBlockResult.getOrNull() ?: return DomainError.DatabaseError.NotFound("block", targetBlockUuid).left()
 
-        return repository.saveBlock(targetBlock.copy(content = targetOldContent))
+        // 3. Restore target block content
+        return repository.updateBlockContentOnly(targetBlockUuid, targetOldContent)
     }
 }
 

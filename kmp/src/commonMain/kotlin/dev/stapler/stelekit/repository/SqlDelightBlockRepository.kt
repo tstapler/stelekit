@@ -228,7 +228,7 @@ class SqlDelightBlockRepository(
                         block.position.toLong(),
                         block.createdAt.toEpochMilliseconds(),
                         block.updatedAt.toEpochMilliseconds(),
-                        block.properties.entries.joinToString(",") { "${it.key}:${it.value}" },
+                        block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
                         block.version,
                         block.contentHash ?: ContentHasher.sha256ForContent(block.content),
                         block.blockType
@@ -253,7 +253,7 @@ class SqlDelightBlockRepository(
                 block.position.toLong(),
                 block.createdAt.toEpochMilliseconds(),
                 block.updatedAt.toEpochMilliseconds(),
-                block.properties.entries.joinToString(",") { "${it.key}:${it.value}" },
+                block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
                 block.version,
                 block.contentHash ?: ContentHasher.sha256ForContent(block.content),
                 block.blockType
@@ -263,6 +263,29 @@ class SqlDelightBlockRepository(
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
+
+    override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                queries.updateBlockContent(content, Clock.System.now().toEpochMilliseconds(), blockUuid)
+                blockCache.remove(blockUuid)
+                Unit.right()
+            } catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                val serialized = properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null }
+                queries.updateBlockProperties(serialized, blockUuid)
+                blockCache.remove(blockUuid)
+                Unit.right()
+            } catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            }
+        }
 
     override suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {

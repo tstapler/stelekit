@@ -465,19 +465,19 @@ class BlockStateManager(
      * the markdown file reflects the new `key:: value` property lines.
      */
     fun updateBlockProperties(blockUuid: String, newProperties: Map<String, String>): Job = scope.launch {
-        val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
-        val updated = block.copy(properties = newProperties, version = block.version + 1)
-        dirtyBlocks[blockUuid] = updated.version
-        blockRepository.saveBlock(updated)
+        val pageUuid = _blocks.value.entries.find { (_, blocks) -> blocks.any { it.uuid == blockUuid } }?.key
+            ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()?.pageUuid
+            ?: return@launch
+        blockRepository.updateBlockPropertiesOnly(blockUuid, newProperties)
         _blocks.update { current ->
             val newBlocks = current.toMutableMap()
-            val pageBlocks = newBlocks[block.pageUuid]?.toMutableList() ?: return@update current
+            val pageBlocks = newBlocks[pageUuid]?.toMutableList() ?: return@update current
             val idx = pageBlocks.indexOfFirst { it.uuid == blockUuid }
-            if (idx >= 0) pageBlocks[idx] = updated
-            newBlocks[block.pageUuid] = pageBlocks
+            if (idx >= 0) pageBlocks[idx] = pageBlocks[idx].copy(properties = newProperties)
+            newBlocks[pageUuid] = pageBlocks
             newBlocks
         }
-        queueDiskSave(block.pageUuid)
+        queueDiskSave(pageUuid)
     }
 
     /**
@@ -509,14 +509,22 @@ class BlockStateManager(
      * and queue a debounced disk write.
      */
     private suspend fun applyContentChange(blockUuid: String, content: String, version: Long) {
-        val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return
-        val updated = block.copy(content = content, version = version)
+        val block = _blocks.value.values.flatten().find { it.uuid == blockUuid }
+            ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+            ?: run {
+                logger.warn("applyContentChange: block $blockUuid not found — content update dropped")
+                return
+            }
 
         // Mark dirty BEFORE saving so the observer merge keeps our version
         dirtyBlocks[blockUuid] = version
 
-        blockRepository.saveBlock(updated)
+        val writeResult = blockRepository.updateBlockContentOnly(blockUuid, content)
+        if (writeResult.isLeft()) {
+            logger.warn("applyContentChange: DB write failed for $blockUuid — content lives in-memory only")
+        }
 
+        val updated = block.copy(content = content, version = version)
         _blocks.update { current ->
             val newBlocks = current.toMutableMap()
             val pageBlocks = newBlocks[block.pageUuid]?.toMutableList() ?: return@update current

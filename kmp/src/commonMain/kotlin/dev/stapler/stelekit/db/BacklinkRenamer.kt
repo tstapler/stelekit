@@ -119,9 +119,14 @@ class BacklinkRenamer(
 
             // 3. Rewrite block content in DB: [[OldName]] → [[NewName]] (aliases included)
             //    and #OldName / #[[OldName]] → #NewName / #[[NewName]].
+            val contentErrors = mutableListOf<String>()
             affectedBlocks.forEach { block ->
                 val updated = replaceHashtag(replaceWikilink(block.content, page.name, newName), page.name, newName)
-                writeActor.saveBlock(block.copy(content = updated))
+                val result = writeActor.execute { blockRepository.updateBlockContentOnly(block.uuid, updated) }
+                if (result.isLeft()) contentErrors.add(block.uuid)
+            }
+            if (contentErrors.isNotEmpty()) {
+                logger.warn("Failed to update content for ${contentErrors.size} blocks during rename '${page.name}' → '$newName': $contentErrors")
             }
 
             // 4. Move the page file on disk (old path → new path).
