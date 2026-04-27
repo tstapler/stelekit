@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.15.0](https://github.com/tstapler/stelekit/compare/v0.14.0...v0.15.0) (2026-04-27)
+
+
+### Features
+
+* **android:** add emulator smoke tests and Roborazzi screenshot tests ([9eaa880](https://github.com/tstapler/stelekit/commit/9eaa88030d40f40fea6e651882898f91a3ad2ccc))
+* **android:** defense-in-depth quality layer for SAF permissions and loading state ([8ce5db1](https://github.com/tstapler/stelekit/commit/8ce5db122de758df0ab41c6e29e143a3cc29647b))
+* **perf:** BlockHound, LRU cache, query-plan CI gate, pg_stat_statements analogue, CPU flamegraphs ([d782dfb](https://github.com/tstapler/stelekit/commit/d782dfbecc5c92a50a4cc6f0dcdbfe0d5b6ed47c))
+* **tools:** replace flamegraph.pl with committed Kotlin implementation ([30828de](https://github.com/tstapler/stelekit/commit/30828de8ad857003cdf325ec92f5ceb406f6e16e))
+
+
+### Bug Fixes
+
+* **android:** use fully-qualified SteleKitApplication name in manifest ([1317782](https://github.com/tstapler/stelekit/commit/1317782492c4e982309d303f6a9a5b7591240b42))
+* **ci:** restore upload-artifact@v7, remove perl guard from local script ([1d67b49](https://github.com/tstapler/stelekit/commit/1d67b491ad4f1c8e18f700a50df66b2bc7e008f6))
+* **ci:** switch Roborazzi to record mode — goldens differ across machines ([5b88085](https://github.com/tstapler/stelekit/commit/5b880851e7d69529d6766bb7a44e70b43327d389))
+* **perf+ci:** eliminate GC pressure from QueryStatsCollector, fix benchmark CI ([6ea1b54](https://github.com/tstapler/stelekit/commit/6ea1b54a5be7b1c437e3cdfb6da0600787b5aa35))
+* **test:** broaden TC-E2E-002 to cover onboarding and recovery screens ([07351bc](https://github.com/tstapler/stelekit/commit/07351bc48cd737833c4a242e5f1cf5a558f1ec3d))
+* **test:** change isFullyLoaded default to false to fix race in loading test ([7c467eb](https://github.com/tstapler/stelekit/commit/7c467ebf2fe6811a4b4bfe89b52b3535b77243b8))
+* **tools/flamegraph:** set workingDir to repo root so relative paths resolve ([714a4a0](https://github.com/tstapler/stelekit/commit/714a4a0ccf06c94428b84efc9e49df05aadfb16d))
+
+
+### Performance Improvements
+
+* **instrumentation:** cache parseSql by identifier; benchmark % change + direction ([ea4236e](https://github.com/tstapler/stelekit/commit/ea4236ec9355d218c3c4bda70da66c5075314429))
+
 ## [0.14.0](https://github.com/tstapler/stelekit/compare/v0.13.0...v0.14.0) (2026-04-26)
 
 
