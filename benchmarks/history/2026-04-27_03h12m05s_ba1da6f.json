@@ -1,0 +1,127 @@
+{
+  "timestamp": "2026-04-27 03:12:05 UTC",
+  "gitSha": "ba1da6f",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 4,
+  "phase3Ms": 16,
+  "totalMs": 29,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 32,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 120,
+      "pct": 60.3
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 20,
+      "pct": 10.1
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 8,
+      "pct": 4.0
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 7,
+      "pct": 3.5
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 6,
+      "pct": 3.0
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.net.URL_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.ClassNotFoundException_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.Class[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2135,
+      "pct": 99.6
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "dev/stapler/stelekit/util/ContentHasher.sha256_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pread",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ThreadLocalAllocBuffer::refill_waste_limit_increment",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/String.regionMatches_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ConstantPool::name_and_type_ref_index_at",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-6ad7efe5-3848-438f-8681-8f6bdd439d86-libsqlitejdbc.so",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlin/time/Instant.<init>_[0]",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}
