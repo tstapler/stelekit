@@ -146,10 +146,9 @@ class SqlDelightPageRepository(
             queries.transaction {
                 pages.forEach { page -> upsertPage(page) }
             }
-            pages.forEach { page ->
-                pageByUuidCache.put(page.uuid, page)
-                pageByNameCache.put(page.name.lowercase(), page)
-            }
+            // Do not populate caches here — savePages is used by background bulk indexing
+            // (thousands of cold pages). Caching them evicts the warm journals the user is
+            // actively reading. Reads populate the cache on first access, which is sufficient.
             Unit.right()
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
