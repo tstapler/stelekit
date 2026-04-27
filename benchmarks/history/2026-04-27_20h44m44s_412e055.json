@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-04-27 20:44:44 UTC",
+  "gitSha": "412e055",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 9,
+  "phase2Ms": 3,
+  "phase3Ms": 16,
+  "totalMs": 28,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 31,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 132,
+      "pct": 67.0
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 9,
+      "pct": 4.6
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 8,
+      "pct": 4.1
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 5,
+      "pct": 2.5
+    },
+    {
+      "frame": "long[]_[k]",
+      "samples": 5,
+      "pct": 2.5
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 4,
+      "pct": 2.0
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "kotlin.ranges.IntRange_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2110,
+      "pct": 99.5
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlin/text/DelimitedRangesSequence$iterator$1.next_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__xstat64",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "I2C/C2I adapters(0xbabbab)",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "CompiledMethod::CompiledMethod",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "AccessInternal::PostRuntimeDispatch<G1BarrierSet::AccessBarrier<286822ul, G1BarrierSet>, (AccessInternal::BarrierType)3, 286822ul>::oop_access_barrier",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ClassVerifier::is_protected_access",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/channels/BufferedChannel.tryReceive-PtdJZtk_[0]",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}
