@@ -247,7 +247,9 @@ private fun handleKeyEvent(
         val formatAction = when (event.key) {
             Key.B -> FormatAction.BOLD
             Key.I -> FormatAction.ITALIC
-            Key.K -> FormatAction.LINK
+            // Only consume Cmd+K for link wrapping when text is selected; without a selection
+            // the event falls through to the global Cmd+K handler (open search).
+            Key.K -> if (!textFieldValue.selection.collapsed) FormatAction.LINK else null
             Key.S -> FormatAction.STRIKETHROUGH
             Key.H -> FormatAction.HIGHLIGHT
             Key.E -> FormatAction.CODE
