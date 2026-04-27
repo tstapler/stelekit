@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-04-27 13:13:45 UTC",
+  "gitSha": "f8a9c10",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 9,
+  "phase2Ms": 3,
+  "phase3Ms": 15,
+  "totalMs": 27,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 31,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 133,
+      "pct": 69.6
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 9,
+      "pct": 4.7
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 5,
+      "pct": 2.6
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 5,
+      "pct": 2.6
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 4,
+      "pct": 2.1
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.util.Arrays$ArrayItr_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.MethodWriter_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2102,
+      "pct": 99.6
+    },
+    {
+      "frame": "HandleArea::real_allocate_handle",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "UTF8::is_legal_utf8",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/scheduling/CoroutineScheduler$Worker.findAnyTask_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "org/sqlite/SQLiteConnection.setFirstStatementExecuted_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/scheduling/CoroutineScheduler.dispatch_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/time/Instant.ofEpochSecond_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__mprotect",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "OopStorage::allocate",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}
