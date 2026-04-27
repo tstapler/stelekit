@@ -249,12 +249,7 @@ fun StelekitApp(
     if (repos == null || !migrationReady) {
         // Show loading state while repositories are being initialized or migration is running
         StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
+            LoadingOverlay("Initializing…")
         }
         return
     }
