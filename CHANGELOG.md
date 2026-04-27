@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.16.2](https://github.com/tstapler/stelekit/compare/v0.16.1...v0.16.2) (2026-04-27)
+
+
+### Performance Improvements
+
+* **android:** fix 27s startup, wrong SAF directory creation, and memory pressure ([fe94e7d](https://github.com/tstapler/stelekit/commit/fe94e7d0d48ebcc7e4b84c3ecedf0bc0490ccda8))
+* **cache:** don't populate page caches during bulk background indexing ([f8a9c10](https://github.com/tstapler/stelekit/commit/f8a9c106bfa31b473afd279ae6d8799c5b177404))
+* **startup:** warm-start fast path in loadGraphProgressive + Arrow docs ([e251ada](https://github.com/tstapler/stelekit/commit/e251adade93eee5b58b0eac73eb521cad6f7425c))
+
 ## [0.16.1](https://github.com/tstapler/stelekit/compare/v0.16.0...v0.16.1) (2026-04-27)
 
 
