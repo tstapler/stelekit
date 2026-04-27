@@ -32,29 +32,35 @@ class SmokeTest {
     }
 
     // TC-E2E-002: Fresh-install (no SAF grant) shows a meaningful UI, not a blank screen.
-    // After loading settles, the app must display either:
-    //   - The loading indicator (still in progress)
-    //   - The "Can't access your notes folder" permission recovery screen
-    // Any other visible Compose content also passes — the key invariant is no blank crash.
+    // After loading settles, the app must display one of:
+    //   - Loading indicator (loading in progress)
+    //   - Onboarding screen ("Welcome to SteleKit" or "Select Your Graph")
+    //   - Permission recovery screen ("Can't access your notes folder")
+    // Checking for ANY Compose text node in the root — the invariant is "not crashed/blank".
     @Test
     fun freshInstallShowsMeaningfulUi() {
         composeRule.waitForIdle()
 
-        val hasLoadingIndicator = runCatching {
-            composeRule.onNodeWithTag("loadingIndicator").assertIsDisplayed()
-        }.isSuccess
+        val candidates = listOf(
+            "loadingIndicator",         // testTag on the circular progress indicator
+        )
+        val textCandidates = listOf(
+            "Welcome to SteleKit",       // onboarding welcome step
+            "Select Your Graph",         // onboarding graph-picker step
+            "Can't access your notes folder", // permission recovery (reinstall path)
+            "SteleKit",                  // any screen containing the app name
+        )
 
-        val hasPermissionScreen = runCatching {
-            composeRule.onNodeWithText("Can't access your notes folder").assertIsDisplayed()
-        }.isSuccess
+        val hasLoadingIndicator = candidates.any { tag ->
+            runCatching { composeRule.onNodeWithTag(tag).assertIsDisplayed() }.isSuccess
+        }
+        val hasKnownText = textCandidates.any { text ->
+            runCatching { composeRule.onNodeWithText(text, substring = true).assertIsDisplayed() }.isSuccess
+        }
 
-        // A Compose tree with any content also satisfies the invariant.
-        val hasAnyContent = runCatching {
-            composeRule.onNodeWithText("SteleKit").assertIsDisplayed()
-        }.isSuccess
-
-        assert(hasLoadingIndicator || hasPermissionScreen || hasAnyContent) {
-            "Fresh install must show loading indicator, permission recovery screen, or app content — not a blank or crashed state"
+        assert(hasLoadingIndicator || hasKnownText) {
+            "Fresh install must show a loading indicator or a known UI screen — not a blank or crashed state. " +
+                "Checked testTags: $candidates and text fragments: $textCandidates"
         }
     }
 }
