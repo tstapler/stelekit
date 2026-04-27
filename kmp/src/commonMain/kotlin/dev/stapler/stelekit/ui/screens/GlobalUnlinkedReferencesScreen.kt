@@ -3,6 +3,7 @@ package dev.stapler.stelekit.ui.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,15 +30,18 @@ fun GlobalUnlinkedReferencesScreen(
     modifier: Modifier = Modifier,
 ) {
     NavigationTracingEffect("GlobalUnlinkedReferences")
-    val scope = rememberCoroutineScope()
     val viewModel = remember {
         GlobalUnlinkedReferencesViewModel(
             pageRepository = pageRepository,
             blockRepository = blockRepository,
             writeActor = writeActor,
             matcher = suggestionMatcher,
-            scope = scope,
         )
+    }
+
+    // Cancel all in-flight searches when the screen leaves composition
+    DisposableEffect(Unit) {
+        onDispose { viewModel.cancel() }
     }
 
     LaunchedEffect(Unit) {
@@ -45,6 +49,19 @@ fun GlobalUnlinkedReferencesScreen(
     }
 
     val state by viewModel.state.collectAsState()
+    val listState = rememberLazyListState()
+
+    // Trigger loadMore automatically when within 3 items of the list end
+    val shouldLoadMore by remember {
+        derivedStateOf {
+            val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val total = state.results.size
+            total > 0 && lastVisible >= total - 3 && state.hasMore && !state.isLoading
+        }
+    }
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore) viewModel.loadMore()
+    }
 
     val linkColor = MaterialTheme.colorScheme.primary
 
@@ -79,7 +96,19 @@ fun GlobalUnlinkedReferencesScreen(
             }
 
             else -> {
+                val countLabel = if (state.hasMore) {
+                    "${state.results.size}+ unlinked references"
+                } else {
+                    "${state.results.size} unlinked reference${if (state.results.size == 1) "" else "s"}"
+                }
+                Text(
+                    text = countLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -97,20 +126,7 @@ fun GlobalUnlinkedReferencesScreen(
                         )
                     }
 
-                    if (state.hasMore && !state.isLoading) {
-                        item {
-                            Button(
-                                onClick = { viewModel.loadMore() },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp),
-                            ) {
-                                Text("Load More")
-                            }
-                        }
-                    }
-
-                    if (state.isLoading && state.results.isNotEmpty()) {
+                    if (state.isLoading) {
                         item {
                             Box(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),

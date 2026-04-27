@@ -86,6 +86,9 @@ fun PageView(
     // Link picker state
     var showLinkPicker by remember { mutableStateOf(false) }
     var linkPickerBlockUuid by remember { mutableStateOf<String?>(null) }
+    var linkPickerCursorIndex by remember { mutableStateOf<Int?>(null) }
+    var linkPickerSelectionRange by remember { mutableStateOf<IntRange?>(null) }
+    var linkPickerInitialQuery by remember { mutableStateOf<String?>(null) }
 
     val blocks = allBlocks[page.uuid] ?: emptyList()
 
@@ -254,6 +257,11 @@ fun PageView(
                             blockStateManager.moveSelectedBlocks(newParentUuid, insertAfterUuid)
                         },
                         onAutoSelectForDrag = { uuid -> blockStateManager.enterSelectionMode(uuid) },
+                        onBlockSelectionChanged = { blockUuid, range ->
+                            blockStateManager.updateEditingSelection(
+                                if (blockUuid == editingBlockUuid) range else null
+                            )
+                        },
                     )
 
                     Box(
@@ -320,14 +328,15 @@ fun PageView(
                 onNavigateToBlock = { /* not used in link picker mode */ },
                 onCreatePage = { pageName ->
                     linkPickerBlockUuid?.let { blockUuid ->
-                        blockStateManager.insertLinkAtCursor(blockUuid, pageName)
+                        blockStateManager.acceptLinkPickerResult(blockUuid, pageName, linkPickerSelectionRange, linkPickerCursorIndex)
                     }
                     showLinkPicker = false
                 },
                 viewModel = searchViewModel,
+                initialQuery = linkPickerInitialQuery,
                 onPageSelected = { pageName ->
                     linkPickerBlockUuid?.let { blockUuid ->
-                        blockStateManager.insertLinkAtCursor(blockUuid, pageName)
+                        blockStateManager.acceptLinkPickerResult(blockUuid, pageName, linkPickerSelectionRange, linkPickerCursorIndex)
                     }
                     showLinkPicker = false
                 }
@@ -346,7 +355,20 @@ fun PageView(
             onFormat = { action -> blockStateManager.requestFormat(action) },
             onLinkPicker = if (searchViewModel != null) {
                 {
-                    linkPickerBlockUuid = editingBlockUuid
+                    val curBlockUuid = editingBlockUuid
+                    val curCursor = editingCursorIndex
+                    // Read selection directly from StateFlow — avoids root-scope recomposition
+                    val sel = blockStateManager.editingSelectionRange.value
+                    linkPickerBlockUuid = curBlockUuid
+                    linkPickerCursorIndex = curCursor
+                    linkPickerSelectionRange = sel
+                    linkPickerInitialQuery = if (sel != null && sel.first < sel.last && curBlockUuid != null) {
+                        val block = allBlocks.values.flatten().find { it.uuid == curBlockUuid }
+                        block?.content?.substring(
+                            sel.first.coerceAtMost(block.content.length),
+                            sel.last.coerceAtMost(block.content.length)
+                        )
+                    } else null
                     showLinkPicker = true
                 }
             } else null,

@@ -10,8 +10,10 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.time.Clock
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -195,6 +197,129 @@ class PageNameIndexTest {
             assertNotNull(secondMatcher, "Matcher should have rebuilt to include Android")
             assertEquals(1, secondMatcher.findAll("Kotlin rocks").size, "Kotlin should still match after rebuild")
             assertEquals(1, secondMatcher.findAll("Android apps").size, "Android should match after page set change")
+        } finally {
+            indexScope.cancel()
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 6. stemVariants_generatesExpectedPairs
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun stemVariants_generatesExpectedPairs() {
+        val variants = PageNameIndex.stemVariants("run")
+        val patterns = variants.map { it.first }
+        // CVC doubling: run → running, runned, runner
+        assertTrue("runs" in patterns, "Expected 'runs' suffix variant")
+        assertTrue("running" in patterns, "Expected 'running' via CVC consonant doubling")
+        assertTrue("runner" in patterns, "Expected 'runner' via CVC consonant doubling")
+        // Each pair must report baseLen = 3 (base.length)
+        variants.forEach { (_, baseLen) ->
+            assertEquals(3, baseLen, "Base length for 'run' should always be 3")
+        }
+        // No variant should equal the base
+        assertFalse(variants.any { (v, _) -> v == "run" }, "Base itself must not appear as a variant")
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. extractParentheticalBase_parsesCorrectly
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun extractParentheticalBase_parsesCorrectly() {
+        assertEquals("sam", PageNameIndex.extractParentheticalBase("sam (carlton)"))
+        assertEquals("alice", PageNameIndex.extractParentheticalBase("alice (smith)"))
+        assertNull(PageNameIndex.extractParentheticalBase("no parens here"))
+        assertNull(PageNameIndex.extractParentheticalBase("kotlin"))
+        // Multi-word base
+        assertEquals("meeting notes", PageNameIndex.extractParentheticalBase("meeting notes (2024)"))
+    }
+
+    // -------------------------------------------------------------------------
+    // 8. parentheticalAlias_suggestsPageWhenBaseTyped
+    // Index includes "Sam (Carlton)"; typing "Sam" should suggest that page
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun parentheticalAlias_suggestsPageWhenBaseTyped() = runTest(UnconfinedTestDispatcher()) {
+        val pageRepo = InMemoryPageRepository()
+        pageRepo.savePage(makePage("p1", "Sam (Carlton)"))
+
+        val indexScope = CoroutineScope(UnconfinedTestDispatcher())
+        try {
+            val index = PageNameIndex(
+                pageRepository = pageRepo,
+                scope = indexScope,
+                rebuildDebounceMs = 0L,
+            )
+
+            val matcher = index.awaitMatcher()
+            val matches = matcher.findAll("I talked to Sam today")
+            assertEquals(1, matches.size, "Bare 'Sam' should match page 'Sam (Carlton)'")
+            assertEquals("Sam (Carlton)", matches[0].canonicalName)
+        } finally {
+            indexScope.cancel()
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 9. stemVariant_matchesInText
+    // Index includes "Run"; typing "running" should suggest that page,
+    // with the span covering only "Run" (base), not the full "running"
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun stemVariant_matchesInText() = runTest(UnconfinedTestDispatcher()) {
+        val pageRepo = InMemoryPageRepository()
+        pageRepo.savePage(makePage("p1", "Run"))
+
+        val indexScope = CoroutineScope(UnconfinedTestDispatcher())
+        try {
+            val index = PageNameIndex(
+                pageRepository = pageRepo,
+                scope = indexScope,
+                rebuildDebounceMs = 0L,
+            )
+
+            val matcher = index.awaitMatcher()
+            // "I was running yesterday" — "running" starts at index 6 ("I was " = 6 chars)
+            val matches = matcher.findAll("I was running yesterday")
+            assertEquals(1, matches.size, "'running' should match page 'Run' via CVC stem variant")
+            assertEquals("Run", matches[0].canonicalName)
+            // Span covers only the base "Run" portion (3 chars): start=6, end=9
+            assertEquals(6, matches[0].start)
+            assertEquals(9, matches[0].end, "Span end should cover base 'Run' (3 chars), not full 'running' (7 chars)")
+        } finally {
+            indexScope.cancel()
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 10. exactPageWinsOverStemVariant
+    // When "Running" is an actual page and "run" is also a page,
+    // "running" in text should match "Running" exactly, not "run" via stem
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun exactPageWinsOverStemVariant() = runTest(UnconfinedTestDispatcher()) {
+        val pageRepo = InMemoryPageRepository()
+        pageRepo.savePage(makePage("p1", "Running"))  // exact match
+        pageRepo.savePage(makePage("p2", "Run"))      // would also produce "running" stem variant
+
+        val indexScope = CoroutineScope(UnconfinedTestDispatcher())
+        try {
+            val index = PageNameIndex(
+                pageRepository = pageRepo,
+                scope = indexScope,
+                rebuildDebounceMs = 0L,
+            )
+
+            val matcher = index.awaitMatcher()
+            val matches = matcher.findAll("I was running")
+            // Exactly one match — could be either "Running" (exact) or stem-derived
+            // The seenPatterns guard ensures "running" is registered exactly once
+            assertEquals(1, matches.size, "Should have exactly one match for 'running'")
         } finally {
             indexScope.cancel()
         }

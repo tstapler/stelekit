@@ -56,6 +56,7 @@ class JournalsViewModel(
     val blocks: StateFlow<Map<String, List<Block>>> = blockStateManager.blocks
     val editingBlockUuid: StateFlow<String?> = blockStateManager.editingBlockUuid
     val editingCursorIndex: StateFlow<Int?> = blockStateManager.editingCursorIndex
+    val editingSelectionRange: StateFlow<IntRange?> = blockStateManager.editingSelectionRange
     val collapsedBlockUuids: StateFlow<Set<String>> = blockStateManager.collapsedBlockUuids
     val selectedBlockUuids: StateFlow<Set<String>> = blockStateManager.selectedBlockUuids
     val isInSelectionMode: StateFlow<Boolean> = blockStateManager.isInSelectionMode
@@ -161,7 +162,16 @@ class JournalsViewModel(
     fun selectAll(pageUuid: String) = blockStateManager.selectAll(pageUuid)
     fun clearSelection() = blockStateManager.clearSelection()
     fun deleteSelectedBlocks(): Job = blockStateManager.deleteSelectedBlocks()
-    fun insertLinkAtCursor(blockUuid: String, pageName: String) = blockStateManager.insertLinkAtCursor(blockUuid, pageName)
+    fun insertLinkAtCursor(blockUuid: String, pageName: String, overrideCursorIndex: Int? = null) =
+        blockStateManager.insertLinkAtCursor(blockUuid, pageName, overrideCursorIndex)
+
+    fun replaceSelectionWithLink(blockUuid: String, selectionStart: Int, selectionEnd: Int, pageName: String) =
+        blockStateManager.replaceSelectionWithLink(blockUuid, selectionStart, selectionEnd, pageName)
+
+    fun acceptLinkPickerResult(blockUuid: String, pageName: String, selectionRange: IntRange?, overrideCursorIndex: Int?) =
+        blockStateManager.acceptLinkPickerResult(blockUuid, pageName, selectionRange, overrideCursorIndex)
+
+    fun updateEditingSelection(range: IntRange?) = blockStateManager.updateEditingSelection(range)
 
     fun close() {
         scope.cancel()

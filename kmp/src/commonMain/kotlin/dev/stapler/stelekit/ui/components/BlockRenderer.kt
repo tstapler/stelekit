@@ -80,6 +80,7 @@ fun BlockRenderer(
     dropAbove: Boolean = false,
     dropBelow: Boolean = false,
     dropAsChild: Boolean = false,
+    onSelectionChanged: ((IntRange?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     BlockItem(
@@ -124,6 +125,7 @@ fun BlockRenderer(
         dropAbove = dropAbove,
         dropBelow = dropBelow,
         dropAsChild = dropAsChild,
+        onSelectionChanged = onSelectionChanged,
         modifier = modifier
     )
 }

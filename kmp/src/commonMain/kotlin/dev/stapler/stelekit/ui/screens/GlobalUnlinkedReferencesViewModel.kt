@@ -8,6 +8,9 @@ import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,10 +55,15 @@ data class UnlinkedRefEntry(
 class GlobalUnlinkedReferencesViewModel(
     private val pageRepository: PageRepository,
     private val blockRepository: BlockRepository,
-    private val scope: CoroutineScope,
     private val writeActor: DatabaseWriteActor? = null,
     private val matcher: AhoCorasickMatcher? = null,
+    scope: CoroutineScope? = null,
 ) {
+    // The ViewModel owns its scope; callers must not pass rememberCoroutineScope().
+    // A testScope override is accepted only for unit tests.
+    private val scope: CoroutineScope = scope ?: CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    fun cancel() { this.scope.cancel() }
 
     private val logger = Logger("GlobalUnlinkedReferencesViewModel")
 

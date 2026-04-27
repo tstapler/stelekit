@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,7 +29,9 @@ import androidx.compose.ui.window.DialogProperties
 import dev.stapler.stelekit.repository.SearchScope
 import dev.stapler.stelekit.ui.screens.SearchResultItem
 import dev.stapler.stelekit.ui.screens.SearchViewModel
+import dev.stapler.stelekit.util.toTitleCase
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchDialog(
     visible: Boolean,
@@ -38,7 +41,8 @@ fun SearchDialog(
     onCreatePage: (String) -> Unit,
     viewModel: SearchViewModel,
     currentPageUuid: String? = null,
-    onPageSelected: ((String) -> Unit)? = null
+    onPageSelected: ((String) -> Unit)? = null,
+    initialQuery: String? = null,
 ) {
     if (!visible) return
 
@@ -51,7 +55,7 @@ fun SearchDialog(
     LaunchedEffect(visible) {
         if (visible) {
             try { focusRequester.requestFocus() } catch (_: IllegalStateException) {}
-            viewModel.onQueryChange("")
+            viewModel.onQueryChange(initialQuery ?: "")
         }
     }
 
@@ -287,39 +291,65 @@ fun SearchDialog(
                             onScopeChange = { viewModel.onScopeChange(it) },
                             showCurrentPage = currentPageUuid != null
                         )
-                        TextField(
-                            value = uiState.query,
-                            onValueChange = { viewModel.onQueryChange(it) },
-                            modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
-                            placeholder = { Text(placeholder) },
-                            singleLine = true,
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                disabledContainerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextField(
+                                value = uiState.query,
+                                onValueChange = { viewModel.onQueryChange(it) },
+                                modifier = Modifier.weight(1f).focusRequester(focusRequester),
+                                placeholder = { Text(placeholder) },
+                                singleLine = true,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    disabledContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                )
                             )
-                        )
+                            if (uiState.query.isNotEmpty()) {
+                                TooltipBox(
+                                    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                                    tooltip = { PlainTooltip { Text("Title Case") } },
+                                    state = rememberTooltipState()
+                                ) {
+                                    TextButton(onClick = { viewModel.onQueryChange(uiState.query.toTitleCase()) }) {
+                                        Text("Tt", style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             } else {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                     Column(modifier = sharedColumnModifier.padding(top = 100.dp)) {
-                        TextField(
-                            value = uiState.query,
-                            onValueChange = { viewModel.onQueryChange(it) },
-                            modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
-                            placeholder = { Text(placeholder) },
-                            singleLine = true,
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                disabledContainerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextField(
+                                value = uiState.query,
+                                onValueChange = { viewModel.onQueryChange(it) },
+                                modifier = Modifier.weight(1f).focusRequester(focusRequester),
+                                placeholder = { Text(placeholder) },
+                                singleLine = true,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    disabledContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                )
                             )
-                        )
+                            if (uiState.query.isNotEmpty()) {
+                                TooltipBox(
+                                    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                                    tooltip = { PlainTooltip { Text("Title Case") } },
+                                    state = rememberTooltipState()
+                                ) {
+                                    TextButton(onClick = { viewModel.onQueryChange(uiState.query.toTitleCase()) }) {
+                                        Text("Tt", style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
+                        }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         FilterBar(
                             currentScope = uiState.scope,
