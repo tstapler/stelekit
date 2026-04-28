@@ -60,12 +60,7 @@ class TextOperations(
             updateTextState(blockId, newState)
             
             // Update block content in repository
-            val block = blockRepository.getBlockByUuid(blockId).first().getOrNull()
-            if (block != null) {
-                val updatedBlock = block.copy(content = newText)
-                blockRepository.saveBlock(updatedBlock)
-            }
-            
+            blockRepository.updateBlockContentOnly(blockId,newText)
             PerformanceMonitor.endTrace(traceId)
             Unit.right()
         } catch (e: Exception) {
@@ -99,12 +94,7 @@ class TextOperations(
             updateTextState(blockId, newState)
             
             // Update block content in repository
-            val block = blockRepository.getBlockByUuid(blockId).first().getOrNull()
-            if (block != null) {
-                val updatedBlock = block.copy(content = updatedText)
-                blockRepository.saveBlock(updatedBlock)
-            }
-            
+            blockRepository.updateBlockContentOnly(blockId,updatedText)
             PerformanceMonitor.endTrace(traceId)
             Unit.right()
         } catch (e: Exception) {
@@ -137,12 +127,7 @@ class TextOperations(
             updateTextState(blockId, newState)
             
             // Update block content in repository
-            val block = blockRepository.getBlockByUuid(blockId).first().getOrNull()
-            if (block != null) {
-                val updatedBlock = block.copy(content = updatedText)
-                blockRepository.saveBlock(updatedBlock)
-            }
-            
+            blockRepository.updateBlockContentOnly(blockId,updatedText)
             PerformanceMonitor.endTrace(traceId)
             Unit.right()
         } catch (e: Exception) {
@@ -376,12 +361,7 @@ class TextOperations(
             updateTextState(blockId, newState)
             
             // Update block content in repository
-            val block = blockRepository.getBlockByUuid(blockId).first().getOrNull()
-            if (block != null) {
-                val updatedBlock = block.copy(content = newText)
-                blockRepository.saveBlock(updatedBlock)
-            }
-            
+            blockRepository.updateBlockContentOnly(blockId,newText)
             Unit.right()
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
@@ -417,12 +397,7 @@ class TextOperations(
             updateTextState(blockId, newState)
             
             // Update block content in repository
-            val block = blockRepository.getBlockByUuid(blockId).first().getOrNull()
-            if (block != null) {
-                val updatedBlock = block.copy(content = newText)
-                blockRepository.saveBlock(updatedBlock)
-            }
-            
+            blockRepository.updateBlockContentOnly(blockId,newText)
             Unit.right()
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
@@ -463,12 +438,7 @@ class TextOperations(
             updateTextState(blockId, newState)
             
             // Update block content in repository
-            val block = blockRepository.getBlockByUuid(blockId).first().getOrNull()
-            if (block != null) {
-                val updatedBlock = block.copy(content = updatedContent)
-                blockRepository.saveBlock(updatedBlock)
-            }
-            
+            blockRepository.updateBlockContentOnly(blockId,updatedContent)
             Unit.right()
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()

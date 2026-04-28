@@ -180,8 +180,7 @@ class BlockTreeOperations(
                 }
             }
             
-            val updatedBlock = block.copy(properties = newProperties)
-            blockOperations.saveBlock(updatedBlock)
+            blockOperations.updateBlockPropertiesOnly(block.uuid, newProperties)
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
