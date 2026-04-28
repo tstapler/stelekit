@@ -87,27 +87,27 @@ open class SearchBenchmark {
     // ── T5.3 benchmarks ────────────────────────────────────────────────────
 
     @Benchmark
-    fun searchWithFilters_singleToken(): Any = runBlocking {
+    fun searchWithFiltersSingleToken(): Any = runBlocking {
         repo.searchWithFilters(SearchRequest(query = "programming", limit = 50)).first()
     }
 
     @Benchmark
-    fun searchWithFilters_multiToken(): Any = runBlocking {
+    fun searchWithFiltersMultiToken(): Any = runBlocking {
         repo.searchWithFilters(SearchRequest(query = "programming notes kotlin", limit = 50)).first()
     }
 
     @Benchmark
-    fun searchWithFilters_phraseQuery(): Any = runBlocking {
+    fun searchWithFiltersPhraseQuery(): Any = runBlocking {
         repo.searchWithFilters(SearchRequest(query = "\"programming notes\"", limit = 50)).first()
     }
 
     @Benchmark
-    fun searchPagesByTitle_singleToken(): Any = runBlocking {
+    fun searchPagesByTitleSingleToken(): Any = runBlocking {
         repo.searchPagesByTitle(query = "design", limit = 50).first()
     }
 
     @Benchmark
-    fun buildRankedList_50results(): Any {
+    fun buildRankedList50Results(): Any {
         return repo.buildRankedList(
             pages = benchPages,
             blocks = benchBlocks,
@@ -118,7 +118,7 @@ open class SearchBenchmark {
     }
 
     @Benchmark
-    fun ftsQueryBuilder_complexQuery(): String {
+    fun ftsQueryBuilderComplexQuery(): String {
         return FtsQueryBuilder.build("kotlin programming notes architecture performance testing")
     }
 

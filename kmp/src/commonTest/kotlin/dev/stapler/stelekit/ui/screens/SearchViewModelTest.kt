@@ -60,8 +60,10 @@ class SearchViewModelTest {
         @DirectRepositoryWrite
         override suspend fun recordPageVisit(pageUuid: String): Either<DomainError, Unit> = Unit.right()
 
+        @DirectRepositoryWrite
         override suspend fun rebuildFts(): Either<DomainError, Unit> = Unit.right()
 
+        @DirectRepositoryWrite
         override suspend fun integrityCheckFts(): Either<DomainError, Unit> = Unit.right()
     }
 

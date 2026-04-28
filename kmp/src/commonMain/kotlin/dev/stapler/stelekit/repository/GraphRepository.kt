@@ -424,12 +424,14 @@ interface SearchRepository {
      * Rebuild the FTS index for both blocks and pages.
      * O(N) operation — call from a non-blocking context.
      */
+    @DirectRepositoryWrite
     suspend fun rebuildFts(): Either<DomainError, Unit>
 
     /**
      * Check the integrity of the FTS index.
      * Returns Right(Unit) if healthy, Left with error if corrupt.
      */
+    @DirectRepositoryWrite
     suspend fun integrityCheckFts(): Either<DomainError, Unit>
 }
 

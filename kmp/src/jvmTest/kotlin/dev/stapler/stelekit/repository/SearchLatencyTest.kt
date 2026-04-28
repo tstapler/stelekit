@@ -55,7 +55,8 @@ class SearchLatencyTest {
 
         // Warm up — excluded from measurement
         repeat(5) { i ->
-            repo.searchWithFilters(SearchRequest(query = queryTerms[i % queryTerms.size], limit = 50)).first()
+            val r = repo.searchWithFilters(SearchRequest(query = queryTerms[i % queryTerms.size], limit = 50)).first()
+            assertTrue(r.isRight(), "Warm-up query $i should succeed")
         }
 
         // Measure 100 queries
@@ -63,15 +64,18 @@ class SearchLatencyTest {
         repeat(100) { i ->
             val query = queryTerms[i % queryTerms.size]
             val start = System.currentTimeMillis()
-            repo.searchWithFilters(SearchRequest(query = query, limit = 50)).first()
+            val r = repo.searchWithFilters(SearchRequest(query = query, limit = 50)).first()
             latencies.add(System.currentTimeMillis() - start)
+            assertTrue(r.isRight(), "Measured query $i should succeed")
         }
 
         latencies.sort()
-        val p99 = latencies[(latencies.size * 0.99).toInt()]
+        // Nearest-rank p99: ceil(0.99 * n) - 1 (0-based index)
+        val p99Idx = (Math.ceil(0.99 * latencies.size)).toInt() - 1
+        val p99 = latencies[p99Idx]
         assertTrue(
             p99 < 200,
-            "p99 latency ${p99}ms exceeded 200ms at 10k pages (p50=${latencies[50]}ms, max=${latencies.last()}ms)"
+            "p99 latency ${p99}ms exceeded 200ms at 10k pages (p50=${latencies[49]}ms, max=${latencies.last()}ms)"
         )
     }
 }

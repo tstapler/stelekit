@@ -23,7 +23,6 @@ import kotlin.test.assertTrue
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import dev.stapler.stelekit.repository.RankedSearchHit
-import kotlin.time.Duration.Companion.hours
 
 class SearchRepositoryIntegrationTests {
 

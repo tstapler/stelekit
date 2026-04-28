@@ -44,6 +44,7 @@ import kotlin.math.exp
  * Exact-title-match guarantee: after scoring, any page whose name equals the query
  * (case-insensitive, trimmed) is promoted to position 0.
  */
+@OptIn(DirectRepositoryWrite::class)
 class SqlDelightSearchRepository(
     private val database: SteleDatabase,
     private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
@@ -395,7 +396,7 @@ class SqlDelightSearchRepository(
             try {
                 val nowMs = HistogramWriter.epochMs()
                 if (writeActor != null) {
-                    writeActor.execute {
+                    writeActor.execute(priority = DatabaseWriteActor.Priority.LOW) {
                         @OptIn(DirectSqlWrite::class)
                         restricted.insertPageVisitIfAbsent(pageUuid, nowMs)
                         @OptIn(DirectSqlWrite::class)
@@ -425,7 +426,7 @@ class SqlDelightSearchRepository(
             try {
                 val sqlDriver = driver ?: return@withContext Unit.right()
                 if (writeActor != null) {
-                    writeActor.execute {
+                    writeActor.execute(priority = DatabaseWriteActor.Priority.LOW) {
                         sqlDriver.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('rebuild')", 0)
                         sqlDriver.execute(null, "INSERT INTO pages_fts(pages_fts) VALUES('rebuild')", 0)
                         Unit.right()

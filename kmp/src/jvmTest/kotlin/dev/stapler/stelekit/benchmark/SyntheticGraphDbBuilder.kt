@@ -40,7 +40,6 @@ object SyntheticGraphDbBuilder {
         db: SteleDatabase,
         pageCount: Int,
         blocksPerPage: Int = 10,
-        seed: Long = 42L,
     ) {
         val pageRepo = SqlDelightPageRepository(db)
         val blockRepo = SqlDelightBlockRepository(db)
