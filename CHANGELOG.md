@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/tstapler/stelekit/compare/v0.18.0...v0.18.1) (2026-04-28)
+
+
+### Bug Fixes
+
+* **journals:** fix journals showing Untitled, missing today's journal, and Claude API response deserialization ([16d2fc7](https://github.com/tstapler/stelekit/commit/16d2fc7cb7ff16cb65fb8f1e877ffefa6ee776a3))
+
 ## [0.18.0](https://github.com/tstapler/stelekit/compare/v0.17.0...v0.18.0) (2026-04-28)
 
 
