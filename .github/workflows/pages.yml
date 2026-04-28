@@ -29,7 +29,7 @@ jobs:
         # git diff HEAD~1 HEAD is reliable for squash merges and direct commits;
         # github.event.head_commit.modified is often empty for PR-merged commits.
         run: |
-          if git diff --name-only HEAD~1 HEAD | grep -qE '^(kmp/|gradle|settings\.gradle)'; then
+          if git diff --name-only HEAD~1 HEAD | grep -qE '^(kmp/|gradle|settings\.gradle|e2e/)'; then
             echo "kmp=true" >> "$GITHUB_OUTPUT"
           else
             echo "kmp=false" >> "$GITHUB_OUTPUT"
@@ -59,6 +59,23 @@ jobs:
         run: |
           find kmp/build/dist/wasmJs/productionExecutable -type f -size +90M \
             -exec echo "FILE TOO LARGE: {}" \; | grep . && exit 1 || true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Install Playwright Chromium
+        run: cd e2e && npm ci && npx playwright install --with-deps chromium
+      - name: Smoke-test WASM demo in headless Chromium
+        run: cd e2e && npx playwright test
+        env:
+          DEMO_DIST: ../kmp/build/dist/wasmJs/productionExecutable
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
           name: demo-dist

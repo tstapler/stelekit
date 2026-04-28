@@ -78,6 +78,9 @@ npm-debug.log
 yarn-error.log
 yarn.lock
 package-lock.json
+# Committed lockfiles for projects that use npm ci in CI
+!site/package-lock.json
+!e2e/package-lock.json
 
 
 # --------------------
@@ -110,6 +113,12 @@ static/fonts/
 public/js/
 public/css/
 resources/public/
+
+# --------------------
+# Playwright E2E
+# --------------------
+e2e/playwright-report/
+e2e/test-results/
 
 # --------------------
 # Claude Code
