@@ -8,11 +8,18 @@ import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.datetime.LocalDate
 import kotlin.time.Clock
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class GraphLoaderProgressiveTest {
 
@@ -35,6 +42,214 @@ class GraphLoaderProgressiveTest {
     private val pageRepository = InMemoryPageRepository()
     private val blockRepository = InMemoryBlockRepository()
     private val graphLoader = GraphLoader(fileSystem, pageRepository, blockRepository)
+
+    // ── Warm-start fast path ──────────────────────────────────────────────────
+
+    /**
+     * When the page repository already has cached journals (same graph, second launch),
+     * [GraphLoader.loadGraphProgressive] must call [onPhase1Complete] without reading any
+     * file content from the filesystem — the DB is the authoritative fast path.
+     */
+    @Test
+    fun `warm start fires onPhase1Complete before filesystem content is read`() = runBlocking {
+        val fsReadCount = AtomicInteger(0)
+        val trackingFs = object : FileSystem {
+            val files = mutableMapOf(
+                "/graph/journals/2026_04_13.md" to "- Journal entry"
+            )
+            override fun getDefaultGraphPath() = "/graph"
+            override fun expandTilde(path: String) = path
+            override fun readFile(path: String): String? {
+                fsReadCount.incrementAndGet()
+                return files[path]
+            }
+            override fun writeFile(path: String, content: String) = true
+            override fun listFiles(path: String) =
+                files.keys.filter { it.startsWith("$path/") }.map { it.substringAfterLast("/") }
+            override fun listDirectories(path: String) = emptyList<String>()
+            override fun fileExists(path: String) = files.containsKey(path)
+            override fun directoryExists(path: String) = true
+            override fun createDirectory(path: String) = true
+            override fun deleteFile(path: String) = true
+            override fun pickDirectory() = null
+            override fun getLastModifiedTime(path: String): Long? = 1000L
+        }
+
+        val warmPageRepo = InMemoryPageRepository()
+        val warmBlockRepo = InMemoryBlockRepository()
+        val now = Clock.System.now()
+
+        // Pre-populate: simulate journals already in DB from a prior session
+        warmPageRepo.savePage(
+            Page(
+                uuid = "journal-warm-1",
+                name = "2026-04-13",
+                filePath = "/graph/journals/2026_04_13.md",
+                createdAt = now, updatedAt = now,
+                isJournal = true,
+                journalDate = LocalDate(2026, 4, 13)
+            )
+        )
+
+        val loader = GraphLoader(trackingFs, warmPageRepo, warmBlockRepo)
+
+        var phase1Called = false
+        val fsReadsAtPhase1 = AtomicInteger(-1)
+
+        withTimeout(10_000) {
+            loader.loadGraphProgressive(
+                graphPath = "/graph",
+                immediateJournalCount = 10,
+                onProgress = {},
+                onPhase1Complete = {
+                    phase1Called = true
+                    fsReadsAtPhase1.set(fsReadCount.get())
+                },
+                onFullyLoaded = {}
+            )
+        }
+
+        assertTrue(phase1Called, "onPhase1Complete must be called on warm start")
+        assertEquals(0, fsReadsAtPhase1.get(),
+            "No file content must be read before onPhase1Complete fires on warm start")
+
+        loader.cancelBackgroundWork()
+    }
+
+    /**
+     * On a cold start (empty repository), [loadGraphProgressive] must read from the
+     * filesystem to discover journals and call both [onPhase1Complete] and [onFullyLoaded].
+     */
+    @Test
+    fun `cold start reads filesystem and calls both callbacks`() = runBlocking {
+        val fsReadCount = AtomicInteger(0)
+        val coldFs = object : FileSystem {
+            val files = mutableMapOf(
+                "/graph/journals/2026_04_13.md" to "- Cold start entry"
+            )
+            override fun getDefaultGraphPath() = "/graph"
+            override fun expandTilde(path: String) = path
+            override fun readFile(path: String): String? {
+                fsReadCount.incrementAndGet()
+                return files[path]
+            }
+            override fun writeFile(path: String, content: String) = true
+            override fun listFiles(path: String) =
+                files.keys.filter { it.startsWith("$path/") }.map { it.substringAfterLast("/") }
+            override fun listDirectories(path: String) = emptyList<String>()
+            override fun fileExists(path: String) = files.containsKey(path)
+            override fun directoryExists(path: String) = true
+            override fun createDirectory(path: String) = true
+            override fun deleteFile(path: String) = true
+            override fun pickDirectory() = null
+            override fun getLastModifiedTime(path: String): Long? = 1000L
+        }
+
+        val coldPageRepo = InMemoryPageRepository()
+        val coldBlockRepo = InMemoryBlockRepository()
+        val loader = GraphLoader(coldFs, coldPageRepo, coldBlockRepo)
+
+        var phase1Called = false
+        var fullyLoadedCalled = false
+
+        withTimeout(10_000) {
+            loader.loadGraphProgressive(
+                graphPath = "/graph",
+                immediateJournalCount = 10,
+                onProgress = {},
+                onPhase1Complete = { phase1Called = true },
+                onFullyLoaded = { fullyLoadedCalled = true }
+            )
+        }
+
+        assertTrue(phase1Called, "onPhase1Complete must be called on cold start")
+        assertTrue(fullyLoadedCalled, "onFullyLoaded must be called on cold start")
+        assertTrue(fsReadCount.get() > 0, "Cold start must read file content from filesystem")
+    }
+
+    /**
+     * [cancelBackgroundWork] must cancel the warm-reconcile job so [onFullyLoaded] is
+     * never called after cancellation — the job that tracks background indexing in
+     * [backgroundIndexJob] must be assigned before [loadGraphProgressive] returns.
+     *
+     * Strategy: block in [readFile] (called during background reconcile but NOT during
+     * the main warm-path setup or [sanitizeDirectory], which only calls readFile when a
+     * file needs renaming). The main path returns fast; we cancel before readFile unblocks.
+     */
+    @Test
+    fun `cancelBackgroundWork on warm start prevents onFullyLoaded from being called`() = runBlocking {
+        // Signal: background job has entered readFile
+        val jobStartedLatch = CountDownLatch(1)
+        // Gate: keeps the background job blocked until we release it
+        val blockingLatch = CountDownLatch(1)
+
+        val blockingFs = object : FileSystem {
+            override fun getDefaultGraphPath() = "/graph"
+            override fun expandTilde(path: String) = path
+            override fun readFile(path: String): String? {
+                // Signal that the background job has started file I/O
+                jobStartedLatch.countDown()
+                // Block until released — simulates slow SAF IPC call
+                blockingLatch.await(5, TimeUnit.SECONDS)
+                return "- content"
+            }
+            override fun writeFile(path: String, content: String) = true
+            override fun listFiles(path: String): List<String> =
+                if (path.endsWith("/journals")) listOf("2026-04-13.md") else emptyList()
+            override fun listDirectories(path: String) = emptyList<String>()
+            override fun fileExists(path: String) = false
+            override fun directoryExists(path: String) = true
+            override fun createDirectory(path: String) = true
+            override fun deleteFile(path: String) = true
+            override fun pickDirectory() = null
+            override fun getLastModifiedTime(path: String): Long? = 1000L
+        }
+
+        val cancelPageRepo = InMemoryPageRepository()
+        val cancelBlockRepo = InMemoryBlockRepository()
+        val now = Clock.System.now()
+
+        cancelPageRepo.savePage(
+            Page(
+                uuid = "journal-cancel-1",
+                name = "2026-04-13",
+                filePath = "/graph/journals/2026-04-13.md",
+                createdAt = now, updatedAt = now,
+                isJournal = true,
+                journalDate = LocalDate(2026, 4, 13)
+            )
+        )
+
+        val loader = GraphLoader(blockingFs, cancelPageRepo, cancelBlockRepo)
+        val fullyLoadedCalled = AtomicBoolean(false)
+
+        // Warm path launches background job and returns immediately — well within 10s
+        withTimeout(10_000) {
+            loader.loadGraphProgressive(
+                graphPath = "/graph",
+                immediateJournalCount = 10,
+                onProgress = {},
+                onPhase1Complete = {},
+                onFullyLoaded = { fullyLoadedCalled.set(true) }
+            )
+        }
+
+        // Wait for the background job to enter readFile (filesystem I/O started)
+        val started = jobStartedLatch.await(5, TimeUnit.SECONDS)
+        assertTrue(started, "Background job should have started readFile within 5s")
+
+        // Cancel the background job (simulates onTrimMemory)
+        loader.cancelBackgroundWork()
+
+        // Release the blocked thread — it will return but the coroutine is cancelled
+        blockingLatch.countDown()
+
+        // Give the coroutine time to observe cancellation and unwind
+        Thread.sleep(500)
+
+        assertFalse(fullyLoadedCalled.get(),
+            "onFullyLoaded must NOT be called after cancelBackgroundWork() on warm start")
+    }
 
     @Test
     fun `test progressive loading phases`() = runTest {

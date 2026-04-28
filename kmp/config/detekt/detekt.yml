@@ -39,7 +39,7 @@ Compose:
   CompositionLocalAllowlist:
     active: true
     # List any project-specific CompositionLocals that are intentionally global here
-    allowedCompositionLocals: ''
+    allowedCompositionLocals: 'LocalOpenSearchWithText'
   LambdaParameterInRestartableEffect:
     active: true
   ContentEmitterReturningValues:

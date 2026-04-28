@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.ui
 
+import androidx.compose.runtime.compositionLocalOf
 import dev.stapler.stelekit.docs.AllPagesDocs
 import dev.stapler.stelekit.docs.FlashcardsDocs
 import dev.stapler.stelekit.docs.HelpPage
@@ -45,6 +46,7 @@ data class AppState(
     val currentGraphPath: String = "",
     val commandPaletteVisible: Boolean = false,
     val searchDialogVisible: Boolean = false,
+    val searchDialogInitialQuery: String = "",
     val commands: List<Command> = emptyList(),
     val statusMessage: String = "Ready",
     // Navigation history for forward/back navigation
@@ -82,6 +84,9 @@ data class AppState(
     val canGoBack: Boolean get() = historyIndex > 0
     val canGoForward: Boolean get() = historyIndex < navigationHistory.size - 1
 }
+
+/** Opens the global search dialog pre-filled with the given text. */
+val LocalOpenSearchWithText = compositionLocalOf<(String) -> Unit> { {} }
 
 data class Command(
     val id: String,

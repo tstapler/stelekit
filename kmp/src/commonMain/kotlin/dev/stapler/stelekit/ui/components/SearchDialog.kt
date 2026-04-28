@@ -42,7 +42,7 @@ fun SearchDialog(
     viewModel: SearchViewModel,
     currentPageUuid: String? = null,
     onPageSelected: ((String) -> Unit)? = null,
-    initialQuery: String? = null,
+    initialQuery: String = "",
 ) {
     if (!visible) return
 
@@ -55,7 +55,7 @@ fun SearchDialog(
     LaunchedEffect(visible) {
         if (visible) {
             try { focusRequester.requestFocus() } catch (_: IllegalStateException) {}
-            viewModel.onQueryChange(initialQuery ?: "")
+            viewModel.onQueryChange(initialQuery)
         }
     }
 

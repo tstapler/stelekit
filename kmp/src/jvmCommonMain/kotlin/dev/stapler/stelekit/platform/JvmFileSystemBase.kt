@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.platform
 
+import dev.stapler.stelekit.logging.Logger
 import java.io.File
 import java.nio.file.Paths
 import java.util.concurrent.ConcurrentHashMap
@@ -8,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Base class for JVM file system implementations.
  */
 abstract class JvmFileSystemBase {
+    private val logger = Logger("FileSystem")
     companion object {
         const val MAX_PATH_LENGTH = 4096
         const val MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB
@@ -93,6 +95,7 @@ abstract class JvmFileSystemBase {
             file.writeText(content)
             true
         } catch (e: Exception) {
+            logger.error("writeFile failed: $path", e)
             false
         }
     }

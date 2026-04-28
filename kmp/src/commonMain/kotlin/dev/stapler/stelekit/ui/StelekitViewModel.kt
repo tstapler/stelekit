@@ -876,6 +876,15 @@ class StelekitViewModel(
         logger.info("Auto-save started")
     }
 
+    /**
+     * Called by the host Activity when the OS signals memory pressure
+     * (TRIM_MEMORY_RUNNING_CRITICAL). Cancels any in-flight background indexing so the
+     * coroutine and its parse buffers can be reclaimed immediately.
+     */
+    fun onMemoryPressure() {
+        graphLoader.cancelBackgroundWork()
+    }
+
     fun close() {
         scope.cancel()
     }
@@ -1111,8 +1120,11 @@ class StelekitViewModel(
         _uiState.update { it.copy(commandPaletteVisible = visible) }
     }
     
-    fun setSearchDialogVisible(visible: Boolean) {
-        _uiState.update { it.copy(searchDialogVisible = visible) }
+    fun setSearchDialogVisible(visible: Boolean, initialQuery: String = "") {
+        _uiState.update { it.copy(
+            searchDialogVisible = visible,
+            searchDialogInitialQuery = if (visible) initialQuery else ""
+        )}
     }
 
     fun setThemeMode(mode: StelekitThemeMode) {

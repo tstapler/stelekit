@@ -242,7 +242,7 @@ fun JournalsView(
                     showLinkPicker = false
                 },
                 viewModel = searchViewModel,
-                initialQuery = linkPickerInitialQuery,
+                initialQuery = linkPickerInitialQuery ?: "",
                 onPageSelected = { pageName ->
                     linkPickerBlockUuid?.let { blockUuid ->
                         viewModel.acceptLinkPickerResult(blockUuid, pageName, linkPickerSelectionRange, linkPickerCursorIndex)

@@ -102,6 +102,30 @@ Platform abstracts → platform/
 - `AppState`: global UI flags (sidebar, search dialog, command palette)
 - `BlockStateManager`: isolated block editing state per block
 
+### Error handling — Arrow `Either`
+
+All repository and service methods use [Arrow](https://arrow-kt.io)'s `Either<DomainError, T>` for error-returning operations. **Do not use `Result<T>`, nullable returns, or thrown exceptions for domain errors at repository boundaries.**
+
+```kotlin
+// Return success
+return Unit.right()
+return page.right()
+
+// Return failure
+return DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+
+// Consume at call site
+result.onLeft { e -> logger.error("failed: ${e.message}") }
+result.getOrNull()           // null on failure
+result.fold({ err -> … }, { value -> … })
+```
+
+Rules:
+- **Repository interfaces** return `Either<DomainError, T>` for `suspend fun` and `Flow<Either<DomainError, T>>` for reactive queries.
+- **Never** let SQLite exceptions propagate raw — wrap in `DomainError.DatabaseError.WriteFailed`.
+- **`getOrNull()`** is fine for internal callers that treat failure as absence. Use `.fold` or `.onLeft` when the error needs to be surfaced.
+- Arrow is already on the classpath via `commonMain`; import `arrow.core.Either`, `arrow.core.left`, `arrow.core.right`.
+
 ### Database
 
 SQLDelight 2.3.2 generates type-safe Kotlin from `.sq` files in `kmp/src/commonMain/sqldelight/`. Schema in `SteleDatabase.sq`.

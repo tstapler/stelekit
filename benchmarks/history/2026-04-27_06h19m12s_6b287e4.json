@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-04-27 06:19:12 UTC",
+  "gitSha": "6b287e4",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 4,
+  "phase3Ms": 13,
+  "totalMs": 26,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 33,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 129,
+      "pct": 69.0
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 10,
+      "pct": 5.3
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 4,
+      "pct": 2.1
+    },
+    {
+      "frame": "java.lang.ref.SoftReference_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "short[]_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "long[]_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.util.HashMap$Node[]_[k]",
+      "samples": 2,
+      "pct": 1.1
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2103,
+      "pct": 99.6
+    },
+    {
+      "frame": "kotlin/collections/ArrayAsCollection.toArray_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "int UNICODE::utf8_length<signed char>",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/reflect/Array.newInstance_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pthread_cond_broadcast",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "jdk/internal/misc/Unsafe.getReferenceVolatile_[j]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/flow/internal/SafeCollector.getContext_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "Assembler::addq",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "CompressedReadStream::read_signed_int",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/channels/BufferedChannel$onReceive$1.<clinit>_[0]",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 0,
+      "totalMs": 0
+    }
+  ]
+}

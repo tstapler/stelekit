@@ -333,7 +333,7 @@ fun PageView(
                     showLinkPicker = false
                 },
                 viewModel = searchViewModel,
-                initialQuery = linkPickerInitialQuery,
+                initialQuery = linkPickerInitialQuery ?: "",
                 onPageSelected = { pageName ->
                     linkPickerBlockUuid?.let { blockUuid ->
                         blockStateManager.acceptLinkPickerResult(blockUuid, pageName, linkPickerSelectionRange, linkPickerCursorIndex)

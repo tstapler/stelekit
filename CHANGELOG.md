@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.16.3](https://github.com/tstapler/stelekit/compare/v0.16.2...v0.16.3) (2026-04-27)
+
+
+### Bug Fixes
+
+* **startup:** track warm reconcile job in backgroundIndexJob ([833296a](https://github.com/tstapler/stelekit/commit/833296a6620b0cf6322dd16ae007486952442d8a))
+* **writer:** surface writeFile exceptions and fix misleading success log ([ca898c7](https://github.com/tstapler/stelekit/commit/ca898c77098c992f877fcaa75f3cd7ea26008ab1))
+
+## [0.16.2](https://github.com/tstapler/stelekit/compare/v0.16.1...v0.16.2) (2026-04-27)
+
+
+### Performance Improvements
+
+* **android:** fix 27s startup, wrong SAF directory creation, and memory pressure ([fe94e7d](https://github.com/tstapler/stelekit/commit/fe94e7d0d48ebcc7e4b84c3ecedf0bc0490ccda8))
+* **cache:** don't populate page caches during bulk background indexing ([f8a9c10](https://github.com/tstapler/stelekit/commit/f8a9c106bfa31b473afd279ae6d8799c5b177404))
+* **startup:** warm-start fast path in loadGraphProgressive + Arrow docs ([e251ada](https://github.com/tstapler/stelekit/commit/e251adade93eee5b58b0eac73eb521cad6f7425c))
+
+## [0.16.1](https://github.com/tstapler/stelekit/compare/v0.16.0...v0.16.1) (2026-04-27)
+
+
+### Bug Fixes
+
+* **ux:** surface live logs on all loading screens ([f1d7de5](https://github.com/tstapler/stelekit/commit/f1d7de5940bf68e3153abc30fc92cc960f3221e8))
+
+## [0.16.0](https://github.com/tstapler/stelekit/compare/v0.15.0...v0.16.0) (2026-04-27)
+
+
+### Features
+
+* **arrow:** full Arrow 2.x integration — typed errors, optics, saga, and resilience ([016bdf5](https://github.com/tstapler/stelekit/commit/016bdf532dc93e322e2e91e3585f49d3549ff730))
+
+
+### Bug Fixes
+
+* **build:** resolve Either/Result type mismatches after merging main ([1103a14](https://github.com/tstapler/stelekit/commit/1103a14fdeb5a301397f58bcb34402addacc6841))
+
 ## [0.15.0](https://github.com/tstapler/stelekit/compare/v0.14.0...v0.15.0) (2026-04-27)
 
 

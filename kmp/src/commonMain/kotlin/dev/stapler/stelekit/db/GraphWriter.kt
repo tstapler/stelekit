@@ -73,21 +73,17 @@ class GraphWriter(
             snapshot.map { it.second }
         }
         pending.forEach { request ->
-            try {
-                savePageInternal(request.page, request.blocks, request.graphPath)
+            val success = savePageInternal(request.page, request.blocks, request.graphPath)
+            if (success) {
                 logger.info("Flushed page: ${request.page.name}")
-            } catch (e: Exception) {
-                logger.error("Failed to flush page: ${request.page.name}", e)
             }
         }
     }
 
     private suspend fun saveImmediately(request: SaveRequest) {
-        try {
-            savePageInternal(request.page, request.blocks, request.graphPath)
+        val success = savePageInternal(request.page, request.blocks, request.graphPath)
+        if (success) {
             logger.info("Saved page: ${request.page.name}")
-        } catch (e: Exception) {
-            logger.error("Failed to save page: ${request.page.name}", e)
         }
     }
 
@@ -192,7 +188,7 @@ class GraphWriter(
      * On any step failure the saga runs compensations in reverse order, ensuring the
      * on-disk state is rolled back before the error propagates.
      */
-    private suspend fun savePageInternal(page: Page, blocks: List<Block>, graphPath: String): Unit =
+    private suspend fun savePageInternal(page: Page, blocks: List<Block>, graphPath: String): Boolean =
         saveMutex.withLock {
             val filePath = if (!page.filePath.isNullOrBlank()) {
                 page.filePath
@@ -211,7 +207,7 @@ class GraphWriter(
                         "Safety check triggered: Attempting to delete more than 50% of blocks on page " +
                             "'${page.name}' ($oldBlockCount -> $newBlockCount). Save aborted."
                     )
-                    return@withLock
+                    return@withLock false
                 }
             }
 
@@ -220,6 +216,7 @@ class GraphWriter(
             // Run the saga — transact() throws on failure; runCatching logs and swallows.
             // The saga { } builder annotates the block with @SagaDSLMarker so inner saga()
             // calls resolve correctly via SagaScope. .transact() executes the pipeline.
+            var succeeded = false
             runCatching {
                 saga {
                     // Step 1: write markdown file — rollback restores previous content
@@ -281,9 +278,11 @@ class GraphWriter(
 
                     logger.debug("Saved page to: $filePath")
                 }.transact()
+                succeeded = true
             }.onFailure { e ->
                 logger.error("Failed to write file: $filePath", e)
             }
+            succeeded
         }
 
     private fun buildMarkdown(page: Page, blocks: List<Block>): String = buildString {

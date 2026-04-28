@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-04-27 14:25:35 UTC",
+  "gitSha": "e251ada",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 9,
+  "phase2Ms": 3,
+  "phase3Ms": 15,
+  "totalMs": 27,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 29,
+  "jankLoadP50Ms": 2,
+  "jankLoadP95Ms": 2,
+  "jankFactor": 0.07,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 128,
+      "pct": 67.0
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 9,
+      "pct": 4.7
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 4,
+      "pct": 2.1
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.net.URL_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.lang.reflect.Method_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.util.ArrayList$Itr_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.FieldWriter_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "kotlin.ranges.IntRange_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2110,
+      "pct": 99.5
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "CodeCache::reverse_free_ratio",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "UTF8::is_legal_utf8",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SystemDictionary::resolve_or_fail",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "frame::sender",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "org/sqlite/core/DB.execute_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/CoroutineContextKt.hasCopyableElements_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/serialization/json/internal/StreamingJsonEncoder.encodeElement_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__xstat64",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}

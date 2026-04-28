@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-04-27 06:11:26 UTC",
+  "gitSha": "f1d7de5",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 3,
+  "phase3Ms": 14,
+  "totalMs": 27,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 26,
+  "jankLoadP50Ms": 2,
+  "jankLoadP95Ms": 2,
+  "jankFactor": 0.08,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 132,
+      "pct": 67.7
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 14,
+      "pct": 7.2
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 6,
+      "pct": 3.1
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 4,
+      "pct": 2.1
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.net.URL_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.util.HashMap$Node[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "kotlin.Pair_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.Class[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2106,
+      "pct": 99.3
+    },
+    {
+      "frame": "I2C/C2I adapters(0xbb)",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "InstanceKlass::module",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "dev/stapler/stelekit/repository/RepositoryFactoryImpl$wireCacheCallbacks$1.invoke_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/EventLoopImplBase.isCompleted_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "dev/stapler/stelekit/performance/TimingDriverWrapper.executeQuery_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlin/time/Instant.toEpochMilliseconds_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/util/zip/ZipFile.ensureOpenOrZipException_[i]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__tls_get_addr",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ClassFileParser::copy_localvariable_table",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}

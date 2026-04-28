@@ -25,7 +25,8 @@ import kotlin.time.Instant
  */
 @OptIn(DirectRepositoryWrite::class)
 class SqlDelightPageRepository(
-    private val database: SteleDatabase
+    private val database: SteleDatabase,
+    private val cacheWrites: Boolean = true,
 ) : PageRepository {
 
     private val queries = database.steleDatabaseQueries
@@ -132,8 +133,10 @@ class SqlDelightPageRepository(
     override suspend fun savePage(page: Page): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             upsertPage(page)
-            pageByUuidCache.put(page.uuid, page)
-            pageByNameCache.put(page.name.lowercase(), page)
+            if (cacheWrites) {
+                pageByUuidCache.put(page.uuid, page)
+                pageByNameCache.put(page.name.lowercase(), page)
+            }
             Unit.right()
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
@@ -146,10 +149,9 @@ class SqlDelightPageRepository(
             queries.transaction {
                 pages.forEach { page -> upsertPage(page) }
             }
-            pages.forEach { page ->
-                pageByUuidCache.put(page.uuid, page)
-                pageByNameCache.put(page.name.lowercase(), page)
-            }
+            // Do not populate caches here — savePages is used by background bulk indexing
+            // (thousands of cold pages). Caching them evicts the warm journals the user is
+            // actively reading. Reads populate the cache on first access, which is sufficient.
             Unit.right()
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
@@ -230,6 +232,11 @@ class SqlDelightPageRepository(
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
+
+    override suspend fun cacheEvictAll(): Unit = withContext(PlatformDispatcher.DB) {
+        pageByUuidCache.invalidateAll()
+        pageByNameCache.invalidateAll()
+    }
 
     override suspend fun clear(): Unit = withContext(PlatformDispatcher.DB) {
         queries.deleteAllPages()

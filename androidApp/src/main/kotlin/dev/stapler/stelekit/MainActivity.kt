@@ -35,6 +35,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 
     private var graphManager: GraphManager? = null
+    private var onMemoryPressureHandler: (() -> Unit)? = null
     private var pendingFolderPick: CompletableDeferred<String?>? = null
     private var pendingMicPermission: CompletableDeferred<Boolean>? = null
 
@@ -166,15 +167,26 @@ class MainActivity : ComponentActivity() {
                 deviceSttAvailable = deviceSttAvailable,
                 deviceLlmAvailable = deviceLlmAvailable,
                 onGraphManagerReady = { gm -> graphManager = gm },
+                onMemoryPressure = { handler -> onMemoryPressureHandler = handler },
             )
         }
     }
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
-            lifecycleScope.launch {
-                graphManager?.activeRepositorySet?.value?.blockRepository?.cacheEvictAll()
+        val repos = graphManager?.activeRepositorySet?.value ?: return
+        lifecycleScope.launch {
+            // RUNNING_LOW (10) and above: free page caches (~10 MB on a typical device).
+            // This includes UI_HIDDEN (20), BACKGROUND (40), MODERATE (60), COMPLETE (80),
+            // so page caches are always released when the app is backgrounded.
+            if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+                repos.pageRepository.cacheEvictAll()
+            }
+            // RUNNING_CRITICAL (15) and above: also release block caches (~15 MB) and
+            // cancel background indexing to free parse buffers and coroutine stacks.
+            if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
+                repos.blockRepository.cacheEvictAll()
+                onMemoryPressureHandler?.invoke()
             }
         }
     }

@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-04-27 13:39:27 UTC",
+  "gitSha": "9f1128b",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 3,
+  "phase3Ms": 15,
+  "totalMs": 27,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 31,
+  "jankLoadP50Ms": 2,
+  "jankLoadP95Ms": 2,
+  "jankFactor": 0.06,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 136,
+      "pct": 72.7
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 9,
+      "pct": 4.8
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 6,
+      "pct": 3.2
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 5,
+      "pct": 2.7
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.util.ArrayList$Itr_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.MethodWriter_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.Label_[k]",
+      "samples": 2,
+      "pct": 1.1
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2117,
+      "pct": 99.5
+    },
+    {
+      "frame": "java/util/zip/ZipFile$Source.getEntryPos_[i]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pread",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/util/concurrent/ConcurrentHashMap.computeIfAbsent_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/serialization/json/internal/WriteModeKt.switchMode_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "InstanceKlass::find_method_index",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "BarrierSetNMethod::nmethod_stub_entry_barrier",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "JVM_LookupDefineClass",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}

@@ -120,6 +120,12 @@ fun StelekitApp(
     spanRecorder: SpanRecorder = NoOpSpanRecorder,
     /** Called once the GraphManager instance is ready. Used by the host Activity for onTrimMemory. */
     onGraphManagerReady: ((GraphManager) -> Unit)? = null,
+    /**
+     * Registers a memory-pressure handler. The lambda receives a [() -> Unit] callback;
+     * the host Activity should store it and invoke it when onTrimMemory fires. Mirrors the
+     * [onGraphManagerReady] pattern.
+     */
+    onMemoryPressure: (((() -> Unit) -> Unit))? = null,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -249,12 +255,7 @@ fun StelekitApp(
     if (repos == null || !migrationReady) {
         // Show loading state while repositories are being initialized or migration is running
         StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
+            LoadingOverlay("Initializing…")
         }
         return
     }
@@ -277,6 +278,7 @@ fun StelekitApp(
             deviceSttAvailable = deviceSttAvailable,
             deviceLlmAvailable = deviceLlmAvailable,
             spanRecorder = spanRecorder,
+            onMemoryPressure = onMemoryPressure,
         )
     }
 }
@@ -305,6 +307,7 @@ private fun GraphContent(
     deviceSttAvailable: Boolean = false,
     deviceLlmAvailable: Boolean = false,
     spanRecorder: SpanRecorder = NoOpSpanRecorder,
+    onMemoryPressure: (((() -> Unit) -> Unit))? = null,
 ) {
     CompositionLocalProvider(LocalSpanRecorder provides spanRecorder) {
     val scope = rememberCoroutineScope()
@@ -321,6 +324,7 @@ private fun GraphContent(
             repos.blockRepository,
             repos.journalService,
             externalWriteActor = repos.writeActor,
+            backgroundPageRepository = repos.backgroundPageRepository,
             sidecarManager = sidecarManager,
             spanRepository = repos.spanRepository,
         ).also { it.onBulkImportComplete = repos.onBulkImportComplete }
@@ -390,6 +394,11 @@ private fun GraphContent(
     // (e.g. after an activity recreation on Android).
     LaunchedEffect(clipboardProvider) {
         viewModel.setClipboardProvider(clipboardProvider)
+    }
+
+    // Register the memory-pressure handler so the host Activity can invoke it.
+    LaunchedEffect(viewModel) {
+        onMemoryPressure?.invoke { viewModel.onMemoryPressure() }
     }
 
     // Bootstrap loadGraph when the ViewModel has no persisted path but GraphManager has an
@@ -550,7 +559,10 @@ private fun GraphContent(
                     val windowSizeClass = windowSizeClassFor(maxWidth)
                     val isMobile = windowSizeClass.isMobile
 
-                    CompositionLocalProvider(LocalWindowSizeClass provides windowSizeClass) {
+                    CompositionLocalProvider(
+                        LocalWindowSizeClass provides windowSizeClass,
+                        LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) }
+                    ) {
 
                     // Auto-manage sidebar based on layout: open on desktop, closed on mobile.
                     // Fires once per isMobile change — handles fold/unfold transitions too.
@@ -951,7 +963,8 @@ private fun GraphDialogLayer(
         onDismiss = { viewModel.setSearchDialogVisible(false) },
         onNavigateToPage = { viewModel.navigateToPageByUuid(it) },
         onNavigateToBlock = { viewModel.navigateToBlock(it) },
-        onCreatePage = { viewModel.navigateToPageByName(it) }
+        onCreatePage = { viewModel.navigateToPageByName(it) },
+        initialQuery = appState.searchDialogInitialQuery
     )
 
     SettingsDialog(

@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-04-27 13:25:28 UTC",
+  "gitSha": "23d57f1",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 8,
+  "phase2Ms": 3,
+  "phase3Ms": 13,
+  "totalMs": 23,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 35,
+  "jankLoadP50Ms": 2,
+  "jankLoadP95Ms": 2,
+  "jankFactor": 0.06,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 119,
+      "pct": 61.0
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 7,
+      "pct": 3.6
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 6,
+      "pct": 3.1
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 5,
+      "pct": 2.6
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 4,
+      "pct": 2.1
+    },
+    {
+      "frame": "java.util.jar.JarFile$JarFileEntry_[k]",
+      "samples": 4,
+      "pct": 2.1
+    },
+    {
+      "frame": "java.io.File_[k]",
+      "samples": 4,
+      "pct": 2.1
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "char[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2117,
+      "pct": 99.4
+    },
+    {
+      "frame": "Java_org_sqlite_core_NativeDB_prepare_1utf8",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/String.encodeUTF8_UTF16_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/invoke/DirectMethodHandle.constructorMethod_[i]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "org/sqlite/core/CorePreparedStatement$$Lambda.0x00007fcc301830a0.run_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/Thread.setName_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/Class.createAnnotationData_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/flow/internal/SafeCollector.checkContext_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/net/URLStreamHandler.setURL_[1]",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 0,
+      "totalMs": 0
+    }
+  ]
+}

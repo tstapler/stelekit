@@ -1,11 +1,11 @@
 # Tasks
 
-- [ ] SteleKit Site — Astro + Starlight GitHub Pages site with CI/CD pipeline, landing page, user docs, developer docs, and demo page; depends on browser-wasm-demo.md for demo embed (docs/tasks/stelekit-site.md)
-- [ ] Browser Wasm Demo — migrate `js(IR)` to `wasmJs` + `CanvasBasedWindow`, rendering the real Compose UI in-browser via Skia canvas; switch SQLDelight to IN_MEMORY backend for demo (docs/tasks/browser-wasm-demo.md)
-- [ ] Recent Pages — per-graph visit history in left sidebar showing last 10 visited pages, persists across sessions (docs/tasks/recent-pages.md)
+- [x] SteleKit Site — Astro + Starlight GitHub Pages site with CI/CD pipeline, landing page, user docs, developer docs, and demo page (PR #3; archived)
+- [x] Browser Wasm Demo — `wasmJs` + `CanvasBasedWindow` rendering real Compose UI in-browser via Skia canvas (PR #3; archived)
+- [x] Recent Pages — per-graph visit history in left sidebar showing last 10 visited pages, persists across sessions (StelekitViewModel.kt; archived)
+- [x] All Pages View — sortable table of every page with backlink counts, name filter, journal/page toggle, and multi-select bulk delete (AllPagesScreen.kt; archived)
+- [x] Progressive Data Loading — repository-level pagination via getPages(limit, offset) (SqlDelightPageRepository.kt; archived)
 - [ ] Copy / Cut / Paste Blocks — Ctrl+C/X/V block-tree clipboard with undo, external Markdown paste, and Ctrl+Shift+V block reference paste (docs/tasks/copy-cut-paste-blocks.md)
-- [ ] All Pages View — sortable table of every page with backlink counts, name filter, journal/page toggle, and multi-select bulk delete (docs/tasks/all-pages-view.md)
-- [ ] Implement Progressive Data Loading Plan (docs/tasks/progressive-loading.md)
 - [ ] Multi-block selection with drag-and-drop reparenting and deletion, including mobile support (docs/tasks/multi-block-selection.md)
 - [ ] Task Management UI — TODO/DOING/DONE cycling, priorities, SCHEDULED/DEADLINE chips, agenda section (docs/tasks/task-management-ui.md)
 - [ ] Graph View — force-directed knowledge graph visualization with global view, local panel, namespace clustering, and filter controls (docs/tasks/graph-view.md)

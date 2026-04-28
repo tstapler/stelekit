@@ -297,6 +297,9 @@ interface PageRepository {
      */
     @DirectRepositoryWrite
     suspend fun clear()
+
+    /** Evict all in-memory caches without touching the database. No-op by default. */
+    suspend fun cacheEvictAll() {}
 }
 
 /**
@@ -567,6 +570,8 @@ interface RepositoryFactory {
 data class RepositorySet(
     val blockRepository: BlockRepository,
     val pageRepository: PageRepository,
+    /** Write-only view of [pageRepository] with cache population disabled. For background indexing. */
+    val backgroundPageRepository: PageRepository = pageRepository,
     val propertyRepository: PropertyRepository,
     val referenceRepository: ReferenceRepository,
     val searchRepository: SearchRepository,

@@ -280,11 +280,21 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val df = DocumentFile.fromSingleUri(ctx, docUri)
             if (df?.exists() == true && df.isDirectory) return true
             val dirName = path.substringAfterLast('/')
-            // Use fromTreeUri on the tree root for the parent — fromSingleUri's createDirectory
-            // is gated on isDirectory() which can fail for non-tree document URIs.
-            val safTreeUri = treeUri ?: return false
-            val parentDocFile = DocumentFile.fromTreeUri(ctx, safTreeUri)
-            parentDocFile?.createDirectory(dirName) != null
+            val parentPath = path.substring(0, path.lastIndexOf('/'))
+            // Ensure ancestor directories exist first (e.g. .stelekit/ before .stelekit/pages/).
+            if (!directoryExists(parentPath)) {
+                if (!createDirectory(parentPath)) return false
+            }
+            // Create the directory inside the CORRECT parent, not at the tree root.
+            // The old code used fromTreeUri(safTreeUri) which always resolved to the wiki
+            // root, causing Android to auto-rename duplicate sub-dirs as "pages (1)", "pages (2)".
+            val parentDocUri = parseDocumentUri(parentPath)
+            DocumentsContract.createDocument(
+                ctx.contentResolver,
+                parentDocUri,
+                DocumentsContract.Document.MIME_TYPE_DIR,
+                dirName,
+            ) != null
         } catch (e: SecurityException) { false }
         catch (e: IllegalArgumentException) { false }
         catch (e: Exception) { false }
