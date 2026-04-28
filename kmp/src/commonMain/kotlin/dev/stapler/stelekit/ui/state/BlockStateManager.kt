@@ -468,7 +468,10 @@ class BlockStateManager(
         val pageUuid = _blocks.value.entries.find { (_, blocks) -> blocks.any { it.uuid == blockUuid } }?.key
             ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()?.pageUuid
             ?: return@launch
-        blockRepository.updateBlockPropertiesOnly(blockUuid, newProperties)
+        val propsResult = blockRepository.updateBlockPropertiesOnly(blockUuid, newProperties)
+        if (propsResult.isLeft()) {
+            logger.warn("updateBlockProperties: DB write failed for $blockUuid — properties live in-memory only")
+        }
         _blocks.update { current ->
             val newBlocks = current.toMutableMap()
             val pageBlocks = newBlocks[pageUuid]?.toMutableList() ?: return@update current

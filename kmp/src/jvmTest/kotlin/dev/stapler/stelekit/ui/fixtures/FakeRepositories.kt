@@ -168,7 +168,7 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
 
     override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> {
         val existing = _blocks.value[blockUuid] ?: return Unit.right()
-        _blocks.value = _blocks.value + (blockUuid to existing.copy(content = content, version = existing.version + 1))
+        _blocks.value = _blocks.value + (blockUuid to existing.copy(content = content, version = existing.version + 1, updatedAt = Clock.System.now()))
         return Unit.right()
     }
 

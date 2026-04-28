@@ -203,7 +203,7 @@ class DatascriptBlockRepository : BlockRepository {
             try {
                 val current = blocks.value.toMutableMap()
                 val existing = current[blockUuid] ?: return@withLock Unit.right()
-                val updated = existing.copy(content = content, version = existing.version + 1)
+                val updated = existing.copy(content = content, version = existing.version + 1, updatedAt = kotlin.time.Clock.System.now())
                 batchUpdateBlocks(mapOf(blockUuid to updated))
                 Unit.right()
             } catch (e: Exception) {

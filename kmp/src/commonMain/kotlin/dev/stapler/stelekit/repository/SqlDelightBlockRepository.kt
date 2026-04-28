@@ -267,7 +267,7 @@ class SqlDelightBlockRepository(
     override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {
             try {
-                queries.updateBlockContent(content, Clock.System.now().toEpochMilliseconds(), blockUuid)
+                queries.updateBlockContent(content, Clock.System.now().toEpochMilliseconds(), ContentHasher.sha256ForContent(content), blockUuid)
                 blockCache.remove(blockUuid)
                 Unit.right()
             } catch (e: Exception) {
@@ -617,8 +617,9 @@ class SqlDelightBlockRepository(
                 // 1. Update content of block A
                 val mergedContent = blockA.content + separator + blockB.content
                 queries.updateBlockContent(
-                    mergedContent, 
-                    Clock.System.now().toEpochMilliseconds(), 
+                    mergedContent,
+                    Clock.System.now().toEpochMilliseconds(),
+                    ContentHasher.sha256ForContent(mergedContent),
                     blockA.uuid
                 )
                 
@@ -667,7 +668,7 @@ class SqlDelightBlockRepository(
                 val secondPart = content.substring(cursorPosition).trim()
                 
                 // 1. Update original block
-                queries.updateBlockContent(firstPart, Clock.System.now().toEpochMilliseconds(), block.uuid)
+                queries.updateBlockContent(firstPart, Clock.System.now().toEpochMilliseconds(), ContentHasher.sha256ForContent(firstPart), block.uuid)
                 
                 // 2. Create new block
                 val newUuid = UuidGenerator.generateV7()

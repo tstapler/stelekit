@@ -144,7 +144,7 @@ class InMemoryBlockRepository : BlockRepository {
     override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> {
         val current = blocks.value.toMutableMap()
         val existing = current[blockUuid] ?: return Unit.right()
-        current[blockUuid] = existing.copy(content = content, version = existing.version + 1)
+        current[blockUuid] = existing.copy(content = content, version = existing.version + 1, updatedAt = kotlin.time.Clock.System.now())
         blocks.value = current
         return Unit.right()
     }

@@ -49,16 +49,16 @@ class SaveBlockWithCopyRule(config: Config = Config.empty) : Rule(config) {
     // Fields that can be safely updated via updateBlockContentOnly()
     // Linked to: Block data class in model/Models.kt
     private val contentOnlyFields = setOf(
-        "content", "version", "updatedAt", "searchContent", "contentHash", "blockType"
+        "content", "version", "updatedAt", "contentHash", "blockType"
     )
 
     // Fields that can be safely updated via updateBlockPropertiesOnly()
     private val propertiesOnlyFields = setOf("properties")
 
     // Structural fields that require full-row writes — changes to these are safe in saveBlock
+    // Matches exactly the fields of the Block data class that define tree position/identity.
     private val structuralFields = setOf(
-        "parentUuid", "pageUuid", "leftUuid", "position", "order", "level",
-        "isCollapsed", "childrenCount", "depth", "uuid", "createdAt"
+        "parentUuid", "pageUuid", "leftUuid", "position", "level", "uuid", "createdAt", "isLoaded"
     )
 
     override fun visitCallExpression(expression: KtCallExpression) {

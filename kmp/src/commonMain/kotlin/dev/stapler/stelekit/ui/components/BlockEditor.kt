@@ -34,9 +34,9 @@ private val WORD_BOUNDARY_CHARS = setOf(' ', '\t', '\n', '.', ',', ';', ':', '!'
 internal fun findWordStart(text: String, position: Int): Int {
     var i = position
     while (i > 0) {
-        // Stop at [[ or ]] boundaries
-        if (i >= 2 && text.substring(i - 2, i) == "[[") return i
-        if (i >= 2 && text.substring(i - 2, i) == "]]") return i
+        // Stop at [[ or ]] boundaries (avoid substring allocation on hot path)
+        if (i >= 2 && text[i - 2] == '[' && text[i - 1] == '[') return i
+        if (i >= 2 && text[i - 2] == ']' && text[i - 1] == ']') return i
         if (text[i - 1] in WORD_BOUNDARY_CHARS) return i
         i--
     }
@@ -51,9 +51,9 @@ internal fun findWordEnd(text: String, position: Int): Int {
     var i = position
     val len = text.length
     while (i < len) {
-        // Stop at [[ or ]] boundaries
-        if (i + 2 <= len && text.substring(i, i + 2) == "[[") return i
-        if (i + 2 <= len && text.substring(i, i + 2) == "]]") return i
+        // Stop at [[ or ]] boundaries (avoid substring allocation on hot path)
+        if (i + 2 <= len && text[i] == '[' && text[i + 1] == '[') return i
+        if (i + 2 <= len && text[i] == ']' && text[i + 1] == ']') return i
         if (text[i] in WORD_BOUNDARY_CHARS) return i
         i++
     }

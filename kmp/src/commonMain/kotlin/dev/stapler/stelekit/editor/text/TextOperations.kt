@@ -60,9 +60,9 @@ class TextOperations(
             updateTextState(blockId, newState)
             
             // Update block content in repository
-            blockRepository.updateBlockContentOnly(blockId,newText)
+            val r1 = blockRepository.updateBlockContentOnly(blockId, newText)
             PerformanceMonitor.endTrace(traceId)
-            Unit.right()
+            r1
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -92,11 +92,11 @@ class TextOperations(
             )
             
             updateTextState(blockId, newState)
-            
+
             // Update block content in repository
-            blockRepository.updateBlockContentOnly(blockId,updatedText)
+            val r2 = blockRepository.updateBlockContentOnly(blockId, updatedText)
             PerformanceMonitor.endTrace(traceId)
-            Unit.right()
+            r2
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -125,11 +125,11 @@ class TextOperations(
             )
             
             updateTextState(blockId, newState)
-            
+
             // Update block content in repository
-            blockRepository.updateBlockContentOnly(blockId,updatedText)
+            val r3 = blockRepository.updateBlockContentOnly(blockId, updatedText)
             PerformanceMonitor.endTrace(traceId)
-            Unit.right()
+            r3
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -359,10 +359,9 @@ class TextOperations(
             )
             
             updateTextState(blockId, newState)
-            
+
             // Update block content in repository
-            blockRepository.updateBlockContentOnly(blockId,newText)
-            Unit.right()
+            blockRepository.updateBlockContentOnly(blockId, newText)
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -395,10 +394,9 @@ class TextOperations(
             )
             
             updateTextState(blockId, newState)
-            
+
             // Update block content in repository
-            blockRepository.updateBlockContentOnly(blockId,newText)
-            Unit.right()
+            blockRepository.updateBlockContentOnly(blockId, newText)
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -436,10 +434,9 @@ class TextOperations(
             )
             
             updateTextState(blockId, newState)
-            
+
             // Update block content in repository
-            blockRepository.updateBlockContentOnly(blockId,updatedContent)
-            Unit.right()
+            blockRepository.updateBlockContentOnly(blockId, updatedContent)
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
