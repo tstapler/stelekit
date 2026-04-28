@@ -582,4 +582,150 @@ class BlockStateManagerTest {
         assertTrue(manager.hasPendingDiskWrite(otherPageUuid),
             "Unrelated page's write must still be pending")
     }
+
+    // ---- insertLinkAtCursor — overrideCursorIndex ----
+
+    @Test
+    fun insertLinkAtCursor_usesOverrideCursorIndex_whenEditingCursorIsNull() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        val block = createBlock("b1", content = "Hello world", version = 0)
+        blockRepo.saveBlock(block)
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        // Simulate: dialog opened, focus lost, cursor nulled
+        manager.requestEditBlock(null)
+        assertNull(manager.editingCursorIndex.value)
+
+        // Insert at position 5 using override
+        manager.insertLinkAtCursor("b1", "MyPage", overrideCursorIndex = 5)
+        advanceUntilIdle()
+
+        val updated = blockRepo.getBlockByUuid("b1").first().getOrNull()
+        assertNotNull(updated)
+        assertEquals("Hello[[MyPage]] world", updated.content,
+            "Link should be inserted at position 5 (override), not at content.length")
+    }
+
+    @Test
+    fun insertLinkAtCursor_fallsBackToContentLength_whenBothNull() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        val block = createBlock("b1", content = "Hi", version = 0)
+        blockRepo.saveBlock(block)
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.requestEditBlock(null)  // cursor = null, no override
+        manager.insertLinkAtCursor("b1", "Page")
+        advanceUntilIdle()
+
+        val updated = blockRepo.getBlockByUuid("b1").first().getOrNull()
+        assertNotNull(updated)
+        assertEquals("Hi[[Page]]", updated.content, "With no cursor info, link appended at end")
+    }
+
+    // ---- replaceSelectionWithLink ----
+
+    @Test
+    fun replaceSelectionWithLink_replacesSelectedText() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        val block = createBlock("b1", content = "Hello world today", version = 0)
+        blockRepo.saveBlock(block)
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        // Select "world" (positions 6..11)
+        manager.replaceSelectionWithLink("b1", 6, 11, "World")
+        advanceUntilIdle()
+
+        val updated = blockRepo.getBlockByUuid("b1").first().getOrNull()
+        assertNotNull(updated)
+        assertEquals("Hello [[World]] today", updated.content,
+            "Selected 'world' should be replaced with [[World]]")
+    }
+
+    @Test
+    fun replaceSelectionWithLink_fallsBackToInsertWhenNoRealSelection() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        val block = createBlock("b1", content = "Hello world", version = 0)
+        blockRepo.saveBlock(block)
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        // selectionStart == selectionEnd → degenerate selection, falls back to insert
+        manager.replaceSelectionWithLink("b1", 5, 5, "Page")
+        advanceUntilIdle()
+
+        val updated = blockRepo.getBlockByUuid("b1").first().getOrNull()
+        assertNotNull(updated)
+        assertEquals("Hello[[Page]] world", updated.content,
+            "Degenerate selection should insert at cursor position, not replace")
+    }
+
+    @Test
+    fun replaceSelectionWithLink_safelyHandlesOutOfBoundsSelection() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        val block = createBlock("b1", content = "Hi", version = 0)
+        blockRepo.saveBlock(block)
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        // Out-of-bounds end clamped to content length
+        manager.replaceSelectionWithLink("b1", 0, 999, "Page")
+        advanceUntilIdle()
+
+        val updated = blockRepo.getBlockByUuid("b1").first().getOrNull()
+        assertNotNull(updated)
+        assertEquals("[[Page]]", updated.content, "Out-of-bounds selection clamped to content length")
+    }
+
+    // ---- editingSelectionRange ----
+
+    @Test
+    fun updateEditingSelection_exposedViaStateFlow() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        assertNull(manager.editingSelectionRange.value)
+
+        manager.updateEditingSelection(IntRange(2, 8))
+        assertEquals(IntRange(2, 8), manager.editingSelectionRange.value)
+
+        // Cleared when editing block is nulled
+        manager.requestEditBlock(null)
+        assertNull(manager.editingSelectionRange.value)
+    }
 }

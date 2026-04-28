@@ -82,6 +82,9 @@ class BlockStateManager(
     private val _editingCursorIndex = MutableStateFlow<Int?>(null)
     val editingCursorIndex: StateFlow<Int?> = _editingCursorIndex.asStateFlow()
 
+    private val _editingSelectionRange = MutableStateFlow<IntRange?>(null)
+    val editingSelectionRange: StateFlow<IntRange?> = _editingSelectionRange.asStateFlow()
+
     private val _collapsedBlockUuids = MutableStateFlow<Set<String>>(emptySet())
     val collapsedBlockUuids: StateFlow<Set<String>> = _collapsedBlockUuids.asStateFlow()
 
@@ -418,8 +421,13 @@ class BlockStateManager(
     // ---- Editing focus management ----
 
     fun requestEditBlock(blockUuid: String?, cursorIndex: Int? = null) {
+        if (blockUuid == null || blockUuid != _editingBlockUuid.value) _editingSelectionRange.value = null
         _editingBlockUuid.value = blockUuid
         _editingCursorIndex.value = cursorIndex
+    }
+
+    fun updateEditingSelection(range: IntRange?) {
+        _editingSelectionRange.value = range
     }
 
     /**
@@ -443,19 +451,66 @@ class BlockStateManager(
     // ---- Block content operations ----
 
     /**
-     * Inserts [[pageName]] at the last known cursor position for the given block.
-     * Used by the mobile link picker after the user selects a page.
+     * Inserts [[pageName]] at the cursor position for the given block.
+     *
+     * [overrideCursorIndex] should be captured by the caller *before* any dialog opens
+     * (opening a dialog nulls [_editingCursorIndex] via focus-loss → [stopEditingBlock]).
+     * When non-null it takes precedence over the stored cursor index.
      */
-    fun insertLinkAtCursor(blockUuid: String, pageName: String) {
+    fun insertLinkAtCursor(blockUuid: String, pageName: String, overrideCursorIndex: Int? = null) {
         scope.launch {
             val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
-            val cursor = _editingCursorIndex.value ?: block.content.length
+            val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
             val linkText = "[[$pageName]]"
             val safePos = cursor.coerceIn(0, block.content.length)
             val newContent = block.content.substring(0, safePos) + linkText + block.content.substring(safePos)
             val newVersion = block.version + 1
             updateBlockContent(blockUuid, newContent, newVersion)
             requestEditBlock(blockUuid, safePos + linkText.length)
+        }
+    }
+
+    /**
+     * Replaces the text in [selectionStart]..[selectionEnd] with [[pageName]].
+     * Falls back to [insertLinkAtCursor] when start >= end (no real selection).
+     */
+    fun replaceSelectionWithLink(
+        blockUuid: String,
+        selectionStart: Int,
+        selectionEnd: Int,
+        pageName: String,
+    ) {
+        if (selectionStart >= selectionEnd) {
+            insertLinkAtCursor(blockUuid, pageName, overrideCursorIndex = selectionStart)
+            return
+        }
+        scope.launch {
+            val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
+            val safeStart = selectionStart.coerceIn(0, block.content.length)
+            val safeEnd = selectionEnd.coerceIn(safeStart, block.content.length)
+            val linkText = "[[$pageName]]"
+            val newContent = block.content.substring(0, safeStart) + linkText + block.content.substring(safeEnd)
+            val newVersion = block.version + 1
+            updateBlockContent(blockUuid, newContent, newVersion)
+            requestEditBlock(blockUuid, safeStart + linkText.length)
+        }
+    }
+
+    /**
+     * Single entry point for the link picker result: replaces a real selection or
+     * falls back to cursor insertion. Callers should capture [selectionRange] and
+     * [overrideCursorIndex] **before** the picker dialog opens.
+     */
+    fun acceptLinkPickerResult(
+        blockUuid: String,
+        pageName: String,
+        selectionRange: IntRange?,
+        overrideCursorIndex: Int?,
+    ) {
+        if (selectionRange != null && selectionRange.first < selectionRange.last) {
+            replaceSelectionWithLink(blockUuid, selectionRange.first, selectionRange.last, pageName)
+        } else {
+            insertLinkAtCursor(blockUuid, pageName, overrideCursorIndex = overrideCursorIndex)
         }
     }
 

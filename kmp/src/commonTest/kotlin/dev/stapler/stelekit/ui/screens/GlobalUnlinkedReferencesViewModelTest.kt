@@ -44,13 +44,12 @@ class GlobalUnlinkedReferencesViewModelTest {
         blockRepo: InMemoryBlockRepository,
         matcher: AhoCorasickMatcher? = null,
     ): GlobalUnlinkedReferencesViewModel {
-        val scope = TestScope(UnconfinedTestDispatcher())
         return GlobalUnlinkedReferencesViewModel(
             pageRepository = pageRepo,
             blockRepository = blockRepo,
-            scope = scope,
             writeActor = null,
             matcher = matcher,
+            scope = TestScope(UnconfinedTestDispatcher()),
         )
     }
 

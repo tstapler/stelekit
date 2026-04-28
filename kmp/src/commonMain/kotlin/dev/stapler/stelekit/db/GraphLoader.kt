@@ -1090,7 +1090,6 @@ class GraphLoader(
     private suspend fun dispatchFullBlockWrites(
         filePath: String,
         content: String,
-        pageUuid: String,
         existingBlocks: List<Block>,
         blocksToSave: List<Block>,
         priority: DatabaseWriteActor.Priority,
@@ -1252,7 +1251,7 @@ class GraphLoader(
                 processBlocksSpan.finish("OK", "block.count" to blocksToSave.size.toString())
 
                 dispatchFullBlockWrites(
-                    filePath, content, pageUuid, existingBlocks, blocksToSave, priority, traceId, rootSpan.spanId
+                    filePath, content, existingBlocks, blocksToSave, priority, traceId, rootSpan.spanId
                 )
 
                 // Update mod time in watcher cache so we don't re-trigger from our own write

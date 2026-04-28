@@ -86,6 +86,7 @@ fun BlockList(
     onNavigateAllSuggestions: ((List<SuggestionItem>) -> Unit)? = null,
     onMoveSelectedBlocks: (newParentUuid: String?, insertAfterUuid: String?) -> Unit = { _, _ -> },
     onAutoSelectForDrag: (String) -> Unit = {},
+    onBlockSelectionChange: ((blockUuid: String, range: IntRange?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     if (isDebugMode) {
@@ -295,6 +296,9 @@ fun BlockList(
                     dropAbove = isDropTarget && currentDropZone == DropZone.ABOVE,
                     dropBelow = isDropTarget && currentDropZone == DropZone.BELOW,
                     dropAsChild = isDropTarget && currentDropZone == DropZone.CHILD,
+                    onSelectionChange = if (onBlockSelectionChange != null) {
+                        { range -> onBlockSelectionChange(block.uuid, range) }
+                    } else null,
                     modifier = Modifier.onGloballyPositioned { coords ->
                         val top = coords.positionInParent().y
                         blockBounds = blockBounds + (block.uuid to Pair(top, top + coords.size.height))

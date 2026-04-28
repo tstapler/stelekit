@@ -8,13 +8,47 @@ package dev.stapler.stelekit.domain
  *
  * Thread safety: immutable after construction — safe to share across coroutines.
  *
- * @param canonicalNames map of lowercase page name -> canonical (display) page name
+ * Stem-match support: use [TrieEntry] with [TrieEntry.reportedBaseLength] shorter than the
+ * full pattern length. The trie stores the full variant (e.g. "running") for matching but
+ * reports only the base span (e.g. positions 0..3 for "run"). The word-boundary check is
+ * applied at the end of the *full* variant so that "running" does not match inside
+ * "runningmore" (no word boundary after the variant).
  */
-class AhoCorasickMatcher(canonicalNames: Map<String, String>) {
+class AhoCorasickMatcher(entries: List<TrieEntry>) {
+
+    /**
+     * Input record for one pattern to index.
+     *
+     * @param pattern         Lowercase form of the word/phrase to find in text.
+     * @param canonical       Display name of the matching page.
+     * @param reportedBaseLength Number of characters from the *start* of the match to include
+     *   in the returned [MatchSpan.end]. Defaults to the full pattern length (exact match).
+     *   Set shorter for stem variants so the span covers only the base word.
+     */
+    data class TrieEntry(
+        val pattern: String,
+        val canonical: String,
+        val reportedBaseLength: Int = pattern.length,
+    ) {
+        init {
+            require(reportedBaseLength in 0..pattern.length) {
+                "reportedBaseLength $reportedBaseLength out of range [0, ${pattern.length}] for pattern '$pattern'"
+            }
+        }
+    }
 
     data class MatchSpan(val start: Int, val end: Int, val canonicalName: String)
 
-    private data class OutputEntry(val canonical: String, val patternLength: Int)
+    /** @param canonicalNames map of lowercase page name -> canonical (display) page name */
+    constructor(canonicalNames: Map<String, String>) : this(
+        canonicalNames.map { (lower, canonical) -> TrieEntry(lower, canonical) }
+    )
+
+    private data class OutputEntry(
+        val canonical: String,
+        val patternLength: Int,
+        val reportedBaseLength: Int,
+    )
 
     private val nodeChildren = ArrayList<HashMap<Char, Int>>()
     private val failureLinks = ArrayList<Int>()
@@ -26,8 +60,9 @@ class AhoCorasickMatcher(canonicalNames: Map<String, String>) {
         failureLinks.add(0)
         nodeOutput.add(emptyList())
 
-        // Build trie from lowercase patterns
-        for ((lowercase, canonical) in canonicalNames) {
+        // Build trie from entries (already lowercased patterns)
+        for (entry in entries) {
+            val lowercase = entry.pattern
             if (lowercase.isEmpty()) continue
             var cur = 0
             for (ch in lowercase) {
@@ -39,7 +74,11 @@ class AhoCorasickMatcher(canonicalNames: Map<String, String>) {
                 }
                 cur = next
             }
-            nodeOutput[cur] = nodeOutput[cur] + OutputEntry(canonical, lowercase.length)
+            nodeOutput[cur] = nodeOutput[cur] + OutputEntry(
+                canonical = entry.canonical,
+                patternLength = lowercase.length,
+                reportedBaseLength = entry.reportedBaseLength,
+            )
         }
 
         // Build failure links via BFS
@@ -75,13 +114,14 @@ class AhoCorasickMatcher(canonicalNames: Map<String, String>) {
      *
      * Matching is case-insensitive (text is lowercased before searching).
      * Only word-boundary matches are returned: the character immediately before
-     * the match start and immediately after the match end must each be absent or
-     * a non-word character. This prevents "the" matching inside "there" or
-     * "other". Multi-word page names (e.g., "Meeting Notes") are treated as a
-     * unit — the boundary check applies to the start of the first word and the
-     * end of the last word only.
+     * the match start and immediately after the *full variant end* must each be absent or
+     * a non-word character.
      *
-     * Overlapping matches are resolved by choosing the leftmost-longest.
+     * For stem entries: [MatchSpan.end] points after the base form only (e.g. "run" inside
+     * "running"), while the boundary check is performed at the end of the full variant so
+     * that "running" in "runningmore" is correctly rejected.
+     *
+     * Overlapping matches are resolved by choosing the leftmost-longest reported span.
      */
     fun findAll(text: String): List<MatchSpan> {
         if (text.isEmpty()) return emptyList()
@@ -97,10 +137,11 @@ class AhoCorasickMatcher(canonicalNames: Map<String, String>) {
             state = nodeChildren[state][ch] ?: 0
             for (entry in nodeOutput[state]) {
                 val start = i - entry.patternLength + 1
-                val end = i + 1
-                // Enforce word boundary: char before start and char after end must not be a word char
-                if (isWordBoundary(text, start, end)) {
-                    raw.add(MatchSpan(start, end, entry.canonical))
+                val fullEnd = i + 1  // end of full variant in text (for boundary check)
+                val reportedEnd = start + entry.reportedBaseLength
+                // Boundary check at start and at end of full variant
+                if (isWordBoundary(text, start, fullEnd)) {
+                    raw.add(MatchSpan(start, reportedEnd, entry.canonical))
                 }
             }
         }
@@ -109,12 +150,12 @@ class AhoCorasickMatcher(canonicalNames: Map<String, String>) {
     }
 
     /**
-     * Returns true if the substring [start, end) is surrounded by word boundaries.
+     * Returns true if the substring [start, fullEnd) is surrounded by word boundaries.
      * A word character is a letter, digit, or underscore.
      */
-    private fun isWordBoundary(text: String, start: Int, end: Int): Boolean {
+    private fun isWordBoundary(text: String, start: Int, fullEnd: Int): Boolean {
         val beforeOk = start == 0 || !text[start - 1].isWordChar()
-        val afterOk = end == text.length || !text[end].isWordChar()
+        val afterOk = fullEnd == text.length || !text[fullEnd].isWordChar()
         return beforeOk && afterOk
     }
 
@@ -122,7 +163,7 @@ class AhoCorasickMatcher(canonicalNames: Map<String, String>) {
 
     private fun resolveOverlaps(matches: List<MatchSpan>): List<MatchSpan> {
         if (matches.isEmpty()) return emptyList()
-        // For each start position, keep the longest match
+        // For each start position, keep the longest reported span
         val bestByStart = matches
             .groupBy { it.start }
             .mapValues { (_, group) -> group.maxByOrNull { it.end - it.start }!! }
