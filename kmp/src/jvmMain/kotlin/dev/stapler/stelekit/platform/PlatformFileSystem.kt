@@ -63,4 +63,17 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
             future.get()?.also { registerGraphRoot(it) }
         }
     }
+
+    override suspend fun pickSaveFileAsync(suggestedName: String, mimeType: String): String? {
+        return withContext(Dispatchers.IO) {
+            val future = CompletableFuture<String?>()
+            SwingUtilities.invokeLater {
+                val chooser = JFileChooser()
+                chooser.selectedFile = java.io.File(getDownloadsPath(), suggestedName)
+                val result = chooser.showSaveDialog(null)
+                future.complete(if (result == JFileChooser.APPROVE_OPTION) chooser.selectedFile.absolutePath else null)
+            }
+            future.get()
+        }
+    }
 }

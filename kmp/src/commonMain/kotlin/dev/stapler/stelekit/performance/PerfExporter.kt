@@ -19,8 +19,32 @@ class PerfExporter(
 ) {
     private val json = Json { prettyPrint = false; encodeDefaults = true }
 
+    companion object {
+        const val MAX_EXPORT_SPANS = 10_000
+    }
+
     /** Default directory for exports (platform Downloads folder). */
     fun defaultExportDirectory(): String = fileSystem.getDownloadsPath()
+
+    /**
+     * Opens the platform-native save-file picker and writes the performance report to the
+     * chosen location. Returns the path on success, or null if the user cancelled.
+     * Falls back to [export] with the default Downloads directory on platforms that don't
+     * support a native picker (iOS, WASM).
+     */
+    suspend fun exportWithPicker(): String? {
+        val timestamp = formatTimestamp(HistogramWriter.epochMs())
+        val suggestedName = "stelekit-perf-$timestamp.json"
+        val pickedPath = fileSystem.pickSaveFileAsync(suggestedName, "application/json")
+        return if (pickedPath != null) {
+            val content = withContext(PlatformDispatcher.IO) { buildReportContent() }
+            check(fileSystem.writeFile(pickedPath, content)) { "Failed to write perf report to $pickedPath" }
+            pickedPath
+        } else {
+            // Platform has no native picker; fall back to the default Downloads directory
+            export(directory = null)
+        }
+    }
 
     /**
      * Exports all recent spans and histogram summaries to a JSON file.
@@ -28,7 +52,16 @@ class PerfExporter(
      * Returns the absolute file path on success.
      */
     suspend fun export(directory: String? = null): String = withContext(PlatformDispatcher.IO) {
-        val spans = spanRepository.getRecentSpans(limit = 10_000).first()
+        val content = buildReportContent()
+        val timestamp = formatTimestamp(HistogramWriter.epochMs())
+        val dir = directory?.takeIf { it.isNotBlank() } ?: fileSystem.getDownloadsPath()
+        val path = "$dir/stelekit-perf-$timestamp.json"
+        check(fileSystem.writeFile(path, content)) { "Failed to write perf report to $path" }
+        path
+    }
+
+    private suspend fun buildReportContent(): String {
+        val spans = spanRepository.getRecentSpans(limit = MAX_EXPORT_SPANS).first()
         val histograms = HistogramWriter.KNOWN_OPERATIONS
             .mapNotNull { op -> histogramWriter.queryPercentiles(op)?.let { op to it } }
             .toMap()
@@ -46,20 +79,16 @@ class PerfExporter(
             sloViolations = sloViolations,
             p99ByOperation = histograms.mapValues { it.value.p99Ms },
         )
-        val report = PerfExportReport(
-            exportedAt = nowMs,
-            appVersion = appVersion,
-            platform = platform,
-            session = session,
-            spans = spans,
-            histograms = histograms,
+        return json.encodeToString(
+            PerfExportReport(
+                exportedAt = nowMs,
+                appVersion = appVersion,
+                platform = platform,
+                session = session,
+                spans = spans,
+                histograms = histograms,
+            )
         )
-        val content = json.encodeToString(report)
-        val timestamp = formatTimestamp(nowMs)
-        val dir = directory?.takeIf { it.isNotBlank() } ?: fileSystem.getDownloadsPath()
-        val path = "$dir/stelekit-perf-$timestamp.json"
-        check(fileSystem.writeFile(path, content)) { "Failed to write perf report to $path" }
-        path
     }
 
     private fun formatTimestamp(epochMs: Long): String {

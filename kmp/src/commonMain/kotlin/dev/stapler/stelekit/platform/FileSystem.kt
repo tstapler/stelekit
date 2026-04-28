@@ -38,4 +38,12 @@ interface FileSystem {
 
     /** Platform-appropriate directory for user-facing exported files (e.g. ~/Downloads). */
     fun getDownloadsPath(): String = expandTilde("~/Downloads")
+
+    /**
+     * Opens a platform-native "save file" dialog and returns the chosen path/URI, or null
+     * if the user cancelled or the platform doesn't support native file picking.
+     * On Android this launches ACTION_CREATE_DOCUMENT; on desktop a save dialog.
+     * Callers must pass the result directly to [writeFile].
+     */
+    suspend fun pickSaveFileAsync(suggestedName: String, mimeType: String = "application/json"): String? = null
 }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Environment
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
@@ -12,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 actual class PlatformFileSystem actual constructor() : FileSystem {
     private var context: Context? = null
     private var onPickDirectory: (suspend () -> String?)? = null
+    private var onPickSaveFile: (suspend (suggestedName: String, mimeType: String) -> String?)? = null
     private val maxPathLength = 4096
     private val maxFileSize = 100 * 1024 * 1024
     private val homeDir: String by lazy {
@@ -196,6 +198,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     }
 
     actual override fun writeFile(path: String, content: String): Boolean {
+        if (path.startsWith("content://")) return contentUriWriteFile(path, content)
         if (!path.startsWith("saf://")) return legacyWriteFile(path, content)
         return try {
             var docUri = parseDocumentUri(path)
@@ -338,6 +341,19 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     actual override fun pickDirectory(): String? = null // Handled via pickDirectoryAsync on Android
 
+    /**
+     * Registers the callback that launches ACTION_CREATE_DOCUMENT and returns the chosen
+     * content:// URI string (or null if cancelled). Must be called from MainActivity after
+     * registering the ActivityResultLauncher.
+     */
+    fun initSaveFilePicker(onPickSaveFile: suspend (suggestedName: String, mimeType: String) -> String?) {
+        this.onPickSaveFile = onPickSaveFile
+    }
+
+    override suspend fun pickSaveFileAsync(suggestedName: String, mimeType: String): String? {
+        return onPickSaveFile?.invoke(suggestedName, mimeType)
+    }
+
     actual override suspend fun pickDirectoryAsync(): String? {
         val result = onPickDirectory?.invoke() ?: return null
         // Refresh internal SAF state after a successful pick so hasStoragePermission() is current.
@@ -388,6 +404,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     }
 
     override fun displayNameForPath(path: String): String {
+        if (path.startsWith("content://")) return displayNameForContentUri(path)
         if (!path.startsWith("saf://")) return super.displayNameForPath(path)
         return try {
             val ctx = context ?: return super.displayNameForPath(path)
@@ -395,6 +412,16 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             DocumentFile.fromTreeUri(ctx, resolvedTreeUri)?.name
                 ?: super.displayNameForPath(path)
         } catch (_: Exception) { super.displayNameForPath(path) }
+    }
+
+    private fun displayNameForContentUri(uriString: String): String {
+        return try {
+            val ctx = context ?: return uriString.substringAfterLast("/")
+            val uri = Uri.parse(uriString)
+            ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+                ?: uriString.substringAfterLast("/")
+        } catch (_: Exception) { uriString.substringAfterLast("/") }
     }
 
     override fun getLibraryDisplayName(): String? {
@@ -422,6 +449,22 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     override fun stopExternalChangeDetection() {
         changeDetector?.stop()
         changeDetector = null
+    }
+
+    // -------------------------------------------------------------------------
+    // Content URI write helper (ACTION_CREATE_DOCUMENT results)
+    // -------------------------------------------------------------------------
+
+    private fun contentUriWriteFile(uriString: String, content: String): Boolean {
+        return try {
+            val ctx = context ?: return false
+            val uri = Uri.parse(uriString)
+            ctx.contentResolver.openOutputStream(uri, "wt")?.use { stream -> // "wt" = write-truncate
+                stream.bufferedWriter(Charsets.UTF_8).apply { write(content); flush() }
+            }
+            true
+        } catch (e: SecurityException) { Log.w(TAG, "contentUriWriteFile: permission denied", e); false }
+        catch (e: Exception) { Log.w(TAG, "contentUriWriteFile: error writing to $uriString", e); false }
     }
 
     // -------------------------------------------------------------------------

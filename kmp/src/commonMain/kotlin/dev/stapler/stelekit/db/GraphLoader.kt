@@ -301,9 +301,6 @@ class GraphLoader(
             val pagesDir = "$graphPath/pages"
             val journalsDir = "$graphPath/journals"
 
-            sanitizeDirectory(pagesDir)
-            sanitizeDirectory(journalsDir)
-
             // Warm-start fast path: DB already has journals from a previous session on the
             // same graph (ViewModel clears the DB before calling us when the graph path changes,
             // so a non-empty result here always means "same graph, valid cached data").
@@ -322,6 +319,10 @@ class GraphLoader(
                 // cancels this job before it can write to a closed DB or exhaust memory.
                 backgroundIndexJob = parallelScope.launch {
                     try {
+                        // Sanitize must run before re-scanning so any renamed files are visible
+                        // to loadJournalsImmediate and loadDirectory below.
+                        sanitizeDirectory(pagesDir)
+                        sanitizeDirectory(journalsDir)
                         loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
                         coroutineScope {
                             launch { loadRemainingJournals(journalsDir, immediateJournalCount, onProgress) }
@@ -354,6 +355,12 @@ class GraphLoader(
 
             onProgress("Ready - loading remaining content...")
             onPhase1Complete()
+
+            // Sanitize runs after Phase 1 so the UI is interactive before any rename I/O.
+            // Pages are always fully re-scanned by loadDirectory so renamed files are picked
+            // up cleanly. Journals are almost never renamed (date filenames are always valid).
+            sanitizeDirectory(pagesDir)
+            sanitizeDirectory(journalsDir)
 
             val phase2Span = Span("graph_load.phase2_background", traceId, rootSpan.spanId)
             coroutineScope {

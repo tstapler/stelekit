@@ -251,6 +251,134 @@ class GraphLoaderProgressiveTest {
             "onFullyLoaded must NOT be called after cancelBackgroundWork() on warm start")
     }
 
+    // ── sanitizeDirectory hot-path tests ─────────────────────────────────────
+
+    /**
+     * On a warm start, [loadGraphProgressive] must not call [listFiles] before
+     * [onPhase1Complete] fires. Sanitize logic is deferred to the background job so the
+     * warm-start fast path incurs zero SAF calls on the critical path.
+     */
+    @Test
+    fun `warm start does not call listFiles before onPhase1Complete`() = runBlocking {
+        val listFilesCount = AtomicInteger(0)
+        val trackingFs = object : FileSystem {
+            val files = mutableMapOf(
+                "/graph/journals/2026_04_13.md" to "- Journal"
+            )
+            override fun getDefaultGraphPath() = "/graph"
+            override fun expandTilde(path: String) = path
+            override fun readFile(path: String) = files[path]
+            override fun writeFile(path: String, content: String) = true
+            override fun listFiles(path: String): List<String> {
+                listFilesCount.incrementAndGet()
+                return files.keys.filter { it.startsWith("$path/") }.map { it.substringAfterLast("/") }
+            }
+            override fun listFilesWithModTimes(path: String): List<Pair<String, Long>> {
+                listFilesCount.incrementAndGet()
+                return listFiles(path).map { it to 1000L }
+            }
+            override fun listDirectories(path: String) = emptyList<String>()
+            override fun fileExists(path: String) = files.containsKey(path)
+            override fun directoryExists(path: String) = true
+            override fun createDirectory(path: String) = true
+            override fun deleteFile(path: String) = true
+            override fun pickDirectory() = null
+            override fun getLastModifiedTime(path: String): Long? = 1000L
+        }
+
+        val warmPageRepo = InMemoryPageRepository()
+        val warmBlockRepo = InMemoryBlockRepository()
+        val now = Clock.System.now()
+
+        warmPageRepo.savePage(
+            Page(
+                uuid = "j-warm-1",
+                name = "2026-04-13",
+                filePath = "/graph/journals/2026_04_13.md",
+                createdAt = now, updatedAt = now,
+                isJournal = true,
+                journalDate = LocalDate(2026, 4, 13)
+            )
+        )
+
+        val loader = GraphLoader(trackingFs, warmPageRepo, warmBlockRepo)
+        val listFilesCountAtPhase1 = AtomicInteger(-1)
+
+        withTimeout(10_000) {
+            loader.loadGraphProgressive(
+                graphPath = "/graph",
+                immediateJournalCount = 10,
+                onProgress = {},
+                onPhase1Complete = { listFilesCountAtPhase1.set(listFilesCount.get()) },
+                onFullyLoaded = {}
+            )
+        }
+
+        assertEquals(0, listFilesCountAtPhase1.get(),
+            "listFiles must not be called before onPhase1Complete on warm start; " +
+            "sanitize must stay in the background job")
+        loader.cancelBackgroundWork()
+    }
+
+    /**
+     * On a cold start (empty DB), [loadGraphProgressive] must not call [listFiles] before
+     * [onPhase1Complete]. Sanitize is deferred to Phase 2 so Phase 1 journal loading is
+     * not preceded by extra directory scans.
+     */
+    @Test
+    fun `cold start does not call listFiles before the Phase 1 journals are loaded`() = runBlocking {
+        // sanitizeDirectory calls listFiles; scanDirectory (loadJournalsImmediate) calls
+        // listFilesWithModTimes. Separate counters so the assertion precisely targets the
+        // forbidden sanitize path without conflating it with the required scan.
+        val sanitizeCallsBeforePhase1 = AtomicInteger(0)
+        val phase1Fired = AtomicBoolean(false)
+
+        val coldFs = object : FileSystem {
+            val files = mutableMapOf(
+                "/graph/journals/2026_04_13.md" to "- Cold entry"
+            )
+            private fun fileNamesIn(path: String) =
+                files.keys.filter { it.startsWith("$path/") }.map { it.substringAfterLast("/") }
+
+            override fun getDefaultGraphPath() = "/graph"
+            override fun expandTilde(path: String) = path
+            override fun readFile(path: String) = files[path]
+            override fun writeFile(path: String, content: String) = true
+            override fun listFiles(path: String): List<String> {
+                // sanitizeDirectory uses listFiles — must be 0 before Phase 1
+                if (!phase1Fired.get()) sanitizeCallsBeforePhase1.incrementAndGet()
+                return fileNamesIn(path)
+            }
+            override fun listFilesWithModTimes(path: String): List<Pair<String, Long>> {
+                // scanDirectory uses listFilesWithModTimes — 1 call (loadJournalsImmediate) is allowed
+                return fileNamesIn(path).map { it to 1000L }
+            }
+            override fun listDirectories(path: String) = emptyList<String>()
+            override fun fileExists(path: String) = files.containsKey(path)
+            override fun directoryExists(path: String) = true
+            override fun createDirectory(path: String) = true
+            override fun deleteFile(path: String) = true
+            override fun pickDirectory() = null
+            override fun getLastModifiedTime(path: String): Long? = 1000L
+        }
+
+        val loader = GraphLoader(coldFs, InMemoryPageRepository(), InMemoryBlockRepository())
+
+        withTimeout(10_000) {
+            loader.loadGraphProgressive(
+                graphPath = "/graph",
+                immediateJournalCount = 10,
+                onProgress = {},
+                onPhase1Complete = { phase1Fired.set(true) },
+                onFullyLoaded = {}
+            )
+        }
+
+        assertEquals(0, sanitizeCallsBeforePhase1.get(),
+            "sanitizeDirectory (listFiles) must not run before Phase 1 on cold start; " +
+            "got ${sanitizeCallsBeforePhase1.get()} call(s)")
+    }
+
     @Test
     fun `test progressive loading phases`() = runTest {
         // Setup 15 journals (immediate count is 10, so 5 should be background loaded)

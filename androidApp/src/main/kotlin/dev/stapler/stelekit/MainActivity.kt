@@ -38,12 +38,20 @@ class MainActivity : ComponentActivity() {
     private var onMemoryPressureHandler: (() -> Unit)? = null
     private var pendingFolderPick: CompletableDeferred<String?>? = null
     private var pendingMicPermission: CompletableDeferred<Boolean>? = null
+    private var pendingSaveFile: CompletableDeferred<String?>? = null
 
     private val micPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         pendingMicPermission?.complete(granted)
         pendingMicPermission = null
+    }
+
+    private val saveFileLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        pendingSaveFile?.complete(uri?.toString())
+        pendingSaveFile = null
     }
 
     private val folderPickerLauncher = registerForActivityResult(
@@ -121,6 +129,12 @@ class MainActivity : ComponentActivity() {
             runOnUiThread { folderPickerLauncher.launch(hintUri) }
             deferred.await()
         }
+        fileSystem.initSaveFilePicker { suggestedName, _ -> // mimeType fixed at "application/json" via CreateDocument constructor
+            val deferred = CompletableDeferred<String?>()
+            pendingSaveFile = deferred
+            runOnUiThread { saveFileLauncher.launch(suggestedName) }
+            deferred.await()
+        }
 
         setContent {
             val fileSystem = remember {
@@ -131,6 +145,12 @@ class MainActivity : ComponentActivity() {
                         // Pre-fill the picker with the last known folder so "Reconnect" UX is smooth
                         val hintUri = getStoredTreeUri()
                         runOnUiThread { folderPickerLauncher.launch(hintUri) }
+                        deferred.await()
+                    }
+                    initSaveFilePicker { suggestedName, _ ->
+                        val deferred = CompletableDeferred<String?>()
+                        pendingSaveFile = deferred
+                        runOnUiThread { saveFileLauncher.launch(suggestedName) }
                         deferred.await()
                     }
                 }

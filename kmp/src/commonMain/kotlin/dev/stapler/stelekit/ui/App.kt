@@ -948,8 +948,7 @@ private fun GraphDialogLayer(
     debugState: DebugMenuState = DebugMenuState(),
     onDebugStateChange: (DebugMenuState) -> Unit = {},
 ) {
-    // Holds the last exported bug report JSON for display in a read-only dialog.
-    var exportedReport by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     CommandPalette(
         visible = appState.commandPaletteVisible,
@@ -1020,38 +1019,25 @@ private fun GraphDialogLayer(
             onStateChange = { newState -> onDebugStateChange(newState) },
             onExportBugReport = {
                 val json = viewModel.exportBugReport()
-                if (json != null) {
-                    exportedReport = json
-                } else {
+                if (json == null) {
                     notificationManager.show("Bug report unavailable — OTel not initialized")
+                } else {
+                    scope.launch {
+                        val path = fileSystem.pickSaveFileAsync("stelekit-bug-report.json", "application/json")
+                        when {
+                            path == null -> { /* user cancelled */ }
+                            fileSystem.writeFile(path, json) ->
+                                notificationManager.show("Bug report saved to ${fileSystem.displayNameForPath(path)}")
+                            else ->
+                                notificationManager.show("Failed to save bug report. Check storage permissions.")
+                        }
+                    }
                 }
             },
             onDismiss = { viewModel.dismissDebugMenu() }
         )
     }
 
-    // Show exported bug report in a scrollable read-only dialog.
-    exportedReport?.let { json ->
-        AlertDialog(
-            onDismissRequest = { exportedReport = null },
-            title = { Text("Bug Report") },
-            text = {
-                androidx.compose.foundation.lazy.LazyColumn {
-                    item {
-                        Text(
-                            text = json,
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { exportedReport = null }) { Text("Close") }
-            }
-        )
-    }
 }
 
 /**
