@@ -7,6 +7,7 @@ import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SearchRepository
 import dev.stapler.stelekit.repository.SearchRequest
 import dev.stapler.stelekit.repository.SearchResult
@@ -55,6 +56,15 @@ class SearchViewModelTest {
             }
             return flowOf(SearchResult(emptyList(), emptyList(), totalCount = 0, hasMore = false).right())
         }
+
+        @DirectRepositoryWrite
+        override suspend fun recordPageVisit(pageUuid: String): Either<DomainError, Unit> = Unit.right()
+
+        @DirectRepositoryWrite
+        override suspend fun rebuildFts(): Either<DomainError, Unit> = Unit.right()
+
+        @DirectRepositoryWrite
+        override suspend fun integrityCheckFts(): Either<DomainError, Unit> = Unit.right()
     }
 
     @Test
@@ -68,7 +78,7 @@ class SearchViewModelTest {
 
         // Perform search
         viewModel.onQueryChange("test")
-        
+
         // Check if query updated
         assertEquals("test", viewModel.uiState.value.query)
     }

@@ -679,6 +679,10 @@ class StelekitViewModel(
         )
         if (screen is Screen.PageView) {
             refreshCurrentPage()
+            // Fire-and-forget visit tracking — does not block navigation
+            scope.launch {
+                searchRepository.recordPageVisit(screen.page.uuid)
+            }
         }
         updateCommands()
     }

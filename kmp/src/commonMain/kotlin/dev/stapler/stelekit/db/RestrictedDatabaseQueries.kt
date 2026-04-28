@@ -382,6 +382,16 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     fun deleteQueryStatsForVersion(app_version: String): QueryResult<Long> =
         queries.deleteQueryStatsForVersion(app_version)
 
+    // ── Visit tracking ────────────────────────────────────────────────────────
+
+    @DirectSqlWrite
+    fun insertPageVisitIfAbsent(page_uuid: String, last_visited_at: Long): QueryResult<Long> =
+        queries.insertPageVisitIfAbsent(page_uuid, last_visited_at)
+
+    @DirectSqlWrite
+    fun updatePageVisit(last_visited_at: Long, page_uuid: String): QueryResult<Long> =
+        queries.updatePageVisit(last_visited_at, page_uuid)
+
     // ── Maintenance ───────────────────────────────────────────────────────────
 
     @DirectSqlWrite

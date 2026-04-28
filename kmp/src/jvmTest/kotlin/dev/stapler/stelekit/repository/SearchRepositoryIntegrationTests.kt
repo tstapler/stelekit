@@ -306,4 +306,155 @@ class SearchRepositoryIntegrationTests {
         assertNotNull(staleHit, "Stale block should appear in results")
         assertTrue(recentHit!!.score > staleHit!!.score, "Recently updated block should rank higher than 90-day-old block")
     }
+
+    // ── TC-1: recordPageVisit stores timestamp ──────────────────────────────
+
+    @Test
+    fun testRecordPageVisitStoresTimestamp() = runTest {
+        val pageUuid = generateUuid(700)
+        pageRepo.savePage(createTestPage(pageUuid, "Visit Test Page"))
+
+        val result = repository.recordPageVisit(pageUuid)
+        assertTrue(result.isRight(), "recordPageVisit should return Right(Unit)")
+
+        val visitRows = database.steleDatabaseQueries
+            .selectPageVisitsByUuids(setOf(pageUuid)).executeAsList()
+        assertEquals(1, visitRows.size, "Should have exactly one visit row")
+        assertTrue(visitRows[0].last_visited_at > 0, "last_visited_at should be positive epoch ms")
+        assertEquals(1L, visitRows[0].visit_count, "visit_count should be 1 after first visit")
+    }
+
+    // ── TC-2: repeated navigation increments visit_count ────────────────────
+
+    @Test
+    fun testRecordPageVisitIncrementsCount() = runTest {
+        val pageUuid = generateUuid(701)
+        pageRepo.savePage(createTestPage(pageUuid, "Increment Test Page"))
+
+        repository.recordPageVisit(pageUuid)
+        repository.recordPageVisit(pageUuid)
+        repository.recordPageVisit(pageUuid)
+
+        val visitRows = database.steleDatabaseQueries
+            .selectPageVisitsByUuids(setOf(pageUuid)).executeAsList()
+        assertEquals(1, visitRows.size, "Should still have exactly one visit row")
+        assertEquals(3L, visitRows[0].visit_count, "visit_count should be 3 after three visits")
+    }
+
+    // ── TC-3: visit-recency boost ranks recently-visited page above unvisited ─
+
+    @Test
+    fun testVisitBoostRanksVisitedPageFirst() = runTest {
+        val visitedPageUuid = generateUuid(710)
+        val neverVisitedPageUuid = generateUuid(711)
+
+        // Use different page names (UNIQUE constraint on pages.name) but identical block content
+        pageRepo.savePage(createTestPage(visitedPageUuid, "Kotlin Dev Notes Visited"))
+        pageRepo.savePage(createTestPage(neverVisitedPageUuid, "Kotlin Dev Notes Unvisited"))
+
+        val identicalContent = "kotlin development guide reference notes"
+        blockRepo.saveBlock(createTestBlock(generateUuid(720), visitedPageUuid, identicalContent, position = 1))
+        blockRepo.saveBlock(createTestBlock(generateUuid(721), neverVisitedPageUuid, identicalContent, position = 1))
+
+        // Record a very recent visit for visitedPageUuid
+        repository.recordPageVisit(visitedPageUuid)
+
+        val request = SearchRequest(query = "kotlin development", limit = 10)
+        val result = repository.searchWithFilters(request).first()
+        assertTrue(result.isRight())
+
+        val ranked = result.getOrNull()?.ranked.orEmpty()
+        val visitedHit = ranked.filterIsInstance<RankedSearchHit.BlockHit>()
+            .firstOrNull { it.block.pageUuid == visitedPageUuid }
+        val neverVisitedHit = ranked.filterIsInstance<RankedSearchHit.BlockHit>()
+            .firstOrNull { it.block.pageUuid == neverVisitedPageUuid }
+
+        assertNotNull(visitedHit, "Visited page block should appear in results")
+        assertNotNull(neverVisitedHit, "Never-visited page block should appear in results")
+        // Visit multiplier at t=0 is 2.0 vs 1.0 for unvisited — expect at least 1.5× score
+        assertTrue(
+            visitedHit!!.score >= neverVisitedHit!!.score * 1.5,
+            "Recently visited page block should rank significantly higher (score=${visitedHit.score} vs ${neverVisitedHit.score})"
+        )
+    }
+
+    // ── TC-7: exact title match is always first ──────────────────────────────
+
+    @Test
+    fun testExactTitleMatchIsFirstResult() = runTest {
+        val taxesPageUuid = generateUuid(730)
+        val taxReturnsPageUuid = generateUuid(731)
+        val taxPlanningPageUuid = generateUuid(732)
+
+        pageRepo.savePage(createTestPage(taxesPageUuid, "Taxes"))
+        pageRepo.savePage(createTestPage(taxReturnsPageUuid, "Tax Returns 2025"))
+        pageRepo.savePage(createTestPage(taxPlanningPageUuid, "Tax Planning"))
+
+        // Give the other pages high-BM25 block content to ensure they'd otherwise rank higher
+        val heavyContent = "taxes taxes taxes taxes taxes tax deduction refund"
+        blockRepo.saveBlock(createTestBlock(generateUuid(740), taxReturnsPageUuid, heavyContent, position = 1))
+        blockRepo.saveBlock(createTestBlock(generateUuid(741), taxPlanningPageUuid, heavyContent, position = 1))
+        // "Taxes" page has no blocks — would normally rank lower
+
+        val result = repository.searchWithFilters(SearchRequest(query = "Taxes", limit = 10)).first()
+        assertTrue(result.isRight())
+
+        val ranked = result.getOrNull()?.ranked.orEmpty()
+        assertTrue(ranked.isNotEmpty(), "Expected ranked results")
+        val first = ranked.first()
+        assertTrue(first is RankedSearchHit.PageHit, "First result should be a page hit")
+        assertEquals(taxesPageUuid, (first as RankedSearchHit.PageHit).page.uuid,
+            "Exact-match page 'Taxes' should be first regardless of BM25")
+    }
+
+    // ── TC-8: exact title match is case-insensitive ──────────────────────────
+
+    @Test
+    fun testExactTitleMatchCaseInsensitive() = runTest {
+        val taxesPageUuid = generateUuid(730) // same UUIDs as TC-7 — no conflict, different test instance
+        val taxReturnsPageUuid = generateUuid(731)
+        val taxPlanningPageUuid = generateUuid(732)
+
+        pageRepo.savePage(createTestPage(taxesPageUuid, "Taxes"))
+        pageRepo.savePage(createTestPage(taxReturnsPageUuid, "Tax Returns 2025"))
+        pageRepo.savePage(createTestPage(taxPlanningPageUuid, "Tax Planning"))
+
+        val heavyContent = "taxes taxes taxes taxes taxes tax deduction refund"
+        blockRepo.saveBlock(createTestBlock(generateUuid(740), taxReturnsPageUuid, heavyContent, position = 1))
+        blockRepo.saveBlock(createTestBlock(generateUuid(741), taxPlanningPageUuid, heavyContent, position = 1))
+
+        // Query with uppercase — should still find "Taxes" first
+        val result = repository.searchWithFilters(SearchRequest(query = "TAXES", limit = 10)).first()
+        assertTrue(result.isRight())
+
+        val ranked = result.getOrNull()?.ranked.orEmpty()
+        assertTrue(ranked.isNotEmpty(), "Expected ranked results")
+        val first = ranked.first()
+        assertTrue(first is RankedSearchHit.PageHit, "First result should be a page hit")
+        assertEquals(taxesPageUuid, (first as RankedSearchHit.PageHit).page.uuid,
+            "Case-insensitive exact-match should promote 'Taxes' to first position")
+    }
+
+    // ── TC-9: no exact match — BM25 order is not overridden ─────────────────
+
+    @Test
+    fun testNoExactMatchDoesNotForceOrder() = runTest {
+        val taxesPageUuid = generateUuid(730)
+        val taxReturnsPageUuid = generateUuid(731)
+
+        pageRepo.savePage(createTestPage(taxesPageUuid, "Taxes"))
+        pageRepo.savePage(createTestPage(taxReturnsPageUuid, "Tax Returns 2025"))
+
+        blockRepo.saveBlock(createTestBlock(generateUuid(740), taxReturnsPageUuid,
+            "taxes taxes taxes taxes tax deduction", position = 1))
+
+        // Query "tax" does not exactly match "Taxes" (different string)
+        val result = repository.searchWithFilters(SearchRequest(query = "tax", limit = 10)).first()
+        assertTrue(result.isRight())
+        val ranked = result.getOrNull()?.ranked.orEmpty()
+
+        // promoteExactTitleMatch should NOT fire — no result with name == "tax"
+        // We just verify results are returned and no exception
+        assertTrue(ranked.isNotEmpty(), "Should return results for 'tax' query")
+    }
 }

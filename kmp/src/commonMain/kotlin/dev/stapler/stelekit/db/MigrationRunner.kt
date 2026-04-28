@@ -132,7 +132,32 @@ object MigrationRunner {
                 // Backfill existing rows — INSERT OR IGNORE is a no-op if already indexed
                 "INSERT OR IGNORE INTO pages_fts(rowid, name) SELECT rowid, name FROM pages"
             )
-        )
+        ),
+        Migration(
+            name = "fix_pages_ai_trigger",
+            statements = listOf(
+                // Fix pages_ai to use new.rowid instead of last_insert_rowid(), which is
+                // incorrect in trigger context and can point to a stale row.
+                "DROP TRIGGER IF EXISTS pages_ai",
+                """
+                CREATE TRIGGER IF NOT EXISTS pages_ai AFTER INSERT ON pages BEGIN
+                    INSERT INTO pages_fts(rowid, name) VALUES (new.rowid, new.name);
+                END
+                """
+            )
+        ),
+        Migration(
+            name = "page_visits_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS page_visits (
+                    page_uuid       TEXT NOT NULL PRIMARY KEY,
+                    visit_count     INTEGER NOT NULL DEFAULT 0,
+                    last_visited_at INTEGER NOT NULL
+                )
+                """
+            )
+        ),
     )
 
     /**

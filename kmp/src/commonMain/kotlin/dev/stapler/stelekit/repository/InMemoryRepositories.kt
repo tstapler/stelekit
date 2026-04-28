@@ -668,4 +668,19 @@ class InMemorySearchRepository(
             SearchResult(emptyList(), pages, totalCount = pages.size, hasMore = false).right()
         }
     }
+
+    /** In-memory visit store for testing — maps pageUuid to last_visited_at epoch ms. */
+    internal val visitMap: MutableMap<String, Long> = mutableMapOf()
+
+    @DirectRepositoryWrite
+    override suspend fun recordPageVisit(pageUuid: String): Either<DomainError, Unit> {
+        visitMap[pageUuid] = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        return Unit.right()
+    }
+
+    @DirectRepositoryWrite
+    override suspend fun rebuildFts(): Either<DomainError, Unit> = Unit.right()
+
+    @DirectRepositoryWrite
+    override suspend fun integrityCheckFts(): Either<DomainError, Unit> = Unit.right()
 }
