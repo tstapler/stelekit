@@ -92,9 +92,13 @@ class JournalService(
         val candidates = listOfNotNull(byDate, byHyphen, byUnderscore).distinctBy { it.uuid }
 
         if (candidates.size > 1) {
-            return@withLock mergeDuplicateJournalPages(candidates, today)
+            val merged = mergeDuplicateJournalPages(candidates, today)
+            return@withLock if (merged.journalDate == null) healJournalDate(merged, today) else merged
         }
-        if (candidates.size == 1) return@withLock candidates.first()
+        if (candidates.size == 1) {
+            val page = candidates.first()
+            return@withLock if (page.journalDate == null) healJournalDate(page, today) else page
+        }
 
         // No page exists — create one
         val pageUuid = UuidGenerator.generateV7()
@@ -153,6 +157,18 @@ class JournalService(
         } else {
             blockRepository.saveBlock(newBlock)
         }
+    }
+
+    private suspend fun healJournalDate(page: Page, date: LocalDate): Page {
+        logger.info("Healing missing journal_date for page ${page.uuid} (name=${page.name})")
+        val healed = page.copy(journalDate = date, isJournal = true, updatedAt = Clock.System.now())
+        if (writeActor != null) {
+            writeActor.savePage(healed)
+        } else {
+            @OptIn(DirectRepositoryWrite::class)
+            pageRepository.savePage(healed)
+        }
+        return healed
     }
 
     /**

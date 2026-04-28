@@ -866,13 +866,13 @@ class GraphLoader(
         val fileName = filePath.replace("\\", "/").substringAfterLast("/")
         val title = FileUtils.decodeFileName(fileName.removeSuffix(".md"))
         val name = title
-        val isJournal = filePath.contains("/journals/")
-        val journalDate = if (isJournal) JournalUtils.parseJournalDate(title) else null
-        
+        val journalDate = if (filePath.contains("/journals/")) JournalUtils.parseJournalDate(title) else null
+        val isJournal = journalDate != null
+
         // Use file modification time if available
         val fileModTime = fileSystem.getLastModifiedTime(filePath)
         val updatedAt = fileModTime?.let { Instant.fromEpochMilliseconds(it) } ?: Clock.System.now()
-        
+
         val existingPage = if (isJournal && journalDate != null) {
             journalDateResolver.getPageByJournalDate(journalDate)
         } else {
@@ -1184,8 +1184,8 @@ class GraphLoader(
                 }
 
                 val name = title
-                val journalDate = JournalUtils.parseJournalDate(title)
-                val isJournal = journalDate != null || filePath.contains("/journals/")
+                val journalDate = if (filePath.contains("/journals/")) JournalUtils.parseJournalDate(title) else null
+                val isJournal = journalDate != null
                 val now = Clock.System.now()
 
                 val lookup = lookupExistingPageAndCheckFreshness(

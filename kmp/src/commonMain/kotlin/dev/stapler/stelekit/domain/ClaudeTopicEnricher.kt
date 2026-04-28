@@ -8,6 +8,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
@@ -83,9 +84,11 @@ class ClaudeTopicEnricher(
                     ),
                 )
             }
+            if (!retry.status.isSuccess()) return localSuggestions
             return parseResponse(retry.body(), localSuggestions)
         }
 
+        if (!response.status.isSuccess()) return localSuggestions
         val body = response.body<MessagesResponse>()
         return parseResponse(body, localSuggestions)
     }
@@ -94,7 +97,7 @@ class ClaudeTopicEnricher(
         body: MessagesResponse,
         fallback: List<TopicSuggestion>,
     ): List<TopicSuggestion> {
-        val rawJson = body.content.firstOrNull()?.text ?: return fallback
+        val rawJson = body.content.firstOrNull { it.type == "text" }?.text ?: return fallback
         return runCatching {
             val parsed = lenientJson.decodeFromString<List<ClaudeCandidate>>(rawJson)
             parsed.map { candidate ->
@@ -122,7 +125,7 @@ private data class MessagesRequest(
 private data class Message(val role: String, val content: String)
 
 @Serializable
-private data class MessagesResponse(val content: List<ContentBlock>)
+private data class MessagesResponse(val content: List<ContentBlock> = emptyList())
 
 @Serializable
-private data class ContentBlock(val type: String, val text: String)
+private data class ContentBlock(val type: String, val text: String? = null)

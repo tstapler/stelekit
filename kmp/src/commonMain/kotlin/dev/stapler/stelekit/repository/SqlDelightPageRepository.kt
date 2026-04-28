@@ -262,4 +262,25 @@ class SqlDelightPageRepository(
             isContentLoaded = this.is_content_loaded == 1L
         )
     }
+
+    // selectJournalPages narrows journal_date to non-null via IS NOT NULL, so SQLDelight
+    // generates SelectJournalPages with journal_date: String instead of String?.
+    private fun dev.stapler.stelekit.db.SelectJournalPages.toModel(): Page {
+        return Page(
+            uuid = this.uuid,
+            name = this.name,
+            namespace = this.namespace,
+            filePath = this.file_path,
+            createdAt = Instant.fromEpochMilliseconds(this.created_at),
+            updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
+            version = this.version,
+            properties = this.properties?.split(",")?.filter { it.isNotBlank() }?.associate {
+                val parts = it.split(":", limit = 2)
+                if (parts.size == 2) parts[0] to parts[1] else "" to ""
+            }?.filter { it.key.isNotBlank() } ?: emptyMap(),
+            isJournal = this.is_journal == 1L,
+            journalDate = kotlinx.datetime.LocalDate.parse(this.journal_date),
+            isContentLoaded = this.is_content_loaded == 1L
+        )
+    }
 }

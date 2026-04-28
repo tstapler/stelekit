@@ -351,7 +351,7 @@ insertPage:
 INSERT OR IGNORE INTO pages (uuid, name, namespace, file_path, created_at, updated_at, properties, version, is_favorite, is_journal, journal_date, is_content_loaded)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 selectJournalPages:
-SELECT * FROM pages WHERE is_journal = 1 ORDER BY COALESCE(journal_date, name) DESC LIMIT ? OFFSET ?;
+SELECT * FROM pages WHERE is_journal = 1 AND journal_date IS NOT NULL ORDER BY journal_date DESC LIMIT ? OFFSET ?;
 
 selectJournalPageByDate:
 SELECT * FROM pages WHERE is_journal = 1 AND journal_date = ? LIMIT 1;
