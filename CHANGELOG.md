@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.19.0](https://github.com/tstapler/stelekit/compare/v0.18.1...v0.19.0) (2026-04-28)
+
+
+### Features
+
+* **homebrew:** add Casks/stelekit.rb for proper macOS GUI install ([afd2613](https://github.com/tstapler/stelekit/commit/afd26136a4b1f04b38b69a5e8eee2bbc9afe5600))
+
+
+### Bug Fixes
+
+* **homebrew:** symlink SteleKit.app to ~/Applications so it appears in Finder/Launchpad ([b006a51](https://github.com/tstapler/stelekit/commit/b006a51d508e17f79661713659b38f3014d48f4c))
+
 ## [0.18.1](https://github.com/tstapler/stelekit/compare/v0.18.0...v0.18.1) (2026-04-28)
 
 
