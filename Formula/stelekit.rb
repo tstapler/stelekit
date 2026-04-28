@@ -56,7 +56,13 @@ class Stelekit < Formula
   end
 
   def post_install
-    if OS.linux?
+    if OS.mac?
+      apps_dir = Pathname.new(ENV.fetch("HOME", ""))/"Applications"
+      apps_dir.mkpath
+      app_symlink = apps_dir/"SteleKit.app"
+      app_symlink.delete if app_symlink.symlink? || app_symlink.exist?
+      app_symlink.make_relative_symlink prefix/"stelekit.app"
+    elsif OS.linux?
       system "update-desktop-database", share/"applications" rescue nil
       system "gtk-update-icon-cache", "-f", "-t", share/"icons/hicolor" rescue nil
 
@@ -75,7 +81,13 @@ class Stelekit < Formula
   end
 
   def caveats
-    if OS.linux?
+    if OS.mac?
+      <<~EOS
+        SteleKit has been added to ~/Applications so it appears in Finder and Launchpad.
+        You can also launch it from the command line:
+          stelekit
+      EOS
+    elsif OS.linux?
       <<~EOS
         SteleKit has been registered in your app launcher automatically.
         If it doesn't appear, your desktop session may need to reload. Log out
