@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.17.0](https://github.com/tstapler/stelekit/compare/v0.16.3...v0.17.0) (2026-04-27)
+
+
+### Features
+
+* **editor:** Cmd+K with selected text opens search pre-filled ([412e055](https://github.com/tstapler/stelekit/commit/412e0559f0dd405e52d33d84aeedf51026812334))
+
+
+### Bug Fixes
+
+* **detekt:** add LocalOpenSearchWithText and GraphLoader pageUuid to baseline ([0c888fa](https://github.com/tstapler/stelekit/commit/0c888fabbeff051c0428baf27a3bb6f80cbfad2d))
+* **editor:** Cmd+K only consumes for link wrap when text is selected ([602c783](https://github.com/tstapler/stelekit/commit/602c7835bcda7f498dd0d70e8bffecdba56adefa))
+
 ## [0.16.3](https://github.com/tstapler/stelekit/compare/v0.16.2...v0.16.3) (2026-04-27)
 
 
