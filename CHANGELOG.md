@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.0](https://github.com/tstapler/stelekit/compare/v0.17.0...v0.18.0) (2026-04-28)
+
+
+### Features
+
+* **search:** visit-recency ranking, exact-title guarantee, FTS repair, and latency benchmarks ([#52](https://github.com/tstapler/stelekit/issues/52)) ([86da88e](https://github.com/tstapler/stelekit/commit/86da88e58416880fa58c7fdeccf5890937a208e0))
+
+
+### Bug Fixes
+
+* **ci:** repair pages workflow so the site actually deploys ([#53](https://github.com/tstapler/stelekit/issues/53)) ([782448b](https://github.com/tstapler/stelekit/commit/782448bcc0fb0054721f0b6a54c24110336aac5a))
+
 ## [0.17.0](https://github.com/tstapler/stelekit/compare/v0.16.3...v0.17.0) (2026-04-27)
 
 
