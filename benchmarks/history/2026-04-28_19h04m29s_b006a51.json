@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-04-28 19:04:29 UTC",
+  "gitSha": "b006a51",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 9,
+  "phase2Ms": 3,
+  "phase3Ms": 17,
+  "totalMs": 29,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 32,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 132,
+      "pct": 65.7
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 14,
+      "pct": 7.0
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 4,
+      "pct": 2.0
+    },
+    {
+      "frame": "kotlin.Pair_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2117,
+      "pct": 99.2
+    },
+    {
+      "frame": "pread",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "__xstat64",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "AccessInternal::PostRuntimeDispatch<G1BarrierSet::AccessBarrier<402470ul, G1BarrierSet>, (AccessInternal::BarrierType)1, 402470ul>::oop_access_barrier",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/JobSupport.getKey_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "Method::line_number_from_bci",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pthread_cond_broadcast",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/invoke/MethodHandleNatives.linkMethodHandleConstant_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "JVM_ArrayCopy",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/JobKt.ensureActive_[0]",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}
