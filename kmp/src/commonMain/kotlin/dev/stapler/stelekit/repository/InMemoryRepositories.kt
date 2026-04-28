@@ -141,6 +141,22 @@ class InMemoryBlockRepository : BlockRepository {
         return Unit.right()
     }
 
+    override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> {
+        val current = blocks.value.toMutableMap()
+        val existing = current[blockUuid] ?: return Unit.right()
+        current[blockUuid] = existing.copy(content = content, version = existing.version + 1, updatedAt = kotlin.time.Clock.System.now())
+        blocks.value = current
+        return Unit.right()
+    }
+
+    override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> {
+        val current = blocks.value.toMutableMap()
+        val existing = current[blockUuid] ?: return Unit.right()
+        current[blockUuid] = existing.copy(properties = properties)
+        blocks.value = current
+        return Unit.right()
+    }
+
     override suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean): Either<DomainError, Unit> {
         val current = blocks.value.toMutableMap()
         val block = current[blockUuid] ?: return Unit.right()

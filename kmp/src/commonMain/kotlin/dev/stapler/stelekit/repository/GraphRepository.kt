@@ -98,6 +98,21 @@ interface BlockRepository {
     suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit>
 
     /**
+     * Update only the content of a block. Does NOT touch structural fields
+     * (parentUuid, position, level, leftUuid), eliminating the race condition
+     * where a full saveBlock() with stale structural fields clobbers concurrent
+     * indent/outdent/move operations.
+     */
+    @DirectRepositoryWrite
+    suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit>
+
+    /**
+     * Update only the properties of a block. Does NOT touch content or structural fields.
+     */
+    @DirectRepositoryWrite
+    suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit>
+
+    /**
      * Delete a block and optionally its children
      */
     @DirectRepositoryWrite

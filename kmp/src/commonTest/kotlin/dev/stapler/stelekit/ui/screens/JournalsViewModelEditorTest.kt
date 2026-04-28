@@ -250,6 +250,18 @@ class JournalsViewModelEditorTest {
         override fun findDuplicateBlocks(limit: Int): Flow<Either<DomainError, List<DuplicateGroup>>> =
             flowOf(emptyList<DuplicateGroup>().right())
 
+        override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> {
+            val existing = blocks.value[blockUuid] ?: return Unit.right()
+            blocks.value = blocks.value + (blockUuid to existing.copy(content = content, version = existing.version + 1))
+            return Unit.right()
+        }
+
+        override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> {
+            val existing = blocks.value[blockUuid] ?: return Unit.right()
+            blocks.value = blocks.value + (blockUuid to existing.copy(properties = properties))
+            return Unit.right()
+        }
+
         override suspend fun clear() { blocks.value = emptyMap() }
     }
 

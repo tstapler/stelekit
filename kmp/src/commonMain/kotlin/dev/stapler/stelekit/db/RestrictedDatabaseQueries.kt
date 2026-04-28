@@ -74,8 +74,8 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
         queries.updateBlockPositionOnly(position, uuid)
 
     @DirectSqlWrite
-    fun updateBlockContent(content: String, updated_at: Long, uuid: String): QueryResult<Long> =
-        queries.updateBlockContent(content, updated_at, uuid)
+    fun updateBlockContent(content: String, updated_at: Long, content_hash: String?, uuid: String): QueryResult<Long> =
+        queries.updateBlockContent(content, updated_at, content_hash, uuid)
 
     @DirectSqlWrite
     fun updateBlockLevelOnly(level: Long, uuid: String): QueryResult<Long> =

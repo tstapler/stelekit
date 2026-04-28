@@ -26,6 +26,41 @@ import dev.stapler.stelekit.ui.screens.SearchResultItem
 private val WIKI_LINK_AUTOCOMPLETE_REGEX = Regex("\\[\\[([^\\]]*)$")
 private val HASHTAG_AUTOCOMPLETE_REGEX = Regex("#([^\\s#\\[\\](),!?;.\"']*)$")
 
+private val WORD_BOUNDARY_CHARS = setOf(' ', '\t', '\n', '.', ',', ';', ':', '!', '?', '(', ')', '[', ']', '"', '\'')
+
+/**
+ * Returns the start index of the word immediately before or at [position].
+ * Stops at whitespace, punctuation, and [[/]] wiki-link delimiters.
+ */
+internal fun findWordStart(text: String, position: Int): Int {
+    var i = position
+    while (i > 0) {
+        // Stop at [[ or ]] boundaries (avoid substring allocation on hot path)
+        if (i >= 2 && text[i - 2] == '[' && text[i - 1] == '[') return i
+        if (i >= 2 && text[i - 2] == ']' && text[i - 1] == ']') return i
+        if (text[i - 1] in WORD_BOUNDARY_CHARS) return i
+        i--
+    }
+    return 0
+}
+
+/**
+ * Returns the end index of the word starting at or after [position].
+ * Stops at whitespace, punctuation, and [[/]] wiki-link delimiters.
+ */
+internal fun findWordEnd(text: String, position: Int): Int {
+    var i = position
+    val len = text.length
+    while (i < len) {
+        // Stop at [[ or ]] boundaries (avoid substring allocation on hot path)
+        if (i + 2 <= len && text[i] == '[' && text[i + 1] == '[') return i
+        if (i + 2 <= len && text[i] == ']' && text[i + 1] == ']') return i
+        if (text[i] in WORD_BOUNDARY_CHARS) return i
+        i++
+    }
+    return len
+}
+
 @Composable
 internal fun BlockEditor(
     textFieldValue: TextFieldValue,
@@ -288,6 +323,62 @@ private fun handleKeyEvent(
             val newVersion = onLocalVersionIncrement()
             onContentChange(newText, newVersion)
             return true
+        }
+    }
+
+    // Word navigation: Ctrl+Left / Ctrl+Right / Home / End
+    if (event.type == KeyEventType.KeyDown && event.isCtrlPressed) {
+        when (event.key) {
+            Key.DirectionLeft -> {
+                val pos = textFieldValue.selection.start
+                val newPos = findWordStart(textFieldValue.text, pos)
+                val newSelection = if (event.isShiftPressed) {
+                    TextRange(newPos, textFieldValue.selection.end)
+                } else {
+                    TextRange(newPos)
+                }
+                onTextFieldValueChange(textFieldValue.copy(selection = newSelection))
+                return true
+            }
+            Key.DirectionRight -> {
+                val pos = textFieldValue.selection.end
+                val newPos = findWordEnd(textFieldValue.text, pos)
+                val newSelection = if (event.isShiftPressed) {
+                    TextRange(textFieldValue.selection.start, newPos)
+                } else {
+                    TextRange(newPos)
+                }
+                onTextFieldValueChange(textFieldValue.copy(selection = newSelection))
+                return true
+            }
+            else -> Unit
+        }
+    }
+
+    // Home / End navigation
+    if (event.type == KeyEventType.KeyDown) {
+        when (event.key) {
+            Key.MoveHome -> {
+                val newPos = 0
+                val newSelection = if (event.isShiftPressed) {
+                    TextRange(newPos, textFieldValue.selection.end)
+                } else {
+                    TextRange(newPos)
+                }
+                onTextFieldValueChange(textFieldValue.copy(selection = newSelection))
+                return true
+            }
+            Key.MoveEnd -> {
+                val newPos = textFieldValue.text.length
+                val newSelection = if (event.isShiftPressed) {
+                    TextRange(textFieldValue.selection.start, newPos)
+                } else {
+                    TextRange(newPos)
+                }
+                onTextFieldValueChange(textFieldValue.copy(selection = newSelection))
+                return true
+            }
+            else -> Unit
         }
     }
 

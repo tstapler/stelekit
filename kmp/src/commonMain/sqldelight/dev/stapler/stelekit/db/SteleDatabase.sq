@@ -230,7 +230,7 @@ updateBlockPositionOnly:
 UPDATE blocks SET position = ? WHERE uuid = ?;
 
 updateBlockContent:
-UPDATE blocks SET content = ?, updated_at = ?, version = version + 1 WHERE uuid = ?;
+UPDATE blocks SET content = ?, updated_at = ?, version = version + 1, content_hash = ? WHERE uuid = ?;
 
 updateBlockLevelOnly:
 UPDATE blocks SET level = ? WHERE uuid = ?;

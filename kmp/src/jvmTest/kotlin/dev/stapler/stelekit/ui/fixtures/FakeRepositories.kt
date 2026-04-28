@@ -166,6 +166,18 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         return Unit.right()
     }
 
+    override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> {
+        val existing = _blocks.value[blockUuid] ?: return Unit.right()
+        _blocks.value = _blocks.value + (blockUuid to existing.copy(content = content, version = existing.version + 1, updatedAt = Clock.System.now()))
+        return Unit.right()
+    }
+
+    override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> {
+        val existing = _blocks.value[blockUuid] ?: return Unit.right()
+        _blocks.value = _blocks.value + (blockUuid to existing.copy(properties = properties))
+        return Unit.right()
+    }
+
     override suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean): Either<DomainError, Unit> {
         val current = _blocks.value.toMutableMap()
         if (deleteChildren) {
