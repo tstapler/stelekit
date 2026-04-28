@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-04-28 03:59:25 UTC",
+  "gitSha": "782448b",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 8,
+  "phase2Ms": 4,
+  "phase3Ms": 17,
+  "totalMs": 28,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 34,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 135,
+      "pct": 70.3
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 12,
+      "pct": 6.2
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 6,
+      "pct": 3.1
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 5,
+      "pct": 2.6
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.ClassWriter_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "char[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.MethodWriter_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.net.URL_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 1705,
+      "pct": 99.4
+    },
+    {
+      "frame": "__pthread_mutex_unlock",
+      "samples": 1,
+      "pct": 0.1
+    },
+    {
+      "frame": "InterpreterRuntime::resolve_invoke",
+      "samples": 1,
+      "pct": 0.1
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-f8dd0537-f66c-4147-9204-b772c3f2c145-libsqlitejdbc.so",
+      "samples": 1,
+      "pct": 0.1
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 1,
+      "pct": 0.1
+    },
+    {
+      "frame": "SystemDictionary::invoke_bootstrap_method",
+      "samples": 1,
+      "pct": 0.1
+    },
+    {
+      "frame": "kotlin/collections/ArraysKt___ArraysKt.joinToString$default_[0]",
+      "samples": 1,
+      "pct": 0.1
+    },
+    {
+      "frame": "kotlinx/coroutines/internal/LockFreeTaskQueue.getSize_[0]",
+      "samples": 1,
+      "pct": 0.1
+    },
+    {
+      "frame": "ClassVerifier::verify_invoke_init",
+      "samples": 1,
+      "pct": 0.1
+    },
+    {
+      "frame": "java/lang/String.equals_[j]",
+      "samples": 1,
+      "pct": 0.1
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}
