@@ -16,15 +16,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      kmp-changed: ${{ steps.filter.outputs.kmp }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history needed to diff against github.event.before on multi-commit pushes
+      - name: Detect kmp/gradle changes
+        id: filter
+        # Use the full push range (github.event.before → HEAD) so multi-commit pushes
+        # don't miss changes that landed in earlier commits of the same push.
+        run: |
+          BEFORE="${{ github.event.before }}"
+          # All-zeros SHA means initial branch push — assume kmp changed to be safe
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "kmp=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$BEFORE" HEAD | grep -qE '^(kmp/|gradle|build\.gradle|buildSrc/|settings\.gradle|e2e/)'; then
+            echo "kmp=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "kmp=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build-demo:
     runs-on: ubuntu-latest
+    needs: check-changes
     # Only rebuild Wasm when app code or build files change; site-only edits skip this job
     if: |
       github.event_name == 'workflow_dispatch' ||
-      contains(toJSON(github.event.head_commit.modified), 'kmp/') ||
-      contains(toJSON(github.event.head_commit.added), 'kmp/') ||
-      contains(toJSON(github.event.head_commit.modified), 'gradle') ||
-      contains(toJSON(github.event.head_commit.modified), 'settings.gradle')
+      needs.check-changes.outputs.kmp-changed == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -42,6 +65,23 @@ jobs:
         run: |
           find kmp/build/dist/wasmJs/productionExecutable -type f -size +90M \
             -exec echo "FILE TOO LARGE: {}" \; | grep . && exit 1 || true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Install Playwright Chromium
+        run: cd e2e && npm ci && npx playwright install --with-deps chromium
+      - name: Smoke-test WASM demo in headless Chromium
+        run: cd e2e && npx playwright test
+        env:
+          DEMO_DIST: ../kmp/build/dist/wasmJs/productionExecutable
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
           name: demo-dist
@@ -72,6 +112,8 @@ jobs:
             --json databaseId --jq '.[0].databaseId // empty')
           if [ -n "$LAST_RUN" ]; then
             gh run download "$LAST_RUN" --name demo-dist --dir site/public/demo/
+          else
+            exit 1
           fi
         env:
           GH_TOKEN: ${{ github.token }}
@@ -86,7 +128,8 @@ jobs:
       - run: npm run build
         working-directory: site
         env:
-          DEMO_AVAILABLE: ${{ steps.download-demo.outcome == 'success' }}
+          # True when demo files are present from either current run or fallback
+          DEMO_AVAILABLE: ${{ steps.download-demo.outcome == 'success' || steps.download-demo-fallback.outcome == 'success' }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site/dist/
@@ -94,6 +137,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build-site
+    # GitHub Actions skips jobs with default success() when any transitive dependency was
+    # skipped (even via if:always() chains). Override explicitly to only gate on build-site.
+    if: always() && needs.build-site.result == 'success'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
