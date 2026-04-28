@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-04-28 04:29:11 UTC",
+  "gitSha": "a890b72",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 4,
+  "phase3Ms": 19,
+  "totalMs": 32,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 29,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 134,
+      "pct": 68.7
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 16,
+      "pct": 8.2
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 6,
+      "pct": 3.1
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 4,
+      "pct": 2.1
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.io.File_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2110,
+      "pct": 99.3
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-24038085-f253-4c08-b2a4-1542db966b1d-libsqlitejdbc.so",
+      "samples": 3,
+      "pct": 0.1
+    },
+    {
+      "frame": "pread",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "kotlinx/coroutines/scheduling/WorkQueue.add_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "inflate_table",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/StringUTF16.newBytesFor_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "jdk/internal/org/objectweb/asm/MethodWriter.visitCode_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "LayoutRawBlock::compare_offset",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "syscall",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "klassVtable::initialize_vtable",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}
