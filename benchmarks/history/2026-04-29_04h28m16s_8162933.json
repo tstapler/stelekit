@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-04-29 04:28:16 UTC",
+  "gitSha": "8162933",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 4,
+  "phase3Ms": 19,
+  "totalMs": 33,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 36,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 130,
+      "pct": 69.9
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 7,
+      "pct": 3.8
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 6,
+      "pct": 3.2
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 5,
+      "pct": 2.7
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.lang.reflect.Method_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.util.LinkedHashMap_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 2,
+      "pct": 1.1
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2144,
+      "pct": 99.4
+    },
+    {
+      "frame": "pread",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-2a1bc277-6ef0-440a-93f1-c20b694359e7-libsqlitejdbc.so",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "Runtime1::is_instance_of",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "I2C/C2I adapters(0xbbbebe)",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "Rewriter::compute_index_maps",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/String.encodeUTF8_UTF16_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "org/sqlite/core/CoreStatement.<init>_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "TypeArrayKlass::allocate_common",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 2,
+      "totalMs": 3
+    }
+  ]
+}
