@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.2](https://github.com/tstapler/stelekit/compare/v0.19.1...v0.19.2) (2026-04-29)
+
+
+### Bug Fixes
+
+* **wasm:** fix wasmJs compilation errors breaking GitHub Pages deploy ([bde6814](https://github.com/tstapler/stelekit/commit/bde681481adf15a9c429b6a9b29c7eeb4cd3619c))
+
 ## [0.19.1](https://github.com/tstapler/stelekit/compare/v0.19.0...v0.19.1) (2026-04-28)
 
 
