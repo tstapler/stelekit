@@ -79,15 +79,13 @@ jobs:
           # expect/actual mismatch errors (e.g. PlatformSettings supertype mismatch).
           gradle-home-cache-excludes: caches/kotlin-build-*
 
-      - name: Run Android unit tests
-        run: ./gradlew :kmp:testDebugUnitTest --no-daemon --build-cache
-
-      # Record screenshots in CI and upload as artifacts for visual review.
+      # Run tests, record screenshots, and assemble the APK in a single Gradle
+      # invocation so configuration, compilation, and daemon startup happen once.
       # Goldens are intentionally not committed — rendering differs between machines.
       # To enable regression detection: download artifacts from a baseline CI run,
       # commit to kmp/src/androidUnitTest/snapshots/images/, then switch to verifyRoborazziDebug.
-      - name: Record Roborazzi screenshots
-        run: ./gradlew :kmp:recordRoborazziDebug --no-daemon --build-cache
+      - name: Run Android tests and build APK
+        run: ./gradlew :kmp:testDebugUnitTest :kmp:recordRoborazziDebug :androidApp:assembleDebug --no-daemon --build-cache
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -95,9 +93,6 @@ jobs:
           name: roborazzi-screenshots
           path: kmp/src/androidUnitTest/snapshots/
           retention-days: 14
-
-      - name: Build debug APK
-        run: ./gradlew :androidApp:assembleDebug --no-daemon --build-cache
 
       - name: Publish test report
         uses: mikepenz/action-junit-report@v4
@@ -172,6 +167,7 @@ jobs:
   android-smoke:
     name: Android Smoke Tests (Emulator)
     runs-on: ubuntu-latest
+    needs: [android]
     if: github.event.pull_request.draft == false
 
     steps:
@@ -203,7 +199,7 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -memory 2048
           disable-animations: true
-          script: ./gradlew :androidApp:connectedDebugAndroidTest --no-daemon
+          script: ./gradlew :androidApp:connectedDebugAndroidTest --no-daemon --build-cache
 
       - uses: actions/upload-artifact@v4
         if: always()
