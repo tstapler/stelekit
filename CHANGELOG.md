@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/tstapler/stelekit/compare/v0.19.0...v0.19.1) (2026-04-28)
+
+
+### Bug Fixes
+
+* **android:** defer sanitizeDirectory off startup critical path; add native file pickers for export ([453f75c](https://github.com/tstapler/stelekit/commit/453f75c7563374ea1305b3f577ed132213b2b833))
+
 ## [0.19.0](https://github.com/tstapler/stelekit/compare/v0.18.1...v0.19.0) (2026-04-28)
 
 
