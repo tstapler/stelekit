@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-04-29 04:24:57 UTC",
+  "gitSha": "88150d6",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 9,
+  "phase2Ms": 3,
+  "phase3Ms": 14,
+  "totalMs": 25,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 34,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 120,
+      "pct": 64.2
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 12,
+      "pct": 6.4
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 5,
+      "pct": 2.7
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 5,
+      "pct": 2.7
+    },
+    {
+      "frame": "java.net.URL_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.util.HashMap$Node[]_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.io.File_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.util.HashMap$Node_[k]",
+      "samples": 2,
+      "pct": 1.1
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2105,
+      "pct": 99.4
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-f20d8d1d-bc3b-47c9-ba4a-9843f85766a1-libsqlitejdbc.so",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/channels/ChannelSegment.onCancelledRequest_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "inflate_fast",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/AbstractStringBuilder.append_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "llseek",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ConstantPool::klass_at_impl",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pread",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}
