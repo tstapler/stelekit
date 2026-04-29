@@ -14,11 +14,11 @@ class JsGitManager : GitManager {
     }
 
     override suspend fun push(): Either<DomainError, Unit> {
-        return DomainError.NetworkError(UnsupportedOperationException("Push not supported on Web")).left()
+        return DomainError.NetworkError.HttpError(501, "Push not supported on Web").left()
     }
 
     override suspend fun pull(): Either<DomainError, Unit> {
-        return DomainError.NetworkError(UnsupportedOperationException("Pull not supported on Web")).left()
+        return DomainError.NetworkError.HttpError(501, "Pull not supported on Web").left()
     }
 
     override suspend fun status(): GitResult<String> {
