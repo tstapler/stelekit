@@ -11,3 +11,4 @@
 - [ ] Graph View — force-directed knowledge graph visualization with global view, local panel, namespace clustering, and filter controls (docs/tasks/graph-view.md)
 - [ ] Templates — mark any block as a reusable template via `template::` property, insert via `/template` slash command with fuzzy picker, dynamic variables `<% today %>` / `<% current page %>` / NLD dates (docs/tasks/templates.md)
 - [ ] LaTeX / Math Rendering — inline `$...$` and block `$$...$$` typeset math via `jlatexmath` (JVM/Android), KaTeX (JS), and `expect/actual` MathRenderer composable; LRU cache, error fallback, editor monospace styling (docs/tasks/latex-math-rendering.md)
+- [ ] Android SAF Performance — fix Phase 3 / BlockStateManager UUID race condition, eliminate DocumentFile metadata overhead, lazy Phase 3 indexing, and SAF shadow copy for 1000+ page graphs (docs/tasks/android-saf-performance.md)
