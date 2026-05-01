@@ -78,8 +78,8 @@ class BlockStateManagerTest {
         updatedAt = now
     )
 
-    private fun createPage(filePath: String? = null) = Page(
-        uuid = pageUuid,
+    private fun createPage(uuid: String = pageUuid, filePath: String? = null) = Page(
+        uuid = uuid,
         name = "Test Page",
         filePath = filePath,
         createdAt = now,
@@ -707,6 +707,63 @@ class BlockStateManagerTest {
         val updated = blockRepo.getBlockByUuid("b1").first().getOrNull()
         assertNotNull(updated)
         assertEquals("[[Page]]", updated.content, "Out-of-bounds selection clamped to content length")
+    }
+
+    // ---- activePageUuids (Phase 3 race condition guard) ----
+
+    @Test
+    fun observePage_adds_uuid_to_activePageUuids() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        assertTrue(manager.activePageUuids.value.isEmpty())
+
+        manager.observePage(pageUuid)
+        assertTrue(manager.activePageUuids.value.contains(pageUuid),
+            "activePageUuids should contain the page UUID once observePage is called")
+    }
+
+    @Test
+    fun unobservePage_removes_uuid_from_activePageUuids() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        manager.observePage(pageUuid)
+        assertTrue(manager.activePageUuids.value.contains(pageUuid))
+
+        manager.unobservePage(pageUuid)
+        assertFalse(manager.activePageUuids.value.contains(pageUuid),
+            "activePageUuids should not contain the page UUID after unobservePage")
+    }
+
+    @Test
+    fun activePageUuids_tracks_multiple_pages_independently() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        val pageA = createPage(uuid = "page-a")
+        val pageB = createPage(uuid = "page-b")
+        pageRepo.savePage(pageA)
+        pageRepo.savePage(pageB)
+
+        manager.observePage("page-a")
+        manager.observePage("page-b")
+        assertEquals(setOf("page-a", "page-b"), manager.activePageUuids.value)
+
+        manager.unobservePage("page-a")
+        assertEquals(setOf("page-b"), manager.activePageUuids.value,
+            "Only page-b should remain after unobserving page-a")
     }
 
     // ---- editingSelectionRange ----

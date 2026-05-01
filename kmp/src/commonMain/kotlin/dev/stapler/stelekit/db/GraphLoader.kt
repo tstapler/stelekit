@@ -472,10 +472,9 @@ class GraphLoader(
                     val blocksToSaveByPage = mutableMapOf<String, MutableList<Block>>()
                     val pageUuidsToDelete = mutableSetOf<String>()
 
-                    val activeSessions = activePageUuids?.value ?: emptySet()
                     chunk.map { page ->
                         async(backgroundIndexDispatcher) {
-                            if (page.uuid in activeSessions) {
+                            if (page.uuid in (activePageUuids?.value ?: emptySet())) {
                                 logger.debug("Phase 3: skipping ${page.name} — active edit session")
                                 return@async null
                             }

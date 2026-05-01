@@ -84,6 +84,19 @@ fun SearchDialog(
     ) {
         val isMobile = LocalWindowSizeClass.current.isMobile
 
+        val indexingIndicator: @Composable () -> Unit = {
+            if (isIndexing) {
+                Text(
+                    text = "Still indexing pages — some results may be missing",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                )
+            }
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -286,16 +299,7 @@ fun SearchDialog(
                 ) {
                     Column(modifier = sharedColumnModifier, verticalArrangement = Arrangement.Bottom) {
                         resultsList()
-                        if (isIndexing) {
-                            Text(
-                                text = "Still indexing pages — some results may be missing",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                            )
-                        }
+                        indexingIndicator()
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         FilterBar(
                             currentScope = uiState.scope,
@@ -370,16 +374,7 @@ fun SearchDialog(
                         HorizontalDivider(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                         )
-                        if (isIndexing) {
-                            Text(
-                                text = "Still indexing pages — some results may be missing",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                            )
-                        }
+                        indexingIndicator()
                         resultsList()
                     }
                 }

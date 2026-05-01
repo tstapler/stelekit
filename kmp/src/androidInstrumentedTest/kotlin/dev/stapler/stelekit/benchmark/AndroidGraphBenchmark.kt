@@ -190,14 +190,14 @@ class AndroidGraphBenchmark {
         }
 
         // Warm up filesystem cache and JIT
-        sampleFiles.take(5).forEach { it.readText() }
+        sampleFiles.take(5).forEach { it.readBytes() }
         sampleFiles.take(5).forEach { file ->
             val uri = FileProvider.getUriForFile(context, safAuthority, file)
             context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
         }
 
         val directMs = measureTime {
-            sampleFiles.forEach { it.readText() }
+            sampleFiles.forEach { it.readBytes() }
         }.inWholeMilliseconds
 
         val safMs = measureTime {

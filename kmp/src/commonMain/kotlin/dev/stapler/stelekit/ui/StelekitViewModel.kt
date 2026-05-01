@@ -359,10 +359,18 @@ class StelekitViewModel(
                                 scope.launch(CoroutineName("lazy-phase3")) {
                                     delay(500) // let UI settle after Phase 1
                                     _indexingProgress.value = IndexingState.InProgress("Indexing pages...")
-                                    graphLoader.indexRemainingPages { progress ->
-                                        _indexingProgress.value = IndexingState.InProgress(progress)
+                                    try {
+                                        graphLoader.indexRemainingPages { progress ->
+                                            _indexingProgress.value = IndexingState.InProgress(progress)
+                                        }
+                                        _indexingProgress.value = IndexingState.Complete
+                                    } catch (e: kotlinx.coroutines.CancellationException) {
+                                        _indexingProgress.value = IndexingState.Idle
+                                        throw e
+                                    } catch (e: Exception) {
+                                        logger.error("Background indexing failed: ${e.message}")
+                                        _indexingProgress.value = IndexingState.Idle
                                     }
-                                    _indexingProgress.value = IndexingState.Complete
                                 }
                             }
                         )
@@ -1010,8 +1018,15 @@ class StelekitViewModel(
         _uiState.update { it.copy(indexingError = null) }
         scope.launch {
             _indexingProgress.value = IndexingState.InProgress("Re-indexing...")
-            graphLoader.indexRemainingPages { /* progress updates can be ignored here */ }
-            _indexingProgress.value = IndexingState.Complete
+            try {
+                graphLoader.indexRemainingPages { /* progress updates can be ignored here */ }
+                _indexingProgress.value = IndexingState.Complete
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                _indexingProgress.value = IndexingState.Idle
+                throw e
+            } catch (e: Exception) {
+                _indexingProgress.value = IndexingState.Idle
+            }
         }
     }
 
