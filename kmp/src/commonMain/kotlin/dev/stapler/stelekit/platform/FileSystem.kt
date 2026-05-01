@@ -46,4 +46,17 @@ interface FileSystem {
      * Callers must pass the result directly to [writeFile].
      */
     suspend fun pickSaveFileAsync(suggestedName: String, mimeType: String = "application/json"): String? = null
+
+    /** Updates the shadow copy after a SAF write. No-op on non-SAF file systems. */
+    fun updateShadow(path: String, content: String) { /* no-op */ }
+
+    /** Invalidates the shadow copy for [path], forcing a re-sync on next read. No-op on non-SAF. */
+    fun invalidateShadow(path: String) { /* no-op */ }
+
+    /**
+     * Syncs the shadow copy for [graphPath] from SAF using batch mtime queries.
+     * No-op on non-SAF file systems. Should run concurrently with Phase 2 metadata loading
+     * so Phase 3 reads can use the shadow instead of SAF Binder IPC.
+     */
+    suspend fun syncShadow(graphPath: String) { /* no-op */ }
 }

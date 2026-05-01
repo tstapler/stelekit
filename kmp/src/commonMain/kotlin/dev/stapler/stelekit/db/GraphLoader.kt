@@ -336,6 +336,7 @@ class GraphLoader(
                         coroutineScope {
                             launch { loadRemainingJournals(journalsDir, immediateJournalCount, onProgress) }
                             launch { loadDirectory(pagesDir, onProgress, ParseMode.METADATA_ONLY) }
+                            launch { fileSystem.syncShadow(graphPath) }
                         }
                         val totalDuration = Clock.System.now() - startTime
                         logger.info("Warm reconcile complete. Duration: $totalDuration")
@@ -379,6 +380,10 @@ class GraphLoader(
 
                 launch(Dispatchers.Default) {
                     loadDirectory(pagesDir, onProgress, ParseMode.METADATA_ONLY)
+                }
+
+                launch {
+                    fileSystem.syncShadow(graphPath)
                 }
             }
             phase2Span.finish("OK")
@@ -518,11 +523,13 @@ class GraphLoader(
 
         for (changed in changeSet.newFiles) {
             logger.info("New file detected: ${changed.entry.filePath}")
+            fileSystem.invalidateShadow(changed.entry.filePath)
             parseAndSavePage(changed.entry.filePath, changed.content, ParseMode.FULL)
         }
 
         for (changed in changeSet.changedFiles) {
             logger.info("File modification detected: ${changed.entry.filePath}")
+            fileSystem.invalidateShadow(changed.entry.filePath)
 
             // Emit event so subscribers can suppress the re-import
             _externalFileChanges.tryEmit(ExternalFileChange(changed.entry.filePath, changed.content) {

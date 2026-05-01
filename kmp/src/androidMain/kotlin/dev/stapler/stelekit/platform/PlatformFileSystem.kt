@@ -25,6 +25,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     private var treeUri: Uri? = null
     private var treeRootDocId: String? = null
 
+    private var shadowCache: ShadowFileCache? = null
     private var changeDetector: SafChangeDetector? = null
 
     companion object {
@@ -64,7 +65,9 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 Log.d(TAG, "init: isSafPermissionValid($uri) = $valid")
                 if (valid) {
                     treeUri = uri
-                    treeRootDocId = DocumentsContract.getTreeDocumentId(uri)
+                    treeRootDocId = DocumentsContract.getTreeDocumentId(uri).also { docId ->
+                        shadowCache = ShadowFileCache(context, ShadowFileCache.graphIdFor(docId))
+                    }
                     Log.d(TAG, "init: SAF restored — treeRootDocId=$treeRootDocId")
                 } else {
                     Log.w(TAG, "init: stored URI has no valid persistable permission — clearing")
@@ -209,14 +212,33 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     actual override fun readFile(path: String): String? {
         if (!path.startsWith("saf://")) return legacyReadFile(path)
-        return try {
-            val docUri = parseDocumentUri(path)
-            context?.contentResolver?.openInputStream(docUri)?.use {
-                it.bufferedReader(Charsets.UTF_8).readText()
+        // Check shadow first — avoids Binder IPC during Phase 3 background indexing
+        val relativePath = relativePathFromSaf(path)
+        if (relativePath.isNotEmpty()) {
+            val shadow = shadowCache?.resolve(relativePath)
+            if (shadow != null) {
+                try { return shadow.readText() } catch (_: Exception) {
+                    Log.d(TAG, "readFile: shadow miss for $relativePath — falling back to SAF")
+                }
             }
-        } catch (e: SecurityException) { Log.w(TAG, "readFile: permission denied for $path", e); null }
-        catch (e: IllegalArgumentException) { Log.w(TAG, "readFile: invalid URI for $path", e); null }
-        catch (e: Exception) { Log.w(TAG, "readFile: unexpected error for $path", e); null }
+        }
+        return safReadContent(path)
+    }
+
+    private fun safReadContent(path: String): String? = try {
+        val docUri = parseDocumentUri(path)
+        context?.contentResolver?.openInputStream(docUri)?.use {
+            it.bufferedReader(Charsets.UTF_8).readText()
+        }
+    } catch (e: SecurityException) { Log.w(TAG, "readFile: permission denied for $path", e); null }
+    catch (e: IllegalArgumentException) { Log.w(TAG, "readFile: invalid URI for $path", e); null }
+    catch (e: Exception) { Log.w(TAG, "readFile: unexpected error for $path", e); null }
+
+    /** Extracts the relative path within the graph (e.g. "pages/Foo.md") from a saf:// URL. */
+    private fun relativePathFromSaf(safPath: String): String {
+        val withoutScheme = safPath.removePrefix("saf://")
+        val slashIdx = withoutScheme.indexOf('/')
+        return if (slashIdx >= 0) withoutScheme.substring(slashIdx + 1) else ""
     }
 
     actual override fun writeFile(path: String, content: String): Boolean {
@@ -390,7 +412,9 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                         val uri = Uri.parse(uriStr)
                         if (isSafPermissionValid(ctx, uri)) {
                             treeUri = uri
-                            treeRootDocId = DocumentsContract.getTreeDocumentId(uri)
+                            treeRootDocId = DocumentsContract.getTreeDocumentId(uri).also { docId ->
+                                shadowCache = ShadowFileCache(ctx, ShadowFileCache.graphIdFor(docId))
+                            }
                             Log.d(TAG, "pickDirectoryAsync: SAF state refreshed — treeRootDocId=$treeRootDocId")
                         } else {
                             Log.w(TAG, "pickDirectoryAsync: permission not valid for $uri after pick")
@@ -409,6 +433,29 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     // -------------------------------------------------------------------------
     // New FileSystem interface methods (Story 3 + Story 4)
     // -------------------------------------------------------------------------
+
+    override fun updateShadow(path: String, content: String) {
+        if (!path.startsWith("saf://")) return
+        val relativePath = relativePathFromSaf(path)
+        if (relativePath.isNotEmpty()) shadowCache?.update(relativePath, content)
+    }
+
+    override fun invalidateShadow(path: String) {
+        if (!path.startsWith("saf://")) return
+        val relativePath = relativePathFromSaf(path)
+        if (relativePath.isNotEmpty()) shadowCache?.invalidate(relativePath)
+    }
+
+    override suspend fun syncShadow(graphPath: String) {
+        val cache = shadowCache ?: return
+        if (!graphPath.startsWith("saf://")) return
+        val pagesPath = "$graphPath/pages"
+        val journalsPath = "$graphPath/journals"
+        val pagesMods = listFilesWithModTimes(pagesPath)
+        val journalsMods = listFilesWithModTimes(journalsPath)
+        cache.syncFromSaf("pages", pagesMods) { fileName -> safReadContent("$pagesPath/$fileName") }
+        cache.syncFromSaf("journals", journalsMods) { fileName -> safReadContent("$journalsPath/$fileName") }
+    }
 
     override fun hasStoragePermission(): Boolean {
         val uri = treeUri ?: return false
