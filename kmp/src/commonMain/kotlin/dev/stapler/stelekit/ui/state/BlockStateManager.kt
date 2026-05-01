@@ -58,6 +58,11 @@ class BlockStateManager(
     private val logger = Logger("BlockStateManager")
     private val diskWriteDebounce = DebounceManager(scope, 300L)
 
+    // ---- Active page sessions ----
+
+    private val _activePageUuids = MutableStateFlow<Set<String>>(emptySet())
+    val activePageUuids: StateFlow<Set<String>> = _activePageUuids.asStateFlow()
+
     // ---- Block state (per-page) ----
 
     private val _blocks = MutableStateFlow<Map<String, List<Block>>>(emptyMap())
@@ -342,6 +347,7 @@ class BlockStateManager(
      * the block is NOT dirty (i.e., has no unconfirmed local edit).
      */
     fun observePage(pageUuid: String, isContentLoaded: Boolean = true) {
+        _activePageUuids.update { it + pageUuid }
         // Cancel pending unobserve on re-navigation within the keepalive window
         pendingUnobserve.remove(pageUuid)?.cancel()
         if (pageUuid in observationJobs) return
@@ -379,6 +385,7 @@ class BlockStateManager(
      * blocks remain in [_blocks] as a stale cache for instant first-paint on slower re-navigation.
      */
     fun unobservePage(pageUuid: String) {
+        _activePageUuids.update { it - pageUuid }
         pendingUnobserve.remove(pageUuid)?.cancel()
         pendingUnobserve[pageUuid] = scope.launch {
             delay(5_000)

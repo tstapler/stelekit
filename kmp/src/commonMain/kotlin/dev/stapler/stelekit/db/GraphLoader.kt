@@ -32,6 +32,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -63,6 +64,14 @@ class GraphLoader(
 
     /** Called after a full bulk import completes. Used to trigger WAL checkpoint. */
     var onBulkImportComplete: (suspend () -> Unit)? = null
+
+    /**
+     * Set of page UUIDs currently open in an active edit session. When non-null,
+     * [indexRemainingPages] skips these pages to avoid clobbering in-progress edits.
+     * Set by [dev.stapler.stelekit.ui.StelekitViewModel] after construction to break the
+     * circular dependency (BlockStateManager depends on GraphLoader).
+     */
+    var activePageUuids: StateFlow<Set<String>>? = null
 
     // Lightweight span tracking for the Spans waterfall tab.
     private fun genId(): String =
@@ -463,8 +472,13 @@ class GraphLoader(
                     val blocksToSaveByPage = mutableMapOf<String, MutableList<Block>>()
                     val pageUuidsToDelete = mutableSetOf<String>()
 
+                    val activeSessions = activePageUuids?.value ?: emptySet()
                     chunk.map { page ->
                         async(backgroundIndexDispatcher) {
+                            if (page.uuid in activeSessions) {
+                                logger.debug("Phase 3: skipping ${page.name} — active edit session")
+                                return@async null
+                            }
                             val path = page.filePath ?: resolvePageFilePath(page.name)
                             if (path == null) return@async null
                             val content = fileSystem.readFile(path) ?: return@async null

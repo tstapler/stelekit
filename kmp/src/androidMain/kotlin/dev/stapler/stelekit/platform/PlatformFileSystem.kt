@@ -142,6 +142,28 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return parseDocumentUri(parentPath)
     }
 
+    private fun queryDocumentMimeType(docUri: Uri): String? {
+        val ctx = context ?: return null
+        return ctx.contentResolver.query(
+            docUri,
+            arrayOf(DocumentsContract.Document.COLUMN_MIME_TYPE),
+            null, null, null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+    }
+
+    private fun queryDocumentLastModified(docUri: Uri): Long? {
+        val ctx = context ?: return null
+        return ctx.contentResolver.query(
+            docUri,
+            arrayOf(DocumentsContract.Document.COLUMN_LAST_MODIFIED),
+            null, null, null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getLong(0).takeIf { it > 0L } else null
+        }
+    }
+
     private fun queryChildren(parentDocUri: Uri): List<DocumentInfo> {
         val ctx = context ?: return emptyList()
         val parentDocId = DocumentsContract.getDocumentId(parentDocUri)
@@ -253,24 +275,16 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         if (!path.startsWith("saf://")) return legacyFileExists(path)
         return try {
             val docUri = parseDocumentUri(path)
-            val df = DocumentFile.fromSingleUri(context ?: return false, docUri)
-            df?.exists() == true && df.isFile
+            queryDocumentMimeType(docUri)?.let { it != DocumentsContract.Document.MIME_TYPE_DIR } == true
         } catch (e: SecurityException) { Log.w(TAG, "fileExists: permission denied for $path", e); false }
         catch (e: IllegalArgumentException) { Log.w(TAG, "fileExists: invalid URI for $path", e); false }
     }
 
     actual override fun directoryExists(path: String): Boolean {
-        if (!path.startsWith("saf://")) {
-            Log.d(TAG, "directoryExists: non-SAF path '$path' — using legacy check")
-            return legacyDirectoryExists(path)
-        }
+        if (!path.startsWith("saf://")) return legacyDirectoryExists(path)
         return try {
             val docUri = parseDocumentUri(path)
-            Log.d(TAG, "directoryExists: resolved '$path' → $docUri")
-            val df = DocumentFile.fromSingleUri(context ?: run { Log.w(TAG, "directoryExists: no context"); return false }, docUri)
-            val result = df?.exists() == true && df.isDirectory
-            Log.d(TAG, "directoryExists: exists=$result isDirectory=${df?.isDirectory} for $docUri")
-            result
+            queryDocumentMimeType(docUri) == DocumentsContract.Document.MIME_TYPE_DIR
         } catch (e: SecurityException) { Log.w(TAG, "directoryExists: permission denied for $path", e); false }
         catch (e: IllegalArgumentException) { Log.w(TAG, "directoryExists: invalid URI for $path", e); false }
     }
@@ -320,9 +334,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         if (!path.startsWith("saf://")) return legacyGetLastModifiedTime(path)
         return try {
             val docUri = parseDocumentUri(path)
-            DocumentFile.fromSingleUri(context ?: return null, docUri)
-                ?.lastModified()
-                ?.takeIf { it > 0L }
+            queryDocumentLastModified(docUri)
         } catch (e: SecurityException) { Log.w(TAG, "getLastModifiedTime: permission denied for $path", e); null }
         catch (e: IllegalArgumentException) { Log.w(TAG, "getLastModifiedTime: invalid URI for $path", e); null }
     }
