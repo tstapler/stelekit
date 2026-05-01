@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.19.3](https://github.com/tstapler/stelekit/compare/v0.19.2...v0.19.3) (2026-05-01)
+
+
+### Bug Fixes
+
+* address Copilot review comments ([d297890](https://github.com/tstapler/stelekit/commit/d297890ba79162a46351d283c07a6594b13fd029))
+* **bench:** move FileProvider to kmp androidMain so test APK gets correct authority ([3704288](https://github.com/tstapler/stelekit/commit/37042881b6d9ac494a99874aaa148b0d35c4bb73))
+
+
+### Performance Improvements
+
+* **android:** PRAGMA tuning, MEDIUM benchmark, SAF I/O overhead test ([52ee431](https://github.com/tstapler/stelekit/commit/52ee43118e260987a9eb9930f3179a4027c4e00f))
+* **android:** SAF performance — race condition fix, DocumentFile elimination, lazy Phase 3 ([574c14a](https://github.com/tstapler/stelekit/commit/574c14a64f288e056882c19e9bfd8aaf6db5b5de))
+* **android:** SAF performance stories 1-3 ([d2ab252](https://github.com/tstapler/stelekit/commit/d2ab2521814112d3f3aa784c4222978bf3970edd))
+* **android:** SAF shadow copy eliminates Binder IPC for Phase 3 reads ([e26fa89](https://github.com/tstapler/stelekit/commit/e26fa89103b69ce496c7843edbbd98622d8aae8b))
+
 ## [0.19.2](https://github.com/tstapler/stelekit/compare/v0.19.1...v0.19.2) (2026-04-29)
 
 
