@@ -226,11 +226,13 @@ class GraphWriter(
                             if (!fileSystem.writeFile(filePath, content)) {
                                 error("writeFile returned false for: $filePath")
                             }
+                            fileSystem.updateShadow(filePath, content)
                         },
                         compensation = { _ ->
                             try {
                                 if (oldContent != null) fileSystem.writeFile(filePath, oldContent)
                                 else fileSystem.deleteFile(filePath)
+                                fileSystem.invalidateShadow(filePath)
                             } catch (e: Exception) {
                                 logger.error("Saga compensation: failed to restore $filePath", e)
                             }

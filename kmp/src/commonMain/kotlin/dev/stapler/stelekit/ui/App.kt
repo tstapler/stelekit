@@ -956,6 +956,7 @@ private fun GraphDialogLayer(
         onDismiss = { viewModel.setCommandPaletteVisible(false) }
     )
 
+    val indexingProgress by viewModel.indexingProgress.collectAsState()
     SearchDialog(
         visible = appState.searchDialogVisible,
         viewModel = searchViewModel,
@@ -963,7 +964,8 @@ private fun GraphDialogLayer(
         onNavigateToPage = { viewModel.navigateToPageByUuid(it) },
         onNavigateToBlock = { viewModel.navigateToBlock(it) },
         onCreatePage = { viewModel.navigateToPageByName(it) },
-        initialQuery = appState.searchDialogInitialQuery
+        initialQuery = appState.searchDialogInitialQuery,
+        isIndexing = indexingProgress is IndexingState.InProgress
     )
 
     SettingsDialog(

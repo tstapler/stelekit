@@ -32,6 +32,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -63,6 +64,14 @@ class GraphLoader(
 
     /** Called after a full bulk import completes. Used to trigger WAL checkpoint. */
     var onBulkImportComplete: (suspend () -> Unit)? = null
+
+    /**
+     * Set of page UUIDs currently open in an active edit session. When non-null,
+     * [indexRemainingPages] skips these pages to avoid clobbering in-progress edits.
+     * Set by [dev.stapler.stelekit.ui.StelekitViewModel] after construction to break the
+     * circular dependency (BlockStateManager depends on GraphLoader).
+     */
+    var activePageUuids: StateFlow<Set<String>>? = null
 
     // Lightweight span tracking for the Spans waterfall tab.
     private fun genId(): String =
@@ -327,6 +336,7 @@ class GraphLoader(
                         coroutineScope {
                             launch { loadRemainingJournals(journalsDir, immediateJournalCount, onProgress) }
                             launch { loadDirectory(pagesDir, onProgress, ParseMode.METADATA_ONLY) }
+                            launch { fileSystem.syncShadow(graphPath) }
                         }
                         val totalDuration = Clock.System.now() - startTime
                         logger.info("Warm reconcile complete. Duration: $totalDuration")
@@ -370,6 +380,10 @@ class GraphLoader(
 
                 launch(Dispatchers.Default) {
                     loadDirectory(pagesDir, onProgress, ParseMode.METADATA_ONLY)
+                }
+
+                launch {
+                    fileSystem.syncShadow(graphPath)
                 }
             }
             phase2Span.finish("OK")
@@ -465,6 +479,10 @@ class GraphLoader(
 
                     chunk.map { page ->
                         async(backgroundIndexDispatcher) {
+                            if (page.uuid in (activePageUuids?.value ?: emptySet())) {
+                                logger.debug("Phase 3: skipping ${page.name} — active edit session")
+                                return@async null
+                            }
                             val path = page.filePath ?: resolvePageFilePath(page.name)
                             if (path == null) return@async null
                             val content = fileSystem.readFile(path) ?: return@async null
@@ -505,11 +523,13 @@ class GraphLoader(
 
         for (changed in changeSet.newFiles) {
             logger.info("New file detected: ${changed.entry.filePath}")
+            fileSystem.invalidateShadow(changed.entry.filePath)
             parseAndSavePage(changed.entry.filePath, changed.content, ParseMode.FULL)
         }
 
         for (changed in changeSet.changedFiles) {
             logger.info("File modification detected: ${changed.entry.filePath}")
+            fileSystem.invalidateShadow(changed.entry.filePath)
 
             // Emit event so subscribers can suppress the re-import
             _externalFileChanges.tryEmit(ExternalFileChange(changed.entry.filePath, changed.content) {

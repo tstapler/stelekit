@@ -44,8 +44,16 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+sealed class IndexingState {
+    object Idle : IndexingState()
+    data class InProgress(val message: String) : IndexingState()
+    object Complete : IndexingState()
+}
 
 /**
  * Main application ViewModel orchestrating graph operations and UI state.
@@ -142,7 +150,12 @@ class StelekitViewModel(
     )
     val uiState: StateFlow<AppState> = _uiState.asStateFlow()
 
+    private val _indexingProgress = MutableStateFlow<IndexingState>(IndexingState.Idle)
+    val indexingProgress: StateFlow<IndexingState> = _indexingProgress.asStateFlow()
+
     init {
+        blockStateManager?.let { graphLoader.activePageUuids = it.activePageUuids }
+
         updateCommands()
 
         // Initialize graph if path exists
@@ -284,6 +297,7 @@ class StelekitViewModel(
         // Set loading state synchronously so callers observe isFullyLoaded=false immediately,
         // eliminating the race where StateFlow.first{isFullyLoaded} catches the initial default.
         _uiState.update { it.copy(isLoading = true, isFullyLoaded = false, statusMessage = "Loading graph from $path...") }
+        _indexingProgress.value = IndexingState.Idle
         val job = scope.launch {
             try {
                 var graphExists = fileSystem.directoryExists(path)
@@ -342,10 +356,20 @@ class StelekitViewModel(
                                 // has finished. Launching this earlier races with the batch loader:
                                 // both paths generate identical deterministic UUIDs and interleaved
                                 // delete+insert sequences cause UNIQUE constraint violations.
-                                scope.launch {
-                                    graphLoader.indexRemainingPages { status ->
-                                        // Optional: show indexing status in UI
-                                        // _uiState.update { it.copy(statusMessage = status) }
+                                scope.launch(CoroutineName("lazy-phase3")) {
+                                    delay(500) // let UI settle after Phase 1
+                                    _indexingProgress.value = IndexingState.InProgress("Indexing pages...")
+                                    try {
+                                        graphLoader.indexRemainingPages { progress ->
+                                            _indexingProgress.value = IndexingState.InProgress(progress)
+                                        }
+                                        _indexingProgress.value = IndexingState.Complete
+                                    } catch (e: kotlinx.coroutines.CancellationException) {
+                                        _indexingProgress.value = IndexingState.Idle
+                                        throw e
+                                    } catch (e: Exception) {
+                                        logger.error("Background indexing failed: ${e.message}")
+                                        _indexingProgress.value = IndexingState.Idle
                                     }
                                 }
                             }
@@ -993,7 +1017,16 @@ class StelekitViewModel(
     fun retryIndexing() {
         _uiState.update { it.copy(indexingError = null) }
         scope.launch {
-            graphLoader.indexRemainingPages { /* progress updates can be ignored here */ }
+            _indexingProgress.value = IndexingState.InProgress("Re-indexing...")
+            try {
+                graphLoader.indexRemainingPages { /* progress updates can be ignored here */ }
+                _indexingProgress.value = IndexingState.Complete
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                _indexingProgress.value = IndexingState.Idle
+                throw e
+            } catch (e: Exception) {
+                _indexingProgress.value = IndexingState.Idle
+            }
         }
     }
 

@@ -72,6 +72,7 @@ jobs:
 
           load = results.get("loadPhase", {})
           jank = results.get("writeLatency", {})
+          saf  = results.get("safIo", {})
 
           try:
               sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode().strip()
@@ -94,6 +95,11 @@ jobs:
               "phase3P95Ms": jank.get("phase3P95Ms"),
               "jankFactor": jank.get("jankFactor"),
               "writes": jank.get("writes"),
+              "safDirectMs": saf.get("directMs"),
+              "safProviderMs": saf.get("safMs"),
+              "safPerFileMs": saf.get("safPerFileMs"),
+              "safDirectPerFileMs": saf.get("directPerFileMs"),
+              "safOverhead": saf.get("overhead"),
           }
 
           history_dir = os.path.join("benchmarks", "android-history")
@@ -160,22 +166,37 @@ jobs:
             const fmt = v => v == null ? 'n/a' : v;
 
             const pageCountStr = curr.pageCount != null ? curr.pageCount : 'n/a';
+            const fms = v => v == null ? 'n/a' : `${parseFloat(v).toFixed(1)}ms`;
             const body = [
               '## Android Load Benchmark',
               '',
-              '_Instrumented benchmark on an API 30 x86_64 emulator measuring load performance for the Android app._',
+              '_Instrumented benchmark on an API 30 x86_64 emulator — 500-page synthetic graph._',
               '',
               `Comparing \`${curr.gitSha}\` (this PR) vs \`${base.gitSha}\` (baseline)  `,
-              `Device: API 30 x86_64 emulator — ${pageCountStr} pages`,
+              `Device: API 30 x86_64 emulator — ${pageCountStr} pages loaded`,
               '',
+              '### Graph Load',
               '| Metric | This PR | Baseline | Delta |',
               '|--------|---------|----------|-------|',
               `| Phase 1 TTI ↓ | ${ms(curr.phase1Ms)} | ${ms(base.phase1Ms)} | ${delta(curr.phase1Ms, base.phase1Ms)} |`,
               `| Phase 3 index ↓ | ${ms(curr.phase3Ms)} | ${ms(base.phase3Ms)} | ${delta(curr.phase3Ms, base.phase3Ms)} |`,
+              '',
+              '### Interactive Write Latency (during Phase 3)',
+              '| Metric | This PR | Baseline | Delta |',
+              '|--------|---------|----------|-------|',
               `| Write p95 (baseline) ↓ | ${ms(curr.baselineP95Ms)} | ${ms(base.baselineP95Ms)} | ${delta(curr.baselineP95Ms, base.baselineP95Ms)} |`,
               `| Write p95 (during phase 3) ↓ | ${ms(curr.phase3P95Ms)} | ${ms(base.phase3P95Ms)} | ${delta(curr.phase3P95Ms, base.phase3P95Ms)} |`,
               `| Jank factor ↓ | ${fmt(curr.jankFactor)}x | ${fmt(base.jankFactor)}x | ${delta(curr.jankFactor, base.jankFactor, true, 'x')} |`,
               `| Concurrent writes ↑ | ${fmt(curr.writes)} | ${fmt(base.writes)} | ${delta(curr.writes, base.writes, false)} |`,
+              '',
+              '### SAF I/O Overhead (ContentProvider vs direct File read)',
+              '_Measures Binder IPC cost added by ContentResolver per readFile() call._',
+              '_Real SAF via ExternalStorageProvider will be higher on device; this is a lower bound._',
+              '| Metric | This PR | Baseline | Delta |',
+              '|--------|---------|----------|-------|',
+              `| Direct read / file ↓ | ${fms(curr.safDirectPerFileMs)} | ${fms(base.safDirectPerFileMs)} | ${delta(curr.safDirectPerFileMs, base.safDirectPerFileMs)} |`,
+              `| Provider read / file ↓ | ${fms(curr.safPerFileMs)} | ${fms(base.safPerFileMs)} | ${delta(curr.safPerFileMs, base.safPerFileMs)} |`,
+              `| IPC overhead ratio ↓ | ${fmt(curr.safOverhead)}x | ${fmt(base.safOverhead)}x | ${delta(curr.safOverhead, base.safOverhead, true, 'x')} |`,
               '_↓ lower is better · ↑ higher is better_',
             ].join('\n');
 
