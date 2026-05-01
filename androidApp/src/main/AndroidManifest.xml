@@ -80,5 +80,17 @@
                 android:resource="@xml/capture_widget_info" />
         </receiver>
 
+        <!-- Benchmark-only FileProvider: serves cacheDir files via ContentResolver to measure
+             Binder IPC overhead (a lower bound on real SAF cost). Not exported; no user impact. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.benchprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/bench_file_paths" />
+        </provider>
+
     </application>
 </manifest>

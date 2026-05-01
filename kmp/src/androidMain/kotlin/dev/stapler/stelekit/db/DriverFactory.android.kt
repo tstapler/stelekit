@@ -48,6 +48,13 @@ actual class DriverFactory actual constructor() {
         try { driver.execute(null, "PRAGMA journal_mode=WAL;", 0) } catch (_: Exception) { }
         try { driver.execute(null, "PRAGMA synchronous=NORMAL;", 0) } catch (_: Exception) { }
         try { driver.execute(null, "PRAGMA busy_timeout=10000;", 0) } catch (_: Exception) { }
+        // Reduce WAL checkpoint frequency to avoid blocking writes during auto-checkpoint.
+        // Default=1000 pages triggers frequent checkpoints on write-heavy workloads; 4000 amortizes cost.
+        // temp_store=MEMORY: keeps temp tables in RAM instead of hitting Android's storage.
+        // cache_size=-8000: 8MB page cache reduces repeated reads for large graphs (1000+ pages).
+        try { driver.execute(null, "PRAGMA wal_autocheckpoint=4000;", 0) } catch (_: Exception) { }
+        try { driver.execute(null, "PRAGMA temp_store=MEMORY;", 0) } catch (_: Exception) { }
+        try { driver.execute(null, "PRAGMA cache_size=-8000;", 0) } catch (_: Exception) { }
 
         // Apply incremental DDL migrations (idempotent, hash-tracked).
         MigrationRunner.applyAll(driver)
