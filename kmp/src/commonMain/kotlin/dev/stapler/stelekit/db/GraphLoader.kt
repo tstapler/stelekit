@@ -345,6 +345,8 @@ class GraphLoader(
                         onFullyLoaded()
                         onBulkImportComplete?.invoke()
                         startWatching(graphPath)
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         warmSpan.finish("ERROR", "error.message" to (e.message ?: "unknown"))
                     } finally {
@@ -488,6 +490,8 @@ class GraphLoader(
                             val content = fileSystem.readFile(path) ?: return@async null
                             try {
                                 parsePageWithoutSaving(path, content, ParseMode.FULL)
+                            } catch (e: CancellationException) {
+                                throw e
                             } catch (e: Exception) {
                                 logger.error("Failed to parse file: $path: ${e.message}")
                                 null
@@ -834,6 +838,8 @@ class GraphLoader(
                                     }
                                     pageUuidsToDelete.add(updatedPage.uuid)
                                     true
+                                } catch (e: CancellationException) {
+                                    throw e
                                 } catch (e: Exception) {
                                     logger.error("Failed to parse file: $filePath: ${e.message}")
                                     false

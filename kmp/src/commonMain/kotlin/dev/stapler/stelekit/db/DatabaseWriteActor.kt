@@ -131,6 +131,14 @@ class DatabaseWriteActor(
                         }
                     try {
                         processRequest(request)
+                    } catch (e: CancellationException) {
+                        // Complete the deferred so the caller doesn't hang, then rethrow so the
+                        // actor loop exits cleanly via the outer catch instead of converting
+                        // cancellation into a spurious WriteFailed result.
+                        if (!request.deferred.isCompleted) {
+                            request.deferred.complete(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
+                        }
+                        throw e
                     } catch (e: Exception) {
                         // Unexpected throw — complete deferred so caller doesn't hang.
                         // Guard against double-completion: processRequest may have already
@@ -163,6 +171,8 @@ class DatabaseWriteActor(
                     try {
                         val pageBlocks = blockRepository.getBlocksForPage(request.pageUuid).first().getOrNull()
                         pageBlocks?.forEach { opLogger.logDelete(it) }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (_: Exception) {
                         // Non-fatal: op log failure must not block the delete
                     }
@@ -178,6 +188,8 @@ class DatabaseWriteActor(
                             val pageBlocks = blockRepository.getBlocksForPage(uuid).first().getOrNull()
                             pageBlocks?.forEach { opLogger.logDelete(it) }
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         logger.warn("Op log pre-delete read failed (non-fatal)", e)
                     }
