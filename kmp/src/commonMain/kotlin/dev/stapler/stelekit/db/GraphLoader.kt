@@ -677,6 +677,8 @@ class GraphLoader(
                 try {
                     parseAndSavePage(entry.filePath, content, ParseMode.FULL)
                     loadedCount++
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     logger.error("Failed to parse journal: ${entry.filePath}: ${e.message}")
                 }
