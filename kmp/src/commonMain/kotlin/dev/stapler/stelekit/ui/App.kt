@@ -126,6 +126,11 @@ fun StelekitApp(
      * [onGraphManagerReady] pattern.
      */
     onMemoryPressure: (((() -> Unit) -> Unit))? = null,
+    /**
+     * Platform-specific git implementation. Pass [JvmGitRepository] on Desktop,
+     * [AndroidGitRepository] on Android. When null, git sync is disabled.
+     */
+    gitRepository: dev.stapler.stelekit.git.GitRepository? = null,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -279,6 +284,7 @@ fun StelekitApp(
             deviceLlmAvailable = deviceLlmAvailable,
             spanRecorder = spanRecorder,
             onMemoryPressure = onMemoryPressure,
+            gitRepository = gitRepository,
         )
     }
 }
@@ -308,6 +314,7 @@ private fun GraphContent(
     deviceLlmAvailable: Boolean = false,
     spanRecorder: SpanRecorder = NoOpSpanRecorder,
     onMemoryPressure: (((() -> Unit) -> Unit))? = null,
+    gitRepository: dev.stapler.stelekit.git.GitRepository? = null,
 ) {
     CompositionLocalProvider(LocalSpanRecorder provides spanRecorder) {
     val scope = rememberCoroutineScope()
@@ -336,6 +343,26 @@ private fun GraphContent(
             onFileWritten = graphLoader::markFileWrittenByUs,
             sidecarManager = sidecarManager,
         )
+    }
+
+    // Wire git sync service for the active graph.
+    // Requires a platform-specific GitRepository; no-op when none is provided.
+    val gitSyncService = remember(gitRepository) {
+        if (gitRepository == null) return@remember null
+        val configRepo = graphManager.createGitConfigRepository() ?: return@remember null
+        val networkMonitor = dev.stapler.stelekit.platform.NetworkMonitor()
+        dev.stapler.stelekit.git.GitSyncService(
+            gitRepository = gitRepository,
+            graphLoader = graphLoader,
+            graphWriter = graphWriter,
+            editLock = dev.stapler.stelekit.git.EditLock(),
+            configRepository = configRepo,
+            networkMonitor = networkMonitor,
+            fileSystem = fileSystem,
+        )
+    }
+    LaunchedEffect(gitSyncService) {
+        graphManager.registerGitSyncService(gitSyncService)
     }
 
     // Break the circular dependency: blockStateManager needs the graph path from viewModel,
@@ -384,6 +411,8 @@ private fun GraphContent(
             debugFlagRepository = repos.debugFlagRepository,
             histogramWriter = repos.histogramWriter,
             ringBuffer = repos.ringBuffer,
+            activeGitSyncService = graphManager.activeGitSyncService,
+            activeGraphIdProvider = { graphManager.getActiveGraphId() },
         ).also {
             viewModelRef = it
             it.startAutoSave()

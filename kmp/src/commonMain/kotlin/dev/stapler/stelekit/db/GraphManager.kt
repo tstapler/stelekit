@@ -62,7 +62,12 @@ class GraphManager(
 
     // Track active coroutines for cleanup during graph switches
     private val activeGraphJobs = mutableMapOf<String, CoroutineScope>()
-    
+
+    // Git sync service for the currently active graph.
+    // Set externally via registerGitSyncService() after GraphLoader/GraphWriter are wired.
+    private val _activeGitSyncService = MutableStateFlow<dev.stapler.stelekit.git.GitSyncService?>(null)
+    val activeGitSyncService: StateFlow<dev.stapler.stelekit.git.GitSyncService?> = _activeGitSyncService.asStateFlow()
+
     init {
         loadRegistry()
     }
@@ -258,7 +263,11 @@ class GraphManager(
         // Cancel any existing coroutines for the previous graph
         val currentGraphId = registry.activeGraphId
         currentGraphId?.let { activeGraphJobs.remove(it)?.cancel() }
-        
+
+        // Shutdown any git sync service from the previous graph
+        _activeGitSyncService.value?.shutdown()
+        _activeGitSyncService.value = null
+
         // Close current factory and its database connection
         currentFactory?.close()
         currentFactory = null
@@ -363,16 +372,46 @@ class GraphManager(
     }
 
     /**
+     * Registers the [GitSyncService] for the currently active graph.
+     *
+     * Called from [GraphContent] after [GraphLoader] and [GraphWriter] are constructed,
+     * because those objects are Compose-managed and cannot be created inside [GraphManager].
+     * The service is automatically shut down on the next [switchGraph] call or on [shutdown].
+     */
+    fun registerGitSyncService(service: dev.stapler.stelekit.git.GitSyncService?) {
+        _activeGitSyncService.value = service
+    }
+
+    /**
+     * Creates a [GitConfigRepository] backed by the currently active graph's database.
+     * Returns null if the database is not yet open or the backend is not SQLDELIGHT.
+     *
+     * Called from [GraphContent] to wire the [GitSyncService] construction.
+     */
+    fun createGitConfigRepository(): dev.stapler.stelekit.git.GitConfigRepository? {
+        val factory = currentFactory as? dev.stapler.stelekit.repository.RepositoryFactoryImpl ?: return null
+        val actor = _activeRepositorySet.value?.writeActor ?: return null
+        return dev.stapler.stelekit.git.SqlDelightGitConfigRepository(
+            database = factory.steleDatabase(),
+            writeActor = actor,
+        )
+    }
+
+    /**
      * Clean up all resources when shutting down
      */
     fun shutdown() {
         // Cancel all graph-specific coroutines
         activeGraphJobs.values.forEach { it.cancel() }
         activeGraphJobs.clear()
-        
+
+        // Shutdown git sync service
+        _activeGitSyncService.value?.shutdown()
+        _activeGitSyncService.value = null
+
         // Close database connection
         currentFactory?.close()
-        
+
         // Clear repository set
         _activeRepositorySet.value = null
         currentFactory = null

@@ -46,6 +46,9 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
+                // Kotlin Multiplatform Diff — used for conflict hunk display
+                implementation("io.github.petertrr:kotlin-multiplatform-diff:1.3.0")
+
                 // Arrow
                 implementation("io.arrow-kt:arrow-core:2.2.1.1")
                 implementation("io.arrow-kt:arrow-optics:2.2.1.1")
@@ -110,6 +113,10 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
                 // sqlite-jdbc 3.51.3+ bundled here (verified: 3.51.3.0) — fixes WAL data-race in 3.7.0–3.51.2
                 implementation("app.cash.sqldelight:sqlite-driver:2.3.2")
+
+                // JGit 7.x — Desktop git operations
+                implementation("org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r")
+                implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.3.0.202506031305-r")
                 implementation("org.jetbrains.kotlinx:kotlinx-benchmark-runtime:0.4.13")
 
                 // Ktor engine for JVM (used by coil-network-ktor3)
@@ -193,6 +200,19 @@ kotlin {
                 // Use 1.1.1 (not 1.1.0) to pick up a protobuf security fix.
                 implementation("androidx.glance:glance-appwidget:1.1.1")
                 implementation("androidx.glance:glance-material3:1.1.1")
+
+                // WorkManager — periodic background git sync
+                implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+                // JGit 5.13.x — Android git operations (Android-safe; Java 11 APIs with desugaring)
+                implementation("org.eclipse.jgit:org.eclipse.jgit:5.13.3.202401111512-r")
+                // JGit SSH/JSch integration module (provides JschConfigSessionFactory)
+                implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:5.13.3.202401111512-r")
+                // mwiede/jsch fork — ED25519/ECDSA/OpenSSH key support for Android SSH
+                // Excludes old com.jcraft:jsch transitive dep, replaces it with mwiede fork
+                implementation("com.github.mwiede:jsch:0.2.21") {
+                    isTransitive = false
+                }
             }
         }
 
@@ -645,6 +665,9 @@ tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
 dependencies {
     detektPlugins(files("${rootProject.projectDir}/buildSrc/build/libs/buildSrc.jar"))
     detektPlugins("io.nlopez.compose.rules:detekt:0.4.27")
+    // Core library desugaring for Android — required by JGit 5.13.x (java.time, java.util.stream, etc.)
+    // Must be at module root level (not inside kotlin { sourceSets { } })
+    "coreLibraryDesugaring"("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 // ── Local CI check ───────────────────────────────────────────────────────────
@@ -787,6 +810,8 @@ android {
     }
 
     compileOptions {
+        // coreLibraryDesugar enables Java 8+ API compatibility for JGit 5.13.x on older Android APIs
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
