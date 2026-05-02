@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.editor.persistence
 
 import dev.stapler.stelekit.model.Block
+import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.logging.Logger
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -236,6 +237,8 @@ class ConflictResolver {
                 ConflictResolutionStrategy.MERGE -> resolveMerge(conflict, context)
                 ConflictResolutionStrategy.MANUAL -> resolveManual(conflict, context)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to resolve conflict ${conflict.conflictId} with strategy $strategy", e)
             EditorConflictResolutionResult(
@@ -378,6 +381,8 @@ data class ResolutionContext(
                 }
             }
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -390,6 +395,8 @@ data class ResolutionContext(
         return try {
             // Reload block from storage, discarding local changes
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -407,6 +414,8 @@ data class ResolutionContext(
                 "MOVE_CONFLICT" -> mergeMoveConflict(conflict)
                 else -> MergeResult(false, "Unknown conflict type: ${conflict.changeType}")
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             MergeResult(false, "Merge failed: ${e.message}")
         }
@@ -419,6 +428,8 @@ data class ResolutionContext(
         return try {
             // Add to manual resolution queue
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }

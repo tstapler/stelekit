@@ -91,6 +91,8 @@ class PersistenceDebouncer(
                         logger.debug("Emitted batch of ${batch.size} debounced changes")
                     }
                     
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     logger.error("Debouncing error", e)
                 }
@@ -173,6 +175,8 @@ class PersistencePerformanceMonitor(
                 try {
                     updateMetrics()
                     delay(5000) // Update metrics every 5 seconds
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     logger.error("Performance monitoring error", e)
                 }
