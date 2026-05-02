@@ -31,7 +31,7 @@ class VoiceSettings(private val platformSettings: Settings) {
         platformSettings.putBoolean(KEY_LLM_ENABLED, enabled)
 
     fun getUseDeviceStt(): Boolean =
-        platformSettings.getBoolean(KEY_USE_DEVICE_STT, false)
+        platformSettings.getBoolean(KEY_USE_DEVICE_STT, true)
 
     fun setUseDeviceStt(enabled: Boolean) =
         platformSettings.putBoolean(KEY_USE_DEVICE_STT, enabled)

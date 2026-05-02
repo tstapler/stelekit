@@ -14,6 +14,7 @@ class SteleKitRuleSetProvider : RuleSetProvider {
             MissingDirectRepositoryWriteRule(config),
             RepositoryWriteCallSiteRule(config),
             SaveBlockWithCopyRule(config),
+            RememberKeyForConstructorArgsRule(config),
         ),
     )
 }

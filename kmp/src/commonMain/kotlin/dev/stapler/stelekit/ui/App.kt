@@ -459,8 +459,11 @@ private fun GraphContent(
     val journalsViewModel = remember {
         JournalsViewModel(repos.journalService, blockStateManager)
     }
-    val voiceCaptureViewModel = remember {
+    val voiceCaptureViewModel = remember(voicePipeline) {
         VoiceCaptureViewModel(voicePipeline, repos.journalService)
+    }
+    DisposableEffect(voiceCaptureViewModel) {
+        onDispose { voiceCaptureViewModel.close() }
     }
 
     // Force-flush pending writes on Android lifecycle pause/stop
@@ -496,7 +499,6 @@ private fun GraphContent(
             allPagesViewModel.close()
             libraryStatsViewModel.close()
             searchViewModel.close()
-            voiceCaptureViewModel.close()
             viewModel.close()
         }
     }
