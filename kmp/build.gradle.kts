@@ -18,7 +18,7 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
     applyDefaultHierarchyTemplate()
 
     compilerOptions {
@@ -30,6 +30,7 @@ kotlin {
     jvm()
 
     if (project.findProperty("enableJs") == "true") {
+        @OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
         wasmJs {
             browser()
             binaries.executable()
@@ -341,12 +342,15 @@ tasks.named<Test>("jvmTest") {
         showStandardStreams = false
     }
     // Print timing after each test using a listener
-    afterTest(KotlinClosure2({ desc: TestDescriptor, result: TestResult ->
-        val ms = result.endTime - result.startTime
-        if (ms > 1000) {
-            println("  SLOW (${ms}ms) ${desc.className}#${desc.name}")
+    addTestListener(object : org.gradle.api.tasks.testing.TestListener {
+        override fun beforeSuite(suite: TestDescriptor) {}
+        override fun afterSuite(suite: TestDescriptor, result: TestResult) {}
+        override fun beforeTest(desc: TestDescriptor) {}
+        override fun afterTest(desc: TestDescriptor, result: TestResult) {
+            val ms = result.endTime - result.startTime
+            if (ms > 1000) println("  SLOW (${ms}ms) ${desc.className}#${desc.name}")
         }
-    }))
+    })
 
     // Run non-Roborazzi tests in parallel (screenshot tests require AWT and must serialize)
     maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
@@ -374,10 +378,15 @@ tasks.register<Test>("jvmTestFast") {
         events("PASSED", "FAILED", "SKIPPED")
         showExceptions = true
     }
-    afterTest(KotlinClosure2({ desc: TestDescriptor, result: TestResult ->
-        val ms = result.endTime - result.startTime
-        if (ms > 500) println("  SLOW (${ms}ms) ${desc.className}#${desc.name}")
-    }))
+    addTestListener(object : org.gradle.api.tasks.testing.TestListener {
+        override fun beforeSuite(suite: TestDescriptor) {}
+        override fun afterSuite(suite: TestDescriptor, result: TestResult) {}
+        override fun beforeTest(desc: TestDescriptor) {}
+        override fun afterTest(desc: TestDescriptor, result: TestResult) {
+            val ms = result.endTime - result.startTime
+            if (ms > 500) println("  SLOW (${ms}ms) ${desc.className}#${desc.name}")
+        }
+    })
 }
 
 // ── graph load TTI profiling ────────────────────────────────────────────────
@@ -466,22 +475,26 @@ tasks.register<Test>("jvmTestProfile") {
             threadsFile.delete()
         }
 
+        fun runCmd(vararg args: String) {
+            ProcessBuilder(*args).inheritIO().start().waitFor()
+        }
+
         if (jfrconvPath != null) {
             // Alloc flamegraph from standard JFR (allocation events are unaffected by profiling mode)
-            exec { commandLine(jfrconvPath, "--alloc", "-o", "collapsed", "$jfrFile", "$allocCollapsedFile"); isIgnoreExitValue = true }
-            exec { commandLine(jfrconvPath, "--alloc", "$jfrFile", "$htmlFile"); isIgnoreExitValue = true }
+            runCmd(jfrconvPath, "--alloc", "-o", "collapsed", "$jfrFile", "$allocCollapsedFile")
+            runCmd(jfrconvPath, "--alloc", "$jfrFile", "$htmlFile")
 
             // CPU/wall flamegraph: prefer wall-clock from async-profiler if available, fall
             // back to JFR CPU samples. Both are filtered to coroutine worker threads.
             if (wallJfrFile.exists()) {
-                exec { commandLine(jfrconvPath, "--wall", "--threads", "-o", "collapsed", "$wallJfrFile", "$wallThreadsFile"); isIgnoreExitValue = true }
+                runCmd(jfrconvPath, "--wall", "--threads", "-o", "collapsed", "$wallJfrFile", "$wallThreadsFile")
                 if (wallThreadsFile.exists()) {
                     filterToCoroutineThreads(wallThreadsFile, cpuCollapsedFile) {
-                        exec { commandLine(jfrconvPath, "--wall", "-o", "collapsed", "$wallJfrFile", "$cpuCollapsedFile"); isIgnoreExitValue = true }
+                        runCmd(jfrconvPath, "--wall", "-o", "collapsed", "$wallJfrFile", "$cpuCollapsedFile")
                     }
                 }
             } else {
-                exec { commandLine(jfrconvPath, "--threads", "-o", "collapsed", "$jfrFile", "$cpuThreadsFile"); isIgnoreExitValue = true }
+                runCmd(jfrconvPath, "--threads", "-o", "collapsed", "$jfrFile", "$cpuThreadsFile")
                 if (cpuThreadsFile.exists()) {
                     filterToCoroutineThreads(cpuThreadsFile, cpuCollapsedFile) {
                         cpuThreadsFile.copyTo(cpuCollapsedFile, overwrite = true)
@@ -579,10 +592,8 @@ with open(out_file, "w") as f:
     json.dump(summary, f, indent=2)
 print(out_file)
 """.trimIndent())
-        exec {
-            commandLine("python3", scriptFile.absolutePath, project.rootDir.absolutePath, reportsDir.absolutePath)
-            isIgnoreExitValue = true
-        }
+        ProcessBuilder("python3", scriptFile.absolutePath, project.rootDir.absolutePath, reportsDir.absolutePath)
+            .inheritIO().start().waitFor()
         scriptFile.delete()
     }
 }
@@ -736,7 +747,7 @@ afterEvaluate {
 
             // --cpu reads profiler.ExecutionSample (async-profiler agent events).
             // If the agent wasn't active the file will be empty — detect and warn.
-            exec { commandLine(jfrconvPath, "--cpu",   "-o", "collapsed", "$jfr", "$cpuCollapsed");   isIgnoreExitValue = true }
+            ProcessBuilder(jfrconvPath, "--cpu",   "-o", "collapsed", "$jfr", "$cpuCollapsed").inheritIO().start().waitFor()
             if (cpuCollapsed.length() == 0L) {
                 cpuCollapsed.delete()
                 println("── CPU stacks:   (empty — async-profiler agent was not active)")
@@ -744,7 +755,7 @@ afterEvaluate {
                 println("── CPU stacks:   $cpuCollapsed")
             }
 
-            exec { commandLine(jfrconvPath, "--alloc", "-o", "collapsed", "$jfr", "$allocCollapsed"); isIgnoreExitValue = true }
+            ProcessBuilder(jfrconvPath, "--alloc", "-o", "collapsed", "$jfr", "$allocCollapsed").inheritIO().start().waitFor()
             if (allocCollapsed.exists() && allocCollapsed.length() > 0) println("── Alloc stacks: $allocCollapsed")
 
             // Prune: keep the 20 most recent .jfr files and their collapsed siblings.
