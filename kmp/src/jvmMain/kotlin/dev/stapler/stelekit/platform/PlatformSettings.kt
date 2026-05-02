@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.platform
 
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.Properties
@@ -19,6 +20,8 @@ actual class PlatformSettings actual constructor() : Settings {
         if (prefsFile.exists()) {
             try {
                 FileInputStream(prefsFile).use { props.load(it) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Ignore load errors, start with empty
             }
@@ -49,6 +52,8 @@ actual class PlatformSettings actual constructor() : Settings {
             FileOutputStream(prefsFile).use { 
                 props.store(it, "SteleKit Preferences")
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             // Ignore save errors
         }

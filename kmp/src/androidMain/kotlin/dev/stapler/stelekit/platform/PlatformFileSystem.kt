@@ -9,6 +9,7 @@ import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 
 actual class PlatformFileSystem actual constructor() : FileSystem {
     private var context: Context? = null
@@ -73,6 +74,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                     Log.w(TAG, "init: stored URI has no valid persistable permission — clearing")
                     prefs.edit().remove(KEY_SAF_TREE_URI).apply()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "init: corrupt URI string — clearing", e)
                 prefs.edit().remove(KEY_SAF_TREE_URI).apply()
@@ -423,6 +426,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                         Log.w(TAG, "pickDirectoryAsync: no URI in SharedPreferences after pick")
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "pickDirectoryAsync: failed to refresh SAF state", e)
             }
@@ -470,6 +475,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val resolvedTreeUri = treeUri ?: return super.displayNameForPath(path)
             DocumentFile.fromTreeUri(ctx, resolvedTreeUri)?.name
                 ?: super.displayNameForPath(path)
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) { super.displayNameForPath(path) }
     }
 
@@ -480,6 +487,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
                 ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
                 ?: uriString.substringAfterLast("/")
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) { uriString.substringAfterLast("/") }
     }
 
@@ -492,6 +501,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 .getString(KEY_SAF_TREE_URI, null) ?: return null
             return try {
                 DocumentFile.fromTreeUri(ctx, Uri.parse(str))?.name
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) { null }
         }
         return try {
@@ -538,6 +549,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             if (!file.exists() || !file.isFile) return null
             if (file.length() > maxFileSize) return null
             file.readText()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }
@@ -555,6 +568,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             }
             file.writeText(content)
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -571,6 +586,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 ?.map { it.name }
                 ?.sorted()
                 ?: emptyList()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -587,6 +604,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 ?.map { it.name }
                 ?.sorted()
                 ?: emptyList()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -598,6 +617,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val validatedPath = validateLegacyPath(expandedPath)
             val file = File(validatedPath)
             file.exists() && file.isFile
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -609,6 +630,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val validatedPath = validateLegacyPath(expandedPath)
             val file = File(validatedPath)
             file.exists() && file.isDirectory
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -623,6 +646,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 return file.isDirectory
             }
             file.mkdirs()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -635,6 +660,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val file = File(validatedPath)
             if (!file.exists()) return true
             if (file.isDirectory) file.deleteRecursively() else file.delete()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -650,6 +677,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             } else {
                 null
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }

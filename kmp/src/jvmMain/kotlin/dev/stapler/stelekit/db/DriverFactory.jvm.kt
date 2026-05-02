@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import app.cash.sqldelight.db.SqlDriver
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.IOException
 import java.util.Properties
@@ -57,6 +58,8 @@ actual class DriverFactory actual constructor() {
 
         try {
             SteleDatabase.Schema.create(driver)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             // Log every exception — "already exists" is benign, anything else is unexpected
             // and will surface as a query failure if it was actually fatal.

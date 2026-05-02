@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import app.cash.sqldelight.Query
+import kotlinx.coroutines.CancellationException
 import app.cash.sqldelight.driver.jdbc.JdbcDriver
 import dev.stapler.stelekit.performance.PoolWaitMetrics
 import dev.stapler.stelekit.performance.PoolWaitSnapshot
@@ -125,6 +126,8 @@ internal class PooledJdbcSqliteDriver(
         while (conn != null) {
             try {
                 conn.close()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 log.warning("Failed to close pooled connection during shutdown: ${e.message}")
             }

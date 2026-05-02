@@ -4,6 +4,7 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.ParsedBlock
 import dev.stapler.stelekit.parser.MarkdownParser
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CancellationException
 import kotlin.test.Test
 import kotlin.time.Clock
 
@@ -112,6 +113,8 @@ class JournalParseReproTest {
                     if (parsedBlock.children.isNotEmpty()) {
                         tryConstructBlocks(parsedBlock.children, blockUuid, baseLevel + 1)
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     blockConstructionFailure = e
                     println("  EXCEPTION constructing block #$blocksConstructed: ${e::class.simpleName}: ${e.message}")

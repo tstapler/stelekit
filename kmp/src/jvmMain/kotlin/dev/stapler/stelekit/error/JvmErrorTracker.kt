@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.error
 
 import dev.stapler.stelekit.logging.LogManager
+import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.logging.LogEntry
 import dev.stapler.stelekit.logging.LogLevel
 import java.io.File
@@ -64,6 +65,8 @@ class JvmErrorTracker(private val logDir: String = "logs") : ErrorTracker {
         try {
             val fileName = "error-${SimpleDateFormat("yyyyMMdd-HHmmss").format(Date())}.log"
             File(logDir, fileName).writeText(report)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             System.err.println("Failed to write error report to file: ${e.message}")
         }

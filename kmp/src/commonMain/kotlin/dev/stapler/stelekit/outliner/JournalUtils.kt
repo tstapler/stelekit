@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.outliner
 
 import kotlinx.datetime.LocalDate
+import kotlinx.coroutines.CancellationException
 import kotlinx.datetime.format
 import kotlinx.datetime.format.char
 
@@ -23,6 +24,8 @@ object JournalUtils {
             val month = match.groupValues[2].toInt()
             val day = match.groupValues[3].toInt()
             LocalDate(year, month, day)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }

@@ -33,6 +33,8 @@ actual class PlatformUtils actual constructor() {
                 oldFile.delete()
             }
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             println("Failed to migrate database file: ${e.message}")
             false

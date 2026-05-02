@@ -11,6 +11,7 @@ import dev.stapler.stelekit.repository.PageRepository
 import io.opentelemetry.api.trace.StatusCode
 import io.opentelemetry.api.trace.Tracer
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.CancellationException
 import kotlinx.datetime.LocalDate
 
 class InstrumentedPageRepository(
@@ -53,6 +54,8 @@ class InstrumentedPageRepository(
             .startSpan()
         return try {
             delegate.savePage(page)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             span.setStatus(StatusCode.ERROR, e.message ?: "")
             throw e
@@ -68,6 +71,8 @@ class InstrumentedPageRepository(
             .startSpan()
         return try {
             delegate.savePages(pages)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             span.setStatus(StatusCode.ERROR, e.message ?: "")
             throw e
@@ -83,6 +88,8 @@ class InstrumentedPageRepository(
             .startSpan()
         return try {
             delegate.toggleFavorite(pageUuid)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             span.setStatus(StatusCode.ERROR, e.message ?: "")
             throw e
@@ -98,6 +105,8 @@ class InstrumentedPageRepository(
             .startSpan()
         return try {
             delegate.renamePage(pageUuid, newName)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             span.setStatus(StatusCode.ERROR, e.message ?: "")
             throw e
@@ -113,6 +122,8 @@ class InstrumentedPageRepository(
             .startSpan()
         return try {
             delegate.deletePage(pageUuid)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             span.setStatus(StatusCode.ERROR, e.message ?: "")
             throw e
@@ -126,6 +137,8 @@ class InstrumentedPageRepository(
         val span = tracer.spanBuilder("page.clear").startSpan()
         try {
             delegate.clear()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             span.setStatus(StatusCode.ERROR, e.message ?: "")
             throw e

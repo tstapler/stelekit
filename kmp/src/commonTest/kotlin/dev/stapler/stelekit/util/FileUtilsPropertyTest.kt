@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.util
 
 import kotlin.test.Test
+import kotlinx.coroutines.CancellationException
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -12,6 +13,8 @@ class FileUtilsPropertyTest {
         inputs.forEach { input ->
             try {
                 FileUtils.sanitizeFileName(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for input: $input")
             }
@@ -30,6 +33,8 @@ class FileUtilsPropertyTest {
         reservedNames.forEach { name ->
             try {
                 FileUtils.sanitizeFileName(name)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $name")
             }
@@ -50,6 +55,8 @@ class FileUtilsPropertyTest {
         pathInputs.forEach { input ->
             try {
                 FileUtils.sanitizeFileName(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }
@@ -71,6 +78,8 @@ class FileUtilsPropertyTest {
         specialChars.forEach { input ->
             try {
                 FileUtils.sanitizeFileName(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }
@@ -92,6 +101,8 @@ class FileUtilsPropertyTest {
         trailingInputs.forEach { input ->
             try {
                 FileUtils.sanitizeFileName(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }
@@ -106,6 +117,8 @@ class FileUtilsPropertyTest {
         unicodeInputs.forEach { input ->
             try {
                 FileUtils.sanitizeFileName(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }
@@ -117,6 +130,8 @@ class FileUtilsPropertyTest {
         try {
             val result = FileUtils.sanitizeFileName("")
             assertTrue(result.isNotEmpty())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             fail("Should handle empty string")
         }
@@ -128,6 +143,8 @@ class FileUtilsPropertyTest {
         inputs.forEach { input ->
             try {
                 FileUtils.decodeFileName(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for input: $input")
             }
@@ -142,6 +159,8 @@ class FileUtilsPropertyTest {
         invalidPercent.forEach { input ->
             try {
                 FileUtils.decodeFileName(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }
@@ -157,6 +176,8 @@ class FileUtilsPropertyTest {
         edgeCases.forEach { input ->
             try {
                 FileUtils.decodeFileName(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }

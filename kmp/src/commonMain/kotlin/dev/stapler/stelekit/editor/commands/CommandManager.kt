@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineScope
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.NotificationType
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 /**
  * Command manager that integrates all command system components
@@ -49,6 +50,8 @@ class CommandManager(
             val result = commandSystem.executeCommand(commandId, context)
             handleResult(result)
             result
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to execute command $commandId", e)
             val errorResult = CommandResult.Error("Failed to execute command: ${e.message}", e)
@@ -77,6 +80,8 @@ class CommandManager(
                     CommandResult.Error("Not a slash command")
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to execute slash command: $input", e)
             val errorResult = CommandResult.Error("Failed to execute slash command: ${e.message}", e)
@@ -91,6 +96,8 @@ class CommandManager(
     suspend fun getCommandSuggestions(query: String, context: CommandContext = CommandContext()): List<CommandSuggestion> {
         return try {
             registry.searchCommands(query, context)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to get command suggestions", e)
             emptyList()
@@ -103,6 +110,8 @@ class CommandManager(
     suspend fun getSlashCommandSuggestions(input: String): List<SlashCommandSuggestion> {
         return try {
             slashCommandHandler.getSuggestions(input)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to get slash command suggestions", e)
             emptyList()
@@ -115,6 +124,8 @@ class CommandManager(
     suspend fun isSlashCommand(input: String): Boolean {
         return try {
             slashCommandHandler.isSlashCommand(input)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to check if input is slash command", e)
             false
@@ -127,6 +138,8 @@ class CommandManager(
     suspend fun getAvailableCommands(context: CommandContext = CommandContext()): List<EditorCommand> {
         return try {
             commandSystem.getAvailableCommands(context)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to get available commands", e)
             emptyList()
@@ -140,6 +153,8 @@ class CommandManager(
         try {
             registry.register(command)
             logger.info("Registered custom command: ${command.id}")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to register command: ${command.id}", e)
         }
@@ -155,6 +170,8 @@ class CommandManager(
         try {
             slashCommandHandler.registerSlashCommand(command, handler)
             logger.info("Registered custom slash command: $command")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to register slash command: $command", e)
         }
@@ -166,6 +183,8 @@ class CommandManager(
     suspend fun getCommand(commandId: String): EditorCommand? {
         return try {
             registry.getCommand(commandId)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to get command: $commandId", e)
             null
@@ -183,6 +202,8 @@ class CommandManager(
     suspend fun clearHistory() {
         try {
             commandSystem.clearHistory()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to clear history", e)
         }

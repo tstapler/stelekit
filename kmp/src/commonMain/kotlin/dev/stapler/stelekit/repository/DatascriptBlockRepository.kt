@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
 
 /**
  * Datalog-style in-memory repository that mirrors Datascript behavior.
@@ -178,6 +179,8 @@ class DatascriptBlockRepository : BlockRepository {
                 val updateMap = blocks.associateBy { it.uuid }
                 batchUpdateBlocks(updateMap)
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.error("Failed to save batch blocks", e)
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
@@ -191,6 +194,8 @@ class DatascriptBlockRepository : BlockRepository {
                 val updateMap = mapOf(block.uuid to block)
                 batchUpdateBlocks(updateMap)
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.error("Failed to save block ${block.uuid}", e)
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
@@ -206,6 +211,8 @@ class DatascriptBlockRepository : BlockRepository {
                 val updated = existing.copy(content = content, version = existing.version + 1, updatedAt = kotlin.time.Clock.System.now())
                 batchUpdateBlocks(mapOf(blockUuid to updated))
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
@@ -219,6 +226,8 @@ class DatascriptBlockRepository : BlockRepository {
                 val existing = current[blockUuid] ?: return@withLock Unit.right()
                 batchUpdateBlocks(mapOf(blockUuid to existing.copy(properties = properties)))
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
@@ -250,6 +259,8 @@ class DatascriptBlockRepository : BlockRepository {
                 blocks.value = current
                 refreshIndexes(current)
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
@@ -319,6 +330,8 @@ class DatascriptBlockRepository : BlockRepository {
 
                 batchUpdateBlocks(updatedBlocks)
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
@@ -364,6 +377,8 @@ class DatascriptBlockRepository : BlockRepository {
                 } else {
                     Unit.right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
@@ -406,6 +421,8 @@ class DatascriptBlockRepository : BlockRepository {
                 } else {
                     Unit.right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
@@ -432,6 +449,8 @@ class DatascriptBlockRepository : BlockRepository {
                 val updates = TreeOperations.reorderSiblings(siblings).associateBy { it.uuid }
                 batchUpdateBlocks(updates)
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
@@ -458,6 +477,8 @@ class DatascriptBlockRepository : BlockRepository {
                 val updates = TreeOperations.reorderSiblings(siblings).associateBy { it.uuid }
                 batchUpdateBlocks(updates)
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
@@ -481,6 +502,8 @@ class DatascriptBlockRepository : BlockRepository {
                 blocks.value = current
                 refreshIndexes(current)
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
@@ -498,6 +521,8 @@ class DatascriptBlockRepository : BlockRepository {
                 blocks.value = current
                 refreshIndexes(current)
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }

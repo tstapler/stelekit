@@ -9,6 +9,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
 
@@ -49,6 +50,8 @@ suspend fun <T> withTracingSpan(
     val span = builder.startSpan()
     try {
         withContext(OtelSpanElement(span)) { block(span) }
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         span.setStatus(StatusCode.ERROR, e.message ?: "error")
         span.recordException(e)

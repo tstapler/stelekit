@@ -233,6 +233,8 @@ class GraphWriter(
                                 if (oldContent != null) fileSystem.writeFile(filePath, oldContent)
                                 else fileSystem.deleteFile(filePath)
                                 fileSystem.invalidateShadow(filePath)
+                            } catch (e: CancellationException) {
+                                throw e
                             } catch (e: Exception) {
                                 logger.error("Saga compensation: failed to restore $filePath", e)
                             }
@@ -252,6 +254,8 @@ class GraphWriter(
                                 val pageSlug = FileUtils.sanitizeFileName(page.name)
                                 try {
                                     sidecarManager.write(pageSlug, blocks)
+                                } catch (e: CancellationException) {
+                                    throw e
                                 } catch (e: Exception) {
                                     logger.error("Failed to write sidecar for page '${page.name}'", e)
                                 }

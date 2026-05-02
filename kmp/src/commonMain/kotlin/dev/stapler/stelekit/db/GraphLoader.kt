@@ -275,6 +275,8 @@ class GraphLoader(
             // Start watching after initial load
             startWatching(graphPath)
             rootSpan.finish("OK", "graph.path" to graphPath, "duration.ms" to duration.inWholeMilliseconds.toString())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             rootSpan.finish("ERROR", "graph.path" to graphPath, "error.message" to (e.message ?: "unknown"))
             throw e
@@ -401,6 +403,8 @@ class GraphLoader(
             startWatching(graphPath)
             rootSpan.finish("OK", "graph.path" to graphPath,
                 "duration.ms" to totalDuration.inWholeMilliseconds.toString())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             rootSpan.finish("ERROR", "graph.path" to graphPath, "error.message" to (e.message ?: "unknown"))
             throw e
@@ -426,6 +430,8 @@ class GraphLoader(
 
                         checkDirectoryForChanges(pagesDir)
                         checkDirectoryForChanges(journalsDir)
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
                         logger.error("Error in graph watcher", e)
@@ -440,6 +446,8 @@ class GraphLoader(
                     try {
                         checkDirectoryForChanges("$graphPath/pages")
                         checkDirectoryForChanges("$graphPath/journals")
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
                         logger.error("Error in external change handler", e)
@@ -715,6 +723,8 @@ class GraphLoader(
                             try {
                                 parseAndSavePage(entry.filePath, content, ParseMode.METADATA_ONLY)
                                 true
+                            } catch (e: CancellationException) {
+                                throw e
                             } catch (e: Exception) {
                                 logger.error("Failed to parse journal: ${entry.filePath}: ${e.message}")
                                 false
@@ -755,6 +765,8 @@ class GraphLoader(
                                 }
                             }
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         logger.error("Error sanitizing file: $oldPath: ${e.message}")
                     }

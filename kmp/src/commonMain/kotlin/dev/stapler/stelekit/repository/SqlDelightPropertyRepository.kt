@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Instant
 
 /**
@@ -35,6 +36,8 @@ class SqlDelightPropertyRepository(
                 val properties = parseProperties(block.uuid, block.properties)
                 emit(properties.right())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -49,6 +52,8 @@ class SqlDelightPropertyRepository(
                 val property = parseProperties(block.uuid, block.properties).find { it.key == key }
                 emit(property.right())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -64,6 +69,8 @@ class SqlDelightPropertyRepository(
                 queries.updateBlockProperties(updatedString, block.uuid)
             }
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -79,6 +86,8 @@ class SqlDelightPropertyRepository(
                 queries.updateBlockProperties(updatedString, block.uuid)
             }
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -90,6 +99,8 @@ class SqlDelightPropertyRepository(
                 .filter { it.properties?.contains(key) == true }
                 .map { it.toBlockModel() }
             emit(results.right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -101,6 +112,8 @@ class SqlDelightPropertyRepository(
                 .filter { it.properties?.contains("$key:$value") == true }
                 .map { it.toBlockModel() }
             emit(results.right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }

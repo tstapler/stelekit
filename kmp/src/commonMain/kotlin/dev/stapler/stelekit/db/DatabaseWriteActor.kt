@@ -149,6 +149,8 @@ class DatabaseWriteActor(
                         }
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 // Channel closed or coroutine cancelled — exit cleanly.
             }
@@ -300,6 +302,8 @@ class DatabaseWriteActor(
             try {
                 val existing = blockRepository.getBlockByUuid(block.uuid).first().getOrNull()
                 if (existing != null) result[block.uuid] = existing
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 // Non-fatal: if lookup fails we skip logging for this block
             }
@@ -380,6 +384,8 @@ class DatabaseWriteActor(
                 try {
                     val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
                     block?.let { opLogger.logDelete(it) }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (_: Exception) {
                     // Non-fatal: op log failure must not block the delete
                 }

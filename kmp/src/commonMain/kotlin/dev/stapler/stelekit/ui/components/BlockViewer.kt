@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -54,6 +55,8 @@ internal fun BlockViewer(
         onUrlClick = { url ->
             try {
                 uriHandler.openUri(url)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Ignore if can't open URL
             }
