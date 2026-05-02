@@ -26,6 +26,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.CancellationException
 
 data class PageRow(val page: Page, val backlinkCount: Int = 0)
 
@@ -156,6 +157,8 @@ class AllPagesViewModel(
                         _isLoading.value = false
                     }
                 }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             _isLoading.value = false
         }

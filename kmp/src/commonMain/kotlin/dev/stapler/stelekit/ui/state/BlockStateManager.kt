@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 /**
  * Single source of truth for block state across all screens (JournalsView, PageView).
@@ -969,6 +970,8 @@ class BlockStateManager(
             _blocks.update { current ->
                 current + (pageUuid to blocks)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to load page content: $pageUuid", e)
         } finally {

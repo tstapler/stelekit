@@ -19,6 +19,7 @@ import dev.stapler.stelekit.performance.PerformanceMonitor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CancellationException
 
 /**
  * Implementation of text operations for Logseq KMP editor
@@ -63,6 +64,8 @@ class TextOperations(
             val r1 = blockRepository.updateBlockContentOnly(blockId, newText)
             PerformanceMonitor.endTrace(traceId)
             r1
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -97,6 +100,8 @@ class TextOperations(
             val r2 = blockRepository.updateBlockContentOnly(blockId, updatedText)
             PerformanceMonitor.endTrace(traceId)
             r2
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -130,6 +135,8 @@ class TextOperations(
             val r3 = blockRepository.updateBlockContentOnly(blockId, updatedText)
             PerformanceMonitor.endTrace(traceId)
             r3
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -156,6 +163,8 @@ class TextOperations(
             
             updateTextState(blockId, newState)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -189,6 +198,8 @@ class TextOperations(
             _selections.value = newSelections
             
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -205,6 +216,8 @@ class TextOperations(
             )
             updateTextState(blockId, newState)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -221,6 +234,8 @@ class TextOperations(
             )
             updateTextState(blockId, newState)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -237,6 +252,8 @@ class TextOperations(
             )
             updateTextState(blockId, newState)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -253,6 +270,8 @@ class TextOperations(
             )
             updateTextState(blockId, newState)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -273,6 +292,8 @@ class TextOperations(
             val wordEnd = findWordEnd(text, cursorPos)
             
             setSelection(blockId, TextRange(wordStart, wordEnd))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -293,6 +314,8 @@ class TextOperations(
             val lineEnd = findLineEnd(text, cursorPos)
             
             setSelection(blockId, TextRange(lineStart, lineEnd))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -302,6 +325,8 @@ class TextOperations(
         try {
             val currentState = _textStates.value[blockId] ?: TextState()
             setSelection(blockId, TextRange(0, currentState.content.length))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -319,6 +344,8 @@ class TextOperations(
             } else {
                 "".right()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -335,6 +362,8 @@ class TextOperations(
             } else {
                 "".right()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -362,6 +391,8 @@ class TextOperations(
 
             // Update block content in repository
             blockRepository.updateBlockContentOnly(blockId, newText)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -397,6 +428,8 @@ class TextOperations(
 
             // Update block content in repository
             blockRepository.updateBlockContentOnly(blockId, newText)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -437,6 +470,8 @@ class TextOperations(
 
             // Update block content in repository
             blockRepository.updateBlockContentOnly(blockId, updatedContent)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -455,6 +490,8 @@ class TextOperations(
                 updateTextState(blockId, newState)
             }
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }

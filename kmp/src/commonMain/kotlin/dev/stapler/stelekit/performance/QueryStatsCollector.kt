@@ -6,6 +6,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 /**
  * Lock-guarded in-place SQL stats accumulator. Collects calls/errors/latencies per (table, operation)
@@ -85,6 +86,8 @@ class QueryStatsCollector(
         }
         try {
             repository?.upsertBatch(snapshot, appVersion)
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             // Stats are best-effort; DB failures (e.g. contention at startup) are silently dropped.
         }
