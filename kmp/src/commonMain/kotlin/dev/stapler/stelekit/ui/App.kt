@@ -459,13 +459,18 @@ private fun GraphContent(
     val journalsViewModel = remember {
         JournalsViewModel(repos.journalService, blockStateManager)
     }
-    val voiceCaptureViewModel = remember {
+    val voiceCaptureViewModel = remember(voicePipeline) {
         VoiceCaptureViewModel(voicePipeline, repos.journalService)
     }
+    DisposableEffect(voiceCaptureViewModel) {
+        onDispose { voiceCaptureViewModel.close() }
+    }
 
-    // Force-flush pending writes on Android lifecycle pause/stop
+    // Force-flush pending writes on Android lifecycle pause/stop.
+    // Keyed on voiceCaptureViewModel so the observer is re-registered whenever the VM is
+    // recreated (e.g. after voicePipeline changes), preventing calls on a stale closed instance.
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, voiceCaptureViewModel) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
                 viewModel.savePendingChanges()
@@ -496,7 +501,6 @@ private fun GraphContent(
             allPagesViewModel.close()
             libraryStatsViewModel.close()
             searchViewModel.close()
-            voiceCaptureViewModel.close()
             viewModel.close()
         }
     }

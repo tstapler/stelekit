@@ -22,7 +22,10 @@ import kotlin.coroutines.resume
 
 private const val TAG = "AndroidSpeechRecognizer"
 
-class AndroidSpeechRecognizerProvider(private val context: Context) : DirectSpeechProvider {
+class AndroidSpeechRecognizerProvider(
+    private val context: Context,
+    private val requestMicPermission: (suspend () -> Boolean)? = null,
+) : DirectSpeechProvider {
 
     companion object {
         fun isAvailable(context: Context): Boolean =
@@ -35,7 +38,14 @@ class AndroidSpeechRecognizerProvider(private val context: Context) : DirectSpee
     @Volatile private var activeRecognizer: SpeechRecognizer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    override suspend fun listen(): TranscriptResult = suspendCancellableCoroutine { cont ->
+    override suspend fun listen(): TranscriptResult {
+        if (requestMicPermission != null && !requestMicPermission()) {
+            return TranscriptResult.Failure.PermissionDenied
+        }
+        return listenInternal()
+    }
+
+    private suspend fun listenInternal(): TranscriptResult = suspendCancellableCoroutine { cont ->
         cont.invokeOnCancellation {
             mainHandler.post {
                 activeRecognizer?.let {

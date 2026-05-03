@@ -15,6 +15,7 @@ class SteleKitRuleSetProvider : RuleSetProvider {
             RepositoryWriteCallSiteRule(config),
             SaveBlockWithCopyRule(config),
             SwallowedCancellationExceptionRule(config),
+            RememberKeyForConstructorArgsRule(config),
         ),
     )
 }

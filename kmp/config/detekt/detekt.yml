@@ -18,6 +18,8 @@ stelekit:
     active: true
   SwallowedCancellationException:
     active: true
+  RememberKeyForConstructorArgs:
+    active: true
 
 # Compose Multiplatform rules (io.nlopez.compose.rules)
 Compose:
