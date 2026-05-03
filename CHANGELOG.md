@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.21.0](https://github.com/tstapler/stelekit/compare/v0.20.0...v0.21.0) (2026-05-03)
+
+
+### Features
+
+* **git:** two-way git sync with in-app conflict resolution ([#63](https://github.com/tstapler/stelekit/issues/63)) ([7269c4e](https://github.com/tstapler/stelekit/commit/7269c4eea6abf6ca41ef1d6120c2058405cde33a))
+
+
+### Bug Fixes
+
+* remove hardcoded local JDK path from gradle.properties ([#69](https://github.com/tstapler/stelekit/issues/69)) ([ca27eda](https://github.com/tstapler/stelekit/commit/ca27eda1b6615ae7cb5913dc64ac9643ab047335))
+
 ## [0.20.0](https://github.com/tstapler/stelekit/compare/v0.19.4...v0.20.0) (2026-05-03)
 
 
