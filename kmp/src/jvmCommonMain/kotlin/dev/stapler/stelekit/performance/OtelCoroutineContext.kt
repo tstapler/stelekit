@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.performance
 
 import io.opentelemetry.api.trace.Span
+import kotlinx.coroutines.CancellationException
 import io.opentelemetry.api.trace.StatusCode
 
 /**
@@ -10,6 +11,8 @@ import io.opentelemetry.api.trace.StatusCode
 suspend fun <T> withSpan(span: Span, block: suspend () -> T): T {
     return try {
         block()
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         span.setStatus(StatusCode.ERROR, e.message ?: "")
         throw e

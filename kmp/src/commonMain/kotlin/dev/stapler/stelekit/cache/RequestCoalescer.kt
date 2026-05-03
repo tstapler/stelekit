@@ -12,6 +12,7 @@ import dev.stapler.stelekit.error.DomainError
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
 
 /**
  * Single-flight request coalescer (Go's `singleflight` ported to Kotlin coroutines).
@@ -64,6 +65,8 @@ class RequestCoalescer<K : Any, V> {
             try {
                 val result = loader()
                 deferred.complete(result)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Throwable) {
                 deferred.completeExceptionally(e)
             } finally {

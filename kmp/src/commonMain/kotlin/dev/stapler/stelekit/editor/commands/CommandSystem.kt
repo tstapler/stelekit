@@ -64,6 +64,8 @@ class CommandSystem(
                     result
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             val executionTime = Clock.System.now().minus(startTime).inWholeMilliseconds
             logger.error("Unexpected error executing command $commandId", e)

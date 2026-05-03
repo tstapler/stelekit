@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.parsing
 
 import dev.stapler.stelekit.parsing.lexer.Lexer
+import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.parsing.lexer.TokenType
 import kotlin.test.Test
 import kotlin.test.fail
@@ -13,6 +14,8 @@ class ParsingPropertyTest {
             val input = generateRandomString((i % 500))
             try {
                 InlineParser(input).parse()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for input length ${input.length}: ${e.message}")
             }
@@ -29,6 +32,8 @@ class ParsingPropertyTest {
         inputs.forEach { input ->
             try {
                 InlineParser(input).parse()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }
@@ -41,6 +46,8 @@ class ParsingPropertyTest {
             val input = "*".repeat(depth) + "text" + "*".repeat(depth)
             try {
                 InlineParser(input).parse()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for depth: $depth")
             }
@@ -56,6 +63,8 @@ class ParsingPropertyTest {
         inputs.forEach { input ->
             try {
                 InlineParser(input).parse()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }
@@ -70,6 +79,8 @@ class ParsingPropertyTest {
         inputs.forEach { input ->
             try {
                 InlineParser(input).parse()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }
@@ -86,6 +97,8 @@ class ParsingPropertyTest {
                 while (token.type != TokenType.EOF) {
                     token = lexer.nextToken()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for input length ${input.length}")
             }
@@ -101,6 +114,8 @@ class ParsingPropertyTest {
         specialChars.forEach { char ->
             try {
                 Lexer(char).nextToken()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $char")
             }
@@ -117,6 +132,8 @@ class ParsingPropertyTest {
         inputs.forEach { input ->
             try {
                 BlockParser(input).parse()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }
@@ -129,6 +146,8 @@ class ParsingPropertyTest {
             val input = generateMarkdown((i % 500))
             try {
                 OutlinerParser().parse(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for input length ${input.length}")
             }
@@ -145,6 +164,8 @@ class ParsingPropertyTest {
         edgeCases.forEach { input ->
             try {
                 OutlinerParser().parse(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }

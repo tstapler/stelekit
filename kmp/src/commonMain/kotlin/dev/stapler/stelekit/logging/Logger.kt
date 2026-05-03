@@ -3,6 +3,7 @@ package dev.stapler.stelekit.logging
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -69,6 +70,8 @@ object LogManager {
         for (sink in sinks) {
             try {
                 sink.write(entry, formatted)
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 // Don't let a broken sink crash the app
             }

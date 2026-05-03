@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Validation
 
@@ -135,6 +136,8 @@ class SlashCommandHandler(
                     cursorPosition = cursorPosition
                 )
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Error parsing slash command: $input", e)
             return SlashCommandParseResult.Error("Invalid command format: ${e.message}")
@@ -149,6 +152,8 @@ class SlashCommandHandler(
         if (registeredHandler != null) {
             return try {
                 registeredHandler(slashCommand, context)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.error("Error in registered slash command handler", e)
                 CommandResult.Error("Error executing slash command: ${e.message}", e)

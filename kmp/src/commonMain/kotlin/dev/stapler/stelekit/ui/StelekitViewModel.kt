@@ -48,6 +48,7 @@ import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 
 sealed class IndexingState {
     object Idle : IndexingState()
@@ -834,6 +835,8 @@ class StelekitViewModel(
                     page?.filePath?.takeIf { it.isNotBlank() }?.let { path ->
                         fileSystem.deleteFile(path)
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     logger.error("Failed to delete page $uuid", e)
                 }
@@ -872,6 +875,8 @@ class StelekitViewModel(
             }
             logger.info("Created new page: $pageName")
             newPage
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to create page: $pageName", e)
             null
@@ -1321,6 +1326,8 @@ class StelekitViewModel(
                 }
 
                 _uiState.update { it.copy(commands = legacyCommands) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.error("Failed to update commands", e)
             }

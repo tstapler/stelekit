@@ -5,6 +5,7 @@ import dev.stapler.stelekit.model.Block
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
 
@@ -103,6 +104,8 @@ class UndoManager(
     private suspend fun invertOperation(op: Operations) {
         val payload = try {
             json.decodeFromString(OperationLogger.OpPayload.serializer(), op.payload)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("UndoManager: failed to parse payload for op ${op.op_id}", e)
             return
@@ -142,6 +145,8 @@ class UndoManager(
     private suspend fun replayOperation(op: Operations) {
         val payload = try {
             json.decodeFromString(OperationLogger.OpPayload.serializer(), op.payload)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("UndoManager: failed to parse payload for redo op ${op.op_id}", e)
             return
@@ -178,6 +183,8 @@ class UndoManager(
 
     private fun parseBatchId(payload: String): String? = try {
         json.decodeFromString(OperationLogger.OpPayload.serializer(), payload).batchId
+    } catch (e: CancellationException) {
+        throw e
     } catch (_: Exception) { null }
 
     private fun snapshotToBlock(snapshot: OperationLogger.BlockSnapshot, pageUuid: String): Block {

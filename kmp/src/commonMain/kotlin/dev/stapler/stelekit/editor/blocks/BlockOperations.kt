@@ -16,6 +16,7 @@ import dev.stapler.stelekit.repository.BlockWithDepth
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Instant
 
 /**
@@ -64,6 +65,8 @@ class BlockOperations(
 
             PerformanceMonitor.endTrace(traceId)
             result.map { newBlock }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -90,6 +93,8 @@ class BlockOperations(
 
             PerformanceMonitor.endTrace(traceId)
             result.map { updatedBlock }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -117,6 +122,8 @@ class BlockOperations(
             
             val result = blockRepository.saveBlock(updatedBlock)
             result.map { updatedBlock }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -179,6 +186,8 @@ class BlockOperations(
             
             // 4. Perform the move
             blockRepository.moveBlock(blockUuid, targetParentUuid, newPosition)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -219,6 +228,8 @@ class BlockOperations(
             val result = blockRepository.saveBlock(duplicate)
 
             result.map { duplicate }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -263,6 +274,8 @@ class BlockOperations(
             val merged = blockRepository.getBlockByUuid(blockUuid).first()
             val b = merged.getOrNull()
             b?.right() ?: DomainError.DatabaseError.NotFound("block", blockUuid).left()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -293,6 +306,8 @@ class BlockOperations(
             val merged = blockRepository.getBlockByUuid(prevBlock.uuid).first()
             val b = merged.getOrNull()
             b?.right() ?: DomainError.DatabaseError.NotFound("block", prevBlock.uuid).left()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }

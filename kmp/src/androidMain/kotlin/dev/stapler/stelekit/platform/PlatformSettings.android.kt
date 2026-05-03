@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.platform
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
@@ -29,6 +30,8 @@ actual class PlatformSettings actual constructor() : Settings {
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             // Fallback to plain prefs if keystore fails (e.g., corrupted keystore after device wipe)
             Log.w("PlatformSettings", "EncryptedSharedPreferences unavailable, falling back to plain prefs", e)
@@ -39,24 +42,32 @@ actual class PlatformSettings actual constructor() : Settings {
     actual override fun getBoolean(key: String, defaultValue: Boolean): Boolean {
         return try {
             prefs.getBoolean(key, defaultValue)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) { defaultValue }
     }
 
     actual override fun putBoolean(key: String, value: Boolean) {
         try {
             prefs.edit().putBoolean(key, value).apply()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) { }
     }
 
     actual override fun getString(key: String, defaultValue: String): String {
         return try {
             prefs.getString(key, defaultValue) ?: defaultValue
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) { defaultValue }
     }
 
     actual override fun putString(key: String, value: String) {
         try {
             prefs.edit().putString(key, value).apply()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) { }
     }
 }

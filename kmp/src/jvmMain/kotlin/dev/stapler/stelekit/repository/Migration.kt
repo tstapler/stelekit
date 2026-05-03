@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.repository
 
 import dev.stapler.stelekit.model.PluginData
+import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.model.PluginMetadata
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -99,6 +100,8 @@ object PluginMigration {
                 result[key] = value.jsonPrimitive.content
             }
             result
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyMap()
         }

@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.logging.Logger
+import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.util.ContentHasher
@@ -72,6 +73,8 @@ class SidecarManager(
                     // First match wins for duplicate-content blocks
                     if (!result.containsKey(entry.first)) result[entry.first] = entry.second
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.warn("SidecarManager: failed to parse sidecar line: $trimmed", e)
             }

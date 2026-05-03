@@ -34,6 +34,7 @@ import dev.stapler.stelekit.editor.text.TextRange
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 /**
  * Rich text field component that extends BasicTextField with Logseq-specific features.
@@ -103,6 +104,8 @@ fun RichTextEditor(
                 val rect = if (textLayoutResult != null && safeCursor <= textLayoutResult!!.layoutInput.text.length) {
                     try {
                         textLayoutResult?.getCursorRect(safeCursor)
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         null
                     }
@@ -112,6 +115,8 @@ fun RichTextEditor(
             } else {
                 onTriggerDetected("", null)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Error in trigger detection", e)
         }
@@ -135,6 +140,8 @@ fun RichTextEditor(
                 if (newValue.selection != oldValue.selection) {
                     textOperations.setSelection(blockId, TextRange(newValue.selection.start, newValue.selection.end))
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.error("Error handling text change", e)
             }

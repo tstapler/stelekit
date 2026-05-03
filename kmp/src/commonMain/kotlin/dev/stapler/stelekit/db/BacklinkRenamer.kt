@@ -11,6 +11,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.CancellationException
 
 /**
  * Preview of a page rename operation — shown to the user before committing.
@@ -145,6 +146,8 @@ class BacklinkRenamer(
             }
 
             RenameResult.Success(page.name, newName, affectedBlocks.size)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Rename failed: '${page.name}' → '$newName'", e)
             RenameResult.Failure(e)

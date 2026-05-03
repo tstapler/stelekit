@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.parser
 
 import kotlin.test.Test
+import kotlinx.coroutines.CancellationException
 import kotlin.test.fail
 
 class PropertiesParserPropertyTest {
@@ -11,6 +12,8 @@ class PropertiesParserPropertyTest {
             val input = generateRandomString((i % 500))
             try {
                 PropertiesParser.parse(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for input length ${input.length}")
             }
@@ -28,6 +31,8 @@ class PropertiesParserPropertyTest {
         propertyFormats.forEach { format ->
             try {
                 PropertiesParser.parse(format)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $format")
             }
@@ -46,6 +51,8 @@ class PropertiesParserPropertyTest {
         drawerInputs.forEach { input ->
             try {
                 PropertiesParser.parse(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }
@@ -62,6 +69,8 @@ class PropertiesParserPropertyTest {
         multiLineInputs.forEach { input ->
             try {
                 PropertiesParser.parse(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }
@@ -76,6 +85,8 @@ class PropertiesParserPropertyTest {
         unicodeInputs.forEach { input ->
             try {
                 PropertiesParser.parse(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }
@@ -91,6 +102,8 @@ class PropertiesParserPropertyTest {
         specialInputs.forEach { input ->
             try {
                 PropertiesParser.parse(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }
@@ -107,6 +120,8 @@ class PropertiesParserPropertyTest {
         edgeCases.forEach { input ->
             try {
                 PropertiesParser.parse(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }
@@ -119,6 +134,8 @@ class PropertiesParserPropertyTest {
             val input = generateRandomString((i % 200))
             try {
                 TimestampParser.parse(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for input length ${input.length}")
             }
@@ -137,6 +154,8 @@ class PropertiesParserPropertyTest {
         malformedTimestamps.forEach { input ->
             try {
                 TimestampParser.parse(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }
@@ -149,6 +168,8 @@ class PropertiesParserPropertyTest {
             val input = generateRandomString((i % 500))
             try {
                 MarkdownPreprocessor.normalize(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for input length ${input.length}")
             }
@@ -164,6 +185,8 @@ class PropertiesParserPropertyTest {
         indentEdgeCases.forEach { input ->
             try {
                 MarkdownPreprocessor.normalize(input)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $input")
             }

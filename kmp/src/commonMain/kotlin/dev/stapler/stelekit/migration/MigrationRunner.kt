@@ -6,6 +6,7 @@ package dev.stapler.stelekit.migration
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.repository.RepositorySet
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 
 // ── Result / error types ───────────────────────────────────────────────────
@@ -136,6 +137,8 @@ class MigrationRunner(
                 )
                 logger.info("MigrationRunner: '${migration.id}' applied ${summary.applied} change(s) in ${executionMs}ms")
                 appliedCount++
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // 6. Mark failed and re-throw
                 changelogRepo.markFailed(

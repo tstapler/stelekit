@@ -144,6 +144,8 @@ class PersistenceErrorHandler(
                 recoveredOperations = recovered,
                 failedOperations = failed
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             _recoveryStatus.value = RecoveryStatus.FAILED
             logger.error("Recovery failed", e)
@@ -196,6 +198,8 @@ class PersistenceErrorHandler(
         retryQueue.value = emptyList()
         logger.info("Cleared all failed operations")
         Unit.right()
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
     }
@@ -213,6 +217,8 @@ class PersistenceErrorHandler(
         
         logger.info("Created recovery backup: ${backup.id}")
         backup.right()
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
     }
@@ -226,6 +232,8 @@ class PersistenceErrorHandler(
         
         logger.info("Restored from recovery backup: ${backup.id}")
         Unit.right()
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
     }
@@ -334,6 +342,8 @@ class PersistenceErrorHandler(
                     RetryResult.Failed(Exception("Unknown operation: ${failure.operation}"))
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Retry failed for operation ${failure.operation}", e)
             RetryResult.Failed(e)

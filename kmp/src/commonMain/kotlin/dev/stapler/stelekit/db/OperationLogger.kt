@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.logging.Logger
+import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlin.time.Clock
@@ -127,6 +128,8 @@ class OperationLogger(
                     created_at = now,
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to log $opType entity=$entityUuid page=$pageUuid session=$sessionId seq=$seq", e)
             // Non-fatal: if op log fails, the underlying write already succeeded

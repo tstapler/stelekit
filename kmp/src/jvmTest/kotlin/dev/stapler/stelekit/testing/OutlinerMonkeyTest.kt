@@ -14,6 +14,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -152,6 +153,8 @@ class OutlinerMonkeyTest {
             // Verify invariants after each operation
             try {
                 verifyInvariants(pageUuid, blockRepo)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Throwable) {
                 println("Invariants failed after operation $i")
                 throw e
@@ -194,6 +197,8 @@ class OutlinerMonkeyTest {
                 // Positions should be distinct (we don't strictly require sequential 0,1,2 in memory repo, but they should be ordered)
                 assertEquals(positions.size, positions.toSet().size, "Duplicate positions found among siblings of parent $parentUuid")
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             println("=== CURRENT BLOCKS STATE ===")
             blocks.sortedBy { it.position }.forEach { 

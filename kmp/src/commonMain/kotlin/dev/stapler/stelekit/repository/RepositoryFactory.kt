@@ -23,6 +23,7 @@ import dev.stapler.stelekit.performance.wrapWithOtelIfAvailable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 /**
  * Factory implementation for creating repository instances.
@@ -337,6 +338,8 @@ class RepositoryFactoryImpl(
         // SQLDelight driver must be closed
         try {
             activeDriver?.close()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             // Driver might not be initialized or already closed
         }

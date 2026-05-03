@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
@@ -81,6 +82,8 @@ class GraphManager(
                 )
                 _graphRegistry.value = refreshed
                 if (refreshed.graphs != registry.graphs) saveRegistry()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Corrupted registry - start fresh
                 _graphRegistry.value = GraphRegistry()
@@ -142,6 +145,8 @@ class GraphManager(
             saveRegistry()
             
             println("Migration complete: graph '$displayName' migrated to ID $graphId")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             println("Migration failed: ${e.message}")
             // Start fresh if migration fails
@@ -157,6 +162,8 @@ class GraphManager(
     private fun migrateDatabaseFile(oldPath: String, newPath: String): Boolean {
         return try {
             fileSystem.renameFile(oldPath, newPath)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             println("Failed to migrate database file: ${e.message}")
             false
@@ -171,6 +178,8 @@ class GraphManager(
             val newDbPath = driverFactory.getDatabaseUrl(graphId).substringAfter("jdbc:sqlite:")
             fileSystem.renameFile("$dbDir/logseq.db-wal", "$newDbPath-wal")
             fileSystem.renameFile("$dbDir/logseq.db-shm", "$newDbPath-shm")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             // Non-critical - WAL/SHM files may not exist
         }
@@ -354,6 +363,8 @@ class GraphManager(
         }
         val content = try {
             fileSystem.readFile(gitignorePath) ?: return
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             return
         }

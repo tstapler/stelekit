@@ -11,6 +11,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -113,6 +114,8 @@ class AndroidSpeechRecognizerProvider(
                     putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1_500L)
                 }
                 recognizer.startListening(intent)
+            } catch (e: CancellationException) {
+                throw e
             } catch (t: Throwable) {
                 _amplitudeFlow.value = 0f
                 activeRecognizer = null

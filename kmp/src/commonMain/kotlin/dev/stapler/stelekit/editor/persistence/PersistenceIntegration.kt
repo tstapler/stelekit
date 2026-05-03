@@ -130,6 +130,8 @@ class IntegratedPersistenceSystem(
                     
                     logger.debug("Processed batch of ${batch.size} changes (optimized to ${optimizedBatch.optimizedChanges.size})")
                     
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     performanceMonitor.endOperation("processBatch", false)
                     
@@ -150,6 +152,8 @@ class IntegratedPersistenceSystem(
         logger.info("Integrated persistence system started")
         Unit.right()
         
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         logger.error("Failed to start integrated persistence system", e)
         DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
@@ -166,6 +170,8 @@ class IntegratedPersistenceSystem(
         logger.info("Integrated persistence system stopped")
         Unit.right()
         
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         logger.error("Failed to stop integrated persistence system", e)
         DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
@@ -202,6 +208,8 @@ class IntegratedPersistenceSystem(
         
         persistenceResult.right()
         
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         performanceMonitor.endOperation("saveBlock", false)
         
@@ -227,6 +235,8 @@ class IntegratedPersistenceSystem(
         performanceMonitor.endOperation("queueChange", true)
         Unit.right()
         
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         performanceMonitor.endOperation("queueChange", false)
         DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()

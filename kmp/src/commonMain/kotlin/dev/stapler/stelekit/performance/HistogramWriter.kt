@@ -14,6 +14,7 @@ import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 /**
  * A sample to be recorded in the histogram store.
@@ -71,11 +72,15 @@ class HistogramWriter(
                         )
                     }
                     Unit.right()
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
                 }
             }
             if (writeActor != null) writeActor.execute(op = writeOp) else writeOp()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             // A DB error must not kill the consumer coroutine — log and continue
         }
