@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.20.0](https://github.com/tstapler/stelekit/compare/v0.19.4...v0.20.0) (2026-05-03)
+
+
+### Features
+
+* **ui:** add Unlinked Mentions tab to ReferencesPanel ([53ac786](https://github.com/tstapler/stelekit/commit/53ac78682e7e1ad560f432cb8ff2f2f03a9af2cb))
+* **voice:** rich markdown formatting, transcript pages, current-page insertion, UX improvements ([#66](https://github.com/tstapler/stelekit/issues/66)) ([8155563](https://github.com/tstapler/stelekit/commit/8155563fbe10279d30554b7433a6f744978dbeab))
+
 ## [0.19.4](https://github.com/tstapler/stelekit/compare/v0.19.3...v0.19.4) (2026-05-03)
 
 
