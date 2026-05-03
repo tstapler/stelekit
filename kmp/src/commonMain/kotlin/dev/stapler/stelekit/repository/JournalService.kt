@@ -139,37 +139,25 @@ class JournalService(
      * Appends a new block with [content] to today's journal page.
      * Creates the journal page if it does not yet exist.
      */
-    @OptIn(DirectRepositoryWrite::class)
     suspend fun appendToToday(content: String) {
-        val page = ensureTodayJournal()
-        val blocks = blockRepository.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
-        val nextPosition = (blocks.maxOfOrNull { it.position } ?: -1) + 1
-        val newBlock = Block(
-            uuid = UuidGenerator.generateV7(),
-            pageUuid = page.uuid,
-            content = content,
-            position = nextPosition,
-            createdAt = Clock.System.now(),
-            updatedAt = Clock.System.now(),
-        )
-        if (writeActor != null) {
-            writeActor.saveBlock(newBlock)
-        } else {
-            blockRepository.saveBlock(newBlock)
-        }
+        appendBlockToPage(ensureTodayJournal(), content)
     }
 
     /**
      * Appends a new block with [content] to the page identified by [pageUuid].
      * Falls back to today's journal if [pageUuid] resolves to no page.
      */
-    @OptIn(DirectRepositoryWrite::class)
     suspend fun appendToPage(pageUuid: String, content: String) {
         val page = pageRepository.getPageByUuid(pageUuid).first().getOrNull()
         if (page == null) {
             appendToToday(content)
             return
         }
+        appendBlockToPage(page, content)
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun appendBlockToPage(page: Page, content: String) {
         val blocks = blockRepository.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
         val nextPosition = (blocks.maxOfOrNull { it.position } ?: -1) + 1
         val newBlock = Block(

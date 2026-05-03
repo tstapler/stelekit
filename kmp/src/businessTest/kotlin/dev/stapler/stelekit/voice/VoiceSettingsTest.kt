@@ -4,6 +4,7 @@ package dev.stapler.stelekit.voice
 
 import dev.stapler.stelekit.platform.Settings
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -72,5 +73,34 @@ class VoiceSettingsTest {
         assertFalse(settings.getIncludeRawTranscript(), "Expected persisted false value")
         settings.setIncludeRawTranscript(true)
         assertTrue(settings.getIncludeRawTranscript(), "Expected persisted true value after re-setting to true")
+    }
+
+    // --- transcriptPageWordThreshold ---
+
+    @Test
+    fun `getTranscriptPageWordThreshold returns 20 by default`() {
+        val settings = VoiceSettings(MapSettings())
+        assertEquals(20, settings.getTranscriptPageWordThreshold())
+    }
+
+    @Test
+    fun `setTranscriptPageWordThreshold persists value`() {
+        val settings = VoiceSettings(MapSettings())
+        settings.setTranscriptPageWordThreshold(50)
+        assertEquals(50, settings.getTranscriptPageWordThreshold())
+    }
+
+    @Test
+    fun `setTranscriptPageWordThreshold clamps negative to 1`() {
+        val settings = VoiceSettings(MapSettings())
+        settings.setTranscriptPageWordThreshold(-5)
+        assertEquals(1, settings.getTranscriptPageWordThreshold())
+    }
+
+    @Test
+    fun `setTranscriptPageWordThreshold clamps zero to 1`() {
+        val settings = VoiceSettings(MapSettings())
+        settings.setTranscriptPageWordThreshold(0)
+        assertEquals(1, settings.getTranscriptPageWordThreshold())
     }
 }

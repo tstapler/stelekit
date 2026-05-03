@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.voice
 
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.repository.JournalService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +28,7 @@ class VoiceCaptureViewModel(
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
     private val scope = scope
+    private val logger = Logger("VoiceCaptureViewModel")
     private val _state = MutableStateFlow<VoiceCaptureState>(VoiceCaptureState.Idle)
     val state: StateFlow<VoiceCaptureState> = _state.asStateFlow()
 
@@ -126,7 +128,7 @@ class VoiceCaptureViewModel(
                 llmResult.formattedText
             }
             is LlmResult.Failure -> {
-                println("[VoiceCaptureViewModel] LLM formatting failed ($llmResult), inserting raw transcript")
+                logger.warn("LLM formatting failed ($llmResult), inserting raw transcript")
                 rawTranscript
             }
         }
@@ -138,7 +140,7 @@ class VoiceCaptureViewModel(
 
         val targetPageUuid = currentOpenPageUuid()
 
-        val wordCount = formattedText.split(Regex("\\s+")).count { it.isNotBlank() }
+        val wordCount = rawTranscript.split(Regex("\\s+")).count { it.isNotBlank() }
         val useTranscriptPage = wordCount >= pipeline.transcriptPageWordThreshold
 
         val inlineBlock = if (useTranscriptPage) {

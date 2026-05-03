@@ -49,10 +49,10 @@ class VoiceSettings(private val platformSettings: Settings) {
         platformSettings.putBoolean(KEY_INCLUDE_RAW_TRANSCRIPT, enabled)
 
     fun getTranscriptPageWordThreshold(): Int =
-        platformSettings.getString(KEY_TRANSCRIPT_PAGE_WORD_THRESHOLD, "20").toIntOrNull() ?: 20
+        maxOf(1, platformSettings.getString(KEY_TRANSCRIPT_PAGE_WORD_THRESHOLD, "20").toIntOrNull() ?: 20)
 
     fun setTranscriptPageWordThreshold(threshold: Int) =
-        platformSettings.putString(KEY_TRANSCRIPT_PAGE_WORD_THRESHOLD, threshold.toString())
+        platformSettings.putString(KEY_TRANSCRIPT_PAGE_WORD_THRESHOLD, maxOf(1, threshold).toString())
 
     companion object {
         private const val KEY_WHISPER = "voice.whisper_key"

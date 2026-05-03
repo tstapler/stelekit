@@ -186,7 +186,7 @@ fun VoiceCaptureSettings(
                     voiceSettings.setUseDeviceStt(useDeviceStt)
                     voiceSettings.setUseDeviceLlm(useDeviceLlm)
                     voiceSettings.setIncludeRawTranscript(includeRawTranscript)
-                    voiceSettings.setTranscriptPageWordThreshold(transcriptPageWordThreshold.toIntOrNull() ?: 20)
+                    voiceSettings.setTranscriptPageWordThreshold(maxOf(1, transcriptPageWordThreshold.toIntOrNull() ?: 20))
                     saved = true
                     onRebuildPipeline()
                 },
