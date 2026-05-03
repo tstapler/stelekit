@@ -175,9 +175,15 @@ fun GitSetupScreen(
                         scope.launch {
                             testInProgress = true
                             testResult = null
+                            val testHttpsTokenKey = if (authType == GitAuthType.HTTPS_TOKEN && httpsToken.isNotBlank()) {
+                                val key = "git_https_token_$graphId"
+                                credentialStore.store(key, httpsToken)
+                                key
+                            } else null
                             val config = buildConfig(
                                 graphId, repoRoot, wikiSubdir, authType,
-                                sshKeyPath, remoteBranch, pollIntervalMinutes
+                                sshKeyPath, remoteBranch, pollIntervalMinutes,
+                                httpsTokenKey = testHttpsTokenKey,
                             )
                             val result = gitRepository.fetch(config)
                             testInProgress = false
