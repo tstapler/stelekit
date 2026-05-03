@@ -396,4 +396,29 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
 
     @DirectSqlWrite
     fun pragmaWalCheckpointTruncate() = queries.pragmaWalCheckpointTruncate()
+
+    // ── Git config writes ─────────────────────────────────────────────────────
+
+    @DirectSqlWrite
+    fun insertOrReplaceGitConfig(
+        graph_id: String,
+        repo_root: String,
+        wiki_subdir: String,
+        remote_name: String,
+        remote_branch: String,
+        auth_type: String,
+        ssh_key_path: String?,
+        ssh_key_passphrase_key: String?,
+        https_token_key: String?,
+        poll_interval_minutes: Long,
+        auto_commit: Long,
+        commit_message_template: String,
+    ) = queries.insertOrReplaceGitConfig(
+        graph_id, repo_root, wiki_subdir, remote_name, remote_branch,
+        auth_type, ssh_key_path, ssh_key_passphrase_key, https_token_key,
+        poll_interval_minutes, auto_commit, commit_message_template,
+    )
+
+    @DirectSqlWrite
+    fun deleteGitConfig(graph_id: String) = queries.deleteGitConfig(graph_id)
 }

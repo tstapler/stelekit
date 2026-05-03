@@ -158,7 +158,17 @@ class GraphLoader(
     private val _writeErrors = MutableSharedFlow<WriteError>(extraBufferCapacity = 16)
     val writeErrors: SharedFlow<WriteError> = _writeErrors.asSharedFlow()
 
+    // Files suppressed from external-change processing.
+    // Two modes:
+    //  1. Single-shot: subscriber calls suppress() in ExternalFileChange handler; the path is
+    //     added here and then removed by checkDirectoryForChanges via .remove().
+    //  2. Sticky (git merge): beginGitMerge() pre-adds paths; they are checked with .contains()
+    //     and not removed until endGitMerge() calls .clear().
+    // Both modes share the same set; sticky paths survive across multiple watcher ticks.
     private val suppressedFiles = mutableSetOf<String>()
+
+    // Paths added by beginGitMerge() — kept for sticky suppression across watcher ticks.
+    private val gitMergeSuppressedFiles = mutableSetOf<String>()
 
     /**
      * Derives a stable UUID for a block from its position in the page tree.
@@ -543,6 +553,13 @@ class GraphLoader(
             logger.info("File modification detected: ${changed.entry.filePath}")
             fileSystem.invalidateShadow(changed.entry.filePath)
 
+            // Sticky git-merge suppression: if the path was added by beginGitMerge,
+            // skip it without consuming the entry (it remains suppressed until endGitMerge).
+            if (gitMergeSuppressedFiles.contains(changed.entry.filePath)) {
+                logger.debug("Skipping watcher reload for git-merge-suppressed file: ${changed.entry.filePath}")
+                continue
+            }
+
             // Emit event so subscribers can suppress the re-import
             _externalFileChanges.tryEmit(ExternalFileChange(changed.entry.filePath, changed.content) {
                 suppressedFiles.add(changed.entry.filePath)
@@ -614,6 +631,43 @@ class GraphLoader(
         watcherJob?.cancel()
         watcherJob = null
         writeActor.close()
+    }
+
+    /**
+     * Adds [pathsBeingMerged] to the sticky git-merge suppression set so the 5-second
+     * polling watcher ignores changes to these files during a git merge operation.
+     *
+     * Unlike single-shot suppression, these entries persist across multiple watcher
+     * ticks until [endGitMerge] is called.
+     *
+     * Call this immediately before [reloadFiles] after git merge completes.
+     * Always paired with [endGitMerge].
+     */
+    fun beginGitMerge(pathsBeingMerged: List<String>) {
+        gitMergeSuppressedFiles.addAll(pathsBeingMerged)
+    }
+
+    /**
+     * Clears the git-merge suppression set, restoring normal file-watcher behaviour.
+     * Must be called after [reloadFiles] completes (or if merge is aborted).
+     */
+    fun endGitMerge() {
+        gitMergeSuppressedFiles.clear()
+    }
+
+    /**
+     * Explicitly reloads [filePaths] from disk and saves them to the database,
+     * bypassing the file-watcher change-detection loop.
+     *
+     * Used after a successful git merge to push merged content into the DB.
+     * Files with conflict markers are skipped by the existing [ConflictMarkerDetector]
+     * guard inside [parseAndSavePage].
+     */
+    suspend fun reloadFiles(filePaths: List<String>) {
+        for (path in filePaths) {
+            val content = fileSystem.readFile(path) ?: continue
+            parseAndSavePage(path, content, ParseMode.FULL, DatabaseWriteActor.Priority.HIGH)
+        }
     }
 
     suspend fun loadFullPage(pageUuid: String) {

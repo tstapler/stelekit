@@ -6,6 +6,8 @@ import dev.stapler.stelekit.docs.FlashcardsDocs
 import dev.stapler.stelekit.docs.HelpPage
 import dev.stapler.stelekit.docs.JournalsDocs
 import dev.stapler.stelekit.docs.PageViewDocs
+import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
@@ -79,7 +81,13 @@ data class AppState(
     // Rename dialog — non-null when the rename dialog is open for a specific page
     val renameDialogPage: Page? = null,
     val renameDialogBusy: Boolean = false,
-    val renameDialogError: String? = null
+    val renameDialogError: String? = null,
+    // Git sync state
+    val syncState: SyncState = SyncState.Idle,
+    val gitConfig: GitConfig? = null,
+    val gitSetupVisible: Boolean = false,
+    val conflictResolutionVisible: Boolean = false,
+    val gitLogVisible: Boolean = false,
 ) {
     val canGoBack: Boolean get() = historyIndex > 0
     val canGoForward: Boolean get() = historyIndex < navigationHistory.size - 1

@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
+import dev.stapler.stelekit.git.CredentialStore
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.SteleKitContext
@@ -37,6 +38,7 @@ class SteleKitApplication : Application() {
         try {
             SteleKitContext.init(this)
             DriverFactory.setContext(this)
+            CredentialStore.init(this)
             fileSystem = PlatformFileSystem().apply { init(applicationContext) }
             graphManager = GraphManager(
                 platformSettings = PlatformSettings(),

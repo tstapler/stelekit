@@ -27,6 +27,18 @@ class DomainErrorTest {
             DomainError.NetworkError.HttpError(404, "not found"),
             DomainError.NetworkError.CircuitOpen(),
             DomainError.NetworkError.Timeout("timeout"),
+            DomainError.GitError.CloneFailed("clone"),
+            DomainError.GitError.FetchFailed("fetch"),
+            DomainError.GitError.PushFailed("push"),
+            DomainError.GitError.AuthFailed("auth"),
+            DomainError.GitError.MergeConflict(1),
+            DomainError.GitError.CommitFailed("commit"),
+            DomainError.GitError.NotAGitRepo("/path"),
+            DomainError.GitError.DetachedHead("/path"),
+            DomainError.GitError.StaleLockFile("/path/.git/index.lock"),
+            DomainError.GitError.NotSupported("iOS"),
+            DomainError.GitError.Offline,
+            DomainError.GitError.EditingInProgress,
         )
         for (err in errors) {
             // exhaustive when — compile error if any branch is missing
@@ -50,6 +62,18 @@ class DomainErrorTest {
                 is DomainError.NetworkError.HttpError -> err.message
                 is DomainError.NetworkError.CircuitOpen -> err.message
                 is DomainError.NetworkError.Timeout -> err.message
+                is DomainError.GitError.CloneFailed -> err.message
+                is DomainError.GitError.FetchFailed -> err.message
+                is DomainError.GitError.PushFailed -> err.message
+                is DomainError.GitError.AuthFailed -> err.message
+                is DomainError.GitError.MergeConflict -> err.message
+                is DomainError.GitError.CommitFailed -> err.message
+                is DomainError.GitError.NotAGitRepo -> err.message
+                is DomainError.GitError.DetachedHead -> err.message
+                is DomainError.GitError.StaleLockFile -> err.message
+                is DomainError.GitError.NotSupported -> err.message
+                DomainError.GitError.Offline -> err.message
+                DomainError.GitError.EditingInProgress -> err.message
             }
             assert(msg.isNotEmpty()) { "Expected non-empty message for $err" }
         }
@@ -90,6 +114,18 @@ class DomainErrorTest {
             DomainError.NetworkError.HttpError(500, "err"),
             DomainError.NetworkError.CircuitOpen(),
             DomainError.NetworkError.Timeout("t"),
+            DomainError.GitError.CloneFailed("clone"),
+            DomainError.GitError.FetchFailed("fetch"),
+            DomainError.GitError.PushFailed("push"),
+            DomainError.GitError.AuthFailed("auth"),
+            DomainError.GitError.MergeConflict(2),
+            DomainError.GitError.CommitFailed("commit"),
+            DomainError.GitError.NotAGitRepo("/path"),
+            DomainError.GitError.DetachedHead("/path"),
+            DomainError.GitError.StaleLockFile("/path/.git/index.lock"),
+            DomainError.GitError.NotSupported("iOS"),
+            DomainError.GitError.Offline,
+            DomainError.GitError.EditingInProgress,
         )
         for (err in errors) {
             assert(err.toUiMessage().isNotEmpty()) { "Expected non-empty UI message for $err" }

@@ -47,6 +47,35 @@ sealed interface DomainError {
         data class CircuitOpen(override val message: String = "Circuit breaker is open") : NetworkError
         data class Timeout(override val message: String) : NetworkError
     }
+
+    sealed interface GitError : DomainError {
+        data class CloneFailed(override val message: String) : GitError
+        data class FetchFailed(override val message: String) : GitError
+        data class PushFailed(override val message: String) : GitError
+        data class AuthFailed(override val message: String) : GitError
+        data class MergeConflict(val conflictCount: Int, val conflictPaths: List<String> = emptyList()) : GitError {
+            override val message: String = "Merge conflict in $conflictCount file(s)"
+        }
+        data class CommitFailed(override val message: String) : GitError
+        data class NotAGitRepo(val path: String) : GitError {
+            override val message: String = "Not a git repository: $path"
+        }
+        data class DetachedHead(val path: String) : GitError {
+            override val message: String = "Repository is in detached HEAD state: $path"
+        }
+        data class StaleLockFile(val lockPath: String) : GitError {
+            override val message: String = "Stale git lock file found: $lockPath"
+        }
+        data class NotSupported(val platform: String) : GitError {
+            override val message: String = "Git integration not yet supported on $platform"
+        }
+        data object Offline : GitError {
+            override val message: String = "No network connection available"
+        }
+        data object EditingInProgress : GitError {
+            override val message: String = "Cannot sync while editing is in progress"
+        }
+    }
 }
 
 fun Throwable.toDatabaseError(): DomainError.DatabaseError.WriteFailed =
@@ -72,4 +101,16 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.NetworkError.HttpError -> "HTTP $statusCode: $message"
     is DomainError.NetworkError.CircuitOpen -> message
     is DomainError.NetworkError.Timeout -> "Request timed out: $message"
+    is DomainError.GitError.CloneFailed -> "Git clone failed: $message"
+    is DomainError.GitError.FetchFailed -> "Git fetch failed: $message"
+    is DomainError.GitError.PushFailed -> "Git push failed: $message"
+    is DomainError.GitError.AuthFailed -> "Git authentication failed: $message"
+    is DomainError.GitError.MergeConflict -> message
+    is DomainError.GitError.CommitFailed -> "Git commit failed: $message"
+    is DomainError.GitError.NotAGitRepo -> message
+    is DomainError.GitError.DetachedHead -> message
+    is DomainError.GitError.StaleLockFile -> message
+    is DomainError.GitError.NotSupported -> message
+    is DomainError.GitError.Offline -> message
+    is DomainError.GitError.EditingInProgress -> message
 }
