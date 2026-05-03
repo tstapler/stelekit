@@ -18,7 +18,7 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
     applyDefaultHierarchyTemplate()
 
     compilerOptions {
@@ -37,7 +37,16 @@ kotlin {
         }
     }
 
-    androidTarget()
+    androidTarget {
+        compilations.configureEach {
+            compileTaskProvider.configure {
+                compilerOptions {
+                    // Cap Android class files at JVM 21; D8 does not support JVM 25 bytecode.
+                    jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+                }
+            }
+        }
+    }
 
     iosX64()
     iosArm64()

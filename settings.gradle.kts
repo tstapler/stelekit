@@ -6,13 +6,13 @@ pluginManagement {
         maven("https://oss.sonatype.org/content/repositories/snapshots/")
     }
     plugins {
-        kotlin("multiplatform") version "2.3.10"
-        kotlin("jvm") version "2.3.10"
-        kotlin("android") version "2.3.10"
-        kotlin("plugin.compose") version "2.3.10"
-        kotlin("plugin.serialization") version "2.3.10"
-        id("com.android.library") version "8.9.1"
-        id("com.android.application") version "8.9.1"
+        kotlin("multiplatform") version "2.3.21"
+        kotlin("jvm") version "2.3.21"
+        kotlin("android") version "2.3.21"
+        kotlin("plugin.compose") version "2.3.21"
+        kotlin("plugin.serialization") version "2.3.21"
+        id("com.android.library") version "8.13.2"
+        id("com.android.application") version "8.13.2"
         id("org.jetbrains.compose") version "1.7.3"
         id("app.cash.sqldelight") version "2.3.2"
         id("io.github.takahirom.roborazzi") version "1.59.0"
