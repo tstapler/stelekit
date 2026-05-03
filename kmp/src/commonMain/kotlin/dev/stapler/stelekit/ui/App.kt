@@ -860,6 +860,7 @@ private fun ScreenRouter(
                 onLinkClick = { viewModel.navigateToPageByName(it) },
                 viewModel = viewModel,
                 searchViewModel = searchViewModel,
+                writeActor = repos.writeActor,
                 isDebugMode = appState.isDebugMode,
                 isLeftHanded = appState.isLeftHanded
             )

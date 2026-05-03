@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.repository.BlockRepository
@@ -57,6 +58,7 @@ fun PageView(
     onLinkClick: (String) -> Unit,
     viewModel: StelekitViewModel,
     searchViewModel: SearchViewModel? = null,
+    writeActor: DatabaseWriteActor? = null,
     isDebugMode: Boolean = false,
     isLeftHanded: Boolean = false
 ) {
@@ -282,7 +284,9 @@ fun PageView(
                     page = page,
                     blockRepository = blockRepository,
                     pageRepository = pageRepository,
-                    onLinkClick = onLinkClick
+                    onLinkClick = onLinkClick,
+                    suggestionMatcher = suggestionMatcher,
+                    writeActor = writeActor,
                 )
             }
         }
