@@ -15,7 +15,5 @@ object HtmlClipboardReader {
         if (clipboard.isDataFlavorAvailable(htmlFlavor)) {
             clipboard.getData(htmlFlavor) as? String
         } else null
-    } catch (e: CancellationException) {
-        throw e
     } catch (_: Exception) { null } // headless, Wayland, or permission error
 }
