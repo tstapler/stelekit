@@ -13,6 +13,7 @@ import dev.stapler.stelekit.git.model.GitConfig
  * Platform implementations: JvmGitRepository (Desktop), AndroidGitRepository (Android),
  * IosGitRepository (iOS stub).
  */
+@Suppress("MissingDirectRepositoryWrite") // git network/filesystem ops — not DB writes, not actor-routed
 interface GitRepository {
     suspend fun isGitRepo(path: String): Boolean
     suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit>

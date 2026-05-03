@@ -61,6 +61,8 @@ android {
     }
 
     compileOptions {
+        // JGit 5.13.x in :kmp uses java.time and other Java 8+ APIs — desugaring required here too
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
@@ -71,6 +73,7 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     implementation(project(":kmp"))
     implementation("io.arrow-kt:arrow-core:2.2.1.1")
     implementation("androidx.activity:activity-compose:1.9.2")

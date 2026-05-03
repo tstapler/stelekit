@@ -156,10 +156,10 @@ class GraphLoader(
     //  2. Sticky (git merge): beginGitMerge() pre-adds paths; they are checked with .contains()
     //     and not removed until endGitMerge() calls .clear().
     // Both modes share the same set; sticky paths survive across multiple watcher ticks.
-    private val suppressedFiles = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private val suppressedFiles = mutableSetOf<String>()
 
     // Paths added by beginGitMerge() — kept for sticky suppression across watcher ticks.
-    private val gitMergeSuppressedFiles = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private val gitMergeSuppressedFiles = mutableSetOf<String>()
 
     /**
      * Derives a stable UUID for a block from its position in the page tree.

@@ -31,6 +31,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -67,15 +68,16 @@ import kotlinx.coroutines.launch
 @Composable
 fun GitSetupScreen(
     graphId: String,
-    existingConfig: GitConfig? = null,
     gitRepository: GitRepository,
     gitConfigRepository: GitConfigRepository,
     gitSyncService: GitSyncService,
     onDismiss: () -> Unit,
-    onSaved: () -> Unit,
+    modifier: Modifier = Modifier,
+    existingConfig: GitConfig? = null,
+    onSave: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
-    var step by remember { mutableStateOf(1) }
+    var step by remember { mutableIntStateOf(1) }
 
     // Form state
     var useExistingClone by remember { mutableStateOf(true) }
@@ -98,6 +100,7 @@ fun GitSetupScreen(
     var saveError by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
+        modifier = modifier,
         topBar = {
             TopAppBar(
                 title = { Text("Git Sync Setup (Step $step / 5)") },
@@ -194,7 +197,7 @@ fun GitSetupScreen(
                             if (result.isRight()) {
                                 // Trigger an immediate background fetch
                                 gitSyncService.fetchOnly(graphId)
-                                onSaved()
+                                onSave()
                             } else {
                                 saveError = "Failed to save configuration."
                             }
@@ -214,22 +217,24 @@ private fun Step1CloneMode(
     onUseExistingClone: (Boolean) -> Unit,
     onNext: () -> Unit,
 ) {
-    Text("Repository mode", style = MaterialTheme.typography.titleMedium)
-    Text("Do you already have a local git clone of your notes repository?", style = MaterialTheme.typography.bodyMedium)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Repository mode", style = MaterialTheme.typography.titleMedium)
+        Text("Do you already have a local git clone of your notes repository?", style = MaterialTheme.typography.bodyMedium)
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected = useExistingClone, onClick = { onUseExistingClone(true) })
-        Spacer(modifier = Modifier.width(8.dp))
-        Text("Use existing clone")
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected = !useExistingClone, onClick = { onUseExistingClone(false) })
-        Spacer(modifier = Modifier.width(8.dp))
-        Text("Clone a remote repository")
-    }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = useExistingClone, onClick = { onUseExistingClone(true) })
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Use existing clone")
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = !useExistingClone, onClick = { onUseExistingClone(false) })
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Clone a remote repository")
+        }
 
-    Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
-        Text("Next")
+        Button(onClick = onNext, modifier = Modifier.fillMaxWidth()) {
+            Text("Next")
+        }
     }
 }
 
@@ -245,43 +250,45 @@ private fun Step2RepoPath(
     onBack: () -> Unit,
     onNext: () -> Unit,
 ) {
-    Text("Repository path", style = MaterialTheme.typography.titleMedium)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Repository path", style = MaterialTheme.typography.titleMedium)
 
-    if (!useExistingClone) {
+        if (!useExistingClone) {
+            OutlinedTextField(
+                value = cloneUrl,
+                onValueChange = onCloneUrlChange,
+                label = { Text("Remote URL (HTTPS or SSH)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+        }
+
         OutlinedTextField(
-            value = cloneUrl,
-            onValueChange = onCloneUrlChange,
-            label = { Text("Remote URL (HTTPS or SSH)") },
+            value = repoRoot,
+            onValueChange = onRepoRootChange,
+            label = { Text("Local repository root path") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
         )
-    }
 
-    OutlinedTextField(
-        value = repoRoot,
-        onValueChange = onRepoRootChange,
-        label = { Text("Local repository root path") },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-    )
+        OutlinedTextField(
+            value = wikiSubdir,
+            onValueChange = onWikiSubdirChange,
+            label = { Text("Wiki subdirectory (leave empty if notes are at repo root)") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
 
-    OutlinedTextField(
-        value = wikiSubdir,
-        onValueChange = onWikiSubdirChange,
-        label = { Text("Wiki subdirectory (leave empty if notes are at repo root)") },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-    )
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        OutlinedButton(onClick = onBack) { Text("Back") }
-        Button(
-            onClick = onNext,
-            enabled = repoRoot.isNotBlank(),
-        ) { Text("Next") }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            OutlinedButton(onClick = onBack) { Text("Back") }
+            Button(
+                onClick = onNext,
+                enabled = repoRoot.isNotBlank(),
+            ) { Text("Next") }
+        }
     }
 }
 
@@ -296,55 +303,57 @@ private fun Step3Auth(
     onBack: () -> Unit,
     onNext: () -> Unit,
 ) {
-    Text("Authentication", style = MaterialTheme.typography.titleMedium)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Authentication", style = MaterialTheme.typography.titleMedium)
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected = authType == GitAuthType.NONE, onClick = { onAuthTypeChange(GitAuthType.NONE) })
-        Spacer(modifier = Modifier.width(8.dp))
-        Text("No authentication (public repo)")
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected = authType == GitAuthType.SSH_KEY, onClick = { onAuthTypeChange(GitAuthType.SSH_KEY) })
-        Spacer(modifier = Modifier.width(8.dp))
-        Text("SSH key")
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected = authType == GitAuthType.HTTPS_TOKEN, onClick = { onAuthTypeChange(GitAuthType.HTTPS_TOKEN) })
-        Spacer(modifier = Modifier.width(8.dp))
-        Text("HTTPS token (GitHub PAT, etc.)")
-    }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = authType == GitAuthType.NONE, onClick = { onAuthTypeChange(GitAuthType.NONE) })
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("No authentication (public repo)")
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = authType == GitAuthType.SSH_KEY, onClick = { onAuthTypeChange(GitAuthType.SSH_KEY) })
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("SSH key")
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = authType == GitAuthType.HTTPS_TOKEN, onClick = { onAuthTypeChange(GitAuthType.HTTPS_TOKEN) })
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("HTTPS token (GitHub PAT, etc.)")
+        }
 
-    if (authType == GitAuthType.SSH_KEY) {
-        OutlinedTextField(
-            value = sshKeyPath,
-            onValueChange = onSshKeyPathChange,
-            label = { Text("SSH private key path (e.g. ~/.ssh/id_ed25519)") },
+        if (authType == GitAuthType.SSH_KEY) {
+            OutlinedTextField(
+                value = sshKeyPath,
+                onValueChange = onSshKeyPathChange,
+                label = { Text("SSH private key path (e.g. ~/.ssh/id_ed25519)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+        }
+
+        if (authType == GitAuthType.HTTPS_TOKEN) {
+            OutlinedTextField(
+                value = httpsToken,
+                onValueChange = onHttpsTokenChange,
+                label = { Text("Personal access token") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            Text(
+                "Token is stored securely on device and never transmitted in plaintext.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-        )
-    }
-
-    if (authType == GitAuthType.HTTPS_TOKEN) {
-        OutlinedTextField(
-            value = httpsToken,
-            onValueChange = onHttpsTokenChange,
-            label = { Text("Personal access token") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-        )
-        Text(
-            "Token is stored securely on device and never transmitted in plaintext.",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        OutlinedButton(onClick = onBack) { Text("Back") }
-        Button(onClick = onNext) { Text("Next") }
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            OutlinedButton(onClick = onBack) { Text("Back") }
+            Button(onClick = onNext) { Text("Next") }
+        }
     }
 }
 
@@ -357,36 +366,38 @@ private fun Step4Branch(
     onBack: () -> Unit,
     onNext: () -> Unit,
 ) {
-    Text("Sync settings", style = MaterialTheme.typography.titleMedium)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Sync settings", style = MaterialTheme.typography.titleMedium)
 
-    OutlinedTextField(
-        value = remoteBranch,
-        onValueChange = onRemoteBranchChange,
-        label = { Text("Remote branch") },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-    )
+        OutlinedTextField(
+            value = remoteBranch,
+            onValueChange = onRemoteBranchChange,
+            label = { Text("Remote branch") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
 
-    Text("Background poll interval", style = MaterialTheme.typography.labelMedium)
+        Text("Background poll interval", style = MaterialTheme.typography.labelMedium)
 
-    val intervals = listOf(0 to "Off", 5 to "5 minutes", 15 to "15 minutes", 30 to "30 minutes", 60 to "1 hour")
-    intervals.forEach { (minutes, label) ->
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(
-                selected = pollIntervalMinutes == minutes,
-                onClick = { onPollIntervalChange(minutes) },
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(label)
+        val intervals = listOf(0 to "Off", 5 to "5 minutes", 15 to "15 minutes", 30 to "30 minutes", 60 to "1 hour")
+        intervals.forEach { (minutes, label) ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(
+                    selected = pollIntervalMinutes == minutes,
+                    onClick = { onPollIntervalChange(minutes) },
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(label)
+            }
         }
-    }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        OutlinedButton(onClick = onBack) { Text("Back") }
-        Button(onClick = onNext) { Text("Next") }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            OutlinedButton(onClick = onBack) { Text("Back") }
+            Button(onClick = onNext) { Text("Next") }
+        }
     }
 }
 
@@ -401,65 +412,67 @@ private fun Step5TestAndSave(
     onTestConnection: () -> Unit,
     onSave: () -> Unit,
 ) {
-    Text("Test and save", style = MaterialTheme.typography.titleMedium)
-    Text("Optionally test your connection before saving.", style = MaterialTheme.typography.bodyMedium)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Test and save", style = MaterialTheme.typography.titleMedium)
+        Text("Optionally test your connection before saving.", style = MaterialTheme.typography.bodyMedium)
 
-    OutlinedButton(
-        onClick = onTestConnection,
-        enabled = !testInProgress,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        if (testInProgress) {
-            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-            Spacer(modifier = Modifier.width(8.dp))
+        OutlinedButton(
+            onClick = onTestConnection,
+            enabled = !testInProgress,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (testInProgress) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text("Test connection")
         }
-        Text("Test connection")
-    }
 
-    if (testResult != null) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = if (testSuccess) Icons.Default.Check else Icons.Default.Error,
-                contentDescription = null,
-                tint = if (testSuccess) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(16.dp),
-            )
-            Spacer(modifier = Modifier.width(8.dp))
+        if (testResult != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (testSuccess) Icons.Default.Check else Icons.Default.Error,
+                    contentDescription = null,
+                    tint = if (testSuccess) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = testResult,
+                    color = if (testSuccess) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
+        saveError?.let { error ->
             Text(
-                text = testResult,
-                color = if (testSuccess) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
+                text = error,
+                color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-    }
 
-    saveError?.let { error ->
-        Text(
-            text = error,
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodySmall,
-        )
-    }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        OutlinedButton(onClick = onBack, enabled = !saving) { Text("Back") }
-        Button(
-            onClick = onSave,
-            enabled = !saving,
-            modifier = Modifier.weight(1f).padding(start = 8.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            if (saving) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+            OutlinedButton(onClick = onBack, enabled = !saving) { Text("Back") }
+            Button(
+                onClick = onSave,
+                enabled = !saving,
+                modifier = Modifier.weight(1f).padding(start = 8.dp),
+            ) {
+                if (saving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text("Save configuration")
             }
-            Text("Save configuration")
         }
     }
 }

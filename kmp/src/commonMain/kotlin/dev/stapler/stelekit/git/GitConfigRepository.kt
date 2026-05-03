@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.Flow
 /**
  * Persists per-graph git configuration in SQLDelight.
  */
+@Suppress("MissingDirectRepositoryWrite") // actor routing is internalized in SqlDelightGitConfigRepository
 interface GitConfigRepository {
     suspend fun getConfig(graphId: String): Either<DomainError, GitConfig?>
     suspend fun saveConfig(config: GitConfig): Either<DomainError, Unit>

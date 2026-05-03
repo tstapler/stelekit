@@ -89,7 +89,7 @@ class JvmGitRepository : GitRepository {
                     val repo = git.repository
                     val headBefore = repo.resolve("HEAD")
 
-                    val fetchResult = git.fetch()
+                    git.fetch()
                         .setRemote(config.remoteName)
                         .call()
 

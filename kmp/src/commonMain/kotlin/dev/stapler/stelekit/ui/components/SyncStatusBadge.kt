@@ -105,12 +105,12 @@ private fun SyncStateBadge(syncState: SyncState, modifier: Modifier = Modifier) 
         }
 
         is SyncState.MergeAvailable -> {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.CloudDownload,
                     contentDescription = "Updates available",
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = modifier.size(16.dp),
+                    modifier = Modifier.size(16.dp),
                 )
                 if (syncState.commitCount > 0) {
                     Spacer(modifier = Modifier.width(2.dp))
@@ -124,12 +124,12 @@ private fun SyncStateBadge(syncState: SyncState, modifier: Modifier = Modifier) 
         }
 
         is SyncState.ConflictPending -> {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.Warning,
                     contentDescription = "Merge conflict",
                     tint = Color(0xFFF59E0B), // amber-400
-                    modifier = modifier.size(16.dp),
+                    modifier = Modifier.size(16.dp),
                 )
                 Spacer(modifier = Modifier.width(2.dp))
                 Text(
@@ -141,12 +141,12 @@ private fun SyncStateBadge(syncState: SyncState, modifier: Modifier = Modifier) 
         }
 
         is SyncState.Error -> {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.Error,
                     contentDescription = "Sync error",
                     tint = MaterialTheme.colorScheme.error,
-                    modifier = modifier.size(16.dp),
+                    modifier = Modifier.size(16.dp),
                 )
                 Spacer(modifier = Modifier.width(2.dp))
                 Text(
