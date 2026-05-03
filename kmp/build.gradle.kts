@@ -18,7 +18,7 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
     applyDefaultHierarchyTemplate()
 
     compilerOptions {
@@ -37,7 +37,16 @@ kotlin {
         }
     }
 
-    androidTarget()
+    androidTarget {
+        compilations.configureEach {
+            compileTaskProvider.configure {
+                compilerOptions {
+                    // jvmToolchain(25) produces class file major version 69; D8 supports max JVM 21.
+                    jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+                }
+            }
+        }
+    }
 
     iosX64()
     iosArm64()
