@@ -166,6 +166,7 @@ class AndroidSpeechRecognizerProvider(
                     Log.w(TAG, "Failed to start speech recognition", t)
                     if (cont.isActive) cont.resume(mapError(SpeechRecognizer.ERROR_CLIENT))
                 }
+            }
         }
 
         startCycle()
