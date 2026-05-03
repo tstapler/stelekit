@@ -15,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class VoiceCaptureViewModelTest {
 
@@ -23,7 +24,7 @@ class VoiceCaptureViewModelTest {
 
     @Test
     fun `initial state is Idle`() = runTest {
-        val vm = VoiceCaptureViewModel(VoicePipelineConfig(), makeJournalService(), this)
+        val vm = VoiceCaptureViewModel(VoicePipelineConfig(), makeJournalService(), scope = this)
         assertIs<VoiceCaptureState.Idle>(vm.state.first())
     }
 
@@ -38,34 +39,13 @@ class VoiceCaptureViewModelTest {
         val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success(transcript) }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
         advanceUntilIdle()
 
         assertIs<VoiceCaptureState.Done>(vm.state.first())
-    }
-
-    @Test
-    fun `word-count gate under 10 words emits Error at TRANSCRIBING`() = runTest {
-        val fakeRecorder = object : AudioRecorder {
-            override suspend fun startRecording(): PlatformAudioFile = PlatformAudioFile("/tmp/test.m4a")
-            override suspend fun stopRecording() = Unit
-            override suspend fun readBytes(file: PlatformAudioFile) = ByteArray(100)
-        }
-        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success("too short") }
-        val vm = VoiceCaptureViewModel(
-            VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
-            makeJournalService(), this,
-        )
-
-        vm.onMicTapped()
-        advanceUntilIdle()
-
-        val state = vm.state.first()
-        assertIs<VoiceCaptureState.Error>(state)
-        assertEquals(PipelineStage.TRANSCRIBING, state.stage)
     }
 
     @Test
@@ -76,7 +56,7 @@ class VoiceCaptureViewModelTest {
         }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -98,7 +78,7 @@ class VoiceCaptureViewModelTest {
         }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -118,7 +98,7 @@ class VoiceCaptureViewModelTest {
         }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -139,7 +119,7 @@ class VoiceCaptureViewModelTest {
         val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Failure.NetworkError }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -163,7 +143,7 @@ class VoiceCaptureViewModelTest {
         val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success(transcript) }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -185,7 +165,7 @@ class VoiceCaptureViewModelTest {
         }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -216,7 +196,7 @@ class VoiceCaptureViewModelTest {
         val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Empty }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -242,7 +222,7 @@ class VoiceCaptureViewModelTest {
         val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Failure.NetworkError }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -261,7 +241,7 @@ class VoiceCaptureViewModelTest {
         val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Empty }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -282,7 +262,7 @@ class VoiceCaptureViewModelTest {
         val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Failure.PermissionDenied }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -309,7 +289,7 @@ class VoiceCaptureViewModelTest {
         }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt, llmProvider = fakeLlm),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         val collectionJob = launch {
@@ -335,7 +315,7 @@ class VoiceCaptureViewModelTest {
         val fakeLlm = LlmFormatterProvider { _, _ -> LlmResult.Failure.NetworkError }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt, llmProvider = fakeLlm),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -360,7 +340,7 @@ class VoiceCaptureViewModelTest {
         val fakeLlm = LlmFormatterProvider { _, _ -> LlmResult.Failure.ApiError(401, "Invalid API key") }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt, llmProvider = fakeLlm),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -374,43 +354,70 @@ class VoiceCaptureViewModelTest {
     }
 
     @Test
-    fun `9-word transcript emits Error at TRANSCRIBING`() = runTest {
+    fun `2-word transcript reaches Done state (AC-11)`() = runTest {
         val fakeRecorder = object : AudioRecorder {
             override suspend fun startRecording(): PlatformAudioFile = PlatformAudioFile("/tmp/test.m4a")
             override suspend fun stopRecording() = Unit
             override suspend fun readBytes(file: PlatformAudioFile) = ByteArray(100)
         }
-        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success("one two three four five six seven eight nine") }
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success("buy milk") }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
-
         vm.onMicTapped()
         advanceUntilIdle()
-
-        val state = vm.state.first()
-        assertIs<VoiceCaptureState.Error>(state)
-        assertEquals(PipelineStage.TRANSCRIBING, state.stage)
+        assertIs<VoiceCaptureState.Done>(vm.state.first())
     }
 
     @Test
-    fun `10-word transcript reaches Done state`() = runTest {
+    fun `when page is open voice note is appended to that page (AC-8)`() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val journalService = JournalService(pageRepo, blockRepo)
+        val targetPage = journalService.ensureTodayJournal()
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success("buy milk") }
         val fakeRecorder = object : AudioRecorder {
             override suspend fun startRecording(): PlatformAudioFile = PlatformAudioFile("/tmp/test.m4a")
             override suspend fun stopRecording() = Unit
             override suspend fun readBytes(file: PlatformAudioFile) = ByteArray(100)
         }
-        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success("one two three four five six seven eight nine ten") }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
-            makeJournalService(), this,
+            journalService,
+            currentOpenPageUuid = { targetPage.uuid },
+            scope = this,
         )
-
         vm.onMicTapped()
         advanceUntilIdle()
-
         assertIs<VoiceCaptureState.Done>(vm.state.first())
+        val blocks = blockRepo.getBlocksForPage(targetPage.uuid).first().getOrNull().orEmpty()
+        assertTrue(blocks.any { it.content.contains("📝 Voice note") })
+    }
+
+    @Test
+    fun `when no page is open voice note falls back to today journal (AC-9)`() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val journalService = JournalService(pageRepo, blockRepo)
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success("buy milk") }
+        val fakeRecorder = object : AudioRecorder {
+            override suspend fun startRecording(): PlatformAudioFile = PlatformAudioFile("/tmp/test.m4a")
+            override suspend fun stopRecording() = Unit
+            override suspend fun readBytes(file: PlatformAudioFile) = ByteArray(100)
+        }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
+            journalService,
+            currentOpenPageUuid = { null },
+            scope = this,
+        )
+        vm.onMicTapped()
+        advanceUntilIdle()
+        assertIs<VoiceCaptureState.Done>(vm.state.first())
+        val journalPage = journalService.ensureTodayJournal()
+        val blocks = blockRepo.getBlocksForPage(journalPage.uuid).first().getOrNull().orEmpty()
+        assertTrue(blocks.any { it.content.contains("📝 Voice note") })
     }
 
     // --- DirectSpeechProvider path ---
@@ -423,7 +430,7 @@ class VoiceCaptureViewModelTest {
         }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(directSpeechProvider = fakeDirectProvider),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -439,7 +446,7 @@ class VoiceCaptureViewModelTest {
         }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(directSpeechProvider = fakeDirectProvider),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -457,7 +464,7 @@ class VoiceCaptureViewModelTest {
         }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(directSpeechProvider = fakeDirectProvider),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -478,7 +485,7 @@ class VoiceCaptureViewModelTest {
         }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(directSpeechProvider = fakeDirectProvider),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -505,7 +512,7 @@ class VoiceCaptureViewModelTest {
         }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt, llmProvider = fakeLlm),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()
@@ -538,7 +545,7 @@ class VoiceCaptureViewModelTest {
         val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Empty }
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
-            makeJournalService(), this,
+            makeJournalService(), scope = this,
         )
 
         vm.onMicTapped()

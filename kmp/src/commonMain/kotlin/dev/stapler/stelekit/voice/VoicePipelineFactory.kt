@@ -30,5 +30,7 @@ fun buildVoicePipeline(
         sttProvider = sttProvider,
         llmProvider = llmProvider,
         directSpeechProvider = directSpeechProvider,
+        includeRawTranscript = settings.getIncludeRawTranscript(),
+        transcriptPageWordThreshold = settings.getTranscriptPageWordThreshold(),
     )
 }

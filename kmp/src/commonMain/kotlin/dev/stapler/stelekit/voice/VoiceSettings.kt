@@ -42,6 +42,18 @@ class VoiceSettings(private val platformSettings: Settings) {
     fun setUseDeviceLlm(enabled: Boolean) =
         platformSettings.putBoolean(KEY_USE_DEVICE_LLM, enabled)
 
+    fun getIncludeRawTranscript(): Boolean =
+        platformSettings.getBoolean(KEY_INCLUDE_RAW_TRANSCRIPT, true)
+
+    fun setIncludeRawTranscript(enabled: Boolean) =
+        platformSettings.putBoolean(KEY_INCLUDE_RAW_TRANSCRIPT, enabled)
+
+    fun getTranscriptPageWordThreshold(): Int =
+        platformSettings.getString(KEY_TRANSCRIPT_PAGE_WORD_THRESHOLD, "20").toIntOrNull() ?: 20
+
+    fun setTranscriptPageWordThreshold(threshold: Int) =
+        platformSettings.putString(KEY_TRANSCRIPT_PAGE_WORD_THRESHOLD, threshold.toString())
+
     companion object {
         private const val KEY_WHISPER = "voice.whisper_key"
         private const val KEY_ANTHROPIC = "voice.anthropic_key"
@@ -49,5 +61,7 @@ class VoiceSettings(private val platformSettings: Settings) {
         private const val KEY_LLM_ENABLED = "voice.llm_enabled"
         private const val KEY_USE_DEVICE_STT = "voice.use_device_stt"
         private const val KEY_USE_DEVICE_LLM = "voice.use_device_llm"
+        private const val KEY_INCLUDE_RAW_TRANSCRIPT = "voice.include_raw_transcript"
+        private const val KEY_TRANSCRIPT_PAGE_WORD_THRESHOLD = "voice.transcript_page_word_threshold"
     }
 }

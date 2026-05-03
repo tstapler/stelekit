@@ -159,6 +159,80 @@ class JournalService(
         }
     }
 
+    /**
+     * Appends a new block with [content] to the page identified by [pageUuid].
+     * Falls back to today's journal if [pageUuid] resolves to no page.
+     */
+    @OptIn(DirectRepositoryWrite::class)
+    suspend fun appendToPage(pageUuid: String, content: String) {
+        val page = pageRepository.getPageByUuid(pageUuid).first().getOrNull()
+        if (page == null) {
+            appendToToday(content)
+            return
+        }
+        val blocks = blockRepository.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
+        val nextPosition = (blocks.maxOfOrNull { it.position } ?: -1) + 1
+        val newBlock = Block(
+            uuid = UuidGenerator.generateV7(),
+            pageUuid = page.uuid,
+            content = content,
+            position = nextPosition,
+            createdAt = Clock.System.now(),
+            updatedAt = Clock.System.now(),
+        )
+        if (writeActor != null) {
+            writeActor.saveBlock(newBlock)
+        } else {
+            blockRepository.saveBlock(newBlock)
+        }
+    }
+
+    /**
+     * Creates a new page with [title] and inserts [content] as its first block.
+     * If a page with that exact title already exists, appends [content] to it instead.
+     *
+     * @return the [Page] that was created or found.
+     */
+    @OptIn(DirectRepositoryWrite::class)
+    suspend fun createTranscriptPage(title: String, content: String): Page {
+        val existing = pageRepository.getPageByName(title).first().getOrNull()
+        if (existing != null) {
+            appendToPage(existing.uuid, content)
+            return existing
+        }
+        val pageUuid = UuidGenerator.generateV7()
+        val newPage = Page(
+            uuid = pageUuid,
+            name = title,
+            createdAt = Clock.System.now(),
+            updatedAt = Clock.System.now(),
+            isJournal = false,
+        )
+        if (writeActor != null) {
+            writeActor.savePage(newPage)
+        } else {
+            pageRepository.savePage(newPage)
+        }
+        val newBlock = Block(
+            uuid = UuidGenerator.generateV7(),
+            pageUuid = pageUuid,
+            content = content,
+            position = 0,
+            createdAt = Clock.System.now(),
+            updatedAt = Clock.System.now(),
+        )
+        if (writeActor != null) {
+            writeActor.saveBlock(newBlock)
+        } else {
+            blockRepository.saveBlock(newBlock)
+        }
+        return newPage
+    }
+
+    /** Returns the name of the page with [uuid], or null if not found. */
+    suspend fun getPageNameByUuid(uuid: String): String? =
+        pageRepository.getPageByUuid(uuid).first().getOrNull()?.name
+
     private suspend fun healJournalDate(page: Page, date: LocalDate): Page {
         logger.info("Healing missing journal_date for page ${page.uuid} (name=${page.name})")
         val healed = page.copy(journalDate = date, isJournal = true, updatedAt = Clock.System.now())

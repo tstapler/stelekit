@@ -19,6 +19,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.voice.VoiceSettings
@@ -36,6 +38,8 @@ fun VoiceCaptureSettings(
     var llmEnabled by remember { mutableStateOf(voiceSettings.getLlmEnabled()) }
     var useDeviceStt by remember { mutableStateOf(voiceSettings.getUseDeviceStt()) }
     var useDeviceLlm by remember { mutableStateOf(voiceSettings.getUseDeviceLlm()) }
+    var includeRawTranscript by remember { mutableStateOf(voiceSettings.getIncludeRawTranscript()) }
+    var transcriptPageWordThreshold by remember { mutableStateOf(voiceSettings.getTranscriptPageWordThreshold().toString()) }
     var saved by remember { mutableStateOf(false) }
 
     SettingsSection("Transcription (Speech-to-Text)") {
@@ -146,6 +150,25 @@ fun VoiceCaptureSettings(
                 )
             }
         }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Include raw transcript in note", style = MaterialTheme.typography.bodyMedium)
+            Switch(
+                checked = includeRawTranscript,
+                onCheckedChange = { includeRawTranscript = it; saved = false },
+            )
+        }
+        OutlinedTextField(
+            value = transcriptPageWordThreshold,
+            onValueChange = { transcriptPageWordThreshold = it; saved = false },
+            label = { Text("Create transcript page after N words") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
     }
 
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
@@ -162,6 +185,8 @@ fun VoiceCaptureSettings(
                     voiceSettings.setLlmEnabled(llmEnabled)
                     voiceSettings.setUseDeviceStt(useDeviceStt)
                     voiceSettings.setUseDeviceLlm(useDeviceLlm)
+                    voiceSettings.setIncludeRawTranscript(includeRawTranscript)
+                    voiceSettings.setTranscriptPageWordThreshold(transcriptPageWordThreshold.toIntOrNull() ?: 20)
                     saved = true
                     onRebuildPipeline()
                 },
