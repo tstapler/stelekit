@@ -27,17 +27,9 @@ jobs:
   ios-framework:
     name: iOS Framework Link Check
     runs-on: macos-latest
-    # One pre-existing blocker prevents full iOS compilation from passing:
-    # Gradle issue #17559 — classloader mismatch: in a multi-project build where :kmp uses
-    # kotlin-multiplatform and :androidApp uses AGP, KotlinNativeBundleBuildService is loaded
-    # by different classloaders. The KGP sets the service on tasks via
-    # `Property<KotlinNativeBundleBuildService>.value(provider)` which Gradle 8.8+ rejects
-    # when the property and provider types are the same class from different loaders. Fix
-    # requires JetBrains to annotate with @ServiceReference or use Property<Any> upstream.
-    # No Kotlin version (2.1.x, 2.2.x, 2.3.x) contains this fix. Affects compileKotlinIos*
-    # tasks but NOT compileCommonMainKotlinMetadata (which is what we run here).
-    # Keep non-blocking until we can verify compileCommonMainKotlinMetadata passes consistently.
-    continue-on-error: true
+    # Full iOS compilation is blocked by Gradle issue #17559 — KotlinNativeBundleBuildService
+    # classloader mismatch in multi-project builds with AGP. Affects compileKotlinIos* tasks.
+    # This job runs compileCommonMainKotlinMetadata instead, which is not affected.
     if: github.event.pull_request.draft == false
 
     steps:
@@ -66,8 +58,16 @@ jobs:
 
       # Best-effort iOS source validation. Restore full compileKotlinIosSimulatorArm64
       # once the Kotlin plugin upstream KT-68400 regression is fixed.
+      #
+      # kotlin.incremental.useClasspathSnapshot=false: Kotlin 2.3.x classpath-snapshot
+      # incremental compilation produces an incomplete ABI view of Compose Multiplatform
+      # 1.7.x klibs, causing androidx.compose.runtime.* symbols to be unresolvable for
+      # files recompiled in an incremental pass. Disabling snapshots forces the full klib
+      # onto the classpath for every incremental compilation unit. Has no effect on cache
+      # hits (task output served directly) so steady-state build speed is unchanged.
       - name: Compile common metadata
         run: |
           ./gradlew :kmp:compileCommonMainKotlinMetadata \
             --no-daemon \
-            --build-cache
+            --build-cache \
+            -Pkotlin.incremental.useClasspathSnapshot=false
