@@ -466,9 +466,11 @@ private fun GraphContent(
         onDispose { voiceCaptureViewModel.close() }
     }
 
-    // Force-flush pending writes on Android lifecycle pause/stop
+    // Force-flush pending writes on Android lifecycle pause/stop.
+    // Keyed on voiceCaptureViewModel so the observer is re-registered whenever the VM is
+    // recreated (e.g. after voicePipeline changes), preventing calls on a stale closed instance.
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, voiceCaptureViewModel) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
                 viewModel.savePendingChanges()
