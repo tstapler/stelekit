@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-03 14:05:09 UTC",
+  "gitSha": "8155563",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 9,
+  "phase2Ms": 3,
+  "phase3Ms": 16,
+  "totalMs": 27,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 32,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 126,
+      "pct": 65.6
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 11,
+      "pct": 5.7
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 5,
+      "pct": 2.6
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 5,
+      "pct": 2.6
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 4,
+      "pct": 2.1
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.util.ArrayList$Itr_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.Class[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2108,
+      "pct": 99.5
+    },
+    {
+      "frame": "kotlinx/coroutines/scheduling/CoroutineScheduler$Worker.trySteal_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "app/cash/sqldelight/driver/jdbc/ConnectionManager$Transaction.<init>_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/util/concurrent/ArrayBlockingQueue.dequeue_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/Object.hashCode_[j]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "acl_CopyRight",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "resource_allocate_bytes",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-5eb4aeed-4b91-465d-80ce-a73a534fb6eb-libsqlitejdbc.so",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "malloc",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SymbolTable::do_lookup",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 2,
+      "totalMs": 3
+    }
+  ]
+}
