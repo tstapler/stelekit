@@ -159,7 +159,7 @@ private fun SyncStateBadge(syncState: SyncState, modifier: Modifier = Modifier) 
 
         is SyncState.Success -> {
             // Brief green checkmark that fades after 3 seconds
-            var visible by remember { mutableStateOf(true) }
+            var visible by remember(syncState) { mutableStateOf(true) }
             LaunchedEffect(syncState) {
                 delay(3_000)
                 visible = false

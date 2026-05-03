@@ -173,7 +173,7 @@ fun GitSetupScreen(
                                 graphId, repoRoot, wikiSubdir, authType,
                                 sshKeyPath, remoteBranch, pollIntervalMinutes
                             )
-                            val result = gitSyncService.fetchOnly(graphId)
+                            val result = gitRepository.fetch(config)
                             testInProgress = false
                             if (result.isRight()) {
                                 testSuccess = true

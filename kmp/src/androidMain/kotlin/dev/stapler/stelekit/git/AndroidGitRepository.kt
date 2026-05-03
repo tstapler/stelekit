@@ -212,10 +212,38 @@ class AndroidGitRepository(
                         emptyList()
                     }
 
+                    val changedFiles = try {
+                        val headAfter = repo.resolve("HEAD")
+                        if (headAfter != null) {
+                            val revWalk = org.eclipse.jgit.revwalk.RevWalk(repo)
+                            val headCommit = revWalk.parseCommit(headAfter)
+                            val parentCommit = headCommit.parents.firstOrNull()?.let { revWalk.parseCommit(it) }
+                            val diffFormatter = org.eclipse.jgit.diff.DiffFormatter(
+                                org.eclipse.jgit.util.io.DisabledOutputStream.INSTANCE
+                            )
+                            diffFormatter.setRepository(repo)
+                            val files = if (parentCommit != null) {
+                                diffFormatter.scan(parentCommit.tree, headCommit.tree)
+                                    .map { "${config.repoRoot}/${it.newPath}" }
+                            } else {
+                                emptyList()
+                            }
+                            diffFormatter.close()
+                            revWalk.close()
+                            files
+                        } else {
+                            emptyList()
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+
                     MergeResult(
                         hasConflicts = hasConflicts,
                         conflicts = conflictFiles,
-                        changedFiles = emptyList(),
+                        changedFiles = changedFiles,
                     ).right()
                 }
             } catch (e: CancellationException) {
@@ -326,8 +354,8 @@ class AndroidGitRepository(
         withContext(PlatformDispatcher.IO) {
             try {
                 openGit(config.repoRoot).use { git ->
-                    val repo = git.repository
-                    repo.branch == repo.resolve("HEAD")?.name
+                    val fullBranch = git.repository.fullBranch ?: return@use false
+                    !fullBranch.startsWith("refs/heads/")
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -363,7 +391,7 @@ class AndroidGitRepository(
     private fun buildJschSessionFactory(keyPath: String): JschConfigSessionFactory {
         return object : JschConfigSessionFactory() {
             override fun configure(host: OpenSshConfig.Host, session: Session) {
-                session.setConfig("StrictHostKeyChecking", "no")
+                session.setConfig("StrictHostKeyChecking", "accept-new")
             }
 
             override fun createDefaultJSch(fs: FS): JSch {

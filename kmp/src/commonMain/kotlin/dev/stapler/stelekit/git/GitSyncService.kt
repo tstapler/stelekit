@@ -160,8 +160,6 @@ class GitSyncService(
                 }
 
                 remoteCommitsMerged = fetchResult.remoteCommitCount
-            } else {
-                _syncState.value = SyncState.MergeAvailable(0)
             }
 
             // 9. Push
@@ -310,6 +308,7 @@ class GitSyncService(
      */
     fun startPeriodicSync(graphId: String, intervalMinutes: Int) {
         stopPeriodicSync()
+        if (intervalMinutes <= 0) return
         periodicSyncJob = scope.launch {
             while (true) {
                 delay(intervalMinutes * 60_000L)

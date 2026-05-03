@@ -385,8 +385,8 @@ class JvmGitRepository : GitRepository {
         withContext(PlatformDispatcher.IO) {
             try {
                 openGit(config.repoRoot).use { git ->
-                    val repo = git.repository
-                    repo.branch == repo.resolve("HEAD")?.name
+                    val fullBranch = git.repository.fullBranch ?: return@use false
+                    !fullBranch.startsWith("refs/heads/")
                 }
             } catch (e: CancellationException) {
                 throw e
