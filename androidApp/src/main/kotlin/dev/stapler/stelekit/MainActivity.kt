@@ -159,7 +159,10 @@ class MainActivity : ComponentActivity() {
             val voiceSettings = remember { VoiceSettings(PlatformSettings()) }
             val deviceSttAvailable = remember { AndroidSpeechRecognizerProvider.isAvailable(this@MainActivity.applicationContext) }
             val deviceSttProvider = remember {
-                if (deviceSttAvailable) AndroidSpeechRecognizerProvider(this@MainActivity.applicationContext) else null
+                if (deviceSttAvailable) AndroidSpeechRecognizerProvider(
+                    this@MainActivity.applicationContext,
+                    this@MainActivity::requestMicrophonePermission,
+                ) else null
             }
             val mlKitProvider = remember { MlKitLlmFormatterProvider.create() }
             var deviceLlmAvailable by remember { mutableStateOf(false) }
