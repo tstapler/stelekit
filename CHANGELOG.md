@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.19.4](https://github.com/tstapler/stelekit/compare/v0.19.3...v0.19.4) (2026-05-03)
+
+
+### Bug Fixes
+
+* rethrow CancellationException in loadJournalsImmediate ([#62](https://github.com/tstapler/stelekit/issues/62)) ([222a638](https://github.com/tstapler/stelekit/commit/222a63831095cb1ecde6fa4301f1c585701eb8a6))
+* **voice:** fix on-device STT always falling back to Whisper on Android ([#64](https://github.com/tstapler/stelekit/issues/64)) ([2f778ef](https://github.com/tstapler/stelekit/commit/2f778ef866350fb8a29e695a884f7e8644ca20af))
+
 ## [0.19.3](https://github.com/tstapler/stelekit/compare/v0.19.2...v0.19.3) (2026-05-01)
 
 
