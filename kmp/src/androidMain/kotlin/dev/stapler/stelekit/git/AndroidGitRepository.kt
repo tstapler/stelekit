@@ -12,6 +12,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.MergeCommand
@@ -43,6 +44,8 @@ class AndroidGitRepository(
             try {
                 Git.init().setDirectory(File(repoRoot)).call().close()
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.CloneFailed("init failed: ${e.message}").left()
             }
@@ -71,6 +74,8 @@ class AndroidGitRepository(
             Unit.right()
         } catch (e: TransportException) {
             DomainError.GitError.AuthFailed(e.message ?: "Authentication failed").left()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.GitError.CloneFailed(e.message ?: "Clone failed").left()
         }
@@ -94,6 +99,8 @@ class AndroidGitRepository(
                     val remoteCommitCount = if (hasChanges && headBefore != null && remoteRef != null) {
                         try {
                             git.log().addRange(headBefore, remoteRef).setMaxCount(100).call().toList().size
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (_: Exception) {
                             0
                         }
@@ -105,6 +112,8 @@ class AndroidGitRepository(
                 }
             } catch (e: TransportException) {
                 DomainError.GitError.AuthFailed(e.message ?: "Authentication failed").left()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.FetchFailed(e.message ?: "Fetch failed").left()
             }
@@ -128,6 +137,8 @@ class AndroidGitRepository(
                         modifiedFiles = (statusResult.modified + statusResult.changed).toList(),
                     ).right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.FetchFailed("Status failed: ${e.message}").left()
             }
@@ -142,6 +153,8 @@ class AndroidGitRepository(
                     git.add().setUpdate(true).addFilepattern(pattern).call()
                     Unit.right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.CommitFailed("Stage failed: ${e.message}").left()
             }
@@ -154,6 +167,8 @@ class AndroidGitRepository(
                     val commit = git.commit().setMessage(message).call()
                     commit.name.right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.CommitFailed(e.message ?: "Commit failed").left()
             }
@@ -203,6 +218,8 @@ class AndroidGitRepository(
                         changedFiles = emptyList(),
                     ).right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.FetchFailed("Merge failed: ${e.message}").left()
             }
@@ -220,6 +237,8 @@ class AndroidGitRepository(
                 }
             } catch (e: TransportException) {
                 DomainError.GitError.AuthFailed(e.message ?: "Push authentication failed").left()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.PushFailed(e.message ?: "Push failed").left()
             }
@@ -242,6 +261,8 @@ class AndroidGitRepository(
                         }
                     commits.right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.FetchFailed("Log failed: ${e.message}").left()
             }
@@ -256,6 +277,8 @@ class AndroidGitRepository(
                         .call()
                     Unit.right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.CommitFailed("Abort merge failed: ${e.message}").left()
             }
@@ -278,6 +301,8 @@ class AndroidGitRepository(
                     .call()
                 Unit.right()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.GitError.CommitFailed("Checkout file failed: ${e.message}").left()
         }
@@ -290,6 +315,8 @@ class AndroidGitRepository(
                     git.add().addFilepattern(filePath.removePrefix("${config.repoRoot}/")).call()
                     Unit.right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.CommitFailed("Mark resolved failed: ${e.message}").left()
             }
@@ -302,6 +329,8 @@ class AndroidGitRepository(
                     val repo = git.repository
                     repo.branch == repo.resolve("HEAD")?.name
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 false
             }
@@ -320,6 +349,8 @@ class AndroidGitRepository(
                 } else {
                     DomainError.GitError.StaleLockFile(lockFile.absolutePath).left()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.StaleLockFile("${config.repoRoot}/.git/index.lock").left()
             }

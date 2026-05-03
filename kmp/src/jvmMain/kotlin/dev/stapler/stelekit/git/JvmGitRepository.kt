@@ -11,6 +11,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.ConflictHunk
 import dev.stapler.stelekit.git.model.GitConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.MergeCommand
@@ -38,6 +39,8 @@ class JvmGitRepository : GitRepository {
             builder.setMustExist(true)
             builder.findGitDir(File(path))
             builder.gitDir != null
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             false
         }
@@ -48,6 +51,8 @@ class JvmGitRepository : GitRepository {
             try {
                 Git.init().setDirectory(File(repoRoot)).call().close()
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.CloneFailed("init failed: ${e.message}").left()
             }
@@ -77,6 +82,8 @@ class JvmGitRepository : GitRepository {
             Unit.right()
         } catch (e: TransportException) {
             DomainError.GitError.AuthFailed(e.message ?: "Authentication failed").left()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.GitError.CloneFailed(e.message ?: "Clone failed").left()
         }
@@ -104,6 +111,8 @@ class JvmGitRepository : GitRepository {
                                 .call()
                                 .toList()
                             commits.size
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (_: Exception) {
                             0
                         }
@@ -115,6 +124,8 @@ class JvmGitRepository : GitRepository {
                 }
             } catch (e: TransportException) {
                 DomainError.GitError.AuthFailed(e.message ?: "Authentication failed").left()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.FetchFailed(e.message ?: "Fetch failed").left()
             }
@@ -142,6 +153,8 @@ class JvmGitRepository : GitRepository {
                         modifiedFiles = modified,
                     ).right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.FetchFailed("Status failed: ${e.message}").left()
             }
@@ -157,6 +170,8 @@ class JvmGitRepository : GitRepository {
                     git.add().setUpdate(true).addFilepattern(pattern).call()
                     Unit.right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.CommitFailed("Stage failed: ${e.message}").left()
             }
@@ -171,6 +186,8 @@ class JvmGitRepository : GitRepository {
                         .call()
                     commit.name.right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.CommitFailed(e.message ?: "Commit failed").left()
             }
@@ -237,6 +254,8 @@ class JvmGitRepository : GitRepository {
                         } else {
                             emptyList()
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (_: Exception) {
                         emptyList()
                     }
@@ -247,6 +266,8 @@ class JvmGitRepository : GitRepository {
                         changedFiles = changedFiles,
                     ).right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.FetchFailed("Merge failed: ${e.message}").left()
             }
@@ -274,6 +295,8 @@ class JvmGitRepository : GitRepository {
                 }
             } catch (e: TransportException) {
                 DomainError.GitError.AuthFailed(e.message ?: "Push authentication failed").left()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.PushFailed(e.message ?: "Push failed").left()
             }
@@ -296,6 +319,8 @@ class JvmGitRepository : GitRepository {
                         }
                     commits.right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.FetchFailed("Log failed: ${e.message}").left()
             }
@@ -310,6 +335,8 @@ class JvmGitRepository : GitRepository {
                         .call()
                     Unit.right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.CommitFailed("Abort merge failed: ${e.message}").left()
             }
@@ -332,6 +359,8 @@ class JvmGitRepository : GitRepository {
                     .call()
                 Unit.right()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.GitError.CommitFailed("Checkout file failed: ${e.message}").left()
         }
@@ -345,6 +374,8 @@ class JvmGitRepository : GitRepository {
                     git.add().addFilepattern(relativePath).call()
                     Unit.right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.CommitFailed("Mark resolved failed: ${e.message}").left()
             }
@@ -357,6 +388,8 @@ class JvmGitRepository : GitRepository {
                     val repo = git.repository
                     repo.branch == repo.resolve("HEAD")?.name
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 false
             }
@@ -378,6 +411,8 @@ class JvmGitRepository : GitRepository {
                 } else {
                     DomainError.GitError.StaleLockFile(lockFile.absolutePath).left()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.GitError.StaleLockFile("${config.repoRoot}/.git/index.lock").left()
             }

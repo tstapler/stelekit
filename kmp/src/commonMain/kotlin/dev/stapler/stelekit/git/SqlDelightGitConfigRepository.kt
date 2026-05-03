@@ -19,6 +19,7 @@ import dev.stapler.stelekit.git.model.GitConfig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 
 /**
@@ -39,6 +40,8 @@ class SqlDelightGitConfigRepository(
             try {
                 val row = queries.selectGitConfig(graphId).executeAsOneOrNull()
                 row?.toModel().right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
             }
@@ -63,6 +66,8 @@ class SqlDelightGitConfigRepository(
                     commit_message_template = config.commitMessageTemplate,
                 )
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
@@ -75,6 +80,8 @@ class SqlDelightGitConfigRepository(
                 @OptIn(DirectSqlWrite::class)
                 database.steleDatabaseQueries.deleteGitConfig(graphId)
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }

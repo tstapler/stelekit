@@ -11,6 +11,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
 
 /**
@@ -83,6 +84,8 @@ class GitSyncWorker(
         return try {
             service.fetchOnly(graphId)
             Result.success()
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             Result.retry()
         }

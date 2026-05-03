@@ -51,6 +51,11 @@ android {
     }
 
     packaging {
+        resources {
+            // Both org.eclipse.jgit and org.eclipse.jgit.ssh.jsch include plugin.properties;
+            // exclude it to prevent duplicate-resource merge failure.
+            excludes += "plugin.properties"
+        }
         jniLibs {
             useLegacyPackaging = false
         }
