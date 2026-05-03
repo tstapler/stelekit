@@ -35,16 +35,26 @@ class AndroidSpeechRecognizerProvider(
     override val amplitudeFlow: Flow<Float> = _amplitudeFlow.asStateFlow()
 
     @Volatile private var activeRecognizer: SpeechRecognizer? = null
+    // Set to true when the user explicitly taps stop; resets at the start of each listen().
+    @Volatile private var stopRequested = false
     private val mainHandler = Handler(Looper.getMainLooper())
 
     override suspend fun listen(): TranscriptResult {
         if (requestMicPermission != null && !requestMicPermission()) {
             return TranscriptResult.Failure.PermissionDenied
         }
-        return listenInternal()
+        stopRequested = false
+        return listenContinuous()
     }
 
-    private suspend fun listenInternal(): TranscriptResult = suspendCancellableCoroutine { cont ->
+    /**
+     * Runs a continuous listen loop: each time the recognizer stops due to silence it is
+     * automatically restarted, accumulating transcript text across the gap. The loop only
+     * terminates when [stopListening] sets [stopRequested] = true.
+     */
+    private suspend fun listenContinuous(): TranscriptResult = suspendCancellableCoroutine { cont ->
+        val accumulated = StringBuilder()
+
         cont.invokeOnCancellation {
             mainHandler.post {
                 activeRecognizer?.let {
@@ -56,18 +66,27 @@ class AndroidSpeechRecognizerProvider(
             }
         }
 
-        mainHandler.post {
-            var recognizer: SpeechRecognizer? = null
-            try {
-                recognizer = SpeechRecognizer.createSpeechRecognizer(context)
-                activeRecognizer = recognizer
-
-                // Guard against cancellation that fired before this post ran
-                if (!cont.isActive) {
-                    recognizer.destroy()
-                    activeRecognizer = null
+        fun startCycle() {
+            mainHandler.post {
+                // Resolve immediately if stop was requested between cycles or after cancellation.
+                if (!cont.isActive || stopRequested) {
+                    _amplitudeFlow.value = 0f
+                    if (cont.isActive) {
+                        val text = accumulated.toString().trim()
+                        cont.resume(if (text.isBlank()) TranscriptResult.Empty else TranscriptResult.Success(text))
+                    }
                     return@post
                 }
+
+                val recognizer: SpeechRecognizer
+                try {
+                    recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+                } catch (t: Throwable) {
+                    Log.w(TAG, "Failed to create SpeechRecognizer", t)
+                    if (cont.isActive) cont.resume(mapError(SpeechRecognizer.ERROR_CLIENT))
+                    return@post
+                }
+                activeRecognizer = recognizer
 
                 recognizer.setRecognitionListener(object : RecognitionListener {
                     override fun onReadyForSpeech(params: Bundle?) {}
@@ -78,7 +97,6 @@ class AndroidSpeechRecognizerProvider(
                     override fun onPartialResults(partialResults: Bundle?) {}
 
                     override fun onRmsChanged(rmsdB: Float) {
-                        // Map roughly -2..10 dB → 0..1
                         _amplitudeFlow.value = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
                     }
 
@@ -87,12 +105,22 @@ class AndroidSpeechRecognizerProvider(
                         activeRecognizer = null
                         recognizer.destroy()
                         if (!cont.isActive) return
+
                         val text = results
                             ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                             ?.firstOrNull()
-                        Log.d(TAG, "onResults: text=${text?.take(80)}")
-                        if (text.isNullOrBlank()) cont.resume(TranscriptResult.Empty)
-                        else cont.resume(TranscriptResult.Success(text))
+                        Log.d(TAG, "onResults: text=${text?.take(80)}, stopRequested=$stopRequested")
+                        if (!text.isNullOrBlank()) {
+                            if (accumulated.isNotEmpty()) accumulated.append(" ")
+                            accumulated.append(text.trim())
+                        }
+
+                        if (stopRequested) {
+                            val finalText = accumulated.toString().trim()
+                            cont.resume(if (finalText.isBlank()) TranscriptResult.Empty else TranscriptResult.Success(finalText))
+                        } else {
+                            startCycle()
+                        }
                     }
 
                     override fun onError(error: Int) {
@@ -100,8 +128,21 @@ class AndroidSpeechRecognizerProvider(
                         activeRecognizer = null
                         recognizer.destroy()
                         if (!cont.isActive) return
-                        Log.w(TAG, "onError: code=$error")
-                        cont.resume(mapError(error))
+                        Log.w(TAG, "onError: code=$error, stopRequested=$stopRequested")
+
+                        when (error) {
+                            SpeechRecognizer.ERROR_NO_MATCH,
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
+                                // Silence gap — restart unless the user has tapped stop.
+                                if (stopRequested) {
+                                    val finalText = accumulated.toString().trim()
+                                    cont.resume(if (finalText.isBlank()) TranscriptResult.Empty else TranscriptResult.Success(finalText))
+                                } else {
+                                    startCycle()
+                                }
+                            }
+                            else -> cont.resume(mapError(error))
+                        }
                     }
                 })
 
@@ -113,28 +154,36 @@ class AndroidSpeechRecognizerProvider(
                     putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 3_000L)
                     putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 2_000L)
                 }
-                recognizer.startListening(intent)
-            } catch (t: Throwable) {
-                _amplitudeFlow.value = 0f
-                activeRecognizer = null
-                recognizer?.destroy()
-                Log.w(TAG, "Failed to start speech recognition", t)
-                if (cont.isActive) {
-                    cont.resume(mapError(SpeechRecognizer.ERROR_CLIENT))
+                try {
+                    recognizer.startListening(intent)
+                } catch (t: Throwable) {
+                    _amplitudeFlow.value = 0f
+                    activeRecognizer = null
+                    recognizer.destroy()
+                    Log.w(TAG, "Failed to start speech recognition", t)
+                    if (cont.isActive) cont.resume(mapError(SpeechRecognizer.ERROR_CLIENT))
                 }
             }
         }
+
+        startCycle()
     }
 
     override suspend fun stopListening() {
+        stopRequested = true
         withContext(Dispatchers.Main) {
-            activeRecognizer?.stopListening()
+            val recognizer = activeRecognizer
+            if (recognizer != null) {
+                // Triggers onResults() with whatever was heard; the loop sees stopRequested=true
+                // and resolves the coroutine with the full accumulated transcript.
+                recognizer.stopListening()
+            }
+            // If activeRecognizer is null we're between cycles — the next startCycle() call
+            // will see stopRequested=true and resolve the coroutine directly.
         }
     }
 
     private fun mapError(error: Int): TranscriptResult = when (error) {
-        SpeechRecognizer.ERROR_NO_MATCH,
-        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> TranscriptResult.Empty
         SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> TranscriptResult.Failure.PermissionDenied
         SpeechRecognizer.ERROR_NETWORK,
         SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> TranscriptResult.Failure.NetworkError
