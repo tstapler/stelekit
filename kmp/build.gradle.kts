@@ -208,12 +208,12 @@ kotlin {
                 // JGit 5.13.x — Android git operations (Android-safe; Java 11 APIs with desugaring)
                 implementation("org.eclipse.jgit:org.eclipse.jgit:5.13.3.202401111512-r")
                 // JGit SSH/JSch integration module (provides JschConfigSessionFactory)
-                implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:5.13.3.202401111512-r")
-                // mwiede/jsch fork — ED25519/ECDSA/OpenSSH key support for Android SSH
-                // Excludes old com.jcraft:jsch transitive dep, replaces it with mwiede fork
-                implementation("com.github.mwiede:jsch:0.2.21") {
-                    isTransitive = false
+                // Excludes com.jcraft:jsch so the mwiede fork below is the sole jsch on classpath
+                implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:5.13.3.202401111512-r") {
+                    exclude(group = "com.jcraft", module = "jsch")
                 }
+                // mwiede/jsch fork — ED25519/ECDSA/OpenSSH key support for Android SSH
+                implementation("com.github.mwiede:jsch:0.2.21")
             }
         }
 
@@ -663,6 +663,8 @@ detekt {
 }
 
 tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+    // Detekt 1.23.x max supported --jvm-target is 22; cap it so jvmToolchain(25) doesn't propagate.
+    jvmTarget = "22"
     reports {
         html.required.set(true)
         sarif.required.set(true)
