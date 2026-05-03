@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.desktop
 
 import androidx.compose.runtime.getValue
+import kotlinx.coroutines.CancellationException
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -63,6 +64,8 @@ fun main() {
                 key.toString().contains("dark", ignoreCase = true)
             }
             setSystemDarkTheme(isDark)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.warn("Failed to detect system theme", e)
             setSystemDarkTheme(false)

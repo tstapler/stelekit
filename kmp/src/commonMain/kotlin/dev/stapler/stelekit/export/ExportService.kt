@@ -14,6 +14,7 @@ import dev.stapler.stelekit.repository.BlockRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 
 /**
  * Orchestrates the export pipeline:
@@ -54,6 +55,8 @@ class ExportService(
                 clipboard.writeText(output)
             }
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -73,6 +76,8 @@ class ExportService(
                 ?: error("Unknown export format: $formatId")
             val resolvedRefs = resolveBlockRefs(collectBlockRefUuids(blocks))
             exporter.export(page, blocks, resolvedRefs).right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }

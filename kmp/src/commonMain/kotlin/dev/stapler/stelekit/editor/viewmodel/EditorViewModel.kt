@@ -22,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlin.random.Random
@@ -124,6 +125,8 @@ class EditorViewModel(
                     currentTextOperations.insertText(focusedBlockUuid, text)
                 }
                 logger.debug("Inserted text: '$text'")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 handleError(EditorError.TextOperationError("Failed to insert text", e))
             }
@@ -145,6 +148,8 @@ class EditorViewModel(
                     currentTextOperations.insertText(focusedBlockUuid, content)
                 }
                 logger.debug("Set content length: ${content.length}")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 handleError(EditorError.TextOperationError("Failed to set content", e))
             }
@@ -164,6 +169,8 @@ class EditorViewModel(
                     currentTextOperations.deleteText(focusedBlockUuid, TextRange(0, currentContent.length))
                 }
                 logger.debug("Cleared content")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 handleError(EditorError.TextOperationError("Failed to clear content", e))
             }
@@ -296,6 +303,8 @@ class EditorViewModel(
                 match?.let { mr ->
                     logger.debug("Found text at range: ${mr.range}")
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 handleError(EditorError.SearchError("Failed to find next", e))
             }
@@ -330,6 +339,8 @@ class EditorViewModel(
                 currentTextOperations.insertText(focusedBlockUuid, replacement)
                 
                 logger.debug("Replaced occurrences")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 handleError(EditorError.SearchError("Failed to replace all", e))
             }
@@ -348,6 +359,8 @@ class EditorViewModel(
                 // undo operations would need to be implemented via command pattern or similar
                 logger.info("Undo operation not implemented in EditorViewModel")
                 logger.debug("Performed undo")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 handleError(EditorError.UndoRedoError("Failed to undo", e))
             }
@@ -364,6 +377,8 @@ class EditorViewModel(
                 // redo operations would need to be implemented via command pattern or similar
                 logger.info("Redo operation not implemented in EditorViewModel")
                 logger.debug("Performed redo")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 handleError(EditorError.UndoRedoError("Failed to redo", e))
             }
@@ -416,6 +431,8 @@ class EditorViewModel(
                 }
                 
                 hideLoading()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 hideLoading()
                 handleError(EditorError.BlockLoadError("Failed to load block", e))
@@ -463,6 +480,8 @@ class EditorViewModel(
                 } else {
                     handleError(EditorError.ValidationError("No block UUID associated with editor"))
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 hideLoading()
                 handleError(EditorError.BlockSaveError("Failed to save block", e))
@@ -510,6 +529,8 @@ class EditorViewModel(
                 } else {
                     handleError(EditorError.BlockCreateError("Failed to create block", result.leftOrNull()?.let { RuntimeException(it.message) }))
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 handleError(EditorError.BlockCreateError("Failed to create block", e))
             }
@@ -614,6 +635,8 @@ class EditorViewModel(
                 kotlinx.coroutines.delay(2000)
                 _autoSaveStatus.value = AutoSaveStatus.Idle
                 
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _autoSaveStatus.value = AutoSaveStatus.Error(e.message ?: "Unknown error")
                 logger.error("Auto-save failed", e)

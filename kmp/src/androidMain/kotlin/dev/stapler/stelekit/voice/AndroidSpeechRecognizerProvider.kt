@@ -11,6 +11,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -156,6 +157,8 @@ class AndroidSpeechRecognizerProvider(
                 }
                 try {
                     recognizer.startListening(intent)
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (t: Throwable) {
                     _amplitudeFlow.value = 0f
                     activeRecognizer = null
@@ -163,7 +166,6 @@ class AndroidSpeechRecognizerProvider(
                     Log.w(TAG, "Failed to start speech recognition", t)
                     if (cont.isActive) cont.resume(mapError(SpeechRecognizer.ERROR_CLIENT))
                 }
-            }
         }
 
         startCycle()

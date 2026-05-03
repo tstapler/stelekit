@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.parser
 
 import dev.stapler.stelekit.logging.Logger
+import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.ParsedBlock
 import dev.stapler.stelekit.model.ParsedPage
@@ -25,6 +26,8 @@ class MarkdownParser {
                 properties = emptyMap(), // Page props handled in GraphLoader via first block?
                 blocks = parsedBlocks
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             // Log the content that caused the error for debugging
             logger.error("Error parsing content (length=${content.length}): ${e.message}", e)

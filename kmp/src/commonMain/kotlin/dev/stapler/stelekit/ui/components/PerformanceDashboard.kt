@@ -41,6 +41,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 
 @Composable
 fun PerformanceDashboard(
@@ -242,6 +243,8 @@ private fun SpansTab(
                             val msg = try {
                                 val path = perfExporter.exportWithPicker()
                                 if (path != null) "Performance report exported" else "Export cancelled"
+                            } catch (e: CancellationException) {
+                                throw e
                             } catch (e: Exception) {
                                 "Export failed. Check storage permissions."
                             }

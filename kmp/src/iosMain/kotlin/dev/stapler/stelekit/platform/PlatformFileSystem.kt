@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.platform
 
 import platform.Foundation.NSDate
+import kotlinx.coroutines.CancellationException
 import platform.Foundation.NSDocumentDirectory
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSFileModificationDate
@@ -40,6 +41,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             if (!exists) return null
             val content = fileManager.contentsAtPath(validatedPath)
             content?.let { String(it) }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }
@@ -54,6 +57,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val data = content.encodeToByteArray()
             fileManager.createFileAtPath(validatedPath, data, null)
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -68,6 +73,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             contents.mapNotNull { it as? String }.filter {
                 fileTypeAtPath("$validatedPath/$it") == NSFileTypeRegular
             }.sorted()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -82,6 +89,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             contents.mapNotNull { it as? String }.filter {
                 fileTypeAtPath("$validatedPath/$it") == NSFileTypeDirectory
             }.sorted()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -93,6 +102,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val validatedPath = validatePath(expandedPath)
             val fileManager = NSFileManager.defaultManager
             fileManager.fileExistsAtPath(validatedPath)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -103,6 +114,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val expandedPath = expandTilde(path)
             val validatedPath = validatePath(expandedPath)
             fileTypeAtPath(validatedPath) == NSFileTypeDirectory
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -115,6 +128,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val fileManager = NSFileManager.defaultManager
             fileManager.createDirectoryAtPath(validatedPath, true, null, null)
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -127,6 +142,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val fileManager = NSFileManager.defaultManager
             fileManager.removeItemAtPath(validatedPath, null)
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -145,6 +162,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val attrs = NSFileManager.defaultManager.attributesOfItemAtPath(validatedPath, null) ?: return null
             val modDate = attrs[NSFileModificationDate] as? NSDate ?: return null
             (modDate.timeIntervalSince1970 * 1000).toLong()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }

@@ -17,6 +17,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import java.nio.file.Files
@@ -141,6 +142,8 @@ class GraphLoadTimingTest {
             }
             sb.append("]")
             file.writeText(sb.toString())
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {}
     }
 
@@ -165,6 +168,8 @@ class GraphLoadTimingTest {
             }
             sb.append("}")
             file.writeText(sb.toString())
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             // non-fatal
         }

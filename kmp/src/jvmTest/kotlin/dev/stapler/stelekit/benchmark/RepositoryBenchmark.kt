@@ -9,6 +9,7 @@ import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.PageRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Duration
 import kotlin.time.measureTime
 
@@ -177,6 +178,8 @@ class RepositoryBenchmark(
             results.add(result)
             println("  ✅ $operationName: ${duration.inWholeMilliseconds}ms")
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             val result = BenchmarkResult(
                 operation = operationName,

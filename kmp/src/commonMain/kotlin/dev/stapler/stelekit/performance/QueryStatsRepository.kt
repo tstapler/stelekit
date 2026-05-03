@@ -10,6 +10,7 @@ import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.error.DomainError
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 
 data class QueryStat(
     val appVersion: String,
@@ -92,6 +93,8 @@ class QueryStatsRepository(
                     }
                 }
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
@@ -119,6 +122,8 @@ class QueryStatsRepository(
                     restricted.deleteQueryStatsForVersion(appVersion)
                 }
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }

@@ -29,6 +29,7 @@ import dev.stapler.stelekit.editor.format.IFormatProcessor
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 /**
  * Main editor implementation that orchestrates all editing operations.
@@ -76,6 +77,8 @@ class Editor(
             
             dev.stapler.stelekit.performance.PerformanceMonitor.endTrace(traceId)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             _editorState.update { it.copy(isLoading = false) }
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
@@ -154,6 +157,8 @@ class Editor(
             
             dev.stapler.stelekit.performance.PerformanceMonitor.endTrace(traceId)
             if (result is CommandResult.Success) Unit.right() else DomainError.DatabaseError.WriteFailed((result as CommandResult.Error).message).left()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -185,6 +190,8 @@ class Editor(
                 is CommandResult.Partial -> mapOf("completed" to result.completed, "total" to result.total).right()
                 is CommandResult.Nothing -> null.right()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }

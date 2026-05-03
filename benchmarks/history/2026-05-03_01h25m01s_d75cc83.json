@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-03 01:25:01 UTC",
+  "gitSha": "d75cc83",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 4,
+  "phase3Ms": 18,
+  "totalMs": 31,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 47,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.02,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 117,
+      "pct": 61.6
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 11,
+      "pct": 5.8
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 8,
+      "pct": 4.2
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 4,
+      "pct": 2.1
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 4,
+      "pct": 2.1
+    },
+    {
+      "frame": "java.io.File_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.lang.reflect.Method_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 2,
+      "pct": 1.1
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2146,
+      "pct": 99.3
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-4e2396eb-4695-451e-b06b-c963ee264c92-libsqlitejdbc.so",
+      "samples": 3,
+      "pct": 0.1
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "_SafeFetch32_fault",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "app/cash/sqldelight/BaseTransacterImpl$$Lambda.0x00007fe8a41d98f0.invoke_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "Dictionary::find",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "org/sqlite/jdbc3/JDBC3Statement.getResultSet_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SymbolTable::do_lookup",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "org/sqlite/SQLiteConnection.commit_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 2,
+      "totalMs": 3
+    }
+  ]
+}

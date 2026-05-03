@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.model
 
 import kotlin.test.Test
+import kotlinx.coroutines.CancellationException
 import kotlin.test.fail
 
 class ValidationPropertyTest {
@@ -26,6 +27,8 @@ class ValidationPropertyTest {
         uuidFormats.forEach { uuid ->
             try {
                 Validation.validateUuid(uuid)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Some formats may fail - that's ok for fuzz testing
             }
@@ -43,6 +46,8 @@ class ValidationPropertyTest {
         invalidUuids.forEach { uuid ->
             try {
                 Validation.validateUuid(uuid)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Expected - validation should reject
             }
@@ -54,6 +59,8 @@ class ValidationPropertyTest {
         val longUuid = "a".repeat(36)
         try {
             Validation.validateUuid(longUuid)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             fail("Failed for max length")
         }
@@ -69,6 +76,8 @@ class ValidationPropertyTest {
         validNames.forEach { name ->
             try {
                 Validation.validateName(name)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $name - ${e.message}")
             }
@@ -86,6 +95,8 @@ class ValidationPropertyTest {
         invalidNames.forEach { name ->
             try {
                 Validation.validateName(name)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Expected - validation should reject
             }
@@ -99,6 +110,8 @@ class ValidationPropertyTest {
             val input = generateRandomString(length)
             try {
                 Validation.validateString(input, maxLength = 100)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for input length $length")
             }
@@ -114,6 +127,8 @@ class ValidationPropertyTest {
         whitespaceStrings.forEach { str ->
             try {
                 Validation.validateString(str, allowWhitespace = true)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $str")
             }
@@ -126,6 +141,8 @@ class ValidationPropertyTest {
         controlChars.forEach { char ->
             try {
                 Validation.validateString(char)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Expected - should reject control chars
             }
@@ -137,6 +154,8 @@ class ValidationPropertyTest {
         val boundaryString = "a".repeat(10000)
         try {
             Validation.validateString(boundaryString, maxLength = 10000)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             fail("Should pass at boundary")
         }
@@ -144,6 +163,8 @@ class ValidationPropertyTest {
         val tooLongString = "a".repeat(10001)
         try {
             Validation.validateString(tooLongString, maxLength = 10000)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             // Expected - should fail over boundary
         }
@@ -154,6 +175,8 @@ class ValidationPropertyTest {
         val largeContent = "a".repeat(1000000)
         try {
             Validation.validateContent(largeContent)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             fail("Failed for large content")
         }
@@ -173,6 +196,8 @@ class ValidationPropertyTest {
         contentTypes.forEach { content ->
             try {
                 Validation.validateContent(content)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("Failed for: $content")
             }

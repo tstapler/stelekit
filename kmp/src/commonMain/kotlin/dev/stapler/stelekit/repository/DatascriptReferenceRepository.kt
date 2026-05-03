@@ -9,6 +9,7 @@ import dev.stapler.stelekit.model.Block
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.CancellationException
 
 @OptIn(DirectRepositoryWrite::class)
 class DatascriptReferenceRepository : ReferenceRepository {
@@ -105,6 +106,8 @@ class DatascriptReferenceRepository : ReferenceRepository {
 
             updateIndexes(fromBlockUuid, toBlockUuid, add = true)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -124,6 +127,8 @@ class DatascriptReferenceRepository : ReferenceRepository {
 
             updateIndexes(fromBlockUuid, toBlockUuid, add = false)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }

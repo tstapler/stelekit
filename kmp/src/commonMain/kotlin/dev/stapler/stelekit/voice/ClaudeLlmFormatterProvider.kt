@@ -102,6 +102,8 @@ class ClaudeLlmFormatterProvider(
             throw e
         } catch (e: IOException) {
             LlmResult.Failure.NetworkError
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             LlmResult.Failure.ApiError(-1, "Unexpected error: ${e.message}")
         }

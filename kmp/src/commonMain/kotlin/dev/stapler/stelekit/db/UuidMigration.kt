@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.db
 
 import arrow.core.left
+import kotlinx.coroutines.CancellationException
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
@@ -144,6 +145,8 @@ class UuidMigration(
                 }
                 restricted.upsertMetadata("uuid_migration_v1", "done")
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.error("UUID migration transaction failed", e)
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()

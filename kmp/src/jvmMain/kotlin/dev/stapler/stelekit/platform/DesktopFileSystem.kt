@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.platform
 
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import java.nio.file.Files
 import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
@@ -37,6 +38,8 @@ class DesktopFileSystem {
             if (!file.exists() || !file.isFile) return null
             if (file.length() > MAX_FILE_SIZE) return null
             Files.readString(Paths.get(validatedPath))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }
@@ -58,6 +61,8 @@ class DesktopFileSystem {
                 StandardOpenOption.TRUNCATE_EXISTING
             )
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -74,6 +79,8 @@ class DesktopFileSystem {
                 ?.map { it.name }
                 ?.sorted()
                 ?: emptyList()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -90,6 +97,8 @@ class DesktopFileSystem {
                 ?.map { it.name }
                 ?.sorted()
                 ?: emptyList()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -101,6 +110,8 @@ class DesktopFileSystem {
             val validatedPath = validatePath(expandedPath)
             val file = File(validatedPath)
             file.exists() && file.isFile
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -112,6 +123,8 @@ class DesktopFileSystem {
             val validatedPath = validatePath(expandedPath)
             val file = File(validatedPath)
             file.exists() && file.isDirectory
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -131,6 +144,8 @@ class DesktopFileSystem {
             }
             Files.createDirectory(pathObj)
             Files.exists(pathObj)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -143,6 +158,8 @@ class DesktopFileSystem {
             val file = File(validatedPath)
             if (!file.exists()) return true
             if (file.isDirectory) file.deleteRecursively() else file.delete()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }

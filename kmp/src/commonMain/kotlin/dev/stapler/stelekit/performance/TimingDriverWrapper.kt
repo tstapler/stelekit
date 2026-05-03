@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.performance
 
 import app.cash.sqldelight.db.QueryResult
+import kotlinx.coroutines.CancellationException
 import app.cash.sqldelight.db.SqlCursor
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlPreparedStatement
@@ -69,6 +70,8 @@ class TimingDriverWrapper(
             val result = block()
             if (ctx != null && ringBuffer != null) recordSpan(ctx, spanName, table, startMs, "OK")
             result
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             isError = true
             if (ctx != null && ringBuffer != null) recordSpan(ctx, spanName, table, startMs, "ERROR", e.message)
@@ -133,6 +136,8 @@ class TimingDriverWrapper(
             "delete" -> sql.substringAfter(" from ").trimStart().split(" ", "(").first()
             else -> "unknown"
         }.trimEnd(',', ';', ')')
+    } catch (e: CancellationException) {
+        throw e
     } catch (_: Exception) {
         "unknown"
     }

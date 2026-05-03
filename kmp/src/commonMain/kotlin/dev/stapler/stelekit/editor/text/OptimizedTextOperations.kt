@@ -15,6 +15,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.performance.PerformanceMonitor
@@ -82,6 +83,8 @@ class OptimizedTextOperations(
             
             PerformanceMonitor.endTrace(traceId)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -121,6 +124,8 @@ class OptimizedTextOperations(
             updateBlockContentOptimized(blockId, newContent)
             
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -151,6 +156,8 @@ class OptimizedTextOperations(
             updateBlockContentOptimized(blockId, newContent)
             
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -174,6 +181,8 @@ class OptimizedTextOperations(
             )
             updateTextState(blockId, newState)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -192,6 +201,8 @@ class OptimizedTextOperations(
             )
             updateTextState(blockId, newState)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -208,6 +219,8 @@ class OptimizedTextOperations(
             )
             updateTextState(blockId, newState)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -224,6 +237,8 @@ class OptimizedTextOperations(
             )
             updateTextState(blockId, newState)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -240,6 +255,8 @@ class OptimizedTextOperations(
             )
             updateTextState(blockId, newState)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -256,6 +273,8 @@ class OptimizedTextOperations(
             )
             updateTextState(blockId, newState)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -274,6 +293,8 @@ class OptimizedTextOperations(
             )
             updateTextState(blockId, newState)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -292,6 +313,8 @@ class OptimizedTextOperations(
             )
             updateTextState(blockId, newState)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -309,6 +332,8 @@ class OptimizedTextOperations(
             )
             updateTextState(blockId, newState)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -337,6 +362,8 @@ class OptimizedTextOperations(
             updateBlockContentOptimized(blockId, newContent)
             
             text.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -372,6 +399,8 @@ class OptimizedTextOperations(
             updateBlockContentOptimized(blockId, newContent)
             
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -409,6 +438,8 @@ class OptimizedTextOperations(
             updateBlockContentOptimized(blockId, newText)
             
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -454,6 +485,8 @@ class OptimizedTextOperations(
             updateBlockContentOptimized(blockId, updatedContent)
             
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -553,6 +586,8 @@ class OptimizedTextOperations(
                 updateTextState(blockId, newState)
             }
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }

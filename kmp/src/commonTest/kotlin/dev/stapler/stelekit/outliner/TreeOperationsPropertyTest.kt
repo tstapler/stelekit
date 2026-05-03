@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.outliner
 
 import dev.stapler.stelekit.model.Block
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -56,6 +57,8 @@ class TreeOperationsPropertyTest {
                         assertEquals(siblings[i - 1].uuid, indented.parentUuid)
                         assertEquals(siblings[i - 1].level + 1, indented.level)
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     fail("indent failed unexpectedly for count $count, index $i: ${e.message}")
                 }
@@ -96,6 +99,8 @@ class TreeOperationsPropertyTest {
             try {
                 val result = TreeOperations.indent(siblings[1], siblings)
                 // Just verify it doesn't crash
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("indent failed unexpectedly: ${e.message}")
             }
@@ -129,6 +134,8 @@ class TreeOperationsPropertyTest {
                         assertEquals(parent.parentUuid, outdented.parentUuid)
                         assertEquals(parent.level, outdented.level)
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     fail("outdent failed unexpectedly: ${e.message}")
                 }
@@ -152,6 +159,8 @@ class TreeOperationsPropertyTest {
         val parentSiblings = listOf(parent)
         try {
             assertNotNull(TreeOperations.outdent(child, parent, siblings, parentSiblings))
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             fail("outdent failed unexpectedly: ${e.message}")
         }
@@ -168,6 +177,8 @@ class TreeOperationsPropertyTest {
                     if (result != null) {
                         assertTrue(result.size >= 2)
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     fail("moveUp failed unexpectedly: ${e.message}")
                 }
@@ -188,6 +199,8 @@ class TreeOperationsPropertyTest {
             val result = TreeOperations.moveUp(siblings[1], siblings)
             assertNotNull(result)
             assertEquals(2, result.size)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             fail("moveUp failed unexpectedly: ${e.message}")
         }
@@ -204,6 +217,8 @@ class TreeOperationsPropertyTest {
                     if (result != null) {
                         assertTrue(result.size >= 2)
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     fail("moveDown failed unexpectedly: ${e.message}")
                 }
@@ -224,6 +239,8 @@ class TreeOperationsPropertyTest {
             val result = TreeOperations.moveDown(siblings[0], siblings)
             assertNotNull(result)
             assertEquals(2, result.size)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             fail("moveDown failed unexpectedly: ${e.message}")
         }
@@ -242,6 +259,8 @@ class TreeOperationsPropertyTest {
                         assertEquals(reordered[i - 1].uuid, reordered[i].leftUuid)
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("reorderSiblings failed unexpectedly for count $count: ${e.message}")
             }
@@ -289,6 +308,8 @@ class TreeOperationsPropertyTest {
                 try {
                     val result = TreeOperations.updateLevels(child, 5) { _ -> emptyList() }
                     assertEquals(5, result.first().level)
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     fail("updateLevels failed unexpectedly: ${e.message}")
                 }
@@ -308,6 +329,8 @@ class TreeOperationsPropertyTest {
 
             // Just verify it doesn't crash
             assertTrue(result.isNotEmpty())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             // May fail for various reasons
         }
@@ -326,6 +349,8 @@ class TreeOperationsPropertyTest {
                     val outdented = indentResult.first { it.uuid == originalBlock.uuid }
                     assertTrue(outdented.parentUuid != originalBlock.parentUuid)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("indent/outdent failed unexpectedly: ${e.message}")
             }
@@ -341,6 +366,8 @@ class TreeOperationsPropertyTest {
             if (moveUpResult != null) {
                 // Just verify it doesn't crash - behavior varies
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             // May fail for various reasons
         }
@@ -357,6 +384,8 @@ class TreeOperationsPropertyTest {
                 assertEquals(expectedLeftUuid, block.leftUuid)
                 expectedLeftUuid = block.uuid
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             fail("reorder failed unexpectedly: ${e.message}")
         }
@@ -368,6 +397,8 @@ class TreeOperationsPropertyTest {
         val siblings = listOf(block)
         try {
             TreeOperations.reorderSiblings(siblings)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             fail("reorderSiblings failed with empty content: ${e.message}")
         }
@@ -379,6 +410,8 @@ class TreeOperationsPropertyTest {
         try {
             val reordered = TreeOperations.reorderSiblings(siblings)
             assertEquals(100, reordered.size)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             fail("reorderSiblings failed with 100 items: ${e.message}")
         }
@@ -395,6 +428,8 @@ class TreeOperationsPropertyTest {
                 reordered.forEachIndexed { index, block ->
                     assertEquals(index, block.position)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 fail("reorderSiblings failed with maxLevel $maxLevel: ${e.message}")
             }

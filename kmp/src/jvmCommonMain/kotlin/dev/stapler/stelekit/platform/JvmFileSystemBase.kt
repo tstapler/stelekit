@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.platform
 
 import dev.stapler.stelekit.logging.Logger
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.nio.file.Paths
 import java.util.concurrent.ConcurrentHashMap
@@ -76,6 +77,8 @@ abstract class JvmFileSystemBase {
             if (!file.exists() || !file.isFile) return null
             if (file.length() > MAX_FILE_SIZE) return null
             file.readText()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }
@@ -94,6 +97,8 @@ abstract class JvmFileSystemBase {
             }
             file.writeText(content)
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("writeFile failed: $path", e)
             false
@@ -110,6 +115,8 @@ abstract class JvmFileSystemBase {
                 ?.map { it.name }
                 ?.sorted()
                 ?: emptyList()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -125,6 +132,8 @@ abstract class JvmFileSystemBase {
                 ?.map { it.name }
                 ?.sorted()
                 ?: emptyList()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -135,6 +144,8 @@ abstract class JvmFileSystemBase {
             val validatedPath = validatePath(path)
             val file = File(validatedPath)
             file.exists() && file.isFile
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -145,6 +156,8 @@ abstract class JvmFileSystemBase {
             val validatedPath = validatePath(path)
             val file = File(validatedPath)
             file.exists() && file.isDirectory
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -160,6 +173,8 @@ abstract class JvmFileSystemBase {
             }
             file.mkdirs()
             file.exists()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -171,6 +186,8 @@ abstract class JvmFileSystemBase {
             val file = File(validatedPath)
             if (!file.exists()) return true
             if (file.isDirectory) file.deleteRecursively() else file.delete()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }
@@ -185,6 +202,8 @@ abstract class JvmFileSystemBase {
             } else {
                 null
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }
@@ -200,6 +219,8 @@ abstract class JvmFileSystemBase {
                 ?.map { file -> file.name to file.lastModified() }
                 ?.sortedBy { it.first }
                 ?: emptyList()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emptyList()
         }
@@ -217,6 +238,8 @@ abstract class JvmFileSystemBase {
                 oldFile.delete()
             }
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             false
         }

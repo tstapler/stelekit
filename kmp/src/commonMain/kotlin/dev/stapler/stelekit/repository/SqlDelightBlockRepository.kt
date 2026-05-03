@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
@@ -134,6 +135,8 @@ class SqlDelightBlockRepository(
                 }
                 emit(resultList.right())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -168,6 +171,8 @@ class SqlDelightBlockRepository(
                 ancestorsCache.put(blockUuid, result)
                 emit(result.right())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -182,6 +187,8 @@ class SqlDelightBlockRepository(
                 val parent = queries.selectBlockByUuid(block.parent_uuid).executeAsOneOrNull()
                 emit(parent?.toBlockModel().right())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -202,6 +209,8 @@ class SqlDelightBlockRepository(
                     .map { it.toBlockModel() }
                 emit(siblings.right())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -236,6 +245,8 @@ class SqlDelightBlockRepository(
                 }
             }
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -259,6 +270,8 @@ class SqlDelightBlockRepository(
                 block.blockType
             )
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -270,6 +283,8 @@ class SqlDelightBlockRepository(
                 queries.updateBlockContent(content, Clock.System.now().toEpochMilliseconds(), ContentHasher.sha256ForContent(content), blockUuid)
                 blockCache.remove(blockUuid)
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
@@ -282,6 +297,8 @@ class SqlDelightBlockRepository(
                 queries.updateBlockProperties(serialized, blockUuid)
                 blockCache.remove(blockUuid)
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
@@ -320,6 +337,8 @@ class SqlDelightBlockRepository(
 
             }
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -357,6 +376,8 @@ class SqlDelightBlockRepository(
                 }
             }
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -421,6 +442,8 @@ class SqlDelightBlockRepository(
             hierarchyCache.invalidateAll()
             ancestorsCache.invalidateAll()
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -460,6 +483,8 @@ class SqlDelightBlockRepository(
             ancestorsCache.invalidateAll()
             blockCache.invalidateAll()
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -517,6 +542,8 @@ class SqlDelightBlockRepository(
             ancestorsCache.invalidateAll()
             blockCache.invalidateAll()
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -557,6 +584,8 @@ class SqlDelightBlockRepository(
             blockCache.remove(prevSibling.uuid)
             nextSibling?.let { blockCache.remove(it.uuid) }
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -597,6 +626,8 @@ class SqlDelightBlockRepository(
             blockCache.remove(nextSibling.uuid)
             afterNextSibling?.let { blockCache.remove(it.uuid) }
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -648,6 +679,8 @@ class SqlDelightBlockRepository(
             blockCache.remove(nextBlockUuid)
             hierarchyCache.invalidateAll()
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -716,6 +749,8 @@ class SqlDelightBlockRepository(
             
             hierarchyCache.invalidateAll()
             newBlock?.right() ?: DomainError.DatabaseError.WriteFailed("Failed to create new block during split").left()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -734,6 +769,8 @@ class SqlDelightBlockRepository(
             val patterns = compileLinkPatterns(pageName)
             val linked = candidates.filter { isLinkedReference(it.content, patterns) }
             emit(linked.right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -751,6 +788,8 @@ class SqlDelightBlockRepository(
                 .filter { isLinkedReference(it.content, patterns) }
 
             emit(allLinked.drop(offset).take(limit).right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -768,6 +807,8 @@ class SqlDelightBlockRepository(
                         !wikiLinkPattern.containsMatchIn(block.content)
             }
             emit(unlinked.right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -789,6 +830,8 @@ class SqlDelightBlockRepository(
                         !wikiLinkPattern.containsMatchIn(block.content)
             }
             emit(unlinked.right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -805,6 +848,8 @@ class SqlDelightBlockRepository(
                 .distinctBy { it.uuid }
                 .count { isLinkedReference(it.content, patterns) }
             emit(count.toLong().right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -859,6 +904,8 @@ class SqlDelightBlockRepository(
             }
 
             emit(groups.right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -914,6 +961,8 @@ class SqlDelightBlockRepository(
     suspend fun walCheckpoint() = withContext(PlatformDispatcher.DB) {
         try {
             queries.pragmaWalCheckpointTruncate()
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             // Non-critical — WAL will be checkpointed automatically on next DB open
         }
@@ -941,6 +990,8 @@ class SqlDelightBlockRepository(
         try {
             queries.deleteBlocksByPageUuid(pageUuid)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -951,6 +1002,8 @@ class SqlDelightBlockRepository(
         try {
             queries.deleteBlocksByPageUuids(pageUuids)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }

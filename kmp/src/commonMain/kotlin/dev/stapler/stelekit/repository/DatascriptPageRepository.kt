@@ -9,6 +9,7 @@ import dev.stapler.stelekit.model.Page
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 
 /**
@@ -108,6 +109,8 @@ class DatascriptPageRepository : PageRepository {
             pages.value = current
             refreshIndexes(current)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -120,6 +123,8 @@ class DatascriptPageRepository : PageRepository {
             pages.value = current
             refreshIndexes(current)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -130,6 +135,8 @@ class DatascriptPageRepository : PageRepository {
             val page = pages.value[pageUuid] ?: return DomainError.DatabaseError.NotFound("page", pageUuid).left()
             val newPage = page.copy(isFavorite = !page.isFavorite)
             savePage(newPage)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -140,6 +147,8 @@ class DatascriptPageRepository : PageRepository {
             val page = pages.value[pageUuid] ?: return DomainError.DatabaseError.NotFound("page", pageUuid).left()
             val newPage = page.copy(name = newName, updatedAt = kotlin.time.Clock.System.now())
             savePage(newPage)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -152,6 +161,8 @@ class DatascriptPageRepository : PageRepository {
             pages.value = current
             refreshIndexes(current)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }

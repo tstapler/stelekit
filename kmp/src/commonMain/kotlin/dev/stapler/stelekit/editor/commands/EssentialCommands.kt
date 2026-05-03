@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.editor.commands
 
 import dev.stapler.stelekit.editor.commands.*
+import kotlinx.coroutines.CancellationException
 
 /**
  * Collection of essential editor commands
@@ -34,6 +35,8 @@ object EssentialCommands {
                             "selectionEnd" to context.selectionEnd
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to format text as bold: ${e.message}", e)
                 }
@@ -63,6 +66,8 @@ object EssentialCommands {
                             "selectionEnd" to context.selectionEnd
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to format text as italic: ${e.message}", e)
                 }
@@ -92,6 +97,8 @@ object EssentialCommands {
                             "selectionEnd" to context.selectionEnd
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to format text as code: ${e.message}", e)
                 }
@@ -121,6 +128,8 @@ object EssentialCommands {
                             "selectionEnd" to context.selectionEnd
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to format text as strikethrough: ${e.message}", e)
                 }
@@ -150,6 +159,8 @@ object EssentialCommands {
                             "selectionEnd" to context.selectionEnd
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to highlight text: ${e.message}", e)
                 }
@@ -187,6 +198,8 @@ object EssentialCommands {
                             "requiresUrlInput" to true
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to create link: ${e.message}", e)
                 }
@@ -231,6 +244,8 @@ object EssentialCommands {
                             "newLine" to newLine
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to set heading: ${e.message}", e)
                 }
@@ -262,6 +277,8 @@ object EssentialCommands {
                             "position" to "after"
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to create new block: ${e.message}", e)
                 }
@@ -287,6 +304,8 @@ object EssentialCommands {
                             "blockId" to (context.currentBlockId ?: "")
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to delete block: ${e.message}", e)
                 }
@@ -313,6 +332,8 @@ object EssentialCommands {
                             "direction" to "up"
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to move block up: ${e.message}", e)
                 }
@@ -339,6 +360,8 @@ object EssentialCommands {
                             "direction" to "down"
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to move block down: ${e.message}", e)
                 }
@@ -365,6 +388,8 @@ object EssentialCommands {
                             "level" to "increment"
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to indent block: ${e.message}", e)
                 }
@@ -391,6 +416,8 @@ object EssentialCommands {
                             "level" to "decrement"
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to outdent block: ${e.message}", e)
                 }
@@ -426,6 +453,8 @@ object EssentialCommands {
                             "newContent" to newContent
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to toggle todo: ${e.message}", e)
                 }
@@ -456,6 +485,8 @@ object EssentialCommands {
                             "query" to ""
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to open search: ${e.message}", e)
                 }
@@ -480,6 +511,8 @@ object EssentialCommands {
                             "action" to "openPageSelector"
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to open page selector: ${e.message}", e)
                 }
@@ -504,6 +537,8 @@ object EssentialCommands {
                             "action" to "navigateBack"
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to navigate back: ${e.message}", e)
                 }
@@ -528,6 +563,8 @@ object EssentialCommands {
                             "action" to "navigateForward"
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to navigate forward: ${e.message}", e)
                 }
@@ -559,6 +596,8 @@ object EssentialCommands {
                             "timestamp" to kotlin.time.Clock.System.now()
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to save: ${e.message}", e)
                 }
@@ -583,6 +622,8 @@ object EssentialCommands {
                             "action" to "undo"
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to undo: ${e.message}", e)
                 }
@@ -607,6 +648,8 @@ object EssentialCommands {
                             "action" to "redo"
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to redo: ${e.message}", e)
                 }
@@ -631,6 +674,8 @@ object EssentialCommands {
                             "action" to "openSettings"
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to open settings: ${e.message}", e)
                 }
@@ -655,6 +700,8 @@ object EssentialCommands {
                             "action" to "openHelp"
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     CommandResult.Error("Failed to open help: ${e.message}", e)
                 }
