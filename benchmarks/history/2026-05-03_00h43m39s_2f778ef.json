@@ -1,0 +1,127 @@
+{
+  "timestamp": "2026-05-03 00:43:39 UTC",
+  "gitSha": "2f778ef",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 9,
+  "phase2Ms": 3,
+  "phase3Ms": 16,
+  "totalMs": 28,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 30,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 124,
+      "pct": 61.1
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 12,
+      "pct": 5.9
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 10,
+      "pct": 4.9
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 7,
+      "pct": 3.4
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 6,
+      "pct": 3.0
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 5,
+      "pct": 2.5
+    },
+    {
+      "frame": "java.util.WeakHashMap$Entry_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.io.File_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.reflect.Method_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2112,
+      "pct": 99.5
+    },
+    {
+      "frame": "pread",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-ef505ac8-8c98-432a-8c66-92c207629d33-libsqlitejdbc.so",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "kotlin/jvm/internal/Intrinsics.areEqual_[i]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SymbolTable::do_lookup",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "read",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "JfrVframeStream::next_vframe",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SymbolTable::lookup_shared",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}
