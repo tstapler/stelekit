@@ -29,7 +29,16 @@ jobs:
     runs-on: macos-latest
     # Full iOS compilation is blocked by Gradle issue #17559 — KotlinNativeBundleBuildService
     # classloader mismatch in multi-project builds with AGP. Affects compileKotlinIos* tasks.
-    # This job runs compileCommonMainKotlinMetadata instead, which is not affected.
+    #
+    # compileCommonMainKotlinMetadata is also unusable: Kotlin 2.3.x K2 cannot read
+    # Compose Multiplatform 1.7.x klibs (compiled with Kotlin 2.1.x), causing
+    # "Unresolved reference" errors for all androidx.compose.runtime.* symbols
+    # across every commonMain file. JVM compilation uses JVM jars instead of klibs
+    # and is not affected by this incompatibility.
+    #
+    # This job validates all commonMain sources via compileKotlinJvm, which exercises
+    # the same shared code. Restore full compileKotlinIosSimulatorArm64 once KT-68400
+    # is resolved and CMP is upgraded to a Kotlin 2.3.x-compatible release.
     if: github.event.pull_request.draft == false
 
     steps:
@@ -40,34 +49,13 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      # Cache the Kotlin Native toolchain — critical on macOS (300-500 MB download otherwise)
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.konan/cache
-            ~/.konan/dependencies
-            ~/.konan/kotlin-native-prebuilt-*
-          key: ${{ runner.os }}-konan-v1-${{ hashFiles('**/build.gradle.kts', '**/settings.gradle.kts') }}
-          restore-keys: |
-            ${{ runner.os }}-konan-v1-
-
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-home-cache-cleanup: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
-      # Best-effort iOS source validation. Restore full compileKotlinIosSimulatorArm64
-      # once the Kotlin plugin upstream KT-68400 regression is fixed.
-      #
-      # kotlin.incremental.useClasspathSnapshot=false: Kotlin 2.3.x classpath-snapshot
-      # incremental compilation produces an incomplete ABI view of Compose Multiplatform
-      # 1.7.x klibs, causing androidx.compose.runtime.* symbols to be unresolvable for
-      # files recompiled in an incremental pass. Disabling snapshots forces the full klib
-      # onto the classpath for every incremental compilation unit. Has no effect on cache
-      # hits (task output served directly) so steady-state build speed is unchanged.
-      - name: Compile common metadata
+      - name: Compile commonMain via JVM target
         run: |
-          ./gradlew :kmp:compileCommonMainKotlinMetadata \
+          ./gradlew :kmp:compileKotlinJvm \
             --no-daemon \
-            --build-cache \
-            -Pkotlin.incremental.useClasspathSnapshot=false
+            --build-cache
