@@ -7,12 +7,12 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
-import androidx.compose.runtime.*
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.isCtrlPressed
+import kotlinx.coroutines.CoroutineScope
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.CursorState
 import dev.stapler.stelekit.editor.commands.*
@@ -41,7 +41,7 @@ class Editor(
     private val commandSystem: ICommandSystem,
 ) : IEditor {
 
-    private val scope = mutableStateOf<kotlinx.coroutines.CoroutineScope?>(null)
+    private var scope: CoroutineScope? = null
     private val _editorState = MutableStateFlow(EditorState(textOperations = textOperations))
     private val _currentPage = MutableStateFlow<Page?>(null)
     private val _cursorState = MutableStateFlow(CursorState())
@@ -93,35 +93,35 @@ class Editor(
         when {
             keyEvent.isCtrlPressed && key == Key.S -> {
                 // Save
-                scope.value?.launch {
+                scope?.launch {
                     executeCommand("system.save", emptyMap())
                 }
                 return true
             }
             keyEvent.isCtrlPressed && key == Key.Z -> {
                 // Undo
-                scope.value?.launch {
+                scope?.launch {
                     executeCommand("system.undo", emptyMap())
                 }
                 return true
             }
             keyEvent.isCtrlPressed && key == Key.Y -> {
                 // Redo
-                scope.value?.launch {
+                scope?.launch {
                     executeCommand("system.redo", emptyMap())
                 }
                 return true
             }
             keyEvent.isCtrlPressed && key == Key.F -> {
                 // Search
-                scope.value?.launch {
+                scope?.launch {
                     executeCommand("navigation.search", emptyMap())
                 }
                 return true
             }
             key == Key.Escape -> {
                 // Command palette
-                scope.value?.launch {
+                scope?.launch {
                     _editorState.update { it.copy(mode = EditorMode.VIEW) }
                 }
                 return true
