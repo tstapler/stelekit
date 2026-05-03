@@ -460,7 +460,11 @@ private fun GraphContent(
         JournalsViewModel(repos.journalService, blockStateManager)
     }
     val voiceCaptureViewModel = remember(voicePipeline) {
-        VoiceCaptureViewModel(voicePipeline, repos.journalService)
+        VoiceCaptureViewModel(
+            voicePipeline,
+            repos.journalService,
+            currentOpenPageUuid = { viewModel.uiState.value.currentPage?.uuid },
+        )
     }
     DisposableEffect(voiceCaptureViewModel) {
         onDispose { voiceCaptureViewModel.close() }
