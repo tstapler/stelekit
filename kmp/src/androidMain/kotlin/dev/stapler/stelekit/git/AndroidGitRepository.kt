@@ -11,6 +11,7 @@ import com.jcraft.jsch.Session
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.ConflictFile
+import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
@@ -33,6 +34,7 @@ import java.io.File
  */
 class AndroidGitRepository(
     private val sshKeyProvider: (() -> ByteArray)? = null,
+    private val credentialStore: CredentialStore = CredentialStore(),
 ) : GitRepository {
 
     override suspend fun isGitRepo(path: String): Boolean = withContext(PlatformDispatcher.IO) {
@@ -240,10 +242,16 @@ class AndroidGitRepository(
                         emptyList()
                     }
 
+                    val wikiChangedFiles = if (config.wikiSubdir.isNotEmpty()) {
+                        changedFiles.filter { it.startsWith("${config.repoRoot}/${config.wikiSubdir}/") }
+                    } else {
+                        changedFiles
+                    }
+
                     MergeResult(
                         hasConflicts = hasConflicts,
                         conflicts = conflictFiles,
-                        changedFiles = changedFiles,
+                        changedFiles = wikiChangedFiles,
                     ).right()
                 }
             } catch (e: CancellationException) {
@@ -411,11 +419,19 @@ class AndroidGitRepository(
         cmd: org.eclipse.jgit.api.TransportCommand<*, *>,
         config: GitConfig,
     ) {
-        // Defer to configureAuth with None since we configure per-operation via transport callback
-        cmd.setTransportConfigCallback { transport ->
-            if (transport is org.eclipse.jgit.transport.SshTransport && config.sshKeyPath != null) {
-                transport.sshSessionFactory = buildJschSessionFactory(config.sshKeyPath)
+        when (config.authType) {
+            GitAuthType.HTTPS_TOKEN -> {
+                val token = config.httpsTokenKey?.let { credentialStore.retrieve(it) } ?: return
+                cmd.setCredentialsProvider(UsernamePasswordCredentialsProvider("", token))
             }
+            GitAuthType.SSH_KEY -> {
+                cmd.setTransportConfigCallback { transport ->
+                    if (transport is org.eclipse.jgit.transport.SshTransport && config.sshKeyPath != null) {
+                        transport.sshSessionFactory = buildJschSessionFactory(config.sshKeyPath)
+                    }
+                }
+            }
+            GitAuthType.NONE -> {}
         }
     }
 

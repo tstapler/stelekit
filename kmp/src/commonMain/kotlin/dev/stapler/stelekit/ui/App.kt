@@ -361,8 +361,12 @@ private fun GraphContent(
             fileSystem = fileSystem,
         )
     }
-    LaunchedEffect(gitSyncService) {
+    DisposableEffect(gitSyncService) {
         graphManager.registerGitSyncService(gitSyncService)
+        onDispose {
+            gitSyncService?.shutdown()
+            graphManager.registerGitSyncService(null)
+        }
     }
 
     // Break the circular dependency: blockStateManager needs the graph path from viewModel,

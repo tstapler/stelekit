@@ -10,6 +10,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.ConflictHunk
+import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
@@ -28,7 +29,9 @@ import java.time.Instant
  * JVM (Desktop) implementation of GitRepository using JGit 7.x.
  * All I/O runs on PlatformDispatcher.IO.
  */
-class JvmGitRepository : GitRepository {
+class JvmGitRepository(
+    private val credentialStore: CredentialStore = CredentialStore(),
+) : GitRepository {
 
     override suspend fun isGitRepo(path: String): Boolean = withContext(PlatformDispatcher.IO) {
         try {
@@ -98,6 +101,7 @@ class JvmGitRepository : GitRepository {
 
                     git.fetch()
                         .setRemote(config.remoteName)
+                        .also { configureAuthFromConfig(it, config) }
                         .call()
 
                     val remoteRef = repo.resolve("${config.remoteName}/${config.remoteBranch}")
@@ -260,10 +264,16 @@ class JvmGitRepository : GitRepository {
                         emptyList()
                     }
 
+                    val wikiChangedFiles = if (config.wikiSubdir.isNotEmpty()) {
+                        changedFiles.filter { it.startsWith("${config.repoRoot}/${config.wikiSubdir}/") }
+                    } else {
+                        changedFiles
+                    }
+
                     MergeResult(
                         hasConflicts = hasConflicts,
                         conflicts = conflictFiles,
-                        changedFiles = changedFiles,
+                        changedFiles = wikiChangedFiles,
                     ).right()
                 }
             } catch (e: CancellationException) {
@@ -279,6 +289,7 @@ class JvmGitRepository : GitRepository {
                 openGit(config.repoRoot).use { git ->
                     val pushResults = git.push()
                         .setRemote(config.remoteName)
+                        .also { configureAuthFromConfig(it, config) }
                         .call()
 
                     for (result in pushResults) {
@@ -422,6 +433,32 @@ class JvmGitRepository : GitRepository {
 
     private fun openGit(repoRoot: String): Git {
         return Git.open(File(repoRoot))
+    }
+
+    private fun configureAuthFromConfig(
+        cmd: org.eclipse.jgit.api.TransportCommand<*, *>,
+        config: GitConfig,
+    ) {
+        when (config.authType) {
+            GitAuthType.HTTPS_TOKEN -> {
+                val token = config.httpsTokenKey?.let { credentialStore.retrieve(it) } ?: return
+                cmd.setCredentialsProvider(UsernamePasswordCredentialsProvider("", token))
+            }
+            GitAuthType.SSH_KEY -> {
+                val keyPath = config.sshKeyPath ?: return
+                val sshFactory = SshdSessionFactoryBuilder()
+                    .setPreferredAuthentications("publickey")
+                    .setHomeDirectory(File(System.getProperty("user.home")))
+                    .setSshDirectory(File(keyPath).parentFile ?: File(System.getProperty("user.home"), ".ssh"))
+                    .build(null)
+                cmd.setTransportConfigCallback { transport ->
+                    if (transport is org.eclipse.jgit.transport.SshTransport) {
+                        transport.sshSessionFactory = sshFactory
+                    }
+                }
+            }
+            GitAuthType.NONE -> {}
+        }
     }
 
     private fun configureAuth(

@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.git.CredentialStore
 import dev.stapler.stelekit.git.GitConfigRepository
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitSyncService
@@ -86,7 +87,12 @@ fun GitSetupScreen(
     var wikiSubdir by remember { mutableStateOf(existingConfig?.wikiSubdir ?: "") }
     var authType by remember { mutableStateOf(existingConfig?.authType ?: GitAuthType.NONE) }
     var sshKeyPath by remember { mutableStateOf(existingConfig?.sshKeyPath ?: "") }
-    var httpsToken by remember { mutableStateOf("") }
+    val credentialStore = remember { CredentialStore() }
+    var httpsToken by remember {
+        mutableStateOf(
+            existingConfig?.httpsTokenKey?.let { key -> credentialStore.retrieve(key) } ?: ""
+        )
+    }
     var remoteBranch by remember { mutableStateOf(existingConfig?.remoteBranch ?: "main") }
     var pollIntervalMinutes by remember { mutableStateOf(existingConfig?.pollIntervalMinutes ?: 5) }
 
@@ -188,9 +194,17 @@ fun GitSetupScreen(
                         scope.launch {
                             saving = true
                             saveError = null
+                            val httpsTokenKey = if (authType == GitAuthType.HTTPS_TOKEN && httpsToken.isNotBlank()) {
+                                val tokenKey = "git_https_token_$graphId"
+                                credentialStore.store(tokenKey, httpsToken)
+                                tokenKey
+                            } else {
+                                existingConfig?.httpsTokenKey
+                            }
                             val config = buildConfig(
                                 graphId, repoRoot, wikiSubdir, authType,
-                                sshKeyPath, remoteBranch, pollIntervalMinutes
+                                sshKeyPath, remoteBranch, pollIntervalMinutes,
+                                httpsTokenKey = httpsTokenKey,
                             )
                             val result = gitConfigRepository.saveConfig(config)
                             saving = false
@@ -485,6 +499,7 @@ private fun buildConfig(
     sshKeyPath: String,
     remoteBranch: String,
     pollIntervalMinutes: Int,
+    httpsTokenKey: String? = null,
 ): GitConfig = GitConfig(
     graphId = graphId,
     repoRoot = repoRoot,
@@ -493,4 +508,5 @@ private fun buildConfig(
     sshKeyPath = sshKeyPath.takeIf { it.isNotBlank() },
     remoteBranch = remoteBranch,
     pollIntervalMinutes = pollIntervalMinutes,
+    httpsTokenKey = httpsTokenKey,
 )

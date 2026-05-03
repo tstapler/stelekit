@@ -11,6 +11,9 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import dev.stapler.stelekit.db.DriverFactory
+import dev.stapler.stelekit.git.model.GitAuthType
+import dev.stapler.stelekit.git.model.GitConfig
 import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
 
@@ -80,9 +83,40 @@ class GitSyncWorker(
 
     override suspend fun doWork(): Result {
         val graphId = inputData.getString(KEY_GRAPH_ID) ?: return Result.failure()
-        val service = GitSyncServiceRegistry.getService(graphId) ?: return Result.success()
+
+        // Fast path: app is running and service is registered
+        val service = GitSyncServiceRegistry.getService(graphId)
+        if (service != null) {
+            return try {
+                service.fetchOnly(graphId)
+                Result.success()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                Result.retry()
+            }
+        }
+
+        // Slow path: process was killed and WorkManager restarted it.
+        // Application.onCreate() has run, so DriverFactory is initialized.
+        // Perform a standalone fetch directly without a full GitSyncService.
         return try {
-            service.fetchOnly(graphId)
+            CredentialStore.init(applicationContext)
+            DriverFactory.setContext(applicationContext)
+
+            val factory = DriverFactory()
+            val dbUrl = factory.getDatabaseUrl(graphId)
+            val driver = factory.createDriver(dbUrl)
+            val db = dev.stapler.stelekit.db.SteleDatabase(driver)
+
+            val row = db.steleDatabaseQueries.selectGitConfig(graphId).executeAsOneOrNull()
+                ?: run { driver.close(); return Result.success() }
+
+            val config = row.toGitConfig()
+            val gitRepository = AndroidGitRepository()
+            gitRepository.fetch(config)
+
+            driver.close()
             Result.success()
         } catch (e: CancellationException) {
             throw e
@@ -91,6 +125,24 @@ class GitSyncWorker(
         }
     }
 }
+
+private fun dev.stapler.stelekit.db.Git_config.toGitConfig() =
+    dev.stapler.stelekit.git.model.GitConfig(
+        graphId = graph_id,
+        repoRoot = repo_root,
+        wikiSubdir = wiki_subdir,
+        remoteName = remote_name,
+        remoteBranch = remote_branch,
+        authType = runCatching {
+            dev.stapler.stelekit.git.model.GitAuthType.valueOf(auth_type)
+        }.getOrDefault(dev.stapler.stelekit.git.model.GitAuthType.NONE),
+        sshKeyPath = ssh_key_path,
+        sshKeyPassphraseKey = ssh_key_passphrase_key,
+        httpsTokenKey = https_token_key,
+        pollIntervalMinutes = poll_interval_minutes.toInt(),
+        autoCommit = auto_commit != 0L,
+        commitMessageTemplate = commit_message_template,
+    )
 
 /**
  * Simple static registry that maps graphId → [GitSyncService].
