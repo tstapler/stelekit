@@ -161,15 +161,7 @@ fun RichFormattedEditor(
     val scope = rememberCoroutineScope()
     val textState by textOperations.getTextState(block.uuid).collectAsState()
     
-    // Get format at cursor for visual feedback
-    val currentFormat by remember(textState.cursorPosition) {
-        derivedStateOf {
-            runCatching {
-                formatProcessor.getFormatAt(textState.content, textState.cursorPosition).getOrNull()
-                    ?: TextFormat()
-            }.getOrDefault(TextFormat())
-        }
-    }
+    val currentFormat by remember { derivedStateOf { TextFormat() } }
     
     Column(modifier = modifier) {
         // Formatting toolbar
