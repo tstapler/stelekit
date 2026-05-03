@@ -230,7 +230,7 @@ kotlin {
             dependencies {
                 implementation(kotlin("test"))
                 implementation("junit:junit:4.13.2")
-                implementation("org.robolectric:robolectric:4.13")
+                implementation("org.robolectric:robolectric:4.16")
                 implementation("androidx.test:core:1.6.1")
                 implementation("androidx.test.ext:junit:1.2.1")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
@@ -840,5 +840,13 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+    }
+
+    packaging {
+        resources {
+            // Both org.eclipse.jgit and org.eclipse.jgit.ssh.jsch include plugin.properties;
+            // exclude it to prevent duplicate-resource merge failure in test APKs.
+            excludes += "plugin.properties"
+        }
     }
 }
