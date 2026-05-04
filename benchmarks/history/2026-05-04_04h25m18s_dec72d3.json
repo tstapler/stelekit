@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-04 04:25:18 UTC",
+  "gitSha": "dec72d3",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 8,
+  "phase2Ms": 3,
+  "phase3Ms": 16,
+  "totalMs": 26,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 57,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.02,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 83,
+      "pct": 62.4
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 7,
+      "pct": 5.3
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 7,
+      "pct": 5.3
+    },
+    {
+      "frame": "java.lang.classfile.constantpool.PoolEntry[]_[k]",
+      "samples": 5,
+      "pct": 3.8
+    },
+    {
+      "frame": "long[]_[k]",
+      "samples": 3,
+      "pct": 2.3
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 2,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 2,
+      "pct": 1.5
+    },
+    {
+      "frame": "short[]_[k]",
+      "samples": 1,
+      "pct": 0.8
+    },
+    {
+      "frame": "java.lang.ClassNotFoundException_[k]",
+      "samples": 1,
+      "pct": 0.8
+    },
+    {
+      "frame": "sun.util.locale.StringTokenIterator_[k]",
+      "samples": 1,
+      "pct": 0.8
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2055,
+      "pct": 99.5
+    },
+    {
+      "frame": "vmSymbols::find_sid",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "kotlinx/coroutines/CoroutineId.updateThreadContext_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/util/ArrayList.<init>_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ConstantPool::klass_ref_at",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "dev/stapler/stelekit/db/DatabaseWriteActor$1.invokeSuspend_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__mprotect",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/String.length_[i]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-ba7486ba-7863-441b-b13d-350aafc4cc7f-libsqlitejdbc.so",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}
