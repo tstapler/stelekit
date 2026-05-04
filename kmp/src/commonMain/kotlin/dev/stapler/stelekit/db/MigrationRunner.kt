@@ -158,6 +158,20 @@ object MigrationRunner {
                 """
             )
         ),
+        Migration(
+            name = "pages_backlink_count",
+            statements = listOf(
+                "ALTER TABLE pages ADD COLUMN IF NOT EXISTS backlink_count INTEGER NOT NULL DEFAULT 0",
+                // Backfill existing rows. Runs once on an existing DB; in-memory test DBs are
+                // empty at migration time so this is a no-op there.
+                """
+                UPDATE pages SET backlink_count = (
+                    SELECT COUNT(*) FROM blocks
+                    WHERE blocks.content LIKE '%[[' || pages.name || ']]%'
+                )
+                """
+            )
+        ),
     )
 
     /**

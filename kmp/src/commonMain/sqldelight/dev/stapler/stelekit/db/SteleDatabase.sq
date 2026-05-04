@@ -13,7 +13,8 @@ CREATE TABLE pages (
     is_favorite INTEGER DEFAULT 0,
     is_journal INTEGER DEFAULT 0,
     journal_date TEXT,
-    is_content_loaded INTEGER NOT NULL DEFAULT 1
+    is_content_loaded INTEGER NOT NULL DEFAULT 1,
+    backlink_count INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE blocks (
@@ -537,6 +538,32 @@ WHERE pages_fts MATCH :query
 ORDER BY bm25(pages_fts)
 LIMIT :limit;
 
+-- Date-ranged FTS queries for search with date filters
+searchPagesByNameFtsInDateRange:
+SELECT p.uuid, p.name, p.namespace, p.file_path, p.created_at, p.updated_at,
+       p.properties, p.version, p.is_favorite, p.is_journal, p.journal_date,
+       p.is_content_loaded,
+       highlight(pages_fts, 0, '<em>', '</em>') AS highlight,
+       bm25(pages_fts) AS bm25_score
+FROM pages_fts pf
+JOIN pages p ON p.rowid = pf.rowid
+WHERE pages_fts MATCH :query
+AND p.updated_at >= :startMs AND p.updated_at <= :endMs
+ORDER BY bm25(pages_fts)
+LIMIT :limit;
+
+searchBlocksByContentFtsInDateRange:
+SELECT b.uuid, b.page_uuid, b.parent_uuid, b.left_uuid, b.content, b.level,
+       b.position, b.created_at, b.updated_at, b.properties, b.version,
+       highlight(blocks_fts, 0, '<em>', '</em>') AS highlight,
+       bm25(blocks_fts) AS bm25_score
+FROM blocks_fts bm
+JOIN blocks b ON b.id = bm.rowid
+WHERE blocks_fts MATCH :query
+AND b.updated_at >= :startMs AND b.updated_at <= :endMs
+ORDER BY bm25(blocks_fts)
+LIMIT :limit OFFSET :offset;
+
 -- Visit tracking queries — two-step upsert (same pattern as histogram buckets)
 insertPageVisitIfAbsent:
 INSERT OR IGNORE INTO page_visits (page_uuid, visit_count, last_visited_at)
@@ -619,6 +646,30 @@ SELECT * FROM blocks WHERE content LIKE '%[[' || :pageName || ']]%' ORDER BY pag
 -- Count blocks that contain a [[pageName]] wikilink (for All Pages backlink count)
 countLinkedReferencesForPage:
 SELECT COUNT(*) FROM blocks WHERE content LIKE '%[[' || :pageName || ']]%';
+
+-- Read precomputed backlink counts for a batch of pages — O(1) per page via UUID index.
+-- The backlink_count column is populated by the pages_backlink_count schema migration
+-- and refreshed by recomputeAllBacklinkCounts when the FTS index is rebuilt.
+selectBacklinkCountsForPages:
+SELECT name AS page_name, backlink_count
+FROM pages
+WHERE uuid IN ?;
+
+-- Recompute all page backlink counts from block content in one pass.
+-- Called alongside FTS rebuild (rebuildFts) so counts stay accurate after bulk imports.
+recomputeAllBacklinkCounts:
+UPDATE pages SET backlink_count = (
+    SELECT COUNT(*) FROM blocks
+    WHERE blocks.content LIKE '%[[' || pages.name || ']]%'
+);
+
+-- Recompute backlink count for a single page by name.
+-- Called incrementally after block writes that add/remove wikilinks.
+recomputeBacklinkCountForPage:
+UPDATE pages SET backlink_count = (
+    SELECT COUNT(*) FROM blocks
+    WHERE blocks.content LIKE '%[[' || pages.name || ']]%'
+) WHERE pages.name = ?;
 
 -- Metadata table for schema versioning and graph-level facts
 CREATE TABLE metadata (
