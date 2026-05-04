@@ -18,7 +18,7 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(25)
+    jvmToolchain(21)
     applyDefaultHierarchyTemplate()
 
     compilerOptions {
@@ -37,16 +37,7 @@ kotlin {
         }
     }
 
-    androidTarget {
-        compilations.configureEach {
-            compileTaskProvider.configure {
-                compilerOptions {
-                    // Cap Android class files at JVM 21; D8 does not support JVM 25 bytecode.
-                    jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
-                }
-            }
-        }
-    }
+    androidTarget()
 
     iosX64()
     iosArm64()
@@ -672,8 +663,7 @@ detekt {
 }
 
 tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
-    // Detekt 1.23.x max supported --jvm-target is 22; cap it so jvmToolchain(25) doesn't propagate.
-    jvmTarget = "22"
+    jvmTarget = "21"
     reports {
         html.required.set(true)
         sarif.required.set(true)
