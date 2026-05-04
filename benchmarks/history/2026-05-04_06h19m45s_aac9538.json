@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-04 06:19:45 UTC",
+  "gitSha": "aac9538",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 8,
+  "phase2Ms": 3,
+  "phase3Ms": 14,
+  "totalMs": 24,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 30,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 123,
+      "pct": 69.1
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 15,
+      "pct": 8.4
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 4,
+      "pct": 2.2
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 3,
+      "pct": 1.7
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 3,
+      "pct": 1.7
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 3,
+      "pct": 1.7
+    },
+    {
+      "frame": "long[]_[k]",
+      "samples": 3,
+      "pct": 1.7
+    },
+    {
+      "frame": "jdk.internal.ref.CleanerImpl$PhantomCleanableRef_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.util.ArrayList_[k]",
+      "samples": 2,
+      "pct": 1.1
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2095,
+      "pct": 99.5
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-f27b95ba-1475-4e36-aaec-99d88c8ccdbe-libsqlitejdbc.so",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "__xstat64",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pthread_cond_broadcast",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "Rewriter::scan_method",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "sun/invoke/util/BytecodeDescriptor.unparseMethod_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/ThreadLocal.getMap_[j]",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}
