@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.domain
 
 import com.fleeksoft.ksoup.Ksoup
+import kotlinx.coroutines.CancellationException
 import io.ktor.client.*
 import io.ktor.client.engine.darwin.*
 import io.ktor.client.plugins.*
@@ -61,6 +62,8 @@ class UrlFetcherIos(
             FetchResult.Success(text = text, pageTitle = pageTitle)
         } catch (e: HttpRequestTimeoutException) {
             FetchResult.Failure.Timeout
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             FetchResult.Failure.NetworkUnavailable
         }

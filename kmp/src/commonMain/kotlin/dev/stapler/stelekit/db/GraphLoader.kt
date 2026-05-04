@@ -158,7 +158,17 @@ class GraphLoader(
     private val _writeErrors = MutableSharedFlow<WriteError>(extraBufferCapacity = 16)
     val writeErrors: SharedFlow<WriteError> = _writeErrors.asSharedFlow()
 
+    // Files suppressed from external-change processing.
+    // Two modes:
+    //  1. Single-shot: subscriber calls suppress() in ExternalFileChange handler; the path is
+    //     added here and then removed by checkDirectoryForChanges via .remove().
+    //  2. Sticky (git merge): beginGitMerge() pre-adds paths; they are checked with .contains()
+    //     and not removed until endGitMerge() calls .clear().
+    // Both modes share the same set; sticky paths survive across multiple watcher ticks.
     private val suppressedFiles = mutableSetOf<String>()
+
+    // Paths added by beginGitMerge() — kept for sticky suppression across watcher ticks.
+    private val gitMergeSuppressedFiles = mutableSetOf<String>()
 
     /**
      * Derives a stable UUID for a block from its position in the page tree.
@@ -275,6 +285,8 @@ class GraphLoader(
             // Start watching after initial load
             startWatching(graphPath)
             rootSpan.finish("OK", "graph.path" to graphPath, "duration.ms" to duration.inWholeMilliseconds.toString())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             rootSpan.finish("ERROR", "graph.path" to graphPath, "error.message" to (e.message ?: "unknown"))
             throw e
@@ -345,6 +357,8 @@ class GraphLoader(
                         onFullyLoaded()
                         onBulkImportComplete?.invoke()
                         startWatching(graphPath)
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         warmSpan.finish("ERROR", "error.message" to (e.message ?: "unknown"))
                     } finally {
@@ -399,6 +413,8 @@ class GraphLoader(
             startWatching(graphPath)
             rootSpan.finish("OK", "graph.path" to graphPath,
                 "duration.ms" to totalDuration.inWholeMilliseconds.toString())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             rootSpan.finish("ERROR", "graph.path" to graphPath, "error.message" to (e.message ?: "unknown"))
             throw e
@@ -424,9 +440,11 @@ class GraphLoader(
 
                         checkDirectoryForChanges(pagesDir)
                         checkDirectoryForChanges(journalsDir)
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
-                        logger.error("Error in graph watcher", e)
+                        logger.warn("Error in graph watcher", e)
                     }
                 }
             }
@@ -438,9 +456,11 @@ class GraphLoader(
                     try {
                         checkDirectoryForChanges("$graphPath/pages")
                         checkDirectoryForChanges("$graphPath/journals")
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
-                        logger.error("Error in external change handler", e)
+                        logger.warn("Error in external change handler", e)
                     }
                 }
             }
@@ -488,8 +508,10 @@ class GraphLoader(
                             val content = fileSystem.readFile(path) ?: return@async null
                             try {
                                 parsePageWithoutSaving(path, content, ParseMode.FULL)
+                            } catch (e: CancellationException) {
+                                throw e
                             } catch (e: Exception) {
-                                logger.error("Failed to parse file: $path: ${e.message}")
+                                logger.warn("Failed to parse file: $path: ${e.message}")
                                 null
                             }
                         }
@@ -530,6 +552,13 @@ class GraphLoader(
         for (changed in changeSet.changedFiles) {
             logger.info("File modification detected: ${changed.entry.filePath}")
             fileSystem.invalidateShadow(changed.entry.filePath)
+
+            // Sticky git-merge suppression: if the path was added by beginGitMerge,
+            // skip it without consuming the entry (it remains suppressed until endGitMerge).
+            if (gitMergeSuppressedFiles.contains(changed.entry.filePath)) {
+                logger.debug("Skipping watcher reload for git-merge-suppressed file: ${changed.entry.filePath}")
+                continue
+            }
 
             // Emit event so subscribers can suppress the re-import
             _externalFileChanges.tryEmit(ExternalFileChange(changed.entry.filePath, changed.content) {
@@ -575,7 +604,7 @@ class GraphLoader(
                     writeActor.execute(DatabaseWriteActor.Priority.LOW) {
                         backgroundPageRepository.savePage(page)
                     }.onLeft { e ->
-                        logger.error("savePage failed for ${page.name}: ${e.message}")
+                        logger.warn("savePage failed for ${page.name}: ${e.message}")
                         _writeErrors.tryEmit(WriteError(page.filePath ?: page.name, 0, e))
                         failedPageUuids.add(page.uuid)
                     }
@@ -591,7 +620,7 @@ class GraphLoader(
                     blockRepository.deleteBlocksForPages(listOf(pageUuid))
                 }
                 blockRepository.saveBlocks(blocks).onLeft { e ->
-                    logger.error("saveBlocks failed for pageUuid=$pageUuid (${blocks.size} blocks): ${e.message}")
+                    logger.warn("saveBlocks failed for pageUuid=$pageUuid (${blocks.size} blocks): ${e.message}")
                     _writeErrors.tryEmit(WriteError(pageUuid, blocks.size, e))
                 }
             }
@@ -604,6 +633,43 @@ class GraphLoader(
         writeActor.close()
     }
 
+    /**
+     * Adds [pathsBeingMerged] to the sticky git-merge suppression set so the 5-second
+     * polling watcher ignores changes to these files during a git merge operation.
+     *
+     * Unlike single-shot suppression, these entries persist across multiple watcher
+     * ticks until [endGitMerge] is called.
+     *
+     * Call this immediately before [reloadFiles] after git merge completes.
+     * Always paired with [endGitMerge].
+     */
+    fun beginGitMerge(pathsBeingMerged: List<String>) {
+        gitMergeSuppressedFiles.addAll(pathsBeingMerged)
+    }
+
+    /**
+     * Clears the git-merge suppression set, restoring normal file-watcher behaviour.
+     * Must be called after [reloadFiles] completes (or if merge is aborted).
+     */
+    fun endGitMerge() {
+        gitMergeSuppressedFiles.clear()
+    }
+
+    /**
+     * Explicitly reloads [filePaths] from disk and saves them to the database,
+     * bypassing the file-watcher change-detection loop.
+     *
+     * Used after a successful git merge to push merged content into the DB.
+     * Files with conflict markers are skipped by the existing [ConflictMarkerDetector]
+     * guard inside [parseAndSavePage].
+     */
+    suspend fun reloadFiles(filePaths: List<String>) {
+        for (path in filePaths) {
+            val content = fileSystem.readFile(path) ?: continue
+            parseAndSavePage(path, content, ParseMode.FULL, DatabaseWriteActor.Priority.HIGH)
+        }
+    }
+
     suspend fun loadFullPage(pageUuid: String) {
         PerformanceMonitor.startTrace("loadFullPage")
         var filePath: String? = null
@@ -612,7 +678,7 @@ class GraphLoader(
             val page = pageResult.getOrNull()
 
             if (page == null) {
-                logger.error("Page not found for UUID: $pageUuid")
+                logger.warn("Page not found for UUID: $pageUuid")
                 return
             }
 
@@ -647,7 +713,7 @@ class GraphLoader(
 
             val content = fileSystem.readFile(filePath)
             if (content == null) {
-                logger.error("Failed to read file: $filePath")
+                logger.warn("Failed to read file: $filePath")
                 return
             }
 
@@ -677,8 +743,10 @@ class GraphLoader(
                 try {
                     parseAndSavePage(entry.filePath, content, ParseMode.FULL)
                     loadedCount++
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
-                    logger.error("Failed to parse journal: ${entry.filePath}: ${e.message}")
+                    logger.warn("Failed to parse journal: ${entry.filePath}: ${e.message}")
                 }
             }
             return loadedCount
@@ -709,8 +777,10 @@ class GraphLoader(
                             try {
                                 parseAndSavePage(entry.filePath, content, ParseMode.METADATA_ONLY)
                                 true
+                            } catch (e: CancellationException) {
+                                throw e
                             } catch (e: Exception) {
-                                logger.error("Failed to parse journal: ${entry.filePath}: ${e.message}")
+                                logger.warn("Failed to parse journal: ${entry.filePath}: ${e.message}")
                                 false
                             }
                         }
@@ -749,8 +819,10 @@ class GraphLoader(
                                 }
                             }
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
-                        logger.error("Error sanitizing file: $oldPath: ${e.message}")
+                        logger.warn("Error sanitizing file: $oldPath: ${e.message}")
                     }
                 }
             }
@@ -832,8 +904,10 @@ class GraphLoader(
                                     }
                                     pageUuidsToDelete.add(updatedPage.uuid)
                                     true
+                                } catch (e: CancellationException) {
+                                    throw e
                                 } catch (e: Exception) {
-                                    logger.error("Failed to parse file: $filePath: ${e.message}")
+                                    logger.warn("Failed to parse file: $filePath: ${e.message}")
                                     false
                                 }
                             }
@@ -1103,7 +1177,7 @@ class GraphLoader(
         if (stubs.isNotEmpty()) {
             writeActor.deleteBlocksForPage(pageUuid, priority)
             writeActor.saveBlocks(stubs, priority).onLeft { e ->
-                logger.error("saveBlocks (stubs) failed for $filePath (${stubs.size} blocks): ${e.message}")
+                logger.warn("saveBlocks (stubs) failed for $filePath (${stubs.size} blocks): ${e.message}")
                 _writeErrors.tryEmit(WriteError(filePath, stubs.size, e))
             }
         }
@@ -1127,10 +1201,8 @@ class GraphLoader(
         val existingBlockCount = existingBlocks.size
         when {
             blocksToSave.isEmpty() && fileHasContent -> {
-                logger.error(
-                    "Parser returned no blocks for non-empty file '$filePath' " +
-                    "(${content.length} chars) — skipping block update to prevent data loss"
-                )
+                logger.warn("Parser returned no blocks for non-empty file '$filePath' " +
+                    "(${content.length} chars) — skipping block update to prevent data loss")
             }
             blocksToSave.isEmpty() && !fileHasContent && existingBlockCount > 0 -> {
                 // Blank-file guard: refuse to destroy non-empty in-memory state with an
@@ -1161,14 +1233,14 @@ class GraphLoader(
                 )
                 diff.toDelete.forEach { uuid ->
                     writeActor.deleteBlock(uuid).onLeft { e ->
-                        logger.error("deleteBlock failed for $uuid in $filePath: ${e.message}")
+                        logger.warn("deleteBlock failed for $uuid in $filePath: ${e.message}")
                     }
                 }
                 val blocksToWrite = diff.toInsert + diff.toUpdate
                 if (blocksToWrite.isNotEmpty()) {
                     val saveBlocksSpan = Span("db.saveBlocks", traceId, parentSpanId)
                     writeActor.saveBlocks(blocksToWrite, priority).onLeft { e ->
-                        logger.error("saveBlocks failed for $filePath (${blocksToWrite.size} blocks): ${e.message}")
+                        logger.warn("saveBlocks failed for $filePath (${blocksToWrite.size} blocks): ${e.message}")
                         _writeErrors.tryEmit(WriteError(filePath, blocksToWrite.size, e))
                     }
                     saveBlocksSpan.finish("OK", "block.count" to blocksToWrite.size.toString())
@@ -1200,7 +1272,7 @@ class GraphLoader(
                 if (title.startsWith("file:")) return
                 // Reject files with git conflict markers — importing them would corrupt the graph.
                 if (ConflictMarkerDetector.hasConflictMarkers(content)) {
-                    logger.error("Git conflict markers detected in '$filePath' — import suppressed")
+                    logger.warn("Git conflict markers detected in '$filePath' — import suppressed")
                     _writeErrors.tryEmit(WriteError(
                         filePath, 0,
                         dev.stapler.stelekit.error.DomainError.ParseError.InvalidSyntax(
@@ -1237,7 +1309,7 @@ class GraphLoader(
                 savePageSpan.finish()
                 if (savePageResult.isLeft()) {
                     val e = savePageResult.leftOrNull()!!
-                    logger.error("savePage failed for $filePath — skipping block writes to prevent FK violation: ${e.message}")
+                    logger.warn("savePage failed for $filePath — skipping block writes to prevent FK violation: ${e.message}")
                     _writeErrors.tryEmit(WriteError(filePath, 0, e))
                     return@withLock
                 }

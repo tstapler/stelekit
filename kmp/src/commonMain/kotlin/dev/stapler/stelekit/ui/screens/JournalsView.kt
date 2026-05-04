@@ -27,6 +27,7 @@ import dev.stapler.stelekit.ui.components.SuggestionItem
 import dev.stapler.stelekit.ui.components.SuggestionNavigatorPanel
 import dev.stapler.stelekit.performance.NavigationTracingEffect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import kotlinx.datetime.LocalDate
 
 /**
@@ -432,6 +433,8 @@ private fun formatJournalDate(pageName: String): String {
         val dayOfWeek = date.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }
         val month = date.month.name.lowercase().replaceFirstChar { it.uppercase() }
         "$dayOfWeek, $month ${date.dayOfMonth}, ${date.year}"
+    } catch (e: CancellationException) {
+        throw e
     } catch (_: Exception) {
         pageName.replace("_", "-") // fallback to ISO format
     }

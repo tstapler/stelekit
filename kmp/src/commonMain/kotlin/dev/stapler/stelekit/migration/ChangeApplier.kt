@@ -9,6 +9,7 @@ import dev.stapler.stelekit.db.replaceWikilink
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.RepositorySet
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CancellationException
 
 /**
  * Applies a [List] of [BlockChange] entries through [DatabaseWriteActor] so all writes
@@ -148,6 +149,8 @@ class ChangeApplier(
                         applied++
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 failed.add("${change::class.simpleName} failed: ${e.message}")
             }

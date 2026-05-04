@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -32,6 +33,8 @@ class SqlDelightReferenceRepository(
         try {
             val results = queries.selectOutgoingReferences(blockUuid).executeAsList().map { it.toBlockModel() }
             emit(results.right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -41,6 +44,8 @@ class SqlDelightReferenceRepository(
         try {
             val results = queries.selectIncomingReferences(blockUuid).executeAsList().map { it.toBlockModel() }
             emit(results.right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -51,6 +56,8 @@ class SqlDelightReferenceRepository(
             val outgoing = queries.selectOutgoingReferences(blockUuid).executeAsList().map { it.toBlockModel() }
             val incoming = queries.selectIncomingReferences(blockUuid).executeAsList().map { it.toBlockModel() }
             emit(BlockReferences(outgoing, incoming).right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -61,6 +68,8 @@ class SqlDelightReferenceRepository(
             try {
                 queries.insertBlockReference(fromBlockUuid, toBlockUuid, Clock.System.now().toEpochMilliseconds())
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
@@ -71,6 +80,8 @@ class SqlDelightReferenceRepository(
             try {
                 queries.deleteBlockReference(fromBlockUuid, toBlockUuid)
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
@@ -80,6 +91,8 @@ class SqlDelightReferenceRepository(
         try {
             val results = queries.selectOrphanedBlocks().executeAsList().map { it.toBlockModel() }
             emit(results.right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -91,6 +104,8 @@ class SqlDelightReferenceRepository(
                 BlockWithReferenceCount(it.toBlockModel(), it.reference_count.toInt())
             }
             emit(results.right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }

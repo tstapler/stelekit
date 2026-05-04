@@ -17,6 +17,7 @@ import app.cash.sqldelight.coroutines.mapToOne
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Instant
 
 /**
@@ -138,6 +139,8 @@ class SqlDelightPageRepository(
                 pageByNameCache.put(page.name.lowercase(), page)
             }
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -153,6 +156,8 @@ class SqlDelightPageRepository(
             // (thousands of cold pages). Caching them evicts the warm journals the user is
             // actively reading. Reads populate the cache on first access, which is sufficient.
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -195,6 +200,8 @@ class SqlDelightPageRepository(
                 queries.updatePageFavorite(newFavorite, pageUuid)
             }
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -207,6 +214,8 @@ class SqlDelightPageRepository(
             queries.updatePageName(newName, pageUuid)
             pageByUuidCache.remove(pageUuid)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -219,6 +228,8 @@ class SqlDelightPageRepository(
             queries.deletePageByUuid(pageUuid)
             pageByUuidCache.remove(pageUuid)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -228,6 +239,8 @@ class SqlDelightPageRepository(
         try {
             val count = queries.countPages().executeAsOne()
             emit(count.right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }

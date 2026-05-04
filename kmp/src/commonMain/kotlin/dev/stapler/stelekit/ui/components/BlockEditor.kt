@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.ui.components
 
 import androidx.compose.foundation.background
+import kotlinx.coroutines.CancellationException
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.*
@@ -123,6 +124,8 @@ internal fun BlockEditor(
                 val rect = if (textLayoutResult != null && safeCursor <= textLayoutResult!!.layoutInput.text.length) {
                     try {
                         textLayoutResult?.getCursorRect(safeCursor)
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         null
                     }

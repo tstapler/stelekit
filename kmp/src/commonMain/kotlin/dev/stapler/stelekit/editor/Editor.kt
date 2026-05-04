@@ -7,12 +7,12 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
-import androidx.compose.runtime.*
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.isCtrlPressed
+import kotlinx.coroutines.CoroutineScope
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.CursorState
 import dev.stapler.stelekit.editor.commands.*
@@ -29,6 +29,7 @@ import dev.stapler.stelekit.editor.format.IFormatProcessor
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 /**
  * Main editor implementation that orchestrates all editing operations.
@@ -41,7 +42,7 @@ class Editor(
     private val commandSystem: ICommandSystem,
 ) : IEditor {
 
-    private val scope = mutableStateOf<kotlinx.coroutines.CoroutineScope?>(null)
+    private var scope: CoroutineScope? = null
     private val _editorState = MutableStateFlow(EditorState(textOperations = textOperations))
     private val _currentPage = MutableStateFlow<Page?>(null)
     private val _cursorState = MutableStateFlow(CursorState())
@@ -76,6 +77,8 @@ class Editor(
             
             dev.stapler.stelekit.performance.PerformanceMonitor.endTrace(traceId)
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             _editorState.update { it.copy(isLoading = false) }
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
@@ -93,35 +96,35 @@ class Editor(
         when {
             keyEvent.isCtrlPressed && key == Key.S -> {
                 // Save
-                scope.value?.launch {
+                scope?.launch {
                     executeCommand("system.save", emptyMap())
                 }
                 return true
             }
             keyEvent.isCtrlPressed && key == Key.Z -> {
                 // Undo
-                scope.value?.launch {
+                scope?.launch {
                     executeCommand("system.undo", emptyMap())
                 }
                 return true
             }
             keyEvent.isCtrlPressed && key == Key.Y -> {
                 // Redo
-                scope.value?.launch {
+                scope?.launch {
                     executeCommand("system.redo", emptyMap())
                 }
                 return true
             }
             keyEvent.isCtrlPressed && key == Key.F -> {
                 // Search
-                scope.value?.launch {
+                scope?.launch {
                     executeCommand("navigation.search", emptyMap())
                 }
                 return true
             }
             key == Key.Escape -> {
                 // Command palette
-                scope.value?.launch {
+                scope?.launch {
                     _editorState.update { it.copy(mode = EditorMode.VIEW) }
                 }
                 return true
@@ -154,6 +157,8 @@ class Editor(
             
             dev.stapler.stelekit.performance.PerformanceMonitor.endTrace(traceId)
             if (result is CommandResult.Success) Unit.right() else DomainError.DatabaseError.WriteFailed((result as CommandResult.Error).message).left()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -185,6 +190,8 @@ class Editor(
                 is CommandResult.Partial -> mapOf("completed" to result.completed, "total" to result.total).right()
                 is CommandResult.Nothing -> null.right()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }

@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import app.cash.sqldelight.db.QueryResult
+import kotlinx.coroutines.CancellationException
 import app.cash.sqldelight.db.SqlDriver
 
 /**
@@ -231,6 +232,8 @@ object MigrationRunner {
             for (sql in migration.statements) {
                 try {
                     driver.execute(null, sql.trimIndent(), 0)
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (_: Exception) {
                     // Idempotent: column/table already exists — desired state already reached.
                 }

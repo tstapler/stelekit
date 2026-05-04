@@ -8,6 +8,8 @@ import dev.stapler.stelekit.db.RenameResult
 import dev.stapler.stelekit.db.UndoManager
 import dev.stapler.stelekit.export.ClipboardProvider
 import dev.stapler.stelekit.export.ExportService
+import dev.stapler.stelekit.git.GitSyncService
+import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.NotificationType
 import dev.stapler.stelekit.outliner.BlockSorter
@@ -38,16 +40,21 @@ import kotlinx.coroutines.SupervisorJob
 import kotlin.time.Clock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 
 sealed class IndexingState {
     object Idle : IndexingState()
@@ -85,6 +92,10 @@ class StelekitViewModel(
     private val bugReportBuilder: dev.stapler.stelekit.performance.BugReportBuilder? = null,
     private val debugFlagRepository: dev.stapler.stelekit.performance.DebugFlagRepository? = null,
     ringBuffer: dev.stapler.stelekit.performance.RingBufferSpanExporter? = null,
+    // Optional git sync service — wired when git is configured for the active graph.
+    // Uses a StateFlow<GitSyncService?> so the ViewModel can switch services on graph change.
+    private val activeGitSyncService: StateFlow<GitSyncService?> = MutableStateFlow(null),
+    private val activeGraphIdProvider: () -> String? = { null },
 ) {
     private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(ringBuffer)
     private val scope = scope
@@ -109,6 +120,58 @@ class StelekitViewModel(
     fun redo() {
         val manager = undoManager ?: return
         scope.launch { manager.redo() }
+    }
+
+    // --- Git Sync ---
+
+    /**
+     * Emits the current [SyncState] from the active [GitSyncService].
+     * Falls back to [SyncState.Idle] when no git sync service is configured.
+     */
+    val syncState: StateFlow<SyncState> = activeGitSyncService
+        .flatMapLatest { service -> service?.syncState ?: flowOf(SyncState.Idle) }
+        .stateIn(scope, SharingStarted.Eagerly, SyncState.Idle)
+
+    private fun observeSyncState() {
+        // Auto-show conflict resolution screen when ConflictPending is emitted
+        scope.launch {
+            syncState.collect { state ->
+                if (state is SyncState.ConflictPending) {
+                    _uiState.update { it.copy(conflictResolutionVisible = true) }
+                }
+            }
+        }
+    }
+
+    /** Triggers a full sync (commit → fetch → merge → push) on the active graph. */
+    fun triggerSync() {
+        val graphId = activeGraphIdProvider() ?: _uiState.value.currentGraphId ?: return
+        scope.launch {
+            activeGitSyncService.value?.sync(graphId)
+        }
+    }
+
+    /** Triggers a fetch-only check for remote changes on the active graph. */
+    fun triggerFetchOnly() {
+        val graphId = activeGraphIdProvider() ?: _uiState.value.currentGraphId ?: return
+        scope.launch {
+            activeGitSyncService.value?.fetchOnly(graphId)
+        }
+    }
+
+    /** Opens the git setup wizard. */
+    fun openGitSetup() {
+        _uiState.update { it.copy(gitSetupVisible = true) }
+    }
+
+    /** Dismisses the git setup wizard. */
+    fun dismissGitSetup() {
+        _uiState.update { it.copy(gitSetupVisible = false) }
+    }
+
+    /** Dismisses the conflict resolution screen. */
+    fun dismissConflictResolution() {
+        _uiState.update { it.copy(conflictResolutionVisible = false) }
     }
 
     // Track recent pages manually to avoid "recently loaded" issues
@@ -157,6 +220,7 @@ class StelekitViewModel(
         blockStateManager?.let { graphLoader.activePageUuids = it.activePageUuids }
 
         updateCommands()
+        observeSyncState()
 
         // Initialize graph if path exists
         val path = _uiState.value.currentGraphPath
@@ -834,6 +898,8 @@ class StelekitViewModel(
                     page?.filePath?.takeIf { it.isNotBlank() }?.let { path ->
                         fileSystem.deleteFile(path)
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     logger.error("Failed to delete page $uuid", e)
                 }
@@ -872,6 +938,8 @@ class StelekitViewModel(
             }
             logger.info("Created new page: $pageName")
             newPage
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to create page: $pageName", e)
             null
@@ -1321,6 +1389,8 @@ class StelekitViewModel(
                 }
 
                 _uiState.update { it.copy(commands = legacyCommands) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.error("Failed to update commands", e)
             }

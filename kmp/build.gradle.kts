@@ -18,7 +18,7 @@ plugins {
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(25)
     applyDefaultHierarchyTemplate()
 
     compilerOptions {
@@ -30,13 +30,23 @@ kotlin {
     jvm()
 
     if (project.findProperty("enableJs") == "true") {
+        @OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
         wasmJs {
             browser()
             binaries.executable()
         }
     }
 
-    androidTarget()
+    androidTarget {
+        compilations.configureEach {
+            compileTaskProvider.configure {
+                compilerOptions {
+                    // Cap Android class files at JVM 21; D8 does not support JVM 25 bytecode.
+                    jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+                }
+            }
+        }
+    }
 
     iosX64()
     iosArm64()
@@ -46,6 +56,9 @@ kotlin {
     sourceSets {
         val commonMain by getting {
             dependencies {
+                // Kotlin Multiplatform Diff — used for conflict hunk display
+                implementation("io.github.petertrr:kotlin-multiplatform-diff:1.3.0")
+
                 // Arrow
                 implementation("io.arrow-kt:arrow-core:2.2.1.1")
                 implementation("io.arrow-kt:arrow-optics:2.2.1.1")
@@ -110,6 +123,10 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
                 // sqlite-jdbc 3.51.3+ bundled here (verified: 3.51.3.0) — fixes WAL data-race in 3.7.0–3.51.2
                 implementation("app.cash.sqldelight:sqlite-driver:2.3.2")
+
+                // JGit 7.x — Desktop git operations
+                implementation("org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r")
+                implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.3.0.202506031305-r")
                 implementation("org.jetbrains.kotlinx:kotlinx-benchmark-runtime:0.4.13")
 
                 // Ktor engine for JVM (used by coil-network-ktor3)
@@ -193,6 +210,19 @@ kotlin {
                 // Use 1.1.1 (not 1.1.0) to pick up a protobuf security fix.
                 implementation("androidx.glance:glance-appwidget:1.1.1")
                 implementation("androidx.glance:glance-material3:1.1.1")
+
+                // WorkManager — periodic background git sync
+                implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+                // JGit 5.13.x — Android git operations (Android-safe; Java 11 APIs with desugaring)
+                implementation("org.eclipse.jgit:org.eclipse.jgit:5.13.3.202401111512-r")
+                // JGit SSH/JSch integration module (provides JschConfigSessionFactory)
+                // Excludes com.jcraft:jsch so the mwiede fork below is the sole jsch on classpath
+                implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:5.13.3.202401111512-r") {
+                    exclude(group = "com.jcraft", module = "jsch")
+                }
+                // mwiede/jsch fork — ED25519/ECDSA/OpenSSH key support for Android SSH
+                implementation("com.github.mwiede:jsch:0.2.21")
             }
         }
 
@@ -200,7 +230,7 @@ kotlin {
             dependencies {
                 implementation(kotlin("test"))
                 implementation("junit:junit:4.13.2")
-                implementation("org.robolectric:robolectric:4.13")
+                implementation("org.robolectric:robolectric:4.16")
                 implementation("androidx.test:core:1.6.1")
                 implementation("androidx.test.ext:junit:1.2.1")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
@@ -321,12 +351,15 @@ tasks.named<Test>("jvmTest") {
         showStandardStreams = false
     }
     // Print timing after each test using a listener
-    afterTest(KotlinClosure2({ desc: TestDescriptor, result: TestResult ->
-        val ms = result.endTime - result.startTime
-        if (ms > 1000) {
-            println("  SLOW (${ms}ms) ${desc.className}#${desc.name}")
+    addTestListener(object : org.gradle.api.tasks.testing.TestListener {
+        override fun beforeSuite(suite: TestDescriptor) {}
+        override fun afterSuite(suite: TestDescriptor, result: TestResult) {}
+        override fun beforeTest(desc: TestDescriptor) {}
+        override fun afterTest(desc: TestDescriptor, result: TestResult) {
+            val ms = result.endTime - result.startTime
+            if (ms > 1000) println("  SLOW (${ms}ms) ${desc.className}#${desc.name}")
         }
-    }))
+    })
 
     // Run non-Roborazzi tests in parallel (screenshot tests require AWT and must serialize)
     maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
@@ -354,10 +387,15 @@ tasks.register<Test>("jvmTestFast") {
         events("PASSED", "FAILED", "SKIPPED")
         showExceptions = true
     }
-    afterTest(KotlinClosure2({ desc: TestDescriptor, result: TestResult ->
-        val ms = result.endTime - result.startTime
-        if (ms > 500) println("  SLOW (${ms}ms) ${desc.className}#${desc.name}")
-    }))
+    addTestListener(object : org.gradle.api.tasks.testing.TestListener {
+        override fun beforeSuite(suite: TestDescriptor) {}
+        override fun afterSuite(suite: TestDescriptor, result: TestResult) {}
+        override fun beforeTest(desc: TestDescriptor) {}
+        override fun afterTest(desc: TestDescriptor, result: TestResult) {
+            val ms = result.endTime - result.startTime
+            if (ms > 500) println("  SLOW (${ms}ms) ${desc.className}#${desc.name}")
+        }
+    })
 }
 
 // ── graph load TTI profiling ────────────────────────────────────────────────
@@ -446,22 +484,26 @@ tasks.register<Test>("jvmTestProfile") {
             threadsFile.delete()
         }
 
+        fun runCmd(vararg args: String) {
+            ProcessBuilder(*args).inheritIO().start().waitFor()
+        }
+
         if (jfrconvPath != null) {
             // Alloc flamegraph from standard JFR (allocation events are unaffected by profiling mode)
-            exec { commandLine(jfrconvPath, "--alloc", "-o", "collapsed", "$jfrFile", "$allocCollapsedFile"); isIgnoreExitValue = true }
-            exec { commandLine(jfrconvPath, "--alloc", "$jfrFile", "$htmlFile"); isIgnoreExitValue = true }
+            runCmd(jfrconvPath, "--alloc", "-o", "collapsed", "$jfrFile", "$allocCollapsedFile")
+            runCmd(jfrconvPath, "--alloc", "$jfrFile", "$htmlFile")
 
             // CPU/wall flamegraph: prefer wall-clock from async-profiler if available, fall
             // back to JFR CPU samples. Both are filtered to coroutine worker threads.
             if (wallJfrFile.exists()) {
-                exec { commandLine(jfrconvPath, "--wall", "--threads", "-o", "collapsed", "$wallJfrFile", "$wallThreadsFile"); isIgnoreExitValue = true }
+                runCmd(jfrconvPath, "--wall", "--threads", "-o", "collapsed", "$wallJfrFile", "$wallThreadsFile")
                 if (wallThreadsFile.exists()) {
                     filterToCoroutineThreads(wallThreadsFile, cpuCollapsedFile) {
-                        exec { commandLine(jfrconvPath, "--wall", "-o", "collapsed", "$wallJfrFile", "$cpuCollapsedFile"); isIgnoreExitValue = true }
+                        runCmd(jfrconvPath, "--wall", "-o", "collapsed", "$wallJfrFile", "$cpuCollapsedFile")
                     }
                 }
             } else {
-                exec { commandLine(jfrconvPath, "--threads", "-o", "collapsed", "$jfrFile", "$cpuThreadsFile"); isIgnoreExitValue = true }
+                runCmd(jfrconvPath, "--threads", "-o", "collapsed", "$jfrFile", "$cpuThreadsFile")
                 if (cpuThreadsFile.exists()) {
                     filterToCoroutineThreads(cpuThreadsFile, cpuCollapsedFile) {
                         cpuThreadsFile.copyTo(cpuCollapsedFile, overwrite = true)
@@ -559,10 +601,8 @@ with open(out_file, "w") as f:
     json.dump(summary, f, indent=2)
 print(out_file)
 """.trimIndent())
-        exec {
-            commandLine("python3", scriptFile.absolutePath, project.rootDir.absolutePath, reportsDir.absolutePath)
-            isIgnoreExitValue = true
-        }
+        ProcessBuilder("python3", scriptFile.absolutePath, project.rootDir.absolutePath, reportsDir.absolutePath)
+            .inheritIO().start().waitFor()
         scriptFile.delete()
     }
 }
@@ -632,6 +672,8 @@ detekt {
 }
 
 tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+    // Detekt 1.23.x max supported --jvm-target is 22; cap it so jvmToolchain(25) doesn't propagate.
+    jvmTarget = "22"
     reports {
         html.required.set(true)
         sarif.required.set(true)
@@ -645,6 +687,9 @@ tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
 dependencies {
     detektPlugins(files("${rootProject.projectDir}/buildSrc/build/libs/buildSrc.jar"))
     detektPlugins("io.nlopez.compose.rules:detekt:0.4.27")
+    // Core library desugaring for Android — required by JGit 5.13.x (java.time, java.util.stream, etc.)
+    // Must be at module root level (not inside kotlin { sourceSets { } })
+    "coreLibraryDesugaring"("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 // ── Local CI check ───────────────────────────────────────────────────────────
@@ -713,7 +758,7 @@ afterEvaluate {
 
             // --cpu reads profiler.ExecutionSample (async-profiler agent events).
             // If the agent wasn't active the file will be empty — detect and warn.
-            exec { commandLine(jfrconvPath, "--cpu",   "-o", "collapsed", "$jfr", "$cpuCollapsed");   isIgnoreExitValue = true }
+            ProcessBuilder(jfrconvPath, "--cpu",   "-o", "collapsed", "$jfr", "$cpuCollapsed").inheritIO().start().waitFor()
             if (cpuCollapsed.length() == 0L) {
                 cpuCollapsed.delete()
                 println("── CPU stacks:   (empty — async-profiler agent was not active)")
@@ -721,7 +766,7 @@ afterEvaluate {
                 println("── CPU stacks:   $cpuCollapsed")
             }
 
-            exec { commandLine(jfrconvPath, "--alloc", "-o", "collapsed", "$jfr", "$allocCollapsed"); isIgnoreExitValue = true }
+            ProcessBuilder(jfrconvPath, "--alloc", "-o", "collapsed", "$jfr", "$allocCollapsed").inheritIO().start().waitFor()
             if (allocCollapsed.exists() && allocCollapsed.length() > 0) println("── Alloc stacks: $allocCollapsed")
 
             // Prune: keep the 20 most recent .jfr files and their collapsed siblings.
@@ -787,11 +832,21 @@ android {
     }
 
     compileOptions {
+        // coreLibraryDesugar enables Java 8+ API compatibility for JGit 5.13.x on older Android APIs
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+    }
+
+    packaging {
+        resources {
+            // Both org.eclipse.jgit and org.eclipse.jgit.ssh.jsch include plugin.properties;
+            // exclude it to prevent duplicate-resource merge failure in test APKs.
+            excludes += "plugin.properties"
+        }
     }
 }

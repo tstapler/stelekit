@@ -6,6 +6,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
 
 /**
  * Manages debounced execution of tasks identified by a key.
@@ -82,6 +83,8 @@ class DebounceManager(
         for (action in actions) {
             try {
                 action()
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 // Best-effort on shutdown
             }

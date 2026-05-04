@@ -25,6 +25,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Instant
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.math.abs
@@ -110,6 +111,8 @@ class SqlDelightSearchRepository(
                 )
             )
             emit(results.right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -127,6 +130,8 @@ class SqlDelightSearchRepository(
                 try {
                     queries.searchPagesByNameFts(query = ftsQuery, limit = limit.toLong())
                         .executeAsList().map { it.toPageModel() }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (_: Exception) {
                     queries.selectPagesByNameLike("%$query%").executeAsList().take(limit).map { it.toPageModel() }
                 }
@@ -146,6 +151,8 @@ class SqlDelightSearchRepository(
                 )
             )
             emit(results.right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -157,6 +164,8 @@ class SqlDelightSearchRepository(
                 .executeAsList()
                 .map { it.toBlockModel() }
             emit(results.right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -249,6 +258,8 @@ class SqlDelightSearchRepository(
                             )
                         }.applyPageScope(scope, searchRequest.pageUuid)
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (_: Exception) {
                     // pages_fts not yet available — fall back to LIKE
                     queries.selectPagesByNameLike("%$rawQuery%")
@@ -354,6 +365,8 @@ class SqlDelightSearchRepository(
                             }
                         }
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     emptyList()
                 }
@@ -385,6 +398,8 @@ class SqlDelightSearchRepository(
                 totalCount = ranked.size,
                 hasMore = false
             ).right())
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
         }
@@ -489,6 +504,8 @@ class SqlDelightSearchRepository(
                     restricted.updatePageVisit(nowMs, pageUuid)
                     Unit.right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
@@ -518,6 +535,8 @@ class SqlDelightSearchRepository(
                     restricted.recomputeAllBacklinkCounts()
                     Unit.right()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed("FTS rebuild failed: ${e.message ?: "unknown"}").left()
             }
@@ -534,6 +553,8 @@ class SqlDelightSearchRepository(
                 sqlDriver.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('integrity-check')", 0)
                 sqlDriver.execute(null, "INSERT INTO pages_fts(pages_fts) VALUES('integrity-check')", 0)
                 Unit.right()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed("FTS integrity check failed: ${e.message ?: "unknown"}").left()
             }

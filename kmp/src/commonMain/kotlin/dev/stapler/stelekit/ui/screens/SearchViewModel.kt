@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 private const val MAX_RECENT_QUERIES = 10
 
@@ -279,6 +280,8 @@ class SearchViewModel(
                         _uiState.update { it.copy(isLoading = false, isSkeletonVisible = false, error = "Search failed") }
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, isSkeletonVisible = false, error = e.message) }
             }

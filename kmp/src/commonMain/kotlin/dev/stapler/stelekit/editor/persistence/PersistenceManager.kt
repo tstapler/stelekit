@@ -86,6 +86,8 @@ class PersistenceManager(
             
             logger.info("Persistence manager started successfully")
             return Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to start persistence manager", e)
             return DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
@@ -114,6 +116,8 @@ class PersistenceManager(
             
             logger.info("Persistence manager stopped")
             return Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Failed to stop persistence manager", e)
             return DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
@@ -130,6 +134,8 @@ class PersistenceManager(
             
             logger.info("Persistence manager paused")
             return Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -145,6 +151,8 @@ class PersistenceManager(
             
             logger.info("Persistence manager resumed")
             return Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -174,6 +182,8 @@ class PersistenceManager(
             
             logger.info("Persistence config updated")
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -203,6 +213,8 @@ class PersistenceManager(
             
             updateStats()
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -230,6 +242,8 @@ class PersistenceManager(
             
             updateStats()
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -261,6 +275,8 @@ class PersistenceManager(
             }
             
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -301,6 +317,8 @@ class PersistenceManager(
             }
             
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -312,6 +330,8 @@ class PersistenceManager(
             
             val saveState = blockSaveStates[blockUuid]
             (saveState?.isDirty ?: false).right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -321,6 +341,8 @@ class PersistenceManager(
         return try {
             Validation.validateUuid(blockUuid)
             blockSaveStates[blockUuid].right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -363,6 +385,8 @@ class PersistenceManager(
             }
             
             return Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Force save failed", e)
             return DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
@@ -393,6 +417,8 @@ class PersistenceManager(
             }
             
             return Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -476,6 +502,8 @@ class PersistenceManager(
                 PerformanceMonitor.endTrace("saveBlock")
                 result.right()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             val result = PersistenceResult.failure(
                 "saveBlock",
@@ -500,6 +528,8 @@ class PersistenceManager(
                 if (r.isLeft()) return r.map { listOf() }
             }
             results.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -543,6 +573,8 @@ class PersistenceManager(
             addRecentResult(result)
             PerformanceMonitor.endTrace("saveBlock")
             result.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             val result = PersistenceResult.failure(
                 "deleteBlock",
@@ -562,6 +594,8 @@ class PersistenceManager(
             mutex.withLock {
                 changeQueue.toList().right()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -577,6 +611,8 @@ class PersistenceManager(
             }
             
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -590,6 +626,8 @@ class PersistenceManager(
             }
             
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -619,6 +657,8 @@ class PersistenceManager(
             }
             
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -627,6 +667,8 @@ class PersistenceManager(
     override suspend fun getFailedOperations(): Either<DomainError, List<PersistenceResult>> {
         return try {
             failedOperations.toList().right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -636,6 +678,8 @@ class PersistenceManager(
         return try {
             failedOperations.clear()
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -646,6 +690,8 @@ class PersistenceManager(
             val pendingChanges = mutex.withLock { changeQueue.toList() }
             val conflicts = conflictDetector.detectChangeConflicts(pendingChanges)
             conflicts.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -656,6 +702,8 @@ class PersistenceManager(
             // This would integrate with ConflictResolver
             // Implementation depends on the specific resolution requirements
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -674,6 +722,8 @@ class PersistenceManager(
             
             logger.info("Created backup: $backupId")
             backupInfo.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -684,6 +734,8 @@ class PersistenceManager(
             // Implementation depends on backup storage strategy
             logger.info("Restored from backup: $backupId")
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -693,6 +745,8 @@ class PersistenceManager(
         return try {
             // Implementation depends on backup storage strategy
             emptyList<BackupInfo>().right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -702,6 +756,8 @@ class PersistenceManager(
         return try {
             // Remove old backups beyond maxBackupFiles limit
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -724,6 +780,8 @@ class PersistenceManager(
             )
             
             metrics.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -733,6 +791,8 @@ class PersistenceManager(
         return try {
             // Enable/disable performance monitoring
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }

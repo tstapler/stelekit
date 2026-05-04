@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.logging
 
 import java.io.BufferedWriter
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.FileWriter
 import java.time.LocalDate
@@ -93,6 +94,8 @@ class FileLogSink(
                     if (fileDate.isBefore(cutoff)) {
                         file.delete()
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (_: Exception) {
                     // Skip files with unparseable names
                 }

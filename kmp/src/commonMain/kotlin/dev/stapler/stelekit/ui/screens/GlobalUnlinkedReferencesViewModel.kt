@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 // ===== State models =====
 
@@ -116,6 +117,8 @@ class GlobalUnlinkedReferencesViewModel(
                         hasMore = pageCursorIndex < allPageNames.size || pendingEntries.isNotEmpty(),
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.error("loadInitial failed", e)
                 _state.update { it.copy(isLoading = false, errorMessage = e.message ?: "Load failed") }
@@ -141,6 +144,8 @@ class GlobalUnlinkedReferencesViewModel(
                         hasMore = pageCursorIndex < allPageNames.size || pendingEntries.isNotEmpty(),
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.error("loadMore failed", e)
                 _state.update { it.copy(isLoading = false, errorMessage = e.message ?: "Load failed") }
@@ -239,6 +244,8 @@ class GlobalUnlinkedReferencesViewModel(
                 blockRepository.getUnlinkedReferences(pageName, limit = PAGE_CHUNK, offset = 0)
                     .first()
                     .getOrNull() ?: continue
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.error("getUnlinkedReferences failed for page '$pageName'", e)
                 continue

@@ -22,6 +22,7 @@ import dev.stapler.stelekit.util.UuidGenerator
 import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
@@ -131,6 +132,14 @@ class DatabaseWriteActor(
                         }
                     try {
                         processRequest(request)
+                    } catch (e: CancellationException) {
+                        // Complete the deferred so the caller doesn't hang, then rethrow so the
+                        // actor loop exits cleanly via the outer catch instead of converting
+                        // cancellation into a spurious WriteFailed result.
+                        if (!request.deferred.isCompleted) {
+                            request.deferred.complete(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
+                        }
+                        throw e
                     } catch (e: Exception) {
                         // Unexpected throw — complete deferred so caller doesn't hang.
                         // Guard against double-completion: processRequest may have already
@@ -140,6 +149,8 @@ class DatabaseWriteActor(
                         }
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 // Channel closed or coroutine cancelled — exit cleanly.
             }
@@ -163,6 +174,8 @@ class DatabaseWriteActor(
                     try {
                         val pageBlocks = blockRepository.getBlocksForPage(request.pageUuid).first().getOrNull()
                         pageBlocks?.forEach { opLogger.logDelete(it) }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (_: Exception) {
                         // Non-fatal: op log failure must not block the delete
                     }
@@ -178,6 +191,8 @@ class DatabaseWriteActor(
                             val pageBlocks = blockRepository.getBlocksForPage(uuid).first().getOrNull()
                             pageBlocks?.forEach { opLogger.logDelete(it) }
                         }
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         logger.warn("Op log pre-delete read failed (non-fatal)", e)
                     }
@@ -287,6 +302,8 @@ class DatabaseWriteActor(
             try {
                 val existing = blockRepository.getBlockByUuid(block.uuid).first().getOrNull()
                 if (existing != null) result[block.uuid] = existing
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 // Non-fatal: if lookup fails we skip logging for this block
             }
@@ -367,6 +384,8 @@ class DatabaseWriteActor(
                 try {
                     val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
                     block?.let { opLogger.logDelete(it) }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (_: Exception) {
                     // Non-fatal: op log failure must not block the delete
                 }

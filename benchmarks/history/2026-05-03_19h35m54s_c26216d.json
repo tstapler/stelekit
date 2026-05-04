@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-03 19:35:54 UTC",
+  "gitSha": "c26216d",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 7,
+  "phase2Ms": 3,
+  "phase3Ms": 17,
+  "totalMs": 26,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 33,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 83,
+      "pct": 62.4
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 11,
+      "pct": 8.3
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 6,
+      "pct": 4.5
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 4,
+      "pct": 3.0
+    },
+    {
+      "frame": "java.io.File_[k]",
+      "samples": 2,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 2,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 2,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.lang.invoke.MemberName_[k]",
+      "samples": 1,
+      "pct": 0.8
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 1,
+      "pct": 0.8
+    },
+    {
+      "frame": "java.lang.reflect.Method_[k]",
+      "samples": 1,
+      "pct": 0.8
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2127,
+      "pct": 99.5
+    },
+    {
+      "frame": "SymbolTable::do_lookup",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "java/lang/String.regionMatches_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/util/concurrent/atomic/AtomicReferenceFieldUpdater$AtomicReferenceFieldUpdaterImpl.set_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/invoke/MethodHandle.invokeBasic_[j]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "initialize_static_field",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/channels/BufferedChannel.registerSelectForReceive_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlin/coroutines/CoroutineContext$Element$DefaultImpls.fold_[i]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "org/sqlite/core/SafeStmtPtr.safeRun_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/util/concurrent/ConcurrentHashMap$KeyIterator.<init>_[0]",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}

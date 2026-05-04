@@ -15,6 +15,7 @@ import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 
 import dev.stapler.stelekit.editor.blocks.IBlockOperations
@@ -51,6 +52,8 @@ class BlockTreeOperations(
             val allBlocks = mutableListOf<BlockWithDepth>()
             collectSubtree(rootUuid, 0, allBlocks, includeCollapsed, maxDepth)
             allBlocks.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -82,6 +85,8 @@ class BlockTreeOperations(
             }
             
             visibleBlocks.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -108,6 +113,8 @@ class BlockTreeOperations(
             
             // Return the deepest common ancestor (last in the list)
             commonPath.lastOrNull().right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -121,6 +128,8 @@ class BlockTreeOperations(
             val ancestorsResult = blockOperations.getBlockAncestors(blockUuid).first()
             val ancestors = ancestorsResult.getOrNull() ?: emptyList()
             (ancestors.map { it.uuid } + blockUuid).right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -158,6 +167,8 @@ class BlockTreeOperations(
             }
             
             collapsed.map { it.uuid }.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -181,6 +192,8 @@ class BlockTreeOperations(
             }
             
             blockOperations.updateBlockPropertiesOnly(block.uuid, newProperties)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -250,6 +263,8 @@ class BlockTreeOperations(
             
             // 6. Return the new root
             newBlocks.first { it.uuid == oldToNewUuid[rootBlockUuid] }.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -299,6 +314,8 @@ class BlockTreeOperations(
             }
             
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -341,6 +358,8 @@ class BlockTreeOperations(
                 PositioningMode.AFTER,
                 parent.uuid
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -383,6 +402,8 @@ class BlockTreeOperations(
                 finalTargetParent.uuid,
                 PositioningMode.END
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -480,6 +501,8 @@ object BlockOperationValidator {
                 errors = errors,
                 warnings = warnings
             ).right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -515,6 +538,8 @@ object BlockOperationValidator {
                 errors = errors,
                 warnings = warnings
             ).right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }

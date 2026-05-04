@@ -2,6 +2,7 @@ package dev.stapler.stelekit.platform
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -56,6 +57,8 @@ internal class ShadowFileCache(context: Context, graphId: String) {
             try {
                 shadowFile.writeText(content)
                 if (safMtime > 0L) shadowFile.setLastModified(safMtime)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "syncFromSaf: failed to write shadow $subdir/$fileName", e)
             }

@@ -10,6 +10,7 @@ import dev.stapler.stelekit.model.Property
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.CancellationException
 
 /**
  * Datalog-style in-memory repository for properties.
@@ -48,6 +49,8 @@ class DatascriptPropertyRepository : PropertyRepository {
             current[property.blockUuid] = blockProps
             properties.value = current
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
@@ -61,6 +64,8 @@ class DatascriptPropertyRepository : PropertyRepository {
             current[blockUuid] = blockProps
             properties.value = current
             Unit.right()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }

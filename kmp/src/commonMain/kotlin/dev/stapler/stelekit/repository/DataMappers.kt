@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.repository
 
 import app.cash.sqldelight.db.SqlCursor
+import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.Property
@@ -68,6 +69,8 @@ private fun parseJsonProperties(json: String): Map<String, String> {
     if (json.isBlank() || json == "{}") return emptyMap()
     return try {
         jsonParser.decodeFromString<Map<String, String>>(json)
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         emptyMap()
     }

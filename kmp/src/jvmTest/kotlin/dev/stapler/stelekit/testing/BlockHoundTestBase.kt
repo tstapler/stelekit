@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.testing
 
 import org.junit.BeforeClass
+import kotlinx.coroutines.CancellationException
 import reactor.blockhound.BlockHound
 
 /**
@@ -31,6 +32,8 @@ open class BlockHoundTestBase {
         fun installBlockHound() {
             try {
                 BlockHound.install()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 System.err.println("BlockHound self-test failed (agent may still be active): ${e.message}")
             }

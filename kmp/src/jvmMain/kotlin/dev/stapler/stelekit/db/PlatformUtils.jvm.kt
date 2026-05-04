@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import java.io.File
+import kotlinx.coroutines.CancellationException
 
 actual class PlatformUtils actual constructor() {
     actual fun getDatabaseDirectory(): String {
@@ -49,6 +50,8 @@ actual class PlatformUtils actual constructor() {
                 oldFile.delete()
             }
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             println("Failed to migrate database file: ${e.message}")
             false

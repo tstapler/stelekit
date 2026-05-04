@@ -7,7 +7,13 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,6 +40,7 @@ import dev.stapler.stelekit.editor.text.TextRange
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 /**
  * Rich text field component that extends BasicTextField with Logseq-specific features.
@@ -103,6 +110,8 @@ fun RichTextEditor(
                 val rect = if (textLayoutResult != null && safeCursor <= textLayoutResult!!.layoutInput.text.length) {
                     try {
                         textLayoutResult?.getCursorRect(safeCursor)
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         null
                     }
@@ -112,6 +121,8 @@ fun RichTextEditor(
             } else {
                 onTriggerDetected("", null)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.error("Error in trigger detection", e)
         }
@@ -135,6 +146,8 @@ fun RichTextEditor(
                 if (newValue.selection != oldValue.selection) {
                     textOperations.setSelection(blockId, TextRange(newValue.selection.start, newValue.selection.end))
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 logger.error("Error handling text change", e)
             }

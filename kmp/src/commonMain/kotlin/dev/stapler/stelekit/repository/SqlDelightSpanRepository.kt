@@ -12,6 +12,7 @@ import dev.stapler.stelekit.performance.SpanRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -78,6 +79,8 @@ class SqlDelightSpanRepository(
                 MapSerializer(String.serializer(), String.serializer()),
                 attributes_json
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             emptyMap()
         }
