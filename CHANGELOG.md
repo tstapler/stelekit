@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.22.0](https://github.com/tstapler/stelekit/compare/v0.21.0...v0.22.0) (2026-05-04)
+
+
+### Features
+
+* **search:** two-panel layout, FTS performance, precomputed backlink counts ([#70](https://github.com/tstapler/stelekit/issues/70)) ([651d006](https://github.com/tstapler/stelekit/commit/651d0061857556e52bd825a28b2377df2820ce4d))
+
+
+### Bug Fixes
+
+* **lint:** use mutableIntStateOf for selectedTab in ReferencesPanel ([dec72d3](https://github.com/tstapler/stelekit/commit/dec72d302ae72c5ecbc4e6871df8e1772c28a877))
+
 ## [0.21.0](https://github.com/tstapler/stelekit/compare/v0.20.0...v0.21.0) (2026-05-03)
 
 
