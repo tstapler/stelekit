@@ -531,7 +531,8 @@ data class DateRange(
 data class SearchedPage(
     val page: Page,
     val snippet: String? = null,
-    val bm25Score: Double = 0.0
+    val bm25Score: Double = 0.0,
+    val backlinkCount: Int = 0
 )
 
 /** A block result with an optional snippet and raw BM25 score from FTS5. */

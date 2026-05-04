@@ -68,6 +68,9 @@ class SqlDelightBlockRepository(
 
     private val hierarchyTtlMs = 120_000L // 2 minutes
 
+    private fun extractWikilinks(content: String): Set<String> =
+        WIKILINK_REGEX.findAll(content).map { it.groupValues[1].trim() }.toHashSet()
+
     override fun getBlockByUuid(uuid: String): Flow<Either<DomainError, Block?>> =
         queries.selectBlockByUuid(uuid)
             .asFlow()
@@ -269,6 +272,7 @@ class SqlDelightBlockRepository(
                 block.contentHash ?: ContentHasher.sha256ForContent(block.content),
                 block.blockType
             )
+            extractWikilinks(block.content).forEach { queries.recomputeBacklinkCountForPage(it) }
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -280,8 +284,12 @@ class SqlDelightBlockRepository(
     override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {
             try {
+                val oldContent = blockCache.get(blockUuid)?.content
+                    ?: queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()?.content ?: ""
                 queries.updateBlockContent(content, Clock.System.now().toEpochMilliseconds(), ContentHasher.sha256ForContent(content), blockUuid)
                 blockCache.remove(blockUuid)
+                val changedPages = extractWikilinks(oldContent) + extractWikilinks(content)
+                changedPages.forEach { queries.recomputeBacklinkCountForPage(it) }
                 Unit.right()
             } catch (e: CancellationException) {
                 throw e
@@ -308,13 +316,18 @@ class SqlDelightBlockRepository(
         try {
             val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
             if (block != null) {
+                val wikilinkPages = mutableSetOf<String>()
+                wikilinkPages.addAll(extractWikilinks(block.content))
                 if (deleteChildren) {
                     val uuidsToDelete = mutableListOf<String>(block.uuid)
                     var index = 0
                     while (index < uuidsToDelete.size) {
                         val currentUuid = uuidsToDelete[index]
                         val children = queries.selectBlockChildren(currentUuid, Long.MAX_VALUE, 0L).executeAsList()
-                        children.forEach { uuidsToDelete.add(it.uuid) }
+                        children.forEach { child ->
+                            uuidsToDelete.add(child.uuid)
+                            wikilinkPages.addAll(extractWikilinks(child.content))
+                        }
                         index++
                     }
 
@@ -334,7 +347,7 @@ class SqlDelightBlockRepository(
                     }
                     queries.deleteBlockByUuid(block.uuid)
                 }
-
+                wikilinkPages.forEach { queries.recomputeBacklinkCountForPage(it) }
             }
             Unit.right()
         } catch (e: CancellationException) {
@@ -346,9 +359,11 @@ class SqlDelightBlockRepository(
 
     override suspend fun deleteBulk(blockUuids: List<String>, deleteChildren: Boolean): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
+            val wikilinkPages = mutableSetOf<String>()
             queries.transaction {
                 blockUuids.forEach { uuid ->
                     val block = queries.selectBlockByUuid(uuid).executeAsOneOrNull() ?: return@forEach
+                    wikilinkPages.addAll(extractWikilinks(block.content))
                     if (deleteChildren) {
                         // Collect the full subtree
                         val uuidsToDelete = mutableListOf(block.uuid)
@@ -356,7 +371,10 @@ class SqlDelightBlockRepository(
                         while (index < uuidsToDelete.size) {
                             val currentUuid = uuidsToDelete[index]
                             val children = queries.selectBlockChildren(currentUuid, Long.MAX_VALUE, 0L).executeAsList()
-                            children.forEach { uuidsToDelete.add(it.uuid) }
+                            children.forEach { child ->
+                                uuidsToDelete.add(child.uuid)
+                                wikilinkPages.addAll(extractWikilinks(child.content))
+                            }
                             index++
                         }
                         // Chain repair for the top-level block being deleted
@@ -374,6 +392,7 @@ class SqlDelightBlockRepository(
                         queries.deleteBlockByUuid(block.uuid)
                     }
                 }
+                wikilinkPages.forEach { queries.recomputeBacklinkCountForPage(it) }
             }
             Unit.right()
         } catch (e: CancellationException) {
@@ -1014,5 +1033,9 @@ class SqlDelightBlockRepository(
         blockCache.invalidateAll()
         hierarchyCache.invalidateAll()
         ancestorsCache.invalidateAll()
+    }
+
+    companion object {
+        private val WIKILINK_REGEX = Regex("""\[\[([^\]]+)\]\]""")
     }
 }

@@ -198,33 +198,66 @@ class SqlDelightSearchRepository(
             val scope = searchRequest.scope
             val dataTypes = searchRequest.dataTypes
 
+            val dateRange = searchRequest.dateRange
+            val startMs = dateRange?.startDate?.toEpochMilliseconds() ?: 0L
+            val endMs = dateRange?.endDate?.toEpochMilliseconds() ?: Long.MAX_VALUE
+
             // ── Page search ────────────────────────────────────────────────
             val searchedPages: List<SearchedPage> = if (
                 scope != SearchScope.BLOCKS_ONLY &&
                 DataType.TITLES in dataTypes
             ) {
                 try {
-                    val andPages = queries.searchPagesByNameFts(
-                        query = ftsQuery,
-                        limit = searchRequest.limit.toLong()
-                    ).executeAsList()
-                    val pageRows = if (andPages.isNotEmpty()) {
-                        andPages
-                    } else {
-                        val orQuery = FtsQueryBuilder.buildOr(rawQuery)
-                        if (orQuery.isEmpty()) emptyList()
-                        else queries.searchPagesByNameFts(
-                            query = orQuery,
+                    if (dateRange != null) {
+                        // Date-ranged page search
+                        val andPages = queries.searchPagesByNameFtsInDateRange(
+                            query = ftsQuery,
+                            startMs = startMs,
+                            endMs = endMs,
                             limit = searchRequest.limit.toLong()
                         ).executeAsList()
+                        val pageRows = if (andPages.isNotEmpty()) {
+                            andPages
+                        } else {
+                            val orQuery = FtsQueryBuilder.buildOr(rawQuery)
+                            if (orQuery.isEmpty()) emptyList()
+                            else queries.searchPagesByNameFtsInDateRange(
+                                query = orQuery,
+                                startMs = startMs,
+                                endMs = endMs,
+                                limit = searchRequest.limit.toLong()
+                            ).executeAsList()
+                        }
+                        pageRows.map { row ->
+                            SearchedPage(
+                                page = row.toPageModel(),
+                                snippet = row.highlight?.takeIf { it.isNotBlank() },
+                                bm25Score = row.bm25_score
+                            )
+                        }.applyPageScope(scope, searchRequest.pageUuid)
+                    } else {
+                        val andPages = queries.searchPagesByNameFts(
+                            query = ftsQuery,
+                            limit = searchRequest.limit.toLong()
+                        ).executeAsList()
+                        val pageRows = if (andPages.isNotEmpty()) {
+                            andPages
+                        } else {
+                            val orQuery = FtsQueryBuilder.buildOr(rawQuery)
+                            if (orQuery.isEmpty()) emptyList()
+                            else queries.searchPagesByNameFts(
+                                query = orQuery,
+                                limit = searchRequest.limit.toLong()
+                            ).executeAsList()
+                        }
+                        pageRows.map { row ->
+                            SearchedPage(
+                                page = row.toPageModel(),
+                                snippet = row.highlight?.takeIf { it.isNotBlank() },
+                                bm25Score = row.bm25_score
+                            )
+                        }.applyPageScope(scope, searchRequest.pageUuid)
                     }
-                    pageRows.map { row ->
-                        SearchedPage(
-                            page = row.toPageModel(),
-                            snippet = row.highlight?.takeIf { it.isNotBlank() },
-                            bm25Score = row.bm25_score
-                        )
-                    }.applyPageScope(scope, searchRequest.pageUuid)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
@@ -236,6 +269,20 @@ class SqlDelightSearchRepository(
                         .applyPageScope(scope, searchRequest.pageUuid)
                 }
             } else emptyList()
+
+            // Read precomputed backlink counts from the pages.backlink_count column (O(1) per page).
+            // The column is populated by the pages_backlink_count migration and refreshed by rebuildFts.
+            val backlinkMap: Map<String, Int> = if (searchedPages.isNotEmpty()) {
+                runCatching {
+                    queries.selectBacklinkCountsForPages(searchedPages.map { it.page.uuid }.toSet())
+                        .executeAsList()
+                        .associate { it.page_name to it.backlink_count.toInt() }
+                }.getOrDefault(emptyMap())
+            } else emptyMap()
+
+            val searchedPagesWithBacklinks = searchedPages.map { sp ->
+                sp.copy(backlinkCount = backlinkMap[sp.page.name] ?: 0)
+            }
 
             // ── Block search ───────────────────────────────────────────────
             val searchedBlocks: List<SearchedBlock> = if (
@@ -262,29 +309,60 @@ class SqlDelightSearchRepository(
                             } else emptyList()
                         }
                         else -> {
-                            val andBlocks = queries.searchBlocksByContentFts(
-                                query = ftsQuery,
-                                limit = searchRequest.limit.toLong(),
-                                offset = searchRequest.offset.toLong()
-                            ).executeAsList()
-                            val blockRows = if (andBlocks.isNotEmpty()) {
-                                andBlocks
-                            } else {
-                                val orQuery = FtsQueryBuilder.buildOr(rawQuery)
-                                if (orQuery.isEmpty()) emptyList()
-                                else queries.searchBlocksByContentFts(
-                                    query = orQuery,
+                            if (dateRange != null) {
+                                // Date-ranged block search
+                                val andBlocks = queries.searchBlocksByContentFtsInDateRange(
+                                    query = ftsQuery,
+                                    startMs = startMs,
+                                    endMs = endMs,
                                     limit = searchRequest.limit.toLong(),
                                     offset = searchRequest.offset.toLong()
                                 ).executeAsList()
+                                val blockRows = if (andBlocks.isNotEmpty()) {
+                                    andBlocks
+                                } else {
+                                    val orQuery = FtsQueryBuilder.buildOr(rawQuery)
+                                    if (orQuery.isEmpty()) emptyList()
+                                    else queries.searchBlocksByContentFtsInDateRange(
+                                        query = orQuery,
+                                        startMs = startMs,
+                                        endMs = endMs,
+                                        limit = searchRequest.limit.toLong(),
+                                        offset = searchRequest.offset.toLong()
+                                    ).executeAsList()
+                                }
+                                blockRows.map { row ->
+                                    SearchedBlock(
+                                        block = row.toBlockModel(),
+                                        snippet = row.highlight?.takeIf { it.isNotBlank() },
+                                        bm25Score = row.bm25_score
+                                    )
+                                }.applyBlockScope(scope)
+                            } else {
+                                val andBlocks = queries.searchBlocksByContentFts(
+                                    query = ftsQuery,
+                                    limit = searchRequest.limit.toLong(),
+                                    offset = searchRequest.offset.toLong()
+                                ).executeAsList()
+                                val blockRows = if (andBlocks.isNotEmpty()) {
+                                    andBlocks
+                                } else {
+                                    val orQuery = FtsQueryBuilder.buildOr(rawQuery)
+                                    if (orQuery.isEmpty()) emptyList()
+                                    else queries.searchBlocksByContentFts(
+                                        query = orQuery,
+                                        limit = searchRequest.limit.toLong(),
+                                        offset = searchRequest.offset.toLong()
+                                    ).executeAsList()
+                                }
+                                blockRows.map { row ->
+                                    SearchedBlock(
+                                        block = row.toBlockModel(),
+                                        snippet = row.highlight?.takeIf { it.isNotBlank() },
+                                        bm25Score = row.bm25_score
+                                    )
+                                }.applyBlockScope(scope)
                             }
-                            blockRows.map { row ->
-                                SearchedBlock(
-                                    block = row.toBlockModel(),
-                                    snippet = row.highlight?.takeIf { it.isNotBlank() },
-                                    bm25Score = row.bm25_score
-                                )
-                            }.applyBlockScope(scope)
                         }
                     }
                 } catch (e: CancellationException) {
@@ -300,7 +378,7 @@ class SqlDelightSearchRepository(
             val nowMs = HistogramWriter.epochMs()
 
             // Batch-fetch visit data for all result UUIDs — single IN query, not N+1
-            val allResultUuids = searchedPages.map { it.page.uuid } +
+            val allResultUuids = searchedPagesWithBacklinks.map { it.page.uuid } +
                 searchedBlocks.map { it.block.pageUuid }
             val visitMap: Map<String, Long> = if (allResultUuids.isEmpty()) emptyMap()
             else runCatching {
@@ -309,13 +387,13 @@ class SqlDelightSearchRepository(
                     .associate { it.page_uuid to it.last_visited_at }
             }.getOrDefault(emptyMap())
 
-            val rankedRaw = buildRankedList(searchedPages, searchedBlocks, neighbourPageUuids, visitMap, nowMs)
+            val rankedRaw = buildRankedList(searchedPagesWithBacklinks, searchedBlocks, neighbourPageUuids, visitMap, nowMs)
             val ranked = promoteExactTitleMatch(rankedRaw, rawQuery)
             emit(SearchResult(
                 blocks = searchedBlocks.map { it.block },
-                pages = searchedPages.map { it.page },
+                pages = searchedPagesWithBacklinks.map { it.page },
                 searchedBlocks = searchedBlocks,
-                searchedPages = searchedPages,
+                searchedPages = searchedPagesWithBacklinks,
                 ranked = ranked,
                 totalCount = ranked.size,
                 hasMore = false
@@ -446,11 +524,15 @@ class SqlDelightSearchRepository(
                     writeActor.execute(priority = DatabaseWriteActor.Priority.LOW) {
                         sqlDriver.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('rebuild')", 0)
                         sqlDriver.execute(null, "INSERT INTO pages_fts(pages_fts) VALUES('rebuild')", 0)
+                        @OptIn(DirectSqlWrite::class)
+                        restricted.recomputeAllBacklinkCounts()
                         Unit.right()
                     }
                 } else {
                     sqlDriver.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('rebuild')", 0)
                     sqlDriver.execute(null, "INSERT INTO pages_fts(pages_fts) VALUES('rebuild')", 0)
+                    @OptIn(DirectSqlWrite::class)
+                    restricted.recomputeAllBacklinkCounts()
                     Unit.right()
                 }
             } catch (e: CancellationException) {
@@ -555,6 +637,36 @@ class SqlDelightSearchRepository(
             isFavorite = is_favorite == 1L,
             isJournal = is_journal == 1L,
             journalDate = journal_date?.let { kotlinx.datetime.LocalDate.parse(it) }
+        )
+
+    private fun dev.stapler.stelekit.db.SearchPagesByNameFtsInDateRange.toPageModel(): Page =
+        Page(
+            uuid = uuid,
+            name = name,
+            namespace = namespace,
+            filePath = file_path,
+            createdAt = Instant.fromEpochMilliseconds(created_at),
+            updatedAt = Instant.fromEpochMilliseconds(updated_at),
+            version = version,
+            properties = emptyMap(),
+            isFavorite = is_favorite == 1L,
+            isJournal = is_journal == 1L,
+            journalDate = journal_date?.let { kotlinx.datetime.LocalDate.parse(it) }
+        )
+
+    private fun dev.stapler.stelekit.db.SearchBlocksByContentFtsInDateRange.toBlockModel(): Block =
+        Block(
+            uuid = uuid,
+            pageUuid = page_uuid,
+            parentUuid = parent_uuid,
+            leftUuid = left_uuid,
+            content = content,
+            level = level.toInt(),
+            position = position.toInt(),
+            createdAt = Instant.fromEpochMilliseconds(created_at),
+            updatedAt = Instant.fromEpochMilliseconds(updated_at),
+            version = version,
+            properties = parseProperties(properties)
         )
 
     private fun dev.stapler.stelekit.db.Pages.toPageModel(): Page =

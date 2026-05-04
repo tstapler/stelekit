@@ -15,7 +15,7 @@ package dev.stapler.stelekit.search
  */
 object FtsQueryBuilder {
 
-    private val STRIP_CHARS = Regex("""[-:^~{}\[\]!]""")
+    private val STRIP_CHARS = Regex("""[-:^~{}\[\]!#]""")
     private val LEADING_OPERATORS = setOf("AND", "OR", "NOT")
 
     /**

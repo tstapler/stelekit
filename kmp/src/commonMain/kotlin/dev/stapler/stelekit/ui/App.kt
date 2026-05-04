@@ -525,7 +525,7 @@ private fun GraphContent(
         LibraryStatsViewModel(libraryStatsProvider, graphManager.getActiveGraphInfo()?.path ?: "")
     }
     val searchViewModel = remember {
-        SearchViewModel(repos.searchRepository)
+        SearchViewModel(repos.searchRepository, pageRepository = repos.pageRepository)
     }
 
     // Cancel all ViewModel scopes when GraphContent leaves composition (key(activeGraphId) re-keys).
@@ -774,6 +774,7 @@ private fun GraphContent(
                         deviceLlmAvailable = deviceLlmAvailable,
                         frameMetric = frameMetricState,
                         debugState = debugMenuState,
+                        loadPageBlocks = repos.blockRepository::getBlocksForPage,
                         onDebugStateChange = { newState ->
                             debugMenuState = newState
                             viewModel.onDebugMenuStateChange(newState)
@@ -988,6 +989,7 @@ private fun GraphDialogLayer(
     deviceLlmAvailable: Boolean = false,
     frameMetric: kotlinx.coroutines.flow.StateFlow<dev.stapler.stelekit.performance.FrameMetric>,
     debugState: DebugMenuState = DebugMenuState(),
+    loadPageBlocks: (String) -> kotlinx.coroutines.flow.Flow<arrow.core.Either<dev.stapler.stelekit.error.DomainError, List<Block>>> = { kotlinx.coroutines.flow.flowOf(arrow.core.Either.Right(emptyList())) },
     onDebugStateChange: (DebugMenuState) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
@@ -1007,7 +1009,8 @@ private fun GraphDialogLayer(
         onNavigateToBlock = { viewModel.navigateToBlock(it) },
         onCreatePage = { viewModel.navigateToPageByName(it) },
         initialQuery = appState.searchDialogInitialQuery,
-        isIndexing = indexingProgress is IndexingState.InProgress
+        isIndexing = indexingProgress is IndexingState.InProgress,
+        loadPageBlocks = loadPageBlocks
     )
 
     SettingsDialog(
