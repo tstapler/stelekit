@@ -66,7 +66,7 @@ fun ReferencesPanel(
     val pageSize = 20
     val scope = rememberCoroutineScope()
 
-    var selectedTab by remember { mutableStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(0) }
 
     // Linked references state
     var linkedOffset by remember { mutableIntStateOf(0) }
