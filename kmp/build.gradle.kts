@@ -65,6 +65,7 @@ kotlin {
                 // SQLDelight
                 implementation("app.cash.sqldelight:runtime:2.3.2")
                 implementation("app.cash.sqldelight:coroutines-extensions:2.3.2")
+                implementation("app.cash.sqldelight:async-extensions:2.3.2")
 
                 // Compose Multiplatform
                 implementation("org.jetbrains.compose.runtime:runtime:1.7.3")
