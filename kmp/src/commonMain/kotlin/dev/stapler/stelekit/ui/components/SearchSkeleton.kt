@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 private val widthFractions = listOf(0.55f, 0.75f, 0.40f, 0.65f, 0.80f, 0.45f)
 
 @Composable
-fun SearchSkeletonList(rowCount: Int = 6) {
+fun SearchSkeletonList(modifier: Modifier = Modifier, rowCount: Int = 6) {
     val infiniteTransition = rememberInfiniteTransition(label = "skeleton")
     val animatedAlpha by infiniteTransition.animateFloat(
         initialValue = 0.3f,

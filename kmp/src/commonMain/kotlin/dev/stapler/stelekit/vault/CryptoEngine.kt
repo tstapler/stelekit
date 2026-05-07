@@ -48,6 +48,20 @@ interface CryptoEngine {
      */
     fun secureRandom(length: Int): ByteArray
 
+    /** HMAC-SHA256: returns 32-byte MAC of [data] under [key]. */
+    fun hmacSha256(key: ByteArray, data: ByteArray): ByteArray
+
+    /**
+     * Constant-time byte array comparison. Default is a pure-Kotlin XOR-fold;
+     * platform implementations may delegate to a native constant-time primitive.
+     */
+    fun constantTimeEquals(a: ByteArray, b: ByteArray): Boolean {
+        if (a.size != b.size) return false
+        var diff = 0
+        for (i in a.indices) diff = diff or (a[i].toInt() xor b[i].toInt())
+        return diff == 0
+    }
+
     /**
      * Zero-fill [bytes] in place to reduce window for memory dumps.
      * Best-effort on JVM (GC may have copied the array).

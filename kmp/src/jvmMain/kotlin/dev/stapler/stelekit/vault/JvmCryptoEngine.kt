@@ -6,6 +6,7 @@ import org.bouncycastle.crypto.params.Argon2Parameters
 import org.bouncycastle.crypto.params.HKDFParameters
 import org.bouncycastle.crypto.digests.SHA256Digest
 import javax.crypto.Cipher
+import javax.crypto.Mac
 import javax.crypto.spec.ChaCha20ParameterSpec
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -75,6 +76,15 @@ class JvmCryptoEngine : CryptoEngine {
         generator.generateBytes(password, output, 0, outputLength)
         return output
     }
+
+    override fun hmacSha256(key: ByteArray, data: ByteArray): ByteArray {
+        val mac = Mac.getInstance("HmacSHA256")
+        mac.init(SecretKeySpec(key, "HmacSHA256"))
+        return mac.doFinal(data)
+    }
+
+    override fun constantTimeEquals(a: ByteArray, b: ByteArray): Boolean =
+        java.security.MessageDigest.isEqual(a, b)
 
     override fun secureRandom(length: Int): ByteArray {
         val bytes = ByteArray(length)

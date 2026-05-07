@@ -3,15 +3,11 @@ package dev.stapler.stelekit.vault
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 
 /**
  * Manages vault header lifecycle: create, unlock, lock, keyslot add/remove.
@@ -26,8 +22,6 @@ class VaultManager(
     private val fileReadBytes: (path: String) -> ByteArray?,
     private val fileWriteBytes: (path: String, data: ByteArray) -> Boolean,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
     private val _vaultEvents = MutableSharedFlow<VaultEvent>(replay = 1, extraBufferCapacity = 8)
     val vaultEvents: SharedFlow<VaultEvent> = _vaultEvents.asSharedFlow()
 
@@ -323,15 +317,11 @@ class VaultManager(
             length = 32,
         )
 
-    private fun computeHeaderMac(macKey: ByteArray, data: ByteArray): ByteArray {
-        val mac = Mac.getInstance("HmacSHA256")
-        mac.init(SecretKeySpec(macKey, "HmacSHA256"))
-        return mac.doFinal(data)
-    }
+    private fun computeHeaderMac(macKey: ByteArray, data: ByteArray): ByteArray =
+        crypto.hmacSha256(macKey, data)
 
-    /** Constant-time byte array comparison to prevent timing oracles. */
     private fun constantTimeEquals(a: ByteArray, b: ByteArray): Boolean =
-        java.security.MessageDigest.isEqual(a, b)
+        crypto.constantTimeEquals(a, b)
 
     companion object {
         fun vaultFilePath(graphPath: String): String {
@@ -346,4 +336,4 @@ class VaultManager(
     }
 }
 
-private fun CharArray.toByteArray(): ByteArray = String(this).encodeToByteArray()
+private fun CharArray.toByteArray(): ByteArray = this.concatToString().encodeToByteArray()
