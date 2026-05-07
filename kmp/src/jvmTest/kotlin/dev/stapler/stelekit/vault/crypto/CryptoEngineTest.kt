@@ -108,17 +108,22 @@ class CryptoEngineTest {
         assertFalse(a.contentEquals(b))
     }
 
-    // CE-13 — Argon2id known-vector test (RFC 9106 §B test vector for Argon2id)
-    // Using the simplified test vector: password="password", salt="somesalt", t=1, m=65536, p=4
-    // Expected output verified against BouncyCastle reference implementation.
+    // CE-13 — Argon2id regression vector (BouncyCastle-specific output)
+    // Verifies that the BouncyCastle implementation produces stable, deterministic output.
+    // Note: this vector was captured from the BouncyCastle Argon2id implementation (version 0x10)
+    // and may differ from the RFC 9106 reference implementation which targets version 0x13.
+    // Parameters: password="password", salt="somesalt", m=65536 KiB, t=2, p=1, output=32 bytes
     @Test fun `argon2id known-vector test`() {
         val pw = "password".encodeToByteArray()
         val salt = "somesalt".encodeToByteArray()
-        // Argon2id with t=2, m=65536 KiB, p=1 produces a known output
+        val expected = byteArrayOf(
+            9, 49, 97, 21, -43, -49, 36, -19,
+            90, 21, -93, 26, 59, -93, 38, -27,
+            -49, 50, -19, -62, 71, 2, -104, 124,
+            2, -74, 86, 111, 97, -111, 60, -9,
+        )
         val result = engine.argon2id(pw, salt, memory = 65536, iterations = 2, parallelism = 1, outputLength = 32)
-        assertEquals(32, result.size)
-        // Verify non-zero (BouncyCastle produces deterministic output for known inputs)
-        assertTrue(result.any { it != 0.toByte() }, "argon2id output must not be all zeros")
+        assertContentEquals(expected, result, "argon2id output must match known test vector")
     }
 
     // CE-14 — secureRandom produces non-zero bytes (probabilistic)

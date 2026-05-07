@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -24,7 +25,12 @@ class VaultManager(
     private val fileReadBytes: (path: String) -> ByteArray?,
     private val fileWriteBytes: (path: String, data: ByteArray) -> Boolean,
 ) {
-    private val _vaultEvents = MutableSharedFlow<VaultEvent>(replay = 1, extraBufferCapacity = 8)
+    // DROP_OLDEST ensures tryEmit always succeeds from non-suspend lock(); Locked is never silently dropped.
+    private val _vaultEvents = MutableSharedFlow<VaultEvent>(
+        replay = 1,
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
     val vaultEvents: SharedFlow<VaultEvent> = _vaultEvents.asSharedFlow()
 
     // @Volatile so that lock() on any thread is immediately visible to currentDek() callers.
@@ -41,8 +47,7 @@ class VaultManager(
     /**
      * Create a new vault at [graphPath]/.stele-vault with a single passphrase keyslot.
      *
-     * [argon2Params] defaults to [TEST_ARGON2_PARAMS] — callers should supply
-     * [DEFAULT_ARGON2_PARAMS] or a calibrated set for production use.
+     * [argon2Params] defaults to [DEFAULT_ARGON2_PARAMS]; supply a calibrated set for production use.
      */
     suspend fun createVault(
         graphPath: String,
@@ -71,6 +76,7 @@ class VaultManager(
             )
             val partialBytes = VaultHeaderSerializer.serialize(header)
             val mac = computeHeaderMac(macKey, partialBytes.sliceArray(0 until VaultHeader.MAC_AUTHENTICATED_SIZE))
+            crypto.clearBytes(macKey)
             val finalHeader = header.copy(headerMac = mac)
             val headerBytes = VaultHeaderSerializer.serialize(finalHeader)
 
@@ -150,6 +156,7 @@ class VaultManager(
                             macKey,
                             rawBytes.sliceArray(0 until VaultHeader.MAC_AUTHENTICATED_SIZE)
                         )
+                        crypto.clearBytes(macKey)
                         if (constantTimeEquals(expectedMac, header.headerMac)) {
                             validDek = dek
                             validNamespace = ns
@@ -157,6 +164,7 @@ class VaultManager(
                             macFailed = true
                             crypto.clearBytes(dek)
                         }
+                        crypto.clearBytes(expectedMac)
                     }
                     crypto.clearBytes(plaintext)
                 } catch (_: VaultAuthException) {
@@ -219,8 +227,20 @@ class VaultManager(
                 is Either.Right -> r.value
             }
 
+            // Verify the provided DEK is correct before mutating any slots.
+            // Without this check, a caller with a wrong DEK could overwrite active slots
+            // because the marker comparison would fail for all slots (false negatives).
+            val verifyMacKey = deriveHeaderMacKey(dek)
+            val actualMac = computeHeaderMac(verifyMacKey, rawBytes.sliceArray(0 until VaultHeader.MAC_AUTHENTICATED_SIZE))
+            crypto.clearBytes(verifyMacKey)
+            val dekValid = constantTimeEquals(actualMac, header.headerMac)
+            crypto.clearBytes(actualMac)
+            if (!dekValid) {
+                return@withContext VaultError.InvalidCredential("Provided DEK does not match vault header").left()
+            }
+
             val targetSlots = namespaceSlotRange(namespace)
-            // A slot is "mine" if its reserved[0] matches the DEK-derived marker for that index.
+            // A slot is "mine" if its reserved[0..3] matches the 4-byte DEK-derived marker.
             // Slots without the marker (decoy slots) are safe to overwrite.
             val emptySlotIndex = targetSlots.firstOrNull { index ->
                 !isSlotMine(header.keyslots[index], dek, index)
@@ -266,6 +286,7 @@ class VaultManager(
         val partialBytes = VaultHeaderSerializer.serialize(header.copy(headerMac = ByteArray(VaultHeader.MAC_SIZE)))
         val macKey = deriveHeaderMacKey(dek)
         val mac = computeHeaderMac(macKey, partialBytes.sliceArray(0 until VaultHeader.MAC_AUTHENTICATED_SIZE))
+        crypto.clearBytes(macKey)
         val finalHeader = header.copy(headerMac = mac)
         val headerBytes = VaultHeaderSerializer.serialize(finalHeader)
         return if (fileWriteBytes(vaultPath, headerBytes)) {
@@ -284,43 +305,50 @@ class VaultManager(
     ): Keyslot {
         val salt = crypto.secureRandom(Keyslot.SALT_SIZE)
         val passwordBytes = passphrase.toByteArray()
-        val keyslotKey = crypto.argon2id(
-            password = passwordBytes,
-            salt = salt,
-            memory = argon2Params.memory,
-            iterations = argon2Params.iterations,
-            parallelism = argon2Params.parallelism,
-            outputLength = 32,
-        )
-        crypto.clearBytes(passwordBytes)
+        var keyslotKey = byteArrayOf()
+        var plaintext = byteArrayOf()
+        var markerKey = byteArrayOf()
+        try {
+            keyslotKey = crypto.argon2id(
+                password = passwordBytes,
+                salt = salt,
+                memory = argon2Params.memory,
+                iterations = argon2Params.iterations,
+                parallelism = argon2Params.parallelism,
+                outputLength = 32,
+            )
 
-        // plaintext = DEK (32 bytes) + namespace_tag (1 byte) + provider_type (1 byte)
-        val plaintext = dek + byteArrayOf(namespace.tag, Keyslot.PROVIDER_PASSPHRASE)
-        val nonce = crypto.secureRandom(Keyslot.NONCE_SIZE)
-        val blob = crypto.encryptAEAD(keyslotKey, nonce, plaintext, byteArrayOf())
-        crypto.clearBytes(keyslotKey)
-        crypto.clearBytes(plaintext)
+            // plaintext = DEK (32 bytes) + namespace_tag (1 byte) + provider_type (1 byte)
+            plaintext = dek + byteArrayOf(namespace.tag, Keyslot.PROVIDER_PASSPHRASE)
+            val nonce = crypto.secureRandom(Keyslot.NONCE_SIZE)
+            val blob = crypto.encryptAEAD(keyslotKey, nonce, plaintext, byteArrayOf())
 
-        // reserved[0]: DEK-derived marker so addKeyslot can find slots it owns without
-        // needing a plaintext providerType byte. Adversaries without the DEK cannot verify
-        // this marker, preserving deniability for slots in other namespaces.
-        val reserved = crypto.secureRandom(Keyslot.RESERVED_SIZE)
-        val markerKey = crypto.hkdfSha256(
-            ikm = dek,
-            salt = "slot-marker-v1".encodeToByteArray(),
-            info = byteArrayOf(slotIndex.toByte()),
-            length = 1,
-        )
-        reserved[0] = markerKey[0]
-        crypto.clearBytes(markerKey)
+            // reserved[0..3]: 4-byte DEK-derived marker so addKeyslot can find owned slots
+            // without a plaintext providerType byte (1/2^32 false-positive rate for decoy slots).
+            // Adversaries without the DEK cannot verify this marker — deniability is preserved.
+            val reserved = crypto.secureRandom(Keyslot.RESERVED_SIZE)
+            markerKey = crypto.hkdfSha256(
+                ikm = dek,
+                salt = "slot-marker-v1".encodeToByteArray(),
+                info = byteArrayOf(slotIndex.toByte()),
+                length = 4,
+            )
+            reserved[0] = markerKey[0]; reserved[1] = markerKey[1]
+            reserved[2] = markerKey[2]; reserved[3] = markerKey[3]
 
-        return Keyslot(
-            salt = salt,
-            argon2Params = argon2Params,
-            encryptedDekBlob = blob,
-            slotNonce = nonce,
-            reserved = reserved,
-        )
+            return Keyslot(
+                salt = salt,
+                argon2Params = argon2Params,
+                encryptedDekBlob = blob,
+                slotNonce = nonce,
+                reserved = reserved,
+            )
+        } finally {
+            crypto.clearBytes(passwordBytes)
+            crypto.clearBytes(keyslotKey)
+            crypto.clearBytes(plaintext)
+            crypto.clearBytes(markerKey)
+        }
     }
 
     private fun randomSlot(): Keyslot = Keyslot(
@@ -332,20 +360,21 @@ class VaultManager(
     )
 
     /**
-     * A slot is "mine" if [reserved][0] matches the HKDF marker derived from [dek] and [slotIndex].
-     * Decoy slots have random reserved bytes that will not match. An adversary without the DEK
-     * cannot verify this marker, so it reveals nothing about the number of active slots.
+     * A slot is "mine" if [reserved][0..3] matches the 4-byte HKDF marker derived from [dek] and [slotIndex].
+     * Decoy slots have random reserved bytes; the probability of a false positive is 1/2^32.
+     * An adversary without the DEK cannot verify this marker, so it reveals nothing about active slots.
      */
     private fun isSlotMine(slot: Keyslot, dek: ByteArray, slotIndex: Int): Boolean {
         val markerKey = crypto.hkdfSha256(
             ikm = dek,
             salt = "slot-marker-v1".encodeToByteArray(),
             info = byteArrayOf(slotIndex.toByte()),
-            length = 1,
+            length = 4,
         )
-        val expected = markerKey[0]
+        val matches = slot.reserved[0] == markerKey[0] && slot.reserved[1] == markerKey[1] &&
+                      slot.reserved[2] == markerKey[2] && slot.reserved[3] == markerKey[3]
         crypto.clearBytes(markerKey)
-        return slot.reserved[0] == expected
+        return matches
     }
 
     private fun namespaceFirstSlot(namespace: VaultNamespace) = when (namespace) {
@@ -392,21 +421,31 @@ class VaultManager(
  * which differs from standard UTF-8 but is deterministic and acceptable for passphrase hashing.
  */
 private fun CharArray.toByteArray(): ByteArray {
-    val out = ArrayList<Byte>(this.size * 2)
+    // First pass: count output bytes to avoid boxing via ArrayList<Byte>
+    var byteCount = 0
+    for (c in this) {
+        byteCount += when {
+            c.code < 0x80 -> 1
+            c.code < 0x800 -> 2
+            else -> 3
+        }
+    }
+    val out = ByteArray(byteCount)
+    var i = 0
     for (c in this) {
         val code = c.code
         when {
-            code < 0x80 -> out.add(code.toByte())
+            code < 0x80 -> { out[i++] = code.toByte() }
             code < 0x800 -> {
-                out.add((0xC0 or (code shr 6)).toByte())
-                out.add((0x80 or (code and 0x3F)).toByte())
+                out[i++] = (0xC0 or (code shr 6)).toByte()
+                out[i++] = (0x80 or (code and 0x3F)).toByte()
             }
             else -> {
-                out.add((0xE0 or (code shr 12)).toByte())
-                out.add((0x80 or ((code shr 6) and 0x3F)).toByte())
-                out.add((0x80 or (code and 0x3F)).toByte())
+                out[i++] = (0xE0 or (code shr 12)).toByte()
+                out[i++] = (0x80 or ((code shr 6) and 0x3F)).toByte()
+                out[i++] = (0x80 or (code and 0x3F)).toByte()
             }
         }
     }
-    return out.toByteArray()
+    return out
 }

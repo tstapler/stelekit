@@ -75,6 +75,6 @@ class VaultHeaderSerializerTest {
             totalNonZeroFraction += nonZeroCount.toDouble() / slotArea.size
         }
         val avgNonZero = totalNonZeroFraction / 10
-        assertTrue(avgNonZero >= 0.5, "Expected at least 50% non-zero bytes in random slot area, got $avgNonZero")
+        assertTrue(avgNonZero >= 0.95, "Expected at least 95% non-zero bytes in random slot area, got $avgNonZero")
     }
 }

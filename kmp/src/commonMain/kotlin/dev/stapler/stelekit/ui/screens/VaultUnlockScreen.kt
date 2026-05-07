@@ -28,6 +28,12 @@ import dev.stapler.stelekit.vault.VaultNamespace
  *
  * "Open alternate graph" is a subtle secondary action below the main form; it does not
  * visually suggest that a hidden volume exists (plausible deniability per NFR-5).
+ *
+ * Security note (JVM): Compose state stores [passphraseText] as a JVM [String], which is
+ * heap-interned and cannot be zeroed. The string is cleared from the state immediately after
+ * [toCharArray] extracts it, but residual copies may linger in the heap until GC. On JVM,
+ * full in-memory passphrase zeroing requires a SecurePassword widget (not yet available in
+ * Compose). iOS/Android have analogous limitations with SecureField/EditText content.
  */
 @Composable
 fun VaultUnlockScreen(
@@ -44,8 +50,11 @@ fun VaultUnlockScreen(
     val isUnlocking = vaultState == VaultState.Unlocking
     val errorMessage = when (vaultState) {
         is VaultState.Error -> when (vaultState.error) {
-            is VaultError.InvalidCredential -> "Incorrect passphrase."
-            is VaultError.HeaderTampered -> "Vault header integrity check failed. The vault may have been tampered with."
+            // HeaderTampered is intentionally mapped to the same message as InvalidCredential.
+            // Distinguishing them would act as a passphrase oracle: an attacker could confirm
+            // a correct passphrase by observing the tamper-specific error.
+            is VaultError.InvalidCredential,
+            is VaultError.HeaderTampered -> "Incorrect passphrase."
             is VaultError.CorruptedFile -> "Vault file is corrupted or truncated."
             is VaultError.UnsupportedVersion -> "Unsupported vault format version."
             is VaultError.NotAVault -> "Vault file is missing or has been moved. Locate the .stele-vault file and try again."

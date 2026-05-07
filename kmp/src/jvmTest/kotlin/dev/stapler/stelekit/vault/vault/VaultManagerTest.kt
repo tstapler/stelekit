@@ -1,10 +1,11 @@
 package dev.stapler.stelekit.vault.vault
 
 import dev.stapler.stelekit.vault.*
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
+@Suppress("DEPRECATION")
 class VaultManagerTest {
     private val engine = JvmCryptoEngine()
     private val params = TEST_ARGON2_PARAMS
@@ -152,22 +153,16 @@ class VaultManagerTest {
     }
 
     // VM-09 — lock() emits VaultLocked event
+    // vaultEvents has replay=1, so the Locked event is available immediately after lock().
     @Test fun `lock emits Locked event`() = runTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
         vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
         vm.unlock(graphPath, "correct".toCharArray(), params)
-        var receivedLocked = false
-        val job = backgroundScope.launch {
-            vm.vaultEvents.collect { event ->
-                if (event is VaultManager.VaultEvent.Locked) receivedLocked = true
-            }
-        }
         vm.lock()
-        kotlinx.coroutines.delay(100)
-        job.cancel()
-        assertTrue(receivedLocked, "Expected Locked event after lock()")
+        val event = vm.vaultEvents.first { it is VaultManager.VaultEvent.Locked }
+        assertIs<VaultManager.VaultEvent.Locked>(event)
     }
 
     // VM-10 — rotateKeyslots (provider rotation): DEK unchanged, file decrypts after passphrase change
@@ -199,21 +194,20 @@ class VaultManagerTest {
         assertIs<VaultError.UnsupportedVersion>(result.leftOrNull())
     }
 
-    // VM-13 — Empty keyslot array → NoValidKeyslot
-    @Test fun `all random slots return NoValidKeyslot`() = runTest {
+    // VM-13 — All slots overwritten with random data → InvalidCredential (all AEAD decryptions fail)
+    @Test fun `all random slots return InvalidCredential`() = runTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
         vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
-        // Overwrite the keyslot area (bytes 13..2060) with random data
+        // Overwrite the keyslot area (bytes 13..2060) with random data — all AEAD tags will fail.
         val vaultPath = VaultManager.vaultFilePath(graphPath)
         val bytes = store[vaultPath]!!.copyOf()
         val randomSlotArea = engine.secureRandom(VaultHeader.KEYSLOT_COUNT * Keyslot.TOTAL_SIZE)
         randomSlotArea.copyInto(bytes, 13)
-        // Recompute MAC with zero key (or just leave it wrong — the test expects a failure)
         store[vaultPath] = bytes
         val result = vm.unlock(graphPath, "correct".toCharArray(), params)
-        assertTrue(result.isLeft())
+        assertIs<VaultError.InvalidCredential>(result.leftOrNull())
     }
 
     // VM-14 — Argon2id parameters stored in keyslot match parameters used at unlock
@@ -258,5 +252,111 @@ class VaultManagerTest {
         val r1 = vm.unlock(graphPath, "correct".toCharArray(), params).getOrNull()!!
         val r2 = vm.unlock(graphPath, "correct".toCharArray(), params).getOrNull()!!
         assertContentEquals(r1.dek, r2.dek)
+    }
+
+    // VM-16 — removeKeyslot on a locked vault returns InvalidCredential (sessionDek is null)
+    @Test fun `removeKeyslot on locked vault returns InvalidCredential`() = runTest {
+        val store = mutableMapOf<String, ByteArray>()
+        val vm = makeVaultManagerWithStore(store)
+        val graphPath = "/tmp/test-graph"
+        vm.createVault(graphPath, "original".toCharArray(), argon2Params = params)
+        // Vault is never unlocked — sessionDek is null
+        val result = vm.removeKeyslot(graphPath, 0)
+        assertIs<VaultError.InvalidCredential>(result.leftOrNull())
+    }
+
+    // VM-17 — addKeyslot with wrong DEK is rejected (MAC fails); active slots are unmodified
+    @Test fun `addKeyslot with wrong DEK is rejected without corrupting existing slots`() = runTest {
+        val store = mutableMapOf<String, ByteArray>()
+        val vm = makeVaultManagerWithStore(store)
+        val graphPath = "/tmp/test-graph"
+        vm.createVault(graphPath, "original".toCharArray(), argon2Params = params)
+        val wrongDek = engine.secureRandom(32)
+        // addKeyslot verifies the DEK via header MAC before modifying any slots.
+        // A wrong DEK cannot produce the correct MAC, so the operation must be rejected.
+        val r = vm.addKeyslot(graphPath, wrongDek, "injected".toCharArray(), argon2Params = params)
+        assertIs<VaultError.InvalidCredential>(r.leftOrNull(), "Wrong DEK must be rejected by addKeyslot")
+        // The vault must still be unlockable with the original passphrase
+        val unlock = vm.unlock(graphPath, "original".toCharArray(), params)
+        assertTrue(unlock.isRight(), "Original slot must be unmodified after rejected addKeyslot")
+    }
+
+    // VM-18 — createVault writes a non-zero hidden-reserve sentinel file
+    @Test fun `createVault writes a non-zero hidden-reserve sentinel`() = runTest {
+        val store = mutableMapOf<String, ByteArray>()
+        val vm = makeVaultManagerWithStore(store)
+        val graphPath = "/tmp/test-graph"
+        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
+        val sentinelPath = VaultManager.hiddenReserveSentinelPath(graphPath)
+        val sentinelBytes = store[sentinelPath]
+        assertNotNull(sentinelBytes, "Sentinel file must be written")
+        assertTrue(sentinelBytes.size == 256, "Sentinel must be 256 bytes")
+        assertTrue(sentinelBytes.any { it != 0.toByte() }, "Sentinel must not be all-zero")
+    }
+
+    // VM-19 — createVault with HIDDEN namespace places keyslot in slots 4–7
+    @Test fun `createVault with HIDDEN namespace places keyslot in slots 4-7`() = runTest {
+        val store = mutableMapOf<String, ByteArray>()
+        val vm = makeVaultManagerWithStore(store)
+        val graphPath = "/tmp/test-graph"
+        vm.createVault(graphPath, "hidden-pass".toCharArray(), namespace = VaultNamespace.HIDDEN, argon2Params = params)
+        val result = vm.unlock(graphPath, "hidden-pass".toCharArray(), params)
+        assertTrue(result.isRight())
+        assertEquals(VaultNamespace.HIDDEN, result.getOrNull()!!.namespace)
+    }
+
+    // VM-20 — passphrase CharArray is zeroed after createVault
+    @Test fun `createVault zeros passphrase CharArray`() = runTest {
+        val store = mutableMapOf<String, ByteArray>()
+        val vm = makeVaultManagerWithStore(store)
+        val passphrase = "correct".toCharArray()
+        vm.createVault("/tmp/test-graph", passphrase, argon2Params = params)
+        assertTrue(passphrase.all { it == ' ' }, "Passphrase must be zeroed after createVault")
+    }
+
+    // VM-21 — passphrase CharArray is zeroed after addKeyslot
+    @Test fun `addKeyslot zeros passphrase CharArray`() = runTest {
+        val store = mutableMapOf<String, ByteArray>()
+        val vm = makeVaultManagerWithStore(store)
+        val graphPath = "/tmp/test-graph"
+        val dek = vm.createVault(graphPath, "original".toCharArray(), argon2Params = params).getOrNull()!!
+        val newPassphrase = "second".toCharArray()
+        vm.addKeyslot(graphPath, dek, newPassphrase, argon2Params = params)
+        assertTrue(newPassphrase.all { it == ' ' }, "Passphrase must be zeroed after addKeyslot")
+    }
+
+    // VM-22 — Empty passphrase round-trips (zero-length input is valid but discouraged)
+    @Test fun `empty passphrase can create and unlock vault`() = runTest {
+        val store = mutableMapOf<String, ByteArray>()
+        val vm = makeVaultManagerWithStore(store)
+        vm.createVault("/tmp/test-graph", charArrayOf(), argon2Params = params)
+        val result = vm.unlock("/tmp/test-graph", charArrayOf(), params)
+        assertTrue(result.isRight(), "Empty passphrase must unlock the vault it created")
+    }
+
+    // VM-23 — Unicode emoji passphrase round-trips (BMP + non-BMP codepoints)
+    @Test fun `unicode emoji passphrase can create and unlock vault`() = runTest {
+        val store = mutableMapOf<String, ByteArray>()
+        val vm = makeVaultManagerWithStore(store)
+        // U+1F511 KEY emoji — encoded as a surrogate pair in Kotlin Char (two chars)
+        val emoji = "🔑".toCharArray()  // 🔑
+        vm.createVault("/tmp/test-graph", emoji, argon2Params = params)
+        val result = vm.unlock("/tmp/test-graph", "🔑".toCharArray(), params)
+        assertTrue(result.isRight(), "Unicode emoji passphrase must unlock the vault it created")
+    }
+
+    // VM-24 — Null-byte in passphrase is preserved (not treated as C string terminator)
+    @Test fun `null-byte passphrase differs from empty passphrase`() = runTest {
+        val store1 = mutableMapOf<String, ByteArray>()
+        val store2 = mutableMapOf<String, ByteArray>()
+        val vm1 = makeVaultManagerWithStore(store1)
+        val vm2 = makeVaultManagerWithStore(store2)
+        vm1.createVault("/tmp/test-graph", charArrayOf(' '), argon2Params = params)
+        vm2.createVault("/tmp/test-graph", charArrayOf(), argon2Params = params)
+        // Null-byte vault cannot be unlocked with empty passphrase and vice versa
+        val r1 = vm1.unlock("/tmp/test-graph", charArrayOf(), params)
+        val r2 = vm2.unlock("/tmp/test-graph", charArrayOf(' '), params)
+        assertTrue(r1.isLeft(), "Empty passphrase must not unlock null-byte vault")
+        assertTrue(r2.isLeft(), "Null-byte passphrase must not unlock empty-passphrase vault")
     }
 }

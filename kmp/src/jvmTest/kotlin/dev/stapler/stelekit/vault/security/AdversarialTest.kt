@@ -4,6 +4,7 @@ import dev.stapler.stelekit.vault.*
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
+@Suppress("DEPRECATION")
 class AdversarialTest {
     private val engine = JvmCryptoEngine()
     private val params = TEST_ARGON2_PARAMS

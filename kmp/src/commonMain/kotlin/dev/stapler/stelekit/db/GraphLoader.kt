@@ -42,9 +42,15 @@ import kotlinx.coroutines.sync.withLock
 
 /**
  * GraphLoader handles loading markdown files from disk into the database.
- * 
+ *
  * Updated to use UUID-native storage for all references.
  * Includes file system watching for auto-reload.
+ *
+ * Paranoid-mode invariant: [cryptoLayer] must be set to a [CryptoLayer] initialized with the
+ * current DEK before reading encrypted files. Setting it to null switches to plaintext mode.
+ * The caller is responsible for keeping [cryptoLayer] in sync with the vault's lock/unlock
+ * lifecycle — reading with a stale [CryptoLayer] after a DEK rotation will produce an
+ * [AuthenticationFailed] error from AEAD tag verification.
  */
 class GraphLoader(
     private val fileSystem: FileSystem,

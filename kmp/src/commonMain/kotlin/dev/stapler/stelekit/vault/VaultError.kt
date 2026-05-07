@@ -3,7 +3,7 @@ package dev.stapler.stelekit.vault
 /**
  * Vault-specific errors. Used with Arrow Either<VaultError, T> for all vault operations.
  * Not extending DomainError (sealed interface cross-package constraint); callers that need
- * DomainError can wrap via VaultError.toDomainError() extension.
+ * a DomainError can wrap the message in their own error type at the use-site.
  */
 sealed class VaultError(open val message: String) {
     /** Passphrase or key-file did not match any keyslot. */

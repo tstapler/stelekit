@@ -5,6 +5,7 @@ import dev.stapler.stelekit.vault.*
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
 
+@Suppress("DEPRECATION")
 class KeyslotIntegrityTest {
     private val engine = JvmCryptoEngine()
     private val params = TEST_ARGON2_PARAMS

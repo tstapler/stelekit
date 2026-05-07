@@ -41,16 +41,19 @@ class CryptoLayer(
     fun encrypt(relativeFilePath: String, plaintext: ByteArray): ByteArray {
         val pathBytes = relativeFilePath.encodeToByteArray()
         val subkey = cryptoEngine.hkdfSha256(dek, pathBytes, HKDF_INFO, 32)
-        val nonce = cryptoEngine.secureRandom(NONCE_SIZE)
-        val ciphertext = cryptoEngine.encryptAEAD(subkey, nonce, plaintext, pathBytes)
-        cryptoEngine.clearBytes(subkey)
+        try {
+            val nonce = cryptoEngine.secureRandom(NONCE_SIZE)
+            val ciphertext = cryptoEngine.encryptAEAD(subkey, nonce, plaintext, pathBytes)
 
-        val result = ByteArray(HEADER_SIZE + ciphertext.size)
-        STEK_MAGIC.copyInto(result, 0)
-        result[4] = STEK_VERSION
-        nonce.copyInto(result, 5)
-        ciphertext.copyInto(result, HEADER_SIZE)
-        return result
+            val result = ByteArray(HEADER_SIZE + ciphertext.size)
+            STEK_MAGIC.copyInto(result, 0)
+            result[4] = STEK_VERSION
+            nonce.copyInto(result, 5)
+            ciphertext.copyInto(result, HEADER_SIZE)
+            return result
+        } finally {
+            cryptoEngine.clearBytes(subkey)
+        }
     }
 
     /**
@@ -75,14 +78,14 @@ class CryptoLayer(
         val ciphertext = raw.sliceArray(HEADER_SIZE until raw.size)
         val pathBytes = relativeFilePath.encodeToByteArray()
         val subkey = cryptoEngine.hkdfSha256(dek, pathBytes, HKDF_INFO, 32)
-
-        return try {
-            val plaintext = cryptoEngine.decryptAEAD(subkey, nonce, ciphertext, pathBytes)
+        try {
+            return try {
+                cryptoEngine.decryptAEAD(subkey, nonce, ciphertext, pathBytes).right()
+            } catch (_: VaultAuthException) {
+                VaultError.AuthenticationFailed().left()
+            }
+        } finally {
             cryptoEngine.clearBytes(subkey)
-            plaintext.right()
-        } catch (_: VaultAuthException) {
-            cryptoEngine.clearBytes(subkey)
-            VaultError.AuthenticationFailed().left()
         }
     }
 

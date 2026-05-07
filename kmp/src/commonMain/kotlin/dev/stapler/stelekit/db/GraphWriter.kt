@@ -29,6 +29,13 @@ import kotlinx.coroutines.sync.withLock
  *
  * The multi-step save pipeline is modelled as an Arrow Saga for transactional rollback:
  * if the DB update fails after the file has been written, the file content is restored.
+ *
+ * Paranoid-mode invariant: [cryptoLayer] must be set to a [CryptoLayer] initialized with the
+ * current DEK before any write that should be encrypted. Setting it to null switches the writer
+ * back to plaintext mode (used when the vault is locked or the graph is not paranoid-mode).
+ * The caller (typically [GraphManager]) is responsible for keeping [cryptoLayer] in sync with
+ * the vault's lock/unlock lifecycle — stale [CryptoLayer] references after a DEK rotation will
+ * silently produce ciphertext the new key cannot decrypt.
  */
 class GraphWriter(
     private val fileSystem: FileSystem,
@@ -208,7 +215,7 @@ class GraphWriter(
                 val relPath = relativeFilePath(filePath)
                 val guard = layer.checkNotHiddenReserve(relPath)
                 if (guard.isLeft()) {
-                    logger.error("Write blocked — hidden reserve area: $filePath")
+                    logger.error("Write blocked — restricted path: $filePath")
                     return@withLock false
                 }
             }

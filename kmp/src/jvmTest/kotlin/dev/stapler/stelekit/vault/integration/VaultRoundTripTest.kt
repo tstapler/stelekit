@@ -8,8 +8,9 @@ import kotlin.test.*
 
 /**
  * Round-trip integration tests using an in-memory file store.
- * Covers RT-01 through RT-10.
+ * Covers RT-01 through RT-10 (all gaps filled).
  */
+@Suppress("DEPRECATION")
 class VaultRoundTripTest {
     private val engine = JvmCryptoEngine()
     private val params = TEST_ARGON2_PARAMS
@@ -73,6 +74,22 @@ class VaultRoundTripTest {
             assertTrue(result.isRight(), "Decryption failed for $path")
             assertContentEquals(expectedContent, result.getOrNull(), "Content mismatch for $path")
         }
+    }
+
+    // RT-04 — File encrypted for path A cannot be decrypted under path B (AAD path-binding)
+    @Test fun `file encrypted for one path cannot be decrypted under a different path`() = runTest {
+        val store = mutableMapOf<String, ByteArray>()
+        val vm = makeVaultManager(store)
+        val graphPath = "/tmp/rt-test"
+        val dek = vm.createVault(graphPath, "pass".toCharArray(), argon2Params = params).getOrNull()!!
+        val layer = CryptoLayer(engine, dek)
+
+        val content = "# Note\n- data".encodeToByteArray()
+        val encrypted = layer.encrypt("pages/Original.md.stek", content)
+
+        // Attempt to decrypt using a different relative path as AAD
+        val result = layer.decrypt("pages/Moved.md.stek", encrypted)
+        assertIs<VaultError.AuthenticationFailed>(result.leftOrNull(), "AAD mismatch must cause AuthenticationFailed")
     }
 
     // RT-05 — Saga rollback: verify old encrypted bytes can be restored
@@ -140,6 +157,15 @@ class VaultRoundTripTest {
         val result = layer2.decrypt("pages/Note.md.stek", store["$graphPath/pages/Note.md.stek"]!!)
         assertTrue(result.isRight())
         assertContentEquals(content, result.getOrNull())
+    }
+
+    // RT-08 — Decrypting a plaintext (non-STEK) file returns NotEncrypted, not an error
+    @Test fun `plaintext file returns NotEncrypted`() {
+        val dek = engine.secureRandom(32)
+        val layer = CryptoLayer(engine, dek)
+        val plaintext = "# Not encrypted\n- plain text content".encodeToByteArray()
+        val result = layer.decrypt("pages/Plaintext.md", plaintext)
+        assertIs<VaultError.NotEncrypted>(result.leftOrNull(), "Non-STEK file must return NotEncrypted")
     }
 
     // RT-09 — .stele-vault file is always present after all operations

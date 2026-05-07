@@ -86,6 +86,10 @@ data class Argon2Params(
 class VaultAuthException(message: String) : Exception(message)
 
 /** Fast parameters for tests — do NOT use in production. */
+@Deprecated(
+    message = "TEST_ARGON2_PARAMS is intentionally weak — use only in test source sets, never in production code.",
+    level = DeprecationLevel.WARNING,
+)
 val TEST_ARGON2_PARAMS = Argon2Params(memory = 4096, iterations = 1, parallelism = 1)
 
 /** Production defaults: 64 MiB / 3 iterations / 1 thread. */
