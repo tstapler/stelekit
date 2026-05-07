@@ -2,14 +2,19 @@ package dev.stapler.stelekit.platform
 
 import kotlinx.coroutines.await
 
-internal suspend fun getOpfsRoot(): JsAny =
-    (js("navigator.storage.getDirectory()") as kotlin.js.Promise<JsAny>).await()
+private fun opfsRootPromise(): kotlin.js.Promise<JsAny> = js("navigator.storage.getDirectory()")
+private fun directoryHandlePromise(parent: JsAny, name: String, create: Boolean): kotlin.js.Promise<JsAny> =
+    js("parent.getDirectoryHandle(name, { create: create })")
+private fun fileHandlePromise(parent: JsAny, name: String, create: Boolean): kotlin.js.Promise<JsAny> =
+    js("parent.getFileHandle(name, { create: create })")
+
+internal suspend fun getOpfsRoot(): JsAny = opfsRootPromise().await()
 
 internal suspend fun getDirectoryHandle(parent: JsAny, name: String, create: Boolean): JsAny =
-    (js("parent.getDirectoryHandle(name, { create: create })") as kotlin.js.Promise<JsAny>).await()
+    directoryHandlePromise(parent, name, create).await()
 
 internal suspend fun getFileHandle(parent: JsAny, name: String, create: Boolean): JsAny =
-    (js("parent.getFileHandle(name, { create: create })") as kotlin.js.Promise<JsAny>).await()
+    fileHandlePromise(parent, name, create).await()
 
 private fun iteratorValues(handle: JsAny): JsAny = js("handle.values()")
 private fun iteratorNext(iter: JsAny): kotlin.js.Promise<JsAny> = js("iter.next()")
@@ -75,5 +80,7 @@ internal suspend fun opfsDeleteFile(path: String) {
         }
         val fileName = parts.last()
         dirRemoveEntry(dir, fileName).await()
-    } catch (_: Throwable) {}
+    } catch (e: Throwable) {
+        println("[SteleKit] OPFS delete failed for $path: ${e.message}")
+    }
 }

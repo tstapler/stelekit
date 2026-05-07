@@ -80,7 +80,7 @@ class WasmOpfsSqlDriver(private val workerScriptPath: String) : SqlDriver {
         }
     }
 
-    override fun endTransaction(successful: Boolean): QueryResult<Unit> = QueryResult.AsyncValue {
+    fun endTransaction(successful: Boolean): QueryResult<Unit> = QueryResult.AsyncValue {
         val id = nextMsgId()
         val promise = createWorkerResponsePromise(worker, id)
         workerPostMessage(worker, buildTransactionEndMessage(id, successful))

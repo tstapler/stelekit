@@ -15,6 +15,8 @@ import dev.stapler.stelekit.ui.StelekitApp
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 
+private fun markSteleKitReady(): Unit = js("window.__stelekit_ready = true")
+
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
     val scope = MainScope()
@@ -41,7 +43,7 @@ fun main() {
             defaultBackend = backend,
         )
 
-        js("window.__stelekit_ready = true")
+        markSteleKitReady()
 
         CanvasBasedWindow(canvasElementId = "ComposeTarget") {
             StelekitApp(
