@@ -713,7 +713,7 @@ class GraphLoader(
      */
     suspend fun reloadFiles(filePaths: List<String>) {
         for (path in filePaths) {
-            val content = fileSystem.readFile(path) ?: continue
+            val content = readFileDecrypted(path) ?: continue
             parseAndSavePage(path, content, ParseMode.FULL, DatabaseWriteActor.Priority.HIGH)
         }
     }

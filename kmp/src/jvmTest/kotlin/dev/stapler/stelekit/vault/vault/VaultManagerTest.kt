@@ -359,4 +359,36 @@ class VaultManagerTest {
         assertTrue(r1.isLeft(), "Empty passphrase must not unlock null-byte vault")
         assertTrue(r2.isLeft(), "Null-byte passphrase must not unlock empty-passphrase vault")
     }
+
+    // VM-25 — OUTER-authenticated session cannot remove HIDDEN keyslots (cross-namespace guard)
+    @Test fun `removeKeyslot rejects cross-namespace slot removal`() = runTest {
+        val store = mutableMapOf<String, ByteArray>()
+        val vm = makeVaultManagerWithStore(store)
+        val graphPath = "/tmp/test-graph"
+        // Create OUTER vault and unlock it
+        vm.createVault(graphPath, "outer-pass".toCharArray(), argon2Params = params)
+        vm.unlock(graphPath, "outer-pass".toCharArray(), params)
+
+        // Attempt to remove a HIDDEN slot (index 4) while authenticated as OUTER
+        val result = vm.removeKeyslot(graphPath, slotIndex = 4)
+        assertIs<VaultError.InvalidCredential>(result.leftOrNull(),
+            "OUTER session must not remove HIDDEN keyslot — got: $result")
+    }
+
+    // VM-26 — removeKeyslot rejects out-of-range slot index
+    @Test fun `removeKeyslot rejects out-of-range slot index`() = runTest {
+        val store = mutableMapOf<String, ByteArray>()
+        val vm = makeVaultManagerWithStore(store)
+        val graphPath = "/tmp/test-graph"
+        vm.createVault(graphPath, "pass".toCharArray(), argon2Params = params)
+        vm.unlock(graphPath, "pass".toCharArray(), params)
+
+        val negative = vm.removeKeyslot(graphPath, slotIndex = -1)
+        assertIs<VaultError.InvalidCredential>(negative.leftOrNull(),
+            "Negative slot index must be rejected")
+
+        val tooLarge = vm.removeKeyslot(graphPath, slotIndex = 8)
+        assertIs<VaultError.InvalidCredential>(tooLarge.leftOrNull(),
+            "Slot index >= KEYSLOT_COUNT must be rejected")
+    }
 }

@@ -151,13 +151,25 @@ class GraphWriter(
         // If paths are same, nothing to do (except maybe case change on some FS)
         if (oldPath == newPath) return true
 
-        val content = fileSystem.readFile(oldPath)
-        if (content == null) {
-            logger.error("Failed to read file for rename: $oldPath")
-            return false
+        // When encryption is active files are binary AEAD ciphertext (.md.stek) — must copy
+        // bytes verbatim. UTF-8 readFile/writeFile would corrupt the ciphertext irreversibly.
+        val writeOk = if (cryptoLayer != null) {
+            val bytes = fileSystem.readFileBytes(oldPath)
+            if (bytes == null) {
+                logger.error("Failed to read file bytes for rename: $oldPath")
+                return false
+            }
+            fileSystem.writeFileBytes(newPath, bytes)
+        } else {
+            val content = fileSystem.readFile(oldPath)
+            if (content == null) {
+                logger.error("Failed to read file for rename: $oldPath")
+                return false
+            }
+            fileSystem.writeFile(newPath, content)
         }
 
-        if (fileSystem.writeFile(newPath, content)) {
+        if (writeOk) {
             if (fileSystem.deleteFile(oldPath)) {
                 logger.debug("Renamed page from $oldPath to $newPath")
                 return true

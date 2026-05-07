@@ -261,11 +261,28 @@ class VaultManager(
     /**
      * Overwrite keyslot at [slotIndex] with random bytes (effectively removing it).
      * The DEK is not re-encrypted — remaining providers can still unlock.
+     *
+     * Enforces two guards before mutating the header:
+     * 1. [slotIndex] must be a valid keyslot index (0 until KEYSLOT_COUNT).
+     * 2. [slotIndex] must belong to the currently authenticated namespace — an OUTER session
+     *    cannot remove HIDDEN keyslots (slots 4–7) and vice versa.
      */
     suspend fun removeKeyslot(
         graphPath: String,
         slotIndex: Int,
     ): Either<VaultError, Unit> = withContext(Dispatchers.Default) {
+        val dek = sessionDek ?: return@withContext VaultError.InvalidCredential("Vault is locked").left()
+        val ns = sessionNamespace ?: return@withContext VaultError.InvalidCredential("Vault is locked").left()
+
+        if (slotIndex !in 0 until VaultHeader.KEYSLOT_COUNT) {
+            return@withContext VaultError.InvalidCredential("Slot index $slotIndex is out of range").left()
+        }
+        if (slotIndex !in namespaceSlotRange(ns)) {
+            return@withContext VaultError.InvalidCredential(
+                "Slot $slotIndex does not belong to the current namespace"
+            ).left()
+        }
+
         val vaultPath = vaultFilePath(graphPath)
         val rawBytes = withContext(PlatformDispatcher.IO) { fileReadBytes(vaultPath) }
             ?: return@withContext VaultError.NotAVault("Vault file not found").left()
@@ -273,7 +290,6 @@ class VaultManager(
             is Either.Left -> return@withContext r
             is Either.Right -> r.value
         }
-        val dek = sessionDek ?: return@withContext VaultError.InvalidCredential("Vault is locked").left()
 
         val updatedSlots = header.keyslots.toMutableList()
         updatedSlots[slotIndex] = randomSlot()
