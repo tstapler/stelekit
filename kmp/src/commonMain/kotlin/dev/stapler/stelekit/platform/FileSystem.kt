@@ -47,6 +47,20 @@ interface FileSystem {
      */
     suspend fun pickSaveFileAsync(suggestedName: String, mimeType: String = "application/json"): String? = null
 
+    /**
+     * Read raw bytes from a file. Used by paranoid-mode decryption to read STEK-format files.
+     * Default implementation reads via [readFile] and encodes to UTF-8 bytes.
+     * JVM override uses direct byte-level IO to preserve binary integrity.
+     */
+    fun readFileBytes(path: String): ByteArray? = readFile(path)?.encodeToByteArray()
+
+    /**
+     * Write raw bytes to a file. Used by paranoid-mode encryption.
+     * Default: decode as UTF-8 and call [writeFile] (works for text, not binary).
+     * JVM override uses direct byte-level IO.
+     */
+    fun writeFileBytes(path: String, data: ByteArray): Boolean = writeFile(path, data.decodeToString())
+
     /** Updates the shadow copy after a SAF write. No-op on non-SAF file systems. */
     fun updateShadow(path: String, content: String) { /* no-op */ }
 

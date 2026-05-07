@@ -27,6 +27,8 @@ import dev.stapler.stelekit.performance.SpanRepository
 import dev.stapler.stelekit.util.ContentHasher
 import dev.stapler.stelekit.util.FileUtils
 import dev.stapler.stelekit.util.UuidGenerator
+import dev.stapler.stelekit.vault.CryptoLayer
+import dev.stapler.stelekit.vault.VaultError
 import kotlin.time.Clock
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
@@ -58,9 +60,48 @@ class GraphLoader(
     private val sidecarManager: SidecarManager? = null,
     private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
     private val spanRepository: SpanRepository? = null,
+    /** When non-null, all file reads are passed through paranoid-mode decryption. */
+    var cryptoLayer: CryptoLayer? = null,
 ) {
     private val logger = Logger("GraphLoader")
     private val markdownParser = MarkdownParser()
+
+    /**
+     * Resolve relative file path for CryptoLayer AAD.
+     * Uses graph-root-relative path (e.g. "pages/Note.md.stek") per plan OPEN-1 decision.
+     */
+    private fun relativePathFor(absoluteFilePath: String): String {
+        val graphPath = currentGraphPath
+        return if (graphPath.isNotEmpty() && absoluteFilePath.startsWith(graphPath)) {
+            absoluteFilePath.removePrefix(graphPath).trimStart('/')
+        } else {
+            absoluteFilePath
+        }
+    }
+
+    /**
+     * Read a file from disk, decrypting via [cryptoLayer] if paranoid mode is active.
+     * Returns null if the file does not exist or decryption fails with a non-recoverable error.
+     * Returns the plaintext string on success.
+     */
+    private fun readFileDecrypted(filePath: String): String? {
+        val layer = cryptoLayer
+        if (layer == null) {
+            return fileSystem.readFile(filePath)
+        }
+        val rawBytes = fileSystem.readFileBytes(filePath) ?: return null
+        val relPath = relativePathFor(filePath)
+        return when (val result = layer.decrypt(relPath, rawBytes)) {
+            is arrow.core.Either.Right -> result.value.decodeToString()
+            is arrow.core.Either.Left -> when (val err = result.value) {
+                is VaultError.NotEncrypted -> fileSystem.readFile(filePath)  // plaintext fallback
+                else -> {
+                    logger.warn("Decryption failed for $filePath: ${err.message}")
+                    null
+                }
+            }
+        }
+    }
 
     /** Called after a full bulk import completes. Used to trigger WAL checkpoint. */
     var onBulkImportComplete: (suspend () -> Unit)? = null
@@ -234,7 +275,7 @@ class GraphLoader(
             return pageRepository.getPageByName(pageName).first().getOrNull()
         }
         try {
-            val content = fileSystem.readFile(filePath) ?: return null
+            val content = readFileDecrypted(filePath) ?: return null
             parseAndSavePage(filePath, content, ParseMode.FULL)
             return pageRepository.getPageByName(pageName).first().getOrNull()
         } finally {
@@ -505,7 +546,7 @@ class GraphLoader(
                             }
                             val path = page.filePath ?: resolvePageFilePath(page.name)
                             if (path == null) return@async null
-                            val content = fileSystem.readFile(path) ?: return@async null
+                            val content = readFileDecrypted(path) ?: return@async null
                             try {
                                 parsePageWithoutSaving(path, content, ParseMode.FULL)
                             } catch (e: CancellationException) {
@@ -711,7 +752,7 @@ class GraphLoader(
                 return
             }
 
-            val content = fileSystem.readFile(filePath)
+            val content = readFileDecrypted(filePath)
             if (content == null) {
                 logger.warn("Failed to read file: $filePath")
                 return
@@ -739,7 +780,7 @@ class GraphLoader(
 
             var loadedCount = 0
             for (entry in immediateFiles) {
-                val content = fileSystem.readFile(entry.filePath) ?: continue
+                val content = readFileDecrypted(entry.filePath) ?: continue
                 try {
                     parseAndSavePage(entry.filePath, content, ParseMode.FULL)
                     loadedCount++
@@ -773,7 +814,7 @@ class GraphLoader(
                 remainingFiles.chunked(50).map { chunk ->
                     async(Dispatchers.Default) {
                         val count = chunk.count { entry ->
-                            val content = fileSystem.readFile(entry.filePath) ?: return@count false
+                            val content = readFileDecrypted(entry.filePath) ?: return@count false
                             try {
                                 parseAndSavePage(entry.filePath, content, ParseMode.METADATA_ONLY)
                                 true
@@ -798,8 +839,14 @@ class GraphLoader(
 
     private suspend fun sanitizeDirectory(path: String) {
         if (!fileSystem.directoryExists(path)) return
-        
-        val files = fileSystem.listFiles(path).filter { it.endsWith(".md") }
+        // Never traverse the hidden-volume reserve directory
+        if (path.endsWith("/_hidden_reserve") || path.contains("/_hidden_reserve/")) return
+
+        val files = fileSystem.listFiles(path).filter { fileName ->
+            fileName.endsWith(".md") &&
+            fileName != ".stele-vault" &&
+            !fileName.endsWith(".md.stek")  // Never rename encrypted files
+        }
         for (fileName in files) {
             val nameWithoutExt = fileName.removeSuffix(".md")
             val decodedName = FileUtils.decodeFileName(nameWithoutExt)
@@ -893,8 +940,8 @@ class GraphLoader(
                                 }
 
                                 if (isPriorityFile(filePath)) return@count true
-                                
-                                val content = fileSystem.readFile(filePath) ?: return@count false
+
+                                val content = readFileDecrypted(filePath) ?: return@count false
                                 try {
                                     val parseResult = parsePageWithoutSaving(filePath, content, mode)
                                     val updatedPage = parseResult.page

@@ -9,9 +9,19 @@ import dev.stapler.stelekit.docs.PageViewDocs
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.model.GraphInfo
+import dev.stapler.stelekit.vault.VaultError
+import dev.stapler.stelekit.vault.VaultNamespace
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.ui.i18n.Language
+
+/** Vault unlock state for paranoid-mode graphs. */
+sealed interface VaultState {
+    data object Locked : VaultState
+    data object Unlocking : VaultState
+    data class Unlocked(val namespace: VaultNamespace) : VaultState
+    data class Error(val error: VaultError) : VaultState
+}
 
 sealed class Screen {
     @HelpPage(docs = JournalsDocs::class)
@@ -29,6 +39,8 @@ sealed class Screen {
     data object Performance : Screen()
     data object GlobalUnlinkedReferences : Screen()
     data object Import : Screen()
+
+    data object VaultUnlock : Screen()
 
     @HelpPage(docs = PageViewDocs::class)
     data class PageView(val page: Page) : Screen()
@@ -82,6 +94,8 @@ data class AppState(
     val renameDialogPage: Page? = null,
     val renameDialogBusy: Boolean = false,
     val renameDialogError: String? = null,
+    // Vault / paranoid-mode state (null = non-paranoid graph)
+    val vaultState: VaultState? = null,
     // Git sync state
     val syncState: SyncState = SyncState.Idle,
     val gitConfig: GitConfig? = null,

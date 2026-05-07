@@ -15,6 +15,8 @@ import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.util.FileUtils
+import dev.stapler.stelekit.vault.CryptoLayer
+import dev.stapler.stelekit.vault.VaultError
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -35,6 +37,10 @@ class GraphWriter(
     @Deprecated("Use writeActor instead", level = DeprecationLevel.WARNING)
     private val pageRepository: PageRepository? = null,
     private val sidecarManager: SidecarManager? = null,
+    /** When non-null, all file writes are encrypted via paranoid-mode before hitting disk. */
+    var cryptoLayer: CryptoLayer? = null,
+    /** Graph root path — required to compute graph-root-relative AAD paths for encryption. */
+    private var graphPath: String = "",
 ) {
     private val logger = Logger("GraphWriter")
     private val saveMutex = Mutex()
@@ -196,6 +202,17 @@ class GraphWriter(
                 getPageFilePath(page, graphPath)
             }
 
+            // Guard: outer graph cannot write to the hidden volume reserve area
+            val layer = cryptoLayer
+            if (layer != null) {
+                val relPath = relativeFilePath(filePath)
+                val guard = layer.checkNotHiddenReserve(relPath)
+                if (guard.isLeft()) {
+                    logger.error("Write blocked — hidden reserve area: $filePath")
+                    return@withLock false
+                }
+            }
+
             // 0. Safety Check for Large Deletions
             if (fileSystem.fileExists(filePath)) {
                 val oldContent = fileSystem.readFile(filePath) ?: ""
@@ -220,18 +237,33 @@ class GraphWriter(
             runCatching {
                 saga {
                     // Step 1: write markdown file — rollback restores previous content
-                    val oldContent = if (fileSystem.fileExists(filePath)) fileSystem.readFile(filePath) else null
+                    val cryptoLayerNow = cryptoLayer
+                    val oldRawBytes = if (fileSystem.fileExists(filePath)) fileSystem.readFileBytes(filePath) else null
+                    val oldContent = if (cryptoLayerNow == null && fileSystem.fileExists(filePath)) fileSystem.readFile(filePath) else null
                     saga(
                         action = {
-                            if (!fileSystem.writeFile(filePath, content)) {
-                                error("writeFile returned false for: $filePath")
+                            if (cryptoLayerNow != null) {
+                                val relPath = relativeFilePath(filePath)
+                                val encryptedBytes = cryptoLayerNow.encrypt(relPath, content.encodeToByteArray())
+                                if (!fileSystem.writeFileBytes(filePath, encryptedBytes)) {
+                                    error("writeFileBytes returned false for: $filePath")
+                                }
+                            } else {
+                                if (!fileSystem.writeFile(filePath, content)) {
+                                    error("writeFile returned false for: $filePath")
+                                }
                             }
                             fileSystem.updateShadow(filePath, content)
                         },
                         compensation = { _ ->
                             try {
-                                if (oldContent != null) fileSystem.writeFile(filePath, oldContent)
-                                else fileSystem.deleteFile(filePath)
+                                if (cryptoLayerNow != null) {
+                                    if (oldRawBytes != null) fileSystem.writeFileBytes(filePath, oldRawBytes)
+                                    else fileSystem.deleteFile(filePath)
+                                } else {
+                                    if (oldContent != null) fileSystem.writeFile(filePath, oldContent)
+                                    else fileSystem.deleteFile(filePath)
+                                }
                                 fileSystem.invalidateShadow(filePath)
                             } catch (e: CancellationException) {
                                 throw e
@@ -331,7 +363,15 @@ class GraphWriter(
         val safeName = FileUtils.sanitizeFileName(page.name)
         val basePath = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
         val folder = if (page.isJournal) "journals" else "pages"
-        return "${basePath}$folder/$safeName.md"
+        val extension = if (cryptoLayer != null) ".md.stek" else ".md"
+        return "${basePath}$folder/$safeName$extension"
+    }
+
+    /** Compute the graph-root-relative path used as AAD for file encryption. */
+    private fun relativeFilePath(absoluteFilePath: String): String {
+        val base = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
+        return if (absoluteFilePath.startsWith(base)) absoluteFilePath.removePrefix(base)
+        else absoluteFilePath
     }
 
     companion object {
@@ -346,6 +386,8 @@ class GraphWriter(
             onFileWritten: ((String) -> Unit)? = null,
             pageRepository: PageRepository? = null,
             sidecarManager: SidecarManager? = null,
+            cryptoLayer: CryptoLayer? = null,
+            graphPath: String = "",
         ): Resource<GraphWriter> = resource {
             val writer = GraphWriter(
                 fileSystem = fileSystem,
@@ -353,6 +395,8 @@ class GraphWriter(
                 onFileWritten = onFileWritten,
                 pageRepository = pageRepository,
                 sidecarManager = sidecarManager,
+                cryptoLayer = cryptoLayer,
+                graphPath = graphPath,
             )
             onRelease {
                 try { writer.flush() } catch (_: Exception) { /* best-effort flush */ }

@@ -750,6 +750,7 @@ class StelekitViewModel(
                     is Screen.GlobalUnlinkedReferences -> "Opened Unlinked References"
                     is Screen.Import -> "Import text as new page"
                     is Screen.LibraryStats -> "Opened Library Stats"
+                    is Screen.VaultUnlock -> "Vault locked"
                 }
             )
         }

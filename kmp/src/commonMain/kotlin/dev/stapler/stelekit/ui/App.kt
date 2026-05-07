@@ -967,6 +967,9 @@ private fun ScreenRouter(
                     },
                 )
             }
+            is Screen.VaultUnlock -> {
+                // Vault unlock is handled by the outer StelekitApp scaffold — no-op here
+            }
         }
     }
 }

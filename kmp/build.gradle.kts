@@ -127,6 +127,9 @@ kotlin {
                 implementation("io.opentelemetry:opentelemetry-sdk:1.43.0")
                 implementation("io.opentelemetry:opentelemetry-exporter-logging:1.43.0")
 
+                // BouncyCastle — Argon2id KDF + HKDF-SHA256 for paranoid-mode vault
+                implementation("org.bouncycastle:bcprov-jdk18on:1.80")
+
                 // Graph databases for performance evaluation
                 // implementation("com.kuzudb:kuzu-jdbc:0.7.0")
                 // implementation("org.neo4j.driver:neo4j-java-driver:5.21.0")
