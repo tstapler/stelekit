@@ -3,6 +3,8 @@ package dev.stapler.stelekit.vault
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -110,7 +112,7 @@ class VaultManager(
         argon2Params: Argon2Params? = null,
     ): Either<VaultError, UnlockResult> = withContext(Dispatchers.Default) {
         val vaultPath = vaultFilePath(graphPath)
-        val rawBytes = withContext(Dispatchers.IO) { fileReadBytes(vaultPath) }
+        val rawBytes = withContext(PlatformDispatcher.IO) { fileReadBytes(vaultPath) }
             ?: return@withContext VaultError.NotAVault("Vault file not found at $vaultPath").left()
 
         val header = when (val r = VaultHeaderSerializer.deserialize(rawBytes)) {
@@ -220,7 +222,7 @@ class VaultManager(
     ): Either<VaultError, Unit> = withContext(Dispatchers.Default) {
         try {
             val vaultPath = vaultFilePath(graphPath)
-            val rawBytes = withContext(Dispatchers.IO) { fileReadBytes(vaultPath) }
+            val rawBytes = withContext(PlatformDispatcher.IO) { fileReadBytes(vaultPath) }
                 ?: return@withContext VaultError.NotAVault("Vault file not found").left()
             val header = when (val r = VaultHeaderSerializer.deserialize(rawBytes)) {
                 is Either.Left -> return@withContext r
@@ -265,7 +267,7 @@ class VaultManager(
         slotIndex: Int,
     ): Either<VaultError, Unit> = withContext(Dispatchers.Default) {
         val vaultPath = vaultFilePath(graphPath)
-        val rawBytes = withContext(Dispatchers.IO) { fileReadBytes(vaultPath) }
+        val rawBytes = withContext(PlatformDispatcher.IO) { fileReadBytes(vaultPath) }
             ?: return@withContext VaultError.NotAVault("Vault file not found").left()
         val header = when (val r = VaultHeaderSerializer.deserialize(rawBytes)) {
             is Either.Left -> return@withContext r

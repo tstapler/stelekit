@@ -4,6 +4,7 @@ import arrow.core.Either
 import dev.stapler.stelekit.vault.*
 import kotlinx.coroutines.test.runTest
 import kotlin.test.*
+import kotlin.time.Duration.Companion.minutes
 
 @Suppress("DEPRECATION")
 class KeyslotIntegrityTest {
@@ -18,7 +19,8 @@ class KeyslotIntegrityTest {
         )
 
     // KI-01 — Any single keyslot byte mutation causes MAC verification failure
-    @Test fun `any header byte mutation is detected`() = runTest {
+    // Timeout is generous: 2573 bytes × 8 Argon2id calls on slow CI may exceed the default 60s.
+    @Test fun `any header byte mutation is detected`() = runTest(timeout = 5.minutes) {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/ki-test"
