@@ -19,7 +19,7 @@ class WasmOpfsSqlDriver(private val workerScriptPath: String) : SqlDriver {
     suspend fun init(dbPath: String) {
         val readyPromise = createWorkerReadyPromise(worker)
         workerPostMessage(worker, buildInitMessage(dbPath))
-        val readyMsg = readyPromise.await()
+        val readyMsg: JsAny = readyPromise.await()
         actualBackend = getMessageBackend(readyMsg)
         val warning = getMessageWarning(readyMsg)
         if (warning != null) {
@@ -43,7 +43,7 @@ class WasmOpfsSqlDriver(private val workerScriptPath: String) : SqlDriver {
         } else emptyJsArray()
         val promise = createWorkerResponsePromise(worker, id)
         workerPostMessage(worker, buildExecuteLongMessage(id, sql, bindArr))
-        val resp = promise.await()
+        val resp: JsAny = promise.await()
         getMessageChanges(resp)
     }
 
@@ -62,7 +62,7 @@ class WasmOpfsSqlDriver(private val workerScriptPath: String) : SqlDriver {
         } else emptyJsArray()
         val promise = createWorkerResponsePromise(worker, id)
         workerPostMessage(worker, buildQueryMessage(id, sql, bindArr))
-        val resp = promise.await()
+        val resp: JsAny = promise.await()
         val rows = getMessageRows(resp)
         val cursor = JsRowCursor(rows)
         mapper(cursor).await()
@@ -72,7 +72,7 @@ class WasmOpfsSqlDriver(private val workerScriptPath: String) : SqlDriver {
         val id = nextMsgId()
         val promise = createWorkerResponsePromise(worker, id)
         workerPostMessage(worker, buildTransactionBeginMessage(id))
-        promise.await()
+        @Suppress("UNUSED_VARIABLE") val _begin: JsAny = promise.await()
         object : Transacter.Transaction() {
             override val enclosingTransaction: Transacter.Transaction? = null
             override fun endTransaction(successful: Boolean): QueryResult<Unit> =
@@ -84,7 +84,7 @@ class WasmOpfsSqlDriver(private val workerScriptPath: String) : SqlDriver {
         val id = nextMsgId()
         val promise = createWorkerResponsePromise(worker, id)
         workerPostMessage(worker, buildTransactionEndMessage(id, successful))
-        promise.await()
+        @Suppress("UNUSED_VARIABLE") val _end: JsAny = promise.await()
         Unit
     }
 

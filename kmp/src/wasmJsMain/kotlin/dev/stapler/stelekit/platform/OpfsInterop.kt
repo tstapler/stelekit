@@ -25,7 +25,7 @@ internal suspend fun listOpfsEntries(dirHandle: JsAny): List<JsAny> {
     val entries = mutableListOf<JsAny>()
     val iterator = iteratorValues(dirHandle)
     while (true) {
-        val next = iteratorNext(iterator).await()
+        val next: JsAny = iteratorNext(iterator).await()
         if (iterResultDone(next)) break
         entries.add(iterResultValue(next))
     }
@@ -41,7 +41,7 @@ private fun fileText(file: JsAny): kotlin.js.Promise<JsAny> = js("file.text()")
 private fun jsStringValue(v: JsAny): String = js("String(v)")
 
 internal suspend fun readOpfsFile(fileHandle: JsAny): String? = try {
-    val file = fileHandleGetFile(fileHandle).await()
+    val file: JsAny = fileHandleGetFile(fileHandle).await()
     jsStringValue(fileText(file).await())
 } catch (e: Throwable) {
     null
@@ -62,9 +62,9 @@ internal suspend fun opfsWriteFile(path: String, content: String) {
         }
         val fileName = parts.last()
         val fileHandle = getFileHandle(dir, fileName, true)
-        val writable = fileHandleCreateWritable(fileHandle).await()
-        writableWrite(writable, content).await()
-        writableClose(writable).await()
+        val writable: JsAny = fileHandleCreateWritable(fileHandle).await()
+        @Suppress("UNUSED_VARIABLE") val _write: JsAny = writableWrite(writable, content).await()
+        @Suppress("UNUSED_VARIABLE") val _close: JsAny = writableClose(writable).await()
     } catch (e: Throwable) {
         println("[SteleKit] OPFS write failed for $path: ${e.message}")
     }
@@ -79,7 +79,7 @@ internal suspend fun opfsDeleteFile(path: String) {
             dir = getDirectoryHandle(dir, part, false)
         }
         val fileName = parts.last()
-        dirRemoveEntry(dir, fileName).await()
+        @Suppress("UNUSED_VARIABLE") val _remove: JsAny = dirRemoveEntry(dir, fileName).await()
     } catch (e: Throwable) {
         println("[SteleKit] OPFS delete failed for $path: ${e.message}")
     }
