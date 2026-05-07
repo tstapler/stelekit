@@ -5,6 +5,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -15,6 +17,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.ui.VaultState
 import dev.stapler.stelekit.vault.VaultError
@@ -34,6 +37,7 @@ fun VaultUnlockScreen(
     modifier: Modifier = Modifier,
 ) {
     var passphraseText by remember { mutableStateOf("") }
+    var showPassphrase by remember { mutableStateOf(false) }
     var showHiddenOption by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
 
@@ -42,8 +46,9 @@ fun VaultUnlockScreen(
         is VaultState.Error -> when (vaultState.error) {
             is VaultError.InvalidCredential -> "Incorrect passphrase."
             is VaultError.HeaderTampered -> "Vault header integrity check failed. The vault may have been tampered with."
-            is VaultError.CorruptedFile -> "Vault file is corrupted."
-            is VaultError.UnsupportedVersion -> "Unsupported vault version."
+            is VaultError.CorruptedFile -> "Vault file is corrupted or truncated."
+            is VaultError.UnsupportedVersion -> "Unsupported vault format version."
+            is VaultError.NotAVault -> "Vault file is missing or has been moved. Locate the .stele-vault file and try again."
             else -> vaultState.error.message
         }
         else -> null
@@ -75,7 +80,7 @@ fun VaultUnlockScreen(
             ) {
                 Icon(
                     imageVector = Icons.Default.Lock,
-                    contentDescription = null,
+                    contentDescription = "Vault locked",
                     modifier = Modifier.size(48.dp),
                     tint = MaterialTheme.colorScheme.primary,
                 )
@@ -96,7 +101,7 @@ fun VaultUnlockScreen(
                     onValueChange = { passphraseText = it },
                     label = { Text("Passphrase") },
                     singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
+                    visualTransformation = if (showPassphrase) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done,
@@ -104,6 +109,14 @@ fun VaultUnlockScreen(
                     keyboardActions = KeyboardActions(
                         onDone = { attemptUnlock(VaultNamespace.OUTER) }
                     ),
+                    trailingIcon = {
+                        IconButton(onClick = { showPassphrase = !showPassphrase }) {
+                            Icon(
+                                imageVector = if (showPassphrase) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (showPassphrase) "Hide passphrase" else "Show passphrase",
+                            )
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .focusRequester(focusRequester),

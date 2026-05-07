@@ -35,10 +35,10 @@ class KeyslotIntegrityTest {
             if (result.isLeft()) detectedTampering++
             store[vaultPath] = original
         }
-        // All mutations should be detected (either via AEAD or header MAC)
-        // Some mutations in random padding/reserved areas may slip through AEAD but be caught by MAC
-        assertTrue(detectedTampering >= VaultHeader.MAC_AUTHENTICATED_SIZE * 95 / 100,
-            "Expected ≥95% of bit flips to be detected, got $detectedTampering/${VaultHeader.MAC_AUTHENTICATED_SIZE}")
+        // Every mutation must be detected — the header MAC covers all bytes 0..MAC_AUTHENTICATED_SIZE,
+        // so even mutations in random padding or reserved areas fail the MAC check.
+        assertEquals(VaultHeader.MAC_AUTHENTICATED_SIZE, detectedTampering,
+            "Expected 100% of bit flips to be detected, got $detectedTampering/${VaultHeader.MAC_AUTHENTICATED_SIZE}")
     }
 
     // KI-02 — Truncated header bytes → deserialization error

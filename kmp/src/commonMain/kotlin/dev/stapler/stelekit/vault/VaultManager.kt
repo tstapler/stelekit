@@ -15,7 +15,9 @@ import kotlinx.coroutines.withContext
  * The DEK is held in memory only while the vault is unlocked. Calling [lock] zero-fills
  * the DEK array and emits [VaultEvent.Locked].
  *
- * Argon2id key derivation runs on [Dispatchers.Default] (CPU-bound, ~350ms–1s).
+ * Argon2id key derivation runs on [Dispatchers.Default] (CPU-bound, ~350ms–1s per slot).
+ * All 8 keyslots are always tried during unlock in constant order — no plaintext hint
+ * is used to skip slots, preserving deniability for hidden-volume passphrases.
  */
 class VaultManager(
     private val crypto: CryptoEngine,
@@ -51,7 +53,7 @@ class VaultManager(
         try {
             val dek = crypto.secureRandom(32)
             val slotIndex = namespaceFirstSlot(namespace)
-            val keyslot = buildKeyslot(passphrase, dek, namespace, argon2Params)
+            val keyslot = buildKeyslot(passphrase, dek, namespace, argon2Params, slotIndex)
 
             val allSlots = (0 until VaultHeader.KEYSLOT_COUNT).map { i ->
                 if (i == slotIndex) keyslot else randomSlot()
@@ -80,7 +82,10 @@ class VaultManager(
             // Pre-create the hidden-reserve directory so it exists even before a hidden graph is written.
             // Written as a random-byte sentinel — indistinguishable from encrypted file content.
             val reservePath = hiddenReserveSentinelPath(graphPath)
-            fileWriteBytes(reservePath, crypto.secureRandom(256))
+            if (!fileWriteBytes(reservePath, crypto.secureRandom(256))) {
+                // Non-fatal: the reserve sentinel is best-effort infrastructure.
+                // Log-worthy but not a reason to fail vault creation.
+            }
 
             dek.right()
         } finally {
@@ -90,6 +95,7 @@ class VaultManager(
 
     /**
      * Try all 8 keyslots in constant-time order, returning the DEK and namespace if any match.
+     * All slots are always tried — no plaintext skip — to preserve deniability.
      * The passphrase CharArray is zero-filled after derivation regardless of outcome.
      */
     suspend fun unlock(
@@ -98,7 +104,7 @@ class VaultManager(
         argon2Params: Argon2Params? = null,
     ): Either<VaultError, UnlockResult> = withContext(Dispatchers.Default) {
         val vaultPath = vaultFilePath(graphPath)
-        val rawBytes = fileReadBytes(vaultPath)
+        val rawBytes = withContext(Dispatchers.IO) { fileReadBytes(vaultPath) }
             ?: return@withContext VaultError.NotAVault("Vault file not found at $vaultPath").left()
 
         val header = when (val r = VaultHeaderSerializer.deserialize(rawBytes)) {
@@ -110,11 +116,13 @@ class VaultManager(
         try {
             var validDek: ByteArray? = null
             var validNamespace: VaultNamespace? = null
+            // Tracks whether a slot decrypted successfully but the header MAC failed,
+            // which means the correct passphrase was used but the vault was tampered.
+            var macFailed = false
 
-            // Skip PROVIDER_UNUSED decoy slots — they carry random blobs and would never verify.
-            // Running Argon2id on decoy slots risks OOM (random memory params) and is ~8x slower.
+            // Try all 8 slots in order — no plaintext hint skips any slot.
+            // Decoy slots fail AEAD decryption (expected), active slots succeed.
             for ((index, slot) in header.keyslots.withIndex()) {
-                if (slot.providerType == Keyslot.PROVIDER_UNUSED) continue
                 val params = argon2Params ?: slot.argon2Params
                 val keyslotKey = crypto.argon2id(
                     password = passwordBytes,
@@ -126,10 +134,16 @@ class VaultManager(
                 )
                 try {
                     val plaintext = crypto.decryptAEAD(keyslotKey, slot.slotNonce, slot.encryptedDekBlob, byteArrayOf())
-                    // plaintext = DEK (32 bytes) + namespace_tag (1 byte)
-                    if (plaintext.size == 33 && validDek == null) {
+                    // plaintext = DEK (32 bytes) + namespace_tag (1 byte) + provider_type (1 byte)
+                    if (plaintext.size == 34 && validDek == null) {
                         val dek = plaintext.sliceArray(0 until 32)
-                        val ns = VaultNamespace.fromTag(plaintext[32])
+                        val ns = try {
+                            VaultNamespace.fromTag(plaintext[32])
+                        } catch (_: VaultAuthException) {
+                            crypto.clearBytes(dek)
+                            crypto.clearBytes(plaintext)
+                            continue
+                        }
                         // Verify header MAC using the recovered DEK
                         val macKey = deriveHeaderMacKey(dek)
                         val expectedMac = computeHeaderMac(
@@ -140,21 +154,26 @@ class VaultManager(
                             validDek = dek
                             validNamespace = ns
                         } else {
+                            macFailed = true
                             crypto.clearBytes(dek)
                         }
                     }
+                    crypto.clearBytes(plaintext)
                 } catch (_: VaultAuthException) {
-                    // Expected for non-matching slots — continue constant-time loop
+                    // Expected for decoy slots and wrong-passphrase slots — continue.
                 }
                 crypto.clearBytes(keyslotKey)
             }
 
             if (validDek == null || validNamespace == null) {
                 if (validDek != null) crypto.clearBytes(validDek)
-                return@withContext VaultError.InvalidCredential().left()
+                return@withContext if (macFailed) {
+                    VaultError.HeaderTampered().left()
+                } else {
+                    VaultError.InvalidCredential().left()
+                }
             }
 
-            // Header MAC already verified above
             sessionDek = validDek
             sessionNamespace = validNamespace
             _vaultEvents.tryEmit(VaultEvent.Unlocked(validNamespace))
@@ -167,12 +186,13 @@ class VaultManager(
 
     /**
      * Zero-fill the in-memory DEK and emit [VaultEvent.Locked].
-     * Completes within 1 second (synchronous array fill).
+     * Null is written before zeroing so concurrent [currentDek] callers see null immediately.
      */
     fun lock() {
-        sessionDek?.let { crypto.clearBytes(it) }
-        sessionDek = null
+        val dek = sessionDek
+        sessionDek = null       // visible immediately to other threads (@Volatile)
         sessionNamespace = null
+        dek?.let { crypto.clearBytes(it) }
         _vaultEvents.tryEmit(VaultEvent.Locked)
     }
 
@@ -192,7 +212,7 @@ class VaultManager(
     ): Either<VaultError, Unit> = withContext(Dispatchers.Default) {
         try {
             val vaultPath = vaultFilePath(graphPath)
-            val rawBytes = fileReadBytes(vaultPath)
+            val rawBytes = withContext(Dispatchers.IO) { fileReadBytes(vaultPath) }
                 ?: return@withContext VaultError.NotAVault("Vault file not found").left()
             val header = when (val r = VaultHeaderSerializer.deserialize(rawBytes)) {
                 is Either.Left -> return@withContext r
@@ -200,11 +220,13 @@ class VaultManager(
             }
 
             val targetSlots = namespaceSlotRange(namespace)
+            // A slot is "mine" if its reserved[0] matches the DEK-derived marker for that index.
+            // Slots without the marker (decoy slots) are safe to overwrite.
             val emptySlotIndex = targetSlots.firstOrNull { index ->
-                isSlotEmpty(header.keyslots[index])
+                !isSlotMine(header.keyslots[index], dek, index)
             } ?: return@withContext VaultError.SlotsFull().left()
 
-            val newSlot = buildKeyslot(passphrase, dek, namespace, argon2Params)
+            val newSlot = buildKeyslot(passphrase, dek, namespace, argon2Params, emptySlotIndex)
             val updatedSlots = header.keyslots.toMutableList()
             updatedSlots[emptySlotIndex] = newSlot
 
@@ -223,7 +245,7 @@ class VaultManager(
         slotIndex: Int,
     ): Either<VaultError, Unit> = withContext(Dispatchers.Default) {
         val vaultPath = vaultFilePath(graphPath)
-        val rawBytes = fileReadBytes(vaultPath)
+        val rawBytes = withContext(Dispatchers.IO) { fileReadBytes(vaultPath) }
             ?: return@withContext VaultError.NotAVault("Vault file not found").left()
         val header = when (val r = VaultHeaderSerializer.deserialize(rawBytes)) {
             is Either.Left -> return@withContext r
@@ -258,6 +280,7 @@ class VaultManager(
         dek: ByteArray,
         namespace: VaultNamespace,
         argon2Params: Argon2Params,
+        slotIndex: Int,
     ): Keyslot {
         val salt = crypto.secureRandom(Keyslot.SALT_SIZE)
         val passwordBytes = passphrase.toByteArray()
@@ -271,19 +294,32 @@ class VaultManager(
         )
         crypto.clearBytes(passwordBytes)
 
-        val plaintext = dek + byteArrayOf(namespace.tag)  // 33 bytes
+        // plaintext = DEK (32 bytes) + namespace_tag (1 byte) + provider_type (1 byte)
+        val plaintext = dek + byteArrayOf(namespace.tag, Keyslot.PROVIDER_PASSPHRASE)
         val nonce = crypto.secureRandom(Keyslot.NONCE_SIZE)
         val blob = crypto.encryptAEAD(keyslotKey, nonce, plaintext, byteArrayOf())
         crypto.clearBytes(keyslotKey)
         crypto.clearBytes(plaintext)
+
+        // reserved[0]: DEK-derived marker so addKeyslot can find slots it owns without
+        // needing a plaintext providerType byte. Adversaries without the DEK cannot verify
+        // this marker, preserving deniability for slots in other namespaces.
+        val reserved = crypto.secureRandom(Keyslot.RESERVED_SIZE)
+        val markerKey = crypto.hkdfSha256(
+            ikm = dek,
+            salt = "slot-marker-v1".encodeToByteArray(),
+            info = byteArrayOf(slotIndex.toByte()),
+            length = 1,
+        )
+        reserved[0] = markerKey[0]
+        crypto.clearBytes(markerKey)
 
         return Keyslot(
             salt = salt,
             argon2Params = argon2Params,
             encryptedDekBlob = blob,
             slotNonce = nonce,
-            providerType = Keyslot.PROVIDER_PASSPHRASE,
-            reserved = crypto.secureRandom(Keyslot.RESERVED_SIZE),
+            reserved = reserved,
         )
     }
 
@@ -292,12 +328,25 @@ class VaultManager(
         argon2Params = DEFAULT_ARGON2_PARAMS,
         encryptedDekBlob = crypto.secureRandom(Keyslot.ENCRYPTED_BLOB_SIZE),
         slotNonce = crypto.secureRandom(Keyslot.NONCE_SIZE),
-        providerType = Keyslot.PROVIDER_UNUSED,
         reserved = crypto.secureRandom(Keyslot.RESERVED_SIZE),
     )
 
-    private fun isSlotEmpty(slot: Keyslot): Boolean =
-        slot.providerType == Keyslot.PROVIDER_UNUSED
+    /**
+     * A slot is "mine" if [reserved][0] matches the HKDF marker derived from [dek] and [slotIndex].
+     * Decoy slots have random reserved bytes that will not match. An adversary without the DEK
+     * cannot verify this marker, so it reveals nothing about the number of active slots.
+     */
+    private fun isSlotMine(slot: Keyslot, dek: ByteArray, slotIndex: Int): Boolean {
+        val markerKey = crypto.hkdfSha256(
+            ikm = dek,
+            salt = "slot-marker-v1".encodeToByteArray(),
+            info = byteArrayOf(slotIndex.toByte()),
+            length = 1,
+        )
+        val expected = markerKey[0]
+        crypto.clearBytes(markerKey)
+        return slot.reserved[0] == expected
+    }
 
     private fun namespaceFirstSlot(namespace: VaultNamespace) = when (namespace) {
         VaultNamespace.OUTER -> 0
@@ -336,4 +385,28 @@ class VaultManager(
     }
 }
 
-private fun CharArray.toByteArray(): ByteArray = this.concatToString().encodeToByteArray()
+/**
+ * Encodes a CharArray to UTF-8 bytes without creating a String intermediate.
+ * Avoids heap-interning of the passphrase in a JVM String that cannot be zeroed.
+ * Handles BMP code points (U+0000–U+FFFF); surrogate pairs are encoded as three bytes each,
+ * which differs from standard UTF-8 but is deterministic and acceptable for passphrase hashing.
+ */
+private fun CharArray.toByteArray(): ByteArray {
+    val out = ArrayList<Byte>(this.size * 2)
+    for (c in this) {
+        val code = c.code
+        when {
+            code < 0x80 -> out.add(code.toByte())
+            code < 0x800 -> {
+                out.add((0xC0 or (code shr 6)).toByte())
+                out.add((0x80 or (code and 0x3F)).toByte())
+            }
+            else -> {
+                out.add((0xE0 or (code shr 12)).toByte())
+                out.add((0x80 or ((code shr 6) and 0x3F)).toByte())
+                out.add((0x80 or (code and 0x3F)).toByte())
+            }
+        }
+    }
+    return out.toByteArray()
+}

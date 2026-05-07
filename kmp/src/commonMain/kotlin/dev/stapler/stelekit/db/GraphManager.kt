@@ -383,6 +383,12 @@ class GraphManager(
         if (!content.contains("*.db") && !content.contains(".db")) {
             println("WARNING: $gitignorePath does not contain '*.db' — SQLite database files may be accidentally committed to git.")
         }
+        if (!content.contains(".stele-vault")) {
+            println("WARNING: $gitignorePath does not contain '.stele-vault' — vault header file may be accidentally committed to git.")
+        }
+        if (!content.contains("_hidden_reserve")) {
+            println("WARNING: $gitignorePath does not contain '_hidden_reserve/' — hidden volume directory may be accidentally committed to git, exposing its existence.")
+        }
     }
 
     /**

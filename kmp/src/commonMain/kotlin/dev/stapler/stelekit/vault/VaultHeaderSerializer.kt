@@ -15,6 +15,15 @@ import arrow.core.right
  *   [2061]  512 bytes — reserved
  *   [2573]  32 bytes  — header MAC
  *   Total:  2605 bytes
+ *
+ * Per-keyslot layout (256 bytes):
+ *   [0]   16  salt
+ *   [16]   4  Argon2 memory (LE uint32)
+ *   [20]   2  Argon2 iterations (LE uint16)
+ *   [22]   2  Argon2 parallelism (LE uint16)
+ *   [24]  50  encrypted DEK blob (AEAD ciphertext)
+ *   [74]  12  slot nonce
+ *   [86] 170  reserved (reserved[0] is slot-activity marker)
  */
 object VaultHeaderSerializer {
 
@@ -113,7 +122,6 @@ object VaultHeaderSerializer {
         writeInt16LE(buf, pos, slot.argon2Params.parallelism); pos += 2
         slot.encryptedDekBlob.copyInto(buf, pos); pos += Keyslot.ENCRYPTED_BLOB_SIZE
         slot.slotNonce.copyInto(buf, pos); pos += Keyslot.NONCE_SIZE
-        buf[pos] = slot.providerType; pos += 1
         slot.reserved.copyInto(buf, pos); pos += Keyslot.RESERVED_SIZE
 
         check(pos == Keyslot.TOTAL_SIZE)
@@ -128,14 +136,12 @@ object VaultHeaderSerializer {
         val parallelism = readInt16LE(bytes, pos); pos += 2
         val blob = bytes.sliceArray(pos until pos + Keyslot.ENCRYPTED_BLOB_SIZE); pos += Keyslot.ENCRYPTED_BLOB_SIZE
         val nonce = bytes.sliceArray(pos until pos + Keyslot.NONCE_SIZE); pos += Keyslot.NONCE_SIZE
-        val providerType = bytes[pos]; pos += 1
         val reserved = bytes.sliceArray(pos until pos + Keyslot.RESERVED_SIZE)
         return Keyslot(
             salt = salt,
             argon2Params = Argon2Params(memory = memory, iterations = iterations, parallelism = parallelism),
             encryptedDekBlob = blob,
             slotNonce = nonce,
-            providerType = providerType,
             reserved = reserved,
         )
     }

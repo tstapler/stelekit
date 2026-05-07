@@ -6,7 +6,8 @@ package dev.stapler.stelekit.vault
  * All implementations must use cryptographically secure random sources (never counters or
  * timestamps) and must not share mutable cipher/key state across concurrent calls.
  *
- * JVM: JvmCryptoEngine (javax.crypto ChaCha20-Poly1305 + BouncyCastle Argon2id/HKDF)
+ * JVM (Desktop): JvmCryptoEngine (javax.crypto ChaCha20-Poly1305 + BouncyCastle Argon2id/HKDF)
+ * Android: TODO — AndroidCryptoEngine using javax.crypto (same APIs, different BouncyCastle setup)
  * WASM: TODO — WasmCryptoEngine via libsodium.js interop (out of scope for v1)
  */
 interface CryptoEngine {

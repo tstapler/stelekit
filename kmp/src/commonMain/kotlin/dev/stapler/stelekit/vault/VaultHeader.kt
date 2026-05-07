@@ -62,26 +62,26 @@ data class VaultHeader(
  *  16      4       Argon2id memory (KiB, LE uint32)
  *  20      2       Argon2id iterations (LE uint16)
  *  22      2       Argon2id parallelism (LE uint16)
- *  24      49      Encrypted DEK blob: ChaCha20-Poly1305(keyslot_key, slot_nonce, DEK||namespace_tag)
- *                   DEK = 32 bytes, namespace_tag = 1 byte, tag = 16 bytes → 33 + 16 = 49 bytes
- *  73      12      slot_nonce (nonce for the DEK-wrapping AEAD)
- *  85      1       Provider type hint (0x00=passphrase, 0x01=keyfile, 0x02=os_keychain, 0xFF=unused/random)
- *  86      170     Reserved / random filler
+ *  24      50      Encrypted DEK blob: ChaCha20-Poly1305(keyslot_key, slot_nonce, DEK||namespace_tag||provider_type)
+ *                   DEK = 32 bytes, namespace_tag = 1 byte, provider_type = 1 byte, AEAD_tag = 16 bytes → 50 bytes
+ *  74      12      slot_nonce (nonce for the DEK-wrapping AEAD)
+ *  86      170     Reserved: reserved[0] is a DEK-derived slot-activity marker (HKDF(dek,"slot-marker-v1",index));
+ *                   all other bytes are random. Active and decoy slots are indistinguishable on disk —
+ *                   only Argon2id + AEAD decryption can identify a valid slot.
  *
- * Unused slots fill ALL 256 bytes with random — indistinguishable from active slots
- * (the AEAD MAC is the only oracle for "is this slot active?").
+ * All 8 slots are always tried on unlock in constant order (no plaintext hint as to which are active),
+ * preserving deniability for hidden-volume passphrases.
  */
 data class Keyslot(
     val salt: ByteArray,              // 16 bytes
     val argon2Params: Argon2Params,
-    val encryptedDekBlob: ByteArray,  // 49 bytes (33 plaintext + 16 tag)
+    val encryptedDekBlob: ByteArray,  // 50 bytes (34 plaintext + 16 AEAD tag)
     val slotNonce: ByteArray,         // 12 bytes
-    val providerType: Byte,
-    val reserved: ByteArray,          // 171 bytes
+    val reserved: ByteArray,          // 170 bytes; reserved[0] is slot-activity marker
 ) {
     companion object {
         const val SALT_SIZE = 16
-        const val ENCRYPTED_BLOB_SIZE = 49  // 32 DEK + 1 namespace_tag + 16 AEAD tag
+        const val ENCRYPTED_BLOB_SIZE = 50  // 32 DEK + 1 namespace_tag + 1 provider_type + 16 AEAD tag
         const val NONCE_SIZE = 12
         const val RESERVED_SIZE = 170
         const val TOTAL_SIZE = 256
@@ -89,7 +89,6 @@ data class Keyslot(
         const val PROVIDER_PASSPHRASE: Byte = 0x00
         const val PROVIDER_KEYFILE: Byte = 0x01
         const val PROVIDER_OS_KEYCHAIN: Byte = 0x02
-        const val PROVIDER_UNUSED: Byte = 0xFF.toByte()
     }
 
     override fun equals(other: Any?): Boolean {
@@ -99,7 +98,6 @@ data class Keyslot(
         if (argon2Params != other.argon2Params) return false
         if (!encryptedDekBlob.contentEquals(other.encryptedDekBlob)) return false
         if (!slotNonce.contentEquals(other.slotNonce)) return false
-        if (providerType != other.providerType) return false
         if (!reserved.contentEquals(other.reserved)) return false
         return true
     }
@@ -109,7 +107,6 @@ data class Keyslot(
         result = 31 * result + argon2Params.hashCode()
         result = 31 * result + encryptedDekBlob.contentHashCode()
         result = 31 * result + slotNonce.contentHashCode()
-        result = 31 * result + providerType.toInt()
         result = 31 * result + reserved.contentHashCode()
         return result
     }
@@ -120,6 +117,8 @@ enum class VaultNamespace(val tag: Byte) {
     HIDDEN(0x01);
 
     companion object {
-        fun fromTag(tag: Byte) = entries.first { it.tag == tag }
+        fun fromTag(tag: Byte): VaultNamespace =
+            entries.firstOrNull { it.tag == tag }
+                ?: throw VaultAuthException("Unknown namespace tag: 0x${tag.toInt().and(0xFF).toString(16)}")
     }
 }

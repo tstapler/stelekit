@@ -134,7 +134,8 @@ fun StelekitApp(
     gitRepository: dev.stapler.stelekit.git.GitRepository? = null,
     /**
      * Platform-specific crypto engine for paranoid-mode vault operations.
-     * Pass [JvmCryptoEngine] on Desktop/Android. When null, paranoid mode is unavailable.
+     * Pass [JvmCryptoEngine] on Desktop. Android support is pending an AndroidCryptoEngine.
+     * When null, paranoid mode is unavailable.
      */
     cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine? = null,
 ) {
@@ -572,12 +573,13 @@ private fun GraphContent(
     // Force-flush pending writes on Android lifecycle pause/stop.
     // Keyed on voiceCaptureViewModel so the observer is re-registered whenever the VM is
     // recreated (e.g. after voicePipeline changes), preventing calls on a stale closed instance.
+    // Uses each object's own internal scope rather than rememberCoroutineScope to avoid
+    // ForgottenCoroutineScopeException when ON_PAUSE fires after composition teardown.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, voiceCaptureViewModel) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
-                viewModel.savePendingChanges()
-                scope.launch { blockStateManager.flush() }
+                viewModel.savePendingChanges()  // launches flush on viewModel's own scope
                 voiceCaptureViewModel.cancel()
             }
         }

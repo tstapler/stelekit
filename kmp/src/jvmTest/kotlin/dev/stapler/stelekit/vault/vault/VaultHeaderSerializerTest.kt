@@ -20,7 +20,6 @@ class VaultHeaderSerializerTest {
         argon2Params = Argon2Params(memory = 4096, iterations = 1, parallelism = 1),
         encryptedDekBlob = engine.secureRandom(Keyslot.ENCRYPTED_BLOB_SIZE),
         slotNonce = engine.secureRandom(Keyslot.NONCE_SIZE),
-        providerType = Keyslot.PROVIDER_PASSPHRASE,
         reserved = engine.secureRandom(Keyslot.RESERVED_SIZE),
     )
 

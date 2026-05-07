@@ -94,8 +94,6 @@ data class AppState(
     val renameDialogPage: Page? = null,
     val renameDialogBusy: Boolean = false,
     val renameDialogError: String? = null,
-    // Vault / paranoid-mode state (null = non-paranoid graph)
-    val vaultState: VaultState? = null,
     // Git sync state
     val syncState: SyncState = SyncState.Idle,
     val gitConfig: GitConfig? = null,

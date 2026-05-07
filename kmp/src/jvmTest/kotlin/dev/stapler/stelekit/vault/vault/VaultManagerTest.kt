@@ -63,9 +63,9 @@ class VaultManagerTest {
         assertIs<VaultError.InvalidCredential>(result.leftOrNull())
     }
 
-    // VM-04 — Only active (non-PROVIDER_UNUSED) keyslots are tried during unlock;
-    // decoy slots are skipped to avoid OOM from unbounded Argon2 params and to keep unlock fast.
-    @Test fun `only active keyslots are tried on unlock`() = runTest {
+    // VM-04 — All 8 keyslots are tried unconditionally for deniability; no plaintext skip
+    // optimization that would leak which slots are active (required by NFR-5).
+    @Test fun `all 8 keyslots are tried on unlock`() = runTest {
         var decryptCount = 0
         val countingEngine = object : CryptoEngine by engine {
             override fun decryptAEAD(key: ByteArray, nonce: ByteArray, ciphertext: ByteArray, aad: ByteArray): ByteArray {
@@ -83,7 +83,7 @@ class VaultManagerTest {
         vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
         decryptCount = 0
         vm.unlock(graphPath, "correct".toCharArray(), params)
-        assertEquals(1, decryptCount, "Expected exactly 1 decryptAEAD call for the single active keyslot")
+        assertEquals(8, decryptCount, "Expected exactly 8 decryptAEAD calls — all slots tried for deniability")
     }
 
     // VM-05 — Add second keyslot (passphrase), unlock with new passphrase
@@ -121,20 +121,21 @@ class VaultManagerTest {
         assertTrue(r2.isRight())
     }
 
-    // VM-07 — Tampered header bytes → VaultError.HeaderTampered
+    // VM-07 — Tampered byte in random-padding region (covered by MAC, outside any keyslot AEAD)
+    // causes HeaderTampered after the active keyslot decrypts but the MAC check fails.
     @Test fun `tampered header bytes return HeaderTampered`() = runTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
         vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
-        // Flip a byte in the keyslot area (offset 13, inside first keyslot)
+        // Flip a byte at offset 5 (inside the 8-byte random padding, bytes 5..12).
+        // The active slot (slot 0) still decrypts correctly, but the MAC over bytes 0..2572 fails.
         val vaultPath = VaultManager.vaultFilePath(graphPath)
         val bytes = store[vaultPath]!!.copyOf()
-        bytes[13] = (bytes[13].toInt() xor 0xFF).toByte()
+        bytes[5] = (bytes[5].toInt() xor 0xFF).toByte()
         store[vaultPath] = bytes
         val result = vm.unlock(graphPath, "correct".toCharArray(), params)
-        // Should fail — either HeaderTampered or InvalidCredential (slot data corrupted)
-        assertTrue(result.isLeft())
+        assertIs<VaultError.HeaderTampered>(result.leftOrNull())
     }
 
     // VM-08 — lock() zero-fills DEK byte array
@@ -229,6 +230,23 @@ class VaultManagerTest {
         assertEquals(8192, slot.argon2Params.memory)
         assertEquals(2, slot.argon2Params.iterations)
         assertEquals(1, slot.argon2Params.parallelism)
+    }
+
+    // VM-15 — All 4 OUTER keyslots can be filled; adding a 5th returns SlotsFull
+    @Test fun `can fill all outer keyslots and extra returns SlotsFull`() = runTest {
+        val store = mutableMapOf<String, ByteArray>()
+        val vm = makeVaultManagerWithStore(store)
+        val graphPath = "/tmp/test-graph"
+        // createVault fills OUTER slot 0
+        val dek = vm.createVault(graphPath, "slot0".toCharArray(), argon2Params = params).getOrNull()!!
+        // Fill remaining OUTER slots (1, 2, 3)
+        for (i in 1..3) {
+            val r = vm.addKeyslot(graphPath, dek, "slot$i".toCharArray(), argon2Params = params)
+            assertTrue(r.isRight(), "Expected OUTER slot $i to be added successfully")
+        }
+        // All 4 OUTER slots are now full; 5th OUTER call must fail with SlotsFull
+        val overflow = vm.addKeyslot(graphPath, dek, "overflow".toCharArray(), argon2Params = params)
+        assertIs<VaultError.SlotsFull>(overflow.leftOrNull())
     }
 
     // VM-11 — Full DEK rotation re-encrypts: test that different DEKs produce different vault state

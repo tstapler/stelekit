@@ -7,7 +7,6 @@ import org.bouncycastle.crypto.params.HKDFParameters
 import org.bouncycastle.crypto.digests.SHA256Digest
 import javax.crypto.Cipher
 import javax.crypto.Mac
-import javax.crypto.spec.ChaCha20ParameterSpec
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import java.security.SecureRandom
