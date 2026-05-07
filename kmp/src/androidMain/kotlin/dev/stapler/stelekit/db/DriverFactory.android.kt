@@ -4,6 +4,7 @@ import android.content.Context
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import io.requery.android.database.sqlite.RequerySQLiteOpenHelperFactory
+import kotlinx.coroutines.runBlocking
 
 
 actual class DriverFactory actual constructor() {
@@ -57,7 +58,7 @@ actual class DriverFactory actual constructor() {
         try { driver.execute(null, "PRAGMA cache_size=-8000;", 0) } catch (_: Exception) { }
 
         // Apply incremental DDL migrations (idempotent, hash-tracked).
-        MigrationRunner.applyAll(driver)
+        runBlocking { MigrationRunner.applyAll(driver) }
 
         return driver
     }

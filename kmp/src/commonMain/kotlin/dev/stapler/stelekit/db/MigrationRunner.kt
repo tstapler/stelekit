@@ -186,7 +186,7 @@ object MigrationRunner {
      * (which would leave the schema in an indeterminate state). The correct fix is always
      * to add a new migration entry rather than edit an existing one.
      */
-    fun applyAll(driver: SqlDriver) {
+    suspend fun applyAll(driver: SqlDriver) {
         // Bootstrap the tracking table — must succeed before anything else.
         driver.execute(
             identifier = null,
@@ -198,23 +198,25 @@ object MigrationRunner {
                 )
             """.trimIndent(),
             parameters = 0
-        )
+        ).await()
 
         // Load both name and hash so we can detect tampering.
         val appliedByName: Map<String, String> = driver.executeQuery(
             identifier = null,
             sql = "SELECT name, hash FROM schema_migrations",
             mapper = { cursor ->
-                val map = mutableMapOf<String, String>()
-                while (cursor.next().value) {
-                    val name = cursor.getString(0)
-                    val hash = cursor.getString(1)
-                    if (name != null && hash != null) map[name] = hash
+                QueryResult.AsyncValue {
+                    val map = mutableMapOf<String, String>()
+                    while (cursor.next().await()) {
+                        val name = cursor.getString(0)
+                        val hash = cursor.getString(1)
+                        if (name != null && hash != null) map[name] = hash
+                    }
+                    map as Map<String, String>
                 }
-                QueryResult.Value(map as Map<String, String>)
             },
             parameters = 0
-        ).value
+        ).await()
 
         for (migration in all) {
             val recordedHash = appliedByName[migration.name]
@@ -231,7 +233,7 @@ object MigrationRunner {
 
             for (sql in migration.statements) {
                 try {
-                    driver.execute(null, sql.trimIndent(), 0)
+                    driver.execute(null, sql.trimIndent(), 0).await()
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
@@ -248,7 +250,7 @@ object MigrationRunner {
             ) {
                 bindString(0, migration.hash)
                 bindString(1, migration.name)
-            }
+            }.await()
         }
     }
 

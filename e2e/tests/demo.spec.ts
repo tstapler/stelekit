@@ -4,6 +4,19 @@ import { test, expect } from '@playwright/test';
 // Assertions here verify that the WASM binary compiles to something that
 // actually runs in a browser, not just that the build directory exists.
 
+test.beforeEach(async ({ page }) => {
+  // Clear OPFS stelekit directory before each test to prevent inter-test bleed
+  await page.goto('/');
+  await page.evaluate(async () => {
+    try {
+      const root = await navigator.storage.getDirectory();
+      await root.removeEntry('stelekit', { recursive: true });
+    } catch {
+      // Directory may not exist on first run
+    }
+  });
+});
+
 test('SteleKit WASM demo: canvas initializes and Compose paints', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', err => {
@@ -60,5 +73,37 @@ test('SteleKit WASM demo: canvas initializes and Compose paints', async ({ page 
     .toBe(true);
 
   // Step 4: no uncaught JS exceptions during startup.
+  expect(errors, `Uncaught JS errors: ${errors.join(' | ')}`).toHaveLength(0);
+});
+
+test('SteleKit OPFS: data persists across page reload', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', err => errors.push(err.message));
+
+  await page.goto('/');
+
+  await page.waitForFunction(
+    () => (window as any).__stelekit_ready === true,
+    { timeout: 30_000 },
+  );
+
+  await page.reload();
+
+  await page.waitForFunction(
+    () => (window as any).__stelekit_ready === true,
+    { timeout: 30_000 },
+  );
+
+  const hasOpfsData = await page.evaluate(async () => {
+    try {
+      const root = await navigator.storage.getDirectory();
+      await root.getDirectoryHandle('stelekit', { create: false });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  expect(hasOpfsData, 'OPFS stelekit directory must exist after app init').toBe(true);
+
   expect(errors, `Uncaught JS errors: ${errors.join(' | ')}`).toHaveLength(0);
 });

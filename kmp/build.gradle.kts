@@ -151,7 +151,7 @@ kotlin {
         if (project.findProperty("enableJs") == "true") {
             val wasmJsMain by getting {
                 dependencies {
-                    // Phase B: add @sqlite.org/sqlite-wasm driver here
+                    implementation(npm("@sqlite.org/sqlite-wasm", "3.46.1"))
                 }
             }
 
@@ -807,6 +807,7 @@ sqldelight {
     databases {
         create("SteleDatabase") {
             packageName.set("dev.stapler.stelekit.db")
+            generateAsync.set(true)
         }
     }
 }
