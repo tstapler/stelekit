@@ -29,8 +29,13 @@ fun main() {
 
         val driverFactory = DriverFactory()
         val backend = try {
-            driverFactory.createDriverAsync(graphId)
-            GraphBackend.SQLDELIGHT
+            val driver = driverFactory.createDriverAsync(graphId)
+            if (driver.actualBackend == "memory") {
+                println("[SteleKit] OPFS worker fell back to :memory: — data will not persist")
+                GraphBackend.IN_MEMORY
+            } else {
+                GraphBackend.SQLDELIGHT
+            }
         } catch (e: Throwable) {
             println("[SteleKit] OPFS driver init failed, using IN_MEMORY: ${e.message}")
             GraphBackend.IN_MEMORY

@@ -53,14 +53,15 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     actual override fun readFile(path: String): String? = cache[path]
     actual override fun fileExists(path: String): Boolean = cache.containsKey(path)
     actual override fun listFiles(path: String): List<String> =
-        cache.keys.filter { it.startsWith("$path/") && !it.removePrefix("$path/").contains('/') }
+        cache.keys
+            .filter { it.startsWith("$path/") && !it.removePrefix("$path/").contains('/') }
+            .map { it.removePrefix("$path/") }
     actual override fun listDirectories(path: String): List<String> =
         cache.keys
             .filter { it.startsWith("$path/") }
             .map { it.removePrefix("$path/").substringBefore('/') }
             .filter { it.isNotEmpty() && cache.keys.any { k -> k.startsWith("$path/$it/") } }
             .distinct()
-            .map { "$path/$it" }
 
     actual override fun writeFile(path: String, content: String): Boolean {
         cache[path] = content
@@ -68,7 +69,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return true
     }
 
-    actual override fun directoryExists(path: String): Boolean = true
+    actual override fun directoryExists(path: String): Boolean =
+        path == homeDir || cache.keys.any { it.startsWith("$path/") }
     actual override fun createDirectory(path: String): Boolean = true
     actual override fun deleteFile(path: String): Boolean {
         cache.remove(path)

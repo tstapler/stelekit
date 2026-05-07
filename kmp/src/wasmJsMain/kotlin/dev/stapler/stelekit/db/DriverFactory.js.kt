@@ -15,10 +15,15 @@ actual class DriverFactory actual constructor() {
     actual fun getDatabaseDirectory(): String = "/stelekit"
 
     suspend fun createDriverAsync(graphId: String): WasmOpfsSqlDriver {
+        check(cachedDriver == null) { "createDriverAsync() called twice for graph '$graphId'" }
         val opfsPath = "/graph-${graphId}.sqlite3"
         val driver = WasmOpfsSqlDriver(workerScriptPath = "./sqlite-stelekit-worker.js")
         driver.init(opfsPath)
-        SteleDatabase.Schema.create(driver).await()
+        try {
+            SteleDatabase.Schema.create(driver).await()
+        } catch (_: Throwable) {
+            // Tables already exist on a persisted OPFS database — treat as benign.
+        }
         MigrationRunner.applyAll(driver)
         cachedDriver = driver
         return driver
