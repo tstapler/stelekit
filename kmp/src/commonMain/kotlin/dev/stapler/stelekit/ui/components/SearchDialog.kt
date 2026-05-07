@@ -493,7 +493,7 @@ fun SearchResultRow(
     snippet: String? = null,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent)
             .clickable(onClick = onClick)
