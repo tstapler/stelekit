@@ -23,10 +23,7 @@ import dev.stapler.stelekit.vault.VaultNamespace
 /**
  * Full-screen vault unlock dialog shown when a paranoid-mode graph requires a passphrase.
  *
- * Passphrase input is backed by a [CharArray] to minimize heap lifetime.
- * The CharArray is cleared after each unlock attempt.
- *
- * "Open as hidden graph" is a subtle secondary action below the main form; it does not
+ * "Open alternate graph" is a subtle secondary action below the main form; it does not
  * visually suggest that a hidden volume exists (plausible deniability per NFR-5).
  */
 @Composable

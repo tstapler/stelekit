@@ -38,9 +38,9 @@ class GraphWriter(
     private val pageRepository: PageRepository? = null,
     private val sidecarManager: SidecarManager? = null,
     /** When non-null, all file writes are encrypted via paranoid-mode before hitting disk. */
-    var cryptoLayer: CryptoLayer? = null,
+    @Volatile var cryptoLayer: CryptoLayer? = null,
     /** Graph root path — required to compute graph-root-relative AAD paths for encryption. */
-    private var graphPath: String = "",
+    @Volatile var graphPath: String = "",
 ) {
     private val logger = Logger("GraphWriter")
     private val saveMutex = Mutex()
@@ -238,7 +238,7 @@ class GraphWriter(
                 saga {
                     // Step 1: write markdown file — rollback restores previous content
                     val cryptoLayerNow = cryptoLayer
-                    val oldRawBytes = if (fileSystem.fileExists(filePath)) fileSystem.readFileBytes(filePath) else null
+                    val oldRawBytes = if (cryptoLayerNow != null && fileSystem.fileExists(filePath)) fileSystem.readFileBytes(filePath) else null
                     val oldContent = if (cryptoLayerNow == null && fileSystem.fileExists(filePath)) fileSystem.readFile(filePath) else null
                     saga(
                         action = {

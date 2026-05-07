@@ -61,7 +61,7 @@ class GraphLoader(
     private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
     private val spanRepository: SpanRepository? = null,
     /** When non-null, all file reads are passed through paranoid-mode decryption. */
-    var cryptoLayer: CryptoLayer? = null,
+    @Volatile var cryptoLayer: CryptoLayer? = null,
 ) {
     private val logger = Logger("GraphLoader")
     private val markdownParser = MarkdownParser()
@@ -92,8 +92,8 @@ class GraphLoader(
         val rawBytes = fileSystem.readFileBytes(filePath) ?: return null
         val relPath = relativePathFor(filePath)
         return when (val result = layer.decrypt(relPath, rawBytes)) {
-            is arrow.core.Either.Right -> result.value.decodeToString()
-            is arrow.core.Either.Left -> when (val err = result.value) {
+            is Either.Right -> result.value.decodeToString()
+            is Either.Left -> when (val err = result.value) {
                 is VaultError.NotEncrypted -> fileSystem.readFile(filePath)  // plaintext fallback
                 else -> {
                     logger.warn("Decryption failed for $filePath: ${err.message}")

@@ -82,6 +82,7 @@ import dev.stapler.stelekit.ui.screens.LibrarySetupScreen
 import dev.stapler.stelekit.ui.screens.PageView
 import dev.stapler.stelekit.ui.screens.PermissionRecoveryScreen
 import dev.stapler.stelekit.ui.screens.SearchViewModel
+import dev.stapler.stelekit.ui.screens.VaultUnlockScreen
 import dev.stapler.stelekit.domain.NoOpUrlFetcher
 import dev.stapler.stelekit.domain.UrlFetcher
 import dev.stapler.stelekit.voice.VoiceCaptureState
@@ -131,6 +132,11 @@ fun StelekitApp(
      * [AndroidGitRepository] on Android. When null, git sync is disabled.
      */
     gitRepository: dev.stapler.stelekit.git.GitRepository? = null,
+    /**
+     * Platform-specific crypto engine for paranoid-mode vault operations.
+     * Pass [JvmCryptoEngine] on Desktop/Android. When null, paranoid mode is unavailable.
+     */
+    cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine? = null,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -285,6 +291,7 @@ fun StelekitApp(
             spanRecorder = spanRecorder,
             onMemoryPressure = onMemoryPressure,
             gitRepository = gitRepository,
+            cryptoEngine = cryptoEngine,
         )
     }
 }
@@ -315,13 +322,40 @@ private fun GraphContent(
     spanRecorder: SpanRecorder = NoOpSpanRecorder,
     onMemoryPressure: (((() -> Unit) -> Unit))? = null,
     gitRepository: dev.stapler.stelekit.git.GitRepository? = null,
+    cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine? = null,
 ) {
     CompositionLocalProvider(LocalSpanRecorder provides spanRecorder) {
     val scope = rememberCoroutineScope()
     val composeClipboard = LocalClipboardManager.current
     val clipboardProvider = rememberClipboardProvider(composeClipboard)
+
+    val activeGraphInfo = remember { graphManager.getActiveGraphInfo() }
+    val activeGraphPath = activeGraphInfo?.path ?: ""
+
+    // Paranoid mode: true when a .stele-vault file exists for this graph and a crypto engine is available.
+    val isParanoidMode = remember {
+        cryptoEngine != null && activeGraphPath.isNotEmpty() &&
+            fileSystem.fileExists(dev.stapler.stelekit.vault.VaultManager.vaultFilePath(activeGraphPath))
+    }
+
+    // Vault state drives the unlock screen and gates graph loading.
+    var vaultState by remember {
+        androidx.compose.runtime.mutableStateOf<VaultState>(
+            if (isParanoidMode) VaultState.Locked else VaultState.Unlocked(dev.stapler.stelekit.vault.VaultNamespace.OUTER)
+        )
+    }
+
+    val vaultManager = remember {
+        if (!isParanoidMode || cryptoEngine == null) null
+        else dev.stapler.stelekit.vault.VaultManager(
+            crypto = cryptoEngine,
+            fileReadBytes = { path -> fileSystem.readFileBytes(path) },
+            fileWriteBytes = { path, data -> fileSystem.writeFileBytes(path, data) },
+        )
+    }
+
     val sidecarManager = remember {
-        val graphPath = graphManager.getActiveGraphInfo()?.path
+        val graphPath = activeGraphPath.ifEmpty { null }
         if (graphPath != null) SidecarManager(fileSystem, graphPath) else null
     }
     val graphLoader = remember {
@@ -435,13 +469,45 @@ private fun GraphContent(
     }
 
     // Bootstrap loadGraph when the ViewModel has no persisted path but GraphManager has an
-    // active graph. This happens when Onboarding completes via onComplete (not onGraphSelected),
-    // or when lastGraphPath was never written to SharedPreferences.
+    // active graph. For paranoid-mode graphs, loading is deferred until after unlock so the
+    // CryptoLayer is in place before any file reads.
     LaunchedEffect(Unit) {
-        if (viewModel.uiState.value.currentGraphPath.isEmpty()) {
+        if (!isParanoidMode && viewModel.uiState.value.currentGraphPath.isEmpty()) {
             val path = graphManager.getActiveGraphInfo()?.path
             if (!path.isNullOrEmpty()) {
                 viewModel.setGraphPath(path)
+            }
+        }
+    }
+
+    // After successful vault unlock, inject CryptoLayer into loader/writer then load graph.
+    LaunchedEffect(vaultState) {
+        val state = vaultState
+        if (state is VaultState.Unlocked && isParanoidMode && viewModel.uiState.value.currentGraphPath.isEmpty()) {
+            val path = graphManager.getActiveGraphInfo()?.path ?: return@LaunchedEffect
+            viewModel.setGraphPath(path)
+        }
+    }
+
+    // Unlock handler — called from VaultUnlockScreen. The namespace arg is UI-only (OUTER vs HIDDEN
+    // button); VaultManager determines the actual namespace from the keyslot that decrypts.
+    val onVaultUnlock: (passphrase: CharArray, dev.stapler.stelekit.vault.VaultNamespace) -> Unit = handler@{ passphrase, _ ->
+        val vm = vaultManager ?: run { passphrase.fill(' '); return@handler }
+        val engine = cryptoEngine ?: run { passphrase.fill(' '); return@handler }
+        vaultState = VaultState.Unlocking
+        scope.launch {
+            when (val result = vm.unlock(activeGraphPath, passphrase)) {
+                is arrow.core.Either.Right -> {
+                    val unlockResult = result.value
+                    val layer = dev.stapler.stelekit.vault.CryptoLayer(engine, unlockResult.dek)
+                    graphLoader.cryptoLayer = layer
+                    graphWriter.cryptoLayer = layer
+                    graphWriter.graphPath = activeGraphPath
+                    vaultState = VaultState.Unlocked(unlockResult.namespace)
+                }
+                is arrow.core.Either.Left -> {
+                    vaultState = VaultState.Error(result.value)
+                }
             }
         }
     }
@@ -545,7 +611,6 @@ private fun GraphContent(
     val appState by viewModel.uiState.collectAsState()
     val voiceCaptureState by voiceCaptureViewModel.state.collectAsState()
     val graphRegistry by graphManager.graphRegistry.collectAsState()
-    val activeGraphInfo = graphManager.getActiveGraphInfo()
     val activeGraphId = graphRegistry.activeGraphId
 
     StelekitTheme(themeMode = appState.themeMode) {
@@ -571,6 +636,13 @@ private fun GraphContent(
                 )
             } else {
                 val focusManager = LocalFocusManager.current
+                if (isParanoidMode && vaultState !is VaultState.Unlocked) {
+                    VaultUnlockScreen(
+                        graphName = activeGraphInfo?.displayName ?: activeGraphPath,
+                        vaultState = vaultState,
+                        onUnlock = onVaultUnlock,
+                    )
+                } else {
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxSize()
@@ -783,6 +855,7 @@ private fun GraphContent(
 
                     } // CompositionLocalProvider(LocalWindowSizeClass)
                 }
+                } // vault unlocked else
             }
         }
     }

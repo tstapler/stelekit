@@ -49,17 +49,21 @@ interface FileSystem {
 
     /**
      * Read raw bytes from a file. Used by paranoid-mode decryption to read STEK-format files.
-     * Default implementation reads via [readFile] and encodes to UTF-8 bytes.
-     * JVM override uses direct byte-level IO to preserve binary integrity.
+     * Platforms that support paranoid mode must override this with true byte-level IO.
+     * The default throws [UnsupportedOperationException] to prevent silent data corruption
+     * from a round-trip through String (which mangles non-UTF-8 byte sequences).
      */
-    fun readFileBytes(path: String): ByteArray? = readFile(path)?.encodeToByteArray()
+    fun readFileBytes(path: String): ByteArray? =
+        throw UnsupportedOperationException("readFileBytes is not implemented for this platform. Override in a platform-specific FileSystem implementation.")
 
     /**
      * Write raw bytes to a file. Used by paranoid-mode encryption.
-     * Default: decode as UTF-8 and call [writeFile] (works for text, not binary).
-     * JVM override uses direct byte-level IO.
+     * Platforms that support paranoid mode must override this with true byte-level IO.
+     * The default throws [UnsupportedOperationException] — decoding arbitrary ciphertext as
+     * UTF-8 and re-encoding it is lossy and would corrupt encrypted file content.
      */
-    fun writeFileBytes(path: String, data: ByteArray): Boolean = writeFile(path, data.decodeToString())
+    fun writeFileBytes(path: String, data: ByteArray): Boolean =
+        throw UnsupportedOperationException("writeFileBytes is not implemented for this platform. Override in a platform-specific FileSystem implementation.")
 
     /** Updates the shadow copy after a SAF write. No-op on non-SAF file systems. */
     fun updateShadow(path: String, content: String) { /* no-op */ }

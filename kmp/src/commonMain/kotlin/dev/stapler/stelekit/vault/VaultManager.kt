@@ -31,9 +31,9 @@ class VaultManager(
     private val _vaultEvents = MutableSharedFlow<VaultEvent>(replay = 1, extraBufferCapacity = 8)
     val vaultEvents: SharedFlow<VaultEvent> = _vaultEvents.asSharedFlow()
 
-    // In-memory session — cleared on lock
-    private var sessionDek: ByteArray? = null
-    private var sessionNamespace: VaultNamespace? = null
+    // @Volatile so that lock() on any thread is immediately visible to currentDek() callers.
+    @Volatile private var sessionDek: ByteArray? = null
+    @Volatile private var sessionNamespace: VaultNamespace? = null
 
     sealed interface VaultEvent {
         data object Locked : VaultEvent
@@ -82,6 +82,12 @@ class VaultManager(
             if (!fileWriteBytes(vaultPath, headerBytes)) {
                 return@withContext VaultError.CorruptedFile("Failed to write vault file to $vaultPath").left()
             }
+
+            // Pre-create the hidden-reserve directory so it exists even before a hidden graph is written.
+            // Written as a random-byte sentinel — indistinguishable from encrypted file content.
+            val reservePath = hiddenReserveSentinelPath(graphPath)
+            fileWriteBytes(reservePath, crypto.secureRandom(256))
+
             dek.right()
         } finally {
             passphrase.fill(' ')
@@ -333,6 +339,10 @@ class VaultManager(
             return "$base/.stele-vault"
         }
 
+        fun hiddenReserveSentinelPath(graphPath: String): String {
+            val base = if (graphPath.endsWith("/")) graphPath.dropLast(1) else graphPath
+            return "$base/_hidden_reserve/.stele-reserve"
+        }
     }
 }
 
