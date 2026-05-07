@@ -55,7 +55,7 @@ class OperationLogger(
     private var seq: Long = -1L
 
     @OptIn(DirectSqlWrite::class)
-    private fun nextSeq(): Long {
+    private suspend fun nextSeq(): Long {
         if (seq < 0) {
             seq = db.steleDatabaseQueries.selectLogicalClock(sessionId)
                 .executeAsOneOrNull() ?: 0L
@@ -65,42 +65,42 @@ class OperationLogger(
         return seq
     }
 
-    fun logInsert(block: Block) = log(
+    suspend fun logInsert(block: Block) = log(
         opType = OpType.INSERT_BLOCK,
         entityUuid = block.uuid,
         pageUuid = block.pageUuid,
         payload = OpPayload(after = block.toSnapshot()),
     )
 
-    fun logUpdate(before: Block, after: Block) = log(
+    suspend fun logUpdate(before: Block, after: Block) = log(
         opType = OpType.UPDATE_BLOCK,
         entityUuid = after.uuid,
         pageUuid = after.pageUuid,
         payload = OpPayload(before = before.toSnapshot(), after = after.toSnapshot()),
     )
 
-    fun logDelete(block: Block) = log(
+    suspend fun logDelete(block: Block) = log(
         opType = OpType.DELETE_BLOCK,
         entityUuid = block.uuid,
         pageUuid = block.pageUuid,
         payload = OpPayload(before = block.toSnapshot()),
     )
 
-    fun logSyncBarrier() = log(
+    suspend fun logSyncBarrier() = log(
         opType = OpType.SYNC_BARRIER,
         entityUuid = null,
         pageUuid = null,
         payload = OpPayload(),
     )
 
-    fun logBatchStart(batchId: String) = log(
+    suspend fun logBatchStart(batchId: String) = log(
         opType = OpType.BATCH_START,
         entityUuid = null,
         pageUuid = null,
         payload = OpPayload(batchId = batchId),
     )
 
-    fun logBatchEnd(batchId: String) = log(
+    suspend fun logBatchEnd(batchId: String) = log(
         opType = OpType.BATCH_END,
         entityUuid = null,
         pageUuid = null,
@@ -108,7 +108,7 @@ class OperationLogger(
     )
 
     @OptIn(DirectSqlWrite::class)
-    private fun log(opType: OpType, entityUuid: String?, pageUuid: String?, payload: OpPayload) {
+    private suspend fun log(opType: OpType, entityUuid: String?, pageUuid: String?, payload: OpPayload) {
         try {
             val opId = UuidGenerator.generateV7()
             val payloadJson = json.encodeToString(payload)
