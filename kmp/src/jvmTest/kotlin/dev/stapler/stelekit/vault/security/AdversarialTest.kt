@@ -134,5 +134,66 @@ class AdversarialTest {
         assertEquals(1000, unique.size, "All 1000 ciphertexts must be distinct (nonce reuse would produce duplicates)")
     }
 
+    // SEC-13 — renamePage latent AAD bug: verbatim ciphertext copy breaks decryption at new path
+    // GraphWriter.renamePage copies encrypted bytes verbatim to the new path. Because STEK AAD is
+    // the *old* relative path, decryption at the new path fails AEAD authentication.
+    // This test documents the latent bug and provides a regression anchor when it is fixed.
+    @Test fun `verbatim ciphertext copy fails authentication at new path`() {
+        val dek = engine.secureRandom(32)
+        val layer = CryptoLayer(engine, dek)
+        val content = "# Note\n- content".encodeToByteArray()
+
+        val oldPath = "pages/OldName.md.stek"
+        val newPath = "pages/NewName.md.stek"
+
+        val encryptedAtOldPath = layer.encrypt(oldPath, content)
+
+        // Verbatim byte copy to new path — AAD is still oldPath, so decrypt(newPath) must fail.
+        val result = layer.decrypt(newPath, encryptedAtOldPath)
+        assertTrue(result.isLeft(), "Verbatim ciphertext copy must fail AEAD at new path (AAD mismatch)")
+        assertIs<VaultError.AuthenticationFailed>(result.leftOrNull())
+    }
+
+    // SEC-14 — Encrypted file does not leak plaintext (ciphertext is not a superstring of plaintext)
+    @Test fun `ciphertext does not contain plaintext bytes`() {
+        val dek = engine.secureRandom(32)
+        val layer = CryptoLayer(engine, dek)
+        val content = "# Secret Note\n- very important content that must not be visible".encodeToByteArray()
+        val encrypted = layer.encrypt("pages/Secret.md.stek", content)
+
+        val plaintextHex = content.toHex()
+        val ciphertextHex = encrypted.sliceArray(CryptoLayer.HEADER_SIZE until encrypted.size).toHex()
+        assertFalse(ciphertextHex.contains(plaintextHex), "Plaintext must not appear as a substring of ciphertext")
+    }
+
+    // SEC-15 — Wrong DEK causes AuthenticationFailed (no silent decryption with wrong key)
+    @Test fun `wrong DEK causes AuthenticationFailed`() {
+        val correctDek = engine.secureRandom(32)
+        val wrongDek = engine.secureRandom(32)
+        val correctLayer = CryptoLayer(engine, correctDek)
+        val wrongLayer = CryptoLayer(engine, wrongDek)
+
+        val path = "pages/Sensitive.md.stek"
+        val content = "confidential data".encodeToByteArray()
+        val encrypted = correctLayer.encrypt(path, content)
+
+        val result = wrongLayer.decrypt(path, encrypted)
+        assertTrue(result.isLeft(), "Wrong DEK must not decrypt the ciphertext")
+        assertIs<VaultError.AuthenticationFailed>(result.leftOrNull())
+    }
+
+    // SEC-16 — Truncated ciphertext (valid STEK magic, no Poly1305 tag) causes error
+    @Test fun `truncated ciphertext after magic causes authentication failure`() {
+        val dek = engine.secureRandom(32)
+        val layer = CryptoLayer(engine, dek)
+        val content = "content".encodeToByteArray()
+        val encrypted = layer.encrypt("pages/Note.md.stek", content)
+
+        // Keep only the STEK header bytes (magic + version + nonce), strip all ciphertext
+        val truncated = encrypted.sliceArray(0 until CryptoLayer.HEADER_SIZE)
+        val result = layer.decrypt("pages/Note.md.stek", truncated)
+        assertTrue(result.isLeft(), "Header-only file (no ciphertext) must fail")
+    }
+
     private fun ByteArray.toHex() = joinToString("") { "%02x".format(it) }
 }

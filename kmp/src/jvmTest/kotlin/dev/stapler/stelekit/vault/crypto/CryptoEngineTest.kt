@@ -135,4 +135,34 @@ class CryptoEngineTest {
         }
         assertTrue(allZeroCount <= 1, "Expected at most 1 all-zero nonce in 1000 (probability ~2^-96 each)")
     }
+
+    // U-JCE-01 — hmacSha256 is deterministic (same key + data → same MAC)
+    @Test fun `hmacSha256 is deterministic`() {
+        val k = key()
+        val data = "vault-header-bytes".encodeToByteArray()
+        val mac1 = engine.hmacSha256(k, data)
+        val mac2 = engine.hmacSha256(k, data)
+        assertContentEquals(mac1, mac2)
+    }
+
+    // U-JCE-02 — hmacSha256 differentiates by key (different keys → different MACs)
+    @Test fun `hmacSha256 differentiates by key`() {
+        val data = "same data".encodeToByteArray()
+        val mac1 = engine.hmacSha256(key(), data)
+        val mac2 = engine.hmacSha256(key(), data)
+        assertFalse(mac1.contentEquals(mac2), "Different keys must produce different MACs")
+    }
+
+    // U-JCE-03 — constantTimeEquals handles equal and unequal arrays correctly
+    @Test fun `constantTimeEquals returns true for equal arrays and false for unequal`() {
+        val a = byteArrayOf(1, 2, 3, 4)
+        val b = byteArrayOf(1, 2, 3, 4)
+        val c = byteArrayOf(1, 2, 3, 5)
+        val d = byteArrayOf(1, 2, 3)
+
+        assertTrue(engine.constantTimeEquals(a, b), "Identical arrays must compare equal")
+        assertFalse(engine.constantTimeEquals(a, c), "Arrays differing in last byte must compare unequal")
+        assertFalse(engine.constantTimeEquals(a, d), "Arrays of different lengths must compare unequal")
+        assertTrue(engine.constantTimeEquals(byteArrayOf(), byteArrayOf()), "Two empty arrays must compare equal")
+    }
 }

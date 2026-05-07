@@ -391,4 +391,96 @@ class VaultManagerTest {
         assertIs<VaultError.InvalidCredential>(tooLarge.leftOrNull(),
             "Slot index >= KEYSLOT_COUNT must be rejected")
     }
+
+    // I-VM-07 — Production unlock path: argon2Params=null uses stored slot params
+    // All existing tests pass explicit params to unlock(); production code passes null so the
+    // stored params are read from the keyslot. This exercises the full deserialization path.
+    @Test fun `unlock with null argon2Params uses stored slot params`() = runTest {
+        val store = mutableMapOf<String, ByteArray>()
+        val vm = makeVaultManagerWithStore(store)
+        val graphPath = "/tmp/test-graph"
+        val customParams = Argon2Params(memory = 8192, iterations = 2, parallelism = 1)
+        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = customParams)
+        // Pass null — uses params stored in the keyslot (the only correct production path)
+        val result = vm.unlock(graphPath, "correct".toCharArray(), argon2Params = null)
+        assertTrue(result.isRight(), "Production unlock path must succeed using stored slot params")
+        assertEquals(32, result.getOrNull()!!.dek.size)
+        assertEquals(VaultNamespace.OUTER, result.getOrNull()!!.namespace)
+    }
+
+    // I-VM-08 — unlock emits an Unlocked event with the correct namespace
+    @Test fun `unlock emits Unlocked event with correct namespace`() = runTest {
+        val store = mutableMapOf<String, ByteArray>()
+        val vm = makeVaultManagerWithStore(store)
+        val graphPath = "/tmp/test-graph"
+        vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params)
+        vm.unlock(graphPath, "correct".toCharArray(), params)
+        val event = vm.vaultEvents.first { it is VaultManager.VaultEvent.Unlocked }
+        assertIs<VaultManager.VaultEvent.Unlocked>(event)
+        assertEquals(VaultNamespace.OUTER, event.namespace)
+    }
+
+    // I-VM-01 — createVault returns CorruptedFile when the underlying write fails
+    @Test fun `createVault returns CorruptedFile when write fails`() = runTest {
+        val vm = VaultManager(
+            crypto = engine,
+            fileReadBytes = { null },
+            fileWriteBytes = { _, _ -> false },
+        )
+        val result = vm.createVault("/tmp/test-graph", "pass".toCharArray(), argon2Params = params)
+        assertTrue(result.isLeft())
+        assertIs<VaultError.CorruptedFile>(result.leftOrNull())
+    }
+
+    // I-VM-02 — addKeyslot returns CorruptedFile when the header write fails
+    @Test fun `addKeyslot returns CorruptedFile when write fails`() = runTest {
+        // First createVault succeeds; then all subsequent writes fail
+        val store = mutableMapOf<String, ByteArray>()
+        var writeCount = 0
+        val vm = VaultManager(
+            crypto = engine,
+            fileReadBytes = { path -> store[path] },
+            fileWriteBytes = { path, data ->
+                writeCount++
+                if (writeCount <= 2) { store[path] = data; true } else false  // allow create + sentinel, block addKeyslot
+            },
+        )
+        val graphPath = "/tmp/test-graph"
+        val dek = vm.createVault(graphPath, "original".toCharArray(), argon2Params = params).getOrNull()!!
+        val result = vm.addKeyslot(graphPath, dek, "second".toCharArray(), argon2Params = params)
+        assertTrue(result.isLeft())
+        assertIs<VaultError.CorruptedFile>(result.leftOrNull())
+    }
+
+    // I-VM-03 — removeKeyslot returns CorruptedFile when the header write fails
+    @Test fun `removeKeyslot returns CorruptedFile when write fails`() = runTest {
+        val store = mutableMapOf<String, ByteArray>()
+        var writeCount = 0
+        val vm = VaultManager(
+            crypto = engine,
+            fileReadBytes = { path -> store[path] },
+            fileWriteBytes = { path, data ->
+                writeCount++
+                if (writeCount <= 2) { store[path] = data; true } else false
+            },
+        )
+        val graphPath = "/tmp/test-graph"
+        vm.createVault(graphPath, "pass".toCharArray(), argon2Params = params)
+        vm.unlock(graphPath, "pass".toCharArray(), params)
+        val result = vm.removeKeyslot(graphPath, slotIndex = 0)
+        assertTrue(result.isLeft())
+        assertIs<VaultError.CorruptedFile>(result.leftOrNull())
+    }
+
+    // I-VM-04 — unlock returns NotAVault when the vault file does not exist
+    @Test fun `unlock returns NotAVault when vault file missing`() = runTest {
+        val vm = VaultManager(
+            crypto = engine,
+            fileReadBytes = { null },
+            fileWriteBytes = { _, _ -> true },
+        )
+        val result = vm.unlock("/tmp/nonexistent-graph", "pass".toCharArray(), params)
+        assertTrue(result.isLeft())
+        assertIs<VaultError.NotAVault>(result.leftOrNull())
+    }
 }

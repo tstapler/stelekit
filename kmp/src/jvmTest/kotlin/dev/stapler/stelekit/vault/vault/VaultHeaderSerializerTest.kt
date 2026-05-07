@@ -77,4 +77,31 @@ class VaultHeaderSerializerTest {
         val avgNonZero = totalNonZeroFraction / 10
         assertTrue(avgNonZero >= 0.95, "Expected at least 95% non-zero bytes in random slot area, got $avgNonZero")
     }
+
+    // U-HS-07 — Argon2 params at uint16 boundary values round-trip without sign extension
+    // iterations and parallelism are stored as LE uint16 (max 65535); memory is LE uint32.
+    // This guards against sign-extension bugs where the Kotlin Int (signed) misreads the stored value.
+    @Test fun `argon2 params at uint16 max round-trip correctly`() {
+        val maxU16 = 65535
+        val slot = Keyslot(
+            salt = engine.secureRandom(Keyslot.SALT_SIZE),
+            argon2Params = Argon2Params(memory = maxU16, iterations = maxU16, parallelism = maxU16),
+            encryptedDekBlob = engine.secureRandom(Keyslot.ENCRYPTED_BLOB_SIZE),
+            slotNonce = engine.secureRandom(Keyslot.NONCE_SIZE),
+            reserved = engine.secureRandom(Keyslot.RESERVED_SIZE),
+        )
+        val header = VaultHeader(
+            randomPadding = engine.secureRandom(VaultHeader.PADDING_SIZE),
+            keyslots = (0 until VaultHeader.KEYSLOT_COUNT).map { if (it == 0) slot else makeRandomSlot() },
+            reserved = engine.secureRandom(VaultHeader.RESERVED_SIZE),
+            headerMac = engine.secureRandom(VaultHeader.MAC_SIZE),
+        )
+        val bytes = VaultHeaderSerializer.serialize(header)
+        val result = VaultHeaderSerializer.deserialize(bytes)
+        assertTrue(result.isRight())
+        val recovered = result.getOrNull()!!.keyslots[0].argon2Params
+        assertEquals(maxU16, recovered.memory, "memory must survive uint16 boundary round-trip")
+        assertEquals(maxU16, recovered.iterations, "iterations must survive uint16 boundary round-trip")
+        assertEquals(maxU16, recovered.parallelism, "parallelism must survive uint16 boundary round-trip")
+    }
 }
