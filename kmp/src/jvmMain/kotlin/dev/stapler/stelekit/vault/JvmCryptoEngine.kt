@@ -39,9 +39,9 @@ class JvmCryptoEngine : CryptoEngine {
         cipher.updateAAD(aad)
         return try {
             cipher.doFinal(ciphertext)
-        } catch (e: javax.crypto.BadPaddingException) {
-            throw VaultAuthException("Authentication tag verification failed: ${e.message}")
         } catch (e: javax.crypto.AEADBadTagException) {
+            throw VaultAuthException("Authentication tag verification failed: ${e.message}")
+        } catch (e: javax.crypto.BadPaddingException) {
             throw VaultAuthException("Authentication tag verification failed: ${e.message}")
         }
     }
