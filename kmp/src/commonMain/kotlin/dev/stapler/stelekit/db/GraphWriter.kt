@@ -197,6 +197,9 @@ class GraphWriter(
 
         if (writeOk) {
             if (fileSystem.deleteFile(oldPath)) {
+                // Notify the file watcher so it registers the new path and does not treat
+                // the newly-created file as an external change on the next poll tick.
+                onFileWritten?.invoke(newPath)
                 logger.debug("Renamed page from $oldPath to $newPath")
                 return true
             } else {

@@ -185,6 +185,15 @@ class GraphLoader(
     private var backgroundIndexJob: Job? = null
 
     /**
+     * Pre-sets the graph path used by [relativePathFor] for AEAD-AAD computation.
+     * Must be called before [cryptoLayer] is assigned so the first decryption uses
+     * the correct relative path rather than falling back to the absolute path.
+     */
+    fun setGraphPath(path: String) {
+        currentGraphPath = path
+    }
+
+    /**
      * Cancels any in-flight background indexing (Phase 2) immediately.
      * Safe to call from any thread. No-op if no indexing is running.
      */

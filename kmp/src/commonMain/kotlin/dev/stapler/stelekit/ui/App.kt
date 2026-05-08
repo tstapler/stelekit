@@ -514,9 +514,10 @@ private fun GraphContent(
                 is arrow.core.Either.Right -> {
                     val unlockResult = result.value
                     val layer = dev.stapler.stelekit.vault.CryptoLayer(engine, unlockResult.dek)
-                    // Write graphPath before cryptoLayer so any concurrent reader that observes
+                    // Set graph paths before cryptoLayer so any concurrent reader that observes
                     // cryptoLayer != null will also see the correct graphPath (used as AAD base).
                     graphWriter.graphPath = activeGraphPath
+                    graphLoader.setGraphPath(activeGraphPath)
                     graphLoader.cryptoLayer = layer
                     graphWriter.cryptoLayer = layer
                     vaultState = VaultState.Unlocked(unlockResult.namespace)

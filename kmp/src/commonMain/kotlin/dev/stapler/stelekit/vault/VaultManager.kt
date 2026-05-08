@@ -144,11 +144,11 @@ class VaultManager(
                 val params = argon2Params ?: slot.argon2Params
                 // Validate params before deriving — extreme values (memory = Int.MAX_VALUE) in
                 // a crafted vault file would cause OOM before the header MAC rejects it.
+                // Use `continue` rather than aborting: decoy slots have random bytes and can
+                // legitimately produce zero or extreme params (~1/2^32 per slot per field).
                 if (params.memory < 1 || params.iterations < 1 || params.parallelism < 1
                     || params.memory > MAX_ARGON2_MEMORY_KIB) {
-                    return@withContext VaultError.CorruptedFile(
-                        "Slot $index has invalid Argon2 params: $params"
-                    ).left()
+                    continue
                 }
                 val keyslotKey = crypto.argon2id(
                     password = passwordBytes,
