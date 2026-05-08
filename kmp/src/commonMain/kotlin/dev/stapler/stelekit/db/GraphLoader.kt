@@ -261,11 +261,15 @@ class GraphLoader(
     }
 
     /**
-     * Tries to find the .md file for a page by searching pages/ and journals/ directories.
+     * Tries to find the page file by searching pages/ and journals/ directories.
+     * Encrypted files (.md.stek) are checked before plaintext (.md) so paranoid-mode
+     * graphs resolve correctly.
      */
     fun resolvePageFilePath(pageName: String): String? {
         if (currentGraphPath.isEmpty()) return null
         val candidates = listOf(
+            "$currentGraphPath/pages/$pageName.md.stek",
+            "$currentGraphPath/journals/$pageName.md.stek",
             "$currentGraphPath/pages/$pageName.md",
             "$currentGraphPath/journals/$pageName.md"
         )
@@ -879,7 +883,7 @@ class GraphLoader(
                 val oldPath = "$path/$fileName"
                 val newPath = "$path/$expectedName.md"
                 
-                if (!fileSystem.fileExists(newPath)) {
+                if (!fileSystem.fileExists(newPath) && !fileSystem.fileExists("$path/$expectedName.md.stek")) {
                     try {
                         val content = fileSystem.readFile(oldPath)
                         if (content != null) {

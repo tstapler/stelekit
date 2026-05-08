@@ -450,6 +450,9 @@ class VaultManagerTest {
         val result = vm.addKeyslot(graphPath, dek, "second".toCharArray(), argon2Params = params)
         assertTrue(result.isLeft())
         assertIs<VaultError.CorruptedFile>(result.leftOrNull())
+        // Vault must still be intact — the original slot must still unlock
+        val unlock = vm.unlock(graphPath, "original".toCharArray(), params)
+        assertTrue(unlock.isRight(), "Vault must remain unlockable after failed addKeyslot write")
     }
 
     // I-VM-03 — removeKeyslot returns CorruptedFile when the header write fails

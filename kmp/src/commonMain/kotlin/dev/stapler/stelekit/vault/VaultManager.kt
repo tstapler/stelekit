@@ -143,6 +143,8 @@ class VaultManager(
                 try {
                     val plaintext = crypto.decryptAEAD(keyslotKey, slot.slotNonce, slot.encryptedDekBlob, byteArrayOf())
                     // plaintext = DEK (32 bytes) + namespace_tag (1 byte) + provider_type (1 byte)
+                    // First-match wins: validDek == null guard discards subsequent active slots.
+                    // All 8 slots are still tried unconditionally for constant-time deniability.
                     if (plaintext.size == 34 && validDek == null) {
                         val dek = plaintext.sliceArray(0 until 32)
                         val ns = try {

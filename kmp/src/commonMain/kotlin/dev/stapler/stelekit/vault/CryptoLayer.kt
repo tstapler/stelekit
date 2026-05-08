@@ -73,6 +73,9 @@ class CryptoLayer(
         if (raw.size < HEADER_SIZE) {
             return VaultError.CorruptedFile("STEK header truncated (${raw.size} < $HEADER_SIZE bytes)").left()
         }
+        if (raw.size == HEADER_SIZE) {
+            return VaultError.CorruptedFile("STEK ciphertext is empty — no Poly1305 tag").left()
+        }
 
         val nonce = raw.sliceArray(5 until 17)
         val ciphertext = raw.sliceArray(HEADER_SIZE until raw.size)

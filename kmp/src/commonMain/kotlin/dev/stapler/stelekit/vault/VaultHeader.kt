@@ -65,8 +65,9 @@ data class VaultHeader(
  *  24      50      Encrypted DEK blob: ChaCha20-Poly1305(keyslot_key, slot_nonce, DEK||namespace_tag||provider_type)
  *                   DEK = 32 bytes, namespace_tag = 1 byte, provider_type = 1 byte, AEAD_tag = 16 bytes → 50 bytes
  *  74      12      slot_nonce (nonce for the DEK-wrapping AEAD)
- *  86      170     Reserved: reserved[0] is a DEK-derived slot-activity marker (HKDF(dek,"slot-marker-v1",index));
- *                   all other bytes are random. Active and decoy slots are indistinguishable on disk —
+ *  86      170     Reserved: reserved[0..3] is a 4-byte DEK-derived slot-activity marker
+ *                   (HKDF-SHA256(dek, "slot-marker-v1", slotIndex), length=4; false-positive rate 1/2^32);
+ *                   remaining bytes are random. Active and decoy slots are indistinguishable on disk —
  *                   only Argon2id + AEAD decryption can identify a valid slot.
  *
  * All 8 slots are always tried on unlock in constant order (no plaintext hint as to which are active),
@@ -77,7 +78,7 @@ data class Keyslot(
     val argon2Params: Argon2Params,
     val encryptedDekBlob: ByteArray,  // 50 bytes (34 plaintext + 16 AEAD tag)
     val slotNonce: ByteArray,         // 12 bytes
-    val reserved: ByteArray,          // 170 bytes; reserved[0] is slot-activity marker
+    val reserved: ByteArray,          // 170 bytes; reserved[0..3] is 4-byte slot-activity marker
 ) {
     companion object {
         const val SALT_SIZE = 16

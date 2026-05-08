@@ -246,16 +246,28 @@ class GraphWriter(
 
             // 0. Safety Check for Large Deletions
             if (fileSystem.fileExists(filePath)) {
-                val oldContent = fileSystem.readFile(filePath) ?: ""
-                val oldBlockCount = oldContent.lines().count { it.trim().startsWith("- ") }
-                val newBlockCount = blocks.size
-
-                if (oldBlockCount > largeDeletionThreshold && newBlockCount < oldBlockCount / 2) {
-                    logger.error(
-                        "Safety check triggered: Attempting to delete more than 50% of blocks on page " +
-                            "'${page.name}' ($oldBlockCount -> $newBlockCount). Save aborted."
-                    )
-                    return@withLock false
+                val cryptoLayerSnap = cryptoLayer
+                val oldContent = if (cryptoLayerSnap != null) {
+                    val rawBytes = fileSystem.readFileBytes(filePath)
+                    if (rawBytes != null) {
+                        when (val r = cryptoLayerSnap.decrypt(relativeFilePath(filePath), rawBytes)) {
+                            is Either.Right -> r.value.decodeToString()
+                            is Either.Left -> null  // decrypt failed — skip guard conservatively
+                        }
+                    } else null
+                } else {
+                    fileSystem.readFile(filePath) ?: ""
+                }
+                if (oldContent != null) {
+                    val oldBlockCount = oldContent.lines().count { it.trim().startsWith("- ") }
+                    val newBlockCount = blocks.size
+                    if (oldBlockCount > largeDeletionThreshold && newBlockCount < oldBlockCount / 2) {
+                        logger.error(
+                            "Safety check triggered: Attempting to delete more than 50% of blocks on page " +
+                                "'${page.name}' ($oldBlockCount -> $newBlockCount). Save aborted."
+                        )
+                        return@withLock false
+                    }
                 }
             }
 
