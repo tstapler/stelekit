@@ -104,4 +104,13 @@ class VaultHeaderSerializerTest {
         assertEquals(maxU16, recovered.iterations, "iterations must survive uint16 boundary round-trip")
         assertEquals(maxU16, recovered.parallelism, "parallelism must survive uint16 boundary round-trip")
     }
+
+    // U-HS-08 — deserialize rejects vault files larger than TOTAL_SIZE
+    // Guards against garbage-appended files slipping through the size check.
+    @Test fun `vault file larger than TOTAL_SIZE returns CorruptedFile`() {
+        val oversized = ByteArray(VaultHeader.TOTAL_SIZE + 1)
+        val result = VaultHeaderSerializer.deserialize(oversized)
+        assertIs<VaultError.CorruptedFile>(result.leftOrNull(),
+            "File with ${VaultHeader.TOTAL_SIZE + 1} bytes must be rejected as CorruptedFile")
+    }
 }

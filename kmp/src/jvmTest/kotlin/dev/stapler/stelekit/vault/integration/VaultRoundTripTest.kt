@@ -185,6 +185,33 @@ class VaultRoundTripTest {
         assertTrue(store.containsKey(VaultManager.vaultFilePath(graphPath)), "Vault file missing after removeKeyslot")
     }
 
+    // RT-11 — Rename: decrypt at old path, re-encrypt at new path, readable at new path only
+    // Regression for the verbatim-copy bug: raw ciphertext copied to a new path is permanently
+    // unreadable because the AEAD tag binds the original relative path as AAD.
+    @Test fun `rename re-encrypt round-trip is readable at new path`() {
+        val dek = engine.secureRandom(32)
+        val layer = CryptoLayer(engine, dek)
+        val content = "# Original\n- content to rename".encodeToByteArray()
+        val oldRelPath = "pages/OldName.md.stek"
+        val newRelPath = "pages/NewName.md.stek"
+
+        val encryptedAtOld = layer.encrypt(oldRelPath, content)
+
+        // Simulate GraphWriter.renamePage: decrypt at old path, re-encrypt at new path
+        val plaintext = layer.decrypt(oldRelPath, encryptedAtOld).getOrNull()!!
+        val encryptedAtNew = layer.encrypt(newRelPath, plaintext)
+
+        // Readable at new path
+        val result = layer.decrypt(newRelPath, encryptedAtNew)
+        assertTrue(result.isRight(), "Re-encrypted file must be readable at new path")
+        assertContentEquals(content, result.getOrNull())
+
+        // Old ciphertext must NOT be readable at new path (verbatim copy is broken)
+        val verbatimAtNew = layer.decrypt(newRelPath, encryptedAtOld)
+        assertIs<VaultError.AuthenticationFailed>(verbatimAtNew.leftOrNull(),
+            "Verbatim-copied ciphertext must fail at new path — AAD binds the original path")
+    }
+
     // RT-10 — sanitizeDirectory skips .stele-vault (tested at API level)
     @Test fun `CryptoLayer rejects hidden reserve writes`() {
         val dek = engine.secureRandom(32)

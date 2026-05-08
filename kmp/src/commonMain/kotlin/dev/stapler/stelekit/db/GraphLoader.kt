@@ -103,7 +103,10 @@ class GraphLoader(
         return when (val result = layer.decrypt(relPath, rawBytes)) {
             is Either.Right -> result.value.decodeToString()
             is Either.Left -> when (val err = result.value) {
-                is VaultError.NotEncrypted -> fileSystem.readFile(filePath)  // plaintext fallback
+                is VaultError.NotEncrypted -> {
+                    logger.warn("Paranoid mode active but $filePath has no STEK magic — reading as plaintext. Re-encrypt to clear this warning.")
+                    fileSystem.readFile(filePath)
+                }
                 else -> {
                     logger.warn("Decryption failed for $filePath: ${err.message}")
                     null
@@ -904,10 +907,27 @@ class GraphLoader(
             // Single scan registers ALL files and provides filtered views
             fileRegistry.scanDirectory(path)
 
-            val fileEntries = if (path.endsWith("/journals")) {
+            val rawEntries = if (path.endsWith("/journals")) {
                 fileRegistry.recentJournals(path, 30)
             } else {
                 fileRegistry.pageFiles(path)
+            }
+
+            // When both a plaintext .md and its encrypted .md.stek counterpart exist
+            // (e.g. after a partial migration), prefer the encrypted file and skip the
+            // plaintext to avoid duplicate page entries in the database.
+            val encryptedStems = rawEntries
+                .filter { it.fileName.endsWith(".md.stek") }
+                .mapTo(HashSet()) { it.fileName.stripPageExtension() }
+            val fileEntries = if (encryptedStems.isEmpty()) rawEntries else {
+                rawEntries.filter { entry ->
+                    val keep = !entry.fileName.endsWith(".md") ||
+                        entry.fileName.stripPageExtension() !in encryptedStems
+                    if (!keep) logger.warn(
+                        "Skipping plaintext ${entry.filePath} — encrypted .md.stek counterpart exists"
+                    )
+                    keep
+                }
             }
 
             // Pre-load all existing pages in one query. Replaces one getPageByName DB call per

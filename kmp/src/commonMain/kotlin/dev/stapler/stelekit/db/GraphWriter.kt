@@ -151,15 +151,26 @@ class GraphWriter(
         // If paths are same, nothing to do (except maybe case change on some FS)
         if (oldPath == newPath) return true
 
-        // When encryption is active files are binary AEAD ciphertext (.md.stek) — must copy
-        // bytes verbatim. UTF-8 readFile/writeFile would corrupt the ciphertext irreversibly.
-        val writeOk = if (cryptoLayer != null) {
+        // When encryption is active, re-encrypt with the new path as AAD rather than copying
+        // raw ciphertext — the AEAD tag binds the old path, so a verbatim copy would be
+        // permanently unreadable at the new location.
+        val cryptoLayerNow = cryptoLayer
+        val writeOk = if (cryptoLayerNow != null) {
             val bytes = fileSystem.readFileBytes(oldPath)
             if (bytes == null) {
                 logger.error("Failed to read file bytes for rename: $oldPath")
                 return false
             }
-            fileSystem.writeFileBytes(newPath, bytes)
+            val oldRelPath = relativeFilePath(oldPath)
+            val newRelPath = relativeFilePath(newPath)
+            val plaintext = when (val result = cryptoLayerNow.decrypt(oldRelPath, bytes)) {
+                is Either.Right -> result.value
+                is Either.Left -> {
+                    logger.error("Failed to decrypt file for rename: $oldPath (${result.value})")
+                    return false
+                }
+            }
+            fileSystem.writeFileBytes(newPath, cryptoLayerNow.encrypt(newRelPath, plaintext))
         } else {
             val content = fileSystem.readFile(oldPath)
             if (content == null) {

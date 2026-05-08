@@ -171,8 +171,11 @@ class VaultManager(
                     crypto.clearBytes(plaintext)
                 } catch (_: VaultAuthException) {
                     // Expected for decoy slots and wrong-passphrase slots — continue.
+                } finally {
+                    // Always zero keyslotKey — `continue` in the inner catch would otherwise
+                    // skip the clearBytes call, leaving the Argon2id-derived key in memory.
+                    crypto.clearBytes(keyslotKey)
                 }
-                crypto.clearBytes(keyslotKey)
             }
 
             if (validDek == null || validNamespace == null) {
@@ -389,8 +392,7 @@ class VaultManager(
             info = byteArrayOf(slotIndex.toByte()),
             length = 4,
         )
-        val matches = slot.reserved[0] == markerKey[0] && slot.reserved[1] == markerKey[1] &&
-                      slot.reserved[2] == markerKey[2] && slot.reserved[3] == markerKey[3]
+        val matches = constantTimeEquals(slot.reserved.sliceArray(0 until 4), markerKey)
         crypto.clearBytes(markerKey)
         return matches
     }

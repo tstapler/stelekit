@@ -148,9 +148,13 @@ class FileRegistry(private val fileSystem: FileSystem) {
     fun markWrittenByUs(filePath: String) {
         val modTime = fileSystem.getLastModifiedTime(filePath) ?: return
         modTimes[filePath] = modTime
-        val content = fileSystem.readFile(filePath)
-        if (content != null) {
-            contentHashes[filePath] = content.hashCode()
+        // Binary encrypted files cannot be read as text — modTime update alone is sufficient
+        // for own-write suppression (detectChanges skips the content-hash guard for .md.stek).
+        if (!filePath.endsWith(".md.stek")) {
+            val content = fileSystem.readFile(filePath)
+            if (content != null) {
+                contentHashes[filePath] = content.hashCode()
+            }
         }
     }
 

@@ -63,8 +63,8 @@ object VaultHeaderSerializer {
     }
 
     fun deserialize(bytes: ByteArray): Either<VaultError, VaultHeader> {
-        if (bytes.size < VaultHeader.TOTAL_SIZE) {
-            return VaultError.CorruptedFile("Vault header too short: ${bytes.size} < ${VaultHeader.TOTAL_SIZE}").left()
+        if (bytes.size != VaultHeader.TOTAL_SIZE) {
+            return VaultError.CorruptedFile("Vault header wrong size: ${bytes.size} (expected ${VaultHeader.TOTAL_SIZE})").left()
         }
 
         var pos = 0
