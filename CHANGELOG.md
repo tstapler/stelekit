@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/tstapler/stelekit/compare/v0.22.1...v0.23.0) (2026-05-08)
+
+
+### Features
+
+* **web:** OPFS-backed SQLite driver + local dev script ([#74](https://github.com/tstapler/stelekit/issues/74)) ([22516f5](https://github.com/tstapler/stelekit/commit/22516f54b3d2ce061c017cda2d97c65edf2d32bc))
+
 ## [0.22.1](https://github.com/tstapler/stelekit/compare/v0.22.0...v0.22.1) (2026-05-04)
 
 
