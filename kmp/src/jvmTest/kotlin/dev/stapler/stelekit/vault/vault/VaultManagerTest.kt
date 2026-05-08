@@ -457,6 +457,8 @@ class VaultManagerTest {
 
     // I-VM-03 — removeKeyslot returns CorruptedFile when the header write fails
     @Test fun `removeKeyslot returns CorruptedFile when write fails`() = runTest {
+        // createVault writes twice (vault header + reserve); addKeyslot writes once.
+        // Allow these 3, then block removeKeyslot (write 4) to exercise CorruptedFile path.
         val store = mutableMapOf<String, ByteArray>()
         var writeCount = 0
         val vm = VaultManager(
@@ -464,15 +466,30 @@ class VaultManagerTest {
             fileReadBytes = { path -> store[path] },
             fileWriteBytes = { path, data ->
                 writeCount++
-                if (writeCount <= 2) { store[path] = data; true } else false
+                if (writeCount <= 3) { store[path] = data; true } else false
             },
         )
         val graphPath = "/tmp/test-graph"
-        vm.createVault(graphPath, "pass".toCharArray(), argon2Params = params)
+        val dek = vm.createVault(graphPath, "pass".toCharArray(), argon2Params = params).getOrNull()!!
         vm.unlock(graphPath, "pass".toCharArray(), params)
+        // Add a second slot so the last-slot guard passes, then a write failure returns CorruptedFile
+        vm.addKeyslot(graphPath, dek, "pass2".toCharArray(), argon2Params = params)
         val result = vm.removeKeyslot(graphPath, slotIndex = 0)
         assertTrue(result.isLeft())
         assertIs<VaultError.CorruptedFile>(result.leftOrNull())
+    }
+
+    // VM-27 — removeKeyslot on sole active slot returns InvalidCredential (GAP-N2 guard)
+    @Test fun `removeKeyslot on last active slot returns InvalidCredential`() = runTest {
+        val store = mutableMapOf<String, ByteArray>()
+        val vm = makeVaultManagerWithStore(store)
+        val graphPath = "/tmp/test-graph"
+        vm.createVault(graphPath, "sole".toCharArray(), argon2Params = params)
+        vm.unlock(graphPath, "sole".toCharArray(), params)
+        // Only one active slot — removing it must be refused
+        val result = vm.removeKeyslot(graphPath, slotIndex = 0)
+        assertTrue(result.isLeft(), "Removing the last slot must return an error; got $result")
+        assertIs<VaultError.InvalidCredential>(result.leftOrNull())
     }
 
     // I-VM-04 — unlock returns NotAVault when the vault file does not exist

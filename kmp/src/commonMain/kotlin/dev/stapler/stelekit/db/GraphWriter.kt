@@ -170,7 +170,11 @@ class GraphWriter(
                     return false
                 }
             }
-            fileSystem.writeFileBytes(newPath, cryptoLayerNow.encrypt(newRelPath, plaintext))
+            try {
+                fileSystem.writeFileBytes(newPath, cryptoLayerNow.encrypt(newRelPath, plaintext))
+            } finally {
+                plaintext.fill(0)
+            }
         } else {
             val content = fileSystem.readFile(oldPath)
             if (content == null) {

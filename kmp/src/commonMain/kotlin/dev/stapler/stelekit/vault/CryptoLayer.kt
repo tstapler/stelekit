@@ -76,6 +76,10 @@ class CryptoLayer(
         if (raw.size == HEADER_SIZE) {
             return VaultError.CorruptedFile("STEK ciphertext is empty — no Poly1305 tag").left()
         }
+        val version = raw[4].toInt() and 0xFF
+        if (version != STEK_VERSION.toInt() and 0xFF) {
+            return VaultError.UnsupportedVersion(version).left()
+        }
 
         val nonce = raw.sliceArray(5 until 17)
         val ciphertext = raw.sliceArray(HEADER_SIZE until raw.size)

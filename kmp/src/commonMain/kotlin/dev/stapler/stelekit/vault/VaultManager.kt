@@ -296,6 +296,14 @@ class VaultManager(
             is Either.Right -> r.value
         }
 
+        // Refuse to remove the last active slot — it would permanently lock out the vault.
+        val activeCount = namespaceSlotRange(ns).count { i -> isSlotMine(header.keyslots[i], dek, i) }
+        if (activeCount <= 1) {
+            return@withContext VaultError.InvalidCredential(
+                "Cannot remove the last keyslot in namespace $ns — vault would be permanently locked"
+            ).left()
+        }
+
         val updatedSlots = header.keyslots.toMutableList()
         updatedSlots[slotIndex] = randomSlot()
         writeUpdatedHeader(vaultPath, dek, header.copy(keyslots = updatedSlots))

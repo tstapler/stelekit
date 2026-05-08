@@ -15,6 +15,10 @@ import kotlinx.coroutines.sync.withLock
  */
 class FileRegistry(private val fileSystem: FileSystem) {
 
+    // TODO(GAP-N6): modTimes and contentHashes are not thread-safe. markWrittenByUs (called
+    //  from the non-suspend onFileWritten callback) can race with detectChanges on JVM/Android.
+    //  Fixing this properly requires making onFileWritten a suspend callback so it can acquire
+    //  detectMutex; left as a follow-up to avoid bloating this security-focused PR.
     private val modTimes = mutableMapOf<String, Long>()
     private val contentHashes = mutableMapOf<String, Int>()
 
