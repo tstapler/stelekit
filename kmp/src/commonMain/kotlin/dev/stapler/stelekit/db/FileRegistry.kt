@@ -28,14 +28,14 @@ class FileRegistry(private val fileSystem: FileSystem) {
     // ---- Scan & Register ----
 
     /**
-     * Scans a directory for .md files, records all mod times, and caches the result.
+     * Scans a directory for .md and .md.stek files, records all mod times, and caches the result.
      * Subsequent calls to [journalFiles], [recentJournals], etc. operate on this cached list.
      */
     fun scanDirectory(dirPath: String): List<FileEntry> {
         if (!fileSystem.directoryExists(dirPath)) return emptyList()
 
         val entries = fileSystem.listFilesWithModTimes(dirPath)
-            .filter { (name, _) -> name.endsWith(".md") }
+            .filter { (name, _) -> name.endsWith(".md") || name.endsWith(".md.stek") }
             .map { (fileName, modTime) ->
                 val filePath = "$dirPath/$fileName"
                 modTimes[filePath] = modTime
@@ -58,7 +58,7 @@ class FileRegistry(private val fileSystem: FileSystem) {
     fun journalFiles(dirPath: String): List<FileEntry> {
         val entries = scannedFiles[dirPath] ?: scanDirectory(dirPath)
         return entries
-            .filter { JournalUtils.isJournalName(it.fileName.removeSuffix(".md")) }
+            .filter { JournalUtils.isJournalName(it.fileName.removeSuffix(".md.stek").removeSuffix(".md")) }
             .sortedByDescending { it.fileName }
     }
 
@@ -89,7 +89,7 @@ class FileRegistry(private val fileSystem: FileSystem) {
         if (!fileSystem.directoryExists(dirPath)) return@withLock ChangeSet.EMPTY
 
         val currentFilesWithTimes = fileSystem.listFilesWithModTimes(dirPath)
-            .filter { (name, _) -> name.endsWith(".md") }
+            .filter { (name, _) -> name.endsWith(".md") || name.endsWith(".md.stek") }
         val newFiles = mutableListOf<ChangedFile>()
         val changedFiles = mutableListOf<ChangedFile>()
         val currentPaths = HashSet<String>(currentFilesWithTimes.size * 2)
@@ -98,25 +98,35 @@ class FileRegistry(private val fileSystem: FileSystem) {
             val filePath = "$dirPath/$fileName"
             currentPaths.add(filePath)
             val lastKnown = modTimes[filePath]
+            val isEncrypted = fileName.endsWith(".md.stek")
 
             if (lastKnown == null) {
-                // New file — not in registry
-                val content = fileSystem.readFile(filePath) ?: continue
+                // New file — not in registry.
+                // Encrypted files are binary; content is read via readFileDecrypted at the call site.
+                val content = if (isEncrypted) "" else fileSystem.readFile(filePath) ?: continue
                 modTimes[filePath] = modTime
-                contentHashes[filePath] = content.hashCode()
+                if (!isEncrypted) contentHashes[filePath] = content.hashCode()
                 newFiles.add(ChangedFile(FileEntry(fileName, filePath, modTime), content))
             } else if (modTime > lastKnown) {
-                // Mod time changed — check content hash guard
-                val content = fileSystem.readFile(filePath) ?: continue
-                val newHash = content.hashCode()
-                if (contentHashes[filePath] == newHash) {
-                    // Same content (our own write) — update mod time, skip
+                if (isEncrypted) {
+                    // Encrypted files are binary — skip the text content-hash guard.
+                    // modTime change alone is sufficient signal; markWrittenByUs keeps own-write
+                    // suppression accurate via the modTimes map.
                     modTimes[filePath] = modTime
-                    continue
+                    changedFiles.add(ChangedFile(FileEntry(fileName, filePath, modTime), ""))
+                } else {
+                    // Mod time changed — check content hash guard
+                    val content = fileSystem.readFile(filePath) ?: continue
+                    val newHash = content.hashCode()
+                    if (contentHashes[filePath] == newHash) {
+                        // Same content (our own write) — update mod time, skip
+                        modTimes[filePath] = modTime
+                        continue
+                    }
+                    modTimes[filePath] = modTime
+                    contentHashes[filePath] = newHash
+                    changedFiles.add(ChangedFile(FileEntry(fileName, filePath, modTime), content))
                 }
-                modTimes[filePath] = modTime
-                contentHashes[filePath] = newHash
-                changedFiles.add(ChangedFile(FileEntry(fileName, filePath, modTime), content))
             }
         }
 

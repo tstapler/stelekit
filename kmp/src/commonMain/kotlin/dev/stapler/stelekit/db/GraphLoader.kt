@@ -73,6 +73,8 @@ class GraphLoader(
     private val logger = Logger("GraphLoader")
     private val markdownParser = MarkdownParser()
 
+    private fun String.stripPageExtension() = removeSuffix(".md.stek").removeSuffix(".md")
+
     /**
      * Resolve relative file path for CryptoLayer AAD.
      * Uses graph-root-relative path (e.g. "pages/Note.md.stek") per plan OPEN-1 decision.
@@ -594,7 +596,12 @@ class GraphLoader(
         for (changed in changeSet.newFiles) {
             logger.info("New file detected: ${changed.entry.filePath}")
             fileSystem.invalidateShadow(changed.entry.filePath)
-            parseAndSavePage(changed.entry.filePath, changed.content, ParseMode.FULL)
+            val content = if (changed.entry.filePath.endsWith(".md.stek")) {
+                readFileDecrypted(changed.entry.filePath) ?: continue
+            } else {
+                changed.content
+            }
+            parseAndSavePage(changed.entry.filePath, content, ParseMode.FULL)
         }
 
         for (changed in changeSet.changedFiles) {
@@ -608,8 +615,14 @@ class GraphLoader(
                 continue
             }
 
+            val content = if (changed.entry.filePath.endsWith(".md.stek")) {
+                readFileDecrypted(changed.entry.filePath) ?: continue
+            } else {
+                changed.content
+            }
+
             // Emit event so subscribers can suppress the re-import
-            _externalFileChanges.tryEmit(ExternalFileChange(changed.entry.filePath, changed.content) {
+            _externalFileChanges.tryEmit(ExternalFileChange(changed.entry.filePath, content) {
                 suppressedFiles.add(changed.entry.filePath)
             })
             yield()
@@ -617,7 +630,7 @@ class GraphLoader(
                 continue
             }
 
-            parseAndSavePage(changed.entry.filePath, changed.content, ParseMode.FULL)
+            parseAndSavePage(changed.entry.filePath, content, ParseMode.FULL)
         }
 
         for (filePath in changeSet.deletedPaths) {
@@ -923,7 +936,7 @@ class GraphLoader(
                                 val filePath = entry.filePath
                                 val fileModTime = entry.modTime
                                 
-                                val title = FileUtils.decodeFileName(fileName.removeSuffix(".md"))
+                                val title = FileUtils.decodeFileName(fileName.stripPageExtension())
                                 // Skip Logseq-internal file: protocol artifacts (e.g. file%3A..%2F%2F...)
                                 if (title.startsWith("file:")) return@count false
                                 val name = title
@@ -1019,7 +1032,7 @@ class GraphLoader(
     
     private suspend fun parsePageWithoutSaving(filePath: String, content: String, mode: ParseMode = ParseMode.FULL): ParseResult {
         val fileName = filePath.replace("\\", "/").substringAfterLast("/")
-        val title = FileUtils.decodeFileName(fileName.removeSuffix(".md"))
+        val title = FileUtils.decodeFileName(fileName.stripPageExtension())
         val name = title
         val journalDate = if (filePath.contains("/journals/")) JournalUtils.parseJournalDate(title) else null
         val isJournal = journalDate != null
@@ -1321,7 +1334,7 @@ class GraphLoader(
             CurrentSpanContext.set(ActiveSpanContext(traceId = traceId, parentSpanId = rootSpan.spanId))
             try {
                 val fileName = filePath.replace("\\", "/").substringAfterLast("/")
-                val title = FileUtils.decodeFileName(fileName.removeSuffix(".md"))
+                val title = FileUtils.decodeFileName(fileName.stripPageExtension())
                 // Skip Logseq-internal file: protocol artifacts silently
                 if (title.startsWith("file:")) return
                 // Reject files with git conflict markers — importing them would corrupt the graph.
