@@ -98,7 +98,7 @@ class CryptoLayer(
 
     /** Guard against outer-graph writes into the hidden volume reserve directory. */
     fun checkNotHiddenReserve(relativeFilePath: String): Either<VaultError, Unit> {
-        return if (relativeFilePath.startsWith("_hidden_reserve/")) {
+        return if (relativeFilePath == "_hidden_reserve" || relativeFilePath.startsWith("_hidden_reserve/")) {
             VaultError.HiddenAreaWriteDenied().left()
         } else {
             Unit.right()

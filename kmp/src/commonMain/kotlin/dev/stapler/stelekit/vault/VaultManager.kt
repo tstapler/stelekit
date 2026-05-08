@@ -44,6 +44,12 @@ class VaultManager(
         data class Unlocked(val namespace: VaultNamespace) : VaultEvent
     }
 
+    /**
+     * The [dek] array is the **same object** that [VaultManager] stores in `sessionDek`.
+     * When [lock] is called, `sessionDek` is zeroed in-place — this also zeroes the
+     * [CryptoLayer] built from it. Callers MUST NOT store or copy the DEK array; pass it
+     * directly to [CryptoLayer] and let [VaultEvent.Locked] trigger cleanup.
+     */
     data class UnlockResult(val dek: ByteArray, val namespace: VaultNamespace)
 
     /**

@@ -163,7 +163,9 @@ class GraphWriter(
         // When encryption is active, re-encrypt with the new path as AAD rather than copying
         // raw ciphertext — the AEAD tag binds the old path, so a verbatim copy would be
         // permanently unreadable at the new location.
-        val cryptoLayerNow = cryptoLayer
+        // Use the already-captured renameLayer snapshot — re-reading cryptoLayer here could
+        // observe null if the vault is locked between the guard check and this point.
+        val cryptoLayerNow = renameLayer
         val writeOk = if (cryptoLayerNow != null) {
             val bytes = fileSystem.readFileBytes(oldPath)
             if (bytes == null) {
@@ -253,11 +255,15 @@ class GraphWriter(
                 getPageFilePath(page, graphPath)
             }
 
+            // Capture cryptoLayer once — @Volatile reads are consistent within a single call but
+            // re-reading across the three use-sites (guard, safety check, saga) would allow a
+            // concurrent lock() to produce an inconsistent mix of encrypted/plaintext operations.
+            val capturedCryptoLayer = cryptoLayer
+
             // Guard: outer graph cannot write to the hidden volume reserve area
-            val layer = cryptoLayer
-            if (layer != null) {
+            if (capturedCryptoLayer != null) {
                 val relPath = relativeFilePath(filePath)
-                val guard = layer.checkNotHiddenReserve(relPath)
+                val guard = capturedCryptoLayer.checkNotHiddenReserve(relPath)
                 if (guard.isLeft()) {
                     logger.error("Write blocked — restricted path: $filePath")
                     return@withLock false
@@ -266,11 +272,10 @@ class GraphWriter(
 
             // 0. Safety Check for Large Deletions
             if (fileSystem.fileExists(filePath)) {
-                val cryptoLayerSnap = cryptoLayer
-                val oldContent = if (cryptoLayerSnap != null) {
+                val oldContent = if (capturedCryptoLayer != null) {
                     val rawBytes = fileSystem.readFileBytes(filePath)
                     if (rawBytes != null) {
-                        when (val r = cryptoLayerSnap.decrypt(relativeFilePath(filePath), rawBytes)) {
+                        when (val r = capturedCryptoLayer.decrypt(relativeFilePath(filePath), rawBytes)) {
                             is Either.Right -> r.value.decodeToString()
                             is Either.Left -> null  // decrypt failed — skip guard conservatively
                         }
@@ -300,7 +305,7 @@ class GraphWriter(
             runCatching {
                 saga {
                     // Step 1: write markdown file — rollback restores previous content
-                    val cryptoLayerNow = cryptoLayer
+                    val cryptoLayerNow = capturedCryptoLayer
                     val oldRawBytes = if (cryptoLayerNow != null && fileSystem.fileExists(filePath)) fileSystem.readFileBytes(filePath) else null
                     val oldContent = if (cryptoLayerNow == null && fileSystem.fileExists(filePath)) fileSystem.readFile(filePath) else null
                     saga(
