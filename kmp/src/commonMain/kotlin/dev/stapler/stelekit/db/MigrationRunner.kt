@@ -201,19 +201,21 @@ object MigrationRunner {
         ).await()
 
         // Load both name and hash so we can detect tampering.
+        // Use QueryResult.Value (not AsyncValue) so synchronous drivers (AndroidSqliteDriver)
+        // can call .getValue() on the mapper result without throwing.
+        // Both AndroidCursor.next() and JsRowCursor.next() return QueryResult.Value, so
+        // cursor.next().value is safe across all platforms.
         val appliedByName: Map<String, String> = driver.executeQuery(
             identifier = null,
             sql = "SELECT name, hash FROM schema_migrations",
             mapper = { cursor ->
-                QueryResult.AsyncValue {
-                    val map = mutableMapOf<String, String>()
-                    while (cursor.next().await()) {
-                        val name = cursor.getString(0)
-                        val hash = cursor.getString(1)
-                        if (name != null && hash != null) map[name] = hash
-                    }
-                    map as Map<String, String>
+                val map = mutableMapOf<String, String>()
+                while (cursor.next().value) {
+                    val name = cursor.getString(0)
+                    val hash = cursor.getString(1)
+                    if (name != null && hash != null) map[name] = hash
                 }
+                QueryResult.Value(map as Map<String, String>)
             },
             parameters = 0
         ).await()
