@@ -154,8 +154,8 @@ class GraphWriter(
             }
         }
 
-        // Calculate new path
-        val newPath = getPageFilePath(page.copy(name = newName), graphPath)
+        // Calculate new path using the already-captured renameLayer snapshot
+        val newPath = getPageFilePath(page.copy(name = newName), graphPath, renameLayer)
 
         // If paths are same, nothing to do (except maybe case change on some FS)
         if (oldPath == newPath) return true
@@ -249,16 +249,15 @@ class GraphWriter(
      */
     private suspend fun savePageInternal(page: Page, blocks: List<Block>, graphPath: String): Boolean =
         saveMutex.withLock {
+            // Capture cryptoLayer once at lock entry — also used by getPageFilePath so the file
+            // extension (.md.stek vs .md) is consistent with all subsequent encrypt/decrypt calls.
+            val capturedCryptoLayer = cryptoLayer
+
             val filePath = if (!page.filePath.isNullOrBlank()) {
                 page.filePath
             } else {
-                getPageFilePath(page, graphPath)
+                getPageFilePath(page, graphPath, capturedCryptoLayer)
             }
-
-            // Capture cryptoLayer once — @Volatile reads are consistent within a single call but
-            // re-reading across the three use-sites (guard, safety check, saga) would allow a
-            // concurrent lock() to produce an inconsistent mix of encrypted/plaintext operations.
-            val capturedCryptoLayer = cryptoLayer
 
             // Guard: outer graph cannot write to the hidden volume reserve area
             if (capturedCryptoLayer != null) {
@@ -427,11 +426,11 @@ class GraphWriter(
         writeBlocks(null)
     }
 
-    private fun getPageFilePath(page: Page, graphPath: String): String {
+    private fun getPageFilePath(page: Page, graphPath: String, layer: CryptoLayer? = cryptoLayer): String {
         val safeName = FileUtils.sanitizeFileName(page.name)
         val basePath = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
         val folder = if (page.isJournal) "journals" else "pages"
-        val extension = if (cryptoLayer != null) ".md.stek" else ".md"
+        val extension = if (layer != null) ".md.stek" else ".md"
         return "${basePath}$folder/$safeName$extension"
     }
 

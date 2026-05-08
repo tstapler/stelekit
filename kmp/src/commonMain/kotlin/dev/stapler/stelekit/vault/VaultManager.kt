@@ -55,6 +55,10 @@ class VaultManager(
     /**
      * Create a new vault at [graphPath]/.stele-vault with a single passphrase keyslot.
      *
+     * Returns the generated DEK as a `ByteArray`. Callers should zero it with
+     * `crypto.clearBytes(dek)` after passing it to [addKeyslot] or [CryptoLayer].
+     * Note: [lock] does NOT zero this DEK — only [unlock]'s `sessionDek` is managed by lock.
+     *
      * [argon2Params] defaults to [DEFAULT_ARGON2_PARAMS]; supply a calibrated set for production use.
      */
     suspend fun createVault(
@@ -474,8 +478,12 @@ class VaultManager(
 /**
  * Encodes a CharArray to UTF-8 bytes without creating a String intermediate.
  * Avoids heap-interning of the passphrase in a JVM String that cannot be zeroed.
- * Handles BMP code points (U+0000–U+FFFF); surrogate pairs are encoded as three bytes each,
- * which differs from standard UTF-8 but is deterministic and acceptable for passphrase hashing.
+ * Handles BMP code points (U+0000–U+FFFF); surrogate pairs are encoded as three bytes each
+ * (CESU-8 style), which differs from standard UTF-8's four-byte encoding for U+10000+.
+ *
+ * **Compatibility warning**: passphrases containing emoji or other supplementary characters
+ * (U+10000 and above) will produce different bytes than a standard UTF-8 encoder. Any future
+ * re-implementation MUST replicate this encoding or such vaults become irrecoverable.
  */
 private fun CharArray.toByteArray(): ByteArray {
     // First pass: count output bytes to avoid boxing via ArrayList<Byte>
