@@ -39,7 +39,7 @@ class HistogramRetentionJob(
     }
 
     @OptIn(DirectSqlWrite::class)
-    private fun deleteOldRows(cutoff: Long) {
+    private suspend fun deleteOldRows(cutoff: Long) {
         restricted.deleteOldHistogramRows(cutoff)
     }
 }

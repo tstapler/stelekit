@@ -315,7 +315,7 @@ class DatabaseWriteActor(
      * Log INSERT or UPDATE operations for each block in the batch.
      * Blocks not present in [existingByUuid] are treated as inserts.
      */
-    private fun logSaveBlocks(blocks: List<Block>, existingByUuid: Map<String, Block>) {
+    private suspend fun logSaveBlocks(blocks: List<Block>, existingByUuid: Map<String, Block>) {
         val logger = opLogger ?: return
         for (block in blocks) {
             val existing = existingByUuid[block.uuid]

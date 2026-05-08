@@ -40,6 +40,10 @@ import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.util.toTitleCase
 import kotlinx.coroutines.flow.Flow
 
+private val TAG_REGEX = Regex("""#\S+""")
+private val SCOPE_REGEX = Regex("""/(pages?|blocks?|journal|current)\b""", RegexOption.IGNORE_CASE)
+private val DATE_REGEX = Regex("""modified:(today|day|week|month|year)""", RegexOption.IGNORE_CASE)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchDialog(
@@ -330,7 +334,10 @@ fun SearchDialog(
                                             }
                                         }
                                     }
-                                    if (uiState.results.isEmpty() && uiState.query.isNotEmpty() && !uiState.isLoading && !uiState.isSkeletonVisible) {
+                                    val noResults = uiState.results.isEmpty()
+                                    val hasQuery = uiState.query.isNotEmpty()
+                                    val isIdle = !uiState.isLoading && !uiState.isSkeletonVisible
+                                    if (noResults && hasQuery && isIdle) {
                                         Box(
                                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                                             contentAlignment = Alignment.Center
@@ -424,17 +431,17 @@ fun SearchDialog(
                                 parsedQuery = uiState.parsedQuery,
                                 onRemoveTag = {
                                     viewModel.onQueryChange(
-                                        uiState.query.replace(Regex("""#\S+"""), "").trim()
+                                        uiState.query.replace(TAG_REGEX, "").trim()
                                     )
                                 },
                                 onRemoveScope = {
                                     viewModel.onQueryChange(
-                                        uiState.query.replace(Regex("""/(pages?|blocks?|journal|current)\b""", RegexOption.IGNORE_CASE), "").trim()
+                                        uiState.query.replace(SCOPE_REGEX, "").trim()
                                     )
                                 },
                                 onRemoveDate = {
                                     viewModel.onQueryChange(
-                                        uiState.query.replace(Regex("""modified:(today|day|week|month|year)""", RegexOption.IGNORE_CASE), "").trim()
+                                        uiState.query.replace(DATE_REGEX, "").trim()
                                     )
                                 },
                                 onRemoveProperty = { key ->
@@ -479,12 +486,12 @@ fun SearchDialog(
 @Composable
 fun SearchResultRow(
     title: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
     subtitle: String? = null,
     relativeDate: String? = null,
     inlineTags: List<String> = emptyList(),
     snippet: String? = null,
-    isSelected: Boolean,
-    onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -574,7 +581,8 @@ fun ActivePrefixChipRow(
     onRemoveTag: () -> Unit,
     onRemoveScope: () -> Unit,
     onRemoveDate: () -> Unit,
-    onRemoveProperty: (String) -> Unit
+    onRemoveProperty: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     if (parsedQuery == null) return
     val hasAnyFilter = parsedQuery.tagFilter != null
@@ -584,7 +592,7 @@ fun ActivePrefixChipRow(
     if (!hasAnyFilter) return
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp)

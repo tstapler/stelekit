@@ -65,6 +65,7 @@ kotlin {
                 // SQLDelight
                 implementation("app.cash.sqldelight:runtime:2.3.2")
                 implementation("app.cash.sqldelight:coroutines-extensions:2.3.2")
+                implementation("app.cash.sqldelight:async-extensions:2.3.2")
 
                 // Compose Multiplatform
                 implementation("org.jetbrains.compose.runtime:runtime:1.7.3")
@@ -151,7 +152,7 @@ kotlin {
         if (project.findProperty("enableJs") == "true") {
             val wasmJsMain by getting {
                 dependencies {
-                    // Phase B: add @sqlite.org/sqlite-wasm driver here
+                    implementation(npm("@sqlite.org/sqlite-wasm", "3.46.1"))
                 }
             }
 
@@ -807,6 +808,7 @@ sqldelight {
     databases {
         create("SteleDatabase") {
             packageName.set("dev.stapler.stelekit.db")
+            generateAsync.set(true)
         }
     }
 }

@@ -1,9 +1,11 @@
 package dev.stapler.stelekit.db
 
 import android.content.Context
+import app.cash.sqldelight.async.coroutines.synchronous
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import io.requery.android.database.sqlite.RequerySQLiteOpenHelperFactory
+import kotlinx.coroutines.runBlocking
 
 
 actual class DriverFactory actual constructor() {
@@ -37,7 +39,7 @@ actual class DriverFactory actual constructor() {
         // AndroidSqliteDriver handles schema creation (fresh installs) and numbered .sqm
         // migrations (via SQLiteOpenHelper.onUpgrade) automatically.
         val driver = AndroidSqliteDriver(
-            schema = SteleDatabase.Schema,
+            schema = SteleDatabase.Schema.synchronous(),
             context = context,
             name = dbName,
             factory = RequerySQLiteOpenHelperFactory()
@@ -57,7 +59,7 @@ actual class DriverFactory actual constructor() {
         try { driver.execute(null, "PRAGMA cache_size=-8000;", 0) } catch (_: Exception) { }
 
         // Apply incremental DDL migrations (idempotent, hash-tracked).
-        MigrationRunner.applyAll(driver)
+        runBlocking { MigrationRunner.applyAll(driver) }
 
         return driver
     }

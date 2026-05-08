@@ -274,22 +274,24 @@ class PooledJdbcSqliteDriverTest {
         val now = System.currentTimeMillis()
 
         // Write a page via the real SteleDatabase schema
-        db.steleDatabaseQueries.run {
-            transaction {
-                insertPage(
-                    uuid = "test-page-uuid",
-                    name = "Test Page",
-                    namespace = null,
-                    file_path = null,
-                    created_at = now,
-                    updated_at = now,
-                    properties = null,
-                    version = 1L,
-                    is_favorite = 0,
-                    is_journal = 0,
-                    journal_date = null,
-                    is_content_loaded = 0,
-                )
+        runBlocking {
+            db.steleDatabaseQueries.run {
+                transaction {
+                    insertPage(
+                        uuid = "test-page-uuid",
+                        name = "Test Page",
+                        namespace = null,
+                        file_path = null,
+                        created_at = now,
+                        updated_at = now,
+                        properties = null,
+                        version = 1L,
+                        is_favorite = 0,
+                        is_journal = 0,
+                        journal_date = null,
+                        is_content_loaded = 0,
+                    )
+                }
             }
         }
 

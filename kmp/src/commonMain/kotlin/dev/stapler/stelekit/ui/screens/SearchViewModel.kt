@@ -150,6 +150,8 @@ class SearchViewModel(
                     }
                     _uiState.update { it.copy(recentPages = recentPageItems) }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 // Ignore errors loading recent pages — non-critical
             }

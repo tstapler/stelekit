@@ -2,6 +2,7 @@ package dev.stapler.stelekit.db
 
 import app.cash.sqldelight.db.SqlDriver
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.IOException
 import java.util.Properties
@@ -57,7 +58,7 @@ actual class DriverFactory actual constructor() {
         val driver = PooledJdbcSqliteDriver(jdbcUrl, connectionProps, poolSize = poolSize)
 
         try {
-            SteleDatabase.Schema.create(driver)
+            runBlocking { SteleDatabase.Schema.create(driver).await() }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -66,7 +67,7 @@ actual class DriverFactory actual constructor() {
             log.warning("Schema creation: ${e.message}")
         }
 
-        MigrationRunner.applyAll(driver)
+        runBlocking { MigrationRunner.applyAll(driver) }
 
         return driver
     }
