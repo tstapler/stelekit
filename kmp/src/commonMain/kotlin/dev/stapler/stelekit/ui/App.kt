@@ -83,6 +83,7 @@ import dev.stapler.stelekit.ui.screens.PageView
 import dev.stapler.stelekit.ui.screens.PermissionRecoveryScreen
 import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.ui.screens.VaultUnlockScreen
+import dev.stapler.stelekit.vault.VaultManager.VaultEvent
 import dev.stapler.stelekit.domain.NoOpUrlFetcher
 import dev.stapler.stelekit.domain.UrlFetcher
 import dev.stapler.stelekit.voice.VoiceCaptureState
@@ -477,6 +478,18 @@ private fun GraphContent(
             val path = graphManager.getActiveGraphInfo()?.path
             if (!path.isNullOrEmpty()) {
                 viewModel.setGraphPath(path)
+            }
+        }
+    }
+
+    // When the vault locks, null out CryptoLayer references so loader/writer do not use
+    // the zeroed DEK left behind by VaultManager.lock(). Subscribes to vaultEvents so
+    // the cleanup runs even when lock() is triggered programmatically (not via vaultState).
+    LaunchedEffect(vaultManager) {
+        vaultManager?.vaultEvents?.collect { event ->
+            if (event is VaultEvent.Locked) {
+                graphLoader.cryptoLayer = null
+                graphWriter.cryptoLayer = null
             }
         }
     }

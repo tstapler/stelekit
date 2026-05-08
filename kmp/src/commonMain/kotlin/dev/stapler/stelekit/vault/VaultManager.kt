@@ -132,6 +132,14 @@ class VaultManager(
             // Decoy slots fail AEAD decryption (expected), active slots succeed.
             for ((index, slot) in header.keyslots.withIndex()) {
                 val params = argon2Params ?: slot.argon2Params
+                // Validate params before deriving — extreme values (memory = Int.MAX_VALUE) in
+                // a crafted vault file would cause OOM before the header MAC rejects it.
+                if (params.memory < 1 || params.iterations < 1 || params.parallelism < 1
+                    || params.memory > MAX_ARGON2_MEMORY_KIB) {
+                    return@withContext VaultError.CorruptedFile(
+                        "Slot $index has invalid Argon2 params: $params"
+                    ).left()
+                }
                 val keyslotKey = crypto.argon2id(
                     password = passwordBytes,
                     salt = slot.salt,
@@ -244,6 +252,16 @@ class VaultManager(
             crypto.clearBytes(actualMac)
             if (!dekValid) {
                 return@withContext VaultError.InvalidCredential("Provided DEK does not match vault header").left()
+            }
+
+            // Namespace guard: an active session may only add slots within its own namespace.
+            // Allowing an OUTER session to embed the OUTER DEK in a HIDDEN slot would let
+            // anyone with the outer passphrase automatically recover the "hidden" DEK.
+            val currentNs = sessionNamespace
+            if (currentNs != null && namespace != currentNs) {
+                return@withContext VaultError.InvalidCredential(
+                    "Active session namespace ($currentNs) cannot add keyslots to $namespace"
+                ).left()
             }
 
             val targetSlots = namespaceSlotRange(namespace)
@@ -432,6 +450,9 @@ class VaultManager(
         crypto.constantTimeEquals(a, b)
 
     companion object {
+        /** Maximum Argon2id memory (KiB) accepted from stored vault params — 4 GiB. */
+        const val MAX_ARGON2_MEMORY_KIB = 4 * 1024 * 1024  // 4 GiB in KiB
+
         fun vaultFilePath(graphPath: String): String {
             val base = if (graphPath.endsWith("/")) graphPath.dropLast(1) else graphPath
             return "$base/.stele-vault"

@@ -145,6 +145,15 @@ class GraphWriter(
             return@withLock false
         }
 
+        // Guard: cannot rename pages in the hidden-volume reserve area
+        val renameLayer = cryptoLayer
+        if (renameLayer != null) {
+            if (renameLayer.checkNotHiddenReserve(relativeFilePath(oldPath)).isLeft()) {
+                logger.error("Rename blocked — restricted path: $oldPath")
+                return@withLock false
+            }
+        }
+
         // Calculate new path
         val newPath = getPageFilePath(page.copy(name = newName), graphPath)
 
@@ -205,6 +214,13 @@ class GraphWriter(
         val path = page.filePath
         if (path.isNullOrBlank()) {
             logger.error("Cannot delete page with no file path: ${page.name}")
+            return false
+        }
+
+        // Guard: cannot delete pages in the hidden-volume reserve area
+        val deleteLayer = cryptoLayer
+        if (deleteLayer != null && deleteLayer.checkNotHiddenReserve(relativeFilePath(path)).isLeft()) {
+            logger.error("Delete blocked — restricted path: $path")
             return false
         }
 

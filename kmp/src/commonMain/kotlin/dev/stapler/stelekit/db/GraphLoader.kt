@@ -104,8 +104,14 @@ class GraphLoader(
             is Either.Right -> result.value.decodeToString()
             is Either.Left -> when (val err = result.value) {
                 is VaultError.NotEncrypted -> {
-                    logger.warn("Paranoid mode active but $filePath has no STEK magic — reading as plaintext. Re-encrypt to clear this warning.")
-                    fileSystem.readFile(filePath)
+                    // .md.stek files MUST be encrypted — reject plaintext to prevent downgrade injection.
+                    if (filePath.endsWith(".md.stek")) {
+                        logger.error("Decryption failed for $filePath: file lacks STEK magic but has .md.stek extension — possible tampering or corruption. Refusing plaintext fallback.")
+                        null
+                    } else {
+                        logger.warn("Paranoid mode active but $filePath has no STEK magic — reading as plaintext. Re-encrypt to clear this warning.")
+                        fileSystem.readFile(filePath)
+                    }
                 }
                 else -> {
                     logger.warn("Decryption failed for $filePath: ${err.message}")
