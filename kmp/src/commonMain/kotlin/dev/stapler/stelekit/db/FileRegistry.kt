@@ -164,12 +164,12 @@ class FileRegistry(private val fileSystem: FileSystem) {
     }
 
     /** Updates mod time for a file (after parseAndSavePage). */
-    fun updateModTime(filePath: String, modTime: Long) {
+    suspend fun updateModTime(filePath: String, modTime: Long) = detectMutex.withLock {
         modTimes[filePath] = modTime
     }
 
     /** Updates content hash for a file. */
-    fun updateContentHash(filePath: String, contentHash: Int) {
+    suspend fun updateContentHash(filePath: String, contentHash: Int) = detectMutex.withLock {
         contentHashes[filePath] = contentHash
     }
 

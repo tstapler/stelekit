@@ -283,6 +283,7 @@ class VaultManager(
         namespace: VaultNamespace = VaultNamespace.OUTER,
         argon2Params: Argon2Params = DEFAULT_ARGON2_PARAMS,
     ): Either<VaultError, Unit> = withContext(Dispatchers.Default) {
+        val localDek = dek.copyOf()   // isolated from concurrent lock() zeroing of the live session array
         try {
             val vaultPath = vaultFilePath(graphPath)
             val rawBytes = withContext(PlatformDispatcher.IO) { fileReadBytes(vaultPath) }
@@ -296,7 +297,7 @@ class VaultManager(
             // Without this check, a caller with a wrong DEK could overwrite active slots
             // because the marker comparison would fail for all slots (false negatives).
             // Use namespace-specific MAC so OUTER DEK cannot be verified against HIDDEN MAC.
-            val verifyMacKey = deriveHeaderMacKey(dek)
+            val verifyMacKey = deriveHeaderMacKey(localDek)
             val authData = when (namespace) {
                 VaultNamespace.OUTER -> outerMacAuthData(rawBytes)
                 VaultNamespace.HIDDEN -> hiddenMacAuthData(rawBytes)
@@ -327,16 +328,18 @@ class VaultManager(
             // A slot is "mine" if its reserved[0..3] matches the 4-byte DEK-derived marker.
             // Slots without the marker (decoy slots) are safe to overwrite.
             val emptySlotIndex = targetSlots.firstOrNull { index ->
-                !isSlotMine(header.keyslots[index], dek, index)
+                !isSlotMine(header.keyslots[index], localDek, index)
             } ?: return@withContext VaultError.SlotsFull().left()
 
-            val newSlot = buildKeyslot(passphrase, dek, namespace, argon2Params, emptySlotIndex)
+            val newSlot = buildKeyslot(passphrase, localDek, namespace, argon2Params, emptySlotIndex)
             val updatedSlots = header.keyslots.toMutableList()
             updatedSlots[emptySlotIndex] = newSlot
 
-            writeUpdatedHeader(vaultPath, dek, namespace, header.copy(keyslots = updatedSlots))
+            writeUpdatedHeader(vaultPath, localDek, namespace, header.copy(keyslots = updatedSlots))
         } finally {
             passphrase.fill(' ')
+            crypto.clearBytes(localDek)
+            // Do NOT zero the original `dek` param — it's the live session array owned by lock()
         }
     }
 
@@ -354,37 +357,40 @@ class VaultManager(
         slotIndex: Int,
     ): Either<VaultError, Unit> = withContext(Dispatchers.Default) {
         val currentSession = session ?: return@withContext VaultError.InvalidCredential("Vault is locked").left()
-        val dek = currentSession.dek
+        val dek = currentSession.dek.copyOf()   // isolated from concurrent lock() zeroing
         val ns = currentSession.namespace
+        try {
+            if (slotIndex !in 0 until VaultHeader.KEYSLOT_COUNT) {
+                return@withContext VaultError.InvalidCredential("Slot index $slotIndex is out of range").left()
+            }
+            if (slotIndex !in namespaceSlotRange(ns)) {
+                return@withContext VaultError.InvalidCredential(
+                    "Slot $slotIndex does not belong to the current namespace"
+                ).left()
+            }
 
-        if (slotIndex !in 0 until VaultHeader.KEYSLOT_COUNT) {
-            return@withContext VaultError.InvalidCredential("Slot index $slotIndex is out of range").left()
-        }
-        if (slotIndex !in namespaceSlotRange(ns)) {
-            return@withContext VaultError.InvalidCredential(
-                "Slot $slotIndex does not belong to the current namespace"
-            ).left()
-        }
+            val vaultPath = vaultFilePath(graphPath)
+            val rawBytes = withContext(PlatformDispatcher.IO) { fileReadBytes(vaultPath) }
+                ?: return@withContext VaultError.NotAVault("Vault file not found").left()
+            val header = when (val r = VaultHeaderSerializer.deserialize(rawBytes)) {
+                is Either.Left -> return@withContext r
+                is Either.Right -> r.value
+            }
 
-        val vaultPath = vaultFilePath(graphPath)
-        val rawBytes = withContext(PlatformDispatcher.IO) { fileReadBytes(vaultPath) }
-            ?: return@withContext VaultError.NotAVault("Vault file not found").left()
-        val header = when (val r = VaultHeaderSerializer.deserialize(rawBytes)) {
-            is Either.Left -> return@withContext r
-            is Either.Right -> r.value
-        }
+            // Refuse to remove the last active slot — it would permanently lock out the vault.
+            val activeCount = namespaceSlotRange(ns).count { i -> isSlotMine(header.keyslots[i], dek, i) }
+            if (activeCount <= 1) {
+                return@withContext VaultError.InvalidCredential(
+                    "Cannot remove the last keyslot in namespace $ns — vault would be permanently locked"
+                ).left()
+            }
 
-        // Refuse to remove the last active slot — it would permanently lock out the vault.
-        val activeCount = namespaceSlotRange(ns).count { i -> isSlotMine(header.keyslots[i], dek, i) }
-        if (activeCount <= 1) {
-            return@withContext VaultError.InvalidCredential(
-                "Cannot remove the last keyslot in namespace $ns — vault would be permanently locked"
-            ).left()
+            val updatedSlots = header.keyslots.toMutableList()
+            updatedSlots[slotIndex] = randomSlot()
+            writeUpdatedHeader(vaultPath, dek, ns, header.copy(keyslots = updatedSlots))
+        } finally {
+            crypto.clearBytes(dek)
         }
-
-        val updatedSlots = header.keyslots.toMutableList()
-        updatedSlots[slotIndex] = randomSlot()
-        writeUpdatedHeader(vaultPath, dek, ns, header.copy(keyslots = updatedSlots))
     }
 
     private fun writeUpdatedHeader(
@@ -404,8 +410,14 @@ class VaultManager(
         }
         crypto.clearBytes(macKey)
         val finalHeader = when (namespace) {
-            VaultNamespace.OUTER -> header.copy(headerMac = mac)
-            VaultNamespace.HIDDEN -> header.copy(hiddenHeaderMac = mac)
+            VaultNamespace.OUTER -> header.copy(
+                headerMac = mac,
+                hiddenHeaderMac = crypto.secureRandom(VaultHeader.MAC_SIZE),
+            )
+            VaultNamespace.HIDDEN -> header.copy(
+                hiddenHeaderMac = mac,
+                headerMac = crypto.secureRandom(VaultHeader.MAC_SIZE),
+            )
         }
         val headerBytes = VaultHeaderSerializer.serialize(finalHeader)
         return if (fileWriteBytes(vaultPath, headerBytes)) {
