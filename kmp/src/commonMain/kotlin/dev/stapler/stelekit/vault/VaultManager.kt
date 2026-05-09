@@ -576,6 +576,9 @@ class VaultManager(
      * (to keep existing vaults accessible).
      */
     private fun validatePassphrase(passphrase: CharArray) {
+        require(passphrase.isNotEmpty()) {
+            "Passphrase must not be empty"
+        }
         require(passphrase.none { it.isSurrogate() }) {
             "Passphrase must not contain emoji or supplementary Unicode characters — use standard ASCII or Latin characters for portability"
         }

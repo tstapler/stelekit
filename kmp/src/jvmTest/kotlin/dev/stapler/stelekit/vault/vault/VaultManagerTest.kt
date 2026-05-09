@@ -328,13 +328,13 @@ class VaultManagerTest {
         assertTrue(newPassphrase.all { it == ' ' }, "Passphrase must be zeroed after addKeyslot")
     }
 
-    // VM-22 — Empty passphrase round-trips (zero-length input is valid but discouraged)
+    // VM-22 — Non-empty passphrase round-trips (empty passphrase is now rejected)
     @Test fun `empty passphrase can create and unlock vault`() = runTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
-        vm.createVault("/tmp/test-graph", charArrayOf(), argon2Params = params)
-        val result = vm.unlock("/tmp/test-graph", charArrayOf(), params)
-        assertTrue(result.isRight(), "Empty passphrase must unlock the vault it created")
+        vm.createVault("/tmp/test-graph", "testpassword".toCharArray(), argon2Params = params)
+        val result = vm.unlock("/tmp/test-graph", "testpassword".toCharArray(), params)
+        assertTrue(result.isRight(), "Non-empty passphrase must unlock the vault it created")
     }
 
     // VM-23 — Emoji passphrase is rejected at vault creation time (MEDIUM-4 validation).
@@ -353,19 +353,19 @@ class VaultManagerTest {
         assertNull(store[VaultManager.vaultFilePath("/tmp/test-graph")], "No vault file must be written for rejected passphrase")
     }
 
-    // VM-24 — Null-byte in passphrase is preserved (not treated as C string terminator)
+    // VM-24 — Different passphrases produce distinct vaults (not interchangeable)
     @Test fun `null-byte passphrase differs from empty passphrase`() = runTest {
         val store1 = mutableMapOf<String, ByteArray>()
         val store2 = mutableMapOf<String, ByteArray>()
         val vm1 = makeVaultManagerWithStore(store1)
         val vm2 = makeVaultManagerWithStore(store2)
-        vm1.createVault("/tmp/test-graph", charArrayOf(' '), argon2Params = params)
-        vm2.createVault("/tmp/test-graph", charArrayOf(), argon2Params = params)
-        // Null-byte vault cannot be unlocked with empty passphrase and vice versa
-        val r1 = vm1.unlock("/tmp/test-graph", charArrayOf(), params)
-        val r2 = vm2.unlock("/tmp/test-graph", charArrayOf(' '), params)
-        assertTrue(r1.isLeft(), "Empty passphrase must not unlock null-byte vault")
-        assertTrue(r2.isLeft(), "Null-byte passphrase must not unlock empty-passphrase vault")
+        vm1.createVault("/tmp/test-graph", "testpassword".toCharArray(), argon2Params = params)
+        vm2.createVault("/tmp/test-graph", "otherpassword".toCharArray(), argon2Params = params)
+        // Each vault can only be unlocked with its own passphrase
+        val r1 = vm1.unlock("/tmp/test-graph", "otherpassword".toCharArray(), params)
+        val r2 = vm2.unlock("/tmp/test-graph", "testpassword".toCharArray(), params)
+        assertTrue(r1.isLeft(), "Wrong passphrase must not unlock vault 1")
+        assertTrue(r2.isLeft(), "Wrong passphrase must not unlock vault 2")
     }
 
     // VM-25 — OUTER-authenticated session cannot remove HIDDEN keyslots (cross-namespace guard)
