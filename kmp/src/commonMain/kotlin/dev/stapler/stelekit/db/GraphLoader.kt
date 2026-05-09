@@ -744,16 +744,16 @@ class GraphLoader(
      * Call this immediately before [reloadFiles] after git merge completes.
      * Always paired with [endGitMerge].
      */
-    fun beginGitMerge(pathsBeingMerged: List<String>) {
-        kotlinx.coroutines.runBlocking { suppressMutex.withLock { gitMergeSuppressedFiles.addAll(pathsBeingMerged) } }
+    suspend fun beginGitMerge(pathsBeingMerged: List<String>) {
+        suppressMutex.withLock { gitMergeSuppressedFiles.addAll(pathsBeingMerged) }
     }
 
     /**
      * Clears the git-merge suppression set, restoring normal file-watcher behaviour.
      * Must be called after [reloadFiles] completes (or if merge is aborted).
      */
-    fun endGitMerge() {
-        kotlinx.coroutines.runBlocking { suppressMutex.withLock { gitMergeSuppressedFiles.clear() } }
+    suspend fun endGitMerge() {
+        suppressMutex.withLock { gitMergeSuppressedFiles.clear() }
     }
 
     /**
