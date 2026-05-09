@@ -849,12 +849,7 @@ private fun GraphContent(
                                     )
                                     if (isParanoidMode && vaultManager != null) {
                                         IconButton(onClick = {
-                                            scope.launch {
-                                                graphWriter.flush()
-                                                graphLoader.cryptoLayer = null
-                                                graphWriter.cryptoLayer = null
-                                                vaultManager.lock()
-                                            }
+                                            viewModel.flushAndLockVault(graphLoader, graphWriter, vaultManager)
                                         }) {
                                             Icon(
                                                 imageVector = Icons.Filled.Lock,
