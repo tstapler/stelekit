@@ -637,14 +637,13 @@ class GraphLoader(
                 continue
             }
 
-            val content = if (changed.entry.filePath.endsWith(".md.stek")) {
-                readFileDecrypted(changed.entry.filePath) ?: continue
-            } else {
-                changed.content
-            }
+            // For encrypted files, do NOT buffer the decrypted content in the SharedFlow.
+            // Emit with empty content; decrypt on-demand only if the change is not suppressed.
+            // This prevents up to 8 decrypted pages from sitting in the SharedFlow heap buffer.
+            val emitContent = if (changed.entry.filePath.endsWith(".md.stek")) "" else changed.content
 
             // Emit event so subscribers can suppress the re-import
-            _externalFileChanges.tryEmit(ExternalFileChange(changed.entry.filePath, content) {
+            _externalFileChanges.tryEmit(ExternalFileChange(changed.entry.filePath, emitContent) {
                 suppressedFiles.add(changed.entry.filePath)
             })
             yield()
@@ -652,6 +651,11 @@ class GraphLoader(
                 continue
             }
 
+            val content = if (changed.entry.filePath.endsWith(".md.stek")) {
+                readFileDecrypted(changed.entry.filePath) ?: continue
+            } else {
+                changed.content
+            }
             parseAndSavePage(changed.entry.filePath, content, ParseMode.FULL)
         }
 

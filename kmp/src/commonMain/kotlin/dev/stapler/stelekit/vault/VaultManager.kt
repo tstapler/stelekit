@@ -21,6 +21,10 @@ import kotlinx.coroutines.withContext
  * Argon2id key derivation runs on [Dispatchers.Default] (CPU-bound, ~350ms–1s per slot).
  * All 8 keyslots are always tried during unlock in constant order — no plaintext hint
  * is used to skip slots, preserving deniability for hidden-volume passphrases.
+ *
+ * **Atomicity requirement**: [fileWriteBytes] MUST write atomically (e.g. write to a
+ * `.tmp` sibling file and rename it over the target). A non-atomic implementation risks
+ * partial writes on crash/power loss that permanently corrupt the vault header.
  */
 class VaultManager(
     private val crypto: CryptoEngine,
@@ -35,9 +39,15 @@ class VaultManager(
     )
     val vaultEvents: SharedFlow<VaultEvent> = _vaultEvents.asSharedFlow()
 
-    // @Volatile so that lock() on any thread is immediately visible to currentDek() callers.
-    @Volatile private var sessionDek: ByteArray? = null
-    @Volatile private var sessionNamespace: VaultNamespace? = null
+    /**
+     * Holds the DEK and namespace as a single atomic unit.
+     * A single @Volatile reference write is atomic on JVM, eliminating the torn-read window
+     * that existed when sessionDek and sessionNamespace were two separate @Volatile fields —
+     * a reader could previously observe sessionDek != null while sessionNamespace was still null.
+     */
+    private data class Session(val dek: ByteArray, val namespace: VaultNamespace)
+
+    @Volatile private var session: Session? = null
 
     sealed interface VaultEvent {
         data object Locked : VaultEvent
@@ -45,10 +55,10 @@ class VaultManager(
     }
 
     /**
-     * The [dek] array is the **same object** that [VaultManager] stores in `sessionDek`.
-     * When [lock] is called, `sessionDek` is zeroed in-place — this also zeroes the
-     * [CryptoLayer] built from it. Callers MUST NOT store or copy the DEK array; pass it
-     * directly to [CryptoLayer] and let [VaultEvent.Locked] trigger cleanup.
+     * The [dek] array is the **same object** that [VaultManager] stores in `session.dek`.
+     * When [lock] is called, `session` is set to null and the DEK is zeroed in-place —
+     * this also zeroes any [CryptoLayer] built from it. Callers MUST NOT store or copy the
+     * DEK array; pass it directly to [CryptoLayer] and let [VaultEvent.Locked] trigger cleanup.
      */
     data class UnlockResult(val dek: ByteArray, val namespace: VaultNamespace)
 
@@ -57,7 +67,7 @@ class VaultManager(
      *
      * Returns the generated DEK as a `ByteArray`. Callers should zero it with
      * `crypto.clearBytes(dek)` after passing it to [addKeyslot] or [CryptoLayer].
-     * Note: [lock] does NOT zero this DEK — only [unlock]'s `sessionDek` is managed by lock.
+     * Note: [lock] does NOT zero this DEK — only [unlock]'s `session.dek` is managed by lock.
      *
      * [argon2Params] defaults to [DEFAULT_ARGON2_PARAMS]; supply a calibrated set for production use.
      */
@@ -225,8 +235,8 @@ class VaultManager(
                 }
             }
 
-            sessionDek = validDek
-            sessionNamespace = validNamespace
+            val newSession = Session(validDek, validNamespace)
+            session = newSession  // single atomic reference write — no torn-read possible
             _vaultEvents.tryEmit(VaultEvent.Unlocked(validNamespace))
             UnlockResult(dek = validDek, namespace = validNamespace).right()
         } finally {
@@ -245,15 +255,14 @@ class VaultManager(
      * also flushes after the event, but that is too late — flush BEFORE calling lock().
      */
     fun lock() {
-        val dek = sessionDek
-        sessionDek = null       // visible immediately to other threads (@Volatile)
-        sessionNamespace = null
-        dek?.let { crypto.clearBytes(it) }
+        val s = session
+        session = null  // single atomic reference write — visible immediately to other threads (@Volatile)
+        s?.let { crypto.clearBytes(it.dek) }
         _vaultEvents.tryEmit(VaultEvent.Locked)
     }
 
     /** Returns the current in-memory DEK (null when locked). */
-    fun currentDek(): ByteArray? = sessionDek
+    fun currentDek(): ByteArray? = session?.dek
 
     /**
      * Add a new passphrase keyslot to an existing vault.
@@ -299,7 +308,7 @@ class VaultManager(
             // Namespace guard: an active session may only add slots within its own namespace.
             // Allowing an OUTER session to embed the OUTER DEK in a HIDDEN slot would let
             // anyone with the outer passphrase automatically recover the "hidden" DEK.
-            val currentNs = sessionNamespace
+            val currentNs = session?.namespace
             if (currentNs != null && namespace != currentNs) {
                 return@withContext VaultError.InvalidCredential(
                     "Active session namespace ($currentNs) cannot add keyslots to $namespace"
@@ -336,8 +345,9 @@ class VaultManager(
         graphPath: String,
         slotIndex: Int,
     ): Either<VaultError, Unit> = withContext(Dispatchers.Default) {
-        val dek = sessionDek ?: return@withContext VaultError.InvalidCredential("Vault is locked").left()
-        val ns = sessionNamespace ?: return@withContext VaultError.InvalidCredential("Vault is locked").left()
+        val currentSession = session ?: return@withContext VaultError.InvalidCredential("Vault is locked").left()
+        val dek = currentSession.dek
+        val ns = currentSession.namespace
 
         if (slotIndex !in 0 until VaultHeader.KEYSLOT_COUNT) {
             return@withContext VaultError.InvalidCredential("Slot index $slotIndex is out of range").left()

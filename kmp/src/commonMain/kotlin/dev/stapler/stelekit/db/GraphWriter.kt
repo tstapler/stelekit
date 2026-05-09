@@ -255,6 +255,10 @@ class GraphWriter(
      *
      * On any step failure the saga runs compensations in reverse order, ensuring the
      * on-disk state is rolled back before the error propagates.
+     *
+     * **Atomicity**: The platform [FileSystem.writeFileBytes] implementation MUST be atomic
+     * (temp-file + rename). A partial write of an .md.stek ciphertext cannot be recovered —
+     * the AEAD tag will fail to verify and the page will be permanently unreadable.
      */
     private suspend fun savePageInternal(page: Page, blocks: List<Block>, graphPath: String): Boolean =
         saveMutex.withLock {
