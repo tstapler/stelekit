@@ -490,7 +490,10 @@ private fun GraphContent(
             if (event is VaultEvent.Locked) {
                 // DEK is already zeroed at this point — do not flush (would write with zero-key).
                 // The primary lock path (user-initiated) already flushed before calling lock().
+                // close() zeroes the CryptoLayer's owned DEK copy before nulling the reference.
+                graphLoader.cryptoLayer?.close()
                 graphLoader.cryptoLayer = null
+                graphWriter.cryptoLayer?.close()
                 graphWriter.cryptoLayer = null
                 vaultState = VaultState.Locked   // show lock/unlock screen; gates graph content
             }

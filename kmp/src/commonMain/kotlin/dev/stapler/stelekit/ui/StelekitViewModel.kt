@@ -1445,7 +1445,11 @@ class StelekitViewModel(
         scope.launch {
             blockStateManager?.flush()  // drain in-memory block edits before DEK is zeroed
             graphWriter.flush()
+            // close() zeroes the CryptoLayer's owned DEK copy before nulling the reference,
+            // so the copy is wiped independently of session.dek that vaultManager.lock() zeroes.
+            graphLoader.cryptoLayer?.close()
             graphLoader.cryptoLayer = null
+            graphWriter.cryptoLayer?.close()
             graphWriter.cryptoLayer = null
             vaultManager.lock()
         }

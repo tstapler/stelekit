@@ -460,8 +460,14 @@ class GraphWriter(
     /** Compute the graph-root-relative path used as AAD for file encryption. */
     private fun relativeFilePath(absoluteFilePath: String, base: String = graphPath): String {
         val baseWithSlash = if (base.endsWith("/")) base else "$base/"
-        return if (absoluteFilePath.startsWith(baseWithSlash)) absoluteFilePath.removePrefix(baseWithSlash)
-        else absoluteFilePath
+        return if (absoluteFilePath.startsWith(baseWithSlash)) {
+            absoluteFilePath.removePrefix(baseWithSlash)
+        } else {
+            if (base.isNotEmpty()) {
+                logger.error("relativeFilePath: '$absoluteFilePath' is outside graph root '$base' — AAD may be non-portable")
+            }
+            absoluteFilePath
+        }
     }
 
     companion object {

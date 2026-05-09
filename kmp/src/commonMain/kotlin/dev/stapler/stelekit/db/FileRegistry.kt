@@ -30,9 +30,12 @@ class FileRegistry(private val fileSystem: FileSystem) {
     /**
      * Scans a directory for .md and .md.stek files, records all mod times, and caches the result.
      * Subsequent calls to [journalFiles], [recentJournals], etc. operate on this cached list.
+     *
+     * Acquires [detectMutex] so writes to [modTimes] and [scannedFiles] are serialized with
+     * [detectChanges], eliminating the concurrent HashMap mutation race on the JVM.
      */
-    fun scanDirectory(dirPath: String): List<FileEntry> {
-        if (!fileSystem.directoryExists(dirPath)) return emptyList()
+    suspend fun scanDirectory(dirPath: String): List<FileEntry> = detectMutex.withLock {
+        if (!fileSystem.directoryExists(dirPath)) return@withLock emptyList()
 
         val entries = fileSystem.listFilesWithModTimes(dirPath)
             .filter { (name, _) -> name.endsWith(".md") || name.endsWith(".md.stek") }
@@ -48,15 +51,16 @@ class FileRegistry(private val fileSystem: FileSystem) {
             }
 
         scannedFiles[dirPath] = entries
-        return entries
+        entries
     }
 
     /**
      * Returns journal files from the last scan, filtered by [JournalUtils.isJournalName]
      * and sorted descending (most recent first).
+     * Callers must invoke [scanDirectory] before calling this method.
      */
     fun journalFiles(dirPath: String): List<FileEntry> {
-        val entries = scannedFiles[dirPath] ?: scanDirectory(dirPath)
+        val entries = scannedFiles[dirPath] ?: emptyList()
         return entries
             .filter { JournalUtils.isJournalName(it.fileName.removeSuffix(".md.stek").removeSuffix(".md")) }
             .sortedByDescending { it.fileName }
@@ -70,9 +74,11 @@ class FileRegistry(private val fileSystem: FileSystem) {
     fun remainingJournals(dirPath: String, skip: Int, take: Int): List<FileEntry> =
         journalFiles(dirPath).drop(skip).take(take)
 
-    /** All .md files from the cached scan (no journal filter), sorted alphabetically. */
+    /** All .md files from the cached scan (no journal filter), sorted alphabetically.
+     * Callers must invoke [scanDirectory] before calling this method.
+     */
     fun pageFiles(dirPath: String): List<FileEntry> {
-        val entries = scannedFiles[dirPath] ?: scanDirectory(dirPath)
+        val entries = scannedFiles[dirPath] ?: emptyList()
         return entries.sortedBy { it.fileName }
     }
 

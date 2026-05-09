@@ -20,12 +20,25 @@ import arrow.core.right
  * prevention per plan OPEN-1 decision).
  *
  * [cryptoEngine] — platform crypto implementation
- * [dek] — 32-byte Data Encryption Key held in memory while the vault is unlocked
+ * [dek] — 32-byte Data Encryption Key; CryptoLayer takes its own copy so the caller's zeroing
+ *         (e.g. VaultManager.lock()) cannot race with an in-flight encrypt/decrypt.
+ *         Call [close] to zero the owned copy when the CryptoLayer is no longer needed.
  */
 class CryptoLayer(
     private val cryptoEngine: CryptoEngine,
-    private val dek: ByteArray,
+    dek: ByteArray,
 ) {
+    // Owned copy — decouples this object's DEK lifetime from the session.dek reference that
+    // VaultManager.lock() zeroes. Zeroed by close() when the caller nulls this CryptoLayer.
+    private val dek: ByteArray = dek.copyOf()
+
+    /**
+     * Zeroes the owned DEK copy. Must be called before nulling the CryptoLayer reference
+     * to ensure the key material does not linger in heap.
+     */
+    fun close() {
+        cryptoEngine.clearBytes(dek)
+    }
     companion object {
         val STEK_MAGIC = byteArrayOf(0x53, 0x54, 0x45, 0x4B)
         const val STEK_VERSION: Byte = 0x01

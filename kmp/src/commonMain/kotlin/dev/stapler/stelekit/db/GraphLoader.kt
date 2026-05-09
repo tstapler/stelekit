@@ -81,9 +81,12 @@ class GraphLoader(
      */
     private fun relativePathFor(absoluteFilePath: String): String {
         val graphPath = currentGraphPath
-        return if (graphPath.isNotEmpty() && absoluteFilePath.startsWith(graphPath)) {
-            absoluteFilePath.removePrefix(graphPath).trimStart('/')
+        if (graphPath.isEmpty()) return absoluteFilePath
+        val base = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
+        return if (absoluteFilePath.startsWith(base)) {
+            absoluteFilePath.removePrefix(base)
         } else {
+            logger.error("relativePathFor: '$absoluteFilePath' is outside graph root '$graphPath' — AAD may be non-portable")
             absoluteFilePath
         }
     }
@@ -230,21 +233,15 @@ class GraphLoader(
     private val _writeErrors = MutableSharedFlow<WriteError>(extraBufferCapacity = 16)
     val writeErrors: SharedFlow<WriteError> = _writeErrors.asSharedFlow()
 
-    // Mutex protecting suppressedFiles and gitMergeSuppressedFiles. Both sets are accessed
-    // concurrently by the 5-second polling loop and native-change callbacks — on JVM,
-    // unsynchronized HashSet mutation can corrupt the structure. suppressMutex is a
-    // kotlinx.coroutines.sync.Mutex (KMP-safe; already imported above).
+    // Mutex protecting gitMergeSuppressedFiles. The set is accessed concurrently by the
+    // 5-second polling loop and native-change callbacks — on JVM, unsynchronized HashSet
+    // mutation can corrupt the structure. suppressMutex is a kotlinx.coroutines.sync.Mutex
+    // (KMP-safe; already imported above).
+    //
+    // Single-shot suppression (subscriber calling suppress() on an ExternalFileChange event)
+    // no longer uses this mutex — it uses a local var per emission instead, removing the
+    // need for runBlocking in the suppress lambda.
     private val suppressMutex = Mutex()
-
-    // Files suppressed from external-change processing.
-    // Two modes:
-    //  1. Single-shot: subscriber calls suppress() in ExternalFileChange handler; the path is
-    //     added here and then removed by checkDirectoryForChanges via .remove().
-    //  2. Sticky (git merge): beginGitMerge() pre-adds paths; they are checked with .contains()
-    //     and not removed until endGitMerge() calls .clear().
-    // Both modes share the same set; sticky paths survive across multiple watcher ticks.
-    // ALL accesses must be inside suppressMutex.withLock { }.
-    private val suppressedFiles = mutableSetOf<String>()
 
     // Paths added by beginGitMerge() — kept for sticky suppression across watcher ticks.
     // ALL accesses must be inside suppressMutex.withLock { }.
@@ -656,14 +653,15 @@ class GraphLoader(
             val emitContent = if (changed.entry.filePath.endsWith(".md.stek")) "" else changed.content
 
             // Emit event so subscribers can suppress the re-import.
-            // The suppress lambda is called from the subscriber's coroutine (non-suspend context).
-            // runBlocking is safe here: subscriber runs on IO/Default, never on main thread, and
-            // the watcher releases suppressMutex before yield() so no deadlock is possible.
+            // The suppress lambda is called synchronously within the same coroutine execution
+            // between tryEmit and yield(), so a plain local var is safe — no thread switch
+            // occurs in that window and no mutex is needed.
+            var suppressed = false
             _externalFileChanges.tryEmit(ExternalFileChange(changed.entry.filePath, emitContent) {
-                kotlinx.coroutines.runBlocking { suppressMutex.withLock { suppressedFiles.add(changed.entry.filePath) } }
+                suppressed = true
             })
             yield()
-            if (suppressMutex.withLock { suppressedFiles.remove(changed.entry.filePath) }) {
+            if (suppressed) {
                 continue
             }
 

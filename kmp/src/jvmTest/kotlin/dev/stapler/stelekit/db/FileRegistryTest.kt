@@ -355,7 +355,7 @@ class FileRegistryTest {
     // ── Paranoid mode: .md.stek file discovery ────────────────────────────────
 
     @Test
-    fun `scanDirectory includes stek files alongside md files`() {
+    fun `scanDirectory includes stek files alongside md files`() = runTest {
         val fs = FakeFs()
         fs.externalWrite("/graph/pages/Note.md", "# Note")
         fs.externalWrite("/graph/pages/Secret.md.stek", "STEK<binary>")
