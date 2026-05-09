@@ -47,6 +47,24 @@ interface FileSystem {
      */
     suspend fun pickSaveFileAsync(suggestedName: String, mimeType: String = "application/json"): String? = null
 
+    /**
+     * Read raw bytes from a file. Used by paranoid-mode decryption to read STEK-format files.
+     * Platforms that support paranoid mode must override this with true byte-level IO.
+     * The default throws [UnsupportedOperationException] to prevent silent data corruption
+     * from a round-trip through String (which mangles non-UTF-8 byte sequences).
+     */
+    fun readFileBytes(path: String): ByteArray? =
+        throw UnsupportedOperationException("readFileBytes is not implemented for this platform. Override in a platform-specific FileSystem implementation.")
+
+    /**
+     * Write raw bytes to a file. Used by paranoid-mode encryption.
+     * Platforms that support paranoid mode must override this with true byte-level IO.
+     * The default throws [UnsupportedOperationException] — decoding arbitrary ciphertext as
+     * UTF-8 and re-encoding it is lossy and would corrupt encrypted file content.
+     */
+    fun writeFileBytes(path: String, data: ByteArray): Boolean =
+        throw UnsupportedOperationException("writeFileBytes is not implemented for this platform. Override in a platform-specific FileSystem implementation.")
+
     /** Updates the shadow copy after a SAF write. No-op on non-SAF file systems. */
     fun updateShadow(path: String, content: String) { /* no-op */ }
 

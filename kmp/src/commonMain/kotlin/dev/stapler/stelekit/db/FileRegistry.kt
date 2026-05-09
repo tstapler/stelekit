@@ -28,14 +28,17 @@ class FileRegistry(private val fileSystem: FileSystem) {
     // ---- Scan & Register ----
 
     /**
-     * Scans a directory for .md files, records all mod times, and caches the result.
+     * Scans a directory for .md and .md.stek files, records all mod times, and caches the result.
      * Subsequent calls to [journalFiles], [recentJournals], etc. operate on this cached list.
+     *
+     * Acquires [detectMutex] so writes to [modTimes] and [scannedFiles] are serialized with
+     * [detectChanges], eliminating the concurrent HashMap mutation race on the JVM.
      */
-    fun scanDirectory(dirPath: String): List<FileEntry> {
-        if (!fileSystem.directoryExists(dirPath)) return emptyList()
+    suspend fun scanDirectory(dirPath: String): List<FileEntry> = detectMutex.withLock {
+        if (!fileSystem.directoryExists(dirPath)) return@withLock emptyList()
 
         val entries = fileSystem.listFilesWithModTimes(dirPath)
-            .filter { (name, _) -> name.endsWith(".md") }
+            .filter { (name, _) -> name.endsWith(".md") || name.endsWith(".md.stek") }
             .map { (fileName, modTime) ->
                 val filePath = "$dirPath/$fileName"
                 modTimes[filePath] = modTime
@@ -48,17 +51,18 @@ class FileRegistry(private val fileSystem: FileSystem) {
             }
 
         scannedFiles[dirPath] = entries
-        return entries
+        entries
     }
 
     /**
      * Returns journal files from the last scan, filtered by [JournalUtils.isJournalName]
      * and sorted descending (most recent first).
+     * Callers must invoke [scanDirectory] before calling this method.
      */
     fun journalFiles(dirPath: String): List<FileEntry> {
-        val entries = scannedFiles[dirPath] ?: scanDirectory(dirPath)
+        val entries = scannedFiles[dirPath] ?: emptyList()
         return entries
-            .filter { JournalUtils.isJournalName(it.fileName.removeSuffix(".md")) }
+            .filter { JournalUtils.isJournalName(it.fileName.removeSuffix(".md.stek").removeSuffix(".md")) }
             .sortedByDescending { it.fileName }
     }
 
@@ -70,9 +74,11 @@ class FileRegistry(private val fileSystem: FileSystem) {
     fun remainingJournals(dirPath: String, skip: Int, take: Int): List<FileEntry> =
         journalFiles(dirPath).drop(skip).take(take)
 
-    /** All .md files from the cached scan (no journal filter), sorted alphabetically. */
+    /** All .md files from the cached scan (no journal filter), sorted alphabetically.
+     * Callers must invoke [scanDirectory] before calling this method.
+     */
     fun pageFiles(dirPath: String): List<FileEntry> {
-        val entries = scannedFiles[dirPath] ?: scanDirectory(dirPath)
+        val entries = scannedFiles[dirPath] ?: emptyList()
         return entries.sortedBy { it.fileName }
     }
 
@@ -89,7 +95,7 @@ class FileRegistry(private val fileSystem: FileSystem) {
         if (!fileSystem.directoryExists(dirPath)) return@withLock ChangeSet.EMPTY
 
         val currentFilesWithTimes = fileSystem.listFilesWithModTimes(dirPath)
-            .filter { (name, _) -> name.endsWith(".md") }
+            .filter { (name, _) -> name.endsWith(".md") || name.endsWith(".md.stek") }
         val newFiles = mutableListOf<ChangedFile>()
         val changedFiles = mutableListOf<ChangedFile>()
         val currentPaths = HashSet<String>(currentFilesWithTimes.size * 2)
@@ -98,25 +104,35 @@ class FileRegistry(private val fileSystem: FileSystem) {
             val filePath = "$dirPath/$fileName"
             currentPaths.add(filePath)
             val lastKnown = modTimes[filePath]
+            val isEncrypted = fileName.endsWith(".md.stek")
 
             if (lastKnown == null) {
-                // New file — not in registry
-                val content = fileSystem.readFile(filePath) ?: continue
+                // New file — not in registry.
+                // Encrypted files are binary; content is read via readFileDecrypted at the call site.
+                val content = if (isEncrypted) "" else fileSystem.readFile(filePath) ?: continue
                 modTimes[filePath] = modTime
-                contentHashes[filePath] = content.hashCode()
+                if (!isEncrypted) contentHashes[filePath] = content.hashCode()
                 newFiles.add(ChangedFile(FileEntry(fileName, filePath, modTime), content))
             } else if (modTime > lastKnown) {
-                // Mod time changed — check content hash guard
-                val content = fileSystem.readFile(filePath) ?: continue
-                val newHash = content.hashCode()
-                if (contentHashes[filePath] == newHash) {
-                    // Same content (our own write) — update mod time, skip
+                if (isEncrypted) {
+                    // Encrypted files are binary — skip the text content-hash guard.
+                    // modTime change alone is sufficient signal; markWrittenByUs keeps own-write
+                    // suppression accurate via the modTimes map.
                     modTimes[filePath] = modTime
-                    continue
+                    changedFiles.add(ChangedFile(FileEntry(fileName, filePath, modTime), ""))
+                } else {
+                    // Mod time changed — check content hash guard
+                    val content = fileSystem.readFile(filePath) ?: continue
+                    val newHash = content.hashCode()
+                    if (contentHashes[filePath] == newHash) {
+                        // Same content (our own write) — update mod time, skip
+                        modTimes[filePath] = modTime
+                        continue
+                    }
+                    modTimes[filePath] = modTime
+                    contentHashes[filePath] = newHash
+                    changedFiles.add(ChangedFile(FileEntry(fileName, filePath, modTime), content))
                 }
-                modTimes[filePath] = modTime
-                contentHashes[filePath] = newHash
-                changedFiles.add(ChangedFile(FileEntry(fileName, filePath, modTime), content))
             }
         }
 
@@ -134,29 +150,38 @@ class FileRegistry(private val fileSystem: FileSystem) {
     /**
      * Marks a file as written by the app. Updates mod time and content hash
      * so the watcher's content-hash guard will suppress the next detection.
+     *
+     * Acquires [detectMutex] so this update is atomic with respect to [detectChanges],
+     * eliminating the race where a concurrent [detectChanges] could read a stale modTime
+     * for a `.md.stek` file (where the content-hash guard is disabled) and emit a spurious
+     * own-write event.
      */
-    fun markWrittenByUs(filePath: String) {
-        val modTime = fileSystem.getLastModifiedTime(filePath) ?: return
+    suspend fun markWrittenByUs(filePath: String) = detectMutex.withLock {
+        val modTime = fileSystem.getLastModifiedTime(filePath) ?: return@withLock
         modTimes[filePath] = modTime
-        val content = fileSystem.readFile(filePath)
-        if (content != null) {
-            contentHashes[filePath] = content.hashCode()
+        // Binary encrypted files cannot be read as text — modTime update alone is sufficient
+        // for own-write suppression (detectChanges skips the content-hash guard for .md.stek).
+        if (!filePath.endsWith(".md.stek")) {
+            val content = fileSystem.readFile(filePath)
+            if (content != null) {
+                contentHashes[filePath] = content.hashCode()
+            }
         }
     }
 
     /** Updates mod time for a file (after parseAndSavePage). */
-    fun updateModTime(filePath: String, modTime: Long) {
+    suspend fun updateModTime(filePath: String, modTime: Long) = detectMutex.withLock {
         modTimes[filePath] = modTime
     }
 
     /** Updates content hash for a file. */
-    fun updateContentHash(filePath: String, contentHash: Int) {
+    suspend fun updateContentHash(filePath: String, contentHash: Int) = detectMutex.withLock {
         contentHashes[filePath] = contentHash
     }
 
     // ---- Cleanup ----
 
-    fun clear() {
+    suspend fun clear() = detectMutex.withLock {
         modTimes.clear()
         contentHashes.clear()
         scannedFiles.clear()

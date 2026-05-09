@@ -119,6 +119,7 @@ fun main() {
                 graphPath = graphPath,
                 urlFetcher = UrlFetcherJvm(),
                 spanRecorder = spanRecorder,
+                cryptoEngine = dev.stapler.stelekit.vault.JvmCryptoEngine(),
             )
         }
     }

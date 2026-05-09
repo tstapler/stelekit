@@ -4,6 +4,7 @@ import dev.stapler.stelekit.db.BacklinkRenamer
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.db.RenameResult
 import dev.stapler.stelekit.db.UndoManager
 import dev.stapler.stelekit.export.ClipboardProvider
@@ -750,6 +751,7 @@ class StelekitViewModel(
                     is Screen.GlobalUnlinkedReferences -> "Opened Unlinked References"
                     is Screen.Import -> "Import text as new page"
                     is Screen.LibraryStats -> "Opened Library Stats"
+                    is Screen.VaultUnlock -> "Vault locked"
                 }
             )
         }
@@ -1431,6 +1433,25 @@ class StelekitViewModel(
     fun savePendingChanges() {
         scope.launch {
             blockStateManager?.flush()
+        }
+    }
+
+    /**
+     * Flush pending writes, null out CryptoLayer references, and lock the vault.
+     * Launched on the ViewModel's own scope to avoid [ForgottenCoroutineScopeException]
+     * when called from a lifecycle observer that may fire after composition teardown.
+     */
+    fun flushAndLockVault(graphLoader: GraphLoader, graphWriter: GraphWriter, vaultManager: VaultManager) {
+        scope.launch {
+            blockStateManager?.flush()  // drain in-memory block edits before DEK is zeroed
+            graphWriter.flush()
+            // close() zeroes the CryptoLayer's owned DEK copy before nulling the reference,
+            // so the copy is wiped independently of session.dek that vaultManager.lock() zeroes.
+            graphLoader.cryptoLayer?.close()
+            graphLoader.cryptoLayer = null
+            graphWriter.cryptoLayer?.close()
+            graphWriter.cryptoLayer = null
+            vaultManager.lock()
         }
     }
 

@@ -351,4 +351,101 @@ class FileRegistryTest {
         assertEquals(1, totalNew,
             "Concurrent calls must not report the same new file twice")
     }
+
+    // ── Paranoid mode: .md.stek file discovery ────────────────────────────────
+
+    @Test
+    fun `scanDirectory includes stek files alongside md files`() = runTest {
+        val fs = FakeFs()
+        fs.externalWrite("/graph/pages/Note.md", "# Note")
+        fs.externalWrite("/graph/pages/Secret.md.stek", "STEK<binary>")
+        val registry = FileRegistry(fs)
+
+        val entries = registry.scanDirectory("/graph/pages")
+
+        val names = entries.map { it.fileName }.toSet()
+        assertTrue("Note.md" in names, "Plain .md file must be discovered")
+        assertTrue("Secret.md.stek" in names, ".md.stek file must be discovered")
+    }
+
+    @Test
+    fun `detectChanges reports new stek file in newFiles with empty content`() = runTest {
+        val fs = FakeFs()
+        fs.externalWrite("/graph/pages/Secret.md.stek", "STEK<binary>")
+        val registry = FileRegistry(fs)
+
+        val changes = registry.detectChanges("/graph/pages")
+
+        assertEquals(1, changes.newFiles.size, "New .md.stek file must appear in newFiles")
+        assertEquals("Secret.md.stek", changes.newFiles[0].entry.fileName)
+        assertEquals("", changes.newFiles[0].content,
+            "Content must be empty — binary file is read via readFileDecrypted at the call site")
+    }
+
+    @Test
+    fun `detectChanges reports changed stek file on mtime bump without content hash check`() = runTest {
+        val fs = FakeFs()
+        fs.externalWrite("/graph/pages/Secret.md.stek", "STEK<v1>")
+        val registry = FileRegistry(fs)
+        registry.detectChanges("/graph/pages") // register baseline
+
+        // Simulate re-encryption producing new ciphertext (same logical content, new bytes)
+        fs.externalWrite("/graph/pages/Secret.md.stek", "STEK<v2>")
+
+        val changes = registry.detectChanges("/graph/pages")
+        assertEquals(1, changes.changedFiles.size, "mtime bump on .md.stek must be reported as changed")
+        assertEquals("", changes.changedFiles[0].content,
+            "Changed .md.stek content must be empty placeholder — read via readFileDecrypted")
+    }
+
+    @Test
+    fun `own stek write is suppressed by markWrittenByUs`() = runTest {
+        val fs = FakeFs()
+        fs.externalWrite("/graph/pages/Secret.md.stek", "STEK<v1>")
+        val registry = FileRegistry(fs)
+        registry.detectChanges("/graph/pages") // register baseline
+
+        // GraphWriter writes the encrypted file and marks it
+        fs.externalWrite("/graph/pages/Secret.md.stek", "STEK<v2>")
+        registry.markWrittenByUs("/graph/pages/Secret.md.stek")
+
+        val changes = registry.detectChanges("/graph/pages")
+        assertTrue(changes.changedFiles.isEmpty(),
+            "Own .md.stek write marked via markWrittenByUs must not be reported as external change")
+    }
+
+    @Test
+    fun `stek and md files coexist in same directory — both discovered`() = runTest {
+        val fs = FakeFs()
+        fs.externalWrite("/graph/pages/Alpha.md", "# Alpha")
+        fs.externalWrite("/graph/pages/Beta.md", "# Beta")
+        fs.externalWrite("/graph/pages/Gamma.md.stek", "STEK<binary>")
+        val registry = FileRegistry(fs)
+
+        val changes = registry.detectChanges("/graph/pages")
+
+        assertEquals(3, changes.newFiles.size, "Both .md and .md.stek files must be discovered")
+        val names = changes.newFiles.map { it.entry.fileName }.toSet()
+        assertTrue("Alpha.md" in names)
+        assertTrue("Beta.md" in names)
+        assertTrue("Gamma.md.stek" in names)
+        // Plain md files carry real content; stek files carry empty placeholder
+        val alphaEntry = changes.newFiles.first { it.entry.fileName == "Alpha.md" }
+        assertEquals("# Alpha", alphaEntry.content)
+        val gammaEntry = changes.newFiles.first { it.entry.fileName == "Gamma.md.stek" }
+        assertEquals("", gammaEntry.content)
+    }
+
+    @Test
+    fun `stek file with unchanged mtime is not re-reported`() = runTest {
+        val fs = FakeFs()
+        fs.externalWrite("/graph/pages/Secret.md.stek", "STEK<binary>")
+        val registry = FileRegistry(fs)
+        registry.detectChanges("/graph/pages") // register baseline
+
+        // No mtime change — detectChanges must be a no-op
+        val changes = registry.detectChanges("/graph/pages")
+        assertTrue(changes.newFiles.isEmpty())
+        assertTrue(changes.changedFiles.isEmpty())
+    }
 }
