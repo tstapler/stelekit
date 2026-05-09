@@ -5,7 +5,8 @@
 package dev.stapler.stelekit.browser
 
 import androidx.compose.ui.ExperimentalComposeUiApi
-import androidx.compose.ui.window.CanvasBasedWindow
+import androidx.compose.ui.window.ComposeViewport
+import kotlinx.browser.document
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -50,7 +51,7 @@ fun main() {
 
         markSteleKitReady()
 
-        CanvasBasedWindow(canvasElementId = "ComposeTarget") {
+        ComposeViewport(document.body!!) {
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = graphPath,

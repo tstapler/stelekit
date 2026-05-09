@@ -1,9 +1,21 @@
-import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
+import sqlite3InitModule from './sqlite3-bundler-friendly.mjs';
+
+// Debug: report status to main page via BroadcastChannel
+const dbgChannel = new BroadcastChannel('stelekit-worker-debug');
+dbgChannel.postMessage({ msg: 'worker-module-loaded', initModuleType: typeof sqlite3InitModule });
 
 let db = null;
 
 async function init(dbPath) {
-  const sqlite3 = await sqlite3InitModule({ print: console.log, printErr: console.error });
+  dbgChannel.postMessage({ msg: 'init-called', dbPath });
+  let sqlite3;
+  try {
+    sqlite3 = await sqlite3InitModule({ print: console.log, printErr: console.error });
+    dbgChannel.postMessage({ msg: 'sqlite3-init-ok' });
+  } catch (initErr) {
+    dbgChannel.postMessage({ msg: 'sqlite3-init-failed', error: String(initErr) });
+    throw initErr;
+  }
   try {
     const poolUtil = await sqlite3.installOpfsSAHPoolVfs({
       name: 'opfs-sahpool',

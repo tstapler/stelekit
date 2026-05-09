@@ -67,12 +67,12 @@ kotlin {
                 implementation("app.cash.sqldelight:coroutines-extensions:2.3.2")
                 implementation("app.cash.sqldelight:async-extensions:2.3.2")
 
-                // Compose Multiplatform
-                implementation("org.jetbrains.compose.runtime:runtime:1.7.3")
-                implementation("org.jetbrains.compose.foundation:foundation:1.7.3")
-                implementation("org.jetbrains.compose.material3:material3:1.7.3")
-                implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
-                implementation("org.jetbrains.compose.components:components-resources:1.7.3")
+                // Compose Multiplatform — versions managed by org.jetbrains.compose plugin
+                implementation(compose.runtime)
+                implementation(compose.foundation)
+                implementation(compose.material3)
+                implementation(compose.materialIconsExtended)
+                implementation(compose.components.resources)
 
                 // Lifecycle
                 implementation("org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
@@ -138,10 +138,8 @@ kotlin {
         val jvmTest by getting {
             dependencies {
                 implementation(kotlin("test-junit"))
-                implementation("org.jetbrains.compose.ui:ui-test-junit4-desktop:1.8.0")
-                implementation("io.github.takahirom.roborazzi:roborazzi-compose-desktop:1.59.0") {
-                    exclude(group = "org.jetbrains.compose.ui", module = "ui-test-junit4-desktop")
-                }
+                implementation(compose.desktop.uiTestJUnit4)
+                implementation("io.github.takahirom.roborazzi:roborazzi-compose-desktop:1.59.0")
                 // Ktor MockEngine for unit-testing UrlFetcherJvm without real network calls
                 implementation("io.ktor:ktor-client-mock:3.1.3")
                 // BlockHound — detects blocking calls on coroutine scheduler threads
@@ -286,6 +284,27 @@ kotlin {
     }
 }
 
+// Copy sqlite-wasm runtime files into the wasmJs distribution so the module worker
+// can resolve './sqlite3-bundler-friendly.mjs' without a bundler or import map.
+// sqlite3-bundler-friendly.mjs locates sqlite3.wasm via import.meta.url (same dir).
+// sqlite3-opfs-async-proxy.js is required by installOpfsSAHPoolVfs.
+if (project.findProperty("enableJs") == "true") {
+    afterEvaluate {
+        tasks.named("wasmJsBrowserDistribution") {
+            doLast {
+                val sqliteWasmSrc = file("${rootDir}/build/wasm/node_modules/@sqlite.org/sqlite-wasm/sqlite-wasm/jswasm")
+                val distDir = file("${projectDir}/build/dist/wasmJs/productionExecutable")
+                copy {
+                    from(sqliteWasmSrc) {
+                        include("sqlite3-bundler-friendly.mjs", "sqlite3.wasm", "sqlite3-opfs-async-proxy.js")
+                    }
+                    into(distDir)
+                }
+            }
+        }
+    }
+}
+
 // ── kotlinx-benchmark configuration ────────────────────────────────────────────
 // Run with: ./gradlew jvmBenchmark
 // Results land in: kmp/build/reports/benchmarks/
@@ -305,17 +324,15 @@ benchmark {
 }
 
 
-// Skiko native/JVM version alignment: compose.desktop.currentOs pins the native runtime at
-// 0.8.18 (Compose plugin 1.7.3), but Coil 3 transitively pulls in compose.foundation 1.8.0
-// which upgrades the Skiko JVM jars to 0.9.4. Force the native platform runtime to match so
-// `RenderNodeContext_nMake` and other 0.9.x native methods are available at test time.
+// Skiko native/JVM version alignment: Compose 1.10.3 uses skiko 0.9.37.4.
+// Force the AWT runtime to match in case transitive deps pull in a different version.
 configurations.all {
     resolutionStrategy.force(
-        "org.jetbrains.skiko:skiko-awt-runtime-linux-x64:0.9.4",
-        "org.jetbrains.skiko:skiko-awt-runtime-linux-arm64:0.9.4",
-        "org.jetbrains.skiko:skiko-awt-runtime-macos-x64:0.9.4",
-        "org.jetbrains.skiko:skiko-awt-runtime-macos-arm64:0.9.4",
-        "org.jetbrains.skiko:skiko-awt-runtime-windows-x64:0.9.4"
+        "org.jetbrains.skiko:skiko-awt-runtime-linux-x64:0.9.37.4",
+        "org.jetbrains.skiko:skiko-awt-runtime-linux-arm64:0.9.37.4",
+        "org.jetbrains.skiko:skiko-awt-runtime-macos-x64:0.9.37.4",
+        "org.jetbrains.skiko:skiko-awt-runtime-macos-arm64:0.9.37.4",
+        "org.jetbrains.skiko:skiko-awt-runtime-windows-x64:0.9.37.4"
     )
 }
 
