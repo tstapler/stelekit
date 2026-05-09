@@ -41,7 +41,7 @@ import kotlinx.coroutines.sync.withLock
 class GraphWriter(
     private val fileSystem: FileSystem,
     private val writeActor: DatabaseWriteActor? = null,
-    private val onFileWritten: ((filePath: String) -> Unit)? = null,
+    private val onFileWritten: (suspend (filePath: String) -> Unit)? = null,
     @Deprecated("Use writeActor instead", level = DeprecationLevel.WARNING)
     private val pageRepository: PageRepository? = null,
     private val sidecarManager: SidecarManager? = null,
@@ -471,7 +471,7 @@ class GraphWriter(
         fun resource(
             fileSystem: FileSystem,
             writeActor: DatabaseWriteActor? = null,
-            onFileWritten: ((String) -> Unit)? = null,
+            onFileWritten: (suspend (String) -> Unit)? = null,
             pageRepository: PageRepository? = null,
             sidecarManager: SidecarManager? = null,
             cryptoLayer: CryptoLayer? = null,

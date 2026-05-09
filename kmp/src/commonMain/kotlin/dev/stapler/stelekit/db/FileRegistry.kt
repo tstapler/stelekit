@@ -15,10 +15,6 @@ import kotlinx.coroutines.sync.withLock
  */
 class FileRegistry(private val fileSystem: FileSystem) {
 
-    // TODO(GAP-N6): modTimes and contentHashes are not thread-safe. markWrittenByUs (called
-    //  from the non-suspend onFileWritten callback) can race with detectChanges on JVM/Android.
-    //  Fixing this properly requires making onFileWritten a suspend callback so it can acquire
-    //  detectMutex; left as a follow-up to avoid bloating this security-focused PR.
     private val modTimes = mutableMapOf<String, Long>()
     private val contentHashes = mutableMapOf<String, Int>()
 
@@ -148,9 +144,14 @@ class FileRegistry(private val fileSystem: FileSystem) {
     /**
      * Marks a file as written by the app. Updates mod time and content hash
      * so the watcher's content-hash guard will suppress the next detection.
+     *
+     * Acquires [detectMutex] so this update is atomic with respect to [detectChanges],
+     * eliminating the race where a concurrent [detectChanges] could read a stale modTime
+     * for a `.md.stek` file (where the content-hash guard is disabled) and emit a spurious
+     * own-write event.
      */
-    fun markWrittenByUs(filePath: String) {
-        val modTime = fileSystem.getLastModifiedTime(filePath) ?: return
+    suspend fun markWrittenByUs(filePath: String) = detectMutex.withLock {
+        val modTime = fileSystem.getLastModifiedTime(filePath) ?: return@withLock
         modTimes[filePath] = modTime
         // Binary encrypted files cannot be read as text — modTime update alone is sufficient
         // for own-write suppression (detectChanges skips the content-hash guard for .md.stek).

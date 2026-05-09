@@ -65,9 +65,9 @@ class VaultManager(
     /**
      * Create a new vault at [graphPath]/.stele-vault with a single passphrase keyslot.
      *
-     * Returns the generated DEK as a `ByteArray`. Callers should zero it with
-     * `crypto.clearBytes(dek)` after passing it to [addKeyslot] or [CryptoLayer].
-     * Note: [lock] does NOT zero this DEK — only [unlock]'s `session.dek` is managed by lock.
+     * The vault is automatically unlocked after creation — [lock] manages DEK zeroing.
+     * Returns an [UnlockResult] so the caller can inject the DEK into a [CryptoLayer]
+     * without holding an orphaned ByteArray on the heap.
      *
      * [argon2Params] defaults to [DEFAULT_ARGON2_PARAMS]; supply a calibrated set for production use.
      */
@@ -76,7 +76,7 @@ class VaultManager(
         passphrase: CharArray,
         namespace: VaultNamespace = VaultNamespace.OUTER,
         argon2Params: Argon2Params = DEFAULT_ARGON2_PARAMS,
-    ): Either<VaultError, ByteArray> = withContext(Dispatchers.Default) {
+    ): Either<VaultError, UnlockResult> = withContext(Dispatchers.Default) {
         try {
             val dek = crypto.secureRandom(32)
             val slotIndex = namespaceFirstSlot(namespace)
@@ -128,7 +128,10 @@ class VaultManager(
                 // Log-worthy but not a reason to fail vault creation.
             }
 
-            dek.right()
+            // Store in session so lock() manages zeroing — symmetric with unlock().
+            session = Session(dek, namespace)
+            _vaultEvents.tryEmit(VaultEvent.Unlocked(namespace))
+            UnlockResult(dek = dek, namespace = namespace).right()
         } finally {
             passphrase.fill(' ')
         }
@@ -249,10 +252,15 @@ class VaultManager(
      * Zero-fill the in-memory DEK and emit [VaultEvent.Locked].
      * Null is written before zeroing so concurrent [currentDek] callers see null immediately.
      *
-     * **Ordering requirement**: callers MUST flush any pending [GraphWriter] saves before calling
-     * this method, e.g. `graphWriter.flush()`. Calling lock() while a save is mid-encryption
-     * will corrupt that file's ciphertext. The [VaultEvent.Locked] event handler in App.kt
-     * also flushes after the event, but that is too late — flush BEFORE calling lock().
+     * **Mandatory call ordering**: callers MUST clear all [CryptoLayer] references
+     * (`graphWriter.cryptoLayer = null`, `graphLoader.cryptoLayer = null`) and flush
+     * pending saves (`graphWriter.flush()`) BEFORE calling this method. If `lock()` zeroes
+     * the DEK while an in-flight `encrypt()` call is still using it, the file is silently
+     * written with an all-zero key and becomes permanently corrupted.
+     *
+     * The [VaultEvent.Locked] handler in App.kt also flushes and clears references, but
+     * that fires AFTER the DEK is already zeroed — it is a safety net for unexpected lock
+     * events only, not the primary lock path.
      */
     fun lock() {
         val s = session
@@ -529,11 +537,15 @@ class VaultManager(
         const val MAX_ARGON2_MEMORY_KIB = 4 * 1024 * 1024  // 4 GiB in KiB
 
         fun vaultFilePath(graphPath: String): String {
+            require(graphPath.isNotEmpty()) { "graphPath must not be empty" }
+            require(!graphPath.contains("..")) { "graphPath must not contain '..' path traversal" }
             val base = if (graphPath.endsWith("/")) graphPath.dropLast(1) else graphPath
             return "$base/.stele-vault"
         }
 
         fun hiddenReserveSentinelPath(graphPath: String): String {
+            require(graphPath.isNotEmpty()) { "graphPath must not be empty" }
+            require(!graphPath.contains("..")) { "graphPath must not contain '..' path traversal" }
             val base = if (graphPath.endsWith("/")) graphPath.dropLast(1) else graphPath
             return "$base/_hidden_reserve/.stele-reserve"
         }

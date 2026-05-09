@@ -70,7 +70,7 @@ class KeyslotIntegrityTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/ki-test"
-        val dek = vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params).getOrNull()!!
+        val dek = vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params).getOrNull()!!.dek
         val vaultPath = VaultManager.vaultFilePath(graphPath)
         val rawBytes = store[vaultPath]!!
 

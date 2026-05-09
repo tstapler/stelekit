@@ -206,7 +206,7 @@ class GraphLoader(
      * Called by GraphWriter after it writes a file, so the watcher doesn't treat
      * our own write as an external change.
      */
-    fun markFileWrittenByUs(filePath: String) {
+    suspend fun markFileWrittenByUs(filePath: String) {
         fileRegistry.markWrittenByUs(filePath)
     }
 

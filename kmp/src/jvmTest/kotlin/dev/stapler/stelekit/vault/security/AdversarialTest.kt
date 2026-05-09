@@ -64,7 +64,7 @@ class AdversarialTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManager(store)
         val graphPath = "/tmp/sec-test"
-        val dek = vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params).getOrNull()!!
+        val dek = vm.createVault(graphPath, "correct".toCharArray(), argon2Params = params).getOrNull()!!.dek
         val vaultPath = VaultManager.vaultFilePath(graphPath)
         val headerBytes = store[vaultPath]!!
 
