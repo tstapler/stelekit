@@ -236,6 +236,7 @@ class GraphWriter(
             return false
         }
 
+        onFileWritten?.invoke(path)   // pre-register deletion so file watcher ignores own-delete event
         val success = fileSystem.deleteFile(path)
         if (success) {
             logger.debug("Deleted page file: $path")

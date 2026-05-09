@@ -174,12 +174,15 @@ class VaultManager(
             // Decoy slots fail AEAD decryption (expected), active slots succeed.
             for ((index, slot) in header.keyslots.withIndex()) {
                 val params = argon2Params ?: slot.argon2Params
-                // Validate params before deriving — extreme values (memory = Int.MAX_VALUE) in
-                // a crafted vault file would cause OOM before the header MAC rejects it.
+                // Validate params before deriving — extreme values (memory = Int.MAX_VALUE,
+                // iterations = 65535, parallelism = 65535) in a crafted vault file would cause
+                // OOM / CPU DoS / thread exhaustion before the header MAC rejects the slot.
                 // Use `continue` rather than aborting: decoy slots have random bytes and can
                 // legitimately produce zero or extreme params (~1/2^32 per slot per field).
                 if (params.memory < 1 || params.iterations < 1 || params.parallelism < 1
-                    || params.memory > MAX_ARGON2_MEMORY_KIB) {
+                    || params.memory > MAX_ARGON2_MEMORY_KIB
+                    || params.iterations > MAX_ARGON2_ITERATIONS
+                    || params.parallelism > MAX_ARGON2_PARALLELISM) {
                     continue
                 }
                 val keyslotKey = crypto.argon2id(
@@ -554,6 +557,10 @@ class VaultManager(
     companion object {
         /** Maximum Argon2id memory (KiB) accepted from stored vault params — 4 GiB. */
         const val MAX_ARGON2_MEMORY_KIB = 4 * 1024 * 1024  // 4 GiB in KiB
+        /** Maximum Argon2id iteration count accepted from stored vault params — prevents CPU DoS. */
+        const val MAX_ARGON2_ITERATIONS = 64
+        /** Maximum Argon2id parallelism accepted from stored vault params — prevents thread/OOM DoS. */
+        const val MAX_ARGON2_PARALLELISM = 64
 
         fun vaultFilePath(graphPath: String): String {
             require(graphPath.isNotEmpty()) { "graphPath must not be empty" }

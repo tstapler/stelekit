@@ -58,7 +58,7 @@ fun VaultUnlockScreen(
             is VaultError.CorruptedFile -> "Vault file is corrupted or truncated."
             is VaultError.UnsupportedVersion -> "Unsupported vault format version."
             is VaultError.NotAVault -> "Vault file is missing or has been moved. Locate the .stele-vault file and try again."
-            else -> vaultState.error.message
+            else -> "Vault error. Please try again or contact support."
         }
         else -> null
     }
