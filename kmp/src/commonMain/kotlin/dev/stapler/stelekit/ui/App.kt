@@ -526,6 +526,7 @@ private fun GraphContent(
                     graphLoader.setGraphPath(activeGraphPath)
                     graphLoader.cryptoLayer = layer
                     graphWriter.cryptoLayer = layer
+                    // CryptoLayer must be injected before vaultState triggers graph load via LaunchedEffect
                     vaultState = VaultState.Unlocked(unlockResult.namespace)
                 }
                 is arrow.core.Either.Left -> {

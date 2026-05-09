@@ -27,7 +27,7 @@ package dev.stapler.stelekit.vault
  *
  * Total: 4 + 1 + 8 + 2048 + 480 + 32 + 32 = 2605
  */
-data class VaultHeader(
+class VaultHeader(
     val version: Byte = 0x02,
     val randomPadding: ByteArray,            // 8 bytes
     val keyslots: List<Keyslot>,             // exactly 8 elements

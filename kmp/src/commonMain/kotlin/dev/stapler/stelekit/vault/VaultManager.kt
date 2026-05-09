@@ -109,11 +109,17 @@ class VaultManager(
             }
             crypto.clearBytes(macKey)
             val finalHeader = when (namespace) {
-                VaultNamespace.OUTER -> header.copy(
+                VaultNamespace.OUTER -> VaultHeader(
+                    randomPadding = header.randomPadding,
+                    keyslots = header.keyslots,
+                    reserved = header.reserved,
                     headerMac = mac,
                     hiddenHeaderMac = crypto.secureRandom(VaultHeader.MAC_SIZE),  // random, not zeros
                 )
-                VaultNamespace.HIDDEN -> header.copy(
+                VaultNamespace.HIDDEN -> VaultHeader(
+                    randomPadding = header.randomPadding,
+                    keyslots = header.keyslots,
+                    reserved = header.reserved,
                     hiddenHeaderMac = mac,
                     headerMac = crypto.secureRandom(VaultHeader.MAC_SIZE),  // random, not zeros
                 )
@@ -170,9 +176,6 @@ class VaultManager(
         try {
             var validDek: ByteArray? = null
             var validNamespace: VaultNamespace? = null
-            // Tracks whether a slot decrypted successfully but the header MAC failed,
-            // which means the correct passphrase was used but the vault was tampered.
-            var macFailed = false
 
             // Try all 8 slots in order — no plaintext hint skips any slot.
             // Decoy slots fail AEAD decryption (expected), active slots succeed.
@@ -227,7 +230,6 @@ class VaultManager(
                             validDek = dek
                             validNamespace = ns
                         } else {
-                            macFailed = true
                             crypto.clearBytes(dek)
                         }
                         crypto.clearBytes(expectedMac)
@@ -244,9 +246,7 @@ class VaultManager(
 
             if (validDek == null || validNamespace == null) {
                 if (validDek != null) crypto.clearBytes(validDek)
-                if (macFailed) {
-                    logger.warn("unlock: correct passphrase but header MAC failed — possible vault tampering")
-                }
+                logger.debug("unlock failed")
                 return@withContext VaultError.InvalidCredential().left()
             }
 
@@ -348,7 +348,13 @@ class VaultManager(
             val updatedSlots = header.keyslots.toMutableList()
             updatedSlots[emptySlotIndex] = newSlot
 
-            return@withContext writeUpdatedHeader(vaultPath, localDek, namespace, header.copy(keyslots = updatedSlots))
+            return@withContext writeUpdatedHeader(vaultPath, localDek, namespace, VaultHeader(
+                randomPadding = header.randomPadding,
+                keyslots = updatedSlots,
+                reserved = header.reserved,
+                hiddenHeaderMac = header.hiddenHeaderMac,
+                headerMac = header.headerMac,
+            ))
         } finally {
             passphrase.fill(' ')
             crypto.clearBytes(localDek)
@@ -400,7 +406,13 @@ class VaultManager(
 
             val updatedSlots = header.keyslots.toMutableList()
             updatedSlots[slotIndex] = randomSlot()
-            return@withContext writeUpdatedHeader(vaultPath, dek, ns, header.copy(keyslots = updatedSlots))
+            return@withContext writeUpdatedHeader(vaultPath, dek, ns, VaultHeader(
+                randomPadding = header.randomPadding,
+                keyslots = updatedSlots,
+                reserved = header.reserved,
+                hiddenHeaderMac = header.hiddenHeaderMac,
+                headerMac = header.headerMac,
+            ))
         } finally {
             crypto.clearBytes(dek)
         }
@@ -412,9 +424,12 @@ class VaultManager(
         namespace: VaultNamespace,
         header: VaultHeader,
     ): Either<VaultError, Unit> {
-        val partialBytes = VaultHeaderSerializer.serialize(header.copy(
+        val partialBytes = VaultHeaderSerializer.serialize(VaultHeader(
+            randomPadding = header.randomPadding,
+            keyslots = header.keyslots,
+            reserved = header.reserved,
             hiddenHeaderMac = ByteArray(VaultHeader.MAC_SIZE),
-            headerMac = ByteArray(VaultHeader.MAC_SIZE)
+            headerMac = ByteArray(VaultHeader.MAC_SIZE),
         ))
         val macKey = deriveHeaderMacKey(dek)
         val mac = when (namespace) {
@@ -423,11 +438,17 @@ class VaultManager(
         }
         crypto.clearBytes(macKey)
         val finalHeader = when (namespace) {
-            VaultNamespace.OUTER -> header.copy(
+            VaultNamespace.OUTER -> VaultHeader(
+                randomPadding = header.randomPadding,
+                keyslots = header.keyslots,
+                reserved = header.reserved,
                 headerMac = mac,
                 hiddenHeaderMac = crypto.secureRandom(VaultHeader.MAC_SIZE),
             )
-            VaultNamespace.HIDDEN -> header.copy(
+            VaultNamespace.HIDDEN -> VaultHeader(
+                randomPadding = header.randomPadding,
+                keyslots = header.keyslots,
+                reserved = header.reserved,
                 hiddenHeaderMac = mac,
                 headerMac = crypto.secureRandom(VaultHeader.MAC_SIZE),
             )

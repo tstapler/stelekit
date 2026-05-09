@@ -126,7 +126,7 @@ class VaultManagerTest {
     // causes the active keyslot to decrypt correctly but the header MAC check to fail.
     // unlock() collapses HeaderTampered into InvalidCredential to preserve plausible deniability
     // (MEDIUM-2): an adversary watching the UI must not distinguish "correct passphrase + tampered
-    // vault" from "wrong passphrase". The tamper condition is logged internally at WARN level only.
+    // vault" from "wrong passphrase". No distinguishing log is emitted — all failures log uniformly.
     @Test fun `tampered header bytes return InvalidCredential`() = runTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
