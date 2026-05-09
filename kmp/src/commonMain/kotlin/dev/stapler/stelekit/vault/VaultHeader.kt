@@ -10,9 +10,11 @@ package dev.stapler.stelekit.vault
  * 13       2048     Keyslot array: 8 × 256 bytes each
  *                     slots 0–3: OUTER namespace
  *                     slots 4–7: HIDDEN namespace
- * 2061     480      Reserved: random bytes, NOT authenticated by either MAC.
- *                   Neither the OUTER nor HIDDEN MAC covers this region — it
- *                   is randomized filler with no semantic meaning.
+ * 2061     480      Reserved: random bytes. NOT authenticated by either MAC (intentional —
+ *                   authentication requires a DEK to produce a MAC, and this region must be
+ *                   freely mutable before either namespace is initialized). Any future semantic
+ *                   use of bytes in this region MUST include a format version bump and MAC
+ *                   coverage update.
  *                   (was 512; 32 bytes repurposed for hiddenHeaderMac)
  * 2541     32       HIDDEN namespace MAC: HMAC-SHA256(hidden_mac_key, prefix13 ++ slots4-7)
  *                     authenticates bytes[0..12] ++ bytes[1037..2060]

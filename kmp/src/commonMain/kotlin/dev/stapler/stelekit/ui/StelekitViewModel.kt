@@ -1443,6 +1443,7 @@ class StelekitViewModel(
      */
     fun flushAndLockVault(graphLoader: GraphLoader, graphWriter: GraphWriter, vaultManager: VaultManager) {
         scope.launch {
+            blockStateManager?.flush()  // drain in-memory block edits before DEK is zeroed
             graphWriter.flush()
             graphLoader.cryptoLayer = null
             graphWriter.cryptoLayer = null

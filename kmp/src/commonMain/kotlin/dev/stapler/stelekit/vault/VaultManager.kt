@@ -80,10 +80,10 @@ class VaultManager(
         namespace: VaultNamespace = VaultNamespace.OUTER,
         argon2Params: Argon2Params = DEFAULT_ARGON2_PARAMS,
     ): Either<VaultError, UnlockResult> = withContext(Dispatchers.Default) {
-        validatePassphrase(passphrase)
         val dek = crypto.secureRandom(32)
         var storedInSession = false
         try {
+            validatePassphrase(passphrase)
             val slotIndex = namespaceFirstSlot(namespace)
             val keyslot = buildKeyslot(passphrase, dek, namespace, argon2Params, slotIndex)
 
@@ -295,9 +295,9 @@ class VaultManager(
         namespace: VaultNamespace = VaultNamespace.OUTER,
         argon2Params: Argon2Params = DEFAULT_ARGON2_PARAMS,
     ): Either<VaultError, Unit> = withContext(Dispatchers.Default) {
-        validatePassphrase(passphrase)
         val localDek = dek.copyOf()   // isolated from concurrent lock() zeroing of the live session array
         try {
+            validatePassphrase(passphrase)
             val vaultPath = vaultFilePath(graphPath)
             val rawBytes = withContext(PlatformDispatcher.IO) { fileReadBytes(vaultPath) }
                 ?: return@withContext VaultError.NotAVault("Vault file not found").left()

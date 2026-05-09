@@ -230,6 +230,12 @@ class GraphLoader(
     private val _writeErrors = MutableSharedFlow<WriteError>(extraBufferCapacity = 16)
     val writeErrors: SharedFlow<WriteError> = _writeErrors.asSharedFlow()
 
+    // Mutex protecting suppressedFiles and gitMergeSuppressedFiles. Both sets are accessed
+    // concurrently by the 5-second polling loop and native-change callbacks — on JVM,
+    // unsynchronized HashSet mutation can corrupt the structure. suppressMutex is a
+    // kotlinx.coroutines.sync.Mutex (KMP-safe; already imported above).
+    private val suppressMutex = Mutex()
+
     // Files suppressed from external-change processing.
     // Two modes:
     //  1. Single-shot: subscriber calls suppress() in ExternalFileChange handler; the path is
@@ -237,9 +243,11 @@ class GraphLoader(
     //  2. Sticky (git merge): beginGitMerge() pre-adds paths; they are checked with .contains()
     //     and not removed until endGitMerge() calls .clear().
     // Both modes share the same set; sticky paths survive across multiple watcher ticks.
+    // ALL accesses must be inside suppressMutex.withLock { }.
     private val suppressedFiles = mutableSetOf<String>()
 
     // Paths added by beginGitMerge() — kept for sticky suppression across watcher ticks.
+    // ALL accesses must be inside suppressMutex.withLock { }.
     private val gitMergeSuppressedFiles = mutableSetOf<String>()
 
     /**
@@ -636,7 +644,8 @@ class GraphLoader(
 
             // Sticky git-merge suppression: if the path was added by beginGitMerge,
             // skip it without consuming the entry (it remains suppressed until endGitMerge).
-            if (gitMergeSuppressedFiles.contains(changed.entry.filePath)) {
+            val isMergeSuppressed = suppressMutex.withLock { gitMergeSuppressedFiles.contains(changed.entry.filePath) }
+            if (isMergeSuppressed) {
                 logger.debug("Skipping watcher reload for git-merge-suppressed file: ${changed.entry.filePath}")
                 continue
             }
@@ -646,12 +655,15 @@ class GraphLoader(
             // This prevents up to 8 decrypted pages from sitting in the SharedFlow heap buffer.
             val emitContent = if (changed.entry.filePath.endsWith(".md.stek")) "" else changed.content
 
-            // Emit event so subscribers can suppress the re-import
+            // Emit event so subscribers can suppress the re-import.
+            // The suppress lambda is called from the subscriber's coroutine (non-suspend context).
+            // runBlocking is safe here: subscriber runs on IO/Default, never on main thread, and
+            // the watcher releases suppressMutex before yield() so no deadlock is possible.
             _externalFileChanges.tryEmit(ExternalFileChange(changed.entry.filePath, emitContent) {
-                suppressedFiles.add(changed.entry.filePath)
+                kotlinx.coroutines.runBlocking { suppressMutex.withLock { suppressedFiles.add(changed.entry.filePath) } }
             })
             yield()
-            if (suppressedFiles.remove(changed.entry.filePath)) {
+            if (suppressMutex.withLock { suppressedFiles.remove(changed.entry.filePath) }) {
                 continue
             }
 
@@ -735,7 +747,7 @@ class GraphLoader(
      * Always paired with [endGitMerge].
      */
     fun beginGitMerge(pathsBeingMerged: List<String>) {
-        gitMergeSuppressedFiles.addAll(pathsBeingMerged)
+        kotlinx.coroutines.runBlocking { suppressMutex.withLock { gitMergeSuppressedFiles.addAll(pathsBeingMerged) } }
     }
 
     /**
@@ -743,7 +755,7 @@ class GraphLoader(
      * Must be called after [reloadFiles] completes (or if merge is aborted).
      */
     fun endGitMerge() {
-        gitMergeSuppressedFiles.clear()
+        kotlinx.coroutines.runBlocking { suppressMutex.withLock { gitMergeSuppressedFiles.clear() } }
     }
 
     /**

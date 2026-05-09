@@ -492,6 +492,7 @@ private fun GraphContent(
                 // The primary lock path (user-initiated) already flushed before calling lock().
                 graphLoader.cryptoLayer = null
                 graphWriter.cryptoLayer = null
+                vaultState = VaultState.Locked   // show lock/unlock screen; gates graph content
             }
         }
     }
