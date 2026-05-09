@@ -443,14 +443,14 @@ class VaultManager(
                 keyslots = header.keyslots,
                 reserved = header.reserved,
                 headerMac = mac,
-                hiddenHeaderMac = crypto.secureRandom(VaultHeader.MAC_SIZE),
+                hiddenHeaderMac = header.hiddenHeaderMac,
             )
             VaultNamespace.HIDDEN -> VaultHeader(
                 randomPadding = header.randomPadding,
                 keyslots = header.keyslots,
                 reserved = header.reserved,
                 hiddenHeaderMac = mac,
-                headerMac = crypto.secureRandom(VaultHeader.MAC_SIZE),
+                headerMac = header.headerMac,
             )
         }
         val headerBytes = VaultHeaderSerializer.serialize(finalHeader)
