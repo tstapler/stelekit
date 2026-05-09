@@ -48,7 +48,7 @@ class VaultManager(
      * that existed when sessionDek and sessionNamespace were two separate @Volatile fields —
      * a reader could previously observe sessionDek != null while sessionNamespace was still null.
      */
-    private data class Session(val dek: ByteArray, val namespace: VaultNamespace)
+    private class Session(val dek: ByteArray, val namespace: VaultNamespace)
 
     @Volatile private var session: Session? = null
 
@@ -63,7 +63,7 @@ class VaultManager(
      * this also zeroes any [CryptoLayer] built from it. Callers MUST NOT store or copy the
      * DEK array; pass it directly to [CryptoLayer] and let [VaultEvent.Locked] trigger cleanup.
      */
-    data class UnlockResult(val dek: ByteArray, val namespace: VaultNamespace)
+    class UnlockResult(val dek: ByteArray, val namespace: VaultNamespace)
 
     /**
      * Create a new vault at [graphPath]/.stele-vault with a single passphrase keyslot.
