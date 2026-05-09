@@ -186,10 +186,11 @@ class VaultManager(
                 // OOM / CPU DoS / thread exhaustion before the header MAC rejects the slot.
                 // Use `continue` rather than aborting: decoy slots have random bytes and can
                 // legitimately produce zero or extreme params (~1/2^32 per slot per field).
-                if (params.memory < 1 || params.iterations < 1 || params.parallelism < 1
-                    || params.memory > MAX_ARGON2_MEMORY_KIB
+                val anyParamBelowMinimum = params.memory < 1 || params.iterations < 1 || params.parallelism < 1
+                val anyParamAboveMaximum = params.memory > MAX_ARGON2_MEMORY_KIB
                     || params.iterations > MAX_ARGON2_ITERATIONS
-                    || params.parallelism > MAX_ARGON2_PARALLELISM) {
+                    || params.parallelism > MAX_ARGON2_PARALLELISM
+                if (anyParamBelowMinimum || anyParamAboveMaximum) {
                     continue
                 }
                 val keyslotKey = crypto.argon2id(
