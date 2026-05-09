@@ -79,17 +79,24 @@ class VaultManager(
             val padding = crypto.secureRandom(VaultHeader.PADDING_SIZE)
             val reserved = crypto.secureRandom(VaultHeader.RESERVED_SIZE)
 
-            val macKey = deriveHeaderMacKey(dek)
             val header = VaultHeader(
                 randomPadding = padding,
                 keyslots = allSlots,
                 reserved = reserved,
+                hiddenHeaderMac = ByteArray(VaultHeader.MAC_SIZE),
                 headerMac = ByteArray(VaultHeader.MAC_SIZE),
             )
             val partialBytes = VaultHeaderSerializer.serialize(header)
-            val mac = computeHeaderMac(macKey, partialBytes.sliceArray(0 until VaultHeader.MAC_AUTHENTICATED_SIZE))
+            val macKey = deriveHeaderMacKey(dek)
+            val mac = when (namespace) {
+                VaultNamespace.OUTER -> computeHeaderMac(macKey, outerMacAuthData(partialBytes))
+                VaultNamespace.HIDDEN -> computeHeaderMac(macKey, hiddenMacAuthData(partialBytes))
+            }
             crypto.clearBytes(macKey)
-            val finalHeader = header.copy(headerMac = mac)
+            val finalHeader = when (namespace) {
+                VaultNamespace.OUTER -> header.copy(headerMac = mac)
+                VaultNamespace.HIDDEN -> header.copy(hiddenHeaderMac = mac)
+            }
             val headerBytes = VaultHeaderSerializer.serialize(finalHeader)
 
             val vaultPath = vaultFilePath(graphPath)
@@ -172,14 +179,19 @@ class VaultManager(
                             crypto.clearBytes(plaintext)
                             continue
                         }
-                        // Verify header MAC using the recovered DEK
+                        // Verify namespace-specific header MAC using the recovered DEK
                         val macKey = deriveHeaderMacKey(dek)
-                        val expectedMac = computeHeaderMac(
-                            macKey,
-                            rawBytes.sliceArray(0 until VaultHeader.MAC_AUTHENTICATED_SIZE)
-                        )
+                        val authData = when (ns) {
+                            VaultNamespace.OUTER -> outerMacAuthData(rawBytes)
+                            VaultNamespace.HIDDEN -> hiddenMacAuthData(rawBytes)
+                        }
+                        val expectedMac = computeHeaderMac(macKey, authData)
                         crypto.clearBytes(macKey)
-                        if (constantTimeEquals(expectedMac, header.headerMac)) {
+                        val storedMac = when (ns) {
+                            VaultNamespace.OUTER -> header.headerMac
+                            VaultNamespace.HIDDEN -> header.hiddenHeaderMac
+                        }
+                        if (constantTimeEquals(expectedMac, storedMac)) {
                             validDek = dek
                             validNamespace = ns
                         } else {
@@ -220,6 +232,11 @@ class VaultManager(
     /**
      * Zero-fill the in-memory DEK and emit [VaultEvent.Locked].
      * Null is written before zeroing so concurrent [currentDek] callers see null immediately.
+     *
+     * **Ordering requirement**: callers MUST flush any pending [GraphWriter] saves before calling
+     * this method, e.g. `graphWriter.flush()`. Calling lock() while a save is mid-encryption
+     * will corrupt that file's ciphertext. The [VaultEvent.Locked] event handler in App.kt
+     * also flushes after the event, but that is too late — flush BEFORE calling lock().
      */
     fun lock() {
         val dek = sessionDek
@@ -255,10 +272,19 @@ class VaultManager(
             // Verify the provided DEK is correct before mutating any slots.
             // Without this check, a caller with a wrong DEK could overwrite active slots
             // because the marker comparison would fail for all slots (false negatives).
+            // Use namespace-specific MAC so OUTER DEK cannot be verified against HIDDEN MAC.
             val verifyMacKey = deriveHeaderMacKey(dek)
-            val actualMac = computeHeaderMac(verifyMacKey, rawBytes.sliceArray(0 until VaultHeader.MAC_AUTHENTICATED_SIZE))
+            val authData = when (namespace) {
+                VaultNamespace.OUTER -> outerMacAuthData(rawBytes)
+                VaultNamespace.HIDDEN -> hiddenMacAuthData(rawBytes)
+            }
+            val actualMac = computeHeaderMac(verifyMacKey, authData)
             crypto.clearBytes(verifyMacKey)
-            val dekValid = constantTimeEquals(actualMac, header.headerMac)
+            val expectedMac = when (namespace) {
+                VaultNamespace.OUTER -> header.headerMac
+                VaultNamespace.HIDDEN -> header.hiddenHeaderMac
+            }
+            val dekValid = constantTimeEquals(actualMac, expectedMac)
             crypto.clearBytes(actualMac)
             if (!dekValid) {
                 return@withContext VaultError.InvalidCredential("Provided DEK does not match vault header").left()
@@ -285,7 +311,7 @@ class VaultManager(
             val updatedSlots = header.keyslots.toMutableList()
             updatedSlots[emptySlotIndex] = newSlot
 
-            writeUpdatedHeader(vaultPath, dek, header.copy(keyslots = updatedSlots))
+            writeUpdatedHeader(vaultPath, dek, namespace, header.copy(keyslots = updatedSlots))
         } finally {
             passphrase.fill(' ')
         }
@@ -334,19 +360,29 @@ class VaultManager(
 
         val updatedSlots = header.keyslots.toMutableList()
         updatedSlots[slotIndex] = randomSlot()
-        writeUpdatedHeader(vaultPath, dek, header.copy(keyslots = updatedSlots))
+        writeUpdatedHeader(vaultPath, dek, ns, header.copy(keyslots = updatedSlots))
     }
 
     private fun writeUpdatedHeader(
         vaultPath: String,
         dek: ByteArray,
+        namespace: VaultNamespace,
         header: VaultHeader,
     ): Either<VaultError, Unit> {
-        val partialBytes = VaultHeaderSerializer.serialize(header.copy(headerMac = ByteArray(VaultHeader.MAC_SIZE)))
+        val partialBytes = VaultHeaderSerializer.serialize(header.copy(
+            hiddenHeaderMac = ByteArray(VaultHeader.MAC_SIZE),
+            headerMac = ByteArray(VaultHeader.MAC_SIZE)
+        ))
         val macKey = deriveHeaderMacKey(dek)
-        val mac = computeHeaderMac(macKey, partialBytes.sliceArray(0 until VaultHeader.MAC_AUTHENTICATED_SIZE))
+        val mac = when (namespace) {
+            VaultNamespace.OUTER -> computeHeaderMac(macKey, outerMacAuthData(partialBytes))
+            VaultNamespace.HIDDEN -> computeHeaderMac(macKey, hiddenMacAuthData(partialBytes))
+        }
         crypto.clearBytes(macKey)
-        val finalHeader = header.copy(headerMac = mac)
+        val finalHeader = when (namespace) {
+            VaultNamespace.OUTER -> header.copy(headerMac = mac)
+            VaultNamespace.HIDDEN -> header.copy(hiddenHeaderMac = mac)
+        }
         val headerBytes = VaultHeaderSerializer.serialize(finalHeader)
         return if (fileWriteBytes(vaultPath, headerBytes)) {
             Unit.right()
@@ -444,6 +480,19 @@ class VaultManager(
         VaultNamespace.OUTER -> 0..3
         VaultNamespace.HIDDEN -> 4..7
     }
+
+    /** Returns the authenticated region for the OUTER namespace MAC: bytes[0..1036] (contiguous). */
+    private fun outerMacAuthData(rawBytes: ByteArray): ByteArray =
+        rawBytes.sliceArray(0 until VaultHeader.OUTER_MAC_AUTH_SIZE)
+
+    /**
+     * Returns the authenticated region for the HIDDEN namespace MAC:
+     * bytes[0..12] (magic+version+padding) ++ bytes[1037..2060] (slots 4-7).
+     * Non-contiguous — neither range overlaps the OUTER keyslot region.
+     */
+    private fun hiddenMacAuthData(rawBytes: ByteArray): ByteArray =
+        rawBytes.sliceArray(0 until VaultHeader.HEADER_PREFIX_SIZE) +
+        rawBytes.sliceArray(VaultHeader.HIDDEN_SLOT_START until VaultHeader.HIDDEN_SLOT_END)
 
     private fun deriveHeaderMacKey(dek: ByteArray): ByteArray =
         crypto.hkdfSha256(

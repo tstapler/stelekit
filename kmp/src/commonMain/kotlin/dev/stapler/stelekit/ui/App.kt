@@ -488,6 +488,7 @@ private fun GraphContent(
     LaunchedEffect(vaultManager) {
         vaultManager?.vaultEvents?.collect { event ->
             if (event is VaultEvent.Locked) {
+                graphWriter.flush()          // drain pending saves before releasing the crypto references
                 graphLoader.cryptoLayer = null
                 graphWriter.cryptoLayer = null
             }

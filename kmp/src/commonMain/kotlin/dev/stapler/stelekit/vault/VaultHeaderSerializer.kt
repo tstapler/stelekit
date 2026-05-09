@@ -11,9 +11,10 @@ import arrow.core.right
  *   [0]     4 bytes  — magic "SKVT"
  *   [4]     1 byte   — version
  *   [5]     8 bytes  — random padding
- *   [13]    2048 bytes — 8 keyslots × 256 bytes each
- *   [2061]  512 bytes — reserved
- *   [2573]  32 bytes  — header MAC
+ *   [13]    2048 bytes — 8 keyslots × 256 bytes each (slots 0-3: OUTER, slots 4-7: HIDDEN)
+ *   [2061]  480 bytes — reserved
+ *   [2541]  32 bytes  — HIDDEN namespace MAC
+ *   [2573]  32 bytes  — OUTER namespace MAC (headerMac)
  *   Total:  2605 bytes
  *
  * Per-keyslot layout (256 bytes):
@@ -33,6 +34,7 @@ object VaultHeaderSerializer {
         }
         require(header.randomPadding.size == VaultHeader.PADDING_SIZE)
         require(header.reserved.size == VaultHeader.RESERVED_SIZE)
+        require(header.hiddenHeaderMac.size == VaultHeader.MAC_SIZE)
         require(header.headerMac.size == VaultHeader.MAC_SIZE)
 
         val buf = ByteArray(VaultHeader.TOTAL_SIZE)
@@ -55,7 +57,9 @@ object VaultHeaderSerializer {
 
         // Reserved
         header.reserved.copyInto(buf, pos); pos += VaultHeader.RESERVED_SIZE
-        // Header MAC
+        // HIDDEN namespace MAC
+        header.hiddenHeaderMac.copyInto(buf, pos); pos += VaultHeader.MAC_SIZE
+        // OUTER namespace MAC
         header.headerMac.copyInto(buf, pos); pos += VaultHeader.MAC_SIZE
 
         check(pos == VaultHeader.TOTAL_SIZE)
@@ -95,7 +99,10 @@ object VaultHeaderSerializer {
         // Reserved
         val reserved = bytes.sliceArray(pos until pos + VaultHeader.RESERVED_SIZE); pos += VaultHeader.RESERVED_SIZE
 
-        // Header MAC
+        // HIDDEN namespace MAC
+        val hiddenMac = bytes.sliceArray(pos until pos + VaultHeader.MAC_SIZE); pos += VaultHeader.MAC_SIZE
+
+        // OUTER namespace MAC
         val mac = bytes.sliceArray(pos until pos + VaultHeader.MAC_SIZE)
 
         return VaultHeader(
@@ -103,6 +110,7 @@ object VaultHeaderSerializer {
             randomPadding = padding,
             keyslots = keyslots,
             reserved = reserved,
+            hiddenHeaderMac = hiddenMac,
             headerMac = mac,
         ).right()
     }

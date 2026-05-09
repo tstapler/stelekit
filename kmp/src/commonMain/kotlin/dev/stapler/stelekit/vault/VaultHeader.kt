@@ -8,18 +8,27 @@ package dev.stapler.stelekit.vault
  *  4       1        Format version: 0x01
  *  5       8        Random padding (prevents zero-length fingerprinting)
  * 13       2048     Keyslot array: 8 × 256 bytes each
- * 2061     512      Reserved random area (future use)
- * 2573     32       Header MAC: HMAC-SHA256(header_mac_key, bytes[0..2572])
- *                   header_mac_key = HKDF-SHA256(DEK, salt="vault-header-mac", info="v1")
+ *                     slots 0–3: OUTER namespace
+ *                     slots 4–7: HIDDEN namespace
+ * 2061     480      Reserved random area (was 512; 32 bytes repurposed for hiddenHeaderMac)
+ * 2541     32       HIDDEN namespace MAC: HMAC-SHA256(hidden_mac_key, prefix13 ++ slots4-7)
+ *                     authenticates bytes[0..12] ++ bytes[1037..2060]
+ * 2573     32       OUTER namespace MAC: HMAC-SHA256(outer_mac_key, bytes[0..1036])
+ *                     authenticates bytes[0..1036] (magic+version+padding+slots0-3)
+ *                   mac_key = HKDF-SHA256(DEK, salt="vault-header-mac", info="v1")
  *
- * Total: 4 + 1 + 8 + 2048 + 512 + 32 = 2605
+ * Key property: neither MAC covers the other namespace's keyslot range, so HIDDEN slots
+ * can be updated without invalidating the OUTER MAC (and vice versa).
+ *
+ * Total: 4 + 1 + 8 + 2048 + 480 + 32 + 32 = 2605
  */
 data class VaultHeader(
     val version: Byte = 0x01,
     val randomPadding: ByteArray,            // 8 bytes
     val keyslots: List<Keyslot>,             // exactly 8 elements
-    val reserved: ByteArray,                 // 512 bytes
-    val headerMac: ByteArray,               // 32 bytes
+    val reserved: ByteArray,                 // 480 bytes
+    val hiddenHeaderMac: ByteArray,         // 32 bytes (HIDDEN namespace MAC, at [2541])
+    val headerMac: ByteArray,               // 32 bytes (OUTER namespace MAC, at [2573])
 ) {
     companion object {
         val MAGIC = byteArrayOf(0x53, 0x4B, 0x56, 0x54)  // "SKVT"
@@ -27,10 +36,13 @@ data class VaultHeader(
         const val TOTAL_SIZE = 2605
         const val KEYSLOT_COUNT = 8
         const val KEYSLOT_SIZE = 256
-        const val RESERVED_SIZE = 512
+        const val RESERVED_SIZE = 480           // was 512; 32 bytes repurposed for hiddenHeaderMac
         const val MAC_SIZE = 32
         const val PADDING_SIZE = 8
-        const val MAC_AUTHENTICATED_SIZE = 2573  // bytes[0..2572]
+        const val OUTER_MAC_AUTH_SIZE = 1037    // bytes[0..1036]: magic+version+padding+slots0-3
+        const val HEADER_PREFIX_SIZE = 13       // bytes[0..12]: magic+version+padding
+        const val HIDDEN_SLOT_START = 1037      // first byte of hidden keyslots (slots 4-7)
+        const val HIDDEN_SLOT_END = 2061        // one-past-end of hidden keyslots
     }
 
     override fun equals(other: Any?): Boolean {
@@ -40,6 +52,7 @@ data class VaultHeader(
         if (!randomPadding.contentEquals(other.randomPadding)) return false
         if (keyslots != other.keyslots) return false
         if (!reserved.contentEquals(other.reserved)) return false
+        if (!hiddenHeaderMac.contentEquals(other.hiddenHeaderMac)) return false
         if (!headerMac.contentEquals(other.headerMac)) return false
         return true
     }
@@ -49,6 +62,7 @@ data class VaultHeader(
         result = 31 * result + randomPadding.contentHashCode()
         result = 31 * result + keyslots.hashCode()
         result = 31 * result + reserved.contentHashCode()
+        result = 31 * result + hiddenHeaderMac.contentHashCode()
         result = 31 * result + headerMac.contentHashCode()
         return result
     }

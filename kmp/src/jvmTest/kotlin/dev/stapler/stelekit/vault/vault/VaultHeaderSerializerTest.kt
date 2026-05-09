@@ -11,6 +11,7 @@ class VaultHeaderSerializerTest {
             randomPadding = engine.secureRandom(VaultHeader.PADDING_SIZE),
             keyslots = (0 until VaultHeader.KEYSLOT_COUNT).map { makeRandomSlot() },
             reserved = engine.secureRandom(VaultHeader.RESERVED_SIZE),
+            hiddenHeaderMac = engine.secureRandom(VaultHeader.MAC_SIZE),
             headerMac = engine.secureRandom(VaultHeader.MAC_SIZE),
         )
     }
@@ -94,6 +95,7 @@ class VaultHeaderSerializerTest {
             randomPadding = engine.secureRandom(VaultHeader.PADDING_SIZE),
             keyslots = (0 until VaultHeader.KEYSLOT_COUNT).map { if (it == 0) slot else makeRandomSlot() },
             reserved = engine.secureRandom(VaultHeader.RESERVED_SIZE),
+            hiddenHeaderMac = engine.secureRandom(VaultHeader.MAC_SIZE),
             headerMac = engine.secureRandom(VaultHeader.MAC_SIZE),
         )
         val bytes = VaultHeaderSerializer.serialize(header)

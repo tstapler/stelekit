@@ -29,8 +29,9 @@ class KeyslotIntegrityTest {
         val original = store[vaultPath]!!
 
         var detectedTampering = 0
-        // Test mutations across bytes 0..2572 (the MAC-authenticated region, excluding MAC itself)
-        for (i in 0 until VaultHeader.MAC_AUTHENTICATED_SIZE) {
+        // Test mutations across bytes 0..1036 (the OUTER MAC-authenticated region, excluding MAC itself).
+        // createVault defaults to OUTER namespace, so the OUTER MAC covers bytes[0..1036].
+        for (i in 0 until VaultHeader.OUTER_MAC_AUTH_SIZE) {
             val mutated = original.copyOf()
             mutated[i] = (mutated[i].toInt() xor 0x01).toByte()
             store[vaultPath] = mutated
@@ -38,10 +39,10 @@ class KeyslotIntegrityTest {
             if (result.isLeft()) detectedTampering++
             store[vaultPath] = original
         }
-        // Every mutation must be detected — the header MAC covers all bytes 0..MAC_AUTHENTICATED_SIZE,
-        // so even mutations in random padding or reserved areas fail the MAC check.
-        assertEquals(VaultHeader.MAC_AUTHENTICATED_SIZE, detectedTampering,
-            "Expected 100% of bit flips to be detected, got $detectedTampering/${VaultHeader.MAC_AUTHENTICATED_SIZE}")
+        // Every mutation must be detected — the OUTER header MAC covers bytes[0..1036],
+        // so even mutations in random padding or OUTER slot areas fail the MAC check.
+        assertEquals(VaultHeader.OUTER_MAC_AUTH_SIZE, detectedTampering,
+            "Expected 100% of bit flips to be detected, got $detectedTampering/${VaultHeader.OUTER_MAC_AUTH_SIZE}")
     }
 
     // KI-02 — Truncated header bytes → deserialization error
@@ -81,13 +82,14 @@ class KeyslotIntegrityTest {
             length = 32,
         )
 
-        // Compute HMAC-SHA256 over bytes[0..2572]
+        // Compute HMAC-SHA256 over bytes[0..OUTER_MAC_AUTH_SIZE-1] (OUTER authenticated region)
         val mac = javax.crypto.Mac.getInstance("HmacSHA256")
         mac.init(javax.crypto.spec.SecretKeySpec(expectedMacKey, "HmacSHA256"))
-        val computedMac = mac.doFinal(rawBytes.sliceArray(0 until VaultHeader.MAC_AUTHENTICATED_SIZE))
+        val computedMac = mac.doFinal(rawBytes.sliceArray(0 until VaultHeader.OUTER_MAC_AUTH_SIZE))
 
-        // Compare with stored MAC (last 32 bytes)
-        val storedMac = rawBytes.sliceArray(VaultHeader.MAC_AUTHENTICATED_SIZE until VaultHeader.TOTAL_SIZE)
-        assertContentEquals(computedMac, storedMac, "Header MAC must be derived from DEK via HKDF")
+        // OUTER MAC is stored in the last 32 bytes (bytes[2573..2604])
+        val outerMacOffset = VaultHeader.TOTAL_SIZE - VaultHeader.MAC_SIZE
+        val storedMac = rawBytes.sliceArray(outerMacOffset until VaultHeader.TOTAL_SIZE)
+        assertContentEquals(computedMac, storedMac, "OUTER header MAC must be derived from DEK via HKDF")
     }
 }

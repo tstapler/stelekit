@@ -87,6 +87,7 @@ class VaultPropertyTest {
                     )
                 },
                 reserved = engine.secureRandom(VaultHeader.RESERVED_SIZE),
+                hiddenHeaderMac = engine.secureRandom(VaultHeader.MAC_SIZE),
                 headerMac = engine.secureRandom(VaultHeader.MAC_SIZE),
             )
             val bytes = VaultHeaderSerializer.serialize(header)

@@ -147,6 +147,10 @@ class GraphWriter(
 
         // Guard: cannot rename pages in the hidden-volume reserve area
         val renameLayer = cryptoLayer
+        if (renameLayer != null && graphPath.isEmpty()) {
+            logger.error("renamePage aborted — cryptoLayer is set but graphPath is empty (AAD would be wrong)")
+            return@withLock false
+        }
         if (renameLayer != null) {
             if (renameLayer.checkNotHiddenReserve(relativeFilePath(oldPath)).isLeft()) {
                 logger.error("Rename blocked — restricted path: $oldPath")
@@ -255,6 +259,13 @@ class GraphWriter(
             // Capture cryptoLayer once at lock entry — also used by getPageFilePath so the file
             // extension (.md.stek vs .md) is consistent with all subsequent encrypt/decrypt calls.
             val capturedCryptoLayer = cryptoLayer
+            // GAP-3: fail fast if encryption is active but the graph path hasn't been set yet.
+            // relativeFilePath() with empty graphPath strips only the leading "/" from absolute paths,
+            // producing the wrong AAD string and making the file permanently unreadable.
+            if (capturedCryptoLayer != null && graphPath.isEmpty()) {
+                logger.error("savePageInternal aborted — cryptoLayer is set but graphPath is empty (AAD would be wrong)")
+                return@withLock false
+            }
 
             val filePath = if (!page.filePath.isNullOrBlank()) {
                 page.filePath
