@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.logging.Logger
 import kotlin.concurrent.Volatile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.BufferOverflow
@@ -31,6 +32,8 @@ class VaultManager(
     private val fileReadBytes: (path: String) -> ByteArray?,
     private val fileWriteBytes: (path: String, data: ByteArray) -> Boolean,
 ) {
+    private val logger = Logger("VaultManager")
+
     // DROP_OLDEST ensures tryEmit always succeeds from non-suspend lock(); Locked is never silently dropped.
     private val _vaultEvents = MutableSharedFlow<VaultEvent>(
         replay = 1,
@@ -77,8 +80,9 @@ class VaultManager(
         namespace: VaultNamespace = VaultNamespace.OUTER,
         argon2Params: Argon2Params = DEFAULT_ARGON2_PARAMS,
     ): Either<VaultError, UnlockResult> = withContext(Dispatchers.Default) {
+        val dek = crypto.secureRandom(32)
+        var storedInSession = false
         try {
-            val dek = crypto.secureRandom(32)
             val slotIndex = namespaceFirstSlot(namespace)
             val keyslot = buildKeyslot(passphrase, dek, namespace, argon2Params, slotIndex)
 
@@ -130,10 +134,12 @@ class VaultManager(
 
             // Store in session so lock() manages zeroing — symmetric with unlock().
             session = Session(dek, namespace)
+            storedInSession = true
             _vaultEvents.tryEmit(VaultEvent.Unlocked(namespace))
             UnlockResult(dek = dek, namespace = namespace).right()
         } finally {
             passphrase.fill(' ')
+            if (!storedInSession) crypto.clearBytes(dek)
         }
     }
 
@@ -231,11 +237,10 @@ class VaultManager(
 
             if (validDek == null || validNamespace == null) {
                 if (validDek != null) crypto.clearBytes(validDek)
-                return@withContext if (macFailed) {
-                    VaultError.HeaderTampered().left()
-                } else {
-                    VaultError.InvalidCredential().left()
+                if (macFailed) {
+                    logger.warn("unlock: correct passphrase but header MAC failed — possible vault tampering")
                 }
+                return@withContext VaultError.InvalidCredential().left()
             }
 
             val newSession = Session(validDek, validNamespace)

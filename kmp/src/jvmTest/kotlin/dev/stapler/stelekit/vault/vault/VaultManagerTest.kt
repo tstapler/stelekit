@@ -123,8 +123,11 @@ class VaultManagerTest {
     }
 
     // VM-07 — Tampered byte in random-padding region (covered by MAC, outside any keyslot AEAD)
-    // causes HeaderTampered after the active keyslot decrypts but the MAC check fails.
-    @Test fun `tampered header bytes return HeaderTampered`() = runTest {
+    // causes the active keyslot to decrypt correctly but the header MAC check to fail.
+    // unlock() collapses HeaderTampered into InvalidCredential to preserve plausible deniability
+    // (MEDIUM-2): an adversary watching the UI must not distinguish "correct passphrase + tampered
+    // vault" from "wrong passphrase". The tamper condition is logged internally at WARN level only.
+    @Test fun `tampered header bytes return InvalidCredential`() = runTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         val graphPath = "/tmp/test-graph"
@@ -136,7 +139,7 @@ class VaultManagerTest {
         bytes[5] = (bytes[5].toInt() xor 0xFF).toByte()
         store[vaultPath] = bytes
         val result = vm.unlock(graphPath, "correct".toCharArray(), params)
-        assertIs<VaultError.HeaderTampered>(result.leftOrNull())
+        assertIs<VaultError.InvalidCredential>(result.leftOrNull())
     }
 
     // VM-08 — lock() zero-fills DEK byte array
