@@ -94,8 +94,14 @@ class VaultManager(
             }
             crypto.clearBytes(macKey)
             val finalHeader = when (namespace) {
-                VaultNamespace.OUTER -> header.copy(headerMac = mac)
-                VaultNamespace.HIDDEN -> header.copy(hiddenHeaderMac = mac)
+                VaultNamespace.OUTER -> header.copy(
+                    headerMac = mac,
+                    hiddenHeaderMac = crypto.secureRandom(VaultHeader.MAC_SIZE),  // random, not zeros
+                )
+                VaultNamespace.HIDDEN -> header.copy(
+                    hiddenHeaderMac = mac,
+                    headerMac = crypto.secureRandom(VaultHeader.MAC_SIZE),  // random, not zeros
+                )
             }
             val headerBytes = VaultHeaderSerializer.serialize(finalHeader)
 

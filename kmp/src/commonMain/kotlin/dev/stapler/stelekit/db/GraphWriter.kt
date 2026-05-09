@@ -147,12 +147,13 @@ class GraphWriter(
 
         // Guard: cannot rename pages in the hidden-volume reserve area
         val renameLayer = cryptoLayer
-        if (renameLayer != null && graphPath.isEmpty()) {
+        val renameGraphPath = this.graphPath
+        if (renameLayer != null && renameGraphPath.isEmpty()) {
             logger.error("renamePage aborted — cryptoLayer is set but graphPath is empty (AAD would be wrong)")
             return@withLock false
         }
         if (renameLayer != null) {
-            if (renameLayer.checkNotHiddenReserve(relativeFilePath(oldPath)).isLeft()) {
+            if (renameLayer.checkNotHiddenReserve(relativeFilePath(oldPath, renameGraphPath)).isLeft()) {
                 logger.error("Rename blocked — restricted path: $oldPath")
                 return@withLock false
             }
@@ -176,8 +177,8 @@ class GraphWriter(
                 logger.error("Failed to read file bytes for rename: $oldPath")
                 return false
             }
-            val oldRelPath = relativeFilePath(oldPath)
-            val newRelPath = relativeFilePath(newPath)
+            val oldRelPath = relativeFilePath(oldPath, renameGraphPath)
+            val newRelPath = relativeFilePath(newPath, renameGraphPath)
             val plaintext = when (val result = cryptoLayerNow.decrypt(oldRelPath, bytes)) {
                 is Either.Right -> result.value
                 is Either.Left -> {
@@ -228,7 +229,8 @@ class GraphWriter(
 
         // Guard: cannot delete pages in the hidden-volume reserve area
         val deleteLayer = cryptoLayer
-        if (deleteLayer != null && deleteLayer.checkNotHiddenReserve(relativeFilePath(path)).isLeft()) {
+        val deleteGraphPath = this.graphPath
+        if (deleteLayer != null && deleteLayer.checkNotHiddenReserve(relativeFilePath(path, deleteGraphPath)).isLeft()) {
             logger.error("Delete blocked — restricted path: $path")
             return false
         }
@@ -256,13 +258,14 @@ class GraphWriter(
      */
     private suspend fun savePageInternal(page: Page, blocks: List<Block>, graphPath: String): Boolean =
         saveMutex.withLock {
-            // Capture cryptoLayer once at lock entry — also used by getPageFilePath so the file
-            // extension (.md.stek vs .md) is consistent with all subsequent encrypt/decrypt calls.
+            // Capture cryptoLayer and graphPath once at lock entry — also used by getPageFilePath so
+            // the file extension (.md.stek vs .md) is consistent with all subsequent encrypt/decrypt calls.
             val capturedCryptoLayer = cryptoLayer
+            val capturedGraphPath = this.graphPath
             // GAP-3: fail fast if encryption is active but the graph path hasn't been set yet.
             // relativeFilePath() with empty graphPath strips only the leading "/" from absolute paths,
             // producing the wrong AAD string and making the file permanently unreadable.
-            if (capturedCryptoLayer != null && graphPath.isEmpty()) {
+            if (capturedCryptoLayer != null && capturedGraphPath.isEmpty()) {
                 logger.error("savePageInternal aborted — cryptoLayer is set but graphPath is empty (AAD would be wrong)")
                 return@withLock false
             }
@@ -275,7 +278,7 @@ class GraphWriter(
 
             // Guard: outer graph cannot write to the hidden volume reserve area
             if (capturedCryptoLayer != null) {
-                val relPath = relativeFilePath(filePath)
+                val relPath = relativeFilePath(filePath, capturedGraphPath)
                 val guard = capturedCryptoLayer.checkNotHiddenReserve(relPath)
                 if (guard.isLeft()) {
                     logger.error("Write blocked — restricted path: $filePath")
@@ -288,7 +291,7 @@ class GraphWriter(
                 val oldContent = if (capturedCryptoLayer != null) {
                     val rawBytes = fileSystem.readFileBytes(filePath)
                     if (rawBytes != null) {
-                        when (val r = capturedCryptoLayer.decrypt(relativeFilePath(filePath), rawBytes)) {
+                        when (val r = capturedCryptoLayer.decrypt(relativeFilePath(filePath, capturedGraphPath), rawBytes)) {
                             is Either.Right -> r.value.decodeToString()
                             is Either.Left -> null  // decrypt failed — skip guard conservatively
                         }
@@ -324,7 +327,7 @@ class GraphWriter(
                     saga(
                         action = {
                             if (cryptoLayerNow != null) {
-                                val relPath = relativeFilePath(filePath)
+                                val relPath = relativeFilePath(filePath, capturedGraphPath)
                                 val encryptedBytes = cryptoLayerNow.encrypt(relPath, content.encodeToByteArray())
                                 if (!fileSystem.writeFileBytes(filePath, encryptedBytes)) {
                                     error("writeFileBytes returned false for: $filePath")
@@ -449,9 +452,9 @@ class GraphWriter(
     }
 
     /** Compute the graph-root-relative path used as AAD for file encryption. */
-    private fun relativeFilePath(absoluteFilePath: String): String {
-        val base = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
-        return if (absoluteFilePath.startsWith(base)) absoluteFilePath.removePrefix(base)
+    private fun relativeFilePath(absoluteFilePath: String, base: String = graphPath): String {
+        val baseWithSlash = if (base.endsWith("/")) base else "$base/"
+        return if (absoluteFilePath.startsWith(baseWithSlash)) absoluteFilePath.removePrefix(baseWithSlash)
         else absoluteFilePath
     }
 
