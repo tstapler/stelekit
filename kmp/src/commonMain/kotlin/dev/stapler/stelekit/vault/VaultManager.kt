@@ -333,7 +333,7 @@ class VaultManager(
             // A slot is "mine" if its reserved[0..3] matches the 4-byte DEK-derived marker.
             // Slots without the marker (decoy slots) are safe to overwrite.
             val emptySlotIndex = targetSlots.firstOrNull { index ->
-                !isSlotMine(header.keyslots[index], localDek, index)
+                !isSlotMine(header.keyslots[index], localDek, index, namespace)
             } ?: return@withContext VaultError.SlotsFull().left()
 
             val newSlot = buildKeyslot(passphrase, localDek, namespace, argon2Params, emptySlotIndex)
@@ -383,7 +383,7 @@ class VaultManager(
             }
 
             // Refuse to remove the last active slot — it would permanently lock out the vault.
-            val activeCount = namespaceSlotRange(ns).count { i -> isSlotMine(header.keyslots[i], dek, i) }
+            val activeCount = namespaceSlotRange(ns).count { i -> isSlotMine(header.keyslots[i], dek, i, ns) }
             if (activeCount <= 1) {
                 return@withContext VaultError.InvalidCredential(
                     "Cannot remove the last keyslot in namespace $ns — vault would be permanently locked"
@@ -466,7 +466,7 @@ class VaultManager(
             markerKey = crypto.hkdfSha256(
                 ikm = dek,
                 salt = "slot-marker-v1".encodeToByteArray(),
-                info = byteArrayOf(slotIndex.toByte()),
+                info = byteArrayOf(slotIndex.toByte(), namespace.tag),
                 length = 4,
             )
             reserved[0] = markerKey[0]; reserved[1] = markerKey[1]
@@ -496,15 +496,17 @@ class VaultManager(
     )
 
     /**
-     * A slot is "mine" if [reserved][0..3] matches the 4-byte HKDF marker derived from [dek] and [slotIndex].
-     * Decoy slots have random reserved bytes; the probability of a false positive is 1/2^32.
+     * A slot is "mine" if [reserved][0..3] matches the 4-byte HKDF marker derived from [dek],
+     * [slotIndex], and [namespace]. Including [namespace] prevents an OUTER DEK holder from
+     * computing markers for HIDDEN slots — markers from different namespaces are cryptographically
+     * independent. Decoy slots have random reserved bytes; the probability of a false positive is 1/2^32.
      * An adversary without the DEK cannot verify this marker, so it reveals nothing about active slots.
      */
-    private fun isSlotMine(slot: Keyslot, dek: ByteArray, slotIndex: Int): Boolean {
+    private fun isSlotMine(slot: Keyslot, dek: ByteArray, slotIndex: Int, namespace: VaultNamespace): Boolean {
         val markerKey = crypto.hkdfSha256(
             ikm = dek,
             salt = "slot-marker-v1".encodeToByteArray(),
-            info = byteArrayOf(slotIndex.toByte()),
+            info = byteArrayOf(slotIndex.toByte(), namespace.tag),
             length = 4,
         )
         val matches = constantTimeEquals(slot.reserved.sliceArray(0 until 4), markerKey)

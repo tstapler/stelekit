@@ -201,6 +201,7 @@ class GraphWriter(
         }
 
         if (writeOk) {
+            onFileWritten?.invoke(oldPath)   // mark old path as our own deletion
             if (fileSystem.deleteFile(oldPath)) {
                 // Notify the file watcher so it registers the new path and does not treat
                 // the newly-created file as an external change on the next poll tick.

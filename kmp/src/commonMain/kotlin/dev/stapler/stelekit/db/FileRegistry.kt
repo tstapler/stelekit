@@ -175,7 +175,7 @@ class FileRegistry(private val fileSystem: FileSystem) {
 
     // ---- Cleanup ----
 
-    fun clear() {
+    suspend fun clear() = detectMutex.withLock {
         modTimes.clear()
         contentHashes.clear()
         scannedFiles.clear()

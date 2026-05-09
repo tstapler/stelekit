@@ -5,7 +5,7 @@ package dev.stapler.stelekit.vault
  *
  * Offset  Size     Field
  *  0       4        Magic: 0x53 0x4B 0x56 0x54 ("SKVT")
- *  4       1        Format version: 0x01
+ *  4       1        Format version: 0x02
  *  5       8        Random padding (prevents zero-length fingerprinting)
  * 13       2048     Keyslot array: 8 × 256 bytes each
  *                     slots 0–3: OUTER namespace
@@ -26,7 +26,7 @@ package dev.stapler.stelekit.vault
  * Total: 4 + 1 + 8 + 2048 + 480 + 32 + 32 = 2605
  */
 data class VaultHeader(
-    val version: Byte = 0x01,
+    val version: Byte = 0x02,
     val randomPadding: ByteArray,            // 8 bytes
     val keyslots: List<Keyslot>,             // exactly 8 elements
     val reserved: ByteArray,                 // 480 bytes
@@ -35,7 +35,7 @@ data class VaultHeader(
 ) {
     companion object {
         val MAGIC = byteArrayOf(0x53, 0x4B, 0x56, 0x54)  // "SKVT"
-        const val SUPPORTED_VERSION: Byte = 0x01
+        const val SUPPORTED_VERSION: Byte = 0x02
         const val TOTAL_SIZE = 2605
         const val KEYSLOT_COUNT = 8
         const val KEYSLOT_SIZE = 256
@@ -75,33 +75,34 @@ data class VaultHeader(
  * Per-keyslot layout (256 bytes each):
  *
  * Offset  Size    Field
- *  0       16      Argon2id salt
- *  16      4       Argon2id memory (KiB, LE uint32)
- *  20      2       Argon2id iterations (LE uint16)
- *  22      2       Argon2id parallelism (LE uint16)
- *  24      50      Encrypted DEK blob: ChaCha20-Poly1305(keyslot_key, slot_nonce, DEK||namespace_tag||provider_type)
+ *  0       32      Argon2id salt (RFC 9106 recommended 32 bytes for high-security applications)
+ *  32      4       Argon2id memory (KiB, LE uint32)
+ *  36      2       Argon2id iterations (LE uint16)
+ *  38      2       Argon2id parallelism (LE uint16)
+ *  40      50      Encrypted DEK blob: ChaCha20-Poly1305(keyslot_key, slot_nonce, DEK||namespace_tag||provider_type)
  *                   DEK = 32 bytes, namespace_tag = 1 byte, provider_type = 1 byte, AEAD_tag = 16 bytes → 50 bytes
- *  74      12      slot_nonce (nonce for the DEK-wrapping AEAD)
- *  86      170     Reserved: reserved[0..3] is a 4-byte DEK-derived slot-activity marker
- *                   (HKDF-SHA256(dek, "slot-marker-v1", slotIndex), length=4; false-positive rate 1/2^32);
- *                   remaining bytes are random. Active and decoy slots are indistinguishable on disk —
- *                   only Argon2id + AEAD decryption can identify a valid slot.
+ *  90      12      slot_nonce (nonce for the DEK-wrapping AEAD)
+ *  102     154     Reserved: reserved[0..3] is a 4-byte DEK-derived slot-activity marker
+ *                   (HKDF-SHA256(dek, "slot-marker-v1", [slotIndex, namespace.tag]), length=4;
+ *                   false-positive rate 1/2^32); remaining bytes are random. Active and decoy
+ *                   slots are indistinguishable on disk — only Argon2id + AEAD decryption can
+ *                   identify a valid slot.
  *
  * All 8 slots are always tried on unlock in constant order (no plaintext hint as to which are active),
  * preserving deniability for hidden-volume passphrases.
  */
 data class Keyslot(
-    val salt: ByteArray,              // 16 bytes
+    val salt: ByteArray,              // 32 bytes
     val argon2Params: Argon2Params,
     val encryptedDekBlob: ByteArray,  // 50 bytes (34 plaintext + 16 AEAD tag)
     val slotNonce: ByteArray,         // 12 bytes
-    val reserved: ByteArray,          // 170 bytes; reserved[0..3] is 4-byte slot-activity marker
+    val reserved: ByteArray,          // 154 bytes; reserved[0..3] is 4-byte slot-activity marker
 ) {
     companion object {
-        const val SALT_SIZE = 16
+        const val SALT_SIZE = 32
         const val ENCRYPTED_BLOB_SIZE = 50  // 32 DEK + 1 namespace_tag + 1 provider_type + 16 AEAD tag
         const val NONCE_SIZE = 12
-        const val RESERVED_SIZE = 170
+        const val RESERVED_SIZE = 154
         const val TOTAL_SIZE = 256
 
         const val PROVIDER_PASSPHRASE: Byte = 0x00

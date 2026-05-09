@@ -98,6 +98,10 @@ class GraphLoader(
         if (layer == null) {
             return fileSystem.readFile(filePath)
         }
+        if (currentGraphPath.isEmpty()) {
+            logger.error("readFileDecrypted: cryptoLayer is set but graphPath is empty — refusing to decrypt (wrong AAD)")
+            return null
+        }
         val rawBytes = fileSystem.readFileBytes(filePath) ?: return null
         val relPath = relativePathFor(filePath)
         return when (val result = layer.decrypt(relPath, rawBytes)) {

@@ -18,13 +18,13 @@ import arrow.core.right
  *   Total:  2605 bytes
  *
  * Per-keyslot layout (256 bytes):
- *   [0]   16  salt
- *   [16]   4  Argon2 memory (LE uint32)
- *   [20]   2  Argon2 iterations (LE uint16)
- *   [22]   2  Argon2 parallelism (LE uint16)
- *   [24]  50  encrypted DEK blob (AEAD ciphertext)
- *   [74]  12  slot nonce
- *   [86] 170  reserved (reserved[0] is slot-activity marker)
+ *   [0]   32  salt
+ *   [32]   4  Argon2 memory (LE uint32)
+ *   [36]   2  Argon2 iterations (LE uint16)
+ *   [38]   2  Argon2 parallelism (LE uint16)
+ *   [40]  50  encrypted DEK blob (AEAD ciphertext)
+ *   [90]  12  slot nonce
+ *   [102] 154  reserved (reserved[0] is slot-activity marker)
  */
 object VaultHeaderSerializer {
 
