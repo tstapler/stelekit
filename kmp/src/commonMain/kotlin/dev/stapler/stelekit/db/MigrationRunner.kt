@@ -186,7 +186,7 @@ object MigrationRunner {
      * (which would leave the schema in an indeterminate state). The correct fix is always
      * to add a new migration entry rather than edit an existing one.
      */
-    fun applyAll(driver: SqlDriver) {
+    suspend fun applyAll(driver: SqlDriver) {
         // Bootstrap the tracking table — must succeed before anything else.
         driver.execute(
             identifier = null,
@@ -198,9 +198,13 @@ object MigrationRunner {
                 )
             """.trimIndent(),
             parameters = 0
-        )
+        ).await()
 
         // Load both name and hash so we can detect tampering.
+        // Use QueryResult.Value (not AsyncValue) so synchronous drivers (AndroidSqliteDriver)
+        // can call .getValue() on the mapper result without throwing.
+        // Both AndroidCursor.next() and JsRowCursor.next() return QueryResult.Value, so
+        // cursor.next().value is safe across all platforms.
         val appliedByName: Map<String, String> = driver.executeQuery(
             identifier = null,
             sql = "SELECT name, hash FROM schema_migrations",
@@ -214,7 +218,7 @@ object MigrationRunner {
                 QueryResult.Value(map as Map<String, String>)
             },
             parameters = 0
-        ).value
+        ).await()
 
         for (migration in all) {
             val recordedHash = appliedByName[migration.name]
@@ -231,7 +235,7 @@ object MigrationRunner {
 
             for (sql in migration.statements) {
                 try {
-                    driver.execute(null, sql.trimIndent(), 0)
+                    driver.execute(null, sql.trimIndent(), 0).await()
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
@@ -248,7 +252,7 @@ object MigrationRunner {
             ) {
                 bindString(0, migration.hash)
                 bindString(1, migration.name)
-            }
+            }.await()
         }
     }
 

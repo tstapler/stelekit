@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.23.0](https://github.com/tstapler/stelekit/compare/v0.22.1...v0.23.0) (2026-05-08)
+
+
+### Features
+
+* **web:** OPFS-backed SQLite driver + local dev script ([#74](https://github.com/tstapler/stelekit/issues/74)) ([22516f5](https://github.com/tstapler/stelekit/commit/22516f54b3d2ce061c017cda2d97c65edf2d32bc))
+
+## [0.22.1](https://github.com/tstapler/stelekit/compare/v0.22.0...v0.22.1) (2026-05-04)
+
+
+### Bug Fixes
+
+* **build:** lower jvmToolchain from 25 to 21 to match CI runtime ([aac9538](https://github.com/tstapler/stelekit/commit/aac953819efd913f2aa9b8b7a29ee2610022aee6))
+* **ci:** add always() guards to release jobs for workflow_dispatch ([63fcb45](https://github.com/tstapler/stelekit/commit/63fcb45377d44e566fe4d72e52e5a20153f3113a))
+
 ## [0.22.0](https://github.com/tstapler/stelekit/compare/v0.21.0...v0.22.0) (2026-05-04)
 
 

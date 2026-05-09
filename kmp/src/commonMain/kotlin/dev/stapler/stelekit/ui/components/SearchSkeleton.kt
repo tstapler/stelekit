@@ -44,7 +44,7 @@ fun SearchSkeletonList(modifier: Modifier = Modifier, rowCount: Int = 6) {
 
     val color = MaterialTheme.colorScheme.onSurface.copy(alpha = animatedAlpha * 0.15f)
 
-    Column {
+    Column(modifier = modifier) {
         repeat(rowCount) { i ->
             val titleFraction = widthFractions[i % widthFractions.size]
             Row(

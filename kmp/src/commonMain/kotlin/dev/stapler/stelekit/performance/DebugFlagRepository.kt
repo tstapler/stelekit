@@ -12,7 +12,7 @@ class DebugFlagRepository(private val database: SteleDatabase) {
     private val restricted = RestrictedDatabaseQueries(database.steleDatabaseQueries)
 
     @OptIn(DirectSqlWrite::class)
-    fun setFlag(key: String, enabled: Boolean) {
+    suspend fun setFlag(key: String, enabled: Boolean) {
         restricted.upsertDebugFlag(
             key = key,
             value_ = if (enabled) 1L else 0L,
@@ -33,7 +33,7 @@ class DebugFlagRepository(private val database: SteleDatabase) {
         isDebugMenuVisible = false  // never persisted as visible
     )
 
-    fun saveDebugMenuState(state: DebugMenuState) {
+    suspend fun saveDebugMenuState(state: DebugMenuState) {
         setFlag("frame_overlay", state.isFrameOverlayEnabled)
         setFlag("otel_stdout", state.isOtelStdoutEnabled)
         setFlag("jank_stats", state.isJankStatsEnabled)

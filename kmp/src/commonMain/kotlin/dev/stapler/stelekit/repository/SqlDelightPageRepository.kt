@@ -163,7 +163,7 @@ class SqlDelightPageRepository(
         }
     }
 
-    private fun upsertPage(page: Page) {
+    private suspend fun upsertPage(page: Page) {
         queries.insertPage(
             uuid = page.uuid,
             name = page.name,

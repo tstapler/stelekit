@@ -25,7 +25,7 @@ class ChangelogRepository(private val db: SteleDatabase) {
             .associate { it.id to it.checksum }
     }
 
-    fun markRunning(id: String, graphId: String, order: Int, checksum: String, description: String) {
+    suspend fun markRunning(id: String, graphId: String, order: Int, checksum: String, description: String) {
         restricted.insertMigrationRecord(
             id = id,
             graph_id = graphId,
@@ -41,7 +41,7 @@ class ChangelogRepository(private val db: SteleDatabase) {
         )
     }
 
-    fun markApplied(id: String, graphId: String, executionMs: Long, changesApplied: Int) {
+    suspend fun markApplied(id: String, graphId: String, executionMs: Long, changesApplied: Int) {
         restricted.updateMigrationStatus(
             status = MigrationStatus.APPLIED.name,
             error_message = null,
@@ -52,7 +52,7 @@ class ChangelogRepository(private val db: SteleDatabase) {
         )
     }
 
-    fun markFailed(id: String, graphId: String, errorMessage: String) {
+    suspend fun markFailed(id: String, graphId: String, errorMessage: String) {
         restricted.updateMigrationStatus(
             status = MigrationStatus.FAILED.name,
             error_message = errorMessage,
@@ -70,7 +70,7 @@ class ChangelogRepository(private val db: SteleDatabase) {
             .map { it.id }
     }
 
-    fun deleteRecord(id: String, graphId: String) {
+    suspend fun deleteRecord(id: String, graphId: String) {
         restricted.deleteMigrationRecord(id, graphId)
     }
 
@@ -89,7 +89,7 @@ class ChangelogRepository(private val db: SteleDatabase) {
      * Used when a migration's `checksumBody` has been legitimately changed (e.g. a comment edit).
      * Calling this voids the tamper-detection guarantee for the updated migration — use with care.
      */
-    fun updateChecksum(id: String, graphId: String, newChecksum: String) {
+    suspend fun updateChecksum(id: String, graphId: String, newChecksum: String) {
         restricted.updateMigrationChecksum(
             checksum = newChecksum,
             id = id,
