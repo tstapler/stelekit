@@ -152,7 +152,7 @@ kotlin {
         if (project.findProperty("enableJs") == "true") {
             val wasmJsMain by getting {
                 dependencies {
-                    implementation(npm("@sqlite.org/sqlite-wasm", "3.46.1"))
+                    implementation(npm("@sqlite.org/sqlite-wasm", "3.46.1-build1"))
                 }
             }
 
