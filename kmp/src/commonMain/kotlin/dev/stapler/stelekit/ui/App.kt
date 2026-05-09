@@ -596,9 +596,20 @@ private fun GraphContent(
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, voiceCaptureViewModel) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
-                viewModel.savePendingChanges()  // launches flush on viewModel's own scope
-                voiceCaptureViewModel.cancel()
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> {
+                    viewModel.savePendingChanges()  // launches flush on viewModel's own scope
+                    voiceCaptureViewModel.cancel()
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    val vm = vaultManager
+                    if (vm != null) {
+                        // Use viewModel's own scope — avoids ForgottenCoroutineScopeException
+                        // if ON_STOP fires after composition teardown.
+                        viewModel.flushAndLockVault(graphLoader, graphWriter, vm)
+                    }
+                }
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -824,12 +835,33 @@ private fun GraphContent(
                         },
                         statusBar = {
                             if (!isMobile) {
-                                StatusBarContent(
-                                    isEncrypted = encryptionManager.isEncryptionEnabled(appState.currentGraphPath),
-                                    statusMessage = appState.statusMessage,
-                                    activeGraphName = activeGraphInfo?.displayName ?: "",
-                                    pluginCount = pluginHost.getAllPlugins().size
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    StatusBarContent(
+                                        isEncrypted = encryptionManager.isEncryptionEnabled(appState.currentGraphPath),
+                                        statusMessage = appState.statusMessage,
+                                        activeGraphName = activeGraphInfo?.displayName ?: "",
+                                        pluginCount = pluginHost.getAllPlugins().size,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    if (isParanoidMode && vaultManager != null) {
+                                        IconButton(onClick = {
+                                            scope.launch {
+                                                graphWriter.flush()
+                                                graphLoader.cryptoLayer = null
+                                                graphWriter.cryptoLayer = null
+                                                vaultManager.lock()
+                                            }
+                                        }) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Lock,
+                                                contentDescription = "Lock vault",
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         },
                         bottomBar = {
@@ -1192,10 +1224,11 @@ private fun StatusBarContent(
     isEncrypted: Boolean,
     statusMessage: String,
     activeGraphName: String,
-    pluginCount: Int
+    pluginCount: Int,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
             .padding(horizontal = 16.dp, vertical = 4.dp),

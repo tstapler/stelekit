@@ -4,6 +4,7 @@ import dev.stapler.stelekit.db.BacklinkRenamer
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.db.RenameResult
 import dev.stapler.stelekit.db.UndoManager
 import dev.stapler.stelekit.export.ClipboardProvider
@@ -1432,6 +1433,20 @@ class StelekitViewModel(
     fun savePendingChanges() {
         scope.launch {
             blockStateManager?.flush()
+        }
+    }
+
+    /**
+     * Flush pending writes, null out CryptoLayer references, and lock the vault.
+     * Launched on the ViewModel's own scope to avoid [ForgottenCoroutineScopeException]
+     * when called from a lifecycle observer that may fire after composition teardown.
+     */
+    fun flushAndLockVault(graphLoader: GraphLoader, graphWriter: GraphWriter, vaultManager: VaultManager) {
+        scope.launch {
+            graphWriter.flush()
+            graphLoader.cryptoLayer = null
+            graphWriter.cryptoLayer = null
+            vaultManager.lock()
         }
     }
 

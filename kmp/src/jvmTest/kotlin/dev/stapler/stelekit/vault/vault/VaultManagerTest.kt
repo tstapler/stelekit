@@ -337,15 +337,20 @@ class VaultManagerTest {
         assertTrue(result.isRight(), "Empty passphrase must unlock the vault it created")
     }
 
-    // VM-23 — Unicode emoji passphrase round-trips (BMP + non-BMP codepoints)
-    @Test fun `unicode emoji passphrase can create and unlock vault`() = runTest {
+    // VM-23 — Emoji passphrase is rejected at vault creation time (MEDIUM-4 validation).
+    // U+1F511 KEY is encoded as a surrogate pair (two Kotlin Chars) — CESU-8 would produce
+    // different bytes than standard UTF-8, permanently locking out users after a platform migration.
+    // createVault must throw IllegalArgumentException before any cryptographic operations.
+    @Test fun `emoji passphrase is rejected at createVault`() = runTest {
         val store = mutableMapOf<String, ByteArray>()
         val vm = makeVaultManagerWithStore(store)
         // U+1F511 KEY emoji — encoded as a surrogate pair in Kotlin Char (two chars)
         val emoji = "🔑".toCharArray()  // 🔑
-        vm.createVault("/tmp/test-graph", emoji, argon2Params = params)
-        val result = vm.unlock("/tmp/test-graph", "🔑".toCharArray(), params)
-        assertTrue(result.isRight(), "Unicode emoji passphrase must unlock the vault it created")
+        assertFailsWith<IllegalArgumentException> {
+            vm.createVault("/tmp/test-graph", emoji, argon2Params = params)
+        }
+        // No vault file should have been written
+        assertNull(store[VaultManager.vaultFilePath("/tmp/test-graph")], "No vault file must be written for rejected passphrase")
     }
 
     // VM-24 — Null-byte in passphrase is preserved (not treated as C string terminator)

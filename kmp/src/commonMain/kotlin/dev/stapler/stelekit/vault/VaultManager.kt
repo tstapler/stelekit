@@ -80,6 +80,7 @@ class VaultManager(
         namespace: VaultNamespace = VaultNamespace.OUTER,
         argon2Params: Argon2Params = DEFAULT_ARGON2_PARAMS,
     ): Either<VaultError, UnlockResult> = withContext(Dispatchers.Default) {
+        validatePassphrase(passphrase)
         val dek = crypto.secureRandom(32)
         var storedInSession = false
         try {
@@ -153,6 +154,9 @@ class VaultManager(
         passphrase: CharArray,
         argon2Params: Argon2Params? = null,
     ): Either<VaultError, UnlockResult> = withContext(Dispatchers.Default) {
+        if (passphrase.any { it.isSurrogate() }) {
+            logger.warn("Passphrase contains supplementary Unicode characters — CESU-8 encoding used, may not interoperate with standard tools")
+        }
         val vaultPath = vaultFilePath(graphPath)
         val rawBytes = withContext(PlatformDispatcher.IO) { fileReadBytes(vaultPath) }
             ?: return@withContext VaultError.NotAVault("Vault file not found at $vaultPath").left()
@@ -291,6 +295,7 @@ class VaultManager(
         namespace: VaultNamespace = VaultNamespace.OUTER,
         argon2Params: Argon2Params = DEFAULT_ARGON2_PARAMS,
     ): Either<VaultError, Unit> = withContext(Dispatchers.Default) {
+        validatePassphrase(passphrase)
         val localDek = dek.copyOf()   // isolated from concurrent lock() zeroing of the live session array
         try {
             val vaultPath = vaultFilePath(graphPath)
@@ -343,7 +348,7 @@ class VaultManager(
             val updatedSlots = header.keyslots.toMutableList()
             updatedSlots[emptySlotIndex] = newSlot
 
-            writeUpdatedHeader(vaultPath, localDek, namespace, header.copy(keyslots = updatedSlots))
+            return@withContext writeUpdatedHeader(vaultPath, localDek, namespace, header.copy(keyslots = updatedSlots))
         } finally {
             passphrase.fill(' ')
             crypto.clearBytes(localDek)
@@ -395,7 +400,7 @@ class VaultManager(
 
             val updatedSlots = header.keyslots.toMutableList()
             updatedSlots[slotIndex] = randomSlot()
-            writeUpdatedHeader(vaultPath, dek, ns, header.copy(keyslots = updatedSlots))
+            return@withContext writeUpdatedHeader(vaultPath, dek, ns, header.copy(keyslots = updatedSlots))
         } finally {
             crypto.clearBytes(dek)
         }
@@ -490,13 +495,21 @@ class VaultManager(
         }
     }
 
-    private fun randomSlot(): Keyslot = Keyslot(
-        salt = crypto.secureRandom(Keyslot.SALT_SIZE),
-        argon2Params = DEFAULT_ARGON2_PARAMS,
-        encryptedDekBlob = crypto.secureRandom(Keyslot.ENCRYPTED_BLOB_SIZE),
-        slotNonce = crypto.secureRandom(Keyslot.NONCE_SIZE),
-        reserved = crypto.secureRandom(Keyslot.RESERVED_SIZE),
-    )
+    private fun randomSlot(): Keyslot {
+        // Randomize params within a small bounded range so decoys are distinct but cheap to try.
+        // Each value is derived from a fresh secureRandom call, using modulo within the range.
+        val randomBytes = crypto.secureRandom(4)
+        val memoryKib = 1024 + ((randomBytes[0].toInt() and 0xFF) * 28)  // 1024..8164 KiB
+        val iterations = 1 + (randomBytes[1].toInt() and 0x03)           // 1..4
+        val parallelism = 1 + (randomBytes[2].toInt() and 0x01)          // 1..2
+        return Keyslot(
+            salt = crypto.secureRandom(Keyslot.SALT_SIZE),
+            argon2Params = Argon2Params(memory = memoryKib, iterations = iterations, parallelism = parallelism),
+            encryptedDekBlob = crypto.secureRandom(Keyslot.ENCRYPTED_BLOB_SIZE),
+            slotNonce = crypto.secureRandom(Keyslot.NONCE_SIZE),
+            reserved = crypto.secureRandom(Keyslot.RESERVED_SIZE),
+        )
+    }
 
     /**
      * A slot is "mine" if [reserved][0..3] matches the 4-byte HKDF marker derived from [dek],
@@ -553,6 +566,20 @@ class VaultManager(
 
     private fun constantTimeEquals(a: ByteArray, b: ByteArray): Boolean =
         crypto.constantTimeEquals(a, b)
+
+    /**
+     * Rejects passphrases containing surrogate characters (emoji and other supplementary
+     * Unicode code points >= U+10000). The [CharArray.toByteArray] extension uses CESU-8
+     * which encodes surrogate pairs as 3+3 bytes instead of standard UTF-8's 4 bytes.
+     * Vaults created with such passphrases would be irrecoverable after a platform migration
+     * to a standard UTF-8 implementation. Fail-fast at creation/add time; warn at unlock time
+     * (to keep existing vaults accessible).
+     */
+    private fun validatePassphrase(passphrase: CharArray) {
+        require(passphrase.none { it.isSurrogate() }) {
+            "Passphrase must not contain emoji or supplementary Unicode characters — use standard ASCII or Latin characters for portability"
+        }
+    }
 
     companion object {
         /** Maximum Argon2id memory (KiB) accepted from stored vault params — 4 GiB. */
