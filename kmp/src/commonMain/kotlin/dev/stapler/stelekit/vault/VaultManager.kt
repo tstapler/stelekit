@@ -333,7 +333,7 @@ class VaultManager(
             val currentNs = session?.namespace
             if (currentNs != null && namespace != currentNs) {
                 return@withContext VaultError.InvalidCredential(
-                    "Active session namespace ($currentNs) cannot add keyslots to $namespace"
+                    "Keyslot namespace mismatch — operation not permitted"
                 ).left()
             }
 
@@ -378,7 +378,7 @@ class VaultManager(
             }
             if (slotIndex !in namespaceSlotRange(ns)) {
                 return@withContext VaultError.InvalidCredential(
-                    "Slot $slotIndex does not belong to the current namespace"
+                    "Keyslot namespace mismatch — operation not permitted"
                 ).left()
             }
 
@@ -394,7 +394,7 @@ class VaultManager(
             val activeCount = namespaceSlotRange(ns).count { i -> isSlotMine(header.keyslots[i], dek, i, ns) }
             if (activeCount <= 1) {
                 return@withContext VaultError.InvalidCredential(
-                    "Cannot remove the last keyslot in namespace $ns — vault would be permanently locked"
+                    "Cannot remove the last active keyslot — vault would be permanently locked"
                 ).left()
             }
 
