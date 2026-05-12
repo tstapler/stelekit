@@ -169,12 +169,14 @@ class AndroidGraphBenchmark {
     }
 
     /**
-     * Measures latency of interactive editing operations (addBlockToPage, splitBlock)
-     * on a fully-loaded graph — the scenario users experience in normal use.
+     * Measures latency of interactive editing operations ([DatabaseWriteActor.saveBlock] and
+     * [BlockRepository.splitBlock]) on a fully-loaded graph — the scenario users experience
+     * in normal use. Operations are called directly, bypassing BlockStateManager, because BSM
+     * is not available in the instrumented benchmark harness.
      *
      * Regressions here indicate DB write contention, FTS5 overhead, or unnecessary
      * synchronous DB reads before operations. Each individual operation must complete
-     * in under 500ms. p95 must stay under 200ms.
+     * in under 500ms (p95 threshold).
      */
     @Test
     fun editingOperationsLatency() = runBlocking {

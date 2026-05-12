@@ -93,12 +93,18 @@ class BlockStateManager(
      * still in-flight. Prevents reactive re-emissions from dropping the block before the DB
      * confirms it (the block won't appear in incomingBlocks until the write commits).
      *
+     * Type: [MutableStateFlow]<[Set]<[String]>> (not CopyOnWriteArraySet).
+     *
      * Lifecycle (coroutine-sequential in [addBlockToPage]):
      *   1. UUID added immediately before [blockRepository.saveBlock] is called
      *   2. UUID removed immediately after [blockRepository.saveBlock] returns
      * Once removed, the next [mergeBlocks] call will find the block in [incomingBlocks] and
-     * treat it as confirmed. If the save fails the UUID is still removed — the block remains
-     * in [_blocks] until the next page reload, at which point it disappears.
+     * treat it as confirmed.
+     *
+     * On DB write failure the block is rolled back from [_blocks] only if the block's content
+     * is still equal to what was written (content-equality guard). If the user typed while the
+     * write was in-flight the content will have changed, so the block is kept in [_blocks] and
+     * the next debounced save will retry the write.
      */
     private val pendingNewBlockUuids = MutableStateFlow<Set<String>>(emptySet())
 
@@ -471,7 +477,9 @@ class BlockStateManager(
      * marks the block as dirty, and persists to DB asynchronously.
      */
     fun updateBlockContent(blockUuid: String, newContent: String, newVersion: Long): Job = scope.launch {
-        val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
+        val block = _blocks.value.values.flatten().find { it.uuid == blockUuid }
+            ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+            ?: return@launch
         val oldContent = block.content
         val oldVersion = block.version
         if (oldContent == newContent) return@launch
