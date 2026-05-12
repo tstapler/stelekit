@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.24.0](https://github.com/tstapler/stelekit/compare/v0.23.0...v0.24.0) (2026-05-12)
+
+
+### Features
+
+* **security:** paranoid mode with LUKS2-style keyslots and hidden volumes ([#73](https://github.com/tstapler/stelekit/issues/73)) ([574da4e](https://github.com/tstapler/stelekit/commit/574da4e4c8919e6a6292287472b8b022758c55a9))
+
+
+### Bug Fixes
+
+* **perf:** fix slow block creation at bottom of journal on Android (BUG-008) ([#78](https://github.com/tstapler/stelekit/issues/78)) ([639c3c3](https://github.com/tstapler/stelekit/commit/639c3c3b99d9199bd751853d2fe4d192c649446c))
+* **wasm:** use [@sqlite](https://github.com/sqlite).org/sqlite-wasm 3.46.1-build1 (bare 3.46.1 not on npm) ([7a00909](https://github.com/tstapler/stelekit/commit/7a00909bdef52a920efd65d038de98bbadad70f9))
+
 ## [0.23.0](https://github.com/tstapler/stelekit/compare/v0.22.1...v0.23.0) (2026-05-08)
 
 
