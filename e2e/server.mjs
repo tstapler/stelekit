@@ -15,6 +15,7 @@ const PORT = parseInt(process.env.PORT ?? '8787', 10);
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js':   'application/javascript',
+  '.mjs':  'application/javascript',
   '.wasm': 'application/wasm',
   '.json': 'application/json',
   '.css':  'text/css',

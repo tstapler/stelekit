@@ -228,23 +228,33 @@ class SqlDelightBlockRepository(
 
     override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            queries.transaction {
-                blocks.forEach { block ->
-                    queries.insertBlock(
-                        block.uuid,
-                        block.pageUuid,
-                        block.parentUuid,
-                        block.leftUuid,
-                        block.content,
-                        block.level.toLong(),
-                        block.position.toLong(),
-                        block.createdAt.toEpochMilliseconds(),
-                        block.updatedAt.toEpochMilliseconds(),
-                        block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
-                        block.version,
-                        block.contentHash ?: ContentHasher.sha256ForContent(block.content),
-                        block.blockType
-                    )
+            // Chunk into bounded transactions so the SQLite write lock is never held for more
+            // than ~WRITE_CHUNK_SIZE rows. Without chunking, a 2000-block Phase-3 batch holds
+            // the lock for several seconds on Android, blocking concurrent user edits.
+            //
+            // Trade-off: chunking is NOT all-or-nothing. If chunk N+1 fails, chunks 0..N are
+            // already committed. This is intentional — a single outer transaction would reintroduce
+            // the BUG-008 write-lock starvation. The caller (Phase-3 loader) can re-parse the
+            // source file on next startup to recover any missing blocks.
+            blocks.chunked(WRITE_CHUNK_SIZE).forEach { chunk ->
+                queries.transaction {
+                    chunk.forEach { block ->
+                        queries.insertBlock(
+                            block.uuid,
+                            block.pageUuid,
+                            block.parentUuid,
+                            block.leftUuid,
+                            block.content,
+                            block.level.toLong(),
+                            block.position.toLong(),
+                            block.createdAt.toEpochMilliseconds(),
+                            block.updatedAt.toEpochMilliseconds(),
+                            block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
+                            block.version,
+                            block.contentHash ?: ContentHasher.sha256ForContent(block.content),
+                            block.blockType
+                        )
+                    }
                 }
             }
             Unit.right()
@@ -1037,5 +1047,13 @@ class SqlDelightBlockRepository(
 
     companion object {
         private val WIKILINK_REGEX = Regex("""\[\[([^\]]+)\]\]""")
+
+        /**
+         * Maximum blocks per SQLite transaction in [saveBlocks]. Limits write-lock hold time
+         * to ~WRITE_CHUNK_SIZE * (insert_cost + FTS5_trigger_cost) per transaction.
+         * 50 rows ≈ 25–75ms on mid-range Android hardware — short enough that concurrent user
+         * edits (addBlockToPage, splitBlock) wait at most one chunk before acquiring the lock.
+         */
+        private const val WRITE_CHUNK_SIZE = 50
     }
 }

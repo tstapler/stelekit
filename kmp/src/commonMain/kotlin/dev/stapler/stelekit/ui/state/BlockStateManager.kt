@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.ui.state
 
+import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.logging.Logger
@@ -39,10 +40,10 @@ import kotlinx.coroutines.CancellationException
  *
  * This eliminates the race condition where reactive re-emissions overwrite local edits.
  *
- * Direct repository writes are permitted here because BSM operations are user-triggered
- * (single, sequential interactions) and do not run concurrently with the parallel graph
- * loading that causes SQLITE_BUSY. The annotation opt-in is intentional and documents this
- * reasoning explicitly.
+ * User-edit writes are routed through [DatabaseWriteActor] when one is injected, so they
+ * queue behind any in-progress Phase-3 bulk load without contending for the raw SQLite write
+ * lock. The [DirectRepositoryWrite] opt-in remains for the fallback path (tests, in-memory
+ * backend) and for structural operations that still call the repository directly.
  */
 @OptIn(DirectRepositoryWrite::class)
 class BlockStateManager(
@@ -54,10 +55,25 @@ class BlockStateManager(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     private val graphWriter: GraphWriter? = null,
     private val pageRepository: PageRepository? = null,
-    private val graphPathProvider: () -> String = { "" }
+    private val graphPathProvider: () -> String = { "" },
+    private val writeActor: DatabaseWriteActor? = null
 ) {
     private val logger = Logger("BlockStateManager")
     private val diskWriteDebounce = DebounceManager(scope, 300L)
+
+    // When a DatabaseWriteActor is injected, user-edit writes go through it so they
+    // are serialized behind any in-progress Phase-3 bulk load without holding a raw
+    // SQLite write lock. Falls back to direct repository calls (tests, in-memory backend).
+    private suspend fun writeBlock(block: Block) =
+        writeActor?.saveBlock(block) ?: blockRepository.saveBlock(block)
+
+    private suspend fun writeContentOnly(blockUuid: String, content: String) =
+        writeActor?.updateBlockContentOnly(blockUuid, content)
+            ?: blockRepository.updateBlockContentOnly(blockUuid, content)
+
+    private suspend fun writePropertiesOnly(blockUuid: String, properties: Map<String, String>) =
+        writeActor?.updateBlockPropertiesOnly(blockUuid, properties)
+            ?: blockRepository.updateBlockPropertiesOnly(blockUuid, properties)
 
     // ---- Active page sessions ----
 
@@ -71,6 +87,26 @@ class BlockStateManager(
 
     /** Blocks whose content was updated locally but not yet confirmed by DB re-emission. */
     private val dirtyBlocks = mutableMapOf<String, Long>() // blockUuid → local version
+
+    /**
+     * UUIDs of blocks that were inserted optimistically into [_blocks] but whose DB write is
+     * still in-flight. Prevents reactive re-emissions from dropping the block before the DB
+     * confirms it (the block won't appear in incomingBlocks until the write commits).
+     *
+     * Type: [MutableStateFlow]<[Set]<[String]>> (not CopyOnWriteArraySet).
+     *
+     * Lifecycle (coroutine-sequential in [addBlockToPage]):
+     *   1. UUID added immediately before [blockRepository.saveBlock] is called
+     *   2. UUID removed immediately after [blockRepository.saveBlock] returns
+     * Once removed, the next [mergeBlocks] call will find the block in [incomingBlocks] and
+     * treat it as confirmed.
+     *
+     * On DB write failure the block is rolled back from [_blocks] only if the block's content
+     * is still equal to what was written (content-equality guard). If the user typed while the
+     * write was in-flight the content will have changed, so the block is kept in [_blocks] and
+     * the next debounced save will retry the write.
+     */
+    private val pendingNewBlockUuids = MutableStateFlow<Set<String>>(emptySet())
 
     /** UUIDs of blocks that have unsaved local edits. Used by ViewModel to protect pages from external overwrites. */
     val dirtyBlockUuids: Set<String> get() = dirtyBlocks.keys.toSet()
@@ -94,113 +130,29 @@ class BlockStateManager(
     private val _collapsedBlockUuids = MutableStateFlow<Set<String>>(emptySet())
     val collapsedBlockUuids: StateFlow<Set<String>> = _collapsedBlockUuids.asStateFlow()
 
-    // ---- Selection state ----
+    // ---- Selection state (delegated to BlockSelectionManager) ----
 
-    private val _selectedBlockUuids = MutableStateFlow<Set<String>>(emptySet())
-    val selectedBlockUuids: StateFlow<Set<String>> = _selectedBlockUuids.asStateFlow()
+    private val selection = BlockSelectionManager(
+        blocksSnapshot = { _blocks.value },
+        visibleBlocksForPage = ::getVisibleBlocksForPage
+    )
+    val selectedBlockUuids: StateFlow<Set<String>> get() = selection.selectedBlockUuids
+    val isInSelectionMode: StateFlow<Boolean> get() = selection.isInSelectionMode
 
-    private val _isInSelectionMode = MutableStateFlow(false)
-    val isInSelectionMode: StateFlow<Boolean> = _isInSelectionMode.asStateFlow()
-
-    private var selectionAnchorUuid: String? = null
-
-    fun enterSelectionMode(uuid: String) {
-        selectionAnchorUuid = uuid
-        _selectedBlockUuids.value = setOf(uuid)
-        _isInSelectionMode.value = true
-    }
-
-    fun toggleBlockSelection(uuid: String) {
-        _selectedBlockUuids.update { current ->
-            if (uuid in current) current - uuid else current + uuid
-        }
-        _isInSelectionMode.value = _selectedBlockUuids.value.isNotEmpty()
-        if (_selectedBlockUuids.value.isEmpty()) selectionAnchorUuid = null
-    }
-
-    fun extendSelectionByOne(up: Boolean) {
-        val anchor = selectionAnchorUuid ?: return
-        val pageUuid = _blocks.value.entries
-            .find { (_, blocks) -> blocks.any { it.uuid == anchor } }
-            ?.key ?: return
-        val visibleBlocks = getVisibleBlocksForPage(pageUuid)
-        val selected = _selectedBlockUuids.value
-        if (selected.isEmpty()) {
-            enterSelectionMode(anchor)
-            return
-        }
-        if (up) {
-            val topIdx = visibleBlocks.indexOfFirst { it.uuid in selected }
-            if (topIdx > 0) {
-                _selectedBlockUuids.update { it + visibleBlocks[topIdx - 1].uuid }
-            }
-        } else {
-            val bottomIdx = visibleBlocks.indexOfLast { it.uuid in selected }
-            if (bottomIdx >= 0 && bottomIdx < visibleBlocks.size - 1) {
-                _selectedBlockUuids.update { it + visibleBlocks[bottomIdx + 1].uuid }
-            }
-        }
-        _isInSelectionMode.value = _selectedBlockUuids.value.isNotEmpty()
-    }
-
-    fun extendSelectionTo(uuid: String) {
-        val anchor = selectionAnchorUuid
-        if (anchor == null) {
-            enterSelectionMode(uuid)
-            return
-        }
-        // Find pageUuid from selected blocks or all blocks
-        val pageUuid = _blocks.value.entries
-            .find { (_, blocks) -> blocks.any { it.uuid == anchor } }
-            ?.key ?: return
-        val visibleBlocks = getVisibleBlocksForPage(pageUuid)
-        val anchorIdx = visibleBlocks.indexOfFirst { it.uuid == anchor }
-        val targetIdx = visibleBlocks.indexOfFirst { it.uuid == uuid }
-        if (anchorIdx < 0 || targetIdx < 0) return
-        val range = if (anchorIdx <= targetIdx)
-            visibleBlocks.subList(anchorIdx, targetIdx + 1)
-        else
-            visibleBlocks.subList(targetIdx, anchorIdx + 1)
-        _selectedBlockUuids.value = range.map { it.uuid }.toSet()
-        _isInSelectionMode.value = _selectedBlockUuids.value.isNotEmpty()
-    }
-
-    fun selectAll(pageUuid: String) {
-        val visible = getVisibleBlocksForPage(pageUuid)
-        selectionAnchorUuid = visible.firstOrNull()?.uuid
-        _selectedBlockUuids.value = visible.map { it.uuid }.toSet()
-        _isInSelectionMode.value = _selectedBlockUuids.value.isNotEmpty()
-    }
-
-    fun clearSelection() {
-        _selectedBlockUuids.value = emptySet()
-        _isInSelectionMode.value = false
-        selectionAnchorUuid = null
-    }
-
-    /**
-     * Removes UUIDs from the set whose ancestor is also in the set,
-     * to prevent double-deletion when parent+child are both selected.
-     */
-    private fun subtreeDedup(uuids: Set<String>, pageUuid: String): List<String> {
-        val allBlocks = _blocks.value[pageUuid] ?: return uuids.toList()
-        val blockByUuid = allBlocks.associateBy { it.uuid }
-        return uuids.filter { uuid ->
-            var current = blockByUuid[uuid]?.parentUuid
-            while (current != null) {
-                if (current in uuids) return@filter false
-                current = blockByUuid[current]?.parentUuid
-            }
-            true
-        }
-    }
+    fun enterSelectionMode(uuid: String) = selection.enterSelectionMode(uuid)
+    fun toggleBlockSelection(uuid: String) = selection.toggleBlockSelection(uuid)
+    fun extendSelectionByOne(up: Boolean) = selection.extendSelectionByOne(up)
+    fun extendSelectionTo(uuid: String) = selection.extendSelectionTo(uuid)
+    fun selectAll(pageUuid: String) = selection.selectAll(pageUuid)
+    fun clearSelection() = selection.clearSelection()
+    private fun subtreeDedup(uuids: Set<String>, pageUuid: String) = selection.subtreeDedup(uuids, pageUuid)
 
     /**
      * Delete all currently selected blocks (and their subtrees) in a single
      * undo-able operation. Clears the selection when done.
      */
     fun deleteSelectedBlocks(): Job = scope.launch {
-        val selected = _selectedBlockUuids.value
+        val selected = selection.selectedBlockUuids.value
         if (selected.isEmpty()) return@launch
         // Determine page UUID from the first selected block
         val pageUuid = _blocks.value.entries
@@ -231,7 +183,7 @@ class BlockStateManager(
      * Wraps the entire operation in a single undo entry.
      */
     fun moveSelectedBlocks(newParentUuid: String?, insertAfterUuid: String?): Job = scope.launch {
-        val selected = _selectedBlockUuids.value
+        val selected = selection.selectedBlockUuids.value
         if (selected.isEmpty()) return@launch
 
         val pageUuid = _blocks.value.entries
@@ -294,51 +246,17 @@ class BlockStateManager(
         _formatEvents.tryEmit(action)
     }
 
-    // ---- Undo/Redo ----
+    // ---- Undo/redo (delegated to BlockUndoManager) ----
 
-    private data class UndoEntry(
-        val undo: suspend () -> Unit,
-        val redo: (suspend () -> Unit)?
-    )
+    private val undoManager = BlockUndoManager(scope)
+    val canUndo: StateFlow<Boolean> get() = undoManager.canUndo
+    val canRedo: StateFlow<Boolean> get() = undoManager.canRedo
 
-    private val undoStack = ArrayDeque<UndoEntry>()
-    private val redoStack = ArrayDeque<UndoEntry>()
-    private val maxUndo = 100
+    fun record(undo: suspend () -> Unit, redo: (suspend () -> Unit)? = null) =
+        undoManager.record(undo, redo)
 
-    private val _canUndo = MutableStateFlow(false)
-    val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
-
-    private val _canRedo = MutableStateFlow(false)
-    val canRedo: StateFlow<Boolean> = _canRedo.asStateFlow()
-
-    fun record(undo: suspend () -> Unit, redo: (suspend () -> Unit)? = null) {
-        undoStack.addLast(UndoEntry(undo, redo))
-        if (undoStack.size > maxUndo) undoStack.removeFirst()
-        redoStack.clear()
-        _canUndo.value = true
-        _canRedo.value = false
-    }
-
-    fun undo(): Job = scope.launch {
-        val entry = undoStack.removeLastOrNull() ?: return@launch
-        entry.undo()
-        if (entry.redo != null) {
-            redoStack.addLast(entry)
-            _canRedo.value = true
-        } else {
-            redoStack.clear()
-            _canRedo.value = false
-        }
-        _canUndo.value = undoStack.isNotEmpty()
-    }
-
-    fun redo(): Job = scope.launch {
-        val entry = redoStack.removeLastOrNull() ?: return@launch
-        entry.redo?.invoke() ?: return@launch
-        undoStack.addLast(entry)
-        _canUndo.value = true
-        _canRedo.value = redoStack.isNotEmpty()
-    }
+    fun undo(): Job = undoManager.undo()
+    fun redo(): Job = undoManager.redo()
 
     // ---- Page observation ----
 
@@ -407,9 +325,11 @@ class BlockStateManager(
     /**
      * Merge incoming DB blocks with local state using dirty-set semantics.
      * Dirty blocks keep their local version; clean blocks accept the DB version.
+     * Pending new blocks (optimistically inserted, DB write still in-flight) are
+     * preserved at the end of the list so they don't disappear on reactive re-emissions.
      */
     private fun mergeBlocks(localBlocks: List<Block>, incomingBlocks: List<Block>): List<Block> {
-        return incomingBlocks.map { incoming ->
+        val merged = incomingBlocks.map { incoming ->
             val dirtyVersion = dirtyBlocks[incoming.uuid]
             if (dirtyVersion != null && dirtyVersion > incoming.version) {
                 // Block has a local edit not yet confirmed — keep local version
@@ -421,6 +341,12 @@ class BlockStateManager(
                 incoming
             }
         }
+        // Append pending new blocks that aren't yet in the DB (won't appear in incomingBlocks
+        // until the write commits). Once the write commits, they'll be in incomingBlocks and
+        // removed from pendingNewBlockUuids before the next emission.
+        val incomingUuids = incomingBlocks.mapTo(HashSet()) { it.uuid }
+        val pending = localBlocks.filter { it.uuid in pendingNewBlockUuids.value && it.uuid !in incomingUuids }
+        return if (pending.isEmpty()) merged else merged + pending
     }
 
     fun blocksForPage(pageUuid: String): List<Block> =
@@ -531,7 +457,7 @@ class BlockStateManager(
         val pageUuid = _blocks.value.entries.find { (_, blocks) -> blocks.any { it.uuid == blockUuid } }?.key
             ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()?.pageUuid
             ?: return@launch
-        val propsResult = blockRepository.updateBlockPropertiesOnly(blockUuid, newProperties)
+        val propsResult = writePropertiesOnly(blockUuid, newProperties)
         if (propsResult.isLeft()) {
             logger.warn("updateBlockProperties: DB write failed for $blockUuid — properties live in-memory only")
         }
@@ -551,7 +477,9 @@ class BlockStateManager(
      * marks the block as dirty, and persists to DB asynchronously.
      */
     fun updateBlockContent(blockUuid: String, newContent: String, newVersion: Long): Job = scope.launch {
-        val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
+        val block = _blocks.value.values.flatten().find { it.uuid == blockUuid }
+            ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+            ?: return@launch
         val oldContent = block.content
         val oldVersion = block.version
         if (oldContent == newContent) return@launch
@@ -585,7 +513,7 @@ class BlockStateManager(
         // Mark dirty BEFORE saving so the observer merge keeps our version
         dirtyBlocks[blockUuid] = version
 
-        val writeResult = blockRepository.updateBlockContentOnly(blockUuid, content)
+        val writeResult = writeContentOnly(blockUuid, content)
         if (writeResult.isLeft()) {
             logger.warn("applyContentChange: DB write failed for $blockUuid — content lives in-memory only")
         }
@@ -798,8 +726,8 @@ class BlockStateManager(
     }
 
     fun addBlockToPage(pageUuid: String): Job = scope.launch {
-        val blocksResult = blockRepository.getBlocksForPage(pageUuid).first()
-        val blocks = blocksResult.getOrNull() ?: emptyList()
+        // Use in-memory state — avoids a DB round-trip since the page is already observed.
+        val blocks = blocksForPage(pageUuid)
 
         val topLevelBlocks = blocks.filter { it.parentUuid == null }.sortedBy { it.position }
         val lastBlock = topLevelBlocks.lastOrNull()
@@ -819,8 +747,35 @@ class BlockStateManager(
             properties = emptyMap(),
             isLoaded = true
         )
-        blockRepository.saveBlock(newBlock)
+        // Optimistically add to local state so focus and keyboard land before the DB write
+        // completes (the write may be queued behind a Phase-3 batch transaction).
+        _blocks.update { current ->
+            val updated = current.toMutableMap()
+            val pageBlocks = updated[pageUuid]?.toMutableList() ?: mutableListOf()
+            pageBlocks.add(newBlock)
+            updated[pageUuid] = pageBlocks
+            updated
+        }
+        pendingNewBlockUuids.update { it + newBlock.uuid }
         requestEditBlock(newBlock.uuid)
+        writeBlock(newBlock).onLeft { err ->
+            logger.error("addBlockToPage: DB write failed for ${newBlock.uuid}: $err")
+            // Roll back the optimistic update only if the block content is unchanged. Comparing
+            // content rather than checking dirtyBlocks avoids a race where the user types between
+            // the dirtyBlocks.containsKey check and the _blocks.update: if the content has already
+            // changed, the user's edits are preserved and the next debounce will retry the write.
+            _blocks.update { current ->
+                val liveContent = current[pageUuid]?.find { it.uuid == newBlock.uuid }?.content
+                if (liveContent == newBlock.content) {
+                    val updated = current.toMutableMap()
+                    updated[pageUuid] = (updated[pageUuid] ?: emptyList()).filter { it.uuid != newBlock.uuid }
+                    updated
+                } else {
+                    current
+                }
+            }
+        }
+        pendingNewBlockUuids.update { it - newBlock.uuid }
         queueDiskSave(pageUuid)
     }
 

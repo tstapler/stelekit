@@ -132,8 +132,10 @@ CREATE TRIGGER blocks_ad AFTER DELETE ON blocks BEGIN
     VALUES('delete', old.id, old.content);
 END;
 
--- Update trigger
-CREATE TRIGGER blocks_au AFTER UPDATE ON blocks BEGIN
+-- Update trigger — scoped to content only so position/level/left_uuid changes
+-- (emitted by splitBlock, indentBlock, moveBlock sibling shifts) don't trigger
+-- O(n) FTS5 delete+insert pairs per structural edit.
+CREATE TRIGGER blocks_au AFTER UPDATE OF content ON blocks BEGIN
     INSERT INTO blocks_fts(blocks_fts, rowid, content)
     VALUES('delete', old.id, old.content);
     INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content);

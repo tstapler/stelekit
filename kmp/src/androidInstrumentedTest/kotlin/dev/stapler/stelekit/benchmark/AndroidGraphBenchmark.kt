@@ -1,3 +1,5 @@
+@file:OptIn(dev.stapler.stelekit.repository.DirectRepositoryWrite::class)
+
 package dev.stapler.stelekit.benchmark
 
 import androidx.core.content.FileProvider
@@ -167,6 +169,93 @@ class AndroidGraphBenchmark {
     }
 
     /**
+     * Measures latency of interactive editing operations ([DatabaseWriteActor.saveBlock] and
+     * [BlockRepository.splitBlock]) on a fully-loaded graph — the scenario users experience
+     * in normal use. Operations are called directly, bypassing BlockStateManager, because BSM
+     * is not available in the instrumented benchmark harness.
+     *
+     * Regressions here indicate DB write contention, FTS5 overhead, or unnecessary
+     * synchronous DB reads before operations. Each individual operation must complete
+     * in under 500ms (p95 threshold).
+     */
+    @Test
+    fun editingOperationsLatency() = runBlocking {
+        val dbFile = File(context.cacheDir, "bench-edit-${System.nanoTime()}.db")
+        val factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite:${dbFile.absolutePath}")
+        val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope)
+        val actor = repoSet.writeActor!!
+        val loader = GraphLoader(
+            fileSystem = directFileSystem(),
+            pageRepository = repoSet.pageRepository,
+            blockRepository = repoSet.blockRepository,
+            externalWriteActor = actor,
+            histogramWriter = repoSet.histogramWriter,
+        )
+
+        // Load the graph fully before measuring (simulates post-launch steady state)
+        loader.loadGraphProgressive(
+            graphPath = graphDir.absolutePath,
+            immediateJournalCount = 5,
+            onProgress = {},
+            onPhase1Complete = {},
+            onFullyLoaded = {},
+        )
+        loader.indexRemainingPages {}
+
+        // Pick a journal page to edit
+        val pages = repoSet.pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+        val journalPage = pages.firstOrNull { it.isJournal } ?: pages.first()
+        val pageUuid = journalPage.uuid
+
+        // Pre-load blocks so the list is non-empty (mirrors user opening a journal)
+        val existingBlocks = repoSet.blockRepository.getBlocksForPage(pageUuid).first().getOrNull() ?: emptyList()
+        val lastTopLevel = existingBlocks.filter { it.parentUuid == null }.maxByOrNull { it.position }
+
+        val addLatencies = mutableListOf<Long>()
+        val splitLatencies = mutableListOf<Long>()
+
+        // --- addBlockToPage latency ---
+        var blockIndex = existingBlocks.size
+        repeat(20) { i ->
+            val position = (lastTopLevel?.position ?: -1) + 1 + i
+            val lat = measureTime {
+                actor.saveBlock(block(pageUuid, blockIndex++, position))
+            }.inWholeMilliseconds
+            addLatencies.add(lat)
+            if (i < 19) kotlinx.coroutines.delay(50)
+        }
+
+        // --- splitBlock latency: fetch a block and call splitBlock ---
+        val blocksAfterAdd = repoSet.blockRepository.getBlocksForPage(pageUuid).first().getOrNull() ?: emptyList()
+        val blockToSplit = blocksAfterAdd.maxByOrNull { it.position } ?: block(pageUuid, blockIndex++, 0)
+        repeat(10) { i ->
+            val target = repoSet.blockRepository.getBlockByUuid(blockToSplit.uuid).first().getOrNull()
+                ?: return@repeat
+            val lat = measureTime {
+                repoSet.blockRepository.splitBlock(target.uuid, target.content.length)
+            }.inWholeMilliseconds
+            splitLatencies.add(lat)
+            if (i < 9) kotlinx.coroutines.delay(50)
+        }
+
+        val addP95 = percentile(addLatencies, 95)
+        val splitP95 = percentile(splitLatencies, 95)
+        val addMax = addLatencies.maxOrNull() ?: 0L
+        val splitMax = splitLatencies.maxOrNull() ?: 0L
+
+        android.util.Log.i(
+            "ANDROID_BENCH",
+            """{"metric":"editLatency","addP95Ms":$addP95,"addMaxMs":$addMax,"splitP95Ms":$splitP95,"splitMaxMs":$splitMax,"ops":${addLatencies.size + splitLatencies.size}}"""
+        )
+
+        factory.close()
+        dbFile.delete()
+
+        assertTrue(addP95 < 500L, "addBlockToPage p95 exceeded 500ms: ${addP95}ms")
+        assertTrue(splitP95 < 500L, "splitBlock p95 exceeded 500ms: ${splitP95}ms")
+    }
+
+    /**
      * Measures ContentResolver (FileProvider) read overhead vs direct File.readText().
      *
      * This simulates the per-file Binder IPC cost that SAF imposes for every readFile() call
@@ -220,12 +309,12 @@ class AndroidGraphBenchmark {
 
     // ── helpers ────────────────────────────────────────────────────────────────
 
-    private fun block(pageUuid: String, index: Int) = Block(
+    private fun block(pageUuid: String, index: Int, position: Int = index) = Block(
         uuid = "bench-block-$index",
         pageUuid = pageUuid,
         content = "Bench $index",
         level = 0,
-        position = index,
+        position = position,
         createdAt = Clock.System.now(),
         updatedAt = Clock.System.now(),
     )

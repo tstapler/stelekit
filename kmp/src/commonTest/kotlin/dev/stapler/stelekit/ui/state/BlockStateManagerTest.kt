@@ -1,13 +1,18 @@
 package dev.stapler.stelekit.ui.state
 
+import arrow.core.Either
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.repository.BlockRepository
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -55,6 +60,24 @@ class CountingFakeFileSystem : FileSystem {
     override fun deleteFile(path: String): Boolean = true
     override fun pickDirectory(): String? = null
     override fun getLastModifiedTime(path: String): Long? = null
+}
+
+/**
+ * Wraps [InMemoryBlockRepository] and counts every call to [getBlocksForPage].
+ * Used to verify that [BlockStateManager.addBlockToPage] uses in-memory state
+ * instead of issuing a new DB read when blocks are already cached.
+ */
+@OptIn(DirectRepositoryWrite::class)
+private class CountingBlockRepository(
+    val delegate: InMemoryBlockRepository = InMemoryBlockRepository()
+) : BlockRepository by delegate {
+    var getBlocksForPageCallCount: Int = 0
+        private set
+
+    override fun getBlocksForPage(pageUuid: String): Flow<Either<DomainError, List<Block>>> {
+        getBlocksForPageCallCount++
+        return delegate.getBlocksForPage(pageUuid)
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -363,6 +386,42 @@ class BlockStateManagerTest {
 
         // Focus should be on the new block
         assertNotNull(manager.editingBlockUuid.value)
+    }
+
+    /**
+     * Regression test for BUG-008 root cause A.
+     *
+     * Before the fix, [BlockStateManager.addBlockToPage] called
+     * `blockRepository.getBlocksForPage(pageUuid).first()` — a DB round-trip — to find
+     * the last block's position even when blocks were already cached in [BlockStateManager._blocks].
+     * After the fix it reads [BlockStateManager.blocksForPage] (in-memory), so
+     * [BlockRepository.getBlocksForPage] must NOT be called again after the initial subscription
+     * set up by [BlockStateManager.observePage].
+     *
+     * Fails against pre-fix code (counter increments twice) and passes after the fix (once).
+     */
+    @Test
+    fun addBlockToPage_uses_in_memory_state_not_db_read() = runTest {
+        val counting = CountingBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, counting)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(counting, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        counting.delegate.saveBlock(createBlock("b1"))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        val countAfterObserve = counting.getBlocksForPageCallCount
+
+        manager.addBlockToPage(pageUuid)
+        advanceUntilIdle()
+
+        assertEquals(
+            countAfterObserve, counting.getBlocksForPageCallCount,
+            "addBlockToPage must not call getBlocksForPage() — use in-memory blocksForPage() instead"
+        )
     }
 
     // ── Pending disk write tracking ───────────────────────────────────────────
@@ -784,5 +843,625 @@ class BlockStateManagerTest {
         // Cleared when editing block is nulled
         manager.requestEditBlock(null)
         assertNull(manager.editingSelectionRange.value)
+    }
+
+    // ---- Selection mode operations ----
+
+    @Test
+    fun enterSelectionMode_sets_anchor_and_selected_and_isInSelectionMode() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        assertFalse(manager.isInSelectionMode.value)
+        assertTrue(manager.selectedBlockUuids.value.isEmpty())
+
+        manager.enterSelectionMode("b1")
+
+        assertEquals(setOf("b1"), manager.selectedBlockUuids.value)
+        assertTrue(manager.isInSelectionMode.value)
+    }
+
+    @Test
+    fun toggleBlockSelection_adds_then_removes_uuid() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        manager.toggleBlockSelection("b1")
+        assertTrue(manager.selectedBlockUuids.value.contains("b1"))
+        assertTrue(manager.isInSelectionMode.value)
+
+        manager.toggleBlockSelection("b1")
+        assertFalse(manager.selectedBlockUuids.value.contains("b1"))
+        assertFalse(manager.isInSelectionMode.value)
+    }
+
+    @Test
+    fun toggleBlockSelection_can_add_multiple_uuids() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        manager.toggleBlockSelection("b1")
+        manager.toggleBlockSelection("b2")
+
+        assertEquals(setOf("b1", "b2"), manager.selectedBlockUuids.value)
+        assertTrue(manager.isInSelectionMode.value)
+    }
+
+    @Test
+    fun clearSelection_resets_all_selection_state() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        manager.enterSelectionMode("b1")
+        assertTrue(manager.isInSelectionMode.value)
+
+        manager.clearSelection()
+
+        assertTrue(manager.selectedBlockUuids.value.isEmpty())
+        assertFalse(manager.isInSelectionMode.value)
+    }
+
+    @Test
+    fun selectAll_selects_all_visible_blocks_for_page() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", position = 0))
+        blockRepo.saveBlock(createBlock("b2", position = 1))
+        blockRepo.saveBlock(createBlock("b3", position = 2))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.selectAll(pageUuid)
+
+        assertEquals(3, manager.selectedBlockUuids.value.size)
+        assertTrue(manager.selectedBlockUuids.value.containsAll(setOf("b1", "b2", "b3")))
+        assertTrue(manager.isInSelectionMode.value)
+    }
+
+    @Test
+    fun extendSelectionByOne_down_adds_next_visible_block() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", position = 0))
+        blockRepo.saveBlock(createBlock("b2", position = 1))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.enterSelectionMode("b1")
+        manager.extendSelectionByOne(up = false)
+
+        assertTrue(manager.selectedBlockUuids.value.contains("b1"))
+        assertTrue(manager.selectedBlockUuids.value.contains("b2"))
+    }
+
+    @Test
+    fun extendSelectionByOne_up_adds_previous_visible_block() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", position = 0))
+        blockRepo.saveBlock(createBlock("b2", position = 1))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.enterSelectionMode("b2")
+        manager.extendSelectionByOne(up = true)
+
+        assertTrue(manager.selectedBlockUuids.value.contains("b1"))
+        assertTrue(manager.selectedBlockUuids.value.contains("b2"))
+    }
+
+    @Test
+    fun extendSelectionTo_selects_range_from_anchor_to_target() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", position = 0))
+        blockRepo.saveBlock(createBlock("b2", position = 1))
+        blockRepo.saveBlock(createBlock("b3", position = 2))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.enterSelectionMode("b1")
+        manager.extendSelectionTo("b3")
+
+        assertEquals(setOf("b1", "b2", "b3"), manager.selectedBlockUuids.value)
+        assertTrue(manager.isInSelectionMode.value)
+    }
+
+    @Test
+    fun deleteSelectedBlocks_removes_selected_block_and_clears_selection() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "keep", position = 0))
+        blockRepo.saveBlock(createBlock("b2", content = "delete me", position = 1))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.enterSelectionMode("b2")
+        manager.deleteSelectedBlocks().join()
+        advanceUntilIdle()
+
+        val remaining = manager.blocks.value[pageUuid] ?: emptyList()
+        assertFalse(remaining.any { it.uuid == "b2" }, "Deleted block must not remain in state")
+        assertTrue(remaining.any { it.uuid == "b1" }, "Non-selected block must remain")
+        assertTrue(manager.selectedBlockUuids.value.isEmpty(), "Selection must be cleared after delete")
+        assertFalse(manager.isInSelectionMode.value)
+    }
+
+    @Test
+    fun deleteSelectedBlocks_is_noop_when_nothing_selected() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        manager.deleteSelectedBlocks().join()
+
+        assertFalse(manager.canUndo.value, "No undo entry must be recorded for empty selection delete")
+    }
+
+    // ---- Structural block operations ----
+
+    @Test
+    fun splitBlock_creates_two_blocks_at_cursor_position() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "HelloWorld", position = 0))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.splitBlock("b1", 5).join()
+        advanceUntilIdle()
+
+        val blocks = manager.blocks.value[pageUuid] ?: emptyList()
+        assertEquals(2, blocks.size, "splitBlock must produce two blocks")
+        assertTrue(blocks.any { it.content == "Hello" }, "First block must have content before cursor")
+        assertTrue(blocks.any { it.content == "World" }, "Second block must have content after cursor")
+    }
+
+    @Test
+    fun splitBlock_focuses_the_new_block() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "AB", position = 0))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.splitBlock("b1", 1).join()
+        advanceUntilIdle()
+
+        val blocks = manager.blocks.value[pageUuid] ?: emptyList()
+        val newBlock = blocks.find { it.uuid != "b1" }
+        assertNotNull(newBlock, "A new block must be created by splitBlock")
+        assertEquals(newBlock.uuid, manager.editingBlockUuid.value,
+            "Focus must move to the new block after split")
+    }
+
+    @Test
+    fun splitBlock_records_undo_entry_and_undo_restores_single_block() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "HelloWorld", position = 0))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.splitBlock("b1", 5).join()
+        advanceUntilIdle()
+        assertTrue(manager.canUndo.value, "splitBlock must record an undo entry")
+
+        manager.undo().join()
+        advanceUntilIdle()
+
+        val blocks = manager.blocks.value[pageUuid] ?: emptyList()
+        assertEquals(1, blocks.size, "Undo must restore single block")
+        assertEquals("HelloWorld", blocks[0].content, "Undo must restore original content")
+    }
+
+    @Test
+    fun splitBlock_at_cursor_zero_produces_empty_first_block_and_full_content_in_second() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "Hello", position = 0))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.splitBlock("b1", 0).join()
+        advanceUntilIdle()
+
+        val blocks = manager.blocks.value[pageUuid] ?: emptyList()
+        assertEquals(2, blocks.size, "splitBlock at 0 must still produce two blocks")
+        val sorted = blocks.sortedBy { it.position }
+        assertEquals("", sorted[0].content, "Block before cursor-at-0 must be empty")
+        assertEquals("Hello", sorted[1].content, "Block after cursor-at-0 must have full original content")
+    }
+
+    @Test
+    fun indentBlock_makes_block_child_of_previous_sibling() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "parent", position = 0))
+        blockRepo.saveBlock(createBlock("b2", content = "child", position = 1))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.indentBlock("b2").join()
+        advanceUntilIdle()
+
+        val blocks = manager.blocks.value[pageUuid] ?: emptyList()
+        val b2 = blocks.find { it.uuid == "b2" }
+        assertNotNull(b2)
+        assertEquals("b1", b2.parentUuid, "indentBlock must make b2 a child of b1")
+    }
+
+    @Test
+    fun indentBlock_records_undo_entry() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", position = 0))
+        blockRepo.saveBlock(createBlock("b2", position = 1))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.indentBlock("b2").join()
+        advanceUntilIdle()
+
+        assertTrue(manager.canUndo.value, "indentBlock must record an undo entry")
+    }
+
+    @Test
+    fun outdentBlock_moves_child_to_grandparent_level() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        // b1 at root, b2 is child of b1
+        blockRepo.saveBlock(createBlock("b1", content = "root", position = 0))
+        val childBlock = Block(
+            uuid = "b2", pageUuid = pageUuid, parentUuid = "b1",
+            content = "child", level = 1, position = 0,
+            createdAt = now, updatedAt = now
+        )
+        blockRepo.saveBlock(childBlock)
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.outdentBlock("b2").join()
+        advanceUntilIdle()
+
+        val blocks = manager.blocks.value[pageUuid] ?: emptyList()
+        val b2 = blocks.find { it.uuid == "b2" }
+        assertNotNull(b2)
+        assertNull(b2.parentUuid, "outdentBlock must remove parentUuid when outdenting from root child")
+    }
+
+    @Test
+    fun moveBlockUp_swaps_positions_with_previous_sibling() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "first", position = 0))
+        blockRepo.saveBlock(createBlock("b2", content = "second", position = 1))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.moveBlockUp("b2").join()
+        advanceUntilIdle()
+
+        val blocks = manager.blocks.value[pageUuid] ?: emptyList()
+        val b1 = blocks.find { it.uuid == "b1" }!!
+        val b2 = blocks.find { it.uuid == "b2" }!!
+        assertTrue(b2.position < b1.position, "b2 must move above b1 after moveBlockUp")
+    }
+
+    @Test
+    fun moveBlockDown_swaps_positions_with_next_sibling() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "first", position = 0))
+        blockRepo.saveBlock(createBlock("b2", content = "second", position = 1))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.moveBlockDown("b1").join()
+        advanceUntilIdle()
+
+        val blocks = manager.blocks.value[pageUuid] ?: emptyList()
+        val b1 = blocks.find { it.uuid == "b1" }!!
+        val b2 = blocks.find { it.uuid == "b2" }!!
+        assertTrue(b1.position > b2.position, "b1 must move below b2 after moveBlockDown")
+    }
+
+    // ---- Content update with undo ----
+
+    @Test
+    fun updateBlockContent_undo_restores_old_content() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "original", version = 0, position = 0))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.updateBlockContent("b1", "modified", 1).join()
+        advanceUntilIdle()
+
+        val afterEdit = manager.blocks.value[pageUuid]?.find { it.uuid == "b1" }
+        assertEquals("modified", afterEdit?.content, "Content must update after edit")
+        assertTrue(manager.canUndo.value)
+
+        manager.undo().join()
+        advanceUntilIdle()
+
+        val afterUndo = manager.blocks.value[pageUuid]?.find { it.uuid == "b1" }
+        assertEquals("original", afterUndo?.content, "Undo must restore original content")
+    }
+
+    @Test
+    fun updateBlockContent_redo_reapplies_edit_after_undo() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "original", version = 0, position = 0))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.updateBlockContent("b1", "modified", 1).join()
+        manager.undo().join()
+        advanceUntilIdle()
+        assertTrue(manager.canRedo.value)
+
+        manager.redo().join()
+        advanceUntilIdle()
+
+        val afterRedo = manager.blocks.value[pageUuid]?.find { it.uuid == "b1" }
+        assertEquals("modified", afterRedo?.content, "Redo must reapply the edit")
+    }
+
+    // ---- Focus navigation ----
+
+    @Test
+    fun focusNextBlock_moves_focus_to_next_visible_block() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "first", position = 0))
+        blockRepo.saveBlock(createBlock("b2", content = "second", position = 1))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.focusNextBlock("b1").join()
+        advanceUntilIdle()
+
+        assertEquals("b2", manager.editingBlockUuid.value,
+            "focusNextBlock must move focus to the next block")
+        assertEquals(0, manager.editingCursorIndex.value,
+            "focusNextBlock must place cursor at position 0 in the next block")
+    }
+
+    @Test
+    fun focusPreviousBlock_moves_focus_to_previous_visible_block() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "first", position = 0))
+        blockRepo.saveBlock(createBlock("b2", content = "second", position = 1))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.focusPreviousBlock("b2").join()
+        advanceUntilIdle()
+
+        assertEquals("b1", manager.editingBlockUuid.value,
+            "focusPreviousBlock must move focus to the previous block")
+        assertEquals("first".length, manager.editingCursorIndex.value,
+            "focusPreviousBlock must place cursor at the end of the previous block")
+    }
+
+    @Test
+    fun focusNextBlock_is_noop_at_last_block() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "only", position = 0))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.focusNextBlock("b1").join()
+        advanceUntilIdle()
+
+        assertNull(manager.editingBlockUuid.value,
+            "focusNextBlock must not change focus when already at last block")
+    }
+
+    @Test
+    fun focusPreviousBlock_is_noop_at_first_block() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "only", position = 0))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.focusPreviousBlock("b1").join()
+        advanceUntilIdle()
+
+        assertNull(manager.editingBlockUuid.value,
+            "focusPreviousBlock must not change focus when already at first block")
+    }
+
+    // ---- Block properties ----
+
+    @Test
+    fun updateBlockProperties_persists_new_properties_in_local_state() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", position = 0))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.updateBlockProperties("b1", mapOf("status" to "done")).join()
+        advanceUntilIdle()
+
+        val b1 = manager.blocks.value[pageUuid]?.find { it.uuid == "b1" }
+        assertNotNull(b1)
+        assertEquals("done", b1.properties["status"],
+            "updateBlockProperties must update local state with new properties")
+    }
+
+    // ---- Merge block ----
+
+    @Test
+    fun mergeBlock_combines_content_with_previous_sibling_and_removes_block() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "Hello", position = 0))
+        blockRepo.saveBlock(createBlock("b2", content = " World", position = 1))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.mergeBlock("b2").join()
+        advanceUntilIdle()
+
+        val blocks = manager.blocks.value[pageUuid] ?: emptyList()
+        val b1 = blocks.find { it.uuid == "b1" }
+        assertNotNull(b1, "b1 must remain after mergeBlock")
+        assertEquals("Hello World", b1.content, "b1 must contain merged content")
+        assertFalse(blocks.any { it.uuid == "b2" }, "Merged block b2 must be removed")
+    }
+
+    @Test
+    fun mergeBlock_moves_focus_to_previous_block() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "Hello", position = 0))
+        blockRepo.saveBlock(createBlock("b2", content = "World", position = 1))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.mergeBlock("b2").join()
+        advanceUntilIdle()
+
+        assertEquals("b1", manager.editingBlockUuid.value,
+            "mergeBlock must move focus to the previous block")
+        assertEquals("Hello".length, manager.editingCursorIndex.value,
+            "mergeBlock must place cursor at the original end of the previous block")
     }
 }
