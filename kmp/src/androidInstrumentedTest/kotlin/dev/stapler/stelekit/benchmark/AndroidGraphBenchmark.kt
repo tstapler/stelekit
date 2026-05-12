@@ -1,3 +1,5 @@
+@file:OptIn(dev.stapler.stelekit.repository.DirectRepositoryWrite::class)
+
 package dev.stapler.stelekit.benchmark
 
 import androidx.core.content.FileProvider
