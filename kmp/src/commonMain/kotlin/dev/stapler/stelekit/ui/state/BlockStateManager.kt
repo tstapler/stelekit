@@ -100,7 +100,7 @@ class BlockStateManager(
      * treat it as confirmed. If the save fails the UUID is still removed — the block remains
      * in [_blocks] until the next page reload, at which point it disappears.
      */
-    private val pendingNewBlockUuids = java.util.concurrent.CopyOnWriteArraySet<String>()
+    private val pendingNewBlockUuids = MutableStateFlow<Set<String>>(emptySet())
 
     /** UUIDs of blocks that have unsaved local edits. Used by ViewModel to protect pages from external overwrites. */
     val dirtyBlockUuids: Set<String> get() = dirtyBlocks.keys.toSet()
@@ -339,7 +339,7 @@ class BlockStateManager(
         // until the write commits). Once the write commits, they'll be in incomingBlocks and
         // removed from pendingNewBlockUuids before the next emission.
         val incomingUuids = incomingBlocks.mapTo(HashSet()) { it.uuid }
-        val pending = localBlocks.filter { it.uuid in pendingNewBlockUuids && it.uuid !in incomingUuids }
+        val pending = localBlocks.filter { it.uuid in pendingNewBlockUuids.value && it.uuid !in incomingUuids }
         return if (pending.isEmpty()) merged else merged + pending
     }
 
@@ -748,7 +748,7 @@ class BlockStateManager(
             updated[pageUuid] = pageBlocks
             updated
         }
-        pendingNewBlockUuids.add(newBlock.uuid)
+        pendingNewBlockUuids.update { it + newBlock.uuid }
         requestEditBlock(newBlock.uuid)
         writeBlock(newBlock).onLeft { err ->
             logger.error("addBlockToPage: DB write failed for ${newBlock.uuid}: $err")
@@ -767,7 +767,7 @@ class BlockStateManager(
                 }
             }
         }
-        pendingNewBlockUuids.remove(newBlock.uuid)
+        pendingNewBlockUuids.update { it - newBlock.uuid }
         queueDiskSave(pageUuid)
     }
 
