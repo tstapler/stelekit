@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import app.cash.sqldelight.db.QueryResult
+import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
 import app.cash.sqldelight.db.SqlDriver
 
@@ -18,13 +19,17 @@ import app.cash.sqldelight.db.SqlDriver
  * it runs before any repository code touches the database.
  *
  * ## Rules for writing migrations
- * - All statements must be idempotent: use `IF NOT EXISTS`, `IF NOT EXISTS`, or
- *   `ALTER TABLE … ADD COLUMN IF NOT EXISTS` (SQLite ≥ 3.37, both bundled drivers meet this).
+ * - All statements must be idempotent: use `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`,
+ *   `DROP TRIGGER IF EXISTS`, etc. For `ALTER TABLE … ADD COLUMN`, use plain SQL without
+ *   `IF NOT EXISTS` — that clause is not valid SQLite syntax; [applyAll] swallows the resulting
+ *   "duplicate column name" error for idempotency.
  * - Append to [all]; never reorder or remove entries (the hash of an unchanged migration
  *   will already be in `schema_migrations` and will be skipped harmlessly).
  * - Group logically related DDL into one [Migration] so they apply atomically.
  */
 object MigrationRunner {
+
+    private val logger = Logger("MigrationRunner")
 
     data class Migration(val name: String, val statements: List<String>) {
         /** FNV-1a-64 digest of all statements joined with newlines. */
@@ -162,9 +167,29 @@ object MigrationRunner {
         Migration(
             name = "pages_backlink_count",
             statements = listOf(
+                // NOTE: ADD COLUMN IF NOT EXISTS is not valid SQLite syntax. This statement
+                // always throws a syntax error, which the applyAll catch block swallows, and
+                // the hash is incorrectly recorded as applied without the column being added.
+                // The pages_backlink_count_fix migration below repairs affected databases.
                 "ALTER TABLE pages ADD COLUMN IF NOT EXISTS backlink_count INTEGER NOT NULL DEFAULT 0",
-                // Backfill existing rows. Runs once on an existing DB; in-memory test DBs are
-                // empty at migration time so this is a no-op there.
+                """
+                UPDATE pages SET backlink_count = (
+                    SELECT COUNT(*) FROM blocks
+                    WHERE blocks.content LIKE '%[[' || pages.name || ']]%'
+                )
+                """
+            )
+        ),
+        Migration(
+            name = "pages_backlink_count_fix",
+            statements = listOf(
+                // Repair for databases where pages_backlink_count was recorded as applied but
+                // the column was never added: the original migration used ADD COLUMN IF NOT EXISTS,
+                // which is not valid SQLite syntax. The syntax error was swallowed and the
+                // migration hash was falsely marked applied. This migration uses the correct
+                // syntax; on databases that already have the column, "duplicate column name"
+                // is swallowed by applyAll leaving the column untouched.
+                "ALTER TABLE pages ADD COLUMN backlink_count INTEGER NOT NULL DEFAULT 0",
                 """
                 UPDATE pages SET backlink_count = (
                     SELECT COUNT(*) FROM blocks
@@ -186,7 +211,9 @@ object MigrationRunner {
      * (which would leave the schema in an indeterminate state). The correct fix is always
      * to add a new migration entry rather than edit an existing one.
      */
-    suspend fun applyAll(driver: SqlDriver) {
+    suspend fun applyAll(driver: SqlDriver) = applyAll(driver, all)
+
+    internal suspend fun applyAll(driver: SqlDriver, migrations: List<Migration>) {
         // Bootstrap the tracking table — must succeed before anything else.
         driver.execute(
             identifier = null,
@@ -220,7 +247,7 @@ object MigrationRunner {
             parameters = 0
         ).await()
 
-        for (migration in all) {
+        for (migration in migrations) {
             val recordedHash = appliedByName[migration.name]
 
             if (recordedHash != null) {
@@ -233,18 +260,44 @@ object MigrationRunner {
                 continue // already applied and untampered, skip
             }
 
+            var encounteredRealError = false
             for (sql in migration.statements) {
                 try {
                     driver.execute(null, sql.trimIndent(), 0).await()
                 } catch (e: CancellationException) {
                     throw e
-                } catch (_: Exception) {
-                    // Idempotent: column/table already exists — desired state already reached.
+                } catch (e: Exception) {
+                    val trimmed = sql.trim()
+                    val msg = e.message?.lowercase() ?: ""
+                    // Statements written with IF NOT EXISTS / IF EXISTS declare intent to be
+                    // idempotent — any exception from them means the desired state is already
+                    // reached (or the DB version doesn't support the syntax, as with
+                    // ADD COLUMN IF NOT EXISTS which is not valid SQLite). Always swallow.
+                    val statementIsIdempotent = trimmed.contains("IF NOT EXISTS", ignoreCase = true) ||
+                        trimmed.contains("IF EXISTS", ignoreCase = true)
+                    // Statements without those guards may still produce "already exists" /
+                    // "duplicate column name" errors that indicate the state is already correct.
+                    val isExpectedIdempotentError = msg.contains("already exists") ||
+                        msg.contains("duplicate column")
+                    if (statementIsIdempotent || isExpectedIdempotentError) {
+                        // Desired state already reached for this statement.
+                    } else {
+                        // Unexpected error (DB locked, permission denied, etc.).
+                        // Log it and skip recording so the next startup can retry.
+                        logger.error(
+                            "Migration '${migration.name}' statement failed: ${e.message} " +
+                            "| SQL: ${trimmed.take(120)}"
+                        )
+                        encounteredRealError = true
+                    }
                 }
             }
 
-            // Record the hash whether each statement was a no-op or newly applied;
-            // what matters is that the target schema state now exists.
+            if (encounteredRealError) continue
+
+            // Record the hash only when all statements succeeded (or hit expected idempotent
+            // errors). A real failure above leaves the migration unrecorded so it retries
+            // on the next startup.
             driver.execute(
                 identifier = null,
                 sql = "INSERT OR IGNORE INTO schema_migrations (hash, name) VALUES (?, ?)",
