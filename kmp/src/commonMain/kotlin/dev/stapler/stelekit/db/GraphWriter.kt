@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import arrow.fx.coroutines.Resource
+import kotlin.concurrent.Volatile
 import arrow.fx.coroutines.resource
 import arrow.resilience.saga
 import arrow.resilience.transact
@@ -15,6 +16,8 @@ import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.util.FileUtils
+import dev.stapler.stelekit.vault.CryptoLayer
+import dev.stapler.stelekit.vault.VaultError
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -27,14 +30,25 @@ import kotlinx.coroutines.sync.withLock
  *
  * The multi-step save pipeline is modelled as an Arrow Saga for transactional rollback:
  * if the DB update fails after the file has been written, the file content is restored.
+ *
+ * Paranoid-mode invariant: [cryptoLayer] must be set to a [CryptoLayer] initialized with the
+ * current DEK before any write that should be encrypted. Setting it to null switches the writer
+ * back to plaintext mode (used when the vault is locked or the graph is not paranoid-mode).
+ * The caller (typically [GraphManager]) is responsible for keeping [cryptoLayer] in sync with
+ * the vault's lock/unlock lifecycle — stale [CryptoLayer] references after a DEK rotation will
+ * silently produce ciphertext the new key cannot decrypt.
  */
 class GraphWriter(
     private val fileSystem: FileSystem,
     private val writeActor: DatabaseWriteActor? = null,
-    private val onFileWritten: ((filePath: String) -> Unit)? = null,
+    private val onFileWritten: (suspend (filePath: String) -> Unit)? = null,
     @Deprecated("Use writeActor instead", level = DeprecationLevel.WARNING)
     private val pageRepository: PageRepository? = null,
     private val sidecarManager: SidecarManager? = null,
+    /** When non-null, all file writes are encrypted via paranoid-mode before hitting disk. */
+    @Volatile var cryptoLayer: CryptoLayer? = null,
+    /** Graph root path — required to compute graph-root-relative AAD paths for encryption. */
+    @Volatile var graphPath: String = "",
 ) {
     private val logger = Logger("GraphWriter")
     private val saveMutex = Mutex()
@@ -131,20 +145,67 @@ class GraphWriter(
             return@withLock false
         }
 
-        // Calculate new path
-        val newPath = getPageFilePath(page.copy(name = newName), graphPath)
+        // Guard: cannot rename pages in the hidden-volume reserve area
+        val renameLayer = cryptoLayer
+        val renameGraphPath = this.graphPath
+        if (renameLayer != null && renameGraphPath.isEmpty()) {
+            logger.error("renamePage aborted — cryptoLayer is set but graphPath is empty (AAD would be wrong)")
+            return@withLock false
+        }
+        if (renameLayer != null) {
+            if (renameLayer.checkNotHiddenReserve(relativeFilePath(oldPath, renameGraphPath)).isLeft()) {
+                logger.error("Rename blocked — restricted path: $oldPath")
+                return@withLock false
+            }
+        }
+
+        // Calculate new path using the already-captured renameLayer snapshot
+        val newPath = getPageFilePath(page.copy(name = newName), graphPath, renameLayer)
 
         // If paths are same, nothing to do (except maybe case change on some FS)
         if (oldPath == newPath) return true
 
-        val content = fileSystem.readFile(oldPath)
-        if (content == null) {
-            logger.error("Failed to read file for rename: $oldPath")
-            return false
+        // When encryption is active, re-encrypt with the new path as AAD rather than copying
+        // raw ciphertext — the AEAD tag binds the old path, so a verbatim copy would be
+        // permanently unreadable at the new location.
+        // Use the already-captured renameLayer snapshot — re-reading cryptoLayer here could
+        // observe null if the vault is locked between the guard check and this point.
+        val cryptoLayerNow = renameLayer
+        val writeOk = if (cryptoLayerNow != null) {
+            val bytes = fileSystem.readFileBytes(oldPath)
+            if (bytes == null) {
+                logger.error("Failed to read file bytes for rename: $oldPath")
+                return false
+            }
+            val oldRelPath = relativeFilePath(oldPath, renameGraphPath)
+            val newRelPath = relativeFilePath(newPath, renameGraphPath)
+            val plaintext = when (val result = cryptoLayerNow.decrypt(oldRelPath, bytes)) {
+                is Either.Right -> result.value
+                is Either.Left -> {
+                    logger.error("Failed to decrypt file for rename: $oldPath (${result.value})")
+                    return false
+                }
+            }
+            try {
+                fileSystem.writeFileBytes(newPath, cryptoLayerNow.encrypt(newRelPath, plaintext))
+            } finally {
+                plaintext.fill(0)
+            }
+        } else {
+            val content = fileSystem.readFile(oldPath)
+            if (content == null) {
+                logger.error("Failed to read file for rename: $oldPath")
+                return false
+            }
+            fileSystem.writeFile(newPath, content)
         }
 
-        if (fileSystem.writeFile(newPath, content)) {
+        if (writeOk) {
+            onFileWritten?.invoke(oldPath)   // mark old path as our own deletion
             if (fileSystem.deleteFile(oldPath)) {
+                // Notify the file watcher so it registers the new path and does not treat
+                // the newly-created file as an external change on the next poll tick.
+                onFileWritten?.invoke(newPath)
                 logger.debug("Renamed page from $oldPath to $newPath")
                 return true
             } else {
@@ -167,6 +228,15 @@ class GraphWriter(
             return false
         }
 
+        // Guard: cannot delete pages in the hidden-volume reserve area
+        val deleteLayer = cryptoLayer
+        val deleteGraphPath = this.graphPath
+        if (deleteLayer != null && deleteLayer.checkNotHiddenReserve(relativeFilePath(path, deleteGraphPath)).isLeft()) {
+            logger.error("Delete blocked — restricted path: $path")
+            return false
+        }
+
+        onFileWritten?.invoke(path)   // pre-register deletion so file watcher ignores own-delete event
         val success = fileSystem.deleteFile(path)
         if (success) {
             logger.debug("Deleted page file: $path")
@@ -187,27 +257,64 @@ class GraphWriter(
      *
      * On any step failure the saga runs compensations in reverse order, ensuring the
      * on-disk state is rolled back before the error propagates.
+     *
+     * **Atomicity**: The platform [FileSystem.writeFileBytes] implementation MUST be atomic
+     * (temp-file + rename). A partial write of an .md.stek ciphertext cannot be recovered —
+     * the AEAD tag will fail to verify and the page will be permanently unreadable.
      */
     private suspend fun savePageInternal(page: Page, blocks: List<Block>, graphPath: String): Boolean =
         saveMutex.withLock {
+            // Capture cryptoLayer and graphPath once at lock entry — also used by getPageFilePath so
+            // the file extension (.md.stek vs .md) is consistent with all subsequent encrypt/decrypt calls.
+            val capturedCryptoLayer = cryptoLayer
+            val capturedGraphPath = this.graphPath
+            // GAP-3: fail fast if encryption is active but the graph path hasn't been set yet.
+            // relativeFilePath() with empty graphPath strips only the leading "/" from absolute paths,
+            // producing the wrong AAD string and making the file permanently unreadable.
+            if (capturedCryptoLayer != null && capturedGraphPath.isEmpty()) {
+                logger.error("savePageInternal aborted — cryptoLayer is set but graphPath is empty (AAD would be wrong)")
+                return@withLock false
+            }
+
             val filePath = if (!page.filePath.isNullOrBlank()) {
                 page.filePath
             } else {
-                getPageFilePath(page, graphPath)
+                getPageFilePath(page, graphPath, capturedCryptoLayer)
+            }
+
+            // Guard: outer graph cannot write to the hidden volume reserve area
+            if (capturedCryptoLayer != null) {
+                val relPath = relativeFilePath(filePath, capturedGraphPath)
+                val guard = capturedCryptoLayer.checkNotHiddenReserve(relPath)
+                if (guard.isLeft()) {
+                    logger.error("Write blocked — restricted path: $filePath")
+                    return@withLock false
+                }
             }
 
             // 0. Safety Check for Large Deletions
             if (fileSystem.fileExists(filePath)) {
-                val oldContent = fileSystem.readFile(filePath) ?: ""
-                val oldBlockCount = oldContent.lines().count { it.trim().startsWith("- ") }
-                val newBlockCount = blocks.size
-
-                if (oldBlockCount > largeDeletionThreshold && newBlockCount < oldBlockCount / 2) {
-                    logger.error(
-                        "Safety check triggered: Attempting to delete more than 50% of blocks on page " +
-                            "'${page.name}' ($oldBlockCount -> $newBlockCount). Save aborted."
-                    )
-                    return@withLock false
+                val oldContent = if (capturedCryptoLayer != null) {
+                    val rawBytes = fileSystem.readFileBytes(filePath)
+                    if (rawBytes != null) {
+                        when (val r = capturedCryptoLayer.decrypt(relativeFilePath(filePath, capturedGraphPath), rawBytes)) {
+                            is Either.Right -> r.value.decodeToString()
+                            is Either.Left -> null  // decrypt failed — skip guard conservatively
+                        }
+                    } else null
+                } else {
+                    fileSystem.readFile(filePath) ?: ""
+                }
+                if (oldContent != null) {
+                    val oldBlockCount = oldContent.lines().count { it.trim().startsWith("- ") }
+                    val newBlockCount = blocks.size
+                    if (oldBlockCount > largeDeletionThreshold && newBlockCount < oldBlockCount / 2) {
+                        logger.error(
+                            "Safety check triggered: Attempting to delete more than 50% of blocks on page " +
+                                "'${page.name}' ($oldBlockCount -> $newBlockCount). Save aborted."
+                        )
+                        return@withLock false
+                    }
                 }
             }
 
@@ -220,18 +327,33 @@ class GraphWriter(
             runCatching {
                 saga {
                     // Step 1: write markdown file — rollback restores previous content
-                    val oldContent = if (fileSystem.fileExists(filePath)) fileSystem.readFile(filePath) else null
+                    val cryptoLayerNow = capturedCryptoLayer
+                    val oldRawBytes = if (cryptoLayerNow != null && fileSystem.fileExists(filePath)) fileSystem.readFileBytes(filePath) else null
+                    val oldContent = if (cryptoLayerNow == null && fileSystem.fileExists(filePath)) fileSystem.readFile(filePath) else null
                     saga(
                         action = {
-                            if (!fileSystem.writeFile(filePath, content)) {
-                                error("writeFile returned false for: $filePath")
+                            if (cryptoLayerNow != null) {
+                                val relPath = relativeFilePath(filePath, capturedGraphPath)
+                                val encryptedBytes = cryptoLayerNow.encrypt(relPath, content.encodeToByteArray())
+                                if (!fileSystem.writeFileBytes(filePath, encryptedBytes)) {
+                                    error("writeFileBytes returned false for: $filePath")
+                                }
+                            } else {
+                                if (!fileSystem.writeFile(filePath, content)) {
+                                    error("writeFile returned false for: $filePath")
+                                }
                             }
                             fileSystem.updateShadow(filePath, content)
                         },
                         compensation = { _ ->
                             try {
-                                if (oldContent != null) fileSystem.writeFile(filePath, oldContent)
-                                else fileSystem.deleteFile(filePath)
+                                if (cryptoLayerNow != null) {
+                                    if (oldRawBytes != null) fileSystem.writeFileBytes(filePath, oldRawBytes)
+                                    else fileSystem.deleteFile(filePath)
+                                } else {
+                                    if (oldContent != null) fileSystem.writeFile(filePath, oldContent)
+                                    else fileSystem.deleteFile(filePath)
+                                }
                                 fileSystem.invalidateShadow(filePath)
                             } catch (e: CancellationException) {
                                 throw e
@@ -327,11 +449,25 @@ class GraphWriter(
         writeBlocks(null)
     }
 
-    private fun getPageFilePath(page: Page, graphPath: String): String {
+    private fun getPageFilePath(page: Page, graphPath: String, layer: CryptoLayer? = cryptoLayer): String {
         val safeName = FileUtils.sanitizeFileName(page.name)
         val basePath = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
         val folder = if (page.isJournal) "journals" else "pages"
-        return "${basePath}$folder/$safeName.md"
+        val extension = if (layer != null) ".md.stek" else ".md"
+        return "${basePath}$folder/$safeName$extension"
+    }
+
+    /** Compute the graph-root-relative path used as AAD for file encryption. */
+    private fun relativeFilePath(absoluteFilePath: String, base: String = graphPath): String {
+        val baseWithSlash = if (base.endsWith("/")) base else "$base/"
+        return if (absoluteFilePath.startsWith(baseWithSlash)) {
+            absoluteFilePath.removePrefix(baseWithSlash)
+        } else {
+            if (base.isNotEmpty()) {
+                logger.error("relativeFilePath: '$absoluteFilePath' is outside graph root '$base' — AAD may be non-portable")
+            }
+            absoluteFilePath
+        }
     }
 
     companion object {
@@ -343,9 +479,11 @@ class GraphWriter(
         fun resource(
             fileSystem: FileSystem,
             writeActor: DatabaseWriteActor? = null,
-            onFileWritten: ((String) -> Unit)? = null,
+            onFileWritten: (suspend (String) -> Unit)? = null,
             pageRepository: PageRepository? = null,
             sidecarManager: SidecarManager? = null,
+            cryptoLayer: CryptoLayer? = null,
+            graphPath: String = "",
         ): Resource<GraphWriter> = resource {
             val writer = GraphWriter(
                 fileSystem = fileSystem,
@@ -353,6 +491,8 @@ class GraphWriter(
                 onFileWritten = onFileWritten,
                 pageRepository = pageRepository,
                 sidecarManager = sidecarManager,
+                cryptoLayer = cryptoLayer,
+                graphPath = graphPath,
             )
             onRelease {
                 try { writer.flush() } catch (_: Exception) { /* best-effort flush */ }

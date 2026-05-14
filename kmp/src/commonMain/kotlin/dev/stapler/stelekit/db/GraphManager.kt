@@ -14,6 +14,7 @@ import dev.stapler.stelekit.migration.MigrationRunner
 import dev.stapler.stelekit.migration.MigrationTamperedError
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.GraphRegistry
+import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.GraphBackend
@@ -209,11 +210,13 @@ class GraphManager(
         // as they are binary and will cause unresolvable merge conflicts.
         checkGitignoreForDatabase(expandedPath)
 
+        val isParanoidMode = fileSystem.fileExists(VaultManager.vaultFilePath(expandedPath))
         val info = GraphInfo(
             id = graphId,
             path = expandedPath,
             displayName = displayName,
-            addedAt = Clock.System.now().toEpochMilliseconds()
+            addedAt = Clock.System.now().toEpochMilliseconds(),
+            isParanoidMode = isParanoidMode,
         )
         
         val registry = _graphRegistry.value
@@ -379,6 +382,12 @@ class GraphManager(
         }
         if (!content.contains("*.db") && !content.contains(".db")) {
             println("WARNING: $gitignorePath does not contain '*.db' — SQLite database files may be accidentally committed to git.")
+        }
+        if (!content.contains(".stele-vault")) {
+            println("WARNING: $gitignorePath does not contain '.stele-vault' — vault header file may be accidentally committed to git.")
+        }
+        if (!content.contains("_hidden_reserve")) {
+            println("WARNING: $gitignorePath does not contain '_hidden_reserve/' — hidden volume directory may be accidentally committed to git, exposing its existence.")
         }
     }
 

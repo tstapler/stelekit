@@ -40,9 +40,9 @@ import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.util.toTitleCase
 import kotlinx.coroutines.flow.Flow
 
-private val TAG_REGEX = Regex("""#\S+""")
-private val SCOPE_REGEX = Regex("""/(pages?|blocks?|journal|current)\b""", RegexOption.IGNORE_CASE)
-private val DATE_REGEX = Regex("""modified:(today|day|week|month|year)""", RegexOption.IGNORE_CASE)
+private val REGEX_TAG_FILTER = Regex("""#\S+""")
+private val REGEX_SCOPE_FILTER = Regex("""/(pages?|blocks?|journal|current)\b""", RegexOption.IGNORE_CASE)
+private val REGEX_DATE_FILTER = Regex("""modified:(today|day|week|month|year)""", RegexOption.IGNORE_CASE)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -334,10 +334,9 @@ fun SearchDialog(
                                             }
                                         }
                                     }
-                                    val noResults = uiState.results.isEmpty()
-                                    val hasQuery = uiState.query.isNotEmpty()
-                                    val isIdle = !uiState.isLoading && !uiState.isSkeletonVisible
-                                    if (noResults && hasQuery && isIdle) {
+                                    val showNoResults = uiState.results.isEmpty() && uiState.query.isNotEmpty()
+                                        && !uiState.isLoading && !uiState.isSkeletonVisible
+                                    if (showNoResults) {
                                         Box(
                                             modifier = Modifier.fillMaxWidth().padding(16.dp),
                                             contentAlignment = Alignment.Center
@@ -431,17 +430,17 @@ fun SearchDialog(
                                 parsedQuery = uiState.parsedQuery,
                                 onRemoveTag = {
                                     viewModel.onQueryChange(
-                                        uiState.query.replace(TAG_REGEX, "").trim()
+                                        uiState.query.replace(REGEX_TAG_FILTER, "").trim()
                                     )
                                 },
                                 onRemoveScope = {
                                     viewModel.onQueryChange(
-                                        uiState.query.replace(SCOPE_REGEX, "").trim()
+                                        uiState.query.replace(REGEX_SCOPE_FILTER, "").trim()
                                     )
                                 },
                                 onRemoveDate = {
                                     viewModel.onQueryChange(
-                                        uiState.query.replace(DATE_REGEX, "").trim()
+                                        uiState.query.replace(REGEX_DATE_FILTER, "").trim()
                                     )
                                 },
                                 onRemoveProperty = { key ->

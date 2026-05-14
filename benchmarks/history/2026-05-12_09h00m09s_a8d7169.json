@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-12 09:00:09 UTC",
+  "gitSha": "a8d7169",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 8,
+  "phase2Ms": 3,
+  "phase3Ms": 17,
+  "totalMs": 27,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 27,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.04,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 122,
+      "pct": 65.2
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 19,
+      "pct": 10.2
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 4,
+      "pct": 2.1
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.io.File_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.lang.reflect.Method_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.util.ArrayList$Itr_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.net.URL_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.MethodWriter_[k]",
+      "samples": 2,
+      "pct": 1.1
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2291,
+      "pct": 99.5
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-caf9274f-f258-4c0b-a3c8-3d5518010cd8-libsqlitejdbc.so",
+      "samples": 3,
+      "pct": 0.1
+    },
+    {
+      "frame": "__xstat64",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/scheduling/CoroutineScheduler$Worker.findTask_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "app/cash/sqldelight/driver/jdbc/JdbcDriver.executeQuery_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "dev/stapler/stelekit/db/PooledJdbcSqliteDriver.notifyListeners_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/invoke/Invokers$Holder.linkToTargetMethod_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ClassFileParser::verify_legal_field_name",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "JfrEvent<EventThreadPark>::write_sized_event",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}

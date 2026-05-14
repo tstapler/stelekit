@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import kotlin.concurrent.Volatile
 
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
@@ -27,6 +28,8 @@ import dev.stapler.stelekit.performance.SpanRepository
 import dev.stapler.stelekit.util.ContentHasher
 import dev.stapler.stelekit.util.FileUtils
 import dev.stapler.stelekit.util.UuidGenerator
+import dev.stapler.stelekit.vault.CryptoLayer
+import dev.stapler.stelekit.vault.VaultError
 import kotlin.time.Clock
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
@@ -40,9 +43,15 @@ import kotlinx.coroutines.sync.withLock
 
 /**
  * GraphLoader handles loading markdown files from disk into the database.
- * 
+ *
  * Updated to use UUID-native storage for all references.
  * Includes file system watching for auto-reload.
+ *
+ * Paranoid-mode invariant: [cryptoLayer] must be set to a [CryptoLayer] initialized with the
+ * current DEK before reading encrypted files. Setting it to null switches to plaintext mode.
+ * The caller is responsible for keeping [cryptoLayer] in sync with the vault's lock/unlock
+ * lifecycle — reading with a stale [CryptoLayer] after a DEK rotation will produce an
+ * [AuthenticationFailed] error from AEAD tag verification.
  */
 class GraphLoader(
     private val fileSystem: FileSystem,
@@ -58,9 +67,66 @@ class GraphLoader(
     private val sidecarManager: SidecarManager? = null,
     private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
     private val spanRepository: SpanRepository? = null,
+    /** When non-null, all file reads are passed through paranoid-mode decryption. */
+    @Volatile var cryptoLayer: CryptoLayer? = null,
 ) {
     private val logger = Logger("GraphLoader")
     private val markdownParser = MarkdownParser()
+
+    private fun String.stripPageExtension() = removeSuffix(".md.stek").removeSuffix(".md")
+
+    /**
+     * Resolve relative file path for CryptoLayer AAD.
+     * Uses graph-root-relative path (e.g. "pages/Note.md.stek") per plan OPEN-1 decision.
+     */
+    private fun relativePathFor(absoluteFilePath: String): String {
+        val graphPath = currentGraphPath
+        if (graphPath.isEmpty()) return absoluteFilePath
+        val base = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
+        return if (absoluteFilePath.startsWith(base)) {
+            absoluteFilePath.removePrefix(base)
+        } else {
+            logger.error("relativePathFor: '$absoluteFilePath' is outside graph root '$graphPath' — AAD may be non-portable")
+            absoluteFilePath
+        }
+    }
+
+    /**
+     * Read a file from disk, decrypting via [cryptoLayer] if paranoid mode is active.
+     * Returns null if the file does not exist or decryption fails with a non-recoverable error.
+     * Returns the plaintext string on success.
+     */
+    private fun readFileDecrypted(filePath: String): String? {
+        val layer = cryptoLayer
+        if (layer == null) {
+            return fileSystem.readFile(filePath)
+        }
+        if (currentGraphPath.isEmpty()) {
+            logger.error("readFileDecrypted: cryptoLayer is set but graphPath is empty — refusing to decrypt (wrong AAD)")
+            return null
+        }
+        val rawBytes = fileSystem.readFileBytes(filePath) ?: return null
+        val relPath = relativePathFor(filePath)
+        return when (val result = layer.decrypt(relPath, rawBytes)) {
+            is Either.Right -> result.value.decodeToString()
+            is Either.Left -> when (val err = result.value) {
+                is VaultError.NotEncrypted -> {
+                    // .md.stek files MUST be encrypted — reject plaintext to prevent downgrade injection.
+                    if (filePath.endsWith(".md.stek")) {
+                        logger.error("Decryption failed for $filePath: file lacks STEK magic but has .md.stek extension — possible tampering or corruption. Refusing plaintext fallback.")
+                        null
+                    } else {
+                        logger.warn("Paranoid mode active but $filePath has no STEK magic — reading as plaintext. Re-encrypt to clear this warning.")
+                        fileSystem.readFile(filePath)
+                    }
+                }
+                else -> {
+                    logger.warn("Decryption failed for $filePath: ${err.message}")
+                    null
+                }
+            }
+        }
+    }
 
     /** Called after a full bulk import completes. Used to trigger WAL checkpoint. */
     var onBulkImportComplete: (suspend () -> Unit)? = null
@@ -126,6 +192,15 @@ class GraphLoader(
     private var backgroundIndexJob: Job? = null
 
     /**
+     * Pre-sets the graph path used by [relativePathFor] for AEAD-AAD computation.
+     * Must be called before [cryptoLayer] is assigned so the first decryption uses
+     * the correct relative path rather than falling back to the absolute path.
+     */
+    fun setGraphPath(path: String) {
+        currentGraphPath = path
+    }
+
+    /**
      * Cancels any in-flight background indexing (Phase 2) immediately.
      * Safe to call from any thread. No-op if no indexing is running.
      */
@@ -138,7 +213,7 @@ class GraphLoader(
      * Called by GraphWriter after it writes a file, so the watcher doesn't treat
      * our own write as an external change.
      */
-    fun markFileWrittenByUs(filePath: String) {
+    suspend fun markFileWrittenByUs(filePath: String) {
         fileRegistry.markWrittenByUs(filePath)
     }
 
@@ -158,16 +233,18 @@ class GraphLoader(
     private val _writeErrors = MutableSharedFlow<WriteError>(extraBufferCapacity = 16)
     val writeErrors: SharedFlow<WriteError> = _writeErrors.asSharedFlow()
 
-    // Files suppressed from external-change processing.
-    // Two modes:
-    //  1. Single-shot: subscriber calls suppress() in ExternalFileChange handler; the path is
-    //     added here and then removed by checkDirectoryForChanges via .remove().
-    //  2. Sticky (git merge): beginGitMerge() pre-adds paths; they are checked with .contains()
-    //     and not removed until endGitMerge() calls .clear().
-    // Both modes share the same set; sticky paths survive across multiple watcher ticks.
-    private val suppressedFiles = mutableSetOf<String>()
+    // Mutex protecting gitMergeSuppressedFiles. The set is accessed concurrently by the
+    // 5-second polling loop and native-change callbacks — on JVM, unsynchronized HashSet
+    // mutation can corrupt the structure. suppressMutex is a kotlinx.coroutines.sync.Mutex
+    // (KMP-safe; already imported above).
+    //
+    // Single-shot suppression (subscriber calling suppress() on an ExternalFileChange event)
+    // no longer uses this mutex — it uses a local var per emission instead, removing the
+    // need for runBlocking in the suppress lambda.
+    private val suppressMutex = Mutex()
 
     // Paths added by beginGitMerge() — kept for sticky suppression across watcher ticks.
+    // ALL accesses must be inside suppressMutex.withLock { }.
     private val gitMergeSuppressedFiles = mutableSetOf<String>()
 
     /**
@@ -208,11 +285,15 @@ class GraphLoader(
     }
 
     /**
-     * Tries to find the .md file for a page by searching pages/ and journals/ directories.
+     * Tries to find the page file by searching pages/ and journals/ directories.
+     * Encrypted files (.md.stek) are checked before plaintext (.md) so paranoid-mode
+     * graphs resolve correctly.
      */
     fun resolvePageFilePath(pageName: String): String? {
         if (currentGraphPath.isEmpty()) return null
         val candidates = listOf(
+            "$currentGraphPath/pages/$pageName.md.stek",
+            "$currentGraphPath/journals/$pageName.md.stek",
             "$currentGraphPath/pages/$pageName.md",
             "$currentGraphPath/journals/$pageName.md"
         )
@@ -234,7 +315,7 @@ class GraphLoader(
             return pageRepository.getPageByName(pageName).first().getOrNull()
         }
         try {
-            val content = fileSystem.readFile(filePath) ?: return null
+            val content = readFileDecrypted(filePath) ?: return null
             parseAndSavePage(filePath, content, ParseMode.FULL)
             return pageRepository.getPageByName(pageName).first().getOrNull()
         } finally {
@@ -505,7 +586,7 @@ class GraphLoader(
                             }
                             val path = page.filePath ?: resolvePageFilePath(page.name)
                             if (path == null) return@async null
-                            val content = fileSystem.readFile(path) ?: return@async null
+                            val content = readFileDecrypted(path) ?: return@async null
                             try {
                                 parsePageWithoutSaving(path, content, ParseMode.FULL)
                             } catch (e: CancellationException) {
@@ -546,7 +627,12 @@ class GraphLoader(
         for (changed in changeSet.newFiles) {
             logger.info("New file detected: ${changed.entry.filePath}")
             fileSystem.invalidateShadow(changed.entry.filePath)
-            parseAndSavePage(changed.entry.filePath, changed.content, ParseMode.FULL)
+            val content = if (changed.entry.filePath.endsWith(".md.stek")) {
+                readFileDecrypted(changed.entry.filePath) ?: continue
+            } else {
+                changed.content
+            }
+            parseAndSavePage(changed.entry.filePath, content, ParseMode.FULL)
         }
 
         for (changed in changeSet.changedFiles) {
@@ -555,21 +641,36 @@ class GraphLoader(
 
             // Sticky git-merge suppression: if the path was added by beginGitMerge,
             // skip it without consuming the entry (it remains suppressed until endGitMerge).
-            if (gitMergeSuppressedFiles.contains(changed.entry.filePath)) {
+            val isMergeSuppressed = suppressMutex.withLock { gitMergeSuppressedFiles.contains(changed.entry.filePath) }
+            if (isMergeSuppressed) {
                 logger.debug("Skipping watcher reload for git-merge-suppressed file: ${changed.entry.filePath}")
                 continue
             }
 
-            // Emit event so subscribers can suppress the re-import
-            _externalFileChanges.tryEmit(ExternalFileChange(changed.entry.filePath, changed.content) {
-                suppressedFiles.add(changed.entry.filePath)
+            // For encrypted files, do NOT buffer the decrypted content in the SharedFlow.
+            // Emit with empty content; decrypt on-demand only if the change is not suppressed.
+            // This prevents up to 8 decrypted pages from sitting in the SharedFlow heap buffer.
+            val emitContent = if (changed.entry.filePath.endsWith(".md.stek")) "" else changed.content
+
+            // Emit event so subscribers can suppress the re-import.
+            // The suppress lambda is called synchronously within the same coroutine execution
+            // between tryEmit and yield(), so a plain local var is safe — no thread switch
+            // occurs in that window and no mutex is needed.
+            var suppressed = false
+            _externalFileChanges.tryEmit(ExternalFileChange(changed.entry.filePath, emitContent) {
+                suppressed = true
             })
             yield()
-            if (suppressedFiles.remove(changed.entry.filePath)) {
+            if (suppressed) {
                 continue
             }
 
-            parseAndSavePage(changed.entry.filePath, changed.content, ParseMode.FULL)
+            val content = if (changed.entry.filePath.endsWith(".md.stek")) {
+                readFileDecrypted(changed.entry.filePath) ?: continue
+            } else {
+                changed.content
+            }
+            parseAndSavePage(changed.entry.filePath, content, ParseMode.FULL)
         }
 
         for (filePath in changeSet.deletedPaths) {
@@ -643,16 +744,16 @@ class GraphLoader(
      * Call this immediately before [reloadFiles] after git merge completes.
      * Always paired with [endGitMerge].
      */
-    fun beginGitMerge(pathsBeingMerged: List<String>) {
-        gitMergeSuppressedFiles.addAll(pathsBeingMerged)
+    suspend fun beginGitMerge(pathsBeingMerged: List<String>) {
+        suppressMutex.withLock { gitMergeSuppressedFiles.addAll(pathsBeingMerged) }
     }
 
     /**
      * Clears the git-merge suppression set, restoring normal file-watcher behaviour.
      * Must be called after [reloadFiles] completes (or if merge is aborted).
      */
-    fun endGitMerge() {
-        gitMergeSuppressedFiles.clear()
+    suspend fun endGitMerge() {
+        suppressMutex.withLock { gitMergeSuppressedFiles.clear() }
     }
 
     /**
@@ -665,7 +766,7 @@ class GraphLoader(
      */
     suspend fun reloadFiles(filePaths: List<String>) {
         for (path in filePaths) {
-            val content = fileSystem.readFile(path) ?: continue
+            val content = readFileDecrypted(path) ?: continue
             parseAndSavePage(path, content, ParseMode.FULL, DatabaseWriteActor.Priority.HIGH)
         }
     }
@@ -711,7 +812,7 @@ class GraphLoader(
                 return
             }
 
-            val content = fileSystem.readFile(filePath)
+            val content = readFileDecrypted(filePath)
             if (content == null) {
                 logger.warn("Failed to read file: $filePath")
                 return
@@ -739,7 +840,7 @@ class GraphLoader(
 
             var loadedCount = 0
             for (entry in immediateFiles) {
-                val content = fileSystem.readFile(entry.filePath) ?: continue
+                val content = readFileDecrypted(entry.filePath) ?: continue
                 try {
                     parseAndSavePage(entry.filePath, content, ParseMode.FULL)
                     loadedCount++
@@ -773,7 +874,7 @@ class GraphLoader(
                 remainingFiles.chunked(50).map { chunk ->
                     async(Dispatchers.Default) {
                         val count = chunk.count { entry ->
-                            val content = fileSystem.readFile(entry.filePath) ?: return@count false
+                            val content = readFileDecrypted(entry.filePath) ?: return@count false
                             try {
                                 parseAndSavePage(entry.filePath, content, ParseMode.METADATA_ONLY)
                                 true
@@ -798,8 +899,14 @@ class GraphLoader(
 
     private suspend fun sanitizeDirectory(path: String) {
         if (!fileSystem.directoryExists(path)) return
-        
-        val files = fileSystem.listFiles(path).filter { it.endsWith(".md") }
+        // Never traverse the hidden-volume reserve directory
+        if (path.endsWith("/_hidden_reserve") || path.contains("/_hidden_reserve/")) return
+
+        val files = fileSystem.listFiles(path).filter { fileName ->
+            fileName.endsWith(".md") &&
+            fileName != ".stele-vault" &&
+            !fileName.endsWith(".md.stek")  // Never rename encrypted files
+        }
         for (fileName in files) {
             val nameWithoutExt = fileName.removeSuffix(".md")
             val decodedName = FileUtils.decodeFileName(nameWithoutExt)
@@ -809,7 +916,7 @@ class GraphLoader(
                 val oldPath = "$path/$fileName"
                 val newPath = "$path/$expectedName.md"
                 
-                if (!fileSystem.fileExists(newPath)) {
+                if (!fileSystem.fileExists(newPath) && !fileSystem.fileExists("$path/$expectedName.md.stek")) {
                     try {
                         val content = fileSystem.readFile(oldPath)
                         if (content != null) {
@@ -837,10 +944,27 @@ class GraphLoader(
             // Single scan registers ALL files and provides filtered views
             fileRegistry.scanDirectory(path)
 
-            val fileEntries = if (path.endsWith("/journals")) {
+            val rawEntries = if (path.endsWith("/journals")) {
                 fileRegistry.recentJournals(path, 30)
             } else {
                 fileRegistry.pageFiles(path)
+            }
+
+            // When both a plaintext .md and its encrypted .md.stek counterpart exist
+            // (e.g. after a partial migration), prefer the encrypted file and skip the
+            // plaintext to avoid duplicate page entries in the database.
+            val encryptedStems = rawEntries
+                .filter { it.fileName.endsWith(".md.stek") }
+                .mapTo(HashSet()) { it.fileName.stripPageExtension() }
+            val fileEntries = if (encryptedStems.isEmpty()) rawEntries else {
+                rawEntries.filter { entry ->
+                    val keep = !entry.fileName.endsWith(".md") ||
+                        entry.fileName.stripPageExtension() !in encryptedStems
+                    if (!keep) logger.warn(
+                        "Skipping plaintext ${entry.filePath} — encrypted .md.stek counterpart exists"
+                    )
+                    keep
+                }
             }
 
             // Pre-load all existing pages in one query. Replaces one getPageByName DB call per
@@ -869,7 +993,7 @@ class GraphLoader(
                                 val filePath = entry.filePath
                                 val fileModTime = entry.modTime
                                 
-                                val title = FileUtils.decodeFileName(fileName.removeSuffix(".md"))
+                                val title = FileUtils.decodeFileName(fileName.stripPageExtension())
                                 // Skip Logseq-internal file: protocol artifacts (e.g. file%3A..%2F%2F...)
                                 if (title.startsWith("file:")) return@count false
                                 val name = title
@@ -893,8 +1017,8 @@ class GraphLoader(
                                 }
 
                                 if (isPriorityFile(filePath)) return@count true
-                                
-                                val content = fileSystem.readFile(filePath) ?: return@count false
+
+                                val content = readFileDecrypted(filePath) ?: return@count false
                                 try {
                                     val parseResult = parsePageWithoutSaving(filePath, content, mode)
                                     val updatedPage = parseResult.page
@@ -965,7 +1089,7 @@ class GraphLoader(
     
     private suspend fun parsePageWithoutSaving(filePath: String, content: String, mode: ParseMode = ParseMode.FULL): ParseResult {
         val fileName = filePath.replace("\\", "/").substringAfterLast("/")
-        val title = FileUtils.decodeFileName(fileName.removeSuffix(".md"))
+        val title = FileUtils.decodeFileName(fileName.stripPageExtension())
         val name = title
         val journalDate = if (filePath.contains("/journals/")) JournalUtils.parseJournalDate(title) else null
         val isJournal = journalDate != null
@@ -1267,7 +1391,7 @@ class GraphLoader(
             CurrentSpanContext.set(ActiveSpanContext(traceId = traceId, parentSpanId = rootSpan.spanId))
             try {
                 val fileName = filePath.replace("\\", "/").substringAfterLast("/")
-                val title = FileUtils.decodeFileName(fileName.removeSuffix(".md"))
+                val title = FileUtils.decodeFileName(fileName.stripPageExtension())
                 // Skip Logseq-internal file: protocol artifacts silently
                 if (title.startsWith("file:")) return
                 // Reject files with git conflict markers — importing them would corrupt the graph.

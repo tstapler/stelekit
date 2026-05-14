@@ -198,6 +198,23 @@ object MigrationRunner {
                 """
             )
         ),
+        Migration(
+            name = "fix_blocks_au_trigger_content_only",
+            statements = listOf(
+                // The original blocks_au trigger fired on ANY column update, causing O(n)
+                // FTS5 delete+insert pairs when splitBlock/indentBlock/moveBlock shift sibling
+                // positions via updateBlockPositionOnly / updateBlockHierarchy / updateBlockLeftUuid.
+                // Limiting it to UPDATE OF content makes structural-only edits FTS5-free.
+                "DROP TRIGGER IF EXISTS blocks_au",
+                """
+                CREATE TRIGGER IF NOT EXISTS blocks_au AFTER UPDATE OF content ON blocks BEGIN
+                    INSERT INTO blocks_fts(blocks_fts, rowid, content)
+                    VALUES('delete', old.id, old.content);
+                    INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content);
+                END
+                """
+            )
+        ),
     )
 
     /**

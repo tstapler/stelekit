@@ -34,6 +34,10 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
 
     override fun renameFile(from: String, to: String): Boolean = super<JvmFileSystemBase>.renameFile(from, to)
 
+    override fun readFileBytes(path: String): ByteArray? = super<JvmFileSystemBase>.readFileBytes(path)
+
+    override fun writeFileBytes(path: String, data: ByteArray): Boolean = super<JvmFileSystemBase>.writeFileBytes(path, data)
+
     actual override fun pickDirectory(): String? {
         // Synchronous fallback — only safe when already on the AWT EDT and not inside
         // a Compose coroutine dispatcher. Prefer pickDirectoryAsync() from coroutines.

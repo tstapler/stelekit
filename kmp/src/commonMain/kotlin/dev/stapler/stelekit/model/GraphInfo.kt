@@ -10,7 +10,8 @@ data class GraphInfo(
     val id: String,           // sha256(canonicalPath).take(16)
     val path: String,         // Canonical absolute path
     val displayName: String,  // User-facing name (defaults to directory name)
-    val addedAt: Long         // Epoch millis
+    val addedAt: Long,        // Epoch millis
+    val isParanoidMode: Boolean = false,  // True when .stele-vault is present
 )
 
 /**

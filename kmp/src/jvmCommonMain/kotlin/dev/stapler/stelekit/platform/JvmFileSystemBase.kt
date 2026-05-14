@@ -226,6 +226,39 @@ abstract class JvmFileSystemBase {
         }
     }
 
+    open fun readFileBytes(path: String): ByteArray? {
+        return try {
+            val validatedPath = validatePath(path)
+            val file = File(validatedPath)
+            if (!file.exists() || !file.isFile) return null
+            if (file.length() > MAX_FILE_SIZE) return null
+            file.readBytes()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    open fun writeFileBytes(path: String, data: ByteArray): Boolean {
+        return try {
+            val validatedPath = validatePath(path, addToWhitelist = false)
+            if (data.size > MAX_FILE_SIZE) return false
+            val file = File(validatedPath)
+            val parentDir = file.parentFile
+            if (parentDir != null && !parentDir.exists()) {
+                parentDir.mkdirs()
+            }
+            file.writeBytes(data)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error("writeFileBytes failed: $path", e)
+            false
+        }
+    }
+
     open fun renameFile(from: String, to: String): Boolean {
         return try {
             val oldFile = File(from)
