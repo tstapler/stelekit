@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.1](https://github.com/tstapler/stelekit/compare/v0.24.0...v0.24.1) (2026-05-14)
+
+
+### Bug Fixes
+
+* **wasm/db/bench:** sqlite-wasm npm version, backlink_count migration repair, benchmark infra ([#79](https://github.com/tstapler/stelekit/issues/79)) ([9b5b383](https://github.com/tstapler/stelekit/commit/9b5b38368696ecf3cca4728c270695d5a1d2a866))
+
 ## [0.24.0](https://github.com/tstapler/stelekit/compare/v0.23.0...v0.24.0) (2026-05-12)
 
 
