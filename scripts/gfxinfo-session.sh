@@ -39,7 +39,7 @@ if [[ "$DEVICE_STATE" != "device" ]]; then
 fi
 
 DEVICE_MODEL=$(adb shell getprop ro.product.model 2>/dev/null | tr -d '\r')
-REFRESH_HZ=$(adb shell dumpsys display 2>/dev/null | grep -i "mBaseDisplayInfo" | grep -oP "(?<=refreshRate=)\d+\.\d+" | head -1 || echo "60")
+REFRESH_HZ=$(adb shell dumpsys display 2>/dev/null | grep -i "mBaseDisplayInfo" | sed 's/.*refreshRate=\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/' | grep -E '^[0-9]+\.[0-9]+$' | head -1 || echo "60")
 JANK_THRESHOLD_MS=$(echo "scale=1; 2 * (1000 / ${REFRESH_HZ%.*})" | bc 2>/dev/null || echo "33")
 
 echo "── Device: $DEVICE_MODEL  (${REFRESH_HZ}Hz, jank threshold >${JANK_THRESHOLD_MS}ms)"
@@ -83,8 +83,8 @@ JANKY_LINE=$(echo "$RAW" | grep -i "Janky frames:" | tr -d '\r' | head -1)
 TOTAL_LINE=$(echo "$RAW" | grep -i "Total frames rendered:" | tr -d '\r' | head -1)
 
 if [[ -n "$JANKY_LINE" && -n "$TOTAL_LINE" ]]; then
-    JANKY=$(echo "$JANKY_LINE" | grep -oP '\d+' | head -1 || echo "?")
-    TOTAL=$(echo "$TOTAL_LINE" | grep -oP '\d+' | head -1 || echo "?")
+    JANKY=$(echo "$JANKY_LINE" | grep -oE '[0-9]+' | head -1 || echo "?")
+    TOTAL=$(echo "$TOTAL_LINE" | grep -oE '[0-9]+' | head -1 || echo "?")
     if [[ "$TOTAL" != "?" && "$TOTAL" -gt 0 && "$JANKY" != "?" ]]; then
         JANK_PCT=$(echo "scale=1; $JANKY * 100 / $TOTAL" | bc 2>/dev/null || echo "?")
         echo "── Jank rate: ${JANKY}/${TOTAL} frames (${JANK_PCT}%)"
@@ -101,10 +101,10 @@ if [[ -n "$JANKY_LINE" && -n "$TOTAL_LINE" ]]; then
     fi
 fi
 
-P50=$(echo "$RAW" | grep -i "50th percentile" | grep -oP '\d+ms' | head -1 | tr -d 'ms' || echo "?")
-P90=$(echo "$RAW" | grep -i "90th percentile" | grep -oP '\d+ms' | head -1 | tr -d 'ms' || echo "?")
-P95=$(echo "$RAW" | grep -i "95th percentile" | grep -oP '\d+ms' | head -1 | tr -d 'ms' || echo "?")
-P99=$(echo "$RAW" | grep -i "99th percentile" | grep -oP '\d+ms' | head -1 | tr -d 'ms' || echo "?")
+P50=$(echo "$RAW" | grep -i "50th percentile" | grep -oE '[0-9]+ms' | head -1 | tr -d 'ms' || echo "?")
+P90=$(echo "$RAW" | grep -i "90th percentile" | grep -oE '[0-9]+ms' | head -1 | tr -d 'ms' || echo "?")
+P95=$(echo "$RAW" | grep -i "95th percentile" | grep -oE '[0-9]+ms' | head -1 | tr -d 'ms' || echo "?")
+P99=$(echo "$RAW" | grep -i "99th percentile" | grep -oE '[0-9]+ms' | head -1 | tr -d 'ms' || echo "?")
 
 if [[ "$P50" != "?" || "$P95" != "?" ]]; then
     echo "── Frame percentiles: p50=${P50}ms  p90=${P90}ms  p95=${P95}ms  p99=${P99}ms"

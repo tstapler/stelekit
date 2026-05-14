@@ -5,6 +5,7 @@ package dev.stapler.stelekit.macrobenchmark
 
 import android.content.Intent
 import androidx.benchmark.macro.CompilationMode
+import dev.stapler.stelekit.MainActivity
 import androidx.benchmark.macro.FrameTimingMetric
 import androidx.benchmark.macro.MacrobenchmarkScope
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
@@ -19,11 +20,14 @@ import org.junit.runner.RunWith
  * Measures rendered frame timing (p50/p90/p99) for common user flows.
  *
  * Run all frame timing benchmarks:
- *   ./gradlew :macrobenchmark:connectedBenchmarkAndroidTest -P android.testInstrumentationRunnerArguments.class=dev.stapler.stelekit.macrobenchmark.FrameTimingBenchmark
+ *   ./gradlew :macrobenchmark:connectedBenchmarkAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.stapler.stelekit.macrobenchmark.FrameTimingBenchmark
  *
- * Each test uses [ensureBenchmarkGraph] to write a 200-page synthetic graph to
+ * Each test uses [ensureBenchmarkGraph] to create a single-page synthetic graph at
  * /data/local/tmp/stelekit-bench/ via adb shell, then passes that path to
- * MainActivity via [EXTRA_BENCHMARK_GRAPH_PATH] so no SAF folder picker is needed.
+ * MainActivity via [MainActivity.EXTRA_BENCHMARK_GRAPH_PATH] so no SAF folder picker is needed.
+ * Note: SELinux enforcing mode on API 26+ prevents the app (untrusted_app domain) from reading
+ * shell_data_file context files in /data/local/tmp/, so frame timing tests measure empty-graph
+ * render performance rather than a populated graph.
  *
  * Key metrics in output:
  *   frameDurationCpuMs    — time the CPU spent on the frame
@@ -124,7 +128,7 @@ private const val BENCH_GRAPH_PATH = "/data/local/tmp/stelekit-bench"
  */
 private fun MacrobenchmarkScope.startActivityWithBenchmarkGraph() {
     startActivityAndWait { intent ->
-        intent.putExtra("benchmark_graph_path", BENCH_GRAPH_PATH)
+        intent.putExtra(MainActivity.EXTRA_BENCHMARK_GRAPH_PATH, BENCH_GRAPH_PATH)
         intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK
     }
 }

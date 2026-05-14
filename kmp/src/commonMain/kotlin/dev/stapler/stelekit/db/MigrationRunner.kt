@@ -306,6 +306,7 @@ object MigrationRunner {
                             "| SQL: ${trimmed.take(120)}"
                         )
                         encounteredRealError = true
+                        break
                     }
                 }
             }

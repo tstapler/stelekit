@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.macrobenchmark
 
 import androidx.benchmark.macro.CompilationMode
+import androidx.benchmark.macro.StartupMode
 import androidx.benchmark.macro.StartupTimingMetric
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -15,7 +16,7 @@ import org.junit.runner.RunWith
  * Measures startup time for the SteleKit app.
  *
  * Run with:
- *   ./gradlew :macrobenchmark:connectedBenchmarkAndroidTest -P android.testInstrumentationRunnerArguments.class=dev.stapler.stelekit.macrobenchmark.StartupBenchmark
+ *   ./gradlew :macrobenchmark:connectedBenchmarkAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.stapler.stelekit.macrobenchmark.StartupBenchmark
  *
  * Results include timeToInitialDisplay and timeToFullDisplay (ms) reported to the
  * Android Studio benchmark output and written to a JSON file on the device.
@@ -53,6 +54,7 @@ class StartupBenchmark {
         packageName = TARGET_PACKAGE,
         metrics = listOf(StartupTimingMetric()),
         compilationMode = CompilationMode.None(),
+        startupMode = StartupMode.WARM,
         iterations = 3,
     ) {
         pressHome()
