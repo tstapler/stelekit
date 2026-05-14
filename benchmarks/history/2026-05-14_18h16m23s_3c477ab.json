@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-14 18:16:23 UTC",
+  "gitSha": "3c477ab",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 11,
+  "phase2Ms": 5,
+  "phase3Ms": 19,
+  "totalMs": 34,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 56,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.02,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 128,
+      "pct": 68.8
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 13,
+      "pct": 7.0
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 5,
+      "pct": 2.7
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 4,
+      "pct": 2.2
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.lang.reflect.Method_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node[]_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.net.URL_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.util.ArrayList$Itr_[k]",
+      "samples": 2,
+      "pct": 1.1
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2188,
+      "pct": 99.2
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 3,
+      "pct": 0.1
+    },
+    {
+      "frame": "pthread_cond_broadcast",
+      "samples": 3,
+      "pct": 0.1
+    },
+    {
+      "frame": "Dictionary::find",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/scheduling/CoroutineScheduler.parkedWorkersStackPush_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "I2C/C2I adapters(0xbb)",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ResolvedMethodTable::find_method",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "org/sqlite/core/SafeStmtPtr.hashCode_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/ClassLoader.loadClass_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/AbstractStringBuilder.append_[1]",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}
