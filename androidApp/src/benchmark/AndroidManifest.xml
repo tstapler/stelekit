@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Benchmark build type manifest overlay.
+  - <profileable> lets Perfetto attach for FrameTimingMetric / StartupTimingMetric.
+  - IsolationActivity is required by benchmark-junit4's MacrobenchmarkRule to isolate
+    process state between iterations; without it the runner crashes at startup.
+  - DUMP permission is needed by Perfetto on Android 13+ to capture traces; must be
+    pre-granted via `adb shell pm grant … android.permission.DUMP` before running.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.DUMP" />
+
+    <application>
+        <profileable android:shell="true" tools:targetApi="q" />
+    </application>
+</manifest>

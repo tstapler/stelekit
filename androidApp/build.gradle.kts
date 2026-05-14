@@ -48,6 +48,17 @@ android {
                 signingConfig = releaseSigningConfig
             }
         }
+        create("benchmark") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            // Non-debuggable so profiling reflects real-world performance.
+            // proguardFiles keeps class names readable in Perfetto traces.
+            isDebuggable = false
+            proguardFiles("proguard/benchmark-rules.proguard")
+            // Tell Gradle to use the :kmp release variant when resolving the benchmark
+            // build type — :kmp has no benchmark variant of its own.
+            matchingFallbacks += listOf("release")
+        }
     }
 
     packaging {
@@ -93,4 +104,5 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.10.6")
     debugImplementation("androidx.compose.ui:ui-test-manifest:1.10.6")
+
 }

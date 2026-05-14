@@ -181,7 +181,12 @@ class MainActivity : ComponentActivity() {
             }
             StelekitApp(
                 fileSystem = fileSystem,
-                graphPath = fileSystem.getDefaultGraphPath(),
+                // When the benchmark extra is absent and SAF permission is not yet
+                // granted, pass "" so StelekitApp shows the first-launch setup screen.
+                // When SAF permission is valid, getDefaultGraphPath() returns the SAF
+                // path so the app opens the user's existing graph directly.
+                graphPath = intent.getStringExtra(EXTRA_BENCHMARK_GRAPH_PATH)
+                    ?: if (fileSystem.hasStoragePermission()) fileSystem.getDefaultGraphPath() else "",
                 graphManager = app.graphManager,
                 urlFetcher = UrlFetcherAndroid(),
                 voicePipeline = voicePipeline,
@@ -228,5 +233,11 @@ class MainActivity : ComponentActivity() {
         private const val TAG = "MainActivity"
         /** Authority for AOSP ExternalStorageProvider — the only provider supported in v1. */
         const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
+        /**
+         * Optional Intent extra that overrides the default graph path. Used by the
+         * :macrobenchmark module to point the app at a pre-seeded synthetic graph
+         * in /data/local/tmp/ without requiring SAF folder picker interaction.
+         */
+        const val EXTRA_BENCHMARK_GRAPH_PATH = "benchmark_graph_path"
     }
 }

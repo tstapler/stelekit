@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  android.experimental.self-instrumenting=true in build.gradle.kts makes AGP set
+  targetPackage to the macrobenchmark's own package so the runner lives in a separate
+  process from dev.stapler.stelekit.
+  DUMP is required by Perfetto in the macrobenchmark process for trace capture.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.DUMP" />
+</manifest>

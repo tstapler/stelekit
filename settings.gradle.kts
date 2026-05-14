@@ -13,6 +13,7 @@ pluginManagement {
         kotlin("plugin.serialization") version "2.3.21"
         id("com.android.library") version "8.13.2"
         id("com.android.application") version "8.13.2"
+        id("com.android.test") version "8.13.2"
         id("org.jetbrains.compose") version "1.10.3"
         id("app.cash.sqldelight") version "2.3.2"
         id("io.github.takahirom.roborazzi") version "1.59.0"
@@ -69,4 +70,5 @@ rootProject.name = "stelekit"
 
 include(":kmp")
 include(":androidApp")
+include(":macrobenchmark")
 include(":tools:flamegraph")

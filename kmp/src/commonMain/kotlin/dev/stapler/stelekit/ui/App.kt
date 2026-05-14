@@ -220,7 +220,12 @@ fun StelekitApp(
         }
     }
 
-    if (!permissionGranted) {
+    // Show the setup/recovery screen only when SAF permission is required:
+    //  - SAF path with no/revoked permission → PermissionRecoveryScreen
+    //  - No path at all (first launch, no folder ever chosen) → LibrarySetupScreen
+    // Non-SAF paths (e.g. /data/local/tmp/ benchmark paths or desktop paths) don't
+    // require a document-tree grant, so skip the screen for those.
+    if (!permissionGranted && (isSafPath || currentGraphPath.isEmpty())) {
         StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
             if (isSafPath) {
                 // Permission was revoked — show recovery screen
