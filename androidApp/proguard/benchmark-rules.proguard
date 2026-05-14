@@ -1,0 +1,4 @@
+# Benchmark build type only — not applied to production releases.
+# Keeps all SteleKit class and member names readable in Perfetto traces and
+# stack dumps so profiler output is human-interpretable without a mapping file.
+-keepnames class dev.stapler.stelekit.** { *; }

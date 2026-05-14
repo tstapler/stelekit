@@ -287,6 +287,20 @@ kotlin {
     }
 }
 
+// ── Compose compiler metrics ──────────────────────────────────────────────────
+// Generate per-composable recomposition reports when debugging jank caused by
+// excessive recomposition. Activate with: ./gradlew :kmp:jvmTest -PrecompositionReport
+// Outputs to kmp/build/reports/recomposition/:
+//   *-composables.txt  — restart/skip/inline/readonly stats per composable
+//   *-composables.csv  — same data in CSV for spreadsheet analysis
+//   *-module.json      — module-level summary (skippable vs. restartable counts)
+composeCompiler {
+    if (project.findProperty("recompositionReport") != null) {
+        reportsDestination = layout.buildDirectory.dir("reports/recomposition")
+        metricsDestination = layout.buildDirectory.dir("reports/recomposition")
+    }
+}
+
 // Copy sqlite-wasm runtime files into the wasmJs distribution so the module worker
 // can resolve './sqlite3-bundler-friendly.mjs' without a bundler or import map.
 // sqlite3-bundler-friendly.mjs locates sqlite3.wasm via import.meta.url (same dir).
@@ -820,6 +834,11 @@ afterEvaluate {
             }
             jvmArgs(jfrArgs)
             println("── JFR profiling active → ${jfr.absolutePath}")
+
+            if (project.findProperty("fpsOverlay") != null) {
+                jvmArgs("-Dskiko.fps.enabled=true")
+                println("── Skia FPS overlay active (pass -PfpsOverlay to enable)")
+            }
         }
     }
 }
