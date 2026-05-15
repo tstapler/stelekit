@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.25.0](https://github.com/tstapler/stelekit/compare/v0.24.1...v0.25.0) (2026-05-15)
+
+
+### Features
+
+* **build:** add buildVariant property and macOS bundle config ([117dd8b](https://github.com/tstapler/stelekit/commit/117dd8b58adc1e3df774692742c1a4b7f6d1ba66))
+* **clipboard:** add ClipboardBlock and BlockClipboard value objects ([599e8a9](https://github.com/tstapler/stelekit/commit/599e8a901b7d5a8578826579f581677717316238))
+* **scripts:** add install-dev.sh for local dev build install ([e203f8d](https://github.com/tstapler/stelekit/commit/e203f8d6bd5f7490896b56ff5a53c35d89d6a04d))
+
+
+### Bug Fixes
+
+* **ci:** run benchmark jobs on push to main, not just non-draft PRs ([a197da8](https://github.com/tstapler/stelekit/commit/a197da8d13e4fa6803c36a32c4321ccef53075b3))
+* **homebrew:** use quarantine false to bypass Gatekeeper on unsigned app ([be54852](https://github.com/tstapler/stelekit/commit/be54852944c518bab7c7a2634ee154169fc7ec78))
+* **search:** resolve all 8 detekt linting failures from CI ([5e1d186](https://github.com/tstapler/stelekit/commit/5e1d186f47720b6958d55b5e47a3a36104f26d7f))
+* **ui:** resolve unresolved reference 'modifier' in SearchResultRow ([1a6aa05](https://github.com/tstapler/stelekit/commit/1a6aa05a7d08883a6cad7578e4704460ca0c8c05))
+
 ## [0.24.1](https://github.com/tstapler/stelekit/compare/v0.24.0...v0.24.1) (2026-05-14)
 
 
