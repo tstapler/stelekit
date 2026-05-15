@@ -10,6 +10,9 @@ cask "stelekit" do
 
   depends_on macos: ">= :ventura"
 
+  # Skip Gatekeeper quarantine — app is unsigned (no Apple Developer account)
+  quarantine false
+
   app "stelekit.app"
 
   # CLI shim so `stelekit` works from the terminal after cask install
