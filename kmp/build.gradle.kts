@@ -660,7 +660,10 @@ compose.desktop {
         mainClass = "dev.stapler.stelekit.desktop.MainKt"
         nativeDistributions {
             targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb, org.jetbrains.compose.desktop.application.dsl.TargetFormat.Rpm)
-            packageName = "stelekit"
+            // Pass -PbuildVariant=dev to produce stelekit-dev.app / stelekit-dev-*.dmg
+            // so test builds coexist with the release install.
+            val buildVariant = (findProperty("buildVariant") as? String)?.takeIf { it.isNotBlank() }
+            packageName = if (buildVariant != null) "stelekit-$buildVariant" else "stelekit"
             // Compose Desktop requires MAJOR > 0. Map 0.x.y → 1.x.y for package metadata;
             // the public version (tag, APK, release title) remains 0.x.y.
             val rawVersion = (findProperty("appVersion") as? String ?: "0.1.0")
@@ -668,6 +671,10 @@ compose.desktop {
             packageVersion = if ((parts.firstOrNull()?.toIntOrNull() ?: 1) == 0)
                 "1.${parts.drop(1).joinToString(".")}" else rawVersion
             modules("java.sql")
+            macOS {
+                iconFile.set(project.file("src/jvmMain/resources/icons/icon.icns"))
+                bundleID = if (buildVariant != null) "dev.stapler.stelekit.$buildVariant" else "dev.stapler.stelekit"
+            }
             linux {
                 iconFile.set(project.file("src/jvmMain/resources/icons/icon.png"))
             }
