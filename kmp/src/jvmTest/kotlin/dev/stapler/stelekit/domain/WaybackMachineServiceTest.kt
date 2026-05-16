@@ -4,8 +4,9 @@ import arrow.core.Either
 import arrow.core.left
 import dev.stapler.stelekit.error.DomainError
 import kotlin.test.Test
-import kotlin.test.assertNotNull
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 
 // These tests verify the URL construction logic without making real HTTP calls.
 // Integration tests requiring a real network call are excluded from CI.
@@ -27,8 +28,9 @@ class WaybackMachineServiceTest {
     }
 
     @Test
-    fun `NoOpWaybackMachineService returns network error`() {
+    fun `NoOpWaybackMachineService returns network error`() = runTest {
         val service = NoOpWaybackMachineService()
-        assertNotNull(service)
+        val result = service.archiveUrl("https://example.com")
+        assertIs<Either.Left<DomainError>>(result)
     }
 }

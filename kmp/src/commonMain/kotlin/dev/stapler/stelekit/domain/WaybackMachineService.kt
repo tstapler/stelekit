@@ -13,6 +13,8 @@ import io.ktor.client.request.post
 import io.ktor.client.request.url
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.HttpHeaders
+import io.ktor.http.URLBuilder
+import io.ktor.http.appendPathSegments
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 
@@ -29,8 +31,11 @@ class KtorWaybackMachineService(private val httpClient: HttpClient) : WaybackMac
 
     override suspend fun archiveUrl(url: String): Either<DomainError, ArchiveResult> {
         return try {
+            val encodedUrl = URLBuilder("https://web.archive.org/save/")
+                .appendPathSegments(url)
+                .buildString()
             val response: HttpResponse = httpClient.post {
-                url("https://web.archive.org/save/$url")
+                url(encodedUrl)
                 headers {
                     append(HttpHeaders.Accept, "application/json")
                     append("Prefer", "respond-async")
@@ -53,7 +58,13 @@ class KtorWaybackMachineService(private val httpClient: HttpClient) : WaybackMac
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            DomainError.NetworkError.Timeout("Archive request failed: ${e.message}").left()
+            val isTimeout = e is io.ktor.client.plugins.HttpRequestTimeoutException ||
+                e.message?.contains("timeout", ignoreCase = true) == true
+            if (isTimeout) {
+                DomainError.NetworkError.Timeout("Archive request timed out: ${e.message}").left()
+            } else {
+                DomainError.NetworkError.RequestFailed(e.message ?: "unknown error").left()
+            }
         }
     }
 }

@@ -46,6 +46,7 @@ sealed interface DomainError {
         data class HttpError(val statusCode: Int, override val message: String) : NetworkError
         data class CircuitOpen(override val message: String = "Circuit breaker is open") : NetworkError
         data class Timeout(override val message: String) : NetworkError
+        data class RequestFailed(override val message: String) : NetworkError
     }
 
     sealed interface GitError : DomainError {
@@ -107,6 +108,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.NetworkError.HttpError -> "HTTP $statusCode: $message"
     is DomainError.NetworkError.CircuitOpen -> message
     is DomainError.NetworkError.Timeout -> "Request timed out: $message"
+    is DomainError.NetworkError.RequestFailed -> "Request failed: $message"
     is DomainError.GitError.CloneFailed -> "Git clone failed: $message"
     is DomainError.GitError.FetchFailed -> "Git fetch failed: $message"
     is DomainError.GitError.PushFailed -> "Git push failed: $message"

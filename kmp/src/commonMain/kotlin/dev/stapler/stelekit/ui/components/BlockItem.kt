@@ -387,7 +387,7 @@ internal fun BlockItem(
                         modifier = Modifier.weight(1f),
                     )
                     else -> {
-                        val imageData = extractSingleImageNode(block.content)
+                        val imageData = remember(block.content) { extractSingleImageNode(block.content) }
                         if (imageData != null) {
                             val (url, altText) = imageData
                             ImageBlock(

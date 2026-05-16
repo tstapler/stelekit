@@ -27,6 +27,7 @@ class DomainErrorTest {
             DomainError.NetworkError.HttpError(404, "not found"),
             DomainError.NetworkError.CircuitOpen(),
             DomainError.NetworkError.Timeout("timeout"),
+            DomainError.NetworkError.RequestFailed("request failed"),
             DomainError.GitError.CloneFailed("clone"),
             DomainError.GitError.FetchFailed("fetch"),
             DomainError.GitError.PushFailed("push"),
@@ -62,6 +63,7 @@ class DomainErrorTest {
                 is DomainError.NetworkError.HttpError -> err.message
                 is DomainError.NetworkError.CircuitOpen -> err.message
                 is DomainError.NetworkError.Timeout -> err.message
+                is DomainError.NetworkError.RequestFailed -> err.message
                 is DomainError.GitError.CloneFailed -> err.message
                 is DomainError.GitError.FetchFailed -> err.message
                 is DomainError.GitError.PushFailed -> err.message

@@ -15,6 +15,7 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
@@ -40,45 +41,57 @@ class AndroidMediaAttachmentService(
     override suspend fun pickAndAttach(
         graphRoot: String,
         pageRelativePath: String
-    ): Either<DomainError, AttachmentResult>? = withContext(PlatformDispatcher.IO) {
-        val uri: Uri? = launchGalleryPicker()
-        if (uri == null) return@withContext null
+    ): Either<DomainError, AttachmentResult>? {
+        val uri: Uri? = withContext(Dispatchers.Main) { launchGalleryPicker() }
+        if (uri == null) return null
 
-        val assetsDir = File("$graphRoot/assets")
-        try {
-            assetsDir.mkdirs()
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            return@withContext DomainError.AttachmentError.AssetsDirectoryFailed(
-                e.message ?: "unknown"
-            ).left()
-        }
-
-        val displayName = resolveDisplayName(uri) ?: "attachment"
-        val stem = displayName.substringBeforeLast('.', displayName)
-        val ext = if (displayName.contains('.')) displayName.substringAfterLast('.') else ""
-        val uniqueName = uniqueFileName(assetsDir.toOkioPath(), stem, ext, FileSystem.SYSTEM)
-        val destFile = File(assetsDir, uniqueName)
-        val tmpFile = File(assetsDir, ".tmp-${java.util.UUID.randomUUID()}")
-
-        try {
-            val inputStream = context.contentResolver.openInputStream(uri)
-                ?: return@withContext DomainError.AttachmentError.CopyFailed(
-                    "ContentResolver returned null for $uri"
+        return withContext(PlatformDispatcher.IO) {
+            val assetsDir = File("$graphRoot/assets")
+            try {
+                assetsDir.mkdirs()
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                return@withContext DomainError.AttachmentError.AssetsDirectoryFailed(
+                    e.message ?: "unknown"
                 ).left()
-            inputStream.use { input ->
-                tmpFile.outputStream().use { output -> input.copyTo(output) }
             }
-            Files.move(tmpFile.toPath(), destFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            tmpFile.delete()
-            return@withContext DomainError.AttachmentError.CopyFailed(
-                e.message ?: "copy failed"
-            ).left()
-        }
 
-        AttachmentResult(relativePath = "../assets/$uniqueName", displayName = uniqueName).right()
+            val displayName = resolveDisplayName(uri) ?: "attachment"
+            val stem = displayName.substringBeforeLast('.', displayName)
+            val ext = if (displayName.contains('.')) displayName.substringAfterLast('.') else ""
+            val uniqueName = uniqueFileName(assetsDir.toOkioPath(), stem, ext, FileSystem.SYSTEM)
+            val destFile = File(assetsDir, uniqueName)
+            val tmpFile = File(assetsDir, ".tmp-${java.util.UUID.randomUUID()}")
+
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                    ?: return@withContext DomainError.AttachmentError.CopyFailed(
+                        "ContentResolver returned null for $uri"
+                    ).left()
+                inputStream.use { input ->
+                    tmpFile.outputStream().use { output -> input.copyTo(output) }
+                }
+                try {
+                    Files.move(tmpFile.toPath(), destFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
+                } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
+                    try {
+                        Files.move(tmpFile.toPath(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                    } catch (e2: Exception) {
+                        if (e2 is CancellationException) throw e2
+                        tmpFile.delete()
+                        return@withContext DomainError.AttachmentError.CopyFailed(e2.message ?: "move failed").left()
+                    }
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                tmpFile.delete()
+                return@withContext DomainError.AttachmentError.CopyFailed(
+                    e.message ?: "copy failed"
+                ).left()
+            }
+
+            AttachmentResult(relativePath = "../assets/$uniqueName", displayName = uniqueName).right()
+        }
     }
 
     override fun hasClipboardImage(): Boolean {
@@ -116,7 +129,17 @@ class AndroidMediaAttachmentService(
                     val inputStream = context.contentResolver.openInputStream(uri)
                         ?: return@withContext DomainError.AttachmentError.CopyFailed("ContentResolver returned null").left()
                     inputStream.use { input -> tmpFile.outputStream().use { output -> input.copyTo(output) } }
-                    Files.move(tmpFile.toPath(), destFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
+                    try {
+                        Files.move(tmpFile.toPath(), destFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
+                    } catch (e: java.nio.file.AtomicMoveNotSupportedException) {
+                        try {
+                            Files.move(tmpFile.toPath(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                        } catch (e2: Exception) {
+                            if (e2 is CancellationException) throw e2
+                            tmpFile.delete()
+                            return@withContext DomainError.AttachmentError.CopyFailed(e2.message ?: "move failed").left()
+                        }
+                    }
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
                     tmpFile.delete()
@@ -135,6 +158,10 @@ class AndroidMediaAttachmentService(
     }
 }
 
+private class ContinuationHolder {
+    var continuation: Continuation<Uri?>? = null
+}
+
 /**
  * Composable factory that wires [ActivityResultLauncher]s and returns an
  * [AndroidMediaAttachmentService] stable across recompositions.
@@ -146,13 +173,13 @@ class AndroidMediaAttachmentService(
  */
 @Composable
 fun rememberAndroidMediaAttachmentService(context: Context): AndroidMediaAttachmentService {
-    var pendingContinuation: Continuation<Uri?>? = null
+    val holder = remember { ContinuationHolder() }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
-        pendingContinuation?.resume(uri)
-        pendingContinuation = null
+        holder.continuation?.resume(uri)
+        holder.continuation = null
     }
 
     return remember(context) {
@@ -160,8 +187,8 @@ fun rememberAndroidMediaAttachmentService(context: Context): AndroidMediaAttachm
             context = context,
             launchGalleryPicker = {
                 suspendCancellableCoroutine { cont ->
-                    pendingContinuation = cont
-                    cont.invokeOnCancellation { pendingContinuation = null }
+                    holder.continuation = cont
+                    cont.invokeOnCancellation { holder.continuation = null }
                     launcher.launch(
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                     )

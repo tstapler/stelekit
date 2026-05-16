@@ -21,9 +21,6 @@ class IosMediaAttachmentService : MediaAttachmentService {
         graphRoot: String,
         pageRelativePath: String
     ): Either<DomainError, AttachmentResult>? {
-        throw NotImplementedError(
-            "iOS image picker not yet implemented. " +
-                "Use PHPickerViewController via Kotlin/Native interop or ImagePickerKMP."
-        )
+        return null
     }
 }

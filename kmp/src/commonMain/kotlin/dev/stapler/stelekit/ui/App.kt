@@ -487,6 +487,37 @@ private fun GraphContent(
         onMemoryPressure?.invoke { viewModel.onMemoryPressure() }
     }
 
+    // Wire the /image command in the command palette to the platform attachment service.
+    // The callback reads the currently editing block from blockStateManager so it works
+    // even when invoked from the command palette (no block UUID passed explicitly).
+    LaunchedEffect(viewModel, attachmentService) {
+        if (attachmentService != null) {
+            viewModel.registerAttachImageCallback {
+                scope.launch {
+                    val editingBlockUuid = blockStateManager.editingBlockUuid.value
+                    val graphRoot = viewModel.uiState.value.currentGraphPath
+                    val result = attachmentService.pickAndAttach(
+                        graphRoot = graphRoot,
+                        pageRelativePath = ""
+                    ) ?: return@launch
+                    result.fold(
+                        ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
+                            graphContentLogger.warn("Image attachment failed: $err")
+                        },
+                        ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
+                            val markdown = "![${attachment.displayName}](${attachment.relativePath})"
+                            if (editingBlockUuid != null) {
+                                blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                            }
+                        }
+                    )
+                }
+            }
+        } else {
+            viewModel.registerAttachImageCallback(null)
+        }
+    }
+
     // Bootstrap loadGraph when the ViewModel has no persisted path but GraphManager has an
     // active graph. For paranoid-mode graphs, loading is deferred until after unlock so the
     // CryptoLayer is in place before any file reads.
