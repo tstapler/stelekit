@@ -62,4 +62,25 @@ interface MediaAttachmentService {
         filePath: String,
         graphRoot: String
     ): Either<DomainError, AttachmentResult>? = null
+
+    /**
+     * Returns true if the platform clipboard currently contains image data that
+     * [pasteFromClipboard] can read. This check is synchronous so it can be called
+     * from a key-event handler without launching a coroutine.
+     *
+     * Default returns `false` (clipboard image paste not supported on this platform).
+     */
+    fun hasClipboardImage(): Boolean = false
+
+    /**
+     * Reads image data from the platform clipboard, copies it into
+     * `<graphRoot>/assets/`, and returns the relative markdown path.
+     *
+     * Returns [Either.Right] with [AttachmentResult] on success.
+     * Returns [Either.Left] with [DomainError.AttachmentError] on failure.
+     * Returns `null` if the clipboard does not contain image data.
+     *
+     * Default returns `null` (no-op).
+     */
+    suspend fun pasteFromClipboard(graphRoot: String): Either<DomainError, AttachmentResult>? = null
 }

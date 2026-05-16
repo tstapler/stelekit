@@ -81,6 +81,52 @@ class AndroidMediaAttachmentService(
         AttachmentResult(relativePath = "../assets/$uniqueName", displayName = uniqueName).right()
     }
 
+    override fun hasClipboardImage(): Boolean {
+        val cm = context.getSystemService(android.content.ClipboardManager::class.java) ?: return false
+        val clip = cm.primaryClip ?: return false
+        for (i in 0 until clip.itemCount) {
+            val uri = clip.getItemAt(i)?.uri ?: continue
+            val type = context.contentResolver.getType(uri) ?: continue
+            if (type.startsWith("image/")) return true
+        }
+        return false
+    }
+
+    override suspend fun pasteFromClipboard(graphRoot: String): Either<DomainError, AttachmentResult>? =
+        withContext(PlatformDispatcher.IO) {
+            val cm = context.getSystemService(android.content.ClipboardManager::class.java)
+                ?: return@withContext null
+            val clip = cm.primaryClip ?: return@withContext null
+            for (i in 0 until clip.itemCount) {
+                val uri = clip.getItemAt(i)?.uri ?: continue
+                val mimeType = context.contentResolver.getType(uri) ?: continue
+                if (!mimeType.startsWith("image/")) continue
+                val ext = mimeType.substringAfter("image/").substringBefore(";").let { if (it == "jpeg") "jpg" else it }
+                val assetsDir = File("$graphRoot/assets")
+                try {
+                    assetsDir.mkdirs()
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    return@withContext DomainError.AttachmentError.AssetsDirectoryFailed(e.message ?: "unknown").left()
+                }
+                val uniqueName = uniqueFileName(assetsDir.toOkioPath(), "clipboard", ext, FileSystem.SYSTEM)
+                val destFile = File(assetsDir, uniqueName)
+                val tmpFile = File(assetsDir, ".tmp-${java.util.UUID.randomUUID()}")
+                try {
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                        ?: return@withContext DomainError.AttachmentError.CopyFailed("ContentResolver returned null").left()
+                    inputStream.use { input -> tmpFile.outputStream().use { output -> input.copyTo(output) } }
+                    Files.move(tmpFile.toPath(), destFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    tmpFile.delete()
+                    return@withContext DomainError.AttachmentError.CopyFailed(e.message ?: "copy failed").left()
+                }
+                return@withContext AttachmentResult(relativePath = "../assets/$uniqueName", displayName = uniqueName).right()
+            }
+            null
+        }
+
     private fun resolveDisplayName(uri: Uri): String? {
         val cursor = context.contentResolver.query(
             uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null

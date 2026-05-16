@@ -902,6 +902,29 @@ private fun GraphContent(
                                         }
                                     }
                                 } else null,
+                                onPasteImage = if (attachmentService != null) {
+                                    { editingBlockUuid ->
+                                        if (attachmentService.hasClipboardImage()) {
+                                            val graphRoot = appState.currentGraphPath
+                                            scope.launch {
+                                                val result = attachmentService.pasteFromClipboard(graphRoot)
+                                                    ?: return@launch
+                                                result.fold(
+                                                    ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
+                                                        graphContentLogger.warn("Clipboard paste failed: $err")
+                                                    },
+                                                    ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
+                                                        val markdown = "![${attachment.displayName}](${attachment.relativePath})"
+                                                        if (editingBlockUuid != null) {
+                                                            blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                            true
+                                        } else false
+                                    }
+                                } else null,
                             )
                         },
                         statusBar = {
@@ -1042,6 +1065,7 @@ private fun ScreenRouter(
     urlFetcher: UrlFetcher = NoOpUrlFetcher(),
     onAttachImage: ((editingBlockUuid: String?) -> Unit)? = null,
     onFileDrop: ((List<Any>) -> Unit)? = null,
+    onPasteImage: ((editingBlockUuid: String?) -> Boolean)? = null,
 ) {
     if (appState.isLoading) {
         LoadingOverlay(
@@ -1092,6 +1116,7 @@ private fun ScreenRouter(
                 isLeftHanded = appState.isLeftHanded,
                 onAttachImage = onAttachImage,
                 onFileDrop = onFileDrop,
+                onPasteImage = onPasteImage,
             )
             is Screen.Journals -> JournalsView(
                 viewModel = journalsViewModel,

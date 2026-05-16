@@ -22,6 +22,9 @@ import java.nio.file.StandardCopyOption
  * Desktop JVM implementation of [MediaAttachmentService].
  * Uses [FileDialog] (AWT native file chooser) to pick an image file.
  */
+private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "gif", "webp", "heic", "svg", "bmp")
+private fun String.isImageExtension() = substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS
+
 class JvmMediaAttachmentService : MediaAttachmentService {
 
     override suspend fun pickAndAttach(
@@ -133,6 +136,53 @@ class JvmMediaAttachmentService : MediaAttachmentService {
         AttachmentResult(relativePath = "../assets/$uniqueName", displayName = uniqueName).right()
     }
 
+    override fun hasClipboardImage(): Boolean = try {
+        val cb = java.awt.Toolkit.getDefaultToolkit().systemClipboard
+        cb.isDataFlavorAvailable(java.awt.datatransfer.DataFlavor.imageFlavor) ||
+            clipboardFileListHasImage(cb)
+    } catch (e: Exception) { false }
+
+    private fun clipboardFileListHasImage(cb: java.awt.datatransfer.Clipboard): Boolean {
+        if (!cb.isDataFlavorAvailable(java.awt.datatransfer.DataFlavor.javaFileListFlavor)) return false
+        @Suppress("UNCHECKED_CAST")
+        val name = (cb.getData(java.awt.datatransfer.DataFlavor.javaFileListFlavor) as? List<*>)
+            ?.firstOrNull()?.toString() ?: return false
+        return name.isImageExtension()
+    }
+
+    override suspend fun pasteFromClipboard(graphRoot: String): Either<DomainError, AttachmentResult>? =
+        withContext(PlatformDispatcher.IO) {
+            val cb = java.awt.Toolkit.getDefaultToolkit().systemClipboard
+            // File list first — preserves original filename and format
+            if (cb.isDataFlavorAvailable(java.awt.datatransfer.DataFlavor.javaFileListFlavor)) {
+                @Suppress("UNCHECKED_CAST")
+                val file = (cb.getData(java.awt.datatransfer.DataFlavor.javaFileListFlavor) as? List<*>)
+                    ?.firstOrNull() as? File
+                if (file != null && file.name.isImageExtension()) {
+                    return@withContext attachExistingFile(file, graphRoot)
+                }
+            }
+            // Raw image flavor (e.g., screenshots)
+            if (cb.isDataFlavorAvailable(java.awt.datatransfer.DataFlavor.imageFlavor)) {
+                val image = cb.getData(java.awt.datatransfer.DataFlavor.imageFlavor) as? java.awt.Image
+                    ?: return@withContext null
+                val width = image.getWidth(null).takeIf { it > 0 } ?: return@withContext null
+                val height = image.getHeight(null).takeIf { it > 0 } ?: return@withContext null
+                val bi = java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+                bi.createGraphics().apply { drawImage(image, 0, 0, null); dispose() }
+                val tmp = File(System.getProperty("java.io.tmpdir"), "clipboard-${java.util.UUID.randomUUID()}.png")
+                try {
+                    javax.imageio.ImageIO.write(bi, "png", tmp)
+                    return@withContext attachExistingFile(tmp, graphRoot)
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    tmp.delete()
+                    return@withContext DomainError.AttachmentError.CopyFailed(e.message ?: "clipboard write failed").left()
+                }
+            }
+            null
+        }
+
     /**
      * Shows a native AWT [FileDialog] on the Event Dispatch Thread.
      * Returns the selected [File], or null if cancelled.
@@ -146,14 +196,7 @@ class JvmMediaAttachmentService : MediaAttachmentService {
         java.awt.EventQueue.invokeLater {
             try {
                 val dialog = FileDialog(null as Frame?, "Select Image", FileDialog.LOAD).apply {
-                    setFilenameFilter { _, name ->
-                        name.lowercase().let { n ->
-                            n.endsWith(".jpg") || n.endsWith(".jpeg") ||
-                                n.endsWith(".png") || n.endsWith(".gif") ||
-                                n.endsWith(".webp") || n.endsWith(".heic") ||
-                                n.endsWith(".svg") || n.endsWith(".bmp")
-                        }
-                    }
+                    setFilenameFilter { _, name -> name.isImageExtension() }
                     isVisible = true
                 }
                 val f = dialog.file

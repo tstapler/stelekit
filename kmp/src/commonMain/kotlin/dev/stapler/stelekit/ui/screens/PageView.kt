@@ -14,9 +14,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -82,7 +84,8 @@ fun PageView(
      * commonMain; on JVM they are [java.io.File] instances).
      * When null, drop events are ignored.
      */
-    onFileDrop: ((List<Any>) -> Unit)? = null
+    onFileDrop: ((List<Any>) -> Unit)? = null,
+    onPasteImage: ((editingBlockUuid: String?) -> Boolean)? = null,
 ) {
     NavigationTracingEffect("PageView/${page.name}")
     val focusManager = LocalFocusManager.current
@@ -131,7 +134,14 @@ fun PageView(
     // currentGraphPath is the graph root directory as stored in AppState.
     CompositionLocalProvider(LocalGraphRootPath provides currentGraphPath.ifEmpty { null }) {
 
-    Box(modifier = Modifier.fillMaxSize().imePadding().onKeyEvent { event ->
+    Box(modifier = Modifier.fillMaxSize().imePadding()
+        .let { m -> if (onPasteImage != null) m.onPreviewKeyEvent { event ->
+            event.type == KeyEventType.KeyDown &&
+            (event.isCtrlPressed || event.isMetaPressed) &&
+            event.key == Key.V &&
+            onPasteImage(editingBlockUuid)
+        } else m }
+        .onKeyEvent { event ->
         if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
         when {
             event.key == Key.A && event.isCtrlPressed && !isInSelectionMode -> {
