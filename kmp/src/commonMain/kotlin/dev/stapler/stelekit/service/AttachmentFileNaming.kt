@@ -17,14 +17,14 @@ import okio.Path
  * @param assetsDir    absolute okio [Path] to the assets directory.
  * @param stem         filename stem without extension (e.g. "photo").
  * @param ext          file extension without leading dot (e.g. "jpg").
- * @param fileSystem   okio [FileSystem] for existence checks (default: [FileSystem.SYSTEM]).
+ * @param fileSystem   okio [FileSystem] for existence checks.
  * @return             unique filename string (e.g. "photo-2.jpg").
  */
 fun uniqueFileName(
     assetsDir: Path,
     stem: String,
     ext: String,
-    fileSystem: FileSystem = FileSystem.SYSTEM
+    fileSystem: FileSystem,
 ): String {
     val base = if (ext.isBlank()) stem else "$stem.$ext"
     if (!fileSystem.exists(assetsDir / base)) return base
