@@ -922,3 +922,6 @@ INSERT OR REPLACE INTO git_config(
 
 deleteGitConfig:
 DELETE FROM git_config WHERE graph_id = ?;
+
+selectBlocksByUuids:
+SELECT * FROM blocks WHERE uuid IN ?;
