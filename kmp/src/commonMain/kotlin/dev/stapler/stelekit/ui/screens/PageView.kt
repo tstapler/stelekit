@@ -35,6 +35,7 @@ import dev.stapler.stelekit.ui.StelekitViewModel
 import androidx.compose.runtime.CompositionLocalProvider
 import dev.stapler.stelekit.ui.components.BlockList
 import dev.stapler.stelekit.ui.components.LocalGraphRootPath
+import dev.stapler.stelekit.ui.components.pageDropTarget
 import dev.stapler.stelekit.ui.components.MobileBlockToolbar
 import dev.stapler.stelekit.ui.components.ReferencesPanel
 import dev.stapler.stelekit.ui.components.SearchDialog
@@ -60,7 +61,28 @@ fun PageView(
     searchViewModel: SearchViewModel? = null,
     writeActor: DatabaseWriteActor? = null,
     isDebugMode: Boolean = false,
-    isLeftHanded: Boolean = false
+    isLeftHanded: Boolean = false,
+    /**
+     * Platform-provided callback to open a file picker and attach an image.
+     * Supply a non-null lambda from the platform-specific screen wrapper
+     * (e.g. JvmMediaAttachmentService on desktop, rememberAndroidMediaAttachmentService on Android).
+     * When null, the attach-image toolbar button is hidden.
+     *
+     * The lambda receives the currently-editing block UUID (or null if no block is focused).
+     * It is responsible for:
+     *   1. Opening the platform file picker.
+     *   2. Copying the file to `<graphRoot>/assets/`.
+     *   3. Calling blockStateManager.insertTextAtCursor(blockUuid, "![altText](relativePath)")
+     *      on the editing block if one is active.
+     */
+    onAttachImage: ((editingBlockUuid: String?) -> Unit)? = null,
+    /**
+     * Platform-provided callback invoked when files are drag-and-dropped onto the page area.
+     * The list contains opaque file handles (typed as [Any] to stay platform-agnostic in
+     * commonMain; on JVM they are [java.io.File] instances).
+     * When null, drop events are ignored.
+     */
+    onFileDrop: ((List<Any>) -> Unit)? = null
 ) {
     NavigationTracingEffect("PageView/${page.name}")
     val focusManager = LocalFocusManager.current
@@ -139,6 +161,7 @@ fun PageView(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 24.dp)
+                .let { m -> if (onFileDrop != null) m.pageDropTarget(onFileDrop) else m }
                 .pointerInput(Unit) {
                     detectTapGestures(onTap = {
                         focusManager.clearFocus()
@@ -357,6 +380,9 @@ fun PageView(
             onUndo = { blockStateManager.undo() },
             onRedo = { blockStateManager.redo() },
             onFormat = { action -> blockStateManager.requestFormat(action) },
+            onAttachImage = if (onAttachImage != null) {
+                { onAttachImage(editingBlockUuid) }
+            } else null,
             onLinkPicker = if (searchViewModel != null) {
                 {
                     val curBlockUuid = editingBlockUuid

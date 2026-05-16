@@ -573,6 +573,30 @@ object EssentialCommands {
     }
     
     /**
+     * Media commands
+     */
+    object MediaCommands {
+        val image = EditorCommand(
+            id = "media.image",
+            type = CommandType.MEDIA,
+            label = "Image",
+            description = "Attach an image from gallery or file system",
+            icon = "image",
+            config = CommandConfig(
+                priority = CommandPriority.HIGH
+            ),
+            execute = { _ ->
+                // Execution is handled by the UI layer (file picker is platform-specific).
+                // The slash command triggers onAttachImage callback in BlockItem/PageView.
+                CommandResult.Success(
+                    message = "Image attachment requested",
+                    data = mapOf<String, Any>("action" to "attachImage")
+                )
+            }
+        )
+    }
+
+    /**
      * System commands
      */
     object SystemCommands {
@@ -738,6 +762,9 @@ object EssentialCommands {
             NavigationCommands.back,
             NavigationCommands.forward,
             
+            // Media
+            MediaCommands.image,
+
             // System
             SystemCommands.save,
             SystemCommands.undo,

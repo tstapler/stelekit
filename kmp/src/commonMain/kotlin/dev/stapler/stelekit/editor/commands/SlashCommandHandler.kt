@@ -307,6 +307,7 @@ class SlashCommandHandler(
             "goto" -> "navigation.goto"
             "help" -> "system.help"
             "settings" -> "system.settings"
+            "image" -> "media.image"
             else -> null
         }
     }
@@ -329,6 +330,7 @@ class SlashCommandHandler(
                             CommandType.TEXT -> 3
                             CommandType.BLOCK -> 2
                             CommandType.NAVIGATION -> 1
+                            CommandType.MEDIA -> 2
                             else -> 0
                         }
                     )
@@ -372,6 +374,7 @@ class SlashCommandHandler(
             "navigation.goto" -> "goto"
             "system.help" -> "help"
             "system.settings" -> "settings"
+            "media.image" -> "image"
             else -> null
         }
     }

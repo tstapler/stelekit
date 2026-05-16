@@ -76,6 +76,12 @@ sealed interface DomainError {
             override val message: String = "Cannot sync while editing is in progress"
         }
     }
+
+    sealed interface AttachmentError : DomainError {
+        data class CopyFailed(override val message: String) : AttachmentError
+        data class PickerFailed(override val message: String) : AttachmentError
+        data class AssetsDirectoryFailed(override val message: String) : AttachmentError
+    }
 }
 
 fun Throwable.toDatabaseError(): DomainError.DatabaseError.WriteFailed =
@@ -113,4 +119,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.NotSupported -> message
     is DomainError.GitError.Offline -> message
     is DomainError.GitError.EditingInProgress -> message
+    is DomainError.AttachmentError.CopyFailed -> "Attachment failed: $message"
+    is DomainError.AttachmentError.PickerFailed -> "Could not open file picker: $message"
+    is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory: $message"
 }

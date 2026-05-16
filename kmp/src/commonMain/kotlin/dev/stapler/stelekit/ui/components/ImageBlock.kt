@@ -5,9 +5,11 @@ package dev.stapler.stelekit.ui.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 
 // TODO: Wire ImageBlock in BlockItem dispatch when paragraph block contains only an ImageNode
@@ -38,6 +40,7 @@ internal fun ImageBlock(
         contentScale = ContentScale.FillWidth,
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(max = 400.dp)
             .clickable { onStartEditing() }
     )
 }

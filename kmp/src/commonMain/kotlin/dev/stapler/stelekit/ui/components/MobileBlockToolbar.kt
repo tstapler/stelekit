@@ -5,6 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -36,6 +37,7 @@ fun MobileBlockToolbar(
     onRedo: () -> Unit = {},
     onFormat: (FormatAction) -> Unit = {},
     onLinkPicker: (() -> Unit)? = null,
+    onAttachImage: (() -> Unit)? = null,
     isInSelectionMode: Boolean = false,
     selectedCount: Int = 0,
     onDeleteSelected: () -> Unit = {},
@@ -184,6 +186,14 @@ fun MobileBlockToolbar(
                                 "[[]]", fontSize = 14.sp,
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                             )
+                        }
+                        if (onAttachImage != null) {
+                            IconButton(
+                                onClick = onAttachImage,
+                                modifier = Modifier.semantics { contentDescription = "Attach image" }
+                            ) {
+                                Icon(Icons.Default.AttachFile, contentDescription = null)
+                            }
                         }
                     }
 

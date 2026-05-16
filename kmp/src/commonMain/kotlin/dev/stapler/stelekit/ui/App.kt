@@ -139,6 +139,15 @@ fun StelekitApp(
      * When null, paranoid mode is unavailable.
      */
     cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine? = null,
+    /**
+     * Platform-specific media attachment service. When non-null the attach-image button
+     * is shown in [MobileBlockToolbar] on the PageView screen.
+     *
+     * Pass [JvmMediaAttachmentService] on Desktop.
+     * Pass the Android service (from [rememberAndroidMediaAttachmentService]) on Android.
+     * Pass null (default) to hide the button entirely.
+     */
+    attachmentService: dev.stapler.stelekit.service.MediaAttachmentService? = null,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -299,6 +308,7 @@ fun StelekitApp(
             onMemoryPressure = onMemoryPressure,
             gitRepository = gitRepository,
             cryptoEngine = cryptoEngine,
+            attachmentService = attachmentService,
         )
     }
 }
@@ -330,9 +340,11 @@ private fun GraphContent(
     onMemoryPressure: (((() -> Unit) -> Unit))? = null,
     gitRepository: dev.stapler.stelekit.git.GitRepository? = null,
     cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine? = null,
+    attachmentService: dev.stapler.stelekit.service.MediaAttachmentService? = null,
 ) {
     CompositionLocalProvider(LocalSpanRecorder provides spanRecorder) {
     val scope = rememberCoroutineScope()
+    val graphContentLogger = remember { Logger("GraphContent") }
     val composeClipboard = LocalClipboardManager.current
     val clipboardProvider = rememberClipboardProvider(composeClipboard)
 
@@ -841,6 +853,55 @@ private fun GraphContent(
                                 appState = appState,
                                 graphWriter = graphWriter,
                                 urlFetcher = urlFetcher,
+                                onAttachImage = if (attachmentService != null) {
+                                    { editingBlockUuid ->
+                                        val graphRoot = appState.currentGraphPath
+                                        scope.launch {
+                                            val result = attachmentService.pickAndAttach(
+                                                graphRoot = graphRoot,
+                                                pageRelativePath = ""
+                                            ) ?: return@launch
+                                            result.fold(
+                                                ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
+                                                    graphContentLogger.warn("Image attachment failed: $err")
+                                                },
+                                                ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
+                                                    val markdown = "![${attachment.displayName}](${attachment.relativePath})"
+                                                    if (editingBlockUuid != null) {
+                                                        blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                } else null,
+                                onFileDrop = if (attachmentService != null) {
+                                    { files ->
+                                        val graphRoot = appState.currentGraphPath
+                                        val pageUuid = (appState.currentScreen as? Screen.PageView)?.page?.uuid
+                                        if (pageUuid != null) {
+                                            scope.launch {
+                                                files.forEach { file ->
+                                                    val result = attachmentService.attachFilePath(
+                                                        filePath = file.toString(),
+                                                        graphRoot = graphRoot
+                                                    ) ?: return@forEach
+                                                    result.fold(
+                                                        ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
+                                                            graphContentLogger.warn("Drag-and-drop attachment failed: $err")
+                                                        },
+                                                        ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
+                                                            blockStateManager.addBlockWithContent(
+                                                                pageUuid = pageUuid,
+                                                                content = "![${attachment.displayName}](${attachment.relativePath})"
+                                                            )
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else null,
                             )
                         },
                         statusBar = {
@@ -979,6 +1040,8 @@ private fun ScreenRouter(
     appState: AppState,
     graphWriter: GraphWriter,
     urlFetcher: UrlFetcher = NoOpUrlFetcher(),
+    onAttachImage: ((editingBlockUuid: String?) -> Unit)? = null,
+    onFileDrop: ((List<Any>) -> Unit)? = null,
 ) {
     if (appState.isLoading) {
         LoadingOverlay(
@@ -1026,7 +1089,9 @@ private fun ScreenRouter(
                 searchViewModel = searchViewModel,
                 writeActor = repos.writeActor,
                 isDebugMode = appState.isDebugMode,
-                isLeftHanded = appState.isLeftHanded
+                isLeftHanded = appState.isLeftHanded,
+                onAttachImage = onAttachImage,
+                onFileDrop = onFileDrop,
             )
             is Screen.Journals -> JournalsView(
                 viewModel = journalsViewModel,

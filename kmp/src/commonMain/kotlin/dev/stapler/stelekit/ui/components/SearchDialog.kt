@@ -487,6 +487,7 @@ fun SearchResultRow(
     title: String,
     isSelected: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     subtitle: String? = null,
     relativeDate: String? = null,
     inlineTags: List<String> = emptyList(),

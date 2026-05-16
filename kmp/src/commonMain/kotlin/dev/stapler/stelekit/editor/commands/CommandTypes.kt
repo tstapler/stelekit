@@ -12,6 +12,7 @@ enum class CommandType {
     SYSTEM,         // System commands (save, undo, redo)
     EDITOR,         // Editor state and settings
     PLUGIN,         // Plugin-related commands
+    MEDIA,          // Media attachment commands (image, file)
     CUSTOM          // User-defined commands
 }
 
