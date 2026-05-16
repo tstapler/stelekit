@@ -368,11 +368,16 @@ class SqlDelightBlockRepository(
     }
 
     override suspend fun deleteBulk(blockUuids: List<String>, deleteChildren: Boolean): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+        if (blockUuids.isEmpty()) return@withContext Unit.right()
         try {
             val wikilinkPages = mutableSetOf<String>()
             queries.transaction {
+                val blocks = blockUuids.chunked(900).flatMap { chunk ->
+                    queries.selectBlocksByUuids(chunk).executeAsList()
+                }
+                val blocksByUuid = blocks.associateBy { it.uuid }
                 blockUuids.forEach { uuid ->
-                    val block = queries.selectBlockByUuid(uuid).executeAsOneOrNull() ?: return@forEach
+                    val block = blocksByUuid[uuid] ?: return@forEach
                     wikilinkPages.addAll(extractWikilinks(block.content))
                     if (deleteChildren) {
                         // Collect the full subtree
