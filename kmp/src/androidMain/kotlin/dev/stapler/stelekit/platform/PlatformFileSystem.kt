@@ -29,6 +29,13 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     private var shadowCache: ShadowFileCache? = null
     private var changeDetector: SafChangeDetector? = null
 
+    // Session-scoped sets for eliminating redundant SAF existence-check IPC calls.
+    // ConcurrentHashMap.newKeySet() is used because writeFile/writeFileBytes may be called
+    // from concurrent coroutines (though saveMutex serializes GraphWriter calls, other
+    // callers like GraphLoader do not hold the mutex).
+    private val knownExistingFiles: MutableSet<String> = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap())
+    private val knownExistingDirs: MutableSet<String> = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap())
+
     companion object {
         private const val TAG = "PlatformFileSystem"
         const val PREFS_NAME = "stelekit_prefs"
@@ -249,23 +256,30 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         if (!path.startsWith("saf://")) return legacyWriteFile(path, content)
         return try {
             var docUri = parseDocumentUri(path)
-            // If file doesn't exist, create it first
             val ctx = context ?: return false
-            val docFile = DocumentFile.fromSingleUri(ctx, docUri)
-            if (docFile == null || !docFile.exists()) {
-                val fileName = path.substringAfterLast('/')
-                val parentPath = path.substring(0, path.lastIndexOf('/'))
-                // Ensure the parent directory exists (e.g. "journals/" on a fresh graph)
-                if (!directoryExists(parentPath)) {
-                    createDirectory(parentPath)
+            // Skip DocumentFile.exists() IPC for files known to exist from this session.
+            // knownExistingFiles is populated on every successful write, so the second and
+            // subsequent saves of a page never pay the existence-check Binder IPC cost.
+            if (path !in knownExistingFiles) {
+                val docFile = DocumentFile.fromSingleUri(ctx, docUri)
+                if (docFile == null || !docFile.exists()) {
+                    val fileName = path.substringAfterLast('/')
+                    val parentPath = path.substring(0, path.lastIndexOf('/'))
+                    // Use knownExistingDirs to skip the directoryExists IPC for known directories
+                    // (e.g. "pages/" and "journals/" are created once and stable for the session).
+                    if (parentPath !in knownExistingDirs && !directoryExists(parentPath)) {
+                        if (!createDirectory(parentPath)) return false
+                    }
+                    knownExistingDirs.add(parentPath)
+                    val parentDocUri = parseParentDocUri(path)
+                    docUri = createMarkdownFile(parentDocUri, fileName) ?: return false
                 }
-                val parentDocUri = parseParentDocUri(path)
-                docUri = createMarkdownFile(parentDocUri, fileName) ?: return false
             }
             // "wt" = write + truncate. Never use "w" alone — it does not truncate on all providers.
             ctx.contentResolver.openOutputStream(docUri, "wt")?.use { stream ->
                 stream.bufferedWriter(Charsets.UTF_8).apply { write(content); flush() }
             }
+            knownExistingFiles.add(path)
             true
         } catch (e: SecurityException) { Log.w(TAG, "writeFile: permission denied for $path", e); false }
         catch (e: IllegalArgumentException) { Log.w(TAG, "writeFile: invalid URI for $path", e); false }
@@ -346,10 +360,12 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         if (!path.startsWith("saf://")) return legacyDeleteFile(path)
         return try {
             val docUri = parseDocumentUri(path)
-            DocumentsContract.deleteDocument(
+            val deleted = DocumentsContract.deleteDocument(
                 context?.contentResolver ?: return false,
                 docUri
             )
+            if (deleted) knownExistingFiles.remove(path)
+            deleted
         } catch (e: SecurityException) { Log.w(TAG, "deleteFile: permission denied for $path", e); false }
         catch (e: IllegalArgumentException) { Log.w(TAG, "deleteFile: invalid URI for $path", e); false }
         catch (e: Exception) { Log.w(TAG, "deleteFile: unexpected error for $path", e); false }
@@ -449,6 +465,22 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         if (!path.startsWith("saf://")) return
         val relativePath = relativePathFromSaf(path)
         if (relativePath.isNotEmpty()) shadowCache?.invalidate(relativePath)
+        knownExistingFiles.remove(path)  // force re-check next write
+    }
+
+    override fun readShadowOnly(path: String): String? {
+        if (!path.startsWith("saf://")) return null
+        val relativePath = relativePathFromSaf(path)
+        if (relativePath.isEmpty()) return null
+        return try {
+            shadowCache?.resolve(relativePath)?.readText()
+        } catch (_: Exception) { null }
+    }
+
+    override fun shadowExists(path: String): Boolean {
+        if (!path.startsWith("saf://")) return false
+        val relativePath = relativePathFromSaf(path)
+        return relativePath.isNotEmpty() && shadowCache?.resolve(relativePath) != null
     }
 
     override suspend fun syncShadow(graphPath: String) {

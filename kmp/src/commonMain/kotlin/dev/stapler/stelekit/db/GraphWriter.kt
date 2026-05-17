@@ -306,28 +306,31 @@ class GraphWriter(
                 }
 
                 // 0. Safety Check for Large Deletions
-                if (fileSystem.fileExists(filePath)) {
-                    val oldContent = if (capturedCryptoLayer != null) {
-                        val rawBytes = fileSystem.readFileBytes(filePath)
-                        if (rawBytes != null) {
-                            when (val r = capturedCryptoLayer.decrypt(relativeFilePath(filePath, capturedGraphPath), rawBytes)) {
-                                is Either.Right -> r.value.decodeToString()
-                                is Either.Left -> null  // decrypt failed — skip guard conservatively
+                // Shadow-first: zero SAF Binder IPC for warm shadow (all saves after the first).
+                // For cold shadow (new file / first launch): falls back to SAF only for plaintext;
+                // for encrypted cold shadow: reads ciphertext and decrypts (same as before).
+                val oldContentForSafetyCheck = fileSystem.readShadowOnly(filePath)
+                    ?: if (capturedCryptoLayer != null) {
+                        // Shadow cold + encrypted: decrypt ciphertext from SAF
+                        if (fileSystem.fileExists(filePath)) {
+                            val rawBytes = fileSystem.readFileBytes(filePath)
+                            rawBytes?.let { bytes ->
+                                (capturedCryptoLayer.decrypt(relativeFilePath(filePath, capturedGraphPath), bytes) as? Either.Right)
+                                    ?.value?.decodeToString()
                             }
                         } else null
                     } else {
-                        fileSystem.readFile(filePath) ?: ""
+                        // Shadow cold + plaintext: openInputStream (null = file doesn't exist yet — safe to skip guard)
+                        fileSystem.readFile(filePath)
                     }
-                    if (oldContent != null) {
-                        val oldBlockCount = oldContent.lines().count { it.trim().startsWith("- ") }
-                        val newBlockCount = blocks.size
-                        if (oldBlockCount > largeDeletionThreshold && newBlockCount < oldBlockCount / 2) {
-                            logger.error(
-                                "Safety check triggered: Attempting to delete more than 50% of blocks on page " +
-                                    "'${page.name}' ($oldBlockCount -> $newBlockCount). Save aborted."
-                            )
-                            return@withContext false
-                        }
+                if (oldContentForSafetyCheck != null) {
+                    val oldBlockCount = oldContentForSafetyCheck.lines().count { it.trim().startsWith("- ") }
+                    if (oldBlockCount > largeDeletionThreshold && blocks.size < oldBlockCount / 2) {
+                        logger.error(
+                            "Safety check triggered: Attempting to delete more than 50% of blocks on page " +
+                                "'${page.name}' ($oldBlockCount -> ${blocks.size}). Save aborted."
+                        )
+                        return@withContext false
                     }
                 }
 
@@ -341,8 +344,19 @@ class GraphWriter(
                     saga {
                         // Step 1: write markdown file — rollback restores previous content
                         val cryptoLayerNow = capturedCryptoLayer
-                        val oldRawBytes = if (cryptoLayerNow != null && fileSystem.fileExists(filePath)) fileSystem.readFileBytes(filePath) else null
-                        val oldContent = if (cryptoLayerNow == null && fileSystem.fileExists(filePath)) fileSystem.readFile(filePath) else null
+                        // Compensation data for saga rollback — read old content before overwriting.
+                        // Shadow-first for plaintext (zero IPC when warm). Encrypted still needs ciphertext
+                        // bytes from SAF; use shadowExists() to skip the fileExists() IPC when shadow is warm.
+                        val oldRawBytes = if (cryptoLayerNow != null) {
+                            if (fileSystem.shadowExists(filePath) || fileSystem.fileExists(filePath)) {
+                                fileSystem.readFileBytes(filePath)
+                            } else null
+                        } else null
+                        val oldContent = if (cryptoLayerNow == null) {
+                            // Shadow-only first; fall back to SAF readFile (which already checks shadow internally)
+                            // only when shadow is cold. readFile returns null if file doesn't exist (new page → delete on rollback).
+                            fileSystem.readShadowOnly(filePath) ?: fileSystem.readFile(filePath)
+                        } else null
                         saga(
                             action = {
                                 if (cryptoLayerNow != null) {

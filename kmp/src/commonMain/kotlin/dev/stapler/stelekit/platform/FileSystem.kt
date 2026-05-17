@@ -72,6 +72,20 @@ interface FileSystem {
     fun invalidateShadow(path: String) { /* no-op */ }
 
     /**
+     * Reads file content from the shadow cache only; returns null if no warm shadow exists.
+     * Never makes a SAF Binder IPC call. Safe to call from any dispatcher.
+     * On non-SAF file systems (JVM, legacy Android) always returns null.
+     */
+    fun readShadowOnly(path: String): String? = null
+
+    /**
+     * Returns true if the shadow cache has a warm (non-empty) entry for [path].
+     * A warm shadow implies the file was previously written to SAF successfully.
+     * Never makes a SAF Binder IPC call. On non-SAF file systems always returns false.
+     */
+    fun shadowExists(path: String): Boolean = false
+
+    /**
      * Syncs the shadow copy for [graphPath] from SAF using batch mtime queries.
      * No-op on non-SAF file systems. Should run concurrently with Phase 2 metadata loading
      * so Phase 3 reads can use the shadow instead of SAF Binder IPC.
