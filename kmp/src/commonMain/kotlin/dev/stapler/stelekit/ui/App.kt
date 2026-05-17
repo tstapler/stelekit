@@ -897,7 +897,9 @@ private fun GraphContent(
                                                     graphContentLogger.warn("Image attachment failed: $err")
                                                 },
                                                 ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                                                    val markdown = "![${attachment.displayName}](${attachment.relativePath})"
+                                                    val safeAlt = attachment.displayName.replace("]", "\\]")
+                                                    val safePath = attachment.relativePath.replace(")", "\\)")
+                                                    val markdown = "![${safeAlt}](${safePath})"
                                                     if (editingBlockUuid != null) {
                                                         blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
                                                     }
@@ -922,9 +924,11 @@ private fun GraphContent(
                                                             graphContentLogger.warn("Drag-and-drop attachment failed: $err")
                                                         },
                                                         ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
+                                                            val safeAlt = attachment.displayName.replace("]", "\\]")
+                                                            val safePath = attachment.relativePath.replace(")", "\\)")
                                                             blockStateManager.addBlockWithContent(
                                                                 pageUuid = pageUuid,
-                                                                content = "![${attachment.displayName}](${attachment.relativePath})"
+                                                                content = "![${safeAlt}](${safePath})"
                                                             )
                                                         }
                                                     )
@@ -945,7 +949,9 @@ private fun GraphContent(
                                                         graphContentLogger.warn("Clipboard paste failed: $err")
                                                     },
                                                     ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                                                        val markdown = "![${attachment.displayName}](${attachment.relativePath})"
+                                                        val safeAlt = attachment.displayName.replace("]", "\\]")
+                                                        val safePath = attachment.relativePath.replace(")", "\\)")
+                                                        val markdown = "![${safeAlt}](${safePath})"
                                                         if (editingBlockUuid != null) {
                                                             blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
                                                         }

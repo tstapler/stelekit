@@ -21,11 +21,18 @@ import coil3.toUri
  *
  * Strings that do not start with "../assets/" pass through as null so Coil falls through
  * to its default handling (http/https NetworkFetcher, absolute file:// FileUriFetcher, etc.).
+ *
+ * Returns null (cache miss) if [filename] contains path traversal sequences (`..`) or
+ * path separator characters (`/`, `\`) to prevent escaping the assets directory.
  */
 class SteleKitAssetMapper(private val graphRoot: String) : Mapper<String, Uri> {
     override fun map(data: String, options: Options): Uri? {
         if (!data.startsWith("../assets/")) return null
         val filename = data.removePrefix("../assets/")
+        // Guard against path traversal: reject backslashes and any ".." path component
+        if (filename.contains('\\') || filename.split('/').any { it == ".." }) {
+            return null
+        }
         return "file://$graphRoot/assets/$filename".toUri()
     }
 }

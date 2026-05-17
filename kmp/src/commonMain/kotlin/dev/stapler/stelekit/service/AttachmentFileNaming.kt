@@ -7,6 +7,16 @@ import okio.FileSystem
 import okio.Path
 
 /**
+ * Strips characters that are unsafe in a filename component.
+ * Retains only alphanumerics, hyphens, underscores, and dots.
+ * Callers that pass an empty [fallback] should supply a non-empty default.
+ */
+internal fun sanitizeFileNameComponent(value: String, fallback: String = "attachment"): String {
+    val sanitized = value.replace(Regex("[^A-Za-z0-9_.\\-]"), "")
+    return if (sanitized.isBlank()) fallback else sanitized
+}
+
+/**
  * Returns a unique filename under [assetsDir] using a suffix-counter strategy:
  *   photo.jpg → photo-1.jpg → photo-2.jpg → …
  *
@@ -26,11 +36,13 @@ fun uniqueFileName(
     ext: String,
     fileSystem: FileSystem,
 ): String {
-    val base = if (ext.isBlank()) stem else "$stem.$ext"
+    val safeStem = sanitizeFileNameComponent(stem, fallback = "attachment")
+    val safeExt = sanitizeFileNameComponent(ext, fallback = "")
+    val base = if (safeExt.isBlank()) safeStem else "$safeStem.$safeExt"
     if (!fileSystem.exists(assetsDir / base)) return base
     var counter = 1
     while (true) {
-        val candidate = if (ext.isBlank()) "$stem-$counter" else "$stem-$counter.$ext"
+        val candidate = if (safeExt.isBlank()) "$safeStem-$counter" else "$safeStem-$counter.$safeExt"
         if (!fileSystem.exists(assetsDir / candidate)) return candidate
         counter++
     }
