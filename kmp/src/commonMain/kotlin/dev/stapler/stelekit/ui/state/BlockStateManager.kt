@@ -385,6 +385,25 @@ class BlockStateManager(
     // ---- Block content operations ----
 
     /**
+     * Inserts [text] at the cursor position for the given block.
+     * Used for image attachment markdown insertion (`![alt](path)`).
+     *
+     * [overrideCursorIndex] should be captured by the caller *before* any dialog opens.
+     * When non-null it takes precedence over the stored cursor index.
+     */
+    fun insertTextAtCursor(blockUuid: String, text: String, overrideCursorIndex: Int? = null) {
+        scope.launch {
+            val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
+            val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
+            val safePos = cursor.coerceIn(0, block.content.length)
+            val newContent = block.content.substring(0, safePos) + text + block.content.substring(safePos)
+            val newVersion = block.version + 1
+            updateBlockContent(blockUuid, newContent, newVersion)
+            requestEditBlock(blockUuid, safePos + text.length)
+        }
+    }
+
+    /**
      * Inserts [[pageName]] at the cursor position for the given block.
      *
      * [overrideCursorIndex] should be captured by the caller *before* any dialog opens
@@ -776,6 +795,56 @@ class BlockStateManager(
             }
         }
         pendingNewBlockUuids.update { it - newBlock.uuid }
+        queueDiskSave(pageUuid)
+    }
+
+    /**
+     * Adds a new block at the end of the page with the given initial [content].
+     *
+     * Unlike [addBlockToPage] (which starts with empty content and focuses the new block),
+     * this variant writes the content immediately without requesting edit focus.
+     * Intended for programmatic insertion such as drag-and-drop image attachment.
+     */
+    fun addBlockWithContent(pageUuid: String, content: String): Job = scope.launch {
+        val blocks = blocksForPage(pageUuid)
+        val topLevelBlocks = blocks.filter { it.parentUuid == null }.sortedBy { it.position }
+        val lastBlock = topLevelBlocks.lastOrNull()
+        val newPosition = if (lastBlock != null) (lastBlock.position) + 1 else 0
+
+        val now = kotlin.time.Clock.System.now()
+        val newBlock = Block(
+            uuid = UuidGenerator.generateV7(),
+            pageUuid = pageUuid,
+            parentUuid = null,
+            leftUuid = lastBlock?.uuid,
+            content = content,
+            level = 0,
+            position = newPosition,
+            createdAt = now,
+            updatedAt = now,
+            properties = emptyMap(),
+            isLoaded = true
+        )
+        _blocks.update { current ->
+            val updated = current.toMutableMap()
+            val pageBlocks = updated[pageUuid]?.toMutableList() ?: mutableListOf()
+            pageBlocks.add(newBlock)
+            updated[pageUuid] = pageBlocks
+            updated
+        }
+        writeBlock(newBlock).onLeft { err ->
+            logger.error("addBlockWithContent: DB write failed for ${newBlock.uuid}: $err")
+            _blocks.update { current ->
+                val liveContent = current[pageUuid]?.find { it.uuid == newBlock.uuid }?.content
+                if (liveContent == newBlock.content) {
+                    val updated = current.toMutableMap()
+                    updated[pageUuid] = (updated[pageUuid] ?: emptyList()).filter { it.uuid != newBlock.uuid }
+                    updated
+                } else {
+                    current
+                }
+            }
+        }
         queueDiskSave(pageUuid)
     }
 

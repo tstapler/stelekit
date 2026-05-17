@@ -85,6 +85,7 @@ internal fun BlockItem(
     dropAbove: Boolean = false,
     dropBelow: Boolean = false,
     dropAsChild: Boolean = false,
+    onArchiveUrl: ((url: String, blockUuid: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -385,24 +386,38 @@ internal fun BlockItem(
                         onStartEditing = onStartEditing,
                         modifier = Modifier.weight(1f),
                     )
-                    else -> BlockViewer( // BULLET, PARAGRAPH, RAW_HTML, unknown
-                        content = block.content,
-                        textColor = textColor,
-                        linkColor = linkColor,
-                        resolvedRefs = resolvedRefs,
-                        onLinkClick = onLinkClick,
-                        onStartEditing = onStartEditing,
-                        modifier = Modifier.weight(1f),
-                        isShiftDown = isShiftDown,
-                        onShiftClick = onShiftClick,
-                        suggestionMatcher = suggestionMatcher,
-                        onSuggestionClick = { canonicalName, contentStart, contentEnd ->
-                            suggestionState = SuggestionState(canonicalName, contentStart, contentEnd, block.content)
-                        },
-                        onSuggestionRightClick = { canonicalName, contentStart, contentEnd ->
-                            contextMenuState = SuggestionState(canonicalName, contentStart, contentEnd, block.content)
-                        },
-                    )
+                    else -> {
+                        val imageData = remember(block.content) { extractSingleImageNode(block.content) }
+                        if (imageData != null) {
+                            val (url, altText) = imageData
+                            ImageBlock(
+                                url = url,
+                                altText = altText,
+                                onStartEditing = onStartEditing,
+                                modifier = Modifier.weight(1f),
+                            )
+                        } else {
+                            BlockViewer( // BULLET, PARAGRAPH, RAW_HTML, unknown
+                                content = block.content,
+                                textColor = textColor,
+                                linkColor = linkColor,
+                                resolvedRefs = resolvedRefs,
+                                onLinkClick = onLinkClick,
+                                onStartEditing = onStartEditing,
+                                modifier = Modifier.weight(1f),
+                                isShiftDown = isShiftDown,
+                                onShiftClick = onShiftClick,
+                                suggestionMatcher = suggestionMatcher,
+                                onSuggestionClick = { canonicalName, contentStart, contentEnd ->
+                                    suggestionState = SuggestionState(canonicalName, contentStart, contentEnd, block.content)
+                                },
+                                onSuggestionRightClick = { canonicalName, contentStart, contentEnd ->
+                                    contextMenuState = SuggestionState(canonicalName, contentStart, contentEnd, block.content)
+                                },
+                                onUrlRightClick = onArchiveUrl?.let { archive -> { url -> archive(url, block.uuid) } },
+                            )
+                        }
+                    }
                 }
             }
         }

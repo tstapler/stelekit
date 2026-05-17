@@ -44,6 +44,7 @@ internal fun BlockViewer(
     suggestionMatcher: AhoCorasickMatcher? = null,
     onSuggestionClick: (canonicalName: String, contentStart: Int, contentEnd: Int) -> Unit = { _, _, _ -> },
     onSuggestionRightClick: (canonicalName: String, contentStart: Int, contentEnd: Int) -> Unit = { _, _, _ -> },
+    onUrlRightClick: ((String) -> Unit)? = null,
 ) {
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     WikiLinkText(
@@ -66,6 +67,7 @@ internal fun BlockViewer(
         suggestionMatcher = suggestionMatcher,
         onSuggestionClick = onSuggestionClick,
         onSuggestionRightClick = onSuggestionRightClick,
+        onUrlRightClick = onUrlRightClick,
     )
 }
 
@@ -86,6 +88,7 @@ fun WikiLinkText(
     suggestionMatcher: AhoCorasickMatcher? = null,
     onSuggestionClick: (canonicalName: String, contentStart: Int, contentEnd: Int) -> Unit = { _, _, _ -> },
     onSuggestionRightClick: (canonicalName: String, contentStart: Int, contentEnd: Int) -> Unit = { _, _, _ -> },
+    onUrlRightClick: ((String) -> Unit)? = null,
 ) {
     val blockRefBg = StelekitTheme.colors.blockRefBackground
     val codeBg = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
@@ -207,6 +210,13 @@ fun WikiLinkText(
                         val decoded = decodeSuggestionAnnotation(suggestion.item)
                         if (decoded != null) {
                             onSuggestionRightClick(decoded.first, decoded.second, decoded.third)
+                        }
+                    } else if (onUrlRightClick != null) {
+                        val urlAnnotation = annotatedString
+                            .getStringAnnotations("url", charOffset, charOffset).firstOrNull()
+                            ?: annotatedString.getStringAnnotations("link", charOffset, charOffset).firstOrNull()
+                        if (urlAnnotation != null) {
+                            onUrlRightClick(urlAnnotation.item)
                         }
                     }
                 }

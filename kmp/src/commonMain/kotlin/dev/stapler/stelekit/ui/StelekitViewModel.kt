@@ -102,6 +102,22 @@ class StelekitViewModel(
     private val scope = scope
     private val logger = Logger("StelekitViewModel")
 
+    /**
+     * Platform-provided callback that opens the image picker and attaches the selected image
+     * to the currently editing block. Registered by the host composable (App.kt) once the
+     * attachment service is wired. Null when no attachment service is available.
+     */
+    private var attachImageCallback: (() -> Unit)? = null
+
+    /**
+     * Registers the platform callback for attaching images from the command palette.
+     * Called from App.kt after the attachment service is set up.
+     */
+    fun registerAttachImageCallback(callback: (() -> Unit)?) {
+        attachImageCallback = callback
+        updateCommands()
+    }
+
     // --- Undo / Redo ---
     private val _falseFlow = MutableStateFlow(false)
 
@@ -1333,8 +1349,13 @@ class StelekitViewModel(
                 val availableCommands = getAvailableCommands()
                 val legacyCommands = availableCommands.map { cmd ->
                     Command(cmd.id, cmd.label, cmd.shortcut) {
-                        scope.launch {
-                            executeCommand(cmd.id)
+                        val attachCallback = attachImageCallback
+                        if (cmd.id == "media.image" && attachCallback != null) {
+                            attachCallback()
+                        } else {
+                            scope.launch {
+                                executeCommand(cmd.id)
+                            }
                         }
                     }
                 }.toMutableList()
