@@ -8,6 +8,7 @@ import kotlin.concurrent.Volatile
 import arrow.fx.coroutines.resource
 import arrow.resilience.saga
 import arrow.resilience.transact
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
@@ -139,82 +140,85 @@ class GraphWriter(
      * Returns true if successful, false otherwise.
      */
     suspend fun renamePage(page: Page, newName: String, graphPath: String): Boolean = saveMutex.withLock {
-        val oldPath = page.filePath
-        if (oldPath.isNullOrBlank()) {
-            logger.error("Cannot rename page with no file path: ${page.name}")
-            return@withLock false
-        }
-
-        // Guard: cannot rename pages in the hidden-volume reserve area
-        val renameLayer = cryptoLayer
-        val renameGraphPath = this.graphPath
-        if (renameLayer != null && renameGraphPath.isEmpty()) {
-            logger.error("renamePage aborted — cryptoLayer is set but graphPath is empty (AAD would be wrong)")
-            return@withLock false
-        }
-        if (renameLayer != null) {
-            if (renameLayer.checkNotHiddenReserve(relativeFilePath(oldPath, renameGraphPath)).isLeft()) {
-                logger.error("Rename blocked — restricted path: $oldPath")
-                return@withLock false
+        // IO boundary: all calls below are blocking SAF Binder IPC on Android
+        withContext(PlatformDispatcher.IO) {
+            val oldPath = page.filePath
+            if (oldPath.isNullOrBlank()) {
+                logger.error("Cannot rename page with no file path: ${page.name}")
+                return@withContext false
             }
-        }
 
-        // Calculate new path using the already-captured renameLayer snapshot
-        val newPath = getPageFilePath(page.copy(name = newName), graphPath, renameLayer)
-
-        // If paths are same, nothing to do (except maybe case change on some FS)
-        if (oldPath == newPath) return true
-
-        // When encryption is active, re-encrypt with the new path as AAD rather than copying
-        // raw ciphertext — the AEAD tag binds the old path, so a verbatim copy would be
-        // permanently unreadable at the new location.
-        // Use the already-captured renameLayer snapshot — re-reading cryptoLayer here could
-        // observe null if the vault is locked between the guard check and this point.
-        val cryptoLayerNow = renameLayer
-        val writeOk = if (cryptoLayerNow != null) {
-            val bytes = fileSystem.readFileBytes(oldPath)
-            if (bytes == null) {
-                logger.error("Failed to read file bytes for rename: $oldPath")
-                return false
+            // Guard: cannot rename pages in the hidden-volume reserve area
+            val renameLayer = cryptoLayer
+            val renameGraphPath = this@GraphWriter.graphPath
+            if (renameLayer != null && renameGraphPath.isEmpty()) {
+                logger.error("renamePage aborted — cryptoLayer is set but graphPath is empty (AAD would be wrong)")
+                return@withContext false
             }
-            val oldRelPath = relativeFilePath(oldPath, renameGraphPath)
-            val newRelPath = relativeFilePath(newPath, renameGraphPath)
-            val plaintext = when (val result = cryptoLayerNow.decrypt(oldRelPath, bytes)) {
-                is Either.Right -> result.value
-                is Either.Left -> {
-                    logger.error("Failed to decrypt file for rename: $oldPath (${result.value})")
-                    return false
+            if (renameLayer != null) {
+                if (renameLayer.checkNotHiddenReserve(relativeFilePath(oldPath, renameGraphPath)).isLeft()) {
+                    logger.error("Rename blocked — restricted path: $oldPath")
+                    return@withContext false
                 }
             }
-            try {
-                fileSystem.writeFileBytes(newPath, cryptoLayerNow.encrypt(newRelPath, plaintext))
-            } finally {
-                plaintext.fill(0)
-            }
-        } else {
-            val content = fileSystem.readFile(oldPath)
-            if (content == null) {
-                logger.error("Failed to read file for rename: $oldPath")
-                return false
-            }
-            fileSystem.writeFile(newPath, content)
-        }
 
-        if (writeOk) {
-            onFileWritten?.invoke(oldPath)   // mark old path as our own deletion
-            if (fileSystem.deleteFile(oldPath)) {
-                // Notify the file watcher so it registers the new path and does not treat
-                // the newly-created file as an external change on the next poll tick.
-                onFileWritten?.invoke(newPath)
-                logger.debug("Renamed page from $oldPath to $newPath")
-                return true
+            // Calculate new path using the already-captured renameLayer snapshot
+            val newPath = getPageFilePath(page.copy(name = newName), graphPath, renameLayer)
+
+            // If paths are same, nothing to do (except maybe case change on some FS)
+            if (oldPath == newPath) return@withContext true
+
+            // When encryption is active, re-encrypt with the new path as AAD rather than copying
+            // raw ciphertext — the AEAD tag binds the old path, so a verbatim copy would be
+            // permanently unreadable at the new location.
+            // Use the already-captured renameLayer snapshot — re-reading cryptoLayer here could
+            // observe null if the vault is locked between the guard check and this point.
+            val cryptoLayerNow = renameLayer
+            val writeOk = if (cryptoLayerNow != null) {
+                val bytes = fileSystem.readFileBytes(oldPath)
+                if (bytes == null) {
+                    logger.error("Failed to read file bytes for rename: $oldPath")
+                    return@withContext false
+                }
+                val oldRelPath = relativeFilePath(oldPath, renameGraphPath)
+                val newRelPath = relativeFilePath(newPath, renameGraphPath)
+                val plaintext = when (val result = cryptoLayerNow.decrypt(oldRelPath, bytes)) {
+                    is Either.Right -> result.value
+                    is Either.Left -> {
+                        logger.error("Failed to decrypt file for rename: $oldPath (${result.value})")
+                        return@withContext false
+                    }
+                }
+                try {
+                    fileSystem.writeFileBytes(newPath, cryptoLayerNow.encrypt(newRelPath, plaintext))
+                } finally {
+                    plaintext.fill(0)
+                }
             } else {
-                logger.error("Failed to delete old file after copy: $oldPath")
-                return false
+                val content = fileSystem.readFile(oldPath)
+                if (content == null) {
+                    logger.error("Failed to read file for rename: $oldPath")
+                    return@withContext false
+                }
+                fileSystem.writeFile(newPath, content)
             }
-        } else {
-            logger.error("Failed to write new file during rename: $newPath")
-            return false
+
+            if (writeOk) {
+                onFileWritten?.invoke(oldPath)   // mark old path as our own deletion
+                if (fileSystem.deleteFile(oldPath)) {
+                    // Notify the file watcher so it registers the new path and does not treat
+                    // the newly-created file as an external change on the next poll tick.
+                    onFileWritten?.invoke(newPath)
+                    logger.debug("Renamed page from $oldPath to $newPath")
+                    return@withContext true
+                } else {
+                    logger.error("Failed to delete old file after copy: $oldPath")
+                    return@withContext false
+                }
+            } else {
+                logger.error("Failed to write new file during rename: $newPath")
+                return@withContext false
+            }
         }
     }
 
@@ -222,28 +226,31 @@ class GraphWriter(
      * Delete a page file.
      */
     suspend fun deletePage(page: Page): Boolean = saveMutex.withLock {
-        val path = page.filePath
-        if (path.isNullOrBlank()) {
-            logger.error("Cannot delete page with no file path: ${page.name}")
-            return false
-        }
+        // IO boundary: all calls below are blocking SAF Binder IPC on Android
+        withContext(PlatformDispatcher.IO) {
+            val path = page.filePath
+            if (path.isNullOrBlank()) {
+                logger.error("Cannot delete page with no file path: ${page.name}")
+                return@withContext false
+            }
 
-        // Guard: cannot delete pages in the hidden-volume reserve area
-        val deleteLayer = cryptoLayer
-        val deleteGraphPath = this.graphPath
-        if (deleteLayer != null && deleteLayer.checkNotHiddenReserve(relativeFilePath(path, deleteGraphPath)).isLeft()) {
-            logger.error("Delete blocked — restricted path: $path")
-            return false
-        }
+            // Guard: cannot delete pages in the hidden-volume reserve area
+            val deleteLayer = cryptoLayer
+            val deleteGraphPath = this@GraphWriter.graphPath
+            if (deleteLayer != null && deleteLayer.checkNotHiddenReserve(relativeFilePath(path, deleteGraphPath)).isLeft()) {
+                logger.error("Delete blocked — restricted path: $path")
+                return@withContext false
+            }
 
-        onFileWritten?.invoke(path)   // pre-register deletion so file watcher ignores own-delete event
-        val success = fileSystem.deleteFile(path)
-        if (success) {
-            logger.debug("Deleted page file: $path")
-        } else {
-            logger.error("Failed to delete page file: $path")
+            onFileWritten?.invoke(path)   // pre-register deletion so file watcher ignores own-delete event
+            val success = fileSystem.deleteFile(path)
+            if (success) {
+                logger.debug("Deleted page file: $path")
+            } else {
+                logger.error("Failed to delete page file: $path")
+            }
+            success
         }
-        return success
     }
 
     /**
@@ -264,153 +271,160 @@ class GraphWriter(
      */
     private suspend fun savePageInternal(page: Page, blocks: List<Block>, graphPath: String): Boolean =
         saveMutex.withLock {
-            // Capture cryptoLayer and graphPath once at lock entry — also used by getPageFilePath so
-            // the file extension (.md.stek vs .md) is consistent with all subsequent encrypt/decrypt calls.
-            val capturedCryptoLayer = cryptoLayer
-            val capturedGraphPath = this.graphPath
-            // GAP-3: fail fast if encryption is active but the graph path hasn't been set yet.
-            // relativeFilePath() with empty graphPath strips only the leading "/" from absolute paths,
-            // producing the wrong AAD string and making the file permanently unreadable.
-            if (capturedCryptoLayer != null && capturedGraphPath.isEmpty()) {
-                logger.error("savePageInternal aborted — cryptoLayer is set but graphPath is empty (AAD would be wrong)")
-                return@withLock false
-            }
-
-            val filePath = if (!page.filePath.isNullOrBlank()) {
-                page.filePath
-            } else {
-                getPageFilePath(page, graphPath, capturedCryptoLayer)
-            }
-
-            // Guard: outer graph cannot write to the hidden volume reserve area
-            if (capturedCryptoLayer != null) {
-                val relPath = relativeFilePath(filePath, capturedGraphPath)
-                val guard = capturedCryptoLayer.checkNotHiddenReserve(relPath)
-                if (guard.isLeft()) {
-                    logger.error("Write blocked — restricted path: $filePath")
-                    return@withLock false
+            // IO BOUNDARY: All filesystem calls below this line run on PlatformDispatcher.IO.
+            // Adding any fileSystem.* call outside this withContext block will cause SAF Binder IPC
+            // to block a Default dispatcher thread, reintroducing the Android insert lag.
+            // See: project_plans/android-inserts/implementation/validation.md TC-08
+            // TODO: Add DirectFileSystemCallOutsideIOContext detekt rule to enforce this statically.
+            withContext(PlatformDispatcher.IO) {
+                // Capture cryptoLayer and graphPath once at lock entry — also used by getPageFilePath so
+                // the file extension (.md.stek vs .md) is consistent with all subsequent encrypt/decrypt calls.
+                val capturedCryptoLayer = cryptoLayer
+                val capturedGraphPath = this@GraphWriter.graphPath
+                // GAP-3: fail fast if encryption is active but the graph path hasn't been set yet.
+                // relativeFilePath() with empty graphPath strips only the leading "/" from absolute paths,
+                // producing the wrong AAD string and making the file permanently unreadable.
+                if (capturedCryptoLayer != null && capturedGraphPath.isEmpty()) {
+                    logger.error("savePageInternal aborted — cryptoLayer is set but graphPath is empty (AAD would be wrong)")
+                    return@withContext false
                 }
-            }
 
-            // 0. Safety Check for Large Deletions
-            if (fileSystem.fileExists(filePath)) {
-                val oldContent = if (capturedCryptoLayer != null) {
-                    val rawBytes = fileSystem.readFileBytes(filePath)
-                    if (rawBytes != null) {
-                        when (val r = capturedCryptoLayer.decrypt(relativeFilePath(filePath, capturedGraphPath), rawBytes)) {
-                            is Either.Right -> r.value.decodeToString()
-                            is Either.Left -> null  // decrypt failed — skip guard conservatively
-                        }
-                    } else null
+                val filePath = if (!page.filePath.isNullOrBlank()) {
+                    page.filePath
                 } else {
-                    fileSystem.readFile(filePath) ?: ""
+                    getPageFilePath(page, graphPath, capturedCryptoLayer)
                 }
-                if (oldContent != null) {
-                    val oldBlockCount = oldContent.lines().count { it.trim().startsWith("- ") }
-                    val newBlockCount = blocks.size
-                    if (oldBlockCount > largeDeletionThreshold && newBlockCount < oldBlockCount / 2) {
-                        logger.error(
-                            "Safety check triggered: Attempting to delete more than 50% of blocks on page " +
-                                "'${page.name}' ($oldBlockCount -> $newBlockCount). Save aborted."
-                        )
-                        return@withLock false
+
+                // Guard: outer graph cannot write to the hidden volume reserve area
+                if (capturedCryptoLayer != null) {
+                    val relPath = relativeFilePath(filePath, capturedGraphPath)
+                    val guard = capturedCryptoLayer.checkNotHiddenReserve(relPath)
+                    if (guard.isLeft()) {
+                        logger.error("Write blocked — restricted path: $filePath")
+                        return@withContext false
                     }
                 }
-            }
 
-            val content = buildMarkdown(page, blocks)
-
-            // Run the saga — transact() throws on failure; runCatching logs and swallows.
-            // The saga { } builder annotates the block with @SagaDSLMarker so inner saga()
-            // calls resolve correctly via SagaScope. .transact() executes the pipeline.
-            var succeeded = false
-            runCatching {
-                saga {
-                    // Step 1: write markdown file — rollback restores previous content
-                    val cryptoLayerNow = capturedCryptoLayer
-                    val oldRawBytes = if (cryptoLayerNow != null && fileSystem.fileExists(filePath)) fileSystem.readFileBytes(filePath) else null
-                    val oldContent = if (cryptoLayerNow == null && fileSystem.fileExists(filePath)) fileSystem.readFile(filePath) else null
-                    saga(
-                        action = {
-                            if (cryptoLayerNow != null) {
-                                val relPath = relativeFilePath(filePath, capturedGraphPath)
-                                val encryptedBytes = cryptoLayerNow.encrypt(relPath, content.encodeToByteArray())
-                                if (!fileSystem.writeFileBytes(filePath, encryptedBytes)) {
-                                    error("writeFileBytes returned false for: $filePath")
-                                }
-                            } else {
-                                if (!fileSystem.writeFile(filePath, content)) {
-                                    error("writeFile returned false for: $filePath")
-                                }
+                // 0. Safety Check for Large Deletions
+                if (fileSystem.fileExists(filePath)) {
+                    val oldContent = if (capturedCryptoLayer != null) {
+                        val rawBytes = fileSystem.readFileBytes(filePath)
+                        if (rawBytes != null) {
+                            when (val r = capturedCryptoLayer.decrypt(relativeFilePath(filePath, capturedGraphPath), rawBytes)) {
+                                is Either.Right -> r.value.decodeToString()
+                                is Either.Left -> null  // decrypt failed — skip guard conservatively
                             }
-                            fileSystem.updateShadow(filePath, content)
-                        },
-                        compensation = { _ ->
-                            try {
-                                if (cryptoLayerNow != null) {
-                                    if (oldRawBytes != null) fileSystem.writeFileBytes(filePath, oldRawBytes)
-                                    else fileSystem.deleteFile(filePath)
-                                } else {
-                                    if (oldContent != null) fileSystem.writeFile(filePath, oldContent)
-                                    else fileSystem.deleteFile(filePath)
-                                }
-                                fileSystem.invalidateShadow(filePath)
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                logger.error("Saga compensation: failed to restore $filePath", e)
-                            }
+                        } else null
+                    } else {
+                        fileSystem.readFile(filePath) ?: ""
+                    }
+                    if (oldContent != null) {
+                        val oldBlockCount = oldContent.lines().count { it.trim().startsWith("- ") }
+                        val newBlockCount = blocks.size
+                        if (oldBlockCount > largeDeletionThreshold && newBlockCount < oldBlockCount / 2) {
+                            logger.error(
+                                "Safety check triggered: Attempting to delete more than 50% of blocks on page " +
+                                    "'${page.name}' ($oldBlockCount -> $newBlockCount). Save aborted."
+                            )
+                            return@withContext false
                         }
-                    )
+                    }
+                }
 
-                    // Step 2: notify observer (suppresses external-change detection in GraphLoader)
-                    saga(
-                        action = { onFileWritten?.invoke(filePath) },
-                        compensation = { _ -> /* idempotent — no-op */ }
-                    )
+                val content = buildMarkdown(page, blocks)
 
-                    // Step 3: write sidecar (non-critical — failure is logged but not propagated)
-                    saga(
-                        action = {
-                            if (sidecarManager != null) {
-                                val pageSlug = FileUtils.sanitizeFileName(page.name)
+                // Run the saga — transact() throws on failure; runCatching logs and swallows.
+                // The saga { } builder annotates the block with @SagaDSLMarker so inner saga()
+                // calls resolve correctly via SagaScope. .transact() executes the pipeline.
+                var succeeded = false
+                runCatching {
+                    saga {
+                        // Step 1: write markdown file — rollback restores previous content
+                        val cryptoLayerNow = capturedCryptoLayer
+                        val oldRawBytes = if (cryptoLayerNow != null && fileSystem.fileExists(filePath)) fileSystem.readFileBytes(filePath) else null
+                        val oldContent = if (cryptoLayerNow == null && fileSystem.fileExists(filePath)) fileSystem.readFile(filePath) else null
+                        saga(
+                            action = {
+                                if (cryptoLayerNow != null) {
+                                    val relPath = relativeFilePath(filePath, capturedGraphPath)
+                                    val encryptedBytes = cryptoLayerNow.encrypt(relPath, content.encodeToByteArray())
+                                    if (!fileSystem.writeFileBytes(filePath, encryptedBytes)) {
+                                        error("writeFileBytes returned false for: $filePath")
+                                    }
+                                } else {
+                                    if (!fileSystem.writeFile(filePath, content)) {
+                                        error("writeFile returned false for: $filePath")
+                                    }
+                                }
+                                fileSystem.updateShadow(filePath, content)
+                            },
+                            compensation = { _ ->
                                 try {
-                                    sidecarManager.write(pageSlug, blocks)
+                                    if (cryptoLayerNow != null) {
+                                        if (oldRawBytes != null) fileSystem.writeFileBytes(filePath, oldRawBytes)
+                                        else fileSystem.deleteFile(filePath)
+                                    } else {
+                                        if (oldContent != null) fileSystem.writeFile(filePath, oldContent)
+                                        else fileSystem.deleteFile(filePath)
+                                    }
+                                    fileSystem.invalidateShadow(filePath)
                                 } catch (e: CancellationException) {
                                     throw e
                                 } catch (e: Exception) {
-                                    logger.error("Failed to write sidecar for page '${page.name}'", e)
+                                    logger.error("Saga compensation: failed to restore $filePath", e)
                                 }
                             }
-                        },
-                        compensation = { _ -> /* sidecar is non-critical — no rollback */ }
-                    )
+                        )
 
-                    // Step 4: update filePath in DB for new pages (fire-and-forget via actor)
-                    saga(
-                        action = {
-                            if (page.filePath.isNullOrBlank()) {
-                                val updatedPage = page.copy(filePath = filePath)
-                                val currentScope = scope
-                                if (writeActor != null && currentScope != null) {
-                                    currentScope.launch { writeActor.savePage(updatedPage) }
-                                } else {
-                                    @Suppress("DEPRECATION")
-                                    @OptIn(DirectRepositoryWrite::class)
-                                    pageRepository?.savePage(updatedPage)
+                        // Step 2: notify observer (suppresses external-change detection in GraphLoader)
+                        saga(
+                            action = { onFileWritten?.invoke(filePath) },
+                            compensation = { _ -> /* idempotent — no-op */ }
+                        )
+
+                        // Step 3: write sidecar (non-critical — failure is logged but not propagated)
+                        saga(
+                            action = {
+                                if (sidecarManager != null) {
+                                    val pageSlug = FileUtils.sanitizeFileName(page.name)
+                                    try {
+                                        sidecarManager.write(pageSlug, blocks)
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        logger.error("Failed to write sidecar for page '${page.name}'", e)
+                                    }
                                 }
-                            }
-                        },
-                        compensation = { _ -> /* DB update is best-effort — no rollback needed */ }
-                    )
+                            },
+                            compensation = { _ -> /* sidecar is non-critical — no rollback */ }
+                        )
 
-                    logger.debug("Saved page to: $filePath")
-                }.transact()
-                succeeded = true
-            }.onFailure { e ->
-                logger.error("Failed to write file: $filePath", e)
+                        // Step 4: update filePath in DB for new pages (fire-and-forget via actor)
+                        saga(
+                            action = {
+                                if (page.filePath.isNullOrBlank()) {
+                                    val updatedPage = page.copy(filePath = filePath)
+                                    val currentScope = scope
+                                    if (writeActor != null && currentScope != null) {
+                                        currentScope.launch { writeActor.savePage(updatedPage) }
+                                    } else {
+                                        @Suppress("DEPRECATION")
+                                        @OptIn(DirectRepositoryWrite::class)
+                                        pageRepository?.savePage(updatedPage)
+                                    }
+                                }
+                            },
+                            compensation = { _ -> /* DB update is best-effort — no rollback needed */ }
+                        )
+
+                        logger.debug("Saved page to: $filePath")
+                    }.transact()
+                    succeeded = true
+                }.onFailure { e ->
+                    logger.error("Failed to write file: $filePath", e)
+                }
+                succeeded
             }
-            succeeded
         }
 
     private fun buildMarkdown(page: Page, blocks: List<Block>): String = buildString {
