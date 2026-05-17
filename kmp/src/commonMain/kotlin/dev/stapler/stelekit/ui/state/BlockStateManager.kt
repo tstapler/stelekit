@@ -697,31 +697,124 @@ class BlockStateManager(
     }
 
     fun addNewBlock(currentBlockUuid: String): Job = scope.launch {
-        val block = blockRepository.getBlockByUuid(currentBlockUuid).first().getOrNull() ?: return@launch
-        val pageUuid = block.pageUuid
+        val sourceBlock = _blocks.value.values.flatten().find { it.uuid == currentBlockUuid }
+            ?: blockRepository.getBlockByUuid(currentBlockUuid).first().getOrNull()
+            ?: return@launch
+        val pageUuid = sourceBlock.pageUuid
         val before = takePageSnapshot(pageUuid)
-        blockRepository.splitBlock(currentBlockUuid, block.content.length).onRight { newBlock ->
-            requestEditBlock(newBlock.uuid)
+        val cursorPosition = sourceBlock.content.length
+
+        // Optimistic: insert empty new block in-memory and move focus immediately
+        val expectedNewUuid = UuidGenerator.generateV7()
+        val now = kotlin.time.Clock.System.now()
+        val optimisticNew = sourceBlock.copy(
+            uuid = expectedNewUuid,
+            content = "",
+            position = sourceBlock.position + 1,
+            leftUuid = currentBlockUuid,
+            createdAt = now,
+            updatedAt = now,
+        )
+        _blocks.update { state ->
+            val pageBlocks = state[pageUuid]?.toMutableList() ?: return@update state
+            val idx = pageBlocks.indexOfFirst { it.uuid == currentBlockUuid }
+            if (idx >= 0) pageBlocks.add(idx + 1, optimisticNew)
+            state + (pageUuid to pageBlocks)
+        }
+        pendingNewBlockUuids.update { it + expectedNewUuid }
+        requestEditBlock(expectedNewUuid)   // focus moves here, before DB
+
+        blockRepository.splitBlock(currentBlockUuid, cursorPosition).onRight { newBlock ->
+            pendingNewBlockUuids.update { it - expectedNewUuid }
+            if (newBlock.uuid != expectedNewUuid) {
+                // UUID mismatch (repository generated a different UUID) — correct focus
+                _blocks.update { state ->
+                    val pageBlocks = state[pageUuid]?.toMutableList() ?: return@update state
+                    val idx = pageBlocks.indexOfFirst { it.uuid == expectedNewUuid }
+                    if (idx >= 0) pageBlocks[idx] = pageBlocks[idx].copy(uuid = newBlock.uuid)
+                    state + (pageUuid to pageBlocks)
+                }
+                requestEditBlock(newBlock.uuid)
+            }
             queueDiskSave(pageUuid)
             val after = takePageSnapshot(pageUuid)
             record(
                 undo = { restorePageToSnapshot(pageUuid, before); requestEditBlock(currentBlockUuid) },
                 redo = { restorePageToSnapshot(pageUuid, after); requestEditBlock(newBlock.uuid) }
             )
+        }.onLeft { err ->
+            logger.error("addNewBlock: DB write failed for $currentBlockUuid: $err")
+            pendingNewBlockUuids.update { it - expectedNewUuid }
+            // Roll back optimistic update
+            _blocks.update { state ->
+                val pageBlocks = state[pageUuid]?.toMutableList() ?: return@update state
+                pageBlocks.removeAll { it.uuid == expectedNewUuid }
+                state + (pageUuid to pageBlocks)
+            }
+            requestEditBlock(currentBlockUuid, cursorPosition)
         }
     }
 
     fun splitBlock(blockUuid: String, cursorPosition: Int): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
+
+        // Optimistic: split _blocks in-memory and move focus immediately
+        val sourceBlock = _blocks.value[pageUuid]?.find { it.uuid == blockUuid } ?: return@launch
+        val firstPart = sourceBlock.content.substring(0, cursorPosition).trim()
+        val secondPart = sourceBlock.content.substring(cursorPosition).trim()
+        val expectedNewUuid = UuidGenerator.generateV7()
+        val now = kotlin.time.Clock.System.now()
+        val optimisticNew = sourceBlock.copy(
+            uuid = expectedNewUuid,
+            content = secondPart,
+            position = sourceBlock.position + 1,
+            leftUuid = blockUuid,
+            createdAt = now,
+            updatedAt = now,
+        )
+        _blocks.update { state ->
+            val pageBlocks = state[pageUuid]?.toMutableList() ?: return@update state
+            val idx = pageBlocks.indexOfFirst { it.uuid == blockUuid }
+            if (idx >= 0) {
+                pageBlocks[idx] = pageBlocks[idx].copy(content = firstPart)
+                pageBlocks.add(idx + 1, optimisticNew)
+            }
+            state + (pageUuid to pageBlocks)
+        }
+        pendingNewBlockUuids.update { it + expectedNewUuid }
+        requestEditBlock(expectedNewUuid)   // focus moves here, before DB
+
         blockRepository.splitBlock(blockUuid, cursorPosition).onRight { newBlock ->
-            requestEditBlock(newBlock.uuid)
+            pendingNewBlockUuids.update { it - expectedNewUuid }
+            if (newBlock.uuid != expectedNewUuid) {
+                // UUID mismatch (repository generated a different UUID) — correct focus
+                _blocks.update { state ->
+                    val pageBlocks = state[pageUuid]?.toMutableList() ?: return@update state
+                    val idx = pageBlocks.indexOfFirst { it.uuid == expectedNewUuid }
+                    if (idx >= 0) pageBlocks[idx] = pageBlocks[idx].copy(uuid = newBlock.uuid)
+                    state + (pageUuid to pageBlocks)
+                }
+                requestEditBlock(newBlock.uuid)
+            }
             queueDiskSave(pageUuid)
             val after = takePageSnapshot(pageUuid)
             record(
                 undo = { restorePageToSnapshot(pageUuid, before); requestEditBlock(blockUuid, cursorPosition) },
                 redo = { restorePageToSnapshot(pageUuid, after); requestEditBlock(newBlock.uuid) }
             )
+        }.onLeft { err ->
+            logger.error("splitBlock: DB write failed for $blockUuid: $err")
+            pendingNewBlockUuids.update { it - expectedNewUuid }
+            // Roll back optimistic update
+            _blocks.update { state ->
+                val pageBlocks = state[pageUuid]?.toMutableList() ?: return@update state
+                pageBlocks.removeAll { it.uuid == expectedNewUuid }
+                val idx = pageBlocks.indexOfFirst { it.uuid == blockUuid }
+                if (idx >= 0) pageBlocks[idx] = pageBlocks[idx].copy(content = sourceBlock.content)
+                state + (pageUuid to pageBlocks)
+            }
+            requestEditBlock(blockUuid, cursorPosition)
         }
     }
 
@@ -793,14 +886,19 @@ class BlockStateManager(
 
         if (currentIndex > 0) {
             val prevBlock = siblings[currentIndex - 1]
+            // Move focus before the DB round-trip so keyboard lands immediately
+            requestEditBlock(prevBlock.uuid, prevBlock.content.length)
             blockRepository.mergeBlocks(prevBlock.uuid, blockUuid, "").onRight {
-                requestEditBlock(prevBlock.uuid, prevBlock.content.length)
                 queueDiskSave(pageUuid)
                 val after = takePageSnapshot(pageUuid)
                 record(
                     undo = { restorePageToSnapshot(pageUuid, before); requestEditBlock(blockUuid, 0) },
                     redo = { restorePageToSnapshot(pageUuid, after); requestEditBlock(prevBlock.uuid, prevBlock.content.length) }
                 )
+            }.onLeft { err ->
+                logger.error("mergeBlock: DB write failed for $blockUuid: $err")
+                // Roll back focus to original block
+                requestEditBlock(blockUuid, 0)
             }
         }
     }
@@ -818,7 +916,6 @@ class BlockStateManager(
         val currentIndex = siblings.indexOfFirst { it.uuid == blockUuid }
 
         suspend fun afterOp(focusUuid: String, focusPos: Int) {
-            requestEditBlock(focusUuid, focusPos)
             queueDiskSave(pageUuid)
             val after = takePageSnapshot(pageUuid)
             record(
@@ -829,26 +926,50 @@ class BlockStateManager(
 
         if (currentIndex > 0) {
             val prevBlock = siblings[currentIndex - 1]
+            // Move focus before the DB round-trip so keyboard lands immediately
+            requestEditBlock(prevBlock.uuid, prevBlock.content.length)
             blockRepository.mergeBlocks(prevBlock.uuid, blockUuid, "").onRight {
                 afterOp(prevBlock.uuid, prevBlock.content.length)
+            }.onLeft { err ->
+                logger.error("handleBackspace: DB merge failed for $blockUuid: $err")
+                requestEditBlock(blockUuid, 0)
             }
         } else if (currentBlock.parentUuid != null) {
             val parent = pageBlocks.find { it.uuid == currentBlock.parentUuid }
             if (parent != null) {
                 if (currentBlock.content.isEmpty()) {
-                    blockRepository.deleteBlock(blockUuid)
-                    afterOp(parent.uuid, parent.content.length)
+                    // Move focus before the DB round-trip
+                    requestEditBlock(parent.uuid, parent.content.length)
+                    val result = blockRepository.deleteBlock(blockUuid)
+                    result.onRight {
+                        afterOp(parent.uuid, parent.content.length)
+                    }.onLeft { err ->
+                        logger.error("handleBackspace: DB delete failed for $blockUuid: $err")
+                        requestEditBlock(blockUuid, 0)
+                    }
                 } else {
+                    // Move focus before the DB round-trip
+                    requestEditBlock(parent.uuid, parent.content.length)
                     blockRepository.mergeBlocks(parent.uuid, blockUuid, "").onRight {
                         afterOp(parent.uuid, parent.content.length)
+                    }.onLeft { err ->
+                        logger.error("handleBackspace: DB merge failed for $blockUuid: $err")
+                        requestEditBlock(blockUuid, 0)
                     }
                 }
             }
         } else {
             if (currentBlock.content.isEmpty() && siblings.size > 1) {
                 val nextBlock = siblings[1]
-                blockRepository.deleteBlock(blockUuid)
-                afterOp(nextBlock.uuid, 0)
+                // Move focus before the DB round-trip
+                requestEditBlock(nextBlock.uuid, 0)
+                val result = blockRepository.deleteBlock(blockUuid)
+                result.onRight {
+                    afterOp(nextBlock.uuid, 0)
+                }.onLeft { err ->
+                    logger.error("handleBackspace: DB delete failed for $blockUuid: $err")
+                    requestEditBlock(blockUuid, 0)
+                }
             }
         }
     }

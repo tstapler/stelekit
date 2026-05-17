@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.ui.state
 
 import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
@@ -12,6 +14,7 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -1464,4 +1467,184 @@ class BlockStateManagerTest {
         assertEquals("Hello".length, manager.editingCursorIndex.value,
             "mergeBlock must place cursor at the original end of the previous block")
     }
+
+    // ---- TC-04: Optimistic update — splitBlock moves _blocks BEFORE DB write ----
+
+    /**
+     * TC-04: Verifies that splitBlock optimistically updates _blocks and sets focus BEFORE
+     * the DB write completes (500ms delay simulated). The user sees the split immediately.
+     */
+    @Test
+    fun splitBlock_optimistically_updates_blocks_and_focus_before_db_write() = runTest {
+        val delayedRepo = DelayedBlockRepository(InMemoryBlockRepository(), splitDelayMs = 500L)
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, delayedRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(delayedRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        delayedRepo.delegate.saveBlock(createBlock("b1", content = "HelloWorld", position = 0))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        // Launch splitBlock but don't join — check state before DB returns
+        val job = manager.splitBlock("b1", 5)
+        // Advance just enough to let the optimistic _blocks update and requestEditBlock run
+        advanceTimeBy(1L)
+
+        // Assert _blocks already has 2 entries BEFORE the 500ms DB delay expires
+        val blocks = manager.blocks.value[pageUuid]
+        assertEquals(2, blocks?.size, "_blocks must have 2 entries immediately after splitBlock launch (optimistic)")
+        assertEquals("Hello", blocks?.find { it.uuid == "b1" }?.content,
+            "First block must have content before cursor (optimistic)")
+        val newBlock = blocks?.find { it.uuid != "b1" }
+        assertNotNull(newBlock, "New block must be present in _blocks optimistically")
+        assertEquals("World", newBlock.content, "New block must have content after cursor (optimistic)")
+
+        // Focus must be on the new block immediately (before DB returns)
+        assertEquals(newBlock.uuid, manager.editingBlockUuid.value,
+            "Focus must move to new block UUID before DB write completes")
+
+        // Now let the DB write complete
+        job.join()
+        advanceUntilIdle()
+    }
+
+    // ---- TC-05: Optimistic update — addNewBlock moves _blocks BEFORE DB write ----
+
+    /**
+     * TC-05: Verifies that addNewBlock optimistically inserts an empty block and sets focus
+     * BEFORE the DB write completes.
+     */
+    @Test
+    fun addNewBlock_optimistically_inserts_empty_block_and_focus_before_db_write() = runTest {
+        val delayedRepo = DelayedBlockRepository(InMemoryBlockRepository(), splitDelayMs = 500L)
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, delayedRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(delayedRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        delayedRepo.delegate.saveBlock(createBlock("b1", content = "Hello", position = 0))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        val job = manager.addNewBlock("b1")
+        advanceTimeBy(1L)
+
+        val blocks = manager.blocks.value[pageUuid]
+        assertEquals(2, blocks?.size, "_blocks must have 2 entries immediately after addNewBlock launch (optimistic)")
+        val newBlock = blocks?.find { it.uuid != "b1" }
+        assertNotNull(newBlock, "New empty block must be present optimistically")
+        assertEquals("", newBlock.content, "New block must have empty content (addNewBlock appends empty)")
+
+        assertEquals(newBlock.uuid, manager.editingBlockUuid.value,
+            "Focus must move to new block UUID before DB write completes")
+
+        job.join()
+        advanceUntilIdle()
+    }
+
+    // ---- TC-06: Rollback — splitBlock rolls back _blocks on DB failure ----
+
+    /**
+     * TC-06: Verifies that when splitBlock's repository call returns Left (DB failure),
+     * the optimistic _blocks update is reversed and focus returns to the original block.
+     */
+    @Test
+    fun splitBlock_rolls_back_blocks_and_focus_on_db_failure() = runTest {
+        val failingRepo = FailingBlockRepository(InMemoryBlockRepository())
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, failingRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(failingRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        failingRepo.delegate.saveBlock(createBlock("b1", content = "HelloWorld", position = 0))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.splitBlock("b1", 5).join()
+        advanceUntilIdle()
+
+        val blocks = manager.blocks.value[pageUuid]
+        assertEquals(1, blocks?.size, "_blocks must be rolled back to 1 entry on DB failure")
+        assertEquals("HelloWorld", blocks?.get(0)?.content, "Original content must be restored on rollback")
+
+        // Focus must return to original block at the original cursor position
+        assertEquals("b1", manager.editingBlockUuid.value,
+            "Focus must return to original block on DB failure")
+        assertEquals(5, manager.editingCursorIndex.value,
+            "Cursor must return to original position on DB failure")
+    }
+
+    // ---- TC-07: Rollback — mergeBlock rolls back focus on DB failure ----
+
+    /**
+     * TC-07: Verifies that when mergeBlock's repository call returns Left (DB failure),
+     * focus returns to the original block at position 0.
+     */
+    @Test
+    fun mergeBlock_rolls_back_focus_on_db_failure() = runTest {
+        val failingRepo = FailingBlockRepository(InMemoryBlockRepository())
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, failingRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(failingRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        failingRepo.delegate.saveBlock(createBlock("b1", content = "Hello", position = 0))
+        failingRepo.delegate.saveBlock(createBlock("b2", content = "World", position = 1))
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.mergeBlock("b2").join()
+        advanceUntilIdle()
+
+        // _blocks must still have 2 entries (merge did not succeed, but note that the merge
+        // result is observed via reactive flow from the delegate which didn't actually mutate)
+        // Focus must be rolled back to b2
+        assertEquals("b2", manager.editingBlockUuid.value,
+            "Focus must return to original block (b2) on merge DB failure")
+        assertEquals(0, manager.editingCursorIndex.value,
+            "Cursor must return to position 0 on merge DB failure")
+    }
+}
+
+// ---- Test doubles for optimistic update and rollback tests ----
+
+/**
+ * Wraps [InMemoryBlockRepository] and introduces a configurable suspend delay in [splitBlock]
+ * to simulate a slow DB round-trip. Used by TC-04 and TC-05 to verify optimistic updates
+ * occur before the DB returns.
+ */
+@OptIn(DirectRepositoryWrite::class)
+private class DelayedBlockRepository(
+    val delegate: InMemoryBlockRepository,
+    private val splitDelayMs: Long = 500L,
+) : BlockRepository by delegate {
+
+    @DirectRepositoryWrite
+    override suspend fun splitBlock(blockUuid: String, cursorPosition: Int): Either<DomainError, Block> {
+        delay(splitDelayMs)
+        return delegate.splitBlock(blockUuid, cursorPosition)
+    }
+}
+
+/**
+ * Wraps [InMemoryBlockRepository] and always returns [Left] (DB failure) from [splitBlock]
+ * and [mergeBlocks]. Used by TC-06 and TC-07 to verify rollback behaviour.
+ */
+@OptIn(DirectRepositoryWrite::class)
+private class FailingBlockRepository(
+    val delegate: InMemoryBlockRepository,
+) : BlockRepository by delegate {
+
+    @DirectRepositoryWrite
+    override suspend fun splitBlock(blockUuid: String, cursorPosition: Int): Either<DomainError, Block> =
+        DomainError.DatabaseError.WriteFailed("injected splitBlock failure").left()
+
+    @DirectRepositoryWrite
+    override suspend fun mergeBlocks(blockUuid: String, nextBlockUuid: String, separator: String): Either<DomainError, Unit> =
+        DomainError.DatabaseError.WriteFailed("injected mergeBlocks failure").left()
 }
