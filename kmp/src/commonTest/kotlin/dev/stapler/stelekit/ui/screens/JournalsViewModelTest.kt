@@ -77,7 +77,7 @@ class JournalsViewModelTest {
         override suspend fun moveBlockUp(blockUuid: String): Either<DomainError, Unit> = Unit.right()
         override suspend fun moveBlockDown(blockUuid: String): Either<DomainError, Unit> = Unit.right()
         override suspend fun mergeBlocks(blockUuid: String, nextBlockUuid: String, separator: String): Either<DomainError, Unit> = Unit.right()
-        override suspend fun splitBlock(blockUuid: String, cursorPosition: Int): Either<DomainError, Block> = DomainError.DatabaseError.WriteFailed("not implemented").left()
+        override suspend fun splitBlock(blockUuid: String, cursorPosition: Int, newBlockUuid: String?): Either<DomainError, Block> = DomainError.DatabaseError.WriteFailed("not implemented").left()
         override fun findDuplicateBlocks(limit: Int): Flow<Either<DomainError, List<DuplicateGroup>>> = flowOf(emptyList<DuplicateGroup>().right())
         override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> = Unit.right()
         override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> = Unit.right()

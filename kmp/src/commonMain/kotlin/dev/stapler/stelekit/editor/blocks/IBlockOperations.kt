@@ -166,20 +166,6 @@ interface IBlockOperations : BlockRepository {
     // ===== TEXT OPERATIONS =====
     
     /**
-     * Split a block at the specified cursor position.
-     * 
-     * @param blockUuid The UUID of the block to split
-     * @param cursorPosition Character position where to split
-     * @param keepContentInOriginal Whether to keep content after cursor in original (true) or move to new block (false)
-     * @return Result containing the new block created from the split or error
-     */
-    suspend fun splitBlock(
-        blockUuid: String,
-        cursorPosition: Int,
-        keepContentInOriginal: Boolean = true
-    ): Either<DomainError, Block>
-    
-    /**
      * Merge a block with its next sibling.
      * 
      * @param blockUuid The UUID of the block to merge (will absorb next sibling's content)
