@@ -8,6 +8,7 @@ import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.repository.ImageAnnotationRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -55,6 +56,8 @@ class GalleryViewModel(
     private val _state = MutableStateFlow(GalleryState())
     val state: StateFlow<GalleryState> = _state.asStateFlow()
 
+    private var loadJob: Job? = null
+
     init {
         loadImages()
     }
@@ -62,7 +65,8 @@ class GalleryViewModel(
     // ── Data loading ──────────────────────────────────────────────────────────
 
     private fun loadImages() {
-        scope.launch {
+        loadJob?.cancel()
+        loadJob = scope.launch {
             val tag = _state.value.selectedTag
             val flow = if (tag != null) {
                 imageAnnotationRepository.getImageAnnotationsByTag(tag)
