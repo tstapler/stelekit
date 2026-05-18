@@ -46,6 +46,7 @@ fun JournalsView(
     onSearchPages: (String) -> kotlinx.coroutines.flow.Flow<List<SearchResultItem>> = { kotlinx.coroutines.flow.emptyFlow() },
     suggestionMatcher: AhoCorasickMatcher? = null,
     isLeftHanded: Boolean = false,
+    onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     NavigationTracingEffect("Journals")
@@ -175,6 +176,7 @@ fun JournalsView(
                             if (blockUuid == editingBlockUuid) range else null
                         )
                     },
+                    onOpenAnnotationEditor = onOpenAnnotationEditor,
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -332,6 +334,7 @@ private fun JournalEntry(
     suggestionMatcher: AhoCorasickMatcher? = null,
     onNavigateAllSuggestions: ((List<SuggestionItem>) -> Unit)? = null,
     onBlockSelectionChange: ((blockUuid: String, range: IntRange?) -> Unit)? = null,
+    onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
@@ -408,6 +411,7 @@ private fun JournalEntry(
                 suggestionMatcher = suggestionMatcher,
                 onNavigateAllSuggestions = onNavigateAllSuggestions,
                 onBlockSelectionChange = onBlockSelectionChange,
+                onOpenAnnotationEditor = onOpenAnnotationEditor,
             )
 
             // Clickable area below blocks to append new block

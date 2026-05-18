@@ -196,6 +196,21 @@ kotlin {
                 // Encrypted SharedPreferences for API key storage
                 implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
+                // ExifInterface — EXIF orientation correction for camera-captured images
+                implementation("androidx.exifinterface:exifinterface:1.3.7")
+
+                // ARCore Depth API — optional AR depth sensing (Story 8.5)
+                // required=false in AndroidManifest so the app installs on non-AR devices.
+                implementation("com.google.ar:core:1.46.0")
+
+                // CameraX — live camera capture (Story 9.2)
+                implementation("androidx.camera:camera-core:1.4.1")
+                implementation("androidx.camera:camera-camera2:1.4.1")
+                implementation("androidx.camera:camera-lifecycle:1.4.1")
+                // ProcessLifecycleOwner — needed by AndroidCameraProvider; camera-lifecycle pulls
+                // this transitively but we declare it explicitly to guarantee compile-time resolution.
+                implementation("androidx.lifecycle:lifecycle-process:2.9.1")
+
                 // On-device LLM via Gemini Nano (Pixel 9+ and AICore-enabled OEM flagships)
                 implementation("com.google.mlkit:genai-prompt:1.0.0-beta2")
 
@@ -207,6 +222,13 @@ kotlin {
 
                 // WorkManager — periodic background git sync
                 implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+                // Kable — Kotlin coroutine BLE for Android (GATT scanning and peripheral management)
+                implementation("com.juul.kable:core:0.32.0")
+
+                // ONNX Runtime — monocular depth inference (Depth Anything V2 ViT-S)
+                // Model (~100MB) is downloaded on first use via DepthModelDownloader, not bundled.
+                implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
 
                 // JGit 5.13.x — Android git operations (Android-safe; Java 11 APIs with desugaring)
                 implementation("org.eclipse.jgit:org.eclipse.jgit:5.13.3.202401111512-r")
@@ -262,6 +284,9 @@ kotlin {
 
                 // Ktor engine for iOS (used by coil-network-ktor3)
                 implementation("io.ktor:ktor-client-darwin:3.1.3")
+
+                // Kable — Kotlin coroutine BLE for iOS/Apple targets (CoreBluetooth wrapper)
+                implementation("com.juul.kable:core:0.32.0")
             }
         }
 

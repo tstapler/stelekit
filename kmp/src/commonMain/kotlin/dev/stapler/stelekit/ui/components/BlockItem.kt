@@ -20,6 +20,7 @@ import androidx.compose.ui.zIndex
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockTypes
+import dev.stapler.stelekit.model.BlockTypes.IMAGE_ANNOTATION
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.screens.FormatAction
 import dev.stapler.stelekit.ui.screens.SearchResultItem
@@ -86,6 +87,8 @@ internal fun BlockItem(
     dropBelow: Boolean = false,
     dropAsChild: Boolean = false,
     onArchiveUrl: ((url: String, blockUuid: String) -> Unit)? = null,
+    /** Called when user taps an image_annotation block thumbnail; receives the image annotation UUID. */
+    onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -348,6 +351,12 @@ internal fun BlockItem(
             } else {
                 // View mode — dispatch on block type
                 when (block.blockType) {
+                    IMAGE_ANNOTATION -> ImageAnnotationBlockItem(
+                        block = block,
+                        onOpenAnnotationEditor = onOpenAnnotationEditor,
+                        onStartEditing = onStartEditing,
+                        modifier = Modifier.weight(1f),
+                    )
                     BlockTypes.HEADING -> HeadingBlock(
                         content = block.content,
                         level = headingLevelFromContent(block.content),

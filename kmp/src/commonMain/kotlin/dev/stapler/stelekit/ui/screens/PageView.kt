@@ -297,6 +297,9 @@ fun PageView(
                                 if (blockUuid == editingBlockUuid) range else null
                             )
                         },
+                        onOpenAnnotationEditor = { uuid ->
+                            viewModel.navigateToAnnotationEditor(uuid, page.uuid)
+                        },
                     )
 
                     Box(

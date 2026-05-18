@@ -69,6 +69,12 @@ import dev.stapler.stelekit.ui.i18n.I18n
 import dev.stapler.stelekit.ui.i18n.LocalI18n
 import dev.stapler.stelekit.ui.i18n.t
 import dev.stapler.stelekit.ui.onboarding.Onboarding
+import dev.stapler.stelekit.repository.InMemoryImageAnnotationRepository
+import dev.stapler.stelekit.repository.InMemoryMeasurementAnnotationRepository
+import dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel
+import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreen
+import dev.stapler.stelekit.ui.gallery.GalleryScreen
+import dev.stapler.stelekit.ui.gallery.GalleryViewModel
 import dev.stapler.stelekit.ui.screens.AllPagesScreen
 import dev.stapler.stelekit.ui.screens.AllPagesViewModel
 import dev.stapler.stelekit.ui.screens.LibraryStatsScreen
@@ -1163,7 +1169,8 @@ private fun ScreenRouter(
                 searchViewModel = searchViewModel,
                 onSearchPages = { query -> viewModel.searchPages(query) },
                 suggestionMatcher = suggestionMatcher,
-                isLeftHanded = appState.isLeftHanded
+                isLeftHanded = appState.isLeftHanded,
+                onOpenAnnotationEditor = { uuid -> viewModel.navigateToAnnotationEditor(uuid) },
             )
             is Screen.Flashcards -> {
                 NavigationTracingEffect("Flashcards")
@@ -1226,6 +1233,66 @@ private fun ScreenRouter(
             }
             is Screen.VaultUnlock -> {
                 // Vault unlock is handled by the outer StelekitApp scaffold — no-op here
+            }
+
+            is Screen.Gallery -> {
+                NavigationTracingEffect("Gallery")
+                val galleryViewModel = remember {
+                    GalleryViewModel(repos.imageAnnotationRepository)
+                }
+                DisposableEffect(galleryViewModel) {
+                    onDispose { galleryViewModel.close() }
+                }
+                GalleryScreen(
+                    viewModel = galleryViewModel,
+                    onOpenAnnotationEditor = { uuid ->
+                        viewModel.navigateToAnnotationEditor(uuid)
+                    },
+                    onNavigateToPage = { pageUuid ->
+                        viewModel.navigateToPageByUuid(pageUuid)
+                    },
+                )
+            }
+
+            is Screen.AnnotationEditor -> {
+                NavigationTracingEffect("AnnotationEditor")
+                val imageAnnotationUuid = currentScreen.imageAnnotationUuid
+                val annotationEditorViewModel = remember(imageAnnotationUuid) {
+                    AnnotationEditorViewModel(
+                        measurementRepository = repos.measurementAnnotationRepository,
+                        imageAnnotationRepository = repos.imageAnnotationRepository,
+                    )
+                }
+                // Collect the annotation reactively; initialize the viewModel once on first non-null load.
+                var initialized by remember(imageAnnotationUuid) { mutableStateOf(false) }
+                var resolvedAnnotation by remember(imageAnnotationUuid) {
+                    mutableStateOf<dev.stapler.stelekit.model.ImageAnnotation?>(null)
+                }
+                LaunchedEffect(imageAnnotationUuid) {
+                    repos.imageAnnotationRepository.getImageAnnotationByUuid(imageAnnotationUuid)
+                        .collect { either ->
+                            either.onRight { annotation ->
+                                resolvedAnnotation = annotation
+                                if (!initialized && annotation != null) {
+                                    initialized = true
+                                    annotationEditorViewModel.initialize(annotation)
+                                }
+                            }
+                        }
+                }
+                resolvedAnnotation?.let { annotation ->
+                    AnnotationEditorScreen(
+                        viewModel = annotationEditorViewModel,
+                        imageAnnotation = annotation,
+                        onNavigateBack = {
+                            if (currentScreen.pageUuid != null) {
+                                viewModel.navigateToPageByUuid(currentScreen.pageUuid)
+                            } else {
+                                viewModel.goBack()
+                            }
+                        },
+                    )
+                }
             }
         }
     }

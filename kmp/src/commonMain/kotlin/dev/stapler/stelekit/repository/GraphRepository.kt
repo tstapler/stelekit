@@ -637,4 +637,8 @@ data class RepositorySet(
     val onBulkImportComplete: (suspend () -> Unit)? = null,
     val queryStatsRepository: dev.stapler.stelekit.performance.QueryStatsRepository? = null,
     val queryStatsCollector: dev.stapler.stelekit.performance.QueryStatsCollector? = null,
+    /** Image annotation repository (Epic 6). Defaults to in-memory; production wires SQLDelight impl. */
+    val imageAnnotationRepository: ImageAnnotationRepository = InMemoryImageAnnotationRepository(),
+    /** Measurement annotation repository (Epic 6). Defaults to in-memory. */
+    val measurementAnnotationRepository: MeasurementAnnotationRepository = InMemoryMeasurementAnnotationRepository(),
 )

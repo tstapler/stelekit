@@ -44,6 +44,20 @@ sealed class Screen {
 
     @HelpPage(docs = PageViewDocs::class)
     data class PageView(val page: Page) : Screen()
+
+    /** Full-screen gallery of annotated images. */
+    data object Gallery : Screen()
+
+    /**
+     * Annotation editor for a single image annotation.
+     *
+     * [imageAnnotationUuid] is the UUID of the [ImageAnnotation] to open.
+     * [pageUuid] is the UUID of the page that owns the block — used for "Go to page" navigation.
+     */
+    data class AnnotationEditor(
+        val imageAnnotationUuid: String,
+        val pageUuid: String? = null,
+    ) : Screen()
 }
 
 data class AppState(

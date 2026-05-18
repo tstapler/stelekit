@@ -35,6 +35,13 @@ fun SettingsDialog(
     onRebuildVoicePipeline: (() -> Unit)? = null,
     deviceSttAvailable: Boolean = false,
     deviceLlmAvailable: Boolean = false,
+    // Google Account settings (Story 7.2)
+    isGoogleAuthenticated: Boolean = false,
+    googleConnectedEmail: String? = null,
+    isGoogleConnecting: Boolean = false,
+    googleAuthError: String? = null,
+    onConnectGoogle: (() -> Unit)? = null,
+    onDisconnectGoogle: (() -> Unit)? = null,
 ) {
     if (visible) {
         Dialog(
@@ -135,6 +142,14 @@ fun SettingsDialog(
                                         deviceLlmAvailable = deviceLlmAvailable,
                                     )
                                 }
+                                SettingsCategory.GOOGLE_ACCOUNT -> GoogleAccountSettings(
+                                    isAuthenticated = isGoogleAuthenticated,
+                                    connectedEmail = googleConnectedEmail,
+                                    isConnecting = isGoogleConnecting,
+                                    errorMessage = googleAuthError,
+                                    onConnect = { onConnectGoogle?.invoke() },
+                                    onDisconnect = { onDisconnectGoogle?.invoke() },
+                                )
                             }
                         }
                     }
@@ -182,4 +197,5 @@ enum class SettingsCategory(val label: String, val icon: ImageVector) {
     PLUGINS("Plugins", Icons.Default.Extension),
     ADVANCED("Advanced", Icons.Default.Build),
     VOICE("Voice Capture", Icons.Default.Mic),
+    GOOGLE_ACCOUNT("Google Account", Icons.Default.Cloud),
 }
