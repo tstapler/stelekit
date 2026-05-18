@@ -82,7 +82,8 @@ data class Page(
 
 private val validBlockTypes = setOf(
     "bullet", "paragraph", "heading", "code_fence", "blockquote",
-    "ordered_list_item", "thematic_break", "table", "raw_html"
+    "ordered_list_item", "thematic_break", "table", "raw_html",
+    "image_annotation"
 )
 
 data class Block(

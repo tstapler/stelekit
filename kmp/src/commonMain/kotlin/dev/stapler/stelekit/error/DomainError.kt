@@ -49,6 +49,16 @@ sealed interface DomainError {
         data class RequestFailed(override val message: String) : NetworkError
     }
 
+    sealed interface SensorError : DomainError {
+        data class PermissionDenied(val sensor: String) : SensorError {
+            override val message: String = "Permission denied for sensor: $sensor"
+        }
+        data class HardwareUnavailable(val sensor: String) : SensorError {
+            override val message: String = "Hardware unavailable: $sensor"
+        }
+        data class CaptureFailed(override val message: String) : SensorError
+    }
+
     sealed interface GitError : DomainError {
         data class CloneFailed(override val message: String) : GitError
         data class FetchFailed(override val message: String) : GitError
@@ -109,6 +119,9 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.NetworkError.CircuitOpen -> message
     is DomainError.NetworkError.Timeout -> "Request timed out: $message"
     is DomainError.NetworkError.RequestFailed -> "Request failed: $message"
+    is DomainError.SensorError.PermissionDenied -> message
+    is DomainError.SensorError.HardwareUnavailable -> message
+    is DomainError.SensorError.CaptureFailed -> "Capture failed: $message"
     is DomainError.GitError.CloneFailed -> "Git clone failed: $message"
     is DomainError.GitError.FetchFailed -> "Git fetch failed: $message"
     is DomainError.GitError.PushFailed -> "Git push failed: $message"

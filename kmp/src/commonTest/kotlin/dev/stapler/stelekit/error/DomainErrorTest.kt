@@ -79,6 +79,9 @@ class DomainErrorTest {
                 is DomainError.AttachmentError.CopyFailed -> err.message
                 is DomainError.AttachmentError.PickerFailed -> err.message
                 is DomainError.AttachmentError.AssetsDirectoryFailed -> err.message
+                is DomainError.SensorError.PermissionDenied -> err.message
+                is DomainError.SensorError.HardwareUnavailable -> err.message
+                is DomainError.SensorError.CaptureFailed -> err.message
             }
             assert(msg.isNotEmpty()) { "Expected non-empty message for $err" }
         }

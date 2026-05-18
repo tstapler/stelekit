@@ -768,6 +768,8 @@ class StelekitViewModel(
                     is Screen.Import -> "Import text as new page"
                     is Screen.LibraryStats -> "Opened Library Stats"
                     is Screen.VaultUnlock -> "Vault locked"
+                    is Screen.Gallery -> "Opened Gallery"
+                    is Screen.AnnotationEditor -> "Opened Annotation Editor"
                 }
             )
         }
@@ -888,6 +890,21 @@ class StelekitViewModel(
         }
     }
     
+    /**
+     * Navigate to the annotation editor for [imageAnnotationUuid].
+     *
+     * [pageUuid] is optional — if provided it is stored in the screen so the editor can
+     * expose a "Go to page" action that returns here.
+     */
+    fun navigateToAnnotationEditor(imageAnnotationUuid: String, pageUuid: String? = null) {
+        navigateTo(Screen.AnnotationEditor(imageAnnotationUuid = imageAnnotationUuid, pageUuid = pageUuid))
+    }
+
+    /** Navigate to the image gallery screen. */
+    fun navigateToGallery() {
+        navigateTo(Screen.Gallery)
+    }
+
     fun navigateToBlock(blockUuid: String) {
         scope.launch {
             val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()

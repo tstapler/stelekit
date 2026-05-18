@@ -196,6 +196,9 @@ kotlin {
                 // Encrypted SharedPreferences for API key storage
                 implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
+                // ExifInterface — EXIF orientation correction for camera-captured images
+                implementation("androidx.exifinterface:exifinterface:1.3.7")
+
                 // On-device LLM via Gemini Nano (Pixel 9+ and AICore-enabled OEM flagships)
                 implementation("com.google.mlkit:genai-prompt:1.0.0-beta2")
 
