@@ -49,19 +49,20 @@ actual class DriverFactory actual constructor() {
             callback = AndroidSqliteDriver.Callback(SteleDatabase.Schema.synchronous()),
         )
 
-        // Apply performance PRAGMAs via driver.execute() — unrestricted path that bypasses
-        // RequerySQLiteOpenHelperFactory's onConfigure/onOpen restrictions.
+        // Apply performance PRAGMAs. Wrapped in try-catch because RequerySQLiteOpenHelperFactory
+        // restricts execSQL in callbacks AND nativeExecuteForChangedRowCount in some connection states;
+        // silently skip rather than crash driver initialization if a PRAGMA is unsupported.
         // WAL mode: allows concurrent reads while a write is in progress, reducing SQLITE_BUSY.
         // busy_timeout: retry for up to 10 seconds before surfacing SQLITE_BUSY to the caller.
         // wal_autocheckpoint=4000: reduce checkpoint frequency on write-heavy workloads (default=1000).
         // temp_store=MEMORY: keeps temp tables in RAM instead of hitting Android's storage.
         // cache_size=-8000: 8MB page cache reduces repeated reads for large graphs (1000+ pages).
-        driver.execute(null, "PRAGMA journal_mode=WAL", 0).value
-        driver.execute(null, "PRAGMA synchronous=NORMAL", 0).value
-        driver.execute(null, "PRAGMA busy_timeout=10000", 0).value
-        driver.execute(null, "PRAGMA wal_autocheckpoint=4000", 0).value
-        driver.execute(null, "PRAGMA temp_store=MEMORY", 0).value
-        driver.execute(null, "PRAGMA cache_size=-8000", 0).value
+        try { driver.execute(null, "PRAGMA journal_mode=WAL", 0) } catch (_: Exception) { }
+        try { driver.execute(null, "PRAGMA synchronous=NORMAL", 0) } catch (_: Exception) { }
+        try { driver.execute(null, "PRAGMA busy_timeout=10000", 0) } catch (_: Exception) { }
+        try { driver.execute(null, "PRAGMA wal_autocheckpoint=4000", 0) } catch (_: Exception) { }
+        try { driver.execute(null, "PRAGMA temp_store=MEMORY", 0) } catch (_: Exception) { }
+        try { driver.execute(null, "PRAGMA cache_size=-8000", 0) } catch (_: Exception) { }
 
         // Apply incremental DDL migrations (idempotent, hash-tracked).
         runBlocking { MigrationRunner.applyAll(driver) }
