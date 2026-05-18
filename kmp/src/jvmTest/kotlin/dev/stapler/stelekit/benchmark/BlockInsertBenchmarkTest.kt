@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.nio.file.Files
@@ -172,6 +173,8 @@ class BlockInsertBenchmarkTest {
                 writeActor = actor,
             )
             bsm.observePage(page.uuid)
+            // Wait for _blocks to be populated before starting timed inserts
+            bsm.blocks.first { it.containsKey(page.uuid) }
 
             // Warm-up: 5 inserts not counted
             repeat(5) { bsm.addBlockToPage(page.uuid).join() }
@@ -243,6 +246,8 @@ class BlockInsertBenchmarkTest {
                 writeActor = actor,
             )
             bsm.observePage(page.uuid)
+            // Wait for _blocks to be populated before starting timed inserts
+            bsm.blocks.first { it.containsKey(page.uuid) }
 
             // Warm-up
             repeat(5) { bsm.addBlockToPage(page.uuid).join() }

@@ -1582,7 +1582,12 @@ class BlockStateManagerTest {
 
     /**
      * TC-07: Verifies that when mergeBlock's repository call returns Left (DB failure),
-     * focus returns to the original block at position 0.
+     * focus is precisely restored to the pre-merge block and cursor position.
+     *
+     * In real usage the user is editing b2 at position 0 (beginning of the block)
+     * when they press Backspace, so the pre-merge focus is (b2, 0). After a DB
+     * failure the rollback must restore that exact state rather than always
+     * resetting to position 0 of an arbitrary block.
      */
     @Test
     fun mergeBlock_rolls_back_focus_on_db_failure() = runTest {
@@ -1598,6 +1603,10 @@ class BlockStateManagerTest {
         manager.observePage(pageUuid)
         manager.blocks.first { it.containsKey(pageUuid) }
 
+        // Simulate user editing b2 at position 0 (cursor at the start of the block,
+        // which is where Backspace triggers mergeBlock in real usage).
+        manager.requestEditBlock("b2", 0)
+
         manager.mergeBlock("b2").join()
         advanceUntilIdle()
 
@@ -1611,11 +1620,11 @@ class BlockStateManagerTest {
         assertEquals("World", blocks?.find { it.uuid == "b2" }?.content,
             "b2 content must be unchanged after failed merge")
 
-        // Focus must be rolled back to b2
+        // Focus must be restored to the exact pre-merge state (b2, position 0)
         assertEquals("b2", manager.editingBlockUuid.value,
             "Focus must return to original block (b2) on merge DB failure")
         assertEquals(0, manager.editingCursorIndex.value,
-            "Cursor must return to position 0 on merge DB failure")
+            "Cursor must return to pre-merge position 0 on merge DB failure")
     }
 }
 

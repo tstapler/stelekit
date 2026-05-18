@@ -869,6 +869,9 @@ class BlockStateManager(
 
         if (currentIndex > 0) {
             val prevBlock = siblings[currentIndex - 1]
+            // Snapshot pre-merge focus so the rollback path can restore it precisely.
+            val preMergeEditUuid = _editingBlockUuid.value
+            val preMergeEditCursor = _editingCursorIndex.value
             // Move focus before the DB round-trip so keyboard lands immediately
             requestEditBlock(prevBlock.uuid, prevBlock.content.length)
             blockRepository.mergeBlocks(prevBlock.uuid, blockUuid, "").onRight {
@@ -880,8 +883,8 @@ class BlockStateManager(
                 )
             }.onLeft { err ->
                 logger.error("mergeBlock: DB write failed for $blockUuid: $err")
-                // Roll back focus to original block
-                requestEditBlock(blockUuid, 0)
+                // Restore the exact focus state that existed before the optimistic move.
+                requestEditBlock(preMergeEditUuid, preMergeEditCursor)
             }
         }
     }
