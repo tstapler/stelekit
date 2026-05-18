@@ -1,7 +1,6 @@
 package dev.stapler.stelekit.repository
 
 import arrow.core.Either
-import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.ImageAnnotation
@@ -47,11 +46,6 @@ class InMemoryImageAnnotationRepository : ImageAnnotationRepository {
     @DirectRepositoryWrite
     override suspend fun saveImageAnnotation(annotation: ImageAnnotation): Either<DomainError, Unit> {
         val current = annotations.value.toMutableMap()
-        if (annotation.uuid in current) {
-            return DomainError.ValidationError.ConstraintViolation(
-                "ImageAnnotation with uuid ${annotation.uuid} already exists"
-            ).left()
-        }
         current[annotation.uuid] = annotation
         annotations.value = current
         return Unit.right()

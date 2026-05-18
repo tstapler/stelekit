@@ -42,11 +42,16 @@ class InMemoryImageAnnotationRepositoryTest {
     }
 
     @Test
-    fun save_should_returnLeft_when_uuidAlreadyExists() = runBlocking {
+    fun save_should_replaceExisting_when_uuidAlreadyExists() = runBlocking {
         val r = repo()
-        r.saveImageAnnotation(annotation())
-        val second = r.saveImageAnnotation(annotation())
-        assertIs<Either.Left<*>>(second)
+        val original = annotation().copy(filePath = "/graph/assets/images/original.jpg")
+        val updated = annotation().copy(filePath = "/graph/assets/images/updated.jpg")
+        r.saveImageAnnotation(original)
+        val second = r.saveImageAnnotation(updated)
+        assertIs<Either.Right<Unit>>(second)
+        val found = r.getImageAnnotationByUuid(original.uuid).first()
+        assertIs<Either.Right<ImageAnnotation?>>(found)
+        assertEquals(updated, found.value)
         Unit
     }
 

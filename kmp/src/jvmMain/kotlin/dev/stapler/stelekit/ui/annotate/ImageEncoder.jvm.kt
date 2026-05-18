@@ -28,9 +28,10 @@ actual object ImageEncoder {
             val writers = ImageIO.getImageWritersByFormatName("jpeg")
             if (!writers.hasNext()) return ByteArray(0)
             val writer = writers.next()
+            val clamped = quality.coerceIn(0, 100)
             val params: ImageWriteParam = writer.defaultWriteParam.apply {
                 compressionMode = ImageWriteParam.MODE_EXPLICIT
-                compressionQuality = quality / 100f
+                compressionQuality = clamped / 100f
             }
             val out = ByteArrayOutputStream()
             writer.output = ImageIO.createImageOutputStream(out)

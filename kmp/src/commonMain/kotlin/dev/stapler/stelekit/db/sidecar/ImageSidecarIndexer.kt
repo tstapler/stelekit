@@ -64,9 +64,12 @@ class ImageSidecarIndexer(
 
                 // Upsert: delete first (no-op if absent), then insert
                 imageAnnotationRepository.deleteImageAnnotation(annotation.uuid)
-                imageAnnotationRepository.saveImageAnnotation(annotation).onLeft { err ->
-                    logger.warn("ImageSidecarIndexer: failed to upsert annotation ${annotation.uuid}: ${err.message}")
-                    return@onLeft
+                val saveResult = imageAnnotationRepository.saveImageAnnotation(annotation)
+                if (saveResult.isLeft()) {
+                    saveResult.onLeft { err ->
+                        logger.warn("ImageSidecarIndexer: failed to upsert annotation ${annotation.uuid}: ${err.message}")
+                    }
+                    continue
                 }
                 measurementAnnotationRepository.deleteMeasurementsForImage(annotation.uuid)
                 measurementAnnotationRepository.saveMeasurements(annotation.uuid, measurements)
