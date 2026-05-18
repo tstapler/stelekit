@@ -19,12 +19,12 @@ import kotlinx.coroutines.delay
  * photoslibrary.readonly scope was revoked in March 2025.
  *
  * Flow:
- * 1. Call [GoogleApiClient.createPhotosPickerSession] to get a picker session + URI.
+ * 1. Call [PhotosPickerApiClient.createPhotosPickerSession] to get a picker session + URI.
  * 2. Open the picker URI in a Custom Tab (system browser overlay — no WebView needed).
- * 3. Poll [GoogleApiClient.getPickerSession] until [PhotosPickerSession.mediaItemsSet] = true.
- * 4. Download selected media bytes via [GoogleApiClient.downloadPickerMedia] using the
+ * 3. Poll [PhotosPickerApiClient.getPickerSession] until [PhotosPickerSession.mediaItemsSet] = true.
+ * 4. Download selected media bytes via [PhotosPickerApiClient.downloadPickerMedia] using the
  *    temporary `baseUrl` (NOT stored long-term — store `mediaItemId` instead).
- * 5. Clean up the session via [GoogleApiClient.deletePickerSession].
+ * 5. Clean up the session via [PhotosPickerApiClient.deletePickerSession].
  *
  * UI copy requirement (Story 7.5): callers must display
  * "Select from Google Photos — you choose which specific photos to share with SteleKit"
@@ -34,7 +34,7 @@ import kotlinx.coroutines.delay
  * If not authenticated, [launchPicker] returns [DomainError.SensorError.PermissionDenied].
  */
 class GooglePhotosPickerLauncher(
-    private val apiClient: GoogleApiClient,
+    private val apiClient: PhotosPickerApiClient,
     private val tokenStore: GoogleTokenStore,
 ) {
 
@@ -143,7 +143,7 @@ class GooglePhotosPickerLauncher(
     /**
      * Fetch the media items (baseUrl, mediaItemId pairs) from a completed picker session.
      *
-     * Delegates to [GoogleApiClient.listPickerMediaItems] which calls:
+     * Delegates to [PhotosPickerApiClient.listPickerMediaItems] which calls:
      * GET https://photospicker.googleapis.com/v1/mediaItems?sessionId={id}
      * Response: { "mediaItems": [{ "id": "...", "mediaFile": { "baseUrl": "...", ... } }] }
      *

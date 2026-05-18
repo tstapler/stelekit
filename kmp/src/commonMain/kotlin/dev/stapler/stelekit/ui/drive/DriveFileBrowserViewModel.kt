@@ -4,8 +4,8 @@
 package dev.stapler.stelekit.ui.drive
 
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.platform.google.DriveApiClient
 import dev.stapler.stelekit.platform.google.DriveFile
-import dev.stapler.stelekit.platform.google.GoogleApiClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -46,7 +46,7 @@ data class DriveFileBrowserState(
  * CRITICAL: owns its [CoroutineScope] internally — never accepts an externally supplied scope.
  */
 class DriveFileBrowserViewModel(
-    private val apiClient: GoogleApiClient,
+    private val apiClient: DriveApiClient,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val logger = Logger("DriveFileBrowserViewModel")

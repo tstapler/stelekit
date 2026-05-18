@@ -120,35 +120,37 @@ open class DriveExportService(private val apiClient: DriveUploader) {
         val sidecarName = "$baseName.measure.json"
 
         // Upload the annotated JPEG
-        val imageUploadResult = apiClient.uploadFile(
+        val imageFileId = apiClient.uploadFile(
             fileName = imageName,
             mimeType = "image/jpeg",
             bytes = imageJpegBytes,
             parentFolderId = folderId,
+        ).fold(
+            ifLeft = { err ->
+                return DomainError.NetworkError.HttpError(
+                    statusCode = if (err is DomainError.NetworkError.HttpError) err.statusCode else -1,
+                    message = "Drive upload of annotated JPEG failed: ${err.message}",
+                ).left()
+            },
+            ifRight = { it },
         )
-        if (imageUploadResult is Either.Left) {
-            return DomainError.NetworkError.HttpError(
-                statusCode = (imageUploadResult.value as? DomainError.NetworkError.HttpError)?.statusCode ?: -1,
-                message = "Drive upload of annotated JPEG failed: ${imageUploadResult.value.message}",
-            ).left()
-        }
-        val imageFileId = (imageUploadResult as Either.Right).value
 
         // Serialize and upload the sidecar JSON
         val sidecarBytes = buildSidecarJson(imageAnnotation, measurements).encodeToByteArray()
-        val sidecarUploadResult = apiClient.uploadFile(
+        val sidecarFileId = apiClient.uploadFile(
             fileName = sidecarName,
             mimeType = "application/json",
             bytes = sidecarBytes,
             parentFolderId = folderId,
+        ).fold(
+            ifLeft = { err ->
+                return DomainError.NetworkError.HttpError(
+                    statusCode = if (err is DomainError.NetworkError.HttpError) err.statusCode else -1,
+                    message = "Drive upload of measurement sidecar JSON failed: ${err.message}",
+                ).left()
+            },
+            ifRight = { it },
         )
-        if (sidecarUploadResult is Either.Left) {
-            return DomainError.NetworkError.HttpError(
-                statusCode = (sidecarUploadResult.value as? DomainError.NetworkError.HttpError)?.statusCode ?: -1,
-                message = "Drive upload of measurement sidecar JSON failed: ${sidecarUploadResult.value.message}",
-            ).left()
-        }
-        val sidecarFileId = (sidecarUploadResult as Either.Right).value
 
         return DriveExportResult(
             imageFileId = imageFileId,
