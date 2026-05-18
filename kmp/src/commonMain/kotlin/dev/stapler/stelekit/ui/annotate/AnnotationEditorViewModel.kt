@@ -19,7 +19,10 @@ import dev.stapler.stelekit.model.polygonAreaMeters
 import dev.stapler.stelekit.platform.measurement.DeviceConnectionState
 import dev.stapler.stelekit.platform.measurement.ExternalMeasurementDevice
 import dev.stapler.stelekit.platform.ml.MonocularDepthEstimator
-import dev.stapler.stelekit.platform.ml.NoOpMonocularDepthEstimator
+import dev.stapler.stelekit.platform.sensor.CameraProvider
+import dev.stapler.stelekit.platform.sensor.DepthSensorProvider
+import dev.stapler.stelekit.platform.sensor.MotionSensorProvider
+import dev.stapler.stelekit.platform.sensor.SensorModule
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.ImageAnnotationRepository
 import dev.stapler.stelekit.repository.MeasurementAnnotationRepository
@@ -162,19 +165,57 @@ class AnnotationEditorViewModel(
      */
     private val onHapticFeedback: () -> Unit = {},
     /**
-     * Optional [MonocularDepthEstimator] for AI depth calibration.
-     *
-     * Defaults to [NoOpMonocularDepthEstimator] so tests and desktop build without a platform
-     * implementation. Pass [SensorModule.monocularDepthEstimator] on Android.
+     * Camera provider for image capture. Defaults to [SensorModule.cameraProvider].
+     * Pass an explicit implementation in tests to avoid global mutable state.
      */
-    private val monocularDepthEstimator: MonocularDepthEstimator = NoOpMonocularDepthEstimator(),
+    private val cameraProvider: CameraProvider = SensorModule.cameraProvider,
+    /**
+     * Motion sensor provider for GPS/compass/IMU data. Defaults to [SensorModule.motionSensorProvider].
+     * Pass an explicit implementation in tests to avoid global mutable state.
+     */
+    private val motionSensorProvider: MotionSensorProvider = SensorModule.motionSensorProvider,
+    /**
+     * Depth sensor provider for ARCore/LiDAR depth frames. Defaults to [SensorModule.depthSensorProvider].
+     * Pass an explicit implementation in tests to avoid global mutable state.
+     */
+    private val depthSensorProvider: DepthSensorProvider = SensorModule.depthSensorProvider,
+    /**
+     * Monocular depth estimator for AI depth calibration. Defaults to [SensorModule.monocularDepthEstimator].
+     * Pass an explicit implementation in tests to avoid global mutable state.
+     */
+    private val monocularDepthEstimator: MonocularDepthEstimator = SensorModule.monocularDepthEstimator,
 ) {
     // CRITICAL: internal scope — never injected from outside composition.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val logger = Logger("AnnotationEditorViewModel")
 
+    // ── Depth estimation coordinator ──────────────────────────────────────────
+    private val depthCoordinator = DepthEstimationCoordinator(
+        depthEstimator = monocularDepthEstimator,
+        imageWidthPx = imageWidthPx,
+        imageHeightPx = imageHeightPx,
+        onCalibrationReady = { cal -> updateCalibration(cal) },
+    )
+
     private val _state = MutableStateFlow(AnnotationEditorState())
     val state: StateFlow<AnnotationEditorState> = _state.asStateFlow()
+
+    init {
+        // Merge depth coordinator state changes into the main AnnotationEditorState so that
+        // the screen continues to read a single unified state object.
+        scope.launch {
+            depthCoordinator.state.collect { depthState ->
+                _state.update { editorState ->
+                    editorState.copy(
+                        isDepthInferenceRunning = depthState.isDepthInferenceRunning,
+                        depthMap = depthState.depthMap,
+                        depthEstimationError = depthState.depthEstimationError,
+                        depthModelUiState = depthState.depthModelUiState,
+                    )
+                }
+            }
+        }
+    }
 
     // ── Undo / redo ───────────────────────────────────────────────────────────
 
@@ -741,24 +782,25 @@ class AnnotationEditorViewModel(
         }
     }
 
-    // ── Monocular depth estimation ────────────────────────────────────────────
+    // ── Monocular depth estimation (delegated to DepthEstimationCoordinator) ──
 
     /**
-     * Push the current [DepthModelUiState] from the platform layer into [AnnotationEditorState].
+     * Push the current [DepthModelUiState] from the platform layer into the coordinator,
+     * which propagates the change into [AnnotationEditorState] automatically.
      *
      * Called from the Android entry point (or a `LaunchedEffect`) when
      * [DepthModelDownloader.modelState] emits a new value.
      */
     fun updateDepthModelUiState(uiState: DepthModelUiState) {
-        _state.update { it.copy(depthModelUiState = uiState) }
+        depthCoordinator.updateDepthModelUiState(uiState)
     }
 
     /**
-     * Run monocular depth estimation on [imageBitmap] via [monocularDepthEstimator].
+     * Run monocular depth estimation on [imageBitmap] via [DepthEstimationCoordinator].
      *
      * Flow:
      * 1. Calls [MonocularDepthEstimator.initialize] (idempotent after first success).
-     * 2. Runs [MonocularDepthEstimator.estimateDepth] on [PlatformDispatcher.Default].
+     * 2. Runs [MonocularDepthEstimator.estimateDepth] on the coordinator's internal scope.
      * 3. On success: stores the depth map in [AnnotationEditorState.depthMap] and applies
      *    a [CalibrationMethod.MONOCULAR_ML] calibration at the tap point if provided.
      * 4. On failure: stores the error message in [AnnotationEditorState.depthEstimationError].
@@ -769,50 +811,17 @@ class AnnotationEditorViewModel(
      * @param tapPoint      optional normalized tap point used to sample depth for calibration
      */
     fun runDepthEstimation(imageBitmap: ImageBitmap, tapPoint: NormalizedPoint? = null) {
-        if (_state.value.isDepthInferenceRunning) return
-        _state.update { it.copy(isDepthInferenceRunning = true, depthEstimationError = null) }
-
-        scope.launch {
-            // Initialize estimator (no-op if already done).
-            val initResult = monocularDepthEstimator.initialize()
-            if (initResult.isLeft()) {
-                val err = (initResult as Either.Left).value.message
-                _state.update { it.copy(isDepthInferenceRunning = false, depthEstimationError = err) }
-                return@launch
-            }
-
-            val depthResult = monocularDepthEstimator.estimateDepth(imageBitmap)
-            depthResult.fold(
-                ifLeft = { err ->
-                    _state.update {
-                        it.copy(isDepthInferenceRunning = false, depthEstimationError = err.message)
-                    }
-                },
-                ifRight = { depthMap ->
-                    _state.update {
-                        it.copy(isDepthInferenceRunning = false, depthMap = depthMap, depthEstimationError = null)
-                    }
-                    // Auto-apply calibration if a tap point is provided.
-                    if (tapPoint != null && imageWidthPx > 0.0 && imageHeightPx > 0.0) {
-                        val cal = CalibrationService.computeFromMLDepth(
-                            depthMap = depthMap,
-                            tapPointNormalized = tapPoint,
-                            imageWidthPx = imageWidthPx,
-                            imageHeightPx = imageHeightPx,
-                        )
-                        if (cal != null) updateCalibration(cal)
-                    }
-                },
-            )
-        }
+        depthCoordinator.runDepthEstimation(imageBitmap, tapPoint)
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     /**
-     * Cancel the internal [CoroutineScope]. Call when the editor is permanently dismissed.
+     * Cancel the internal [CoroutineScope] and the [DepthEstimationCoordinator].
+     * Call when the editor is permanently dismissed.
      */
     fun close() {
+        depthCoordinator.close()
         scope.launch { /* drain */ }.cancel()
         scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
     }
