@@ -65,11 +65,13 @@ interface FileSystem {
     fun writeFileBytes(path: String, data: ByteArray): Boolean =
         throw UnsupportedOperationException("writeFileBytes is not implemented for this platform. Override in a platform-specific FileSystem implementation.")
 
-    /** Updates the shadow copy after a SAF write. No-op on non-SAF file systems. */
-    fun updateShadow(path: String, content: String) { /* no-op */ }
-
-    /** Invalidates the shadow copy for [path], forcing a re-sync on next read. No-op on non-SAF. */
-    fun invalidateShadow(path: String) { /* no-op */ }
+    /**
+     * Write-behind hook: writes [content] to shadow storage and enqueues [path] in the
+     * dirty-page queue for background SAF flush. Returns true if write-behind is active
+     * (caller should NOT call writeFile). Returns false if write-behind is not supported
+     * on this platform/mode (caller must call writeFile instead).
+     */
+    fun markDirty(path: String, content: String): Boolean = false
 
     /**
      * Reads file content from the shadow cache only; returns null if no warm shadow exists.
@@ -84,6 +86,15 @@ interface FileSystem {
      * Never makes a SAF Binder IPC call. On non-SAF file systems always returns false.
      */
     fun shadowExists(path: String): Boolean = false
+
+    /** Flush all pending write-behind pages to SAF. No-op on platforms without write-behind. */
+    suspend fun flushPendingWrites() {}
+
+    /** Updates the shadow copy after a SAF write. No-op on non-SAF file systems. */
+    fun updateShadow(path: String, content: String) { /* no-op */ }
+
+    /** Invalidates the shadow copy for [path], forcing a re-sync on next read. No-op on non-SAF. */
+    fun invalidateShadow(path: String) { /* no-op */ }
 
     /**
      * Syncs the shadow copy for [graphPath] from SAF using batch mtime queries.
