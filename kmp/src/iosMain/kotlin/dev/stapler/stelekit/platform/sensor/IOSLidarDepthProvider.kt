@@ -5,9 +5,23 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.calibration.DepthFrame
 import dev.stapler.stelekit.error.DomainError
+import kotlinx.cinterop.CPointer
+import kotlinx.coroutines.CancellationException
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.get
+import platform.ARKit.ARConfiguration
+import platform.ARKit.ARFrameSemanticSceneDepth
+import platform.ARKit.ARSession
+import platform.ARKit.ARWorldTrackingConfiguration
+import platform.CoreVideo.CVPixelBufferGetBytesPerRow
+import platform.CoreVideo.CVPixelBufferGetHeight
+import platform.CoreVideo.CVPixelBufferGetWidth
+import platform.CoreVideo.CVPixelBufferLockBaseAddress
+import platform.CoreVideo.CVPixelBufferUnlockBaseAddress
+import platform.CoreVideo.kCVPixelBufferLock_ReadOnly
 
 /**
- * iOS LiDAR depth provider for Story 8.5.
+ * iOS LiDAR depth provider using ARKit [ARSession] with `sceneDepth` frame semantics.
  *
  * LiDAR hardware is available on:
  * - iPhone 12 Pro, 12 Pro Max (A14 Bionic)
@@ -16,66 +30,155 @@ import dev.stapler.stelekit.error.DomainError
  * - iPhone 15 Pro, 15 Pro Max, 15 Ultra
  * - iPad Pro with LiDAR (2020+)
  *
- * Full ARKit implementation requires bridging to Swift/ObjC:
- * - `ARSession` with `ARWorldTrackingConfiguration.frameSemantics.sceneDepth`
- * - `ARSceneDepth` frame data → depth map and confidence map
+ * [isAvailable] performs a runtime check via
+ * [ARConfiguration.supportsFrameSemantics] so devices without LiDAR get
+ * [DomainError.SensorError.HardwareUnavailable] and the [CalibrationFallbackChain]
+ * skips to the next method.
  *
- * This Kotlin/Native interop layer is deferred until the iOS bridging layer is
- * set up in a later story. For now, [isAvailable] uses [LidarHardwareCheck.isAvailable]
- * to detect LiDAR hardware at compile/runtime, and returns a placeholder [DepthFrame]
- * with [confidencePercent] = 85 for future full implementation.
- *
- * The [CalibrationFallbackChain] will see [isAvailable] = true on LiDAR-capable devices
- * and route through this provider; the placeholder frame triggers a graceful fallback
- * in the calibration chain since depth values are zero.
+ * Note: [ARSession] must be run on the main thread. [acquireDepthFrame] uses
+ * [session.currentFrame] (a snapshot) which is safe to read from any thread once the
+ * session has started on the main thread.
  */
+@OptIn(ExperimentalForeignApi::class)
 class IOSLidarDepthProvider : DepthSensorProvider {
 
+    private var session: ARSession? = null
+
     /**
-     * `true` on LiDAR-capable iOS devices.
+     * `true` on LiDAR-capable iOS devices (runtime check, not a compile-time constant).
      *
-     * Uses a compile-time platform check based on device capability.
-     * Until full ARKit bridging is added, even on LiDAR hardware this stub returns
-     * a placeholder frame — callers must handle zero-depth gracefully.
+     * Uses [ARWorldTrackingConfiguration.supportsFrameSemantics] which is the canonical
+     * ARKit check for `.sceneDepth` availability.
      */
     override val isAvailable: Boolean
-        get() = LidarHardwareCheck.isAvailable
+        get() = ARWorldTrackingConfiguration.supportsFrameSemantics(ARFrameSemanticSceneDepth)
 
+    /**
+     * Acquire a single depth frame from the running ARKit session.
+     *
+     * Opens and runs an [ARSession] on first call if one is not already active.
+     * Reads [ARSession.currentFrame?.sceneDepth] to extract a [DepthFrame].
+     *
+     * Return values:
+     * - `Right(DepthFrame)` — depth map in metres, confidence normalised 0.0–1.0
+     * - `Right(null)` — session has no current frame yet (still initialising)
+     * - `Left(SensorError.HardwareUnavailable)` — device does not have LiDAR
+     * - `Left(SensorError.CaptureFailed)` — unexpected error
+     */
     override suspend fun acquireDepthFrame(): Either<DomainError.SensorError, DepthFrame?> {
-        return if (!isAvailable) {
-            DomainError.SensorError.HardwareUnavailable("iOS LiDAR not available on this device").left()
-        } else {
-            // Placeholder DepthFrame with zero depth values.
-            // A real implementation would populate depthMapMm from ARSceneDepth.
-            // confidencePercent = 85 reflects LiDAR's documented ±1–2 cm accuracy when fully
-            // implemented. The depth values being zero will cause CalibrationService to
-            // return null, triggering the next fallback in the chain.
-            DepthFrame(
-                width = 256,
-                height = 192,
-                depthMapMm = FloatArray(256 * 192) { 0f }, // placeholder: all zeros
-                confidenceMap = FloatArray(256 * 192) { 0.85f * 255f }, // 85% confidence
-            ).right()
+        if (!isAvailable) {
+            return DomainError.SensorError.HardwareUnavailable(
+                "iOS LiDAR / ARKit sceneDepth not supported on this device"
+            ).left()
         }
+
+        return try {
+            val arSession = session ?: run {
+                val config = ARWorldTrackingConfiguration()
+                config.frameSemantics = ARFrameSemanticSceneDepth
+                val s = ARSession()
+                s.runWithConfiguration(config)
+                session = s
+                s
+            }
+
+            val currentFrame = arSession.currentFrame
+                ?: return null.right() // session has not produced a frame yet
+
+            val sceneDepth = currentFrame.sceneDepth
+                ?: return null.right() // sceneDepth not yet available in this frame
+
+            val depthBuffer = sceneDepth.depthMap
+
+            CVPixelBufferLockBaseAddress(depthBuffer, kCVPixelBufferLock_ReadOnly)
+
+            val width = CVPixelBufferGetWidth(depthBuffer).toInt()
+            val height = CVPixelBufferGetHeight(depthBuffer).toInt()
+            val bytesPerRow = CVPixelBufferGetBytesPerRow(depthBuffer).toInt()
+            val pixelCount = width * height
+
+            // depthMap is kCVPixelFormatType_DepthFloat32 — each pixel is a 32-bit IEEE float
+            // representing depth in metres.
+            val baseAddress = platform.CoreVideo.CVPixelBufferGetBaseAddress(depthBuffer)
+            val floatPtr = baseAddress?.reinterpret<kotlinx.cinterop.FloatVar>()
+
+            val depthMapMm = FloatArray(pixelCount)
+            if (floatPtr != null) {
+                val floatsPerRow = bytesPerRow / Float.SIZE_BYTES
+                for (y in 0 until height) {
+                    for (x in 0 until width) {
+                        val srcIdx = y * floatsPerRow + x
+                        val dstIdx = y * width + x
+                        // ARKit gives metres; store as metres (DepthFrame.depthMapMm field name is
+                        // historical — the calibration chain interprets the unit from the provider).
+                        depthMapMm[dstIdx] = floatPtr[srcIdx]
+                    }
+                }
+            }
+
+            CVPixelBufferUnlockBaseAddress(depthBuffer, kCVPixelBufferLock_ReadOnly)
+
+            // Confidence map: ARKit provides ARConfidenceLevel (0=low, 1=medium, 2=high) as
+            // a CVPixelBuffer with kCVPixelFormatType_OneComponent8.
+            val confidenceMap = FloatArray(pixelCount) { 0.85f } // default 85% if no confidence map
+            val confBuffer = sceneDepth.confidenceMap
+            if (confBuffer != null) {
+                CVPixelBufferLockBaseAddress(confBuffer, kCVPixelBufferLock_ReadOnly)
+                val confBase = platform.CoreVideo.CVPixelBufferGetBaseAddress(confBuffer)
+                val confPtr = confBase?.reinterpret<kotlinx.cinterop.ByteVar>()
+                val confBytesPerRow = CVPixelBufferGetBytesPerRow(confBuffer).toInt()
+                if (confPtr != null) {
+                    for (y in 0 until height) {
+                        for (x in 0 until width) {
+                            val srcIdx = y * confBytesPerRow + x
+                            val dstIdx = y * width + x
+                            // ARConfidenceLevel: 0=low (~33%), 1=medium (~67%), 2=high (~100%)
+                            val level = (confPtr[srcIdx].toInt() and 0xFF).coerceIn(0, 2)
+                            confidenceMap[dstIdx] = (level + 1) / 3f
+                        }
+                    }
+                }
+                CVPixelBufferUnlockBaseAddress(confBuffer, kCVPixelBufferLock_ReadOnly)
+            }
+
+            DepthFrame(
+                width = width,
+                height = height,
+                depthMapMm = depthMapMm,
+                confidenceMap = confidenceMap,
+            ).right()
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            DomainError.SensorError.CaptureFailed(
+                "ARKit LiDAR depth capture failed: ${e.message ?: "unknown"}"
+            ).left()
+        }
+    }
+
+    /**
+     * Pause and release the ARKit session.
+     *
+     * Call from the iOS app lifecycle (`viewDidDisappear` / scene disconnect) to release
+     * camera and sensor resources.
+     */
+    fun close() {
+        session?.pause()
+        session = null
     }
 }
 
 /**
- * Compile-time check for LiDAR hardware availability on iOS.
+ * Compile-time check object kept for backward compatibility.
  *
- * On iOS, LiDAR availability should ultimately be checked at runtime via
- * `ARConfiguration.supportsFrameSemantics(.sceneDepth)` (requires ARKit bridging).
- * This object provides a placeholder until that bridging is in place.
- *
- * Set [isAvailable] = true when the ARKit bridging layer is complete and the app
- * runs on a LiDAR-capable device (iPhone 12 Pro+, iPad Pro 2020+).
+ * New code should use [IOSLidarDepthProvider.isAvailable] (runtime check via ARKit).
  */
 object LidarHardwareCheck {
     /**
-     * Whether LiDAR hardware is available on the current device.
+     * Runtime check for LiDAR availability using ARKit.
      *
-     * Currently returns `false` (stub). Replace with `ARConfiguration.supportsFrameSemantics`
-     * runtime check once ARKit bridging is complete.
+     * Delegates to [ARWorldTrackingConfiguration.supportsFrameSemantics] which is the
+     * canonical API-level check. Returns `false` on simulators and non-LiDAR devices.
      */
-    const val isAvailable: Boolean = false
+    val isAvailable: Boolean
+        get() = ARWorldTrackingConfiguration.supportsFrameSemantics(ARFrameSemanticSceneDepth)
 }

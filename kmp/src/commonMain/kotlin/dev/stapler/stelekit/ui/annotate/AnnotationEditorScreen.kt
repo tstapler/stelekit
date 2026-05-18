@@ -10,15 +10,19 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -109,6 +113,20 @@ fun AnnotationEditorScreen(
     onExportToDrive: (() -> Unit)? = null,
     /** Story 7.4: Drive export state for progress/success/error feedback. */
     driveExportState: DriveExportUiState = DriveExportUiState.Idle,
+    /**
+     * Optional callback invoked when the user taps "Download depth model".
+     *
+     * When null, the depth estimation panel is not shown. On Android, pass a lambda that
+     * calls [DepthModelDownloader.downloadModel] and pushes state into the ViewModel via
+     * [AnnotationEditorViewModel.updateDepthModelUiState].
+     */
+    onDownloadDepthModel: (() -> Unit)? = null,
+    /**
+     * When non-null, the "Estimate depth (AI)" button is shown and tapping it calls this
+     * lambda. The caller (Android activity/fragment) should trigger inference and update the
+     * ViewModel's [AnnotationEditorState.depthMap] via [AnnotationEditorViewModel.runDepthEstimation].
+     */
+    onEstimateDepth: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsState()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
@@ -320,6 +338,20 @@ fun AnnotationEditorScreen(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(8.dp),
+                )
+            }
+
+            // Depth estimation panel — shown when platform provides download/estimate callbacks.
+            if (onDownloadDepthModel != null || onEstimateDepth != null) {
+                DepthEstimationPanel(
+                    modelState = state.depthModelUiState,
+                    isInferenceRunning = state.isDepthInferenceRunning,
+                    depthEstimationError = state.depthEstimationError,
+                    onDownload = onDownloadDepthModel ?: {},
+                    onEstimate = onEstimateDepth ?: {},
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(start = 8.dp, top = 8.dp),
                 )
             }
 
@@ -856,6 +888,144 @@ internal fun DeviceConnectionChip(
                         color = chipColor,
                     )
                 }
+            }
+        }
+    }
+}
+
+// ── Depth estimation panel ────────────────────────────────────────────────────
+
+/**
+ * Compact floating panel that drives the monocular depth model download and inference flow.
+ *
+ * State transitions (per ADR-005 and Story 9.8 spec):
+ * - [DepthModelUiState.Absent]      → "Download depth model (~100MB)" button
+ * - [DepthModelUiState.Downloading] → progress indicator with percentage
+ * - [DepthModelUiState.Ready]       → "Estimate depth (AI)" button (or spinner during inference)
+ * - [DepthModelUiState.Failed]      → "Download failed — tap to retry" button
+ *
+ * After a successful estimation the low-confidence warning badge is shown inline
+ * (ADR-005: ML depth confidence ±15%).
+ */
+@Composable
+internal fun DepthEstimationPanel(
+    modelState: DepthModelUiState,
+    isInferenceRunning: Boolean,
+    depthEstimationError: String?,
+    onDownload: () -> Unit,
+    onEstimate: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        color = Color(0xDD1A1A1A),
+        shape = MaterialTheme.shapes.small,
+        modifier = modifier,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            when {
+                // Inference running — show spinner.
+                isInferenceRunning -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "Estimating depth…",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                        )
+                    }
+                }
+
+                // Model ready — show estimate button.
+                modelState is DepthModelUiState.Ready -> {
+                    OutlinedButton(onClick = onEstimate) {
+                        Text(
+                            text = "Estimate depth (AI)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                        )
+                    }
+                    // ADR-005 low-confidence warning.
+                    Spacer(Modifier.height(2.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = Color(0xFFFFA000),
+                            modifier = Modifier.size(12.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "Low confidence — verify with reference object",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFFFFA000),
+                        )
+                    }
+                }
+
+                // Download in progress — show indeterminate progress.
+                modelState is DepthModelUiState.Downloading -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        val pct = modelState.progress
+                        Text(
+                            text = if (pct >= 0) "Downloading model… $pct%" else "Downloading model…",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                        )
+                    }
+                }
+
+                // Download failed — show retry button.
+                modelState is DepthModelUiState.Failed -> {
+                    TextButton(onClick = onDownload) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = Color(0xFFEF5350),
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "Download failed — tap to retry",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFFEF5350),
+                        )
+                    }
+                }
+
+                // Model absent — show download prompt.
+                else -> {
+                    OutlinedButton(onClick = onDownload) {
+                        Text(
+                            text = "Download depth model (~100MB)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                        )
+                    }
+                }
+            }
+
+            // Show inference error if present (below the main action button).
+            if (depthEstimationError != null && !isInferenceRunning) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = depthEstimationError,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFEF5350),
+                )
             }
         }
     }

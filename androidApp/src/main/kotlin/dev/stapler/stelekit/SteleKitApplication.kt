@@ -8,6 +8,11 @@ import dev.stapler.stelekit.git.CredentialStore
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.SteleKitContext
+import dev.stapler.stelekit.platform.measurement.MeasurementDeviceRegistry
+import dev.stapler.stelekit.platform.measurement.ble.KableBleScanner
+import dev.stapler.stelekit.platform.sensor.AndroidCameraProvider
+import dev.stapler.stelekit.platform.sensor.ARCoreDepthProvider
+import dev.stapler.stelekit.platform.sensor.SensorModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -39,6 +44,9 @@ class SteleKitApplication : Application() {
             SteleKitContext.init(this)
             DriverFactory.setContext(this)
             CredentialStore.init(this)
+            SensorModule.cameraProvider = AndroidCameraProvider(applicationContext)
+            SensorModule.depthSensorProvider = ARCoreDepthProvider(applicationContext)
+            MeasurementDeviceRegistry.register(KableBleScanner(applicationContext))
             fileSystem = PlatformFileSystem().apply { init(applicationContext) }
             graphManager = GraphManager(
                 platformSettings = PlatformSettings(),

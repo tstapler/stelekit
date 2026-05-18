@@ -59,6 +59,13 @@ sealed interface DomainError {
         data class CaptureFailed(override val message: String) : SensorError
     }
 
+    sealed interface BleError : DomainError {
+        data class ConnectionFailed(override val message: String) : BleError
+        data class Gatt133(val attempts: Int, override val message: String) : BleError {
+            override fun toString(): String = "GATT 133 after $attempts attempts: $message"
+        }
+    }
+
     sealed interface GitError : DomainError {
         data class CloneFailed(override val message: String) : GitError
         data class FetchFailed(override val message: String) : GitError
@@ -122,6 +129,8 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.SensorError.PermissionDenied -> message
     is DomainError.SensorError.HardwareUnavailable -> message
     is DomainError.SensorError.CaptureFailed -> "Capture failed: $message"
+    is DomainError.BleError.ConnectionFailed -> "BLE connection failed: $message"
+    is DomainError.BleError.Gatt133 -> "BLE GATT error after $attempts attempts: $message"
     is DomainError.GitError.CloneFailed -> "Git clone failed: $message"
     is DomainError.GitError.FetchFailed -> "Git fetch failed: $message"
     is DomainError.GitError.PushFailed -> "Git push failed: $message"

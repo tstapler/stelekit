@@ -7,6 +7,19 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- Camera capture (Story 9.2).
+         CAMERA is a runtime permission requested before AndroidCameraProvider.capturePhoto().
+         required=false so the app installs on devices without a camera (tablets, emulators). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- ARCore Depth API (Story 8.5).
+         required=false — ARCore depth is optional; the CalibrationFallbackChain degrades
+         gracefully to EXIF/ML on devices that lack AR hardware or the ARCore APK.
+         The meta-data tag in <application> tells Google Play that ARCore is optional,
+         allowing the app to install on all devices (not just AR-capable ones). -->
+    <uses-feature android:name="android.hardware.camera.ar" android:required="false" />
+
     <!-- BLE Laser Rangefinder permissions (Story 5.2.3, Epic 5).
          BLUETOOTH_SCAN + BLUETOOTH_CONNECT: required on API 31+ for BLE scanning and GATT.
          BLUETOOTH_ADVERTISE: declared for completeness (not used by scanner role).
@@ -32,6 +45,10 @@
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
     <application>
+        <!-- ARCore optional — allows Google Play to show an "Install ARCore" prompt on
+             AR-capable devices without blocking installation on non-AR devices. -->
+        <meta-data android:name="com.google.ar.core" android:value="optional" />
+
         <!-- Benchmark-only FileProvider: serves cacheDir files via ContentResolver to measure
              Binder IPC overhead vs direct file I/O. Declared here (kmp androidMain) so the
              provider is present in the kmp instrumented-test APK with the correct ${applicationId}

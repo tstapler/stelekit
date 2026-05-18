@@ -53,8 +53,20 @@ android {
     }
 
     compileOptions {
+        // androidApp (and :kmp via JGit) require core library desugaring — macrobenchmark
+        // must enable it to depend on :androidApp without a checkAarMetadata failure.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
+    }
+
+    packaging {
+        resources {
+            // Both org.eclipse.jgit and org.eclipse.jgit.ssh.jsch (pulled in transitively via
+            // :androidApp → :kmp) include plugin.properties. Exclude it to prevent a
+            // duplicate-resource merge failure (same rule as in :androidApp).
+            excludes += "plugin.properties"
+        }
     }
 
     kotlin {
@@ -63,6 +75,10 @@ android {
 }
 
 dependencies {
+    // androidApp classes (e.g. MainActivity) must be on the compile classpath so the benchmark
+    // source can import them. targetProjectPath only makes the APK available at runtime.
+    implementation(project(":androidApp"))
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     implementation("androidx.benchmark:benchmark-macro-junit4:1.4.1")
     // benchmark-junit4 provides AndroidBenchmarkRunner which must be present in the
     // macrobenchmark APK's DEX — it is not bundled inside benchmark-macro-junit4.

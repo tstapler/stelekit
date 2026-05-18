@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.ui.annotate
 
 import arrow.core.Either
+import androidx.compose.ui.graphics.ImageBitmap
 import dev.stapler.stelekit.calibration.CalibrationService
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
@@ -17,6 +18,8 @@ import dev.stapler.stelekit.model.pixelDistanceToMeters
 import dev.stapler.stelekit.model.polygonAreaMeters
 import dev.stapler.stelekit.platform.measurement.DeviceConnectionState
 import dev.stapler.stelekit.platform.measurement.ExternalMeasurementDevice
+import dev.stapler.stelekit.platform.ml.MonocularDepthEstimator
+import dev.stapler.stelekit.platform.ml.NoOpMonocularDepthEstimator
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.ImageAnnotationRepository
 import dev.stapler.stelekit.repository.MeasurementAnnotationRepository
@@ -87,7 +90,36 @@ data class AnnotationEditorState(
     val gridRefLengthText: String = "",
     /** Selected unit for the GRID_REF dialog (defaults to the image's display unit). */
     val gridRefUnit: MeasurementUnit = MeasurementUnit.METERS,
+    // ── Monocular depth estimation state ──────────────────────────────────
+    /** True while ONNX inference is running (shows spinner). */
+    val isDepthInferenceRunning: Boolean = false,
+    /** Non-null after successful depth estimation. Relative depth map, normalized [0,1]. */
+    val depthMap: FloatArray? = null,
+    /** Error message from the most recent depth estimation attempt. Null when none. */
+    val depthEstimationError: String? = null,
+    /** Current download/readiness state of the depth model file. */
+    val depthModelUiState: DepthModelUiState = DepthModelUiState.Absent,
 )
+
+/**
+ * Platform-independent mirror of [DepthModelDownloader.ModelState] for common UI.
+ *
+ * Populated via [AnnotationEditorViewModel.updateDepthModelUiState] from the Android
+ * platform layer which observes [DepthModelDownloader.modelState].
+ */
+sealed interface DepthModelUiState {
+    /** Model not downloaded. Show "Download depth model (~100MB)" button. */
+    data object Absent : DepthModelUiState
+
+    /** Download in progress. [progress] is 0–100 or -1 if indeterminate. */
+    data class Downloading(val progress: Int) : DepthModelUiState
+
+    /** Model ready — show "Estimate depth (AI)" button. */
+    data object Ready : DepthModelUiState
+
+    /** Download failed. Show "Download failed — tap to retry". */
+    data object Failed : DepthModelUiState
+}
 
 /**
  * ViewModel for the image annotation editor screen.
@@ -129,6 +161,13 @@ class AnnotationEditorViewModel(
      * Defaults to no-op to preserve backward compatibility in tests and JVM desktop.
      */
     private val onHapticFeedback: () -> Unit = {},
+    /**
+     * Optional [MonocularDepthEstimator] for AI depth calibration.
+     *
+     * Defaults to [NoOpMonocularDepthEstimator] so tests and desktop build without a platform
+     * implementation. Pass [SensorModule.monocularDepthEstimator] on Android.
+     */
+    private val monocularDepthEstimator: MonocularDepthEstimator = NoOpMonocularDepthEstimator(),
 ) {
     // CRITICAL: internal scope — never injected from outside composition.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -699,6 +738,72 @@ class AnnotationEditorViewModel(
             updateCalibration(newCalibration)
 
             logger.info("BLE reading injected: ${reading.valueMeters}m from ${reading.deviceId}")
+        }
+    }
+
+    // ── Monocular depth estimation ────────────────────────────────────────────
+
+    /**
+     * Push the current [DepthModelUiState] from the platform layer into [AnnotationEditorState].
+     *
+     * Called from the Android entry point (or a `LaunchedEffect`) when
+     * [DepthModelDownloader.modelState] emits a new value.
+     */
+    fun updateDepthModelUiState(uiState: DepthModelUiState) {
+        _state.update { it.copy(depthModelUiState = uiState) }
+    }
+
+    /**
+     * Run monocular depth estimation on [imageBitmap] via [monocularDepthEstimator].
+     *
+     * Flow:
+     * 1. Calls [MonocularDepthEstimator.initialize] (idempotent after first success).
+     * 2. Runs [MonocularDepthEstimator.estimateDepth] on [PlatformDispatcher.Default].
+     * 3. On success: stores the depth map in [AnnotationEditorState.depthMap] and applies
+     *    a [CalibrationMethod.MONOCULAR_ML] calibration at the tap point if provided.
+     * 4. On failure: stores the error message in [AnnotationEditorState.depthEstimationError].
+     *
+     * ADR-005: confidence is 15%. The UI must show the low-confidence warning.
+     *
+     * @param imageBitmap   the image to estimate depth for
+     * @param tapPoint      optional normalized tap point used to sample depth for calibration
+     */
+    fun runDepthEstimation(imageBitmap: ImageBitmap, tapPoint: NormalizedPoint? = null) {
+        if (_state.value.isDepthInferenceRunning) return
+        _state.update { it.copy(isDepthInferenceRunning = true, depthEstimationError = null) }
+
+        scope.launch {
+            // Initialize estimator (no-op if already done).
+            val initResult = monocularDepthEstimator.initialize()
+            if (initResult.isLeft()) {
+                val err = (initResult as Either.Left).value.message
+                _state.update { it.copy(isDepthInferenceRunning = false, depthEstimationError = err) }
+                return@launch
+            }
+
+            val depthResult = monocularDepthEstimator.estimateDepth(imageBitmap)
+            depthResult.fold(
+                ifLeft = { err ->
+                    _state.update {
+                        it.copy(isDepthInferenceRunning = false, depthEstimationError = err.message)
+                    }
+                },
+                ifRight = { depthMap ->
+                    _state.update {
+                        it.copy(isDepthInferenceRunning = false, depthMap = depthMap, depthEstimationError = null)
+                    }
+                    // Auto-apply calibration if a tap point is provided.
+                    if (tapPoint != null && imageWidthPx > 0.0 && imageHeightPx > 0.0) {
+                        val cal = CalibrationService.computeFromMLDepth(
+                            depthMap = depthMap,
+                            tapPointNormalized = tapPoint,
+                            imageWidthPx = imageWidthPx,
+                            imageHeightPx = imageHeightPx,
+                        )
+                        if (cal != null) updateCalibration(cal)
+                    }
+                },
+            )
         }
     }
 

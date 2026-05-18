@@ -1,79 +1,183 @@
 package dev.stapler.stelekit.platform.sensor
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.core.content.ContextCompat
 import arrow.core.Either
 import arrow.core.left
+import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.model.ImageSensorData
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.io.File
+import java.util.UUID
+import java.util.concurrent.Executors
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
  * Android camera provider using CameraX.
  *
- * This is a stub implementation. The full CameraX live-preview capture flow
- * (Activity-level permission request + ImageCapture use-case + EXIF correction
- * via [ExifOrientationFixer]) will be completed when CameraX is added to
- * androidMain dependencies in kmp/build.gradle.kts.
- *
- * For Android image import, use [AndroidPhotoPickerLauncher] instead — it does not
- * require the CAMERA permission and works on API 21+.
- *
- * Dependency gate: CameraX is NOT yet in kmp/build.gradle.kts.
- * Until added, this class returns [DomainError.SensorError.HardwareUnavailable].
+ * Requires the CAMERA runtime permission — checked in [capturePhoto] before binding.
+ * Uses [ProcessLifecycleOwner] so no Activity reference is needed.
  *
  * ## OOM prevention (Story 9.2) — inSampleSize for preview loading
  *
- * Modern Android cameras produce 12–200 MP images (12–48 MB decoded ARGB_8888).
- * Loading the full bitmap into memory for display would immediately OOM on most devices.
+ * Full-resolution JPEG is written to `cacheDir/captures/<uuid>.jpg`. Display is handled
+ * by Coil's [coil3.compose.AsyncImage], which subsamples to the viewport resolution
+ * automatically via [android.graphics.BitmapFactory.Options.inSampleSize].
+ * This class never decodes the full bitmap into memory.
  *
- * The annotation canvas uses Coil's [coil3.compose.AsyncImage], which automatically
- * applies [android.graphics.BitmapFactory.Options.inSampleSize] to decode the image
- * at the viewport's display resolution rather than the sensor's full resolution.
- * The full-resolution file is retained on disk for export and sidecar metadata.
+ * ## EXIF correction
  *
- * When a full CameraX capture implementation is added, the recommended approach is:
- *  1. Save the full-resolution capture to disk via [ImageCapture.takePicture] (file path).
- *  2. Return the file path in [PlatformImageFile.path] — Coil handles display subsampling.
- *  3. Do NOT decode the full bitmap into memory in this class; let Coil subsample it.
+ * After capture, [ExifOrientationFixer.fixOrientation] rotates pixel data to bake in the
+ * EXIF orientation and resets the orientation tag to NORMAL. Camera metadata
+ * (focal length, make, model) is extracted from EXIF at that point.
  *
- * Example inSampleSize calculation (for any code that needs raw bitmap access,
- * e.g. EXIF correction in [ExifOrientationFixer]):
- * ```kotlin
- * val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
- * BitmapFactory.decodeFile(path, opts)
- * opts.inSampleSize = calculateInSampleSize(opts, targetWidth = 1920, targetHeight = 1080)
- * opts.inJustDecodeBounds = false
- * val bitmap = BitmapFactory.decodeFile(path, opts)
- * // bitmap is now at most 1920×1080 — safe to keep in memory
- * ```
- * where `calculateInSampleSize` rounds down to the nearest power-of-two factor.
+ * ## Sensor data (Story 8.1.5)
  *
- * Story 8.1.5: When a full capture implementation is added, it must snapshot
- * [SensorModule.motionSensorProvider.sensorDataFlow] at the moment of shutter
- * and attach the result to the returned [PlatformImageFile.sensorData]. This
- * ensures GPS, bearing, and tilt data captured at the exact capture instant are
- * preserved through the import pipeline.
- *
- * Example pattern for the full implementation:
- * ```kotlin
- * val sensorSnapshot = SensorModule.motionSensorProvider.sensorDataFlow
- *     .firstOrNull()  // latest emission; null if sensing not started
- * return PlatformImageFile(
- *     path = savedImagePath,
- *     capturedAtMs = System.currentTimeMillis(),
- *     sensorData = sensorSnapshot,
- * ).right()
- * ```
+ * A snapshot of [SensorModule.motionSensorProvider.sensorDataFlow] is captured at shutter
+ * time and attached to the returned [PlatformImageFile.sensorData].
  */
-class AndroidCameraProvider : CameraProvider {
+class AndroidCameraProvider(private val context: Context) : CameraProvider {
 
-    override val isAvailable: Boolean = false
+    override val isAvailable: Boolean = true
 
     /**
-     * Stub: returns [DomainError.SensorError.HardwareUnavailable] until CameraX
-     * is wired in and the CAMERA permission is requested.
+     * Captures a single JPEG photo using CameraX [ImageCapture].
      *
-     * To enable: add `implementation("androidx.camera:camera-camera2:1.5.0")` and
-     * `implementation("androidx.camera:camera-lifecycle:1.5.0")` to androidMain
-     * dependencies, then replace this body with a real ImageCapture flow.
+     * Returns [DomainError.SensorError.PermissionDenied] if CAMERA permission is missing.
+     * Returns [DomainError.SensorError.CaptureFailed] for any capture or I/O error.
      */
-    override suspend fun capturePhoto(): Either<DomainError.SensorError, PlatformImageFile> =
-        DomainError.SensorError.HardwareUnavailable("camera").left()
+    @Suppress("TooGenericExceptionCaught")
+    override suspend fun capturePhoto(): Either<DomainError.SensorError, PlatformImageFile> {
+        // 1. Permission gate
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            return DomainError.SensorError.PermissionDenied("camera").left()
+        }
+
+        return try {
+            // 2. Obtain ProcessCameraProvider — bridge ListenableFuture to suspend
+            val cameraProvider: ProcessCameraProvider = suspendCancellableCoroutine { cont ->
+                val future = ProcessCameraProvider.getInstance(context)
+                val executor = ContextCompat.getMainExecutor(context)
+                future.addListener(
+                    {
+                        if (cont.isActive) {
+                            runCatching { future.get() }
+                                .onSuccess { cont.resume(it) }
+                                .onFailure { cont.resumeWithException(it) }
+                        }
+                    },
+                    executor,
+                )
+                cont.invokeOnCancellation { future.cancel(true) }
+            }
+
+            // 3. Build ImageCapture use case
+            val imageCapture = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                .build()
+
+            // 4. Bind to ProcessLifecycleOwner — no Activity reference required.
+            // Use fully-qualified class to avoid the Glance bindToLifecycle extension clash.
+            val lifecycleOwner = androidx.lifecycle.ProcessLifecycleOwner.get()
+            cameraProvider.unbindAll()
+            cameraProvider.bindToLifecycle(
+                lifecycleOwner,
+                CameraSelector.DEFAULT_BACK_CAMERA,
+                imageCapture,
+            )
+
+            // 5. Prepare output file: cacheDir/captures/<uuid>.jpg
+            val capturesDir = File(context.cacheDir, "captures").also { it.mkdirs() }
+            val outputFile = File(capturesDir, "${UUID.randomUUID()}.jpg")
+
+            // 6. Snapshot sensor data at shutter time (Story 8.1.5)
+            val sensorSnapshot = SensorModule.motionSensorProvider.sensorDataFlow.firstOrNull()
+            val capturedAt = System.currentTimeMillis()
+
+            // 7. Take the photo — bridge ImageCapture callback to a suspend function
+            val outputOptions = ImageCapture.OutputFileOptions.Builder(outputFile).build()
+            val executor = Executors.newSingleThreadExecutor()
+
+            suspendCancellableCoroutine { cont ->
+                imageCapture.takePicture(
+                    outputOptions,
+                    executor,
+                    object : ImageCapture.OnImageSavedCallback {
+                        override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                            if (cont.isActive) cont.resume(Unit)
+                        }
+
+                        override fun onError(exception: ImageCaptureException) {
+                            if (cont.isActive) cont.resumeWithException(exception)
+                        }
+                    },
+                )
+                cont.invokeOnCancellation { executor.shutdown() }
+            }
+            executor.shutdown()
+
+            if (!outputFile.exists()) {
+                return DomainError.SensorError.CaptureFailed(
+                    "CameraX onImageSaved fired but file missing: ${outputFile.absolutePath}"
+                ).left()
+            }
+
+            // 8. Fix EXIF orientation in-place and extract camera metadata
+            val fixResult = ExifOrientationFixer.fixOrientation(outputFile.absolutePath)
+                .fold(
+                    ifLeft = { return it.left() },
+                    ifRight = { it },
+                )
+
+            // 9. Merge EXIF camera metadata into motion sensor snapshot
+            val sensorData: ImageSensorData? = if (sensorSnapshot != null) {
+                sensorSnapshot.copy(
+                    focalLengthMm = fixResult.focalLengthMm ?: sensorSnapshot.focalLengthMm,
+                    focalLength35mmEq = fixResult.focalLength35mmEq
+                        ?: sensorSnapshot.focalLength35mmEq,
+                    cameraMake = fixResult.cameraMake ?: sensorSnapshot.cameraMake,
+                    cameraModel = fixResult.cameraModel ?: sensorSnapshot.cameraModel,
+                )
+            } else if (fixResult.focalLengthMm != null || fixResult.cameraMake != null) {
+                // No live sensor data — build from EXIF metadata alone
+                ImageSensorData(
+                    focalLengthMm = fixResult.focalLengthMm,
+                    focalLength35mmEq = fixResult.focalLength35mmEq,
+                    cameraMake = fixResult.cameraMake,
+                    cameraModel = fixResult.cameraModel,
+                )
+            } else {
+                null
+            }
+
+            PlatformImageFile(
+                path = fixResult.outputPath,
+                mimeType = "image/jpeg",
+                capturedAtMs = capturedAt,
+                focalLengthMm = fixResult.focalLengthMm,
+                focalLength35mmEq = fixResult.focalLength35mmEq,
+                cameraMake = fixResult.cameraMake,
+                cameraModel = fixResult.cameraModel,
+                sensorData = sensorData,
+            ).right()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            DomainError.SensorError.CaptureFailed(
+                "CameraX capture failed: ${e.message ?: "unknown"}"
+            ).left()
+        }
+    }
 }
