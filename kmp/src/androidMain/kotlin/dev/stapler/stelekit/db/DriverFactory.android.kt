@@ -9,21 +9,23 @@ import io.requery.android.database.sqlite.RequerySQLiteOpenHelperFactory
 import kotlinx.coroutines.runBlocking
 
 /**
- * Custom callback that applies performance PRAGMAs in [onConfigure], which fires before
- * schema creation. This is the correct lifecycle hook for per-connection settings with
- * [RequerySQLiteOpenHelperFactory] — the factory's [CallbackSQLiteOpenHelper] delegates
- * [onConfigure] directly to this callback, guaranteeing WAL mode is set before any DDL runs.
+ * Custom callback that applies performance PRAGMAs in [onOpen], which fires after schema
+ * creation and is unrestricted for [execSQL] with [RequerySQLiteOpenHelperFactory].
  *
- * ADR-003: [RequerySQLiteOpenHelperFactory]'s internal [CallbackSQLiteOpenHelper] calls
- * [onConfigure] from [SupportSQLiteOpenHelper.Callback], confirmed by decompiling
- * sqlite-android-3.49.0.aar. Moving PRAGMAs here eliminates the race where post-construction
- * PRAGMA application could run in DELETE journal mode if [schema.create] was slow or threw.
+ * ADR-003 update: [RequerySQLiteOpenHelperFactory]'s [CallbackSQLiteOpenHelper] restricts
+ * [execSQL] during [onConfigure] (throws "Queries can be performed using SQLiteDatabase
+ * query or rawQuery methods only"). Moving PRAGMAs to [onOpen] avoids this restriction.
+ * WAL mode is persistent across connections once set, so [onOpen] is the correct hook.
  */
 private class WalConfiguredCallback(
     schema: app.cash.sqldelight.db.SqlSchema<app.cash.sqldelight.db.QueryResult.Value<Unit>>,
 ) : AndroidSqliteDriver.Callback(schema) {
     override fun onConfigure(db: SupportSQLiteDatabase) {
         super.onConfigure(db) // preserves AndroidSqliteDriver.Callback defaults (foreign keys, etc.)
+    }
+
+    override fun onOpen(db: SupportSQLiteDatabase) {
+        super.onOpen(db)
         // WAL mode: allows concurrent reads while a write is in progress, reducing SQLITE_BUSY.
         // busy_timeout: retry for up to 10 seconds before surfacing SQLITE_BUSY to the caller.
         // wal_autocheckpoint=4000: reduce checkpoint frequency on write-heavy workloads (default=1000).
