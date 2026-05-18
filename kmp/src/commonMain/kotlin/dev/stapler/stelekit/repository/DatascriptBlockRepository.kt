@@ -489,7 +489,11 @@ class DatascriptBlockRepository : BlockRepository {
         return Unit.right()
     }
 
-    override suspend fun splitBlock(blockUuid: String, cursorPosition: Int): Either<DomainError, Block> {
+    override suspend fun splitBlock(
+        blockUuid: String,
+        cursorPosition: Int,
+        newBlockUuid: String?,
+    ): Either<DomainError, Block> {
         return DomainError.DatabaseError.WriteFailed("splitBlock not implemented").left()
     }
 

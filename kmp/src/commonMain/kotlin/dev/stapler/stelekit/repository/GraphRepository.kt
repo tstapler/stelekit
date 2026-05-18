@@ -162,10 +162,18 @@ interface BlockRepository {
     suspend fun mergeBlocks(blockUuid: String, nextBlockUuid: String, separator: String): Either<DomainError, Unit>
 
     /**
-     * Split a block into two atomically at the given cursor position
+     * Split a block into two atomically at the given cursor position.
+     *
+     * @param newBlockUuid UUID to assign to the newly-created block. When provided (optimistic
+     *   path) the caller and the repository use the same UUID, eliminating the need for a
+     *   post-split UUID-correction pass in [BlockStateManager].
      */
     @DirectRepositoryWrite
-    suspend fun splitBlock(blockUuid: String, cursorPosition: Int): Either<DomainError, Block>
+    suspend fun splitBlock(
+        blockUuid: String,
+        cursorPosition: Int,
+        newBlockUuid: String? = null,
+    ): Either<DomainError, Block>
 
     /**
      * Find all blocks that contain a wiki link to the given page name

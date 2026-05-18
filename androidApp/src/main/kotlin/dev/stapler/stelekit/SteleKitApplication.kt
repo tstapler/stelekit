@@ -8,6 +8,7 @@ import dev.stapler.stelekit.git.CredentialStore
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.SteleKitContext
+import dev.stapler.stelekit.platform.WriteBehindQueue
 import dev.stapler.stelekit.platform.measurement.MeasurementDeviceRegistry
 import dev.stapler.stelekit.platform.measurement.ble.KableBleScanner
 import dev.stapler.stelekit.platform.sensor.AndroidCameraProvider
@@ -16,6 +17,7 @@ import dev.stapler.stelekit.platform.sensor.SensorModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.runBlocking
 
 class SteleKitApplication : Application() {
 
@@ -48,6 +50,20 @@ class SteleKitApplication : Application() {
             SensorModule.depthSensorProvider = ARCoreDepthProvider(applicationContext)
             MeasurementDeviceRegistry.register(KableBleScanner(applicationContext))
             fileSystem = PlatformFileSystem().apply { init(applicationContext) }
+            // Activate write-behind when MANAGE_EXTERNAL_STORAGE is not granted.
+            // Direct access (when granted) is faster than write-behind and makes it unnecessary.
+            if (android.os.Build.VERSION.SDK_INT >= 30 &&
+                !android.os.Environment.isExternalStorageManager()
+            ) {
+                val queueFile = java.io.File(filesDir, "write_behind_queue.txt")
+                fileSystem.setWriteBehindQueue(WriteBehindQueue(queueFile))
+                // Startup recovery: flush any pages left dirty from a previous session.
+                // Runs synchronously before the graph loads to guarantee consistency.
+                runBlocking {
+                    try { fileSystem.flushPendingWrites() }
+                    catch (e: Exception) { Log.w(TAG, "Startup write-behind flush failed", e) }
+                }
+            }
             graphManager = GraphManager(
                 platformSettings = PlatformSettings(),
                 driverFactory = DriverFactory(),

@@ -200,6 +200,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStop() {
+        super.onStop()
+        // Flush any pending write-behind pages to SAF before the process may be killed.
+        val app = application as? SteleKitApplication ?: return
+        lifecycleScope.launch {
+            try { app.fileSystem.flushPendingWrites() }
+            catch (e: Exception) { Log.w(TAG, "onStop write-behind flush failed", e) }
+        }
+    }
+
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         val repos = graphManager?.activeRepositorySet?.value ?: return

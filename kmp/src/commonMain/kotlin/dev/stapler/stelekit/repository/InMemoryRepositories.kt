@@ -380,16 +380,20 @@ class InMemoryBlockRepository : BlockRepository {
         return Unit.right()
     }
 
-    override suspend fun splitBlock(blockUuid: String, cursorPosition: Int): Either<DomainError, Block> {
+    override suspend fun splitBlock(
+        blockUuid: String,
+        cursorPosition: Int,
+        newBlockUuid: String?,
+    ): Either<DomainError, Block> {
         val current = blocks.value.toMutableMap()
         val block = current[blockUuid] ?: return DomainError.DatabaseError.WriteFailed("Block not found").left()
-        
+
         val firstPart = block.content.substring(0, cursorPosition).trim()
         val secondPart = block.content.substring(cursorPosition).trim()
-        
+
         val updatedBlock = block.copy(content = firstPart)
         val newPosition = block.position + 1
-        
+
         // Shift following siblings
         val siblings = current.values.filter { it.pageUuid == block.pageUuid && it.parentUuid == block.parentUuid }
         for (sibling in siblings) {
@@ -399,12 +403,12 @@ class InMemoryBlockRepository : BlockRepository {
         }
 
         val newBlock = block.copy(
-            uuid = dev.stapler.stelekit.util.UuidGenerator.generateV7(),
+            uuid = newBlockUuid ?: dev.stapler.stelekit.util.UuidGenerator.generateV7(),
             content = secondPart,
             position = newPosition,
             level = block.level // New block must be at the same level
         )
-        
+
         current[blockUuid] = updatedBlock
         current[newBlock.uuid] = newBlock
         blocks.value = current

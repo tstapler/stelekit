@@ -353,7 +353,7 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         return Unit.right()
     }
 
-    override suspend fun splitBlock(blockUuid: String, cursorPosition: Int): Either<DomainError, Block> {
+    override suspend fun splitBlock(blockUuid: String, cursorPosition: Int, newBlockUuid: String?): Either<DomainError, Block> {
         val current = _blocks.value.toMutableMap()
         val block = current[blockUuid] ?: return DomainError.DatabaseError.NotFound("block", blockUuid).left()
         val firstPart = block.content.substring(0, cursorPosition).trim()
@@ -365,7 +365,11 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         }
 
         current[blockUuid] = block.copy(content = firstPart)
-        val newBlock = block.copy(uuid = dev.stapler.stelekit.util.UuidGenerator.generateV7(), content = secondPart, position = newPos)
+        val newBlock = block.copy(
+            uuid = newBlockUuid ?: dev.stapler.stelekit.util.UuidGenerator.generateV7(),
+            content = secondPart,
+            position = newPos,
+        )
         current[newBlock.uuid] = newBlock
         _blocks.value = current
         return newBlock.right()
