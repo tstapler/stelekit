@@ -22,6 +22,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
+import kotlin.time.Clock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -127,19 +128,25 @@ open class GoogleApiClient(
 
         return try {
             // Build multipart/related body: metadata part + media part
-            val boundary = "boundary_stelekit_${System.currentTimeMillis()}"
+            val boundary = "boundary_stelekit_${Clock.System.now().toEpochMilliseconds()}"
             val parentsPart = if (parentFolderId != null) {
                 ""","parents":["$parentFolderId"]"""
             } else ""
             val metadataPart = """{"name":"$fileName","mimeType":"$mimeType"$parentsPart}"""
 
-            val multipartBody = buildString {
+            val headerBytes = buildString {
                 append("--$boundary\r\n")
                 append("Content-Type: application/json; charset=UTF-8\r\n\r\n")
                 append(metadataPart)
                 append("\r\n--$boundary\r\n")
                 append("Content-Type: $mimeType\r\n\r\n")
-            }.toByteArray() + bytes + "\r\n--$boundary--".toByteArray()
+            }.encodeToByteArray()
+            val footerBytes = "\r\n--$boundary--".encodeToByteArray()
+            val multipartBody = ByteArray(headerBytes.size + bytes.size + footerBytes.size).also { buf ->
+                headerBytes.copyInto(buf, 0)
+                bytes.copyInto(buf, headerBytes.size)
+                footerBytes.copyInto(buf, headerBytes.size + bytes.size)
+            }
 
             val response = httpClient.post(
                 "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",

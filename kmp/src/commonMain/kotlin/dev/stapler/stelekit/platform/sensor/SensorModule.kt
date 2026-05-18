@@ -35,7 +35,7 @@ object SensorModule {
      * Set once at application startup by the platform entry point.
      * Thread-safe for simple read after startup (Kotlin `@Volatile`).
      */
-    @Volatile
+
     var cameraProvider: CameraProvider = NoOpCameraProvider()
 
     /**
@@ -45,7 +45,7 @@ object SensorModule {
      * Set once at application startup by the platform entry point.
      * Thread-safe for simple read after startup (Kotlin `@Volatile`).
      */
-    @Volatile
+
     var motionSensorProvider: MotionSensorProvider = NoOpMotionSensorProvider()
 
     /**
@@ -55,7 +55,7 @@ object SensorModule {
      * Set once at application startup by the platform entry point.
      * Thread-safe for simple read after startup (Kotlin `@Volatile`).
      */
-    @Volatile
+
     var depthSensorProvider: DepthSensorProvider = NoOpDepthProvider()
 
     /**
@@ -66,6 +66,6 @@ object SensorModule {
      * Set once at application startup by the platform entry point.
      * Thread-safe for simple read after startup (Kotlin `@Volatile`).
      */
-    @Volatile
+
     var monocularDepthEstimator: MonocularDepthEstimator = NoOpMonocularDepthEstimator()
 }

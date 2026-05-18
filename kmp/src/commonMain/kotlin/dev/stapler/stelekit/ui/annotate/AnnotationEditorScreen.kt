@@ -65,6 +65,8 @@ import dev.stapler.stelekit.model.NormalizedPoint
 import dev.stapler.stelekit.platform.measurement.DeviceConnectionState
 import dev.stapler.stelekit.platform.measurement.ExternalMeasurementDevice
 import kotlin.math.abs
+import kotlin.math.pow
+import kotlin.math.round
 
 /**
  * Root screen for the image annotation editor.
@@ -714,7 +716,7 @@ internal fun GpsMetadataRow(
     val (lat, lng) = latLng
     val latStr = formatCoordinate(lat, "N", "S")
     val lngStr = formatCoordinate(lng, "E", "W")
-    val altStr = if (altitudeM != null) "  ↑ ${"%.1f".format(altitudeM)} m" else ""
+    val altStr = if (altitudeM != null) "  ↑ ${formatDecimals(altitudeM, 1)} m" else ""
 
     Row(
         modifier = modifier,
@@ -742,7 +744,28 @@ internal fun GpsMetadataRow(
 private fun formatCoordinate(degrees: Double, positive: String, negative: String): String {
     val direction = if (degrees >= 0.0) positive else negative
     val absDeg = abs(degrees)
-    return "${"%.4f".format(absDeg)}° $direction"
+    return "${formatDecimals(absDeg, 4)}° $direction"
+}
+
+/**
+ * KMP-compatible decimal formatting. Rounds [value] to [decimals] decimal places and
+ * returns a plain string. Avoids [String.format] which is JVM-only.
+ */
+private fun formatDecimals(value: Double, decimals: Int): String {
+    val factor = 10.0.pow(decimals.toDouble())
+    val rounded = kotlin.math.round(value * factor) / factor
+    val s = rounded.toString()
+    val dotIdx = s.indexOf('.')
+    return if (dotIdx < 0) {
+        if (decimals == 0) s else s + "." + "0".repeat(decimals)
+    } else {
+        val currentDecimals = s.length - dotIdx - 1
+        when {
+            currentDecimals < decimals -> s + "0".repeat(decimals - currentDecimals)
+            currentDecimals > decimals -> s.substring(0, dotIdx + decimals + 1)
+            else -> s
+        }
+    }
 }
 
 // ── GRID_REF calibration dialog ───────────────────────────────────────────────

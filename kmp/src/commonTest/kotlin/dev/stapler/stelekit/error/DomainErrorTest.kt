@@ -40,6 +40,11 @@ class DomainErrorTest {
             DomainError.GitError.NotSupported("iOS"),
             DomainError.GitError.Offline,
             DomainError.GitError.EditingInProgress,
+            DomainError.BleError.ConnectionFailed("ble connect"),
+            DomainError.BleError.Gatt133(3, "gatt error"),
+            DomainError.SensorError.PermissionDenied("camera"),
+            DomainError.SensorError.HardwareUnavailable("lidar"),
+            DomainError.SensorError.CaptureFailed("capture failed"),
         )
         for (err in errors) {
             // exhaustive when — compile error if any branch is missing
@@ -82,6 +87,8 @@ class DomainErrorTest {
                 is DomainError.SensorError.PermissionDenied -> err.message
                 is DomainError.SensorError.HardwareUnavailable -> err.message
                 is DomainError.SensorError.CaptureFailed -> err.message
+                is DomainError.BleError.ConnectionFailed -> err.message
+                is DomainError.BleError.Gatt133 -> err.message
             }
             assert(msg.isNotEmpty()) { "Expected non-empty message for $err" }
         }
@@ -134,6 +141,15 @@ class DomainErrorTest {
             DomainError.GitError.NotSupported("iOS"),
             DomainError.GitError.Offline,
             DomainError.GitError.EditingInProgress,
+            DomainError.NetworkError.RequestFailed("req failed"),
+            DomainError.AttachmentError.CopyFailed("copy"),
+            DomainError.AttachmentError.PickerFailed("picker"),
+            DomainError.AttachmentError.AssetsDirectoryFailed("assets"),
+            DomainError.SensorError.PermissionDenied("camera"),
+            DomainError.SensorError.HardwareUnavailable("lidar"),
+            DomainError.SensorError.CaptureFailed("capture"),
+            DomainError.BleError.ConnectionFailed("ble connect"),
+            DomainError.BleError.Gatt133(3, "gatt error"),
         )
         for (err in errors) {
             assert(err.toUiMessage().isNotEmpty()) { "Expected non-empty UI message for $err" }

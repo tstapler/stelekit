@@ -135,7 +135,7 @@ open class DriveExportService(private val apiClient: DriveUploader) {
         val imageFileId = (imageUploadResult as Either.Right).value
 
         // Serialize and upload the sidecar JSON
-        val sidecarBytes = buildSidecarJson(imageAnnotation, measurements).toByteArray(Charsets.UTF_8)
+        val sidecarBytes = buildSidecarJson(imageAnnotation, measurements).encodeToByteArray()
         val sidecarUploadResult = apiClient.uploadFile(
             fileName = sidecarName,
             mimeType = "application/json",

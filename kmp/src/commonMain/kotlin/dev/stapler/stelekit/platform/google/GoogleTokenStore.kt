@@ -3,6 +3,8 @@
 
 package dev.stapler.stelekit.platform.google
 
+import kotlin.time.Clock
+
 /**
  * Secure storage interface for Google OAuth 2.0 tokens.
  *
@@ -67,7 +69,7 @@ interface GoogleTokenStore {
  */
 suspend fun GoogleTokenStore.isTokenExpired(): Boolean {
     val expiresAt = getExpiresAt() ?: return true
-    val nowMs = System.currentTimeMillis()
+    val nowMs = Clock.System.now().toEpochMilliseconds()
     val bufferMs = 60_000L // refresh 60s before actual expiry
     return nowMs >= expiresAt - bufferMs
 }

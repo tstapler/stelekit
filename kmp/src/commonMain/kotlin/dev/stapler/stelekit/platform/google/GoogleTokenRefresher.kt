@@ -12,6 +12,7 @@ import io.ktor.client.request.forms.submitForm
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.Parameters
 import io.ktor.http.isSuccess
+import kotlin.time.Clock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -81,7 +82,7 @@ suspend fun refreshGoogleToken(
             ).left()
         }
 
-        val expiresAt = System.currentTimeMillis() + (parsed.expiresInSeconds * 1000L)
+        val expiresAt = Clock.System.now().toEpochMilliseconds() + (parsed.expiresInSeconds * 1000L)
         // Google may rotate the refresh token; if a new one is returned, store it.
         val newRefreshToken = parsed.refreshToken ?: refreshToken
         tokenStore.saveTokens(parsed.accessToken, newRefreshToken, expiresAt)

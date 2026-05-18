@@ -11,7 +11,7 @@ import dev.stapler.stelekit.error.DomainError
  * as a Blob and convert to ByteArray. That requires JS interop and is deferred to a later story.
  *
  * Current behaviour mirrors [NoOpCameraProvider]: always returns [DomainError.SensorError.HardwareUnavailable].
- * The Web UI should present an `<input type="file" accept="image/*">` instead.
+ * The Web UI should present an HTML file input accepting image files instead.
  */
 class WebCameraProvider : CameraProvider {
 
