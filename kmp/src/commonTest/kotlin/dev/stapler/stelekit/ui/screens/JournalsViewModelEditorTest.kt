@@ -214,16 +214,16 @@ class JournalsViewModelEditorTest {
             return Unit.right()
         }
 
-        override suspend fun splitBlock(blockUuid: String, cursorPosition: Int): Either<DomainError, Block> {
+        override suspend fun splitBlock(blockUuid: String, cursorPosition: Int, newBlockUuid: String?): Either<DomainError, Block> {
             val currentMap = blocks.value.toMutableMap()
             val block = currentMap[blockUuid] ?: return DomainError.DatabaseError.NotFound("block", blockUuid).left()
-            
+
             val fullContent = block.content
             val safeSplitIndex = cursorPosition.coerceIn(0, fullContent.length)
-            
+
             val firstPart = fullContent.substring(0, safeSplitIndex).trim()
             val secondPart = fullContent.substring(safeSplitIndex).trim()
-            
+
             val updatedBlock = block.copy(content = firstPart)
             val newPosition = block.position + 1
             
@@ -236,7 +236,7 @@ class JournalsViewModelEditorTest {
             }
             
             val newBlock = block.copy(
-                uuid = java.util.UUID.randomUUID().toString(),
+                uuid = newBlockUuid ?: java.util.UUID.randomUUID().toString(),
                 content = secondPart,
                 position = newPosition
             )

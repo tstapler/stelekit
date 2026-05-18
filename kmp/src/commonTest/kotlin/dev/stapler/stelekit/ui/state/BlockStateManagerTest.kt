@@ -1603,6 +1603,14 @@ class BlockStateManagerTest {
 
         // _blocks must still have 2 entries (merge did not succeed, but note that the merge
         // result is observed via reactive flow from the delegate which didn't actually mutate)
+        val blocks = manager.blocks.value[pageUuid]
+        assertEquals(2, blocks?.size,
+            "_blocks must remain unchanged (2 entries) after failed merge")
+        assertEquals("Hello", blocks?.find { it.uuid == "b1" }?.content,
+            "b1 content must be unchanged after failed merge")
+        assertEquals("World", blocks?.find { it.uuid == "b2" }?.content,
+            "b2 content must be unchanged after failed merge")
+
         // Focus must be rolled back to b2
         assertEquals("b2", manager.editingBlockUuid.value,
             "Focus must return to original block (b2) on merge DB failure")
@@ -1625,9 +1633,13 @@ private class DelayedBlockRepository(
 ) : BlockRepository by delegate {
 
     @DirectRepositoryWrite
-    override suspend fun splitBlock(blockUuid: String, cursorPosition: Int): Either<DomainError, Block> {
+    override suspend fun splitBlock(
+        blockUuid: String,
+        cursorPosition: Int,
+        newBlockUuid: String?,
+    ): Either<DomainError, Block> {
         delay(splitDelayMs)
-        return delegate.splitBlock(blockUuid, cursorPosition)
+        return delegate.splitBlock(blockUuid, cursorPosition, newBlockUuid)
     }
 }
 
@@ -1641,7 +1653,11 @@ private class FailingBlockRepository(
 ) : BlockRepository by delegate {
 
     @DirectRepositoryWrite
-    override suspend fun splitBlock(blockUuid: String, cursorPosition: Int): Either<DomainError, Block> =
+    override suspend fun splitBlock(
+        blockUuid: String,
+        cursorPosition: Int,
+        newBlockUuid: String?,
+    ): Either<DomainError, Block> =
         DomainError.DatabaseError.WriteFailed("injected splitBlock failure").left()
 
     @DirectRepositoryWrite

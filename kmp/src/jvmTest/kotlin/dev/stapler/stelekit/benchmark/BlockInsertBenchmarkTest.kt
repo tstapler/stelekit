@@ -16,6 +16,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.nio.file.Files
+import kotlin.math.roundToInt
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlin.time.Clock
@@ -60,8 +61,6 @@ class BlockInsertBenchmarkTest {
         )
     }
 
-    private data class BenchResult(val p50: Long, val p95: Long, val p99: Long)
-
     /**
      * Run N insert iterations via [BlockStateManager.addBlockToPage] and return
      * wall-clock latencies (ms from call start to [Job.join] — DB write committed).
@@ -82,7 +81,7 @@ class BlockInsertBenchmarkTest {
 
     private fun List<Long>.percentile(p: Double): Long {
         val sorted = sorted()
-        val idx = (size * p).toInt().coerceIn(0, size - 1)
+        val idx = ((size - 1) * p).roundToInt().coerceIn(0, size - 1)
         return sorted[idx]
     }
 

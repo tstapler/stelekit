@@ -3,7 +3,6 @@ package dev.stapler.stelekit.db
 import android.content.Context
 import androidx.sqlite.db.SupportSQLiteDatabase
 import app.cash.sqldelight.async.coroutines.synchronous
-import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import io.requery.android.database.sqlite.RequerySQLiteOpenHelperFactory
@@ -24,6 +23,7 @@ private class WalConfiguredCallback(
     schema: app.cash.sqldelight.db.SqlSchema<app.cash.sqldelight.db.QueryResult.Value<Unit>>,
 ) : AndroidSqliteDriver.Callback(schema) {
     override fun onConfigure(db: SupportSQLiteDatabase) {
+        super.onConfigure(db) // preserves AndroidSqliteDriver.Callback defaults (foreign keys, etc.)
         // WAL mode: allows concurrent reads while a write is in progress, reducing SQLITE_BUSY.
         // busy_timeout: retry for up to 10 seconds before surfacing SQLITE_BUSY to the caller.
         // wal_autocheckpoint=4000: reduce checkpoint frequency on write-heavy workloads (default=1000).
@@ -77,38 +77,6 @@ actual class DriverFactory actual constructor() {
             factory = RequerySQLiteOpenHelperFactory(),
             callback = WalConfiguredCallback(SteleDatabase.Schema.synchronous()),
         )
-
-        // WAL verification — read back journal_mode to confirm the PRAGMA applied.
-        // WalConfiguredCallback.onConfigure fires before schema creation, but if the
-        // RequerySQLiteOpenHelperFactory integration silently drops onConfigure on some
-        // Android versions, this read-back will catch it at startup without crashing.
-        // Uses runBlocking because createDriver is not a suspend fun; AndroidSqliteDriver
-        // is synchronous so await() returns immediately without blocking any thread pool.
-        try {
-            val journalMode = runBlocking {
-                driver.executeQuery(
-                    identifier = null,
-                    sql = "PRAGMA journal_mode;",
-                    mapper = { cursor ->
-                        QueryResult.Value(
-                            if (cursor.next().value) cursor.getString(0) else null,
-                        )
-                    },
-                    parameters = 0,
-                ).await()
-            }
-            if (journalMode?.lowercase() != "wal") {
-                android.util.Log.w(
-                    "DriverFactory",
-                    "WAL not active — journal_mode=$journalMode. " +
-                        "SQLite writes will be slower. Check RequerySQLiteOpenHelperFactory onConfigure.",
-                )
-            } else {
-                android.util.Log.d("DriverFactory", "WAL confirmed active.")
-            }
-        } catch (_: Exception) {
-            android.util.Log.w("DriverFactory", "Could not verify journal_mode PRAGMA.")
-        }
 
         // Apply incremental DDL migrations (idempotent, hash-tracked).
         runBlocking { MigrationRunner.applyAll(driver) }

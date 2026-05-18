@@ -724,18 +724,9 @@ class BlockStateManager(
         pendingNewBlockUuids.update { it + expectedNewUuid }
         requestEditBlock(expectedNewUuid)   // focus moves here, before DB
 
-        blockRepository.splitBlock(currentBlockUuid, cursorPosition).onRight { newBlock ->
+        blockRepository.splitBlock(currentBlockUuid, cursorPosition, expectedNewUuid).onRight { newBlock ->
             pendingNewBlockUuids.update { it - expectedNewUuid }
-            if (newBlock.uuid != expectedNewUuid) {
-                // UUID mismatch (repository generated a different UUID) — correct focus
-                _blocks.update { state ->
-                    val pageBlocks = state[pageUuid]?.toMutableList() ?: return@update state
-                    val idx = pageBlocks.indexOfFirst { it.uuid == expectedNewUuid }
-                    if (idx >= 0) pageBlocks[idx] = pageBlocks[idx].copy(uuid = newBlock.uuid)
-                    state + (pageUuid to pageBlocks)
-                }
-                requestEditBlock(newBlock.uuid)
-            }
+            // Repository was given expectedNewUuid — UUIDs always match; no correction needed.
             queueDiskSave(pageUuid)
             val after = takePageSnapshot(pageUuid)
             record(
@@ -761,8 +752,9 @@ class BlockStateManager(
 
         // Optimistic: split _blocks in-memory and move focus immediately
         val sourceBlock = _blocks.value[pageUuid]?.find { it.uuid == blockUuid } ?: return@launch
-        val firstPart = sourceBlock.content.substring(0, cursorPosition).trim()
-        val secondPart = sourceBlock.content.substring(cursorPosition).trim()
+        val clampedCursor = cursorPosition.coerceIn(0, sourceBlock.content.length)
+        val firstPart = sourceBlock.content.substring(0, clampedCursor).trim()
+        val secondPart = sourceBlock.content.substring(clampedCursor).trim()
         val expectedNewUuid = UuidGenerator.generateV7()
         val now = kotlin.time.Clock.System.now()
         val optimisticNew = sourceBlock.copy(
@@ -785,22 +777,13 @@ class BlockStateManager(
         pendingNewBlockUuids.update { it + expectedNewUuid }
         requestEditBlock(expectedNewUuid)   // focus moves here, before DB
 
-        blockRepository.splitBlock(blockUuid, cursorPosition).onRight { newBlock ->
+        blockRepository.splitBlock(blockUuid, clampedCursor, expectedNewUuid).onRight { newBlock ->
             pendingNewBlockUuids.update { it - expectedNewUuid }
-            if (newBlock.uuid != expectedNewUuid) {
-                // UUID mismatch (repository generated a different UUID) — correct focus
-                _blocks.update { state ->
-                    val pageBlocks = state[pageUuid]?.toMutableList() ?: return@update state
-                    val idx = pageBlocks.indexOfFirst { it.uuid == expectedNewUuid }
-                    if (idx >= 0) pageBlocks[idx] = pageBlocks[idx].copy(uuid = newBlock.uuid)
-                    state + (pageUuid to pageBlocks)
-                }
-                requestEditBlock(newBlock.uuid)
-            }
+            // Repository was given expectedNewUuid — UUIDs always match; no correction needed.
             queueDiskSave(pageUuid)
             val after = takePageSnapshot(pageUuid)
             record(
-                undo = { restorePageToSnapshot(pageUuid, before); requestEditBlock(blockUuid, cursorPosition) },
+                undo = { restorePageToSnapshot(pageUuid, before); requestEditBlock(blockUuid, clampedCursor) },
                 redo = { restorePageToSnapshot(pageUuid, after); requestEditBlock(newBlock.uuid) }
             )
         }.onLeft { err ->
@@ -814,7 +797,7 @@ class BlockStateManager(
                 if (idx >= 0) pageBlocks[idx] = pageBlocks[idx].copy(content = sourceBlock.content)
                 state + (pageUuid to pageBlocks)
             }
-            requestEditBlock(blockUuid, cursorPosition)
+            requestEditBlock(blockUuid, clampedCursor)
         }
     }
 

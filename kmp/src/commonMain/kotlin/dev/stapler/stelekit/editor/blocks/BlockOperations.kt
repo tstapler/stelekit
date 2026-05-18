@@ -244,9 +244,9 @@ class BlockOperations(
     override suspend fun splitBlock(
         blockUuid: String,
         cursorPosition: Int,
-        keepContentInOriginal: Boolean
+        newBlockUuid: String?,
     ): Either<DomainError, Block> = operationMutex.withLock {
-        blockRepository.splitBlock(blockUuid, cursorPosition)
+        blockRepository.splitBlock(blockUuid, cursorPosition, newBlockUuid)
     }
 
     override suspend fun mergeWithNext(

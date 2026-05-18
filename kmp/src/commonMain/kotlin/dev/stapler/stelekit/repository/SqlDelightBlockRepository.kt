@@ -716,24 +716,27 @@ class SqlDelightBlockRepository(
     }
 
     override suspend fun splitBlock(
-        blockUuid: String, 
-        cursorPosition: Int
+        blockUuid: String,
+        cursorPosition: Int,
+        newBlockUuid: String?,
     ): Either<DomainError, Block> = withContext(PlatformDispatcher.DB) {
         try {
             var newBlock: Block? = null
             queries.transaction {
                 val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
                     ?: return@transaction
-                
+
                 val content = block.content
                 val firstPart = content.substring(0, cursorPosition).trim()
                 val secondPart = content.substring(cursorPosition).trim()
-                
+
                 // 1. Update original block
                 queries.updateBlockContent(firstPart, Clock.System.now().toEpochMilliseconds(), ContentHasher.sha256ForContent(firstPart), block.uuid)
-                
-                // 2. Create new block
-                val newUuid = UuidGenerator.generateV7()
+
+                // 2. Create new block — use caller-supplied UUID when provided so that the
+                //    optimistic in-memory block and the DB block share the same UUID, eliminating
+                //    the UUID-correction pass in BlockStateManager.
+                val newUuid = newBlockUuid ?: UuidGenerator.generateV7()
                 val newPosition = block.position + 1L
                 
                 // Shift siblings' positions
