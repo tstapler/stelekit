@@ -12,7 +12,7 @@ import kotlin.concurrent.withLock
  * File-backed rather than SQLite so the queue lifecycle is independent of the graph database:
  * the same queue instance survives graph switches and is valid from process start.
  */
-internal class WriteBehindQueue(private val queueFile: File) {
+class WriteBehindQueue(private val queueFile: File) {
     private val lock = ReentrantLock()
 
     companion object {
