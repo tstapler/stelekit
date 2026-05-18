@@ -58,6 +58,7 @@ class GalleryViewModel(
     val state: StateFlow<GalleryState> = _state.asStateFlow()
 
     private var loadJob: Job? = null
+    private var loadGeneration: Int = 0
 
     init {
         loadImages()
@@ -67,6 +68,7 @@ class GalleryViewModel(
 
     private fun loadImages() {
         loadJob?.cancel()
+        val generation = ++loadGeneration
         loadJob = scope.launch {
             val tag = _state.value.selectedTag
             val flow = if (tag != null) {
@@ -75,6 +77,9 @@ class GalleryViewModel(
                 imageAnnotationRepository.getAllImageAnnotations()
             }
             flow.collect { result ->
+                // Discard emissions from a superseded load — a newer loadImages() call
+                // has already replaced this job's tag/filter context.
+                if (generation != loadGeneration) return@collect
                 result.fold(
                     ifLeft = { err ->
                         logger.error("Failed to load gallery images: ${err.message}")
