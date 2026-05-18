@@ -1,11 +1,48 @@
 package dev.stapler.stelekit.db
 
 import android.content.Context
+import androidx.sqlite.db.SupportSQLiteDatabase
 import app.cash.sqldelight.async.coroutines.synchronous
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import io.requery.android.database.sqlite.RequerySQLiteOpenHelperFactory
 import kotlinx.coroutines.runBlocking
+
+/**
+ * Applies performance PRAGMAs in [onConfigure] via [SupportSQLiteDatabase.query] (rawQuery path).
+ *
+ * Requery's [RequerySQLiteOpenHelperFactory] restricts [SupportSQLiteDatabase.execSQL] for
+ * statements that return a result set (like `PRAGMA journal_mode=WAL`), throwing
+ * "Queries can be performed using SQLiteDatabase query or rawQuery methods only." The rawQuery
+ * path ([query]) is unrestricted and correctly executes SET-type PRAGMAs — SQLite runs the
+ * PRAGMA and returns the new value as a cursor, which we discard by calling [close].
+ *
+ * [onConfigure] fires before schema creation, ensuring WAL is in effect for all DDL.
+ */
+private class WalConfiguredCallback(
+    schema: app.cash.sqldelight.db.SqlSchema<app.cash.sqldelight.db.QueryResult.Value<Unit>>,
+) : AndroidSqliteDriver.Callback(schema) {
+    override fun onConfigure(db: SupportSQLiteDatabase) {
+        super.onConfigure(db) // preserves foreign-key enforcement and other AndroidSqliteDriver defaults
+        // rawQuery path: Requery allows query/rawQuery for all statement types including SET-PRAGMAs.
+        // WAL mode: concurrent reads during writes; persistent across connections once set.
+        // synchronous=NORMAL: fsync on WAL checkpoint only, safe with WAL.
+        // busy_timeout: retry for up to 10 s on SQLITE_BUSY before surfacing the error.
+        // wal_autocheckpoint=4000: reduce checkpoint frequency on write-heavy workloads (default 1000).
+        // temp_store=MEMORY: keep temp tables in RAM, not on Android storage.
+        // cache_size=-8000: 8 MB page cache; reduces repeated reads for large graphs (1000+ pages).
+        listOf(
+            "PRAGMA journal_mode=WAL",
+            "PRAGMA synchronous=NORMAL",
+            "PRAGMA busy_timeout=10000",
+            "PRAGMA wal_autocheckpoint=4000",
+            "PRAGMA temp_store=MEMORY",
+            "PRAGMA cache_size=-8000",
+        ).forEach { pragma ->
+            try { db.query(pragma).close() } catch (_: Exception) { }
+        }
+    }
+}
 
 actual class DriverFactory actual constructor() {
     companion object {
@@ -37,32 +74,14 @@ actual class DriverFactory actual constructor() {
 
         // AndroidSqliteDriver handles schema creation (fresh installs) and numbered .sqm
         // migrations (via SQLiteOpenHelper.onUpgrade) automatically.
-        // Standard callback is used — PRAGMAs are applied via driver.execute() below,
-        // which goes through Requery's normal write-connection path (unrestricted).
-        // RequerySQLiteOpenHelperFactory restricts execSQL in onConfigure/onOpen hooks,
-        // so PRAGMAs must NOT be applied there (see ADR-003).
+        // WalConfiguredCallback applies PRAGMAs in onConfigure via rawQuery (Requery-safe).
         val driver = AndroidSqliteDriver(
             schema = SteleDatabase.Schema.synchronous(),
             context = context,
             name = dbName,
             factory = RequerySQLiteOpenHelperFactory(),
-            callback = AndroidSqliteDriver.Callback(SteleDatabase.Schema.synchronous()),
+            callback = WalConfiguredCallback(SteleDatabase.Schema.synchronous()),
         )
-
-        // Apply performance PRAGMAs. Wrapped in try-catch because RequerySQLiteOpenHelperFactory
-        // restricts execSQL in callbacks AND nativeExecuteForChangedRowCount in some connection states;
-        // silently skip rather than crash driver initialization if a PRAGMA is unsupported.
-        // WAL mode: allows concurrent reads while a write is in progress, reducing SQLITE_BUSY.
-        // busy_timeout: retry for up to 10 seconds before surfacing SQLITE_BUSY to the caller.
-        // wal_autocheckpoint=4000: reduce checkpoint frequency on write-heavy workloads (default=1000).
-        // temp_store=MEMORY: keeps temp tables in RAM instead of hitting Android's storage.
-        // cache_size=-8000: 8MB page cache reduces repeated reads for large graphs (1000+ pages).
-        try { driver.execute(null, "PRAGMA journal_mode=WAL", 0) } catch (_: Exception) { }
-        try { driver.execute(null, "PRAGMA synchronous=NORMAL", 0) } catch (_: Exception) { }
-        try { driver.execute(null, "PRAGMA busy_timeout=10000", 0) } catch (_: Exception) { }
-        try { driver.execute(null, "PRAGMA wal_autocheckpoint=4000", 0) } catch (_: Exception) { }
-        try { driver.execute(null, "PRAGMA temp_store=MEMORY", 0) } catch (_: Exception) { }
-        try { driver.execute(null, "PRAGMA cache_size=-8000", 0) } catch (_: Exception) { }
 
         // Apply incremental DDL migrations (idempotent, hash-tracked).
         runBlocking { MigrationRunner.applyAll(driver) }
