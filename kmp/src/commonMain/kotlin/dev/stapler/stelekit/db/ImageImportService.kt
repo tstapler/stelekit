@@ -83,6 +83,18 @@ class ImageImportService(
         source: ImageSource = ImageSource.FILE,
         insertToJournalPage: Boolean = false,
     ): Either<DomainError, ImageAnnotation> {
+        if (imageAnnotationRepository == null) {
+            return DomainError.DatabaseError.WriteFailed(
+                "ImageImportService: imageAnnotationRepository not wired"
+            ).left()
+        }
+        if (sidecarManager == null) {
+            return DomainError.FileSystemError.WriteFailed(
+                "<unknown>",
+                "ImageImportService: imageSidecarManager not wired"
+            ).left()
+        }
+
         val annotationUuid = UuidGenerator.generateV7()
         val blockUuid = UuidGenerator.generateV7()
         val now = Clock.System.now()
@@ -127,8 +139,7 @@ class ImageImportService(
         )
 
         // Step 4: Write sidecar BEFORE DB insert (Known Issues transactional write order)
-        val resolvedSidecarManager = sidecarManager ?: ImageSidecarManager(fileSystem)
-        resolvedSidecarManager.writeSidecar(annotation, emptyList()).fold(
+        sidecarManager.writeSidecar(annotation, emptyList()).fold(
             ifLeft = { err ->
                 // Sidecar failed — roll back the copied file and return error
                 fileSystem.deleteFile(destPath)
@@ -138,11 +149,7 @@ class ImageImportService(
         )
 
         // Step 5: Save annotation to DB
-        val imageRepo = imageAnnotationRepository
-            ?: return DomainError.DatabaseError.WriteFailed(
-                "ImageAnnotationRepository not wired — cannot persist annotation"
-            ).left()
-        imageRepo.saveImageAnnotation(annotation).fold(
+        imageAnnotationRepository.saveImageAnnotation(annotation).fold(
             ifLeft = { err ->
                 // DB write failed; sidecar already written. Leave sidecar in place —
                 // ImageSidecarIndexer can recover the DB row from the sidecar on next startup.

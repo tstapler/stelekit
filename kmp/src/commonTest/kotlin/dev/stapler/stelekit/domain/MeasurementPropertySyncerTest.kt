@@ -31,6 +31,13 @@ class MeasurementPropertySyncerTest {
         unit = unit,
     )
 
+    private fun pointsForType(type: AnnotationType): List<NormalizedPoint> = when (type) {
+        AnnotationType.DISTANCE -> listOf(NormalizedPoint(0.1, 0.1), NormalizedPoint(0.5, 0.5))
+        AnnotationType.ANGLE -> listOf(NormalizedPoint(0.1, 0.1), NormalizedPoint(0.5, 0.5), NormalizedPoint(0.9, 0.1))
+        AnnotationType.AREA -> listOf(NormalizedPoint(0.1, 0.1), NormalizedPoint(0.9, 0.1), NormalizedPoint(0.5, 0.9))
+        AnnotationType.LABEL, AnnotationType.GRID_REF -> listOf(NormalizedPoint(0.5, 0.5))
+    }
+
     private fun makeMeasurement(
         uuid: String,
         imageUuid: String = "img-1",
@@ -41,7 +48,7 @@ class MeasurementPropertySyncerTest {
         uuid = uuid,
         imageUuid = imageUuid,
         annotationType = type,
-        normalizedPoints = listOf(NormalizedPoint(0.1, 0.1), NormalizedPoint(0.5, 0.5)),
+        normalizedPoints = pointsForType(type),
         valueMeters = 3.0,
         valueDisplay = display,
         label = label,
@@ -220,7 +227,7 @@ class MeasureTemplateResolverTest {
             uuid = "m-1",
             imageUuid = "img-1",
             annotationType = AnnotationType.DISTANCE,
-            normalizedPoints = emptyList(),
+            normalizedPoints = listOf(NormalizedPoint(0.1, 0.1), NormalizedPoint(0.9, 0.9)),
             valueDisplay = "3.2 m",
             label = "wall-a",
         )
@@ -228,7 +235,7 @@ class MeasureTemplateResolverTest {
             uuid = "m-2",
             imageUuid = "img-1",
             annotationType = AnnotationType.AREA,
-            normalizedPoints = emptyList(),
+            normalizedPoints = listOf(NormalizedPoint(0.1, 0.1), NormalizedPoint(0.9, 0.1), NormalizedPoint(0.5, 0.9)),
             valueDisplay = "12.0 m2",
             label = "floor",
         )
@@ -246,7 +253,7 @@ class MeasureTemplateResolverTest {
             uuid = "m-3",
             imageUuid = "img-1",
             annotationType = AnnotationType.DISTANCE,
-            normalizedPoints = emptyList(),
+            normalizedPoints = listOf(NormalizedPoint(0.1, 0.1), NormalizedPoint(0.9, 0.9)),
             valueDisplay = "1.0 m",
             label = "",
         )

@@ -77,6 +77,23 @@ data class MeasurementAnnotation(
     init {
         Validation.validateUuid(uuid)
         Validation.validateUuid(imageUuid)
+        require(normalizedPoints.all { it.x in 0.0..1.0 && it.y in 0.0..1.0 }) {
+            "All normalizedPoints must be in [0,1] range"
+        }
+        when (annotationType) {
+            AnnotationType.DISTANCE -> require(normalizedPoints.size == 2) {
+                "DISTANCE annotation requires exactly 2 points, got ${normalizedPoints.size}"
+            }
+            AnnotationType.ANGLE -> require(normalizedPoints.size == 3) {
+                "ANGLE annotation requires exactly 3 points, got ${normalizedPoints.size}"
+            }
+            AnnotationType.AREA -> require(normalizedPoints.size >= 3) {
+                "AREA annotation requires at least 3 points, got ${normalizedPoints.size}"
+            }
+            AnnotationType.LABEL, AnnotationType.GRID_REF -> require(normalizedPoints.size == 1) {
+                "${annotationType} annotation requires exactly 1 point, got ${normalizedPoints.size}"
+            }
+        }
     }
 }
 

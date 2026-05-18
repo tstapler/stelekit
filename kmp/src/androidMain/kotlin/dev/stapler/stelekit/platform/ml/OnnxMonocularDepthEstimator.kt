@@ -39,6 +39,10 @@ class OnnxMonocularDepthEstimator(private val context: Context) : MonocularDepth
     private var ortSession: OrtSession? = null
     private var _isAvailable: Boolean = false
 
+    private val inputBuffer: FloatBuffer by lazy {
+        FloatBuffer.allocate(INPUT_SIZE * INPUT_SIZE * 3)
+    }
+
     val downloader: DepthModelDownloader = DepthModelDownloader(context)
 
     /** Mirrors [DepthModelDownloader.modelState] for UI observation. */
@@ -148,24 +152,24 @@ class OnnxMonocularDepthEstimator(private val context: Context) : MonocularDepth
                 resized.recycle()
 
                 // Layout: [1, 3, 518, 518] in NCHW order — fill R plane, then G, then B.
-                val floatBuffer = FloatBuffer.allocate(3 * INPUT_SIZE * INPUT_SIZE)
+                inputBuffer.rewind()
                 for (pixelValue in pixels) {
                     val r = ((pixelValue shr 16) and 0xFF) / 255f
-                    floatBuffer.put((r - MEAN_R) / STD_R)
+                    inputBuffer.put((r - MEAN_R) / STD_R)
                 }
                 for (pixelValue in pixels) {
                     val g = ((pixelValue shr 8) and 0xFF) / 255f
-                    floatBuffer.put((g - MEAN_G) / STD_G)
+                    inputBuffer.put((g - MEAN_G) / STD_G)
                 }
                 for (pixelValue in pixels) {
                     val b = (pixelValue and 0xFF) / 255f
-                    floatBuffer.put((b - MEAN_B) / STD_B)
+                    inputBuffer.put((b - MEAN_B) / STD_B)
                 }
-                floatBuffer.rewind()
+                inputBuffer.rewind()
 
                 // 3. Create input tensor and run inference.
                 val inputShape = longArrayOf(1L, 3L, INPUT_SIZE.toLong(), INPUT_SIZE.toLong())
-                val inputTensor = OnnxTensor.createTensor(env, floatBuffer, inputShape)
+                val inputTensor = OnnxTensor.createTensor(env, inputBuffer, inputShape)
 
                 val outputs = inputTensor.use {
                     session.run(mapOf("image" to inputTensor))

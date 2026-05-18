@@ -49,13 +49,20 @@ class SidecarSerializationTest {
         ),
     )
 
+    private fun pointsForType(type: AnnotationType): List<NormalizedPoint> = when (type) {
+        AnnotationType.DISTANCE -> listOf(NormalizedPoint(0.1, 0.2), NormalizedPoint(0.5, 0.6))
+        AnnotationType.ANGLE -> listOf(NormalizedPoint(0.1, 0.2), NormalizedPoint(0.5, 0.6), NormalizedPoint(0.9, 0.2))
+        AnnotationType.AREA -> listOf(NormalizedPoint(0.1, 0.1), NormalizedPoint(0.9, 0.1), NormalizedPoint(0.5, 0.9))
+        AnnotationType.LABEL, AnnotationType.GRID_REF -> listOf(NormalizedPoint(0.5, 0.5))
+    }
+
     private fun measurementsForAllTypes(imageUuid: String): List<MeasurementAnnotation> =
         AnnotationType.entries.mapIndexed { i, type ->
             MeasurementAnnotation(
                 uuid = "meas-00$i",
                 imageUuid = imageUuid,
                 annotationType = type,
-                normalizedPoints = listOf(NormalizedPoint(0.1, 0.2), NormalizedPoint(0.5, 0.6)),
+                normalizedPoints = pointsForType(type),
                 valueMeters = (i + 1) * 1.5,
                 valueDisplay = "${(i + 1) * 1.5} m",
                 label = "Measurement $i",

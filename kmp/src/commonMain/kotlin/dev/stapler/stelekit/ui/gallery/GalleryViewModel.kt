@@ -31,6 +31,7 @@ enum class GallerySortOrder {
  */
 data class GalleryState(
     val images: List<ImageAnnotation> = emptyList(),
+    val availableTags: List<String> = emptyList(),
     val selectedTag: String? = null,
     val sortOrder: GallerySortOrder = GallerySortOrder.BY_DATE_IMPORTED,
     val isLoading: Boolean = true,
@@ -81,7 +82,8 @@ class GalleryViewModel(
                     },
                     ifRight = { images ->
                         val sorted = sortImages(images, _state.value.sortOrder)
-                        _state.update { it.copy(images = sorted, isLoading = false, errorMessage = null) }
+                        val tags = images.flatMap { it.tags }.distinct().sorted()
+                        _state.update { it.copy(images = sorted, availableTags = tags, isLoading = false, errorMessage = null) }
                     }
                 )
             }

@@ -202,6 +202,7 @@ class SqlDelightMeasurementAnnotationRepositoryTest {
         imageRepo.saveImageAnnotation(baseAnnotation())
         val m = measurement().copy(
             annotationType = AnnotationType.AREA,
+            normalizedPoints = listOf(NormalizedPoint(0.1, 0.1), NormalizedPoint(0.9, 0.1), NormalizedPoint(0.5, 0.9)),
             valueMeters = 6.28,
             label = "Room A",
             colorHex = "#00FF00",

@@ -69,13 +69,8 @@ fun GalleryScreen(
             )
         }
 
-        // Collect all unique tags from loaded images
-        val allTags = remember(state.images) {
-            state.images.flatMap { it.tags }.distinct().sorted()
-        }
-
         // Tag filter chips row
-        if (allTags.isNotEmpty()) {
+        if (state.availableTags.isNotEmpty()) {
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -90,7 +85,7 @@ fun GalleryScreen(
                         label = { Text("All") },
                     )
                 }
-                items(allTags) { tag ->
+                items(state.availableTags) { tag ->
                     FilterChip(
                         selected = state.selectedTag == tag,
                         onClick = { viewModel.selectTag(if (state.selectedTag == tag) null else tag) },
