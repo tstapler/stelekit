@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-18 22:14:38 UTC",
+  "gitSha": "64dca6d",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 12,
+  "phase2Ms": 3,
+  "phase3Ms": 14,
+  "totalMs": 29,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 29,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 113,
+      "pct": 68.9
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 9,
+      "pct": 5.5
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 7,
+      "pct": 4.3
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 3,
+      "pct": 1.8
+    },
+    {
+      "frame": "long[]_[k]",
+      "samples": 3,
+      "pct": 1.8
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 2,
+      "pct": 1.2
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 2,
+      "pct": 1.2
+    },
+    {
+      "frame": "java.util.ArrayList_[k]",
+      "samples": 1,
+      "pct": 0.6
+    },
+    {
+      "frame": "java.util.ArrayList$Itr_[k]",
+      "samples": 1,
+      "pct": 0.6
+    },
+    {
+      "frame": "java.lang.Integer_[k]",
+      "samples": 1,
+      "pct": 0.6
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2092,
+      "pct": 99.2
+    },
+    {
+      "frame": "ClassVerifier::generate_code_data",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ClassFileParser::parse_constant_pool_entries",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__xstat64",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SharedRuntime::find_callee_info_helper",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "org/sqlite/jdbc3/JDBC3PreparedStatement.setLong_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pread",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "I2C/C2I adapters(0xbb)",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlin/coroutines/CoroutineContext$Element$DefaultImpls.fold_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SignatureStream::find_symbol",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 0,
+      "totalMs": 0
+    }
+  ]
+}
