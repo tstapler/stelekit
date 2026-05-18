@@ -3,6 +3,7 @@ package dev.stapler.stelekit.google
 import dev.stapler.stelekit.platform.google.GoogleTokenStore
 import dev.stapler.stelekit.platform.google.isTokenExpired
 import kotlinx.coroutines.test.runTest
+import kotlin.time.Clock
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
@@ -24,7 +25,7 @@ class GoogleTokenStoreTest {
 
     @Test
     fun `isAuthenticated returns true after saveTokens`() = runTest {
-        store.saveTokens("access", "refresh", System.currentTimeMillis() + 3_600_000)
+        store.saveTokens("access", "refresh", Clock.System.now().toEpochMilliseconds() + 3_600_000)
         assertTrue(store.isAuthenticated())
     }
 
@@ -42,7 +43,7 @@ class GoogleTokenStoreTest {
     fun `saveTokens and retrieve roundtrip`() = runTest {
         val accessToken = "ya29.access_token_value"
         val refreshToken = "1//refresh_token_value"
-        val expiresAt = System.currentTimeMillis() + 3_600_000L
+        val expiresAt = Clock.System.now().toEpochMilliseconds() + 3_600_000L
 
         store.saveTokens(accessToken, refreshToken, expiresAt)
 
@@ -53,7 +54,7 @@ class GoogleTokenStoreTest {
 
     @Test
     fun `clearTokens removes all stored data`() = runTest {
-        store.saveTokens("access", "refresh", System.currentTimeMillis() + 3_600_000)
+        store.saveTokens("access", "refresh", Clock.System.now().toEpochMilliseconds() + 3_600_000)
         assertTrue(store.isAuthenticated())
 
         store.clearTokens()
@@ -72,7 +73,7 @@ class GoogleTokenStoreTest {
     @Test
     fun `isTokenExpired returns false when token expires in the future beyond buffer`() = runTest {
         // Token expires 2 hours from now (well beyond the 60s buffer)
-        val expiresAt = System.currentTimeMillis() + 2 * 3_600_000L
+        val expiresAt = Clock.System.now().toEpochMilliseconds() + 2 * 3_600_000L
         store.saveTokens("access", "refresh", expiresAt)
 
         assertFalse(store.isTokenExpired())
@@ -81,7 +82,7 @@ class GoogleTokenStoreTest {
     @Test
     fun `isTokenExpired returns true when token already expired`() = runTest {
         // Token expired 10 minutes ago
-        val expiresAt = System.currentTimeMillis() - 600_000L
+        val expiresAt = Clock.System.now().toEpochMilliseconds() - 600_000L
         store.saveTokens("access", "refresh", expiresAt)
 
         assertTrue(store.isTokenExpired())
@@ -90,7 +91,7 @@ class GoogleTokenStoreTest {
     @Test
     fun `isTokenExpired returns true when token expires within 60s buffer window`() = runTest {
         // Token expires in 30s — within the 60s pre-expiry buffer
-        val expiresAt = System.currentTimeMillis() + 30_000L
+        val expiresAt = Clock.System.now().toEpochMilliseconds() + 30_000L
         store.saveTokens("access", "refresh", expiresAt)
 
         assertTrue(store.isTokenExpired())
@@ -99,7 +100,7 @@ class GoogleTokenStoreTest {
     @Test
     fun `isTokenExpired returns false when token expires just outside 60s buffer`() = runTest {
         // Token expires in 90s — just outside the 60s pre-expiry buffer
-        val expiresAt = System.currentTimeMillis() + 90_000L
+        val expiresAt = Clock.System.now().toEpochMilliseconds() + 90_000L
         store.saveTokens("access", "refresh", expiresAt)
 
         assertFalse(store.isTokenExpired())
@@ -107,8 +108,8 @@ class GoogleTokenStoreTest {
 
     @Test
     fun `saving new tokens overwrites previous tokens`() = runTest {
-        store.saveTokens("old_access", "old_refresh", System.currentTimeMillis() + 1_000)
-        store.saveTokens("new_access", "new_refresh", System.currentTimeMillis() + 3_600_000)
+        store.saveTokens("old_access", "old_refresh", Clock.System.now().toEpochMilliseconds() + 1_000)
+        store.saveTokens("new_access", "new_refresh", Clock.System.now().toEpochMilliseconds() + 3_600_000)
 
         assertTrue(store.getAccessToken() == "new_access")
         assertTrue(store.getRefreshToken() == "new_refresh")

@@ -1240,6 +1240,9 @@ private fun ScreenRouter(
                 val galleryViewModel = remember {
                     GalleryViewModel(repos.imageAnnotationRepository)
                 }
+                DisposableEffect(galleryViewModel) {
+                    onDispose { galleryViewModel.close() }
+                }
                 GalleryScreen(
                     viewModel = galleryViewModel,
                     onOpenAnnotationEditor = { uuid ->
