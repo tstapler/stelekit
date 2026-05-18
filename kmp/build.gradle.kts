@@ -147,6 +147,7 @@ kotlin {
                 implementation("io.ktor:ktor-client-mock:3.1.3")
                 // BlockHound — detects blocking calls on coroutine scheduler threads
                 implementation("io.projectreactor.tools:blockhound:1.0.9.RELEASE")
+
             }
         }
 

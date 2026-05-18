@@ -15,4 +15,6 @@
                 android:resource="@xml/bench_file_paths" />
         </provider>
     </application>
+
+
 </manifest>

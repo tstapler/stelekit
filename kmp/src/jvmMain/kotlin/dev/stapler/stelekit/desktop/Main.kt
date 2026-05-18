@@ -17,6 +17,7 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.rememberWindowState
 import dev.stapler.stelekit.domain.UrlFetcherJvm
+import dev.stapler.stelekit.service.JvmMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
 import dev.stapler.stelekit.ui.theme.setSystemDarkTheme
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -114,12 +115,14 @@ fun main() {
                 }
             }
 
+            val attachmentService = remember { JvmMediaAttachmentService() }
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = graphPath,
                 urlFetcher = UrlFetcherJvm(),
                 spanRecorder = spanRecorder,
                 cryptoEngine = dev.stapler.stelekit.vault.JvmCryptoEngine(),
+                attachmentService = attachmentService,
             )
         }
     }
