@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.26.0](https://github.com/tstapler/stelekit/compare/v0.25.0...v0.26.0) (2026-05-19)
+
+
+### Features
+
+* **android/test:** add StrictModeRule to catch main-thread disk I/O in instrumented tests ([0aebddc](https://github.com/tstapler/stelekit/commit/0aebddccdb46b719d448e2303b2177c195bb7bda))
+* **image-meter:** native photo annotation with scaled measurements ([#85](https://github.com/tstapler/stelekit/issues/85)) ([64dca6d](https://github.com/tstapler/stelekit/commit/64dca6da44ccf660415fbe403f60ef17427c353f))
+* **images:** image attachment, inline rendering, and Wayback Machine archiving ([#83](https://github.com/tstapler/stelekit/issues/83)) ([20adc0f](https://github.com/tstapler/stelekit/commit/20adc0f9037db2fe23e592e1a4b45877b5fcb0a7))
+
+
+### Bug Fixes
+
+* **android:** prevent ANR by moving addGraph SAF I/O off the main thread ([9453802](https://github.com/tstapler/stelekit/commit/9453802a07560af4590bdfdd7ea55e1284429923))
+
+
+### Performance Improvements
+
+* **android:** fix block insert latency — IO dispatcher + optimistic focus ([#84](https://github.com/tstapler/stelekit/issues/84)) ([3af9e5b](https://github.com/tstapler/stelekit/commit/3af9e5be83bffd65320a80673e1198eda2464466))
+
 ## [0.25.0](https://github.com/tstapler/stelekit/compare/v0.24.1...v0.25.0) (2026-05-15)
 
 
