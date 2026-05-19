@@ -15,6 +15,7 @@ import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.SteleKitContext
+import dev.stapler.stelekit.testing.StrictModeRule
 import dev.stapler.stelekit.ui.onboarding.Onboarding
 import org.junit.After
 import org.junit.Before
@@ -38,7 +39,10 @@ import kotlin.test.assertTrue
 @RunWith(AndroidJUnit4::class)
 class AppSmokeTest {
 
-    @get:Rule
+    @get:Rule(order = 0)
+    val strictMode = StrictModeRule()
+
+    @get:Rule(order = 1)
     val composeTestRule = createComposeRule()
 
     private val context: Context
