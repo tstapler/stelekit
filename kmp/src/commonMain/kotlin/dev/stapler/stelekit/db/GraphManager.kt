@@ -20,6 +20,7 @@ import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.RepositorySet
 import dev.stapler.stelekit.util.ContentHasher
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
@@ -199,18 +201,22 @@ class GraphManager(
     fun graphIdFromPath(path: String): String = 
         ContentHasher.sha256(path).take(16)
     
-    fun addGraph(path: String): String {
+    suspend fun addGraph(path: String): String {
         // Use expanded path for consistent ID generation
         val expandedPath = fileSystem.expandTilde(path)
         val graphId = graphIdFromPath(expandedPath)
-        val displayName = fileSystem.displayNameForPath(expandedPath)
 
-        // Warn if the SQLite database files are not gitignored.
-        // The .db, .db-wal, and .db-shm files must never be committed to git
-        // as they are binary and will cause unresolvable merge conflicts.
-        checkGitignoreForDatabase(expandedPath)
-
-        val isParanoidMode = fileSystem.fileExists(VaultManager.vaultFilePath(expandedPath))
+        // Move SAF Binder IPC off the main thread — these calls can take hundreds of ms
+        // on real hardware and cause ANR when called from a LaunchedEffect.
+        val (displayName, isParanoidMode) = withContext(PlatformDispatcher.IO) {
+            val dn = fileSystem.displayNameForPath(expandedPath)
+            // Warn if the SQLite database files are not gitignored.
+            // The .db, .db-wal, and .db-shm files must never be committed to git
+            // as they are binary and will cause unresolvable merge conflicts.
+            checkGitignoreForDatabase(expandedPath)
+            val ipm = fileSystem.fileExists(VaultManager.vaultFilePath(expandedPath))
+            dn to ipm
+        }
         val info = GraphInfo(
             id = graphId,
             path = expandedPath,
