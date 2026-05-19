@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-19 21:14:16 UTC",
+  "gitSha": "16341a6",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 7,
+  "phase2Ms": 3,
+  "phase3Ms": 11,
+  "totalMs": 20,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 30,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 137,
+      "pct": 68.8
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 6,
+      "pct": 3.0
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 4,
+      "pct": 2.0
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 4,
+      "pct": 2.0
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.io.File_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "kotlin.ranges.IntRange_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "jdk.internal.util.StrongReferenceKey_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2178,
+      "pct": 99.5
+    },
+    {
+      "frame": "Relocation::copy_into",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pread",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/scheduling/CoroutineScheduler$Worker.runWorker_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ConstMethod::localvariable_table_length",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ConstMethod::compressed_linenumber_table",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/internal/ThreadContextKt.restoreThreadContext_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/util/concurrent/ConcurrentHashMap.putVal_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "StackMapFrame::set_locals_from_arg",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}
