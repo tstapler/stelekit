@@ -286,6 +286,15 @@ jobs:
           gradle-home-cache-strict-match: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
+      - name: Install Bazelisk
+        run: brew install bazelisk
+
+      - name: Generate icon.icns
+        run: |
+          bazel build //kmp/src/jvmMain/resources/icons:icon_icns
+          cp bazel-bin/kmp/src/jvmMain/resources/icons/icon.icns \
+             kmp/src/jvmMain/resources/icons/icon.icns
+
       - name: Package desktop distributable
         run: |
           APP_VERSION="${{ needs.resolve-version.outputs.version }}"

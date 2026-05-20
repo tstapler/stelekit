@@ -1,0 +1,4 @@
+module(
+    name = "stelekit",
+    version = "0.1",
+)
