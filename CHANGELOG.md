@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.26.1](https://github.com/tstapler/stelekit/compare/v0.26.0...v0.26.1) (2026-05-20)
+
+
+### Bug Fixes
+
+* **ui:** add border, column dividers, and header background to TableBlock ([c3f55ac](https://github.com/tstapler/stelekit/commit/c3f55ac7dd2572f7947914b50efe73a700120860))
+* **ui:** move clickable after clip in TableBlock modifier chain ([a9e0aea](https://github.com/tstapler/stelekit/commit/a9e0aeafcd14376d214ebeff36ffb75afff53068))
+
 ## [0.26.0](https://github.com/tstapler/stelekit/compare/v0.25.0...v0.26.0) (2026-05-19)
 
 
