@@ -87,9 +87,9 @@ internal fun TableBlock(
     Box(
         modifier = modifier
             .horizontalScroll(rememberScrollState())
-            .clickable { onStartEditing() }
             .border(1.dp, borderColor, RoundedCornerShape(4.dp))
             .clip(RoundedCornerShape(4.dp))
+            .clickable { onStartEditing() }
     ) {
         Column(modifier = Modifier.wrapContentWidth(unbounded = true)) {
             // Header row
