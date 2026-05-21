@@ -170,7 +170,7 @@ class SearchViewModel(
 
         searchJob?.cancel()
         if (query.isBlank()) {
-            _uiState.update { it.copy(results = emptyList(), isLoading = false, isSkeletonVisible = false) }
+            _uiState.update { it.copy(results = emptyList(), isLoading = false, isSkeletonVisible = false, isLoadingBlocks = false) }
             return
         }
 
@@ -255,14 +255,14 @@ class SearchViewModel(
                                 it is SearchResultItem.PageItem &&
                                     it.page.name.equals(query, ignoreCase = true)
                             }
-                            val withCreate = if (!exactPageMatch && query.isNotBlank()) {
+                            val withCreate = if (!exactPageMatch && query.isNotBlank() && !searchResult.hasMore) {
                                 listOf(SearchResultItem.CreatePageItem(query)) + items
                             } else {
                                 items
                             }
 
-                            // Record in recent queries when results are non-empty
-                            val recentQueries = if (items.isNotEmpty()) {
+                            // Record in recent queries when final results are non-empty
+                            val recentQueries = if (items.isNotEmpty() && !searchResult.hasMore) {
                                 val updated = (listOf(query) + state.recentQueries)
                                     .distinct()
                                     .take(MAX_RECENT_QUERIES)
@@ -275,17 +275,18 @@ class SearchViewModel(
                                 results = withCreate,
                                 isLoading = false,
                                 isSkeletonVisible = false,
+                                isLoadingBlocks = searchResult.hasMore,
                                 recentQueries = recentQueries
                             )
                         }
                     } else {
-                        _uiState.update { it.copy(isLoading = false, isSkeletonVisible = false, error = "Search failed") }
+                        _uiState.update { it.copy(isLoading = false, isSkeletonVisible = false, isLoadingBlocks = false, error = "Search failed") }
                     }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, isSkeletonVisible = false, error = e.message) }
+                _uiState.update { it.copy(isLoading = false, isSkeletonVisible = false, isLoadingBlocks = false, error = e.message) }
             }
         }
     }
@@ -341,6 +342,7 @@ data class SearchUiState(
     val results: List<SearchResultItem> = emptyList(),
     val isLoading: Boolean = false,
     val isSkeletonVisible: Boolean = false,
+    val isLoadingBlocks: Boolean = false,
     val error: String? = null,
     val scope: SearchScope = SearchScope.ALL,
     val recentQueries: List<String> = emptyList(),

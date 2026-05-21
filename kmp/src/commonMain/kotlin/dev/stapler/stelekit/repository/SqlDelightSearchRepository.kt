@@ -202,6 +202,12 @@ class SqlDelightSearchRepository(
             val startMs = dateRange?.startDate?.toEpochMilliseconds() ?: 0L
             val endMs = dateRange?.endDate?.toEpochMilliseconds() ?: Long.MAX_VALUE
 
+            // Block search is skipped for single-char queries — prefix queries like "g*" can match
+            // tens of thousands of block rows and force full BM25 scoring before LIMIT is applied.
+            val blockSearchNeeded = rawQuery.length >= 2 &&
+                scope != SearchScope.PAGES_ONLY &&
+                DataType.CONTENT in dataTypes
+
             // ── Page search ────────────────────────────────────────────────
             val searchedPages: List<SearchedPage> = if (
                 scope != SearchScope.BLOCKS_ONLY &&
@@ -284,11 +290,21 @@ class SqlDelightSearchRepository(
                 sp.copy(backlinkCount = backlinkMap[sp.page.name] ?: 0)
             }
 
+            // Emit page results immediately so the UI can display them while block search runs.
+            if (blockSearchNeeded) {
+                emit(SearchResult(
+                    blocks = emptyList(),
+                    pages = searchedPagesWithBacklinks.map { it.page },
+                    searchedPages = searchedPagesWithBacklinks,
+                    searchedBlocks = emptyList(),
+                    ranked = emptyList(),
+                    totalCount = searchedPagesWithBacklinks.size,
+                    hasMore = true
+                ).right())
+            }
+
             // ── Block search ───────────────────────────────────────────────
-            val searchedBlocks: List<SearchedBlock> = if (
-                scope != SearchScope.PAGES_ONLY &&
-                DataType.CONTENT in dataTypes
-            ) {
+            val searchedBlocks: List<SearchedBlock> = if (blockSearchNeeded) {
                 try {
                     when (scope) {
                         SearchScope.CURRENT_PAGE -> {

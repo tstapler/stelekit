@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -203,7 +204,7 @@ fun SearchDialog(
                 .clickable(onClick = onDismiss)
         ) {
 
-            val resultsList: @Composable ColumnScope.() -> Unit = {
+            val resultsList: @Composable () -> Unit = {
                 // Outer crossfade: empty-query state (recent pages) vs active search
                 Crossfade(
                     targetState = uiState.query.isBlank(),
@@ -213,7 +214,7 @@ fun SearchDialog(
                     if (showingEmpty && uiState.recentPages.isNotEmpty()) {
                         // Show recent pages list
                         LazyColumn(
-                            modifier = Modifier.heightIn(max = 300.dp).fillMaxWidth()
+                            modifier = (if (isMobile) Modifier.fillMaxSize() else Modifier.heightIn(max = 300.dp)).fillMaxWidth()
                         ) {
                             item {
                                 Text(
@@ -256,10 +257,10 @@ fun SearchDialog(
                             if (showingSkeleton) {
                                 SearchSkeletonList(rowCount = 6)
                             } else {
-                                Column {
+                                Column(modifier = if (isMobile) Modifier.fillMaxSize() else Modifier) {
                                     LazyColumn(
                                         state = listState,
-                                        modifier = Modifier.heightIn(max = 400.dp).fillMaxWidth()
+                                        modifier = (if (isMobile) Modifier.weight(1f) else Modifier.heightIn(max = 400.dp)).fillMaxWidth()
                                     ) {
                                         itemsIndexed(uiState.results) { index, item ->
                                             when (item) {
@@ -336,6 +337,7 @@ fun SearchDialog(
                                     }
                                     val showNoResults = uiState.results.isEmpty() && uiState.query.isNotEmpty()
                                         && !uiState.isLoading && !uiState.isSkeletonVisible
+                                        && !uiState.isLoadingBlocks
                                     if (showNoResults) {
                                         Box(
                                             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -343,6 +345,13 @@ fun SearchDialog(
                                         ) {
                                             Text("No results found", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
+                                    }
+                                    if (uiState.isLoadingBlocks) {
+                                        LinearProgressIndicator(
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                                            trackColor = Color.Transparent
+                                        )
                                     }
                                 }
                             }
@@ -356,8 +365,10 @@ fun SearchDialog(
                     modifier = Modifier.fillMaxSize().imePadding(),
                     contentAlignment = Alignment.BottomCenter
                 ) {
-                    Column(modifier = mobileModifier, verticalArrangement = Arrangement.Bottom) {
-                        resultsList()
+                    Column(modifier = mobileModifier.fillMaxHeight(0.85f)) {
+                        Column(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            resultsList()
+                        }
                         indexingIndicator()
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         FilterBar(
