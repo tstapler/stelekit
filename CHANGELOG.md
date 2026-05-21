@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.26.2](https://github.com/tstapler/stelekit/compare/v0.26.1...v0.26.2) (2026-05-21)
+
+
+### Bug Fixes
+
+* **android:** remove runBlocking from Application.onCreate and switchGraph ([46c9db1](https://github.com/tstapler/stelekit/commit/46c9db1564699e0902426882f993310e01fcb5bc))
+* **release:** generate icon.icns via Bazel genrule on macOS CI ([8c4dd7b](https://github.com/tstapler/stelekit/commit/8c4dd7b1bfdb47f83bafb2991c328518c686faf3))
+
 ## [0.26.1](https://github.com/tstapler/stelekit/compare/v0.26.0...v0.26.1) (2026-05-20)
 
 
