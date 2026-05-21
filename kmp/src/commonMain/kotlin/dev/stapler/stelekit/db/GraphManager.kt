@@ -312,7 +312,13 @@ class GraphManager(
 
             val dbUrl = driverFactory.getDatabaseUrl(id)
             val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl)
-            val deviceInfo = try { dev.stapler.stelekit.performance.getDeviceInfo() } catch (_: Exception) { null }
+            val deviceInfo = try {
+                dev.stapler.stelekit.performance.getDeviceInfo()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
             val repoSet = factory.createRepositorySet(
                 backend = defaultBackend,
                 scope = graphScope,
