@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.26.4](https://github.com/tstapler/stelekit/compare/v0.26.3...v0.26.4) (2026-05-21)
+
+
+### Bug Fixes
+
+* **android:** eliminate Initializing… permanent hang on large libraries ([9437abf](https://github.com/tstapler/stelekit/commit/9437abf45e73163a7633af6c7fbfc5ae42d136dc))
+* **wasm:** remove @Volatile from commonMain — not available on Wasm/JS ([908822a](https://github.com/tstapler/stelekit/commit/908822a20061704f554365c47ed0f0693a25ed0f))
+
 ## [0.26.3](https://github.com/tstapler/stelekit/compare/v0.26.2...v0.26.3) (2026-05-21)
 
 
