@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.26.3](https://github.com/tstapler/stelekit/compare/v0.26.2...v0.26.3) (2026-05-21)
+
+
+### Bug Fixes
+
+* **android:** remove runBlocking from Application.onCreate and switchGraph ([46c9db1](https://github.com/tstapler/stelekit/commit/46c9db1564699e0902426882f993310e01fcb5bc))
+* **detekt:** rethrow CancellationException in switchGraph deviceInfo catch ([57d3ff2](https://github.com/tstapler/stelekit/commit/57d3ff222c0f75870941668f5826a68381e36943))
+
 ## [0.26.2](https://github.com/tstapler/stelekit/compare/v0.26.1...v0.26.2) (2026-05-21)
 
 
