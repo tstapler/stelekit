@@ -307,33 +307,37 @@ class GraphManager(
         // subsequent UUID/changelog migrations all move to an IO coroutine so they never
         // execute on the main/calling thread. preFlightJob is awaited first to ensure any
         // startup write-behind flush completes before we open the database.
+        //
+        // The outer try/finally guarantees deferred.complete(Unit) is called in ALL cases —
+        // including unhandled exceptions from factory/repoSet creation — so awaitPendingMigration()
+        // never hangs permanently.
         graphScope.launch(PlatformDispatcher.IO) {
-            preFlightJob?.await()
+            try {
+                preFlightJob?.await()
 
-            val dbUrl = driverFactory.getDatabaseUrl(id)
-            val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl)
-            val deviceInfo = try {
-                dev.stapler.stelekit.performance.getDeviceInfo()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                null
-            }
-            val repoSet = factory.createRepositorySet(
-                backend = defaultBackend,
-                scope = graphScope,
-                fileSystem = fileSystem,
-                appVersion = deviceInfo?.appVersion ?: "unknown",
-                platform = deviceInfo?.platform ?: "unknown",
-            )
-            currentFactory = factory
-            _activeRepositorySet.value = repoSet
+                val dbUrl = driverFactory.getDatabaseUrl(id)
+                val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl)
+                val deviceInfo = try {
+                    dev.stapler.stelekit.performance.getDeviceInfo()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
+                val repoSet = factory.createRepositorySet(
+                    backend = defaultBackend,
+                    scope = graphScope,
+                    fileSystem = fileSystem,
+                    appVersion = deviceInfo?.appVersion ?: "unknown",
+                    platform = deviceInfo?.platform ?: "unknown",
+                )
+                currentFactory = factory
+                _activeRepositorySet.value = repoSet
 
-            if (defaultBackend == GraphBackend.SQLDELIGHT) {
-                val writeActor = repoSet.writeActor
-                if (writeActor != null) {
-                    val db = factory.steleDatabase()
-                    try {
+                if (defaultBackend == GraphBackend.SQLDELIGHT) {
+                    val writeActor = repoSet.writeActor
+                    if (writeActor != null) {
+                        val db = factory.steleDatabase()
                         UuidMigration(writeActor).runIfNeeded(db)
                         try {
                             MigrationRunner(
@@ -348,13 +352,13 @@ class GraphManager(
                         } catch (e: MigrationTamperedError) {
                             logger.error("MigrationRunner: tampered migration detected for graph $id", e)
                         }
-                    } finally {
-                        deferred.complete(Unit)
                     }
-                } else {
-                    deferred.complete(Unit)
                 }
-            } else {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.error("switchGraph initialization failed for graph $id", e)
+            } finally {
                 deferred.complete(Unit)
             }
         }

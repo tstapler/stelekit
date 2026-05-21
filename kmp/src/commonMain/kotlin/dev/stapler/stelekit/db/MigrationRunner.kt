@@ -31,7 +31,18 @@ object MigrationRunner {
 
     private val logger = Logger("MigrationRunner")
 
-    data class Migration(val name: String, val statements: List<String>) {
+    data class Migration(
+        val name: String,
+        val statements: List<String>,
+        /**
+         * When true, a hash mismatch for this migration (recorded hash ≠ current hash) is
+         * treated as an intentional update rather than tampering: the old hash is replaced with
+         * the new one and the migration is re-applied on next startup. Use ONLY for migrations
+         * whose SQL has been deliberately updated to remove a correctness issue (e.g. an
+         * expensive side-effect) after the migration was already shipped.
+         */
+        val allowContentUpdate: Boolean = false,
+    ) {
         /** FNV-1a-64 digest of all statements joined with newlines. */
         val hash: String = fnv1a64(statements.joinToString("\n"))
     }
@@ -182,6 +193,7 @@ object MigrationRunner {
         ),
         Migration(
             name = "pages_backlink_count_fix",
+            allowContentUpdate = true,
             statements = listOf(
                 // Repair for databases where pages_backlink_count was recorded as applied but
                 // the column was never added: the original migration used ADD COLUMN IF NOT EXISTS,
@@ -189,13 +201,13 @@ object MigrationRunner {
                 // migration hash was falsely marked applied. This migration uses the correct
                 // syntax; on databases that already have the column, "duplicate column name"
                 // is swallowed by applyAll leaving the column untouched.
-                "ALTER TABLE pages ADD COLUMN backlink_count INTEGER NOT NULL DEFAULT 0",
-                """
-                UPDATE pages SET backlink_count = (
-                    SELECT COUNT(*) FROM blocks
-                    WHERE blocks.content LIKE '%[[' || pages.name || ']]%'
-                )
-                """
+                //
+                // The O(P×B) UPDATE that used to follow this ADD COLUMN has been intentionally
+                // removed (allowContentUpdate = true). On large libraries (500+ pages, 50k+
+                // blocks) it took 10–60+ minutes and caused permanent "Initializing…" hangs.
+                // Backlink counts start at 0 (the column default) and are recomputed
+                // incrementally as the user edits notes, or fully via Search > Rebuild Index.
+                "ALTER TABLE pages ADD COLUMN backlink_count INTEGER NOT NULL DEFAULT 0"
             )
         ),
         Migration(
@@ -268,13 +280,29 @@ object MigrationRunner {
             val recordedHash = appliedByName[migration.name]
 
             if (recordedHash != null) {
-                // Migration was previously applied — verify it hasn't been edited.
-                check(recordedHash == migration.hash) {
-                    "Migration '${migration.name}' has been modified after being applied. " +
-                    "Recorded hash: $recordedHash, current hash: ${migration.hash}. " +
-                    "Never edit a shipped migration — add a new Migration entry instead."
+                if (recordedHash != migration.hash) {
+                    check(migration.allowContentUpdate) {
+                        "Migration '${migration.name}' has been modified after being applied. " +
+                        "Recorded hash: $recordedHash, current hash: ${migration.hash}. " +
+                        "Never edit a shipped migration — add a new Migration entry instead."
+                    }
+                    // allowContentUpdate=true: deliberate SQL update — replace the stored hash so
+                    // the new version runs on databases that have not yet applied it, and the old
+                    // hash passes on databases that already did.
+                    logger.warn(
+                        "Migration '${migration.name}' content updated (allowContentUpdate). " +
+                        "Replacing stored hash $recordedHash → ${migration.hash}."
+                    )
+                    driver.execute(
+                        identifier = null,
+                        sql = "UPDATE schema_migrations SET hash = ? WHERE name = ?",
+                        parameters = 2
+                    ) {
+                        bindString(0, migration.hash)
+                        bindString(1, migration.name)
+                    }.await()
                 }
-                continue // already applied and untampered, skip
+                continue // already applied (or hash updated above), skip
             }
 
             var encounteredRealError = false
