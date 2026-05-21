@@ -838,9 +838,14 @@ afterEvaluate {
         }
     }
 
+    val resolvedAppVersion: String = (findProperty("appVersion") as? String)?.removePrefix("v")
+        ?: rootProject.file("version.txt").takeIf { it.exists() }?.readText()?.trim()
+        ?: "dev"
+
     tasks.named<JavaExec>("run") {
         // finalizedBy runs convertLastProfile even if run fails or is cancelled (Ctrl+C).
         finalizedBy(convertLastProfile)
+        systemProperty("app.version", resolvedAppVersion)
 
         doFirst {
             val ts = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(Date())

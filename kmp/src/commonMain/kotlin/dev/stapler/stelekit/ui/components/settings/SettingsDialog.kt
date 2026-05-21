@@ -15,9 +15,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import arrow.core.Either
 import dev.stapler.stelekit.performance.getDeviceInfo
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.ui.i18n.Language
+import dev.stapler.stelekit.vault.VaultError
 import dev.stapler.stelekit.voice.VoiceSettings
 
 @Composable
@@ -42,6 +44,14 @@ fun SettingsDialog(
     googleAuthError: String? = null,
     onConnectGoogle: (() -> Unit)? = null,
     onDisconnectGoogle: (() -> Unit)? = null,
+    // Vault / encryption settings
+    isParanoidMode: Boolean = false,
+    isVaultUnlocked: Boolean = false,
+    onCreateVault: (suspend (CharArray) -> Either<VaultError, Unit>)? = null,
+    onAddKeyslot: (suspend (CharArray) -> Either<VaultError, Unit>)? = null,
+    onRemoveKeyslot: (suspend (Int) -> Either<VaultError, Unit>)? = null,
+    onLockVault: (() -> Unit)? = null,
+    onListActiveSlots: (suspend () -> List<Int>)? = null,
 ) {
     if (visible) {
         Dialog(
@@ -150,6 +160,15 @@ fun SettingsDialog(
                                     onConnect = { onConnectGoogle?.invoke() },
                                     onDisconnect = { onDisconnectGoogle?.invoke() },
                                 )
+                                SettingsCategory.VAULT -> VaultSettings(
+                                    isParanoidMode = isParanoidMode,
+                                    isVaultUnlocked = isVaultUnlocked,
+                                    onCreateVault = onCreateVault,
+                                    onAddKeyslot = onAddKeyslot,
+                                    onRemoveKeyslot = onRemoveKeyslot,
+                                    onLockVault = onLockVault,
+                                    onListActiveSlots = onListActiveSlots,
+                                )
                             }
                         }
                     }
@@ -198,4 +217,5 @@ enum class SettingsCategory(val label: String, val icon: ImageVector) {
     ADVANCED("Advanced", Icons.Default.Build),
     VOICE("Voice Capture", Icons.Default.Mic),
     GOOGLE_ACCOUNT("Google Account", Icons.Default.Cloud),
+    VAULT("Vault", Icons.Default.Lock),
 }

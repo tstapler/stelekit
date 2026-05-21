@@ -21,9 +21,16 @@ import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.domain.UrlFetcherAndroid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.git.AndroidGitRepository
+import dev.stapler.stelekit.git.GitSyncServiceRegistry
+import dev.stapler.stelekit.service.rememberAndroidMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
 import android.speech.SpeechRecognizer
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import dev.stapler.stelekit.performance.OtelExporterConfig
+import dev.stapler.stelekit.performance.OtelProvider
+import dev.stapler.stelekit.performance.createAndroidSpanRecorder
 import dev.stapler.stelekit.voice.AndroidAudioRecorder
 import dev.stapler.stelekit.voice.AndroidSpeechRecognizerProvider
 import dev.stapler.stelekit.voice.MlKitLlmFormatterProvider
@@ -136,6 +143,10 @@ class MainActivity : ComponentActivity() {
             deferred.await()
         }
 
+        if (!OtelProvider.isInitialized) {
+            OtelProvider.initialize(OtelExporterConfig(enableStdout = false, enableRingBuffer = true))
+        }
+
         setContent {
             val fileSystem = remember {
                 PlatformFileSystem().apply {
@@ -179,6 +190,23 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(deviceLlmAvailable) {
                 voicePipeline = buildPipeline()
             }
+            val spanRecorder = remember { createAndroidSpanRecorder() }
+            val gitRepository = remember { AndroidGitRepository() }
+            val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity)
+
+            // Keep GitSyncServiceRegistry in sync so GitSyncWorker can reach the active service
+            // even when the process was revived by WorkManager without the UI being foregrounded.
+            val appGm = app.graphManager
+            val activeGitSyncService by (appGm?.activeGitSyncService
+                ?: kotlinx.coroutines.flow.MutableStateFlow(null)).collectAsState()
+            LaunchedEffect(activeGitSyncService) {
+                if (appGm == null) return@LaunchedEffect
+                val graphId = appGm.getActiveGraphId() ?: return@LaunchedEffect
+                val svc = activeGitSyncService
+                if (svc != null) GitSyncServiceRegistry.register(graphId, svc)
+                else GitSyncServiceRegistry.unregister(graphId)
+            }
+
             StelekitApp(
                 fileSystem = fileSystem,
                 // When the benchmark extra is absent and SAF permission is not yet
@@ -194,8 +222,11 @@ class MainActivity : ComponentActivity() {
                 onRebuildVoicePipeline = { voicePipeline = buildPipeline() },
                 deviceSttAvailable = deviceSttAvailable,
                 deviceLlmAvailable = deviceLlmAvailable,
+                spanRecorder = spanRecorder,
+                gitRepository = gitRepository,
                 onGraphManagerReady = { gm -> graphManager = gm },
                 onMemoryPressure = { handler -> onMemoryPressureHandler = handler },
+                attachmentService = attachmentService,
             )
         }
     }

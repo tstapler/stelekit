@@ -358,9 +358,11 @@ private fun GraphContent(
     val activeGraphPath = activeGraphInfo?.path ?: ""
 
     // Paranoid mode: true when a .stele-vault file exists for this graph and a crypto engine is available.
-    val isParanoidMode = remember {
-        cryptoEngine != null && activeGraphPath.isNotEmpty() &&
-            fileSystem.fileExists(dev.stapler.stelekit.vault.VaultManager.vaultFilePath(activeGraphPath))
+    var isParanoidMode by remember {
+        androidx.compose.runtime.mutableStateOf(
+            cryptoEngine != null && activeGraphPath.isNotEmpty() &&
+                fileSystem.fileExists(dev.stapler.stelekit.vault.VaultManager.vaultFilePath(activeGraphPath))
+        )
     }
 
     // Vault state drives the unlock screen and gates graph loading.
@@ -370,12 +372,14 @@ private fun GraphContent(
         )
     }
 
-    val vaultManager = remember {
-        if (!isParanoidMode || cryptoEngine == null) null
-        else dev.stapler.stelekit.vault.VaultManager(
-            crypto = cryptoEngine,
-            fileReadBytes = { path -> fileSystem.readFileBytes(path) },
-            fileWriteBytes = { path, data -> fileSystem.writeFileBytes(path, data) },
+    var vaultManager by remember {
+        androidx.compose.runtime.mutableStateOf(
+            if (!isParanoidMode || cryptoEngine == null) null
+            else dev.stapler.stelekit.vault.VaultManager(
+                crypto = cryptoEngine,
+                fileReadBytes = { path -> fileSystem.readFileBytes(path) },
+                fileWriteBytes = { path, data -> fileSystem.writeFileBytes(path, data) },
+            )
         )
     }
 
@@ -589,6 +593,73 @@ private fun GraphContent(
             }
         }
     }
+
+    // Vault settings callbacks — threaded into SettingsDialog via GraphDialogLayer.
+    val onCreateVault: (suspend (CharArray) -> arrow.core.Either<dev.stapler.stelekit.vault.VaultError, Unit>)? =
+        if (cryptoEngine != null && activeGraphPath.isNotEmpty()) {
+            { passphrase ->
+                val engine = cryptoEngine
+                val tempManager = dev.stapler.stelekit.vault.VaultManager(
+                    crypto = engine,
+                    fileReadBytes = { path -> fileSystem.readFileBytes(path) },
+                    fileWriteBytes = { path, data -> fileSystem.writeFileBytes(path, data) },
+                )
+                when (val result = tempManager.createVault(activeGraphPath, passphrase)) {
+                    is arrow.core.Either.Right -> {
+                        val unlockResult = result.value
+                        val layer = dev.stapler.stelekit.vault.CryptoLayer(engine, unlockResult.dek)
+                        graphWriter.graphPath = activeGraphPath
+                        graphLoader.setGraphPath(activeGraphPath)
+                        graphLoader.cryptoLayer = layer
+                        graphWriter.cryptoLayer = layer
+                        vaultManager = tempManager
+                        isParanoidMode = true
+                        vaultState = VaultState.Unlocked(unlockResult.namespace)
+                        arrow.core.Either.Right(Unit)
+                    }
+                    is arrow.core.Either.Left -> result
+                }
+            }
+        } else null
+
+    val capturedVaultManager = vaultManager
+
+    val onAddKeyslot: (suspend (CharArray) -> arrow.core.Either<dev.stapler.stelekit.vault.VaultError, Unit>)? =
+        if (isParanoidMode && capturedVaultManager != null) {
+            { passphrase ->
+                val dek = capturedVaultManager.currentDek()
+                if (dek == null) {
+                    arrow.core.Either.Left(dev.stapler.stelekit.vault.VaultError.InvalidCredential("Vault is locked"))
+                } else {
+                    capturedVaultManager.addKeyslot(activeGraphPath, dek, passphrase)
+                }
+            }
+        } else null
+
+    val onRemoveKeyslot: (suspend (Int) -> arrow.core.Either<dev.stapler.stelekit.vault.VaultError, Unit>)? =
+        if (isParanoidMode && capturedVaultManager != null) {
+            { slotIndex -> capturedVaultManager.removeKeyslot(activeGraphPath, slotIndex) }
+        } else null
+
+    val onLockVault: (() -> Unit)? =
+        if (isParanoidMode && capturedVaultManager != null) {
+            {
+                scope.launch {
+                    graphWriter.flush()
+                    graphLoader.cryptoLayer?.close()
+                    graphLoader.cryptoLayer = null
+                    graphWriter.cryptoLayer?.close()
+                    graphWriter.cryptoLayer = null
+                    capturedVaultManager.lock()
+                }
+                Unit
+            }
+        } else null
+
+    val onListActiveSlots: (suspend () -> List<Int>)? =
+        if (isParanoidMode && capturedVaultManager != null) {
+            { capturedVaultManager.listActiveKeyslotIndices(activeGraphPath) }
+        } else null
 
     val frameMetricState = remember { kotlinx.coroutines.flow.MutableStateFlow(dev.stapler.stelekit.performance.FrameMetric()) }
 
@@ -981,9 +1052,10 @@ private fun GraphContent(
                                         pluginCount = pluginHost.getAllPlugins().size,
                                         modifier = Modifier.weight(1f),
                                     )
-                                    if (isParanoidMode && vaultManager != null) {
+                                    val vmForLockBtn = vaultManager
+                                    if (isParanoidMode && vmForLockBtn != null) {
                                         IconButton(onClick = {
-                                            viewModel.flushAndLockVault(graphLoader, graphWriter, vaultManager)
+                                            viewModel.flushAndLockVault(graphLoader, graphWriter, vmForLockBtn)
                                         }) {
                                             Icon(
                                                 imageVector = Icons.Filled.Lock,
@@ -1033,6 +1105,13 @@ private fun GraphContent(
                             debugMenuState = newState
                             viewModel.onDebugMenuStateChange(newState)
                         },
+                        isParanoidMode = isParanoidMode,
+                        isVaultUnlocked = vaultState is VaultState.Unlocked,
+                        onCreateVault = onCreateVault,
+                        onAddKeyslot = onAddKeyslot,
+                        onRemoveKeyslot = onRemoveKeyslot,
+                        onLockVault = onLockVault,
+                        onListActiveSlots = onListActiveSlots,
                     )
 
                     } // CompositionLocalProvider(LocalWindowSizeClass)
@@ -1316,6 +1395,13 @@ private fun GraphDialogLayer(
     debugState: DebugMenuState = DebugMenuState(),
     loadPageBlocks: (String) -> kotlinx.coroutines.flow.Flow<arrow.core.Either<dev.stapler.stelekit.error.DomainError, List<Block>>> = { kotlinx.coroutines.flow.flowOf(arrow.core.Either.Right(emptyList())) },
     onDebugStateChange: (DebugMenuState) -> Unit = {},
+    isParanoidMode: Boolean = false,
+    isVaultUnlocked: Boolean = false,
+    onCreateVault: (suspend (CharArray) -> arrow.core.Either<dev.stapler.stelekit.vault.VaultError, Unit>)? = null,
+    onAddKeyslot: (suspend (CharArray) -> arrow.core.Either<dev.stapler.stelekit.vault.VaultError, Unit>)? = null,
+    onRemoveKeyslot: (suspend (Int) -> arrow.core.Either<dev.stapler.stelekit.vault.VaultError, Unit>)? = null,
+    onLockVault: (() -> Unit)? = null,
+    onListActiveSlots: (suspend () -> List<Int>)? = null,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -1355,6 +1441,13 @@ private fun GraphDialogLayer(
         onRebuildVoicePipeline = onRebuildVoicePipeline,
         deviceSttAvailable = deviceSttAvailable,
         deviceLlmAvailable = deviceLlmAvailable,
+        isParanoidMode = isParanoidMode,
+        isVaultUnlocked = isVaultUnlocked,
+        onCreateVault = onCreateVault,
+        onAddKeyslot = onAddKeyslot,
+        onRemoveKeyslot = onRemoveKeyslot,
+        onLockVault = onLockVault,
+        onListActiveSlots = onListActiveSlots,
     )
 
     appState.diskConflict?.let { conflict ->

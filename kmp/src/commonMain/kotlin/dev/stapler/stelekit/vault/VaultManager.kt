@@ -552,6 +552,29 @@ class VaultManager(
         return matches
     }
 
+    /**
+     * Returns the indices of "owned" keyslots in the current session namespace,
+     * identified by the DEK-derived marker. Requires the vault to be unlocked.
+     * Returns an empty list when locked.
+     */
+    suspend fun listActiveKeyslotIndices(graphPath: String): List<Int> = withContext(Dispatchers.Default) {
+        val currentSession = session ?: return@withContext emptyList()
+        val dek = currentSession.dek.copyOf()
+        val ns = currentSession.namespace
+        try {
+            val vaultPath = vaultFilePath(graphPath)
+            val rawBytes = withContext(PlatformDispatcher.IO) { fileReadBytes(vaultPath) }
+                ?: return@withContext emptyList()
+            val header = when (val r = VaultHeaderSerializer.deserialize(rawBytes)) {
+                is Either.Left -> return@withContext emptyList()
+                is Either.Right -> r.value
+            }
+            namespaceSlotRange(ns).filter { i -> isSlotMine(header.keyslots[i], dek, i, ns) }
+        } finally {
+            crypto.clearBytes(dek)
+        }
+    }
+
     private fun namespaceFirstSlot(namespace: VaultNamespace) = when (namespace) {
         VaultNamespace.OUTER -> 0
         VaultNamespace.HIDDEN -> 4
