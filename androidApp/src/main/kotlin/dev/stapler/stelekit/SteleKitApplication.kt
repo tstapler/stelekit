@@ -14,15 +14,25 @@ import dev.stapler.stelekit.platform.measurement.ble.KableBleScanner
 import dev.stapler.stelekit.platform.sensor.AndroidCameraProvider
 import dev.stapler.stelekit.platform.sensor.ARCoreDepthProvider
 import dev.stapler.stelekit.platform.sensor.SensorModule
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.async
 
 class SteleKitApplication : Application() {
 
     /** Process-scoped scope for widget/tile background work (goAsync pattern). */
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Resolves when the startup write-behind flush completes (or immediately if SAF mode is
+     * not active). Passed to [GraphManager] so the driver is never opened before dirty pages
+     * from a previous session are flushed — without blocking the main thread.
+     */
+    lateinit var startupFlushJob: Deferred<Unit>
+        private set
 
     /**
      * Shared [PlatformFileSystem] for the process. Initialized with [applicationContext]
@@ -58,16 +68,20 @@ class SteleKitApplication : Application() {
                 val queueFile = java.io.File(filesDir, "write_behind_queue.txt")
                 fileSystem.setWriteBehindQueue(WriteBehindQueue(queueFile))
                 // Startup recovery: flush any pages left dirty from a previous session.
-                // Runs synchronously before the graph loads to guarantee consistency.
-                runBlocking {
+                // Runs off the main thread; GraphManager awaits this deferred before opening
+                // the database so consistency is preserved without blocking onCreate().
+                startupFlushJob = appScope.async(Dispatchers.IO) {
                     try { fileSystem.flushPendingWrites() }
                     catch (e: Exception) { Log.w(TAG, "Startup write-behind flush failed", e) }
                 }
+            } else {
+                startupFlushJob = CompletableDeferred<Unit>().also { it.complete(Unit) }
             }
             graphManager = GraphManager(
                 platformSettings = PlatformSettings(),
                 driverFactory = DriverFactory(),
                 fileSystem = fileSystem,
+                preFlightJob = startupFlushJob,
             )
         } catch (e: Exception) {
             Log.e(TAG, "Application init failed — widget/tile/share will show placeholder", e)

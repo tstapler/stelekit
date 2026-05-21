@@ -20,6 +20,8 @@ stelekit:
     active: true
   RememberKeyForConstructorArgs:
     active: true
+  NoRunBlockingInLifecycle:
+    active: true
 
 # Compose Multiplatform rules (io.nlopez.compose.rules)
 Compose:

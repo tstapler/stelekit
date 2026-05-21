@@ -47,6 +47,9 @@ class GraphManager(
     private val driverFactory: DriverFactory,
     private val fileSystem: FileSystem,
     val defaultBackend: GraphBackend = GraphBackend.SQLDELIGHT,
+    /** Awaited before any driver is created — lets the Application flush write-behind pages
+     *  on a background thread while GraphManager initialization proceeds. */
+    private val preFlightJob: Deferred<Unit>? = null,
 ) {
     private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val logger = Logger("GraphManager")
@@ -57,8 +60,9 @@ class GraphManager(
     private val _activeRepositorySet = MutableStateFlow<RepositorySet?>(null)
     val activeRepositorySet: StateFlow<RepositorySet?> = _activeRepositorySet.asStateFlow()
     
-    // Track current factory for lifecycle management
-    private var currentFactory: dev.stapler.stelekit.repository.RepositoryFactory? = null
+    // Track current factory for lifecycle management.
+    // Written from a background coroutine (switchGraph's IO launch) — must be @Volatile.
+    @Volatile private var currentFactory: dev.stapler.stelekit.repository.RepositoryFactory? = null
 
     // Deferred that resolves when the one-shot UUID migration for the active graph completes.
     // Callers can await this before loading graph content to ensure UUIDs are stable.
@@ -295,50 +299,58 @@ class GraphManager(
         val graphScope = CoroutineScope(coroutineScope.coroutineContext)
         activeGraphJobs[id] = graphScope
 
-        // Create new database for this graph (platform-agnostic URL)
-        val dbUrl = driverFactory.getDatabaseUrl(id)
-        val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl)
-        currentFactory = factory
-        val deviceInfo = try { dev.stapler.stelekit.performance.getDeviceInfo() } catch (_: Exception) { null }
-        val repoSet = factory.createRepositorySet(
-            backend = defaultBackend,
-            scope = graphScope,
-            fileSystem = fileSystem,
-            appVersion = deviceInfo?.appVersion ?: "unknown",
-            platform = deviceInfo?.platform ?: "unknown",
-        )
-        _activeRepositorySet.value = repoSet
-
-        // Run one-shot UUID migration before graph content is loaded.
-        // The migration goes through the writeActor so it is serialised ahead of any
-        // loadGraph writes. We also expose the Deferred so callers can await completion.
-        val writeActor = repoSet.writeActor
+        // Expose a Deferred for callers that need to await the full initialization.
         val deferred = CompletableDeferred<Unit>()
         _pendingMigration = deferred
-        if (writeActor != null && defaultBackend == GraphBackend.SQLDELIGHT) {
-            val db = factory.steleDatabase()
-            graphScope.launch {
-                try {
-                    UuidMigration(writeActor).runIfNeeded(db)
+
+        // Driver creation (which runs MigrationRunner via runBlocking internally) and the
+        // subsequent UUID/changelog migrations all move to an IO coroutine so they never
+        // execute on the main/calling thread. preFlightJob is awaited first to ensure any
+        // startup write-behind flush completes before we open the database.
+        graphScope.launch(PlatformDispatcher.IO) {
+            preFlightJob?.await()
+
+            val dbUrl = driverFactory.getDatabaseUrl(id)
+            val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl)
+            val deviceInfo = try { dev.stapler.stelekit.performance.getDeviceInfo() } catch (_: Exception) { null }
+            val repoSet = factory.createRepositorySet(
+                backend = defaultBackend,
+                scope = graphScope,
+                fileSystem = fileSystem,
+                appVersion = deviceInfo?.appVersion ?: "unknown",
+                platform = deviceInfo?.platform ?: "unknown",
+            )
+            currentFactory = factory
+            _activeRepositorySet.value = repoSet
+
+            if (defaultBackend == GraphBackend.SQLDELIGHT) {
+                val writeActor = repoSet.writeActor
+                if (writeActor != null) {
+                    val db = factory.steleDatabase()
                     try {
-                        MigrationRunner(
-                            registry = MigrationRegistry,
-                            changelogRepo = ChangelogRepository(db),
-                            evaluator = DslEvaluator(repoSet),
-                            applier = ChangeApplier(writeActor, opLogger = null),
-                            flusher = null,
-                        ).runPending(id, repoSet, graphInfo.path)
-                    } catch (e: InterruptedMigrationException) {
-                        logger.error("MigrationRunner: interrupted migration detected for graph $id", e)
-                    } catch (e: MigrationTamperedError) {
-                        logger.error("MigrationRunner: tampered migration detected for graph $id", e)
+                        UuidMigration(writeActor).runIfNeeded(db)
+                        try {
+                            MigrationRunner(
+                                registry = MigrationRegistry,
+                                changelogRepo = ChangelogRepository(db),
+                                evaluator = DslEvaluator(repoSet),
+                                applier = ChangeApplier(writeActor, opLogger = null),
+                                flusher = null,
+                            ).runPending(id, repoSet, graphInfo.path)
+                        } catch (e: InterruptedMigrationException) {
+                            logger.error("MigrationRunner: interrupted migration detected for graph $id", e)
+                        } catch (e: MigrationTamperedError) {
+                            logger.error("MigrationRunner: tampered migration detected for graph $id", e)
+                        }
+                    } finally {
+                        deferred.complete(Unit)
                     }
-                } finally {
+                } else {
                     deferred.complete(Unit)
                 }
+            } else {
+                deferred.complete(Unit)
             }
-        } else {
-            deferred.complete(Unit)
         }
 
         // Update active graph
