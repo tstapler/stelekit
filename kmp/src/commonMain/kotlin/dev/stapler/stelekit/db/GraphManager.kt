@@ -61,8 +61,9 @@ class GraphManager(
     val activeRepositorySet: StateFlow<RepositorySet?> = _activeRepositorySet.asStateFlow()
     
     // Track current factory for lifecycle management.
-    // Written from a background coroutine (switchGraph's IO launch) — must be @Volatile.
-    @Volatile private var currentFactory: dev.stapler.stelekit.repository.RepositoryFactory? = null
+    // Written from a background coroutine (switchGraph's IO launch).
+    // MutableStateFlow used as the thread-safe state carrier; currentFactory is a convenience alias.
+    private var currentFactory: dev.stapler.stelekit.repository.RepositoryFactory? = null
 
     // Deferred that resolves when the one-shot UUID migration for the active graph completes.
     // Callers can await this before loading graph content to ensure UUIDs are stable.
