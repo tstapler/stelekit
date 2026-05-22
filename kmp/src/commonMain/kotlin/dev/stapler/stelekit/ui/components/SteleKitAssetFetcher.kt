@@ -25,7 +25,9 @@ import coil3.toUri
  * Returns null (cache miss) if [filename] contains path traversal sequences (`..`) or
  * path separator characters (`/`, `\`) to prevent escaping the assets directory.
  */
-class SteleKitAssetMapper(private val graphRoot: String) : Mapper<String, Uri> {
+class SteleKitAssetMapper(graphRoot: String) : Mapper<String, Uri> {
+    private val graphRoot = graphRoot.trimEnd('/')
+
     override fun map(data: String, options: Options): Uri? {
         if (!data.startsWith("../assets/")) return null
         val filename = data.removePrefix("../assets/")

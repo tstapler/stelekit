@@ -12,9 +12,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 
-// TODO: Wire ImageBlock in BlockItem dispatch when paragraph block contains only an ImageNode
-// For now, ImageNode in mixed content renders as a link annotation via MarkdownEngine.
-
 /**
  * Renders a Logseq image node as a full-width async image using Coil 3.
  *

@@ -103,7 +103,7 @@ open class SearchBenchmark {
 
     @Benchmark
     fun searchPagesByTitleSingleToken(): Any = runBlocking {
-        repo.searchPagesByTitle(query = "design", limit = 50).first()
+        repo.searchPagesByTitle(query = "design", limit = 50).last()
     }
 
     @Benchmark
