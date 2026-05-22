@@ -11,7 +11,7 @@ import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlin.time.Clock
@@ -157,7 +157,7 @@ class SearchRepositoryIntegrationTests {
             offset = 0
         )
 
-        val results = repository.searchWithFilters(request).first()
+        val results = repository.searchWithFilters(request).last()
         assertTrue(results.isRight())
         // SQLDelight implementation currently only does basic content/title matching
         assertTrue(results.getOrNull()?.blocks?.any { it.uuid == generateUuid(1) } == true)
@@ -194,7 +194,7 @@ class SearchRepositoryIntegrationTests {
         blockRepo.saveBlock(createTestBlock(generateUuid(31), otherPageUuid, "project alpha notes from meeting", position = 1))
 
         val request = SearchRequest(query = "project alpha", limit = 10, offset = 0)
-        val result = repository.searchWithFilters(request).first()
+        val result = repository.searchWithFilters(request).last()
         assertTrue(result.isRight())
 
         val ranked = result.getOrNull()?.ranked.orEmpty()
@@ -246,7 +246,7 @@ class SearchRepositoryIntegrationTests {
             limit = 10,
             offset = 0
         )
-        val result = repository.searchWithFilters(request).first()
+        val result = repository.searchWithFilters(request).last()
         assertTrue(result.isRight())
 
         val ranked = result.getOrNull()?.ranked.orEmpty()
@@ -295,7 +295,7 @@ class SearchRepositoryIntegrationTests {
         blockRepo.saveBlock(staleBlock)
 
         val request = SearchRequest(query = "kotlin guide", limit = 10, offset = 0)
-        val result = repository.searchWithFilters(request).first()
+        val result = repository.searchWithFilters(request).last()
         assertTrue(result.isRight())
 
         val ranked = result.getOrNull()?.ranked.orEmpty()
@@ -360,7 +360,7 @@ class SearchRepositoryIntegrationTests {
         repository.recordPageVisit(visitedPageUuid)
 
         val request = SearchRequest(query = "kotlin development", limit = 10)
-        val result = repository.searchWithFilters(request).first()
+        val result = repository.searchWithFilters(request).last()
         assertTrue(result.isRight())
 
         val ranked = result.getOrNull()?.ranked.orEmpty()
@@ -396,7 +396,7 @@ class SearchRepositoryIntegrationTests {
         blockRepo.saveBlock(createTestBlock(generateUuid(741), taxPlanningPageUuid, heavyContent, position = 1))
         // "Taxes" page has no blocks — would normally rank lower
 
-        val result = repository.searchWithFilters(SearchRequest(query = "Taxes", limit = 10)).first()
+        val result = repository.searchWithFilters(SearchRequest(query = "Taxes", limit = 10)).last()
         assertTrue(result.isRight())
 
         val ranked = result.getOrNull()?.ranked.orEmpty()
@@ -424,7 +424,7 @@ class SearchRepositoryIntegrationTests {
         blockRepo.saveBlock(createTestBlock(generateUuid(741), taxPlanningPageUuid, heavyContent, position = 1))
 
         // Query with uppercase — should still find "Taxes" first
-        val result = repository.searchWithFilters(SearchRequest(query = "TAXES", limit = 10)).first()
+        val result = repository.searchWithFilters(SearchRequest(query = "TAXES", limit = 10)).last()
         assertTrue(result.isRight())
 
         val ranked = result.getOrNull()?.ranked.orEmpty()
@@ -449,7 +449,7 @@ class SearchRepositoryIntegrationTests {
             "taxes taxes taxes taxes tax deduction", position = 1))
 
         // Query "tax" does not exactly match "Taxes" (different string)
-        val result = repository.searchWithFilters(SearchRequest(query = "tax", limit = 10)).first()
+        val result = repository.searchWithFilters(SearchRequest(query = "tax", limit = 10)).last()
         assertTrue(result.isRight())
         val ranked = result.getOrNull()?.ranked.orEmpty()
 

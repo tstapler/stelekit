@@ -19,7 +19,7 @@ import kotlinx.benchmark.Mode
 import kotlinx.benchmark.OutputTimeUnit
 import kotlinx.benchmark.Setup
 import kotlinx.benchmark.State
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.runBlocking
 import org.openjdk.jmh.annotations.Level
 import org.openjdk.jmh.annotations.Scope
@@ -88,17 +88,17 @@ open class SearchBenchmark {
 
     @Benchmark
     fun searchWithFiltersSingleToken(): Any = runBlocking {
-        repo.searchWithFilters(SearchRequest(query = "programming", limit = 50)).first()
+        repo.searchWithFilters(SearchRequest(query = "programming", limit = 50)).last()
     }
 
     @Benchmark
     fun searchWithFiltersMultiToken(): Any = runBlocking {
-        repo.searchWithFilters(SearchRequest(query = "programming notes kotlin", limit = 50)).first()
+        repo.searchWithFilters(SearchRequest(query = "programming notes kotlin", limit = 50)).last()
     }
 
     @Benchmark
     fun searchWithFiltersPhraseQuery(): Any = runBlocking {
-        repo.searchWithFilters(SearchRequest(query = "\"programming notes\"", limit = 50)).first()
+        repo.searchWithFilters(SearchRequest(query = "\"programming notes\"", limit = 50)).last()
     }
 
     @Benchmark

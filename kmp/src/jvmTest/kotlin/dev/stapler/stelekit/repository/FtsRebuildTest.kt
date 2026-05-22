@@ -3,7 +3,7 @@ package dev.stapler.stelekit.repository
 import dev.stapler.stelekit.benchmark.SyntheticGraphDbBuilder
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -49,7 +49,7 @@ class FtsRebuildTest {
         // Subsequent search should still work
         val searchResult = repo.searchWithFilters(
             SearchRequest(query = "programming", limit = 5)
-        ).first()
+        ).last()
         assertTrue(searchResult.isRight(), "Search after FTS rebuild should succeed")
         val ranked = searchResult.getOrNull()?.ranked.orEmpty()
         assertTrue(ranked.isNotEmpty(), "Should find results after FTS rebuild")
