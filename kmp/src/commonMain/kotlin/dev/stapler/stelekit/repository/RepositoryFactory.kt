@@ -298,6 +298,7 @@ class RepositoryFactoryImpl(
             while (true) {
                 delay(5_000)
                 val drained = ringBuffer.drain()
+                if (drained.isNotEmpty()) dev.stapler.stelekit.performance.SpanArchiver.archive(drained)
                 val drainBlock: suspend () -> Either<DomainError, Unit> = {
                     drained.forEach { span -> spanRepository.insertSpan(span) }
                     spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)

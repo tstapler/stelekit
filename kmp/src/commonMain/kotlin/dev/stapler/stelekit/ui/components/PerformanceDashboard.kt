@@ -162,15 +162,22 @@ private fun SpansTab(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // SQLite-persisted spans (reactive flow); fall back to polling ring buffer if no repo.
-    val liveSpans by if (spanRepository != null) {
+    // SQLite-persisted spans merged with in-flight ring buffer spans.
+    // The ring buffer holds spans from the last 0–5s that haven't been drained to SQLite yet,
+    // so without this merge those recent spans are invisible when navigating back to this page.
+    val sqliteSpans by if (spanRepository != null) {
         spanRepository.getRecentSpans(500).collectAsState(emptyList())
     } else {
-        produceState(emptyList<SerializedSpan>()) {
-            while (true) {
-                value = ringBuffer?.snapshot()?.reversed() ?: emptyList()
-                delay(1000)
-            }
+        remember { kotlinx.coroutines.flow.MutableStateFlow(emptyList<SerializedSpan>()) }.collectAsState()
+    }
+
+    val liveSpans by produceState(sqliteSpans, sqliteSpans, ringBuffer) {
+        while (true) {
+            val inFlight = ringBuffer?.snapshot() ?: emptyList()
+            val inFlightIds = inFlight.map { it.spanId }.filter { it.isNotEmpty() }.toHashSet()
+            value = (sqliteSpans.filterNot { it.spanId.isNotEmpty() && it.spanId in inFlightIds } + inFlight)
+                .sortedByDescending { it.startEpochMs }
+            delay(1000)
         }
     }
 

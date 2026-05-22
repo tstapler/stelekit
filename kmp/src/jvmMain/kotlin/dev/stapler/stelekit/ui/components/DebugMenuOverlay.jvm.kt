@@ -29,6 +29,9 @@ actual fun DebugMenuOverlay(
                 DebugToggleRow("JankStats", state.isJankStatsEnabled) {
                     onStateChange(state.copy(isJankStatsEnabled = it))
                 }
+                DebugToggleRow("Span Capture", state.isSpanCaptureEnabled) {
+                    onStateChange(state.copy(isSpanCaptureEnabled = it))
+                }
                 Spacer(Modifier.height(8.dp))
                 Button(onClick = onExportBugReport, modifier = Modifier.fillMaxWidth()) {
                     Text("Export Bug Report")
