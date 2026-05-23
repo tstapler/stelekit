@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.27.0](https://github.com/tstapler/stelekit/compare/v0.26.4...v0.27.0) (2026-05-23)
+
+
+### Features
+
+* **android,vault:** wire Android OTel/Git/WorkManager, add vault settings UI ([b2bcb9f](https://github.com/tstapler/stelekit/commit/b2bcb9fb7792f7f19a95c31452c0ff2feed57466))
+* **perf:** on-demand span capture, GZIP archive, and live performance dashboard ([#92](https://github.com/tstapler/stelekit/issues/92)) ([afb7b4d](https://github.com/tstapler/stelekit/commit/afb7b4dd6450260ce9345625569cacb7d3b95117))
+* **search:** progressive page→block results with loading indicator ([93aa386](https://github.com/tstapler/stelekit/commit/93aa3868a72299f0fd4ef2400489fcf1d00c0bb2))
+
+
+### Bug Fixes
+
+* **images:** render Logseq size-hint images as actual images ([130fdb5](https://github.com/tstapler/stelekit/commit/130fdb5fdd8d9394f528c36487a1262e89eff596))
+* **search:** update tests to use .last() for progressive search flow ([a3995a8](https://github.com/tstapler/stelekit/commit/a3995a8fd368f22887f70ed111bfce32f4ee5afb))
+
 ## [0.26.4](https://github.com/tstapler/stelekit/compare/v0.26.3...v0.26.4) (2026-05-21)
 
 
