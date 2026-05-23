@@ -32,6 +32,7 @@ import kotlinx.coroutines.launch
 fun VaultSettings(
     isParanoidMode: Boolean,
     isVaultUnlocked: Boolean,
+    modifier: Modifier = Modifier,
     onCreateVault: (suspend (CharArray) -> Either<VaultError, Unit>)? = null,
     onAddKeyslot: (suspend (CharArray) -> Either<VaultError, Unit>)? = null,
     onRemoveKeyslot: (suspend (Int) -> Either<VaultError, Unit>)? = null,
@@ -40,61 +41,63 @@ fun VaultSettings(
 ) {
     val scope = rememberCoroutineScope()
 
-    // Status section
-    SettingsSection("Encryption Status") {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = if (isParanoidMode) Icons.Default.Shield else Icons.Default.LockOpen,
-                contentDescription = null,
-                tint = if (isParanoidMode) MaterialTheme.colorScheme.primary
-                       else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Column {
-                Text(
-                    text = if (isParanoidMode) "Paranoid mode enabled" else "Encryption disabled",
-                    style = MaterialTheme.typography.bodyLarge,
+    Column(modifier = modifier) {
+        // Status section
+        SettingsSection("Encryption Status") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (isParanoidMode) Icons.Default.Shield else Icons.Default.LockOpen,
+                    contentDescription = null,
+                    tint = if (isParanoidMode) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
                 )
-                Text(
-                    text = when {
-                        !isParanoidMode -> "Files are stored as plain markdown."
-                        isVaultUnlocked -> "Graph is unlocked. Files are encrypted at rest."
-                        else -> "Graph is locked."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = if (isParanoidMode) "Paranoid mode enabled" else "Encryption disabled",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        text = when {
+                            !isParanoidMode -> "Files are stored as plain markdown."
+                            isVaultUnlocked -> "Graph is unlocked. Files are encrypted at rest."
+                            else -> "Graph is locked."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
-    }
 
-    HorizontalDivider()
-
-    // Enable encryption (only shown when not yet encrypted and engine is available)
-    if (!isParanoidMode && onCreateVault != null) {
-        CreateVaultSection(onCreateVault)
-        HorizontalDivider()
-    }
-
-    // Keyslot management (only shown when vault is unlocked)
-    if (isParanoidMode && isVaultUnlocked) {
-        KeyslotManagementSection(
-            onAddKeyslot = onAddKeyslot,
-            onRemoveKeyslot = onRemoveKeyslot,
-            onListActiveSlots = onListActiveSlots,
-        )
         HorizontalDivider()
 
-        if (onLockVault != null) {
-            SettingsSection("Session") {
-                OutlinedButton(
-                    onClick = onLockVault,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Lock vault")
+        // Enable encryption (only shown when not yet encrypted and engine is available)
+        if (!isParanoidMode && onCreateVault != null) {
+            CreateVaultSection(onCreateVault)
+            HorizontalDivider()
+        }
+
+        // Keyslot management (only shown when vault is unlocked)
+        if (isParanoidMode && isVaultUnlocked) {
+            KeyslotManagementSection(
+                onAddKeyslot = onAddKeyslot,
+                onRemoveKeyslot = onRemoveKeyslot,
+                onListActiveSlots = onListActiveSlots,
+            )
+            HorizontalDivider()
+
+            if (onLockVault != null) {
+                SettingsSection("Session") {
+                    OutlinedButton(
+                        onClick = onLockVault,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Lock vault")
+                    }
                 }
             }
         }
@@ -162,10 +165,13 @@ private fun KeyslotManagementSection(
     var removeError by remember { mutableStateOf<String?>(null) }
     var showAddForm by remember { mutableStateOf(false) }
 
+    val currentOnListActiveSlots by rememberUpdatedState(onListActiveSlots)
+
     LaunchedEffect(Unit) {
-        if (onListActiveSlots != null) {
+        val listSlots = currentOnListActiveSlots
+        if (listSlots != null) {
             loading = true
-            activeSlots = onListActiveSlots()
+            activeSlots = listSlots()
             loading = false
         }
     }
