@@ -23,11 +23,16 @@ data class SerializedSpan(
  * On JVM, dispatch to a dedicated coroutine dispatcher before calling.
  *
  * When capacity is exceeded, the oldest entry is dropped.
+ *
+ * Set [enabled] to false to make [record] a no-op (for opt-in span capture).
+ * Histograms are unaffected by this flag — they are collected separately.
  */
 class RingBufferSpanExporter(val capacity: Int = 1000) {
+    @kotlin.concurrent.Volatile var enabled: Boolean = false
     private val buffer = ArrayDeque<SerializedSpan>(capacity)
 
     fun record(span: SerializedSpan) {
+        if (!enabled) return
         if (buffer.size >= capacity) buffer.removeFirst()
         buffer.addLast(span)
     }
