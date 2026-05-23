@@ -20,9 +20,11 @@ import dev.stapler.stelekit.performance.SpanEmitter
 import dev.stapler.stelekit.performance.SpanLogSink
 import dev.stapler.stelekit.performance.TimingDriverWrapper
 import dev.stapler.stelekit.performance.wrapWithOtelIfAvailable
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 
 /**
@@ -298,7 +300,9 @@ class RepositoryFactoryImpl(
             while (true) {
                 delay(5_000)
                 val drained = ringBuffer.drain()
-                if (drained.isNotEmpty()) dev.stapler.stelekit.performance.SpanArchiver.archive(drained)
+                if (drained.isNotEmpty()) withContext(PlatformDispatcher.IO) {
+                    dev.stapler.stelekit.performance.SpanArchiver.archive(drained)
+                }
                 val drainBlock: suspend () -> Either<DomainError, Unit> = {
                     drained.forEach { span -> spanRepository.insertSpan(span) }
                     spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)

@@ -165,17 +165,20 @@ private fun SpansTab(
     // SQLite-persisted spans merged with in-flight ring buffer spans.
     // The ring buffer holds spans from the last 0–5s that haven't been drained to SQLite yet,
     // so without this merge those recent spans are invisible when navigating back to this page.
-    val sqliteSpans by if (spanRepository != null) {
-        spanRepository.getRecentSpans(500).collectAsState(emptyList())
-    } else {
-        remember { kotlinx.coroutines.flow.MutableStateFlow(emptyList<SerializedSpan>()) }.collectAsState()
-    }
+    val sqliteSpans by (spanRepository?.getRecentSpans(500) ?: kotlinx.coroutines.flow.flowOf(emptyList<SerializedSpan>()))
+        .collectAsState(emptyList())
 
-    val liveSpans by produceState(sqliteSpans, sqliteSpans, ringBuffer) {
+    val currentSqliteSpans = rememberUpdatedState(sqliteSpans)
+    val liveSpans by produceState(sqliteSpans, ringBuffer, spanRepository) {
+        if (ringBuffer == null) {
+            value = currentSqliteSpans.value
+            return@produceState
+        }
         while (true) {
-            val inFlight = ringBuffer?.snapshot() ?: emptyList()
+            val inFlight = ringBuffer.snapshot()
             val inFlightIds = inFlight.map { it.spanId }.filter { it.isNotEmpty() }.toHashSet()
-            value = (sqliteSpans.filterNot { it.spanId.isNotEmpty() && it.spanId in inFlightIds } + inFlight)
+            val sqlite = currentSqliteSpans.value
+            value = (sqlite.filterNot { it.spanId.isNotEmpty() && it.spanId in inFlightIds } + inFlight)
                 .sortedByDescending { it.startEpochMs }
             delay(1000)
         }

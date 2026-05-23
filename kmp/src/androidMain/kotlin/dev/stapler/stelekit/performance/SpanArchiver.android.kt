@@ -27,8 +27,11 @@ actual object SpanArchiver {
                     }
                 }
             }
-        } catch (_: Exception) {
-            // Non-fatal: archive failure must not interrupt the drain loop
+            // Post-write check: a single large drain can push the file past MAX_BYTES;
+            // delete so the next drain starts fresh rather than appending to an over-limit file.
+            if (file.exists() && file.length() > MAX_BYTES) file.delete()
+        } catch (e: Exception) {
+            android.util.Log.w("SpanArchiver", "Failed to archive spans", e)
         }
     }
 }
