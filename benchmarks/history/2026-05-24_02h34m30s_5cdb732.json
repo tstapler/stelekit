@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-24 02:34:30 UTC",
+  "gitSha": "5cdb732",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 3,
+  "phase3Ms": 14,
+  "totalMs": 27,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 30,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 136,
+      "pct": 66.7
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 15,
+      "pct": 7.4
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 6,
+      "pct": 2.9
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 4,
+      "pct": 2.0
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 4,
+      "pct": 2.0
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "long[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "sun.util.locale.LocaleObjectCache$CacheEntry_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.reflect.Method_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2096,
+      "pct": 99.2
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-d9064000-8007-4310-b379-74b9527f63fe-libsqlitejdbc.so",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "dev/stapler/stelekit/performance/QueryStatsCollector$Accum.getB100_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__xstat64",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pread",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__libc_free",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "InstanceKlass::find_method_index",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "app/cash/sqldelight/driver/jdbc/JdbcDriver.execute_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ConstantPool::resolve_constant_at_impl",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "JfrVframeStream::JfrVframeStream",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}
