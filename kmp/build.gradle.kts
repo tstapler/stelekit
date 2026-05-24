@@ -334,6 +334,7 @@ composeCompiler {
 if (project.findProperty("enableJs") == "true") {
     afterEvaluate {
         tasks.named("wasmJsBrowserDistribution") {
+            notCompatibleWithConfigurationCache("copies sqlite-wasm files using project.file() and project.copy() APIs")
             doLast {
                 val sqliteWasmSrc = file("${rootDir}/build/wasm/node_modules/@sqlite.org/sqlite-wasm/sqlite-wasm/jswasm")
                 val distDir = file("${projectDir}/build/dist/wasmJs/productionExecutable")
@@ -778,9 +779,6 @@ afterEvaluate {
     // the JFR regardless of whether doLast ran.
     val latestJfrPointer = IoFile(profilesDir, "latest.jfr.path")
 
-    val jfrconvPath = listOf("jfrconv", "/opt/homebrew/bin/jfrconv", "/usr/local/bin/jfrconv")
-        .firstOrNull { cmd -> runCatching { ProcessBuilder("which", cmd).start().waitFor() == 0 }.getOrDefault(false) }
-
     val asyncProfilerLib = listOf(
         "/home/linuxbrew/.linuxbrew/lib/libasyncProfiler.so",
         "/usr/local/lib/libasyncProfiler.so",
@@ -795,7 +793,10 @@ afterEvaluate {
     val convertLastProfile = tasks.register("convertLastProfile") {
         group = "profiling"
         description = "Convert the most recent JFR profile to collapsed stacks. Runs automatically after :run."
+        notCompatibleWithConfigurationCache("runs external jfrconv process and uses project APIs at execution time")
         doLast {
+            val jfrconvPath = listOf("jfrconv", "/opt/homebrew/bin/jfrconv", "/usr/local/bin/jfrconv")
+                .firstOrNull { cmd -> runCatching { ProcessBuilder("which", cmd).start().waitFor() == 0 }.getOrDefault(false) }
             val jfr = latestJfrPointer.takeIf { it.exists() }
                 ?.readText()?.trim()?.let { IoFile(it) }
                 ?: (profilesDir.listFiles { f: IoFile -> f.extension == "jfr" }
@@ -845,6 +846,7 @@ afterEvaluate {
         ?: "dev"
 
     tasks.named<JavaExec>("run") {
+        notCompatibleWithConfigurationCache("uses project.findProperty at execution time")
         // finalizedBy runs convertLastProfile even if run fails or is cancelled (Ctrl+C).
         finalizedBy(convertLastProfile)
         systemProperty("app.version", resolvedAppVersion)

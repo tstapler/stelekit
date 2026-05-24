@@ -1470,7 +1470,9 @@ private fun GraphDialogLayer(
         onListActiveSlots = onListActiveSlots,
     )
 
-    if (appState.gitSetupVisible && gitSyncService != null && gitRepository != null && gitConfigRepository != null) {
+    val canShowGitSetup = appState.gitSetupVisible &&
+        gitSyncService != null && gitRepository != null && gitConfigRepository != null
+    if (canShowGitSetup) {
         dev.stapler.stelekit.ui.screens.git.GitSetupScreen(
             graphId = activeGraphId ?: "",
             gitRepository = gitRepository,
