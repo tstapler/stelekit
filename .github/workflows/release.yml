@@ -131,6 +131,14 @@ jobs:
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # lintVitalAnalyzeRelease and D8 desugar exhaust the 512m default Metaspace.
+          # Override gradle.properties jvmargs: reduce heap pre-alloc (no warm daemon),
+          # double Metaspace to 1g to prevent intermittent OOM on CI runners.
+          GRADLE_OPTS: >-
+            -Xms2g -Xmx4g
+            -XX:MaxMetaspaceSize=1g
+            -XX:ReservedCodeCacheSize=512m
+            -Dfile.encoding=UTF-8
         run: |
           APP_VERSION="${{ needs.resolve-version.outputs.version }}"
           ./gradlew :androidApp:assembleRelease --no-daemon --build-cache \
