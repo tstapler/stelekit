@@ -69,6 +69,11 @@ jobs:
               --dir fdroid/repo/ || true
           done
 
+      - name: Seed repo icon
+        run: |
+          mkdir -p fdroid/repo/icons
+          cp fdroid/icons/icon.png fdroid/repo/icons/icon.png
+
       - name: Generate fdroid index
         working-directory: fdroid
         run: fdroid update --create-metadata --verbose

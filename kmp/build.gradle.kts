@@ -459,6 +459,8 @@ tasks.register<Test>("jvmTestFast") {
 tasks.register<Test>("jvmTestProfile") {
     group = "verification"
     description = "Profile graph load TTI with JFR + async-profiler wall-clock. Usage: -PgraphPath=/your/graph"
+    // doLast references project.layout and captures rootProject — incompatible with config cache.
+    notCompatibleWithConfigurationCache("jvmTestProfile captures project reference for JFR/flamegraph processing")
 
     classpath = tasks.named<Test>("jvmTest").get().classpath
     testClassesDirs = tasks.named<Test>("jvmTest").get().testClassesDirs
