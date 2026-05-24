@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -41,6 +42,7 @@ import androidx.compose.foundation.lazy.items
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.ui.LocalWindowSizeClass
 import dev.stapler.stelekit.ui.Screen
 import dev.stapler.stelekit.ui.isMobile
@@ -67,6 +69,9 @@ fun LeftSidebar(
     onAddGraph: () -> Unit = {},
     onRemoveGraph: (String) -> Unit = {},
     onCollapse: () -> Unit = {},
+    syncState: SyncState = SyncState.Idle,
+    onSyncClick: () -> Unit = {},
+    onGitSetup: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isMobile = LocalWindowSizeClass.current.isMobile
@@ -114,6 +119,12 @@ fun LeftSidebar(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
+            SyncStatusBadge(
+                syncState = syncState,
+                onSyncClick = onSyncClick,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            )
+
             // Navigation Section — hidden on mobile since bottom nav covers these destinations
             if (!isMobile) {
                 Text(
@@ -129,6 +140,7 @@ fun LeftSidebar(
                 NavigationItem("Gallery", Icons.Default.PhotoLibrary, currentScreen is Screen.Gallery) { onNavigate(Screen.Gallery) }
                 NavigationItem("Unlinked References", Icons.Default.Link, currentScreen is Screen.GlobalUnlinkedReferences) { onNavigate(Screen.GlobalUnlinkedReferences) }
                 NavigationItem("Notifications", Icons.Default.Notifications, currentScreen is Screen.Notifications) { onNavigate(Screen.Notifications) }
+                NavigationItem("Git Sync", Icons.Default.Sync, false) { onGitSetup() }
 
                 // Developer tools — accessible via Settings → Debug on mobile
                 if (currentScreen is Screen.Logs || currentScreen is Screen.Performance) {

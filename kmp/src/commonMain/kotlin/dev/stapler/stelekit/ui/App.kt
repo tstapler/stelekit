@@ -410,16 +410,18 @@ private fun GraphContent(
 
     // Wire git sync service for the active graph.
     // Requires a platform-specific GitRepository; no-op when none is provided.
-    val gitSyncService = remember(gitRepository) {
-        if (gitRepository == null) return@remember null
-        val configRepo = graphManager.createGitConfigRepository() ?: return@remember null
+    val gitConfigRepository = remember(gitRepository) {
+        if (gitRepository == null) null else graphManager.createGitConfigRepository()
+    }
+    val gitSyncService = remember(gitConfigRepository) {
+        if (gitRepository == null || gitConfigRepository == null) return@remember null
         val networkMonitor = dev.stapler.stelekit.platform.NetworkMonitor()
         dev.stapler.stelekit.git.GitSyncService(
             gitRepository = gitRepository,
             graphLoader = graphLoader,
             graphWriter = graphWriter,
             editLock = dev.stapler.stelekit.git.EditLock(),
-            configRepository = configRepo,
+            configRepository = gitConfigRepository,
             networkMonitor = networkMonitor,
             fileSystem = fileSystem,
         )
@@ -779,6 +781,7 @@ private fun GraphContent(
     val voiceCaptureState by voiceCaptureViewModel.state.collectAsState()
     val graphRegistry by graphManager.graphRegistry.collectAsState()
     val activeGraphId = graphRegistry.activeGraphId
+    val syncState by viewModel.syncState.collectAsState()
 
     StelekitTheme(themeMode = appState.themeMode) {
         CompositionLocalProvider(LocalI18n provides I18n(appState.language)) {
@@ -939,7 +942,10 @@ private fun GraphContent(
                                     closeSidebarIfMobile()
                                 },
                                 onRemoveGraph = { scope.launch { graphManager.removeGraph(it) } },
-                                onCollapse = { viewModel.toggleSidebar() }
+                                onCollapse = { viewModel.toggleSidebar() },
+                                syncState = syncState,
+                                onSyncClick = { viewModel.triggerSync() },
+                                onGitSetup = { viewModel.openGitSetup() },
                             )
                         },
                         rightSidebar = {
@@ -1118,6 +1124,10 @@ private fun GraphContent(
                         onRemoveKeyslot = onRemoveKeyslot,
                         onLockVault = onLockVault,
                         onListActiveSlots = onListActiveSlots,
+                        gitSyncService = gitSyncService,
+                        gitRepository = gitRepository,
+                        gitConfigRepository = gitConfigRepository,
+                        activeGraphId = activeGraphId,
                     )
 
                     } // CompositionLocalProvider(LocalWindowSizeClass)
@@ -1408,6 +1418,10 @@ private fun GraphDialogLayer(
     onRemoveKeyslot: (suspend (Int) -> arrow.core.Either<dev.stapler.stelekit.vault.VaultError, Unit>)? = null,
     onLockVault: (() -> Unit)? = null,
     onListActiveSlots: (suspend () -> List<Int>)? = null,
+    gitSyncService: dev.stapler.stelekit.git.GitSyncService? = null,
+    gitRepository: dev.stapler.stelekit.git.GitRepository? = null,
+    gitConfigRepository: dev.stapler.stelekit.git.GitConfigRepository? = null,
+    activeGraphId: String? = null,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -1455,6 +1469,61 @@ private fun GraphDialogLayer(
         onLockVault = onLockVault,
         onListActiveSlots = onListActiveSlots,
     )
+
+    if (appState.gitSetupVisible && gitSyncService != null && gitRepository != null && gitConfigRepository != null) {
+        dev.stapler.stelekit.ui.screens.git.GitSetupScreen(
+            graphId = activeGraphId ?: "",
+            gitRepository = gitRepository,
+            gitConfigRepository = gitConfigRepository,
+            gitSyncService = gitSyncService,
+            onDismiss = { viewModel.dismissGitSetup() },
+            onSave = { viewModel.dismissGitSetup() },
+        )
+    }
+
+    if (appState.conflictResolutionVisible) {
+        val liveSyncState by viewModel.syncState.collectAsState()
+        val conflictFiles = if (liveSyncState is dev.stapler.stelekit.git.model.SyncState.ConflictPending)
+            (liveSyncState as dev.stapler.stelekit.git.model.SyncState.ConflictPending).conflicts.map { it.filePath }
+        else emptyList()
+
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { viewModel.dismissConflictResolution() },
+            title = { androidx.compose.material3.Text("Merge Conflict") },
+            text = {
+                androidx.compose.foundation.layout.Column {
+                    androidx.compose.material3.Text(
+                        "Git detected merge conflicts in ${conflictFiles.size} file(s). " +
+                        "Resolve them in your editor or use the options below."
+                    )
+                    if (conflictFiles.isNotEmpty()) {
+                        androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
+                        conflictFiles.forEach { path ->
+                            androidx.compose.material3.Text(
+                                "• $path",
+                                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { viewModel.dismissConflictResolution() }) {
+                    androidx.compose.material3.Text("Dismiss")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        viewModel.dismissConflictResolution()
+                        viewModel.openGitSetup()
+                    }
+                ) {
+                    androidx.compose.material3.Text("Open Git Setup")
+                }
+            },
+        )
+    }
 
     appState.diskConflict?.let { conflict ->
         DiskConflictDialog(
