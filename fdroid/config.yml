@@ -17,6 +17,8 @@ repo_description: >-
 
 archive_older: 5
 
+repo_icon: icons/icon.png
+
 repo_keyalias: onyx
 keydname: CN=onyx, OU=F-Droid
 
