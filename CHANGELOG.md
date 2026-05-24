@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.1](https://github.com/tstapler/stelekit/compare/v0.27.0...v0.27.1) (2026-05-24)
+
+
+### Bug Fixes
+
+* **ci:** increase Metaspace to 1g for Android release build ([2b99076](https://github.com/tstapler/stelekit/commit/2b99076435f1bdebc581a571b50cfa1fbe417b3f))
+
 ## [0.27.0](https://github.com/tstapler/stelekit/compare/v0.26.4...v0.27.0) (2026-05-23)
 
 
