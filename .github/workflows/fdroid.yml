@@ -94,7 +94,9 @@ jobs:
         working-directory: site
         run: |
           npm ci
-          npm run build
+          # Expose the demo iframe only when the demo files were actually downloaded.
+          DEMO_AVAILABLE=$(test -f public/demo/index.html && echo true || echo false)
+          DEMO_AVAILABLE=$DEMO_AVAILABLE npm run build
 
       - name: Merge fdroid repo into site output
         run: |

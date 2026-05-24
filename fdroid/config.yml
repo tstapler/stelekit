@@ -15,7 +15,7 @@ repo_description: >-
   Self-hosted F-Droid repository for SteleKit — a local-first Markdown
   outliner and note-taking app compatible with the Logseq file format.
 
-archive_older: 3
+archive_older: 5
 
 repo_keyalias: onyx
 keydname: CN=onyx, OU=F-Droid
