@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.28.0](https://github.com/tstapler/stelekit/compare/v0.27.1...v0.28.0) (2026-05-24)
+
+
+### Features
+
+* **git:** wire git UI — sync badge, setup wizard, conflict dialog ([5cdb732](https://github.com/tstapler/stelekit/commit/5cdb732de6fa975e9143d540e74388f581fa7f49))
+
+
+### Bug Fixes
+
+* **ci:** resolve Benchmark config-cache crash and F-Droid repo-icon path ([ddc1356](https://github.com/tstapler/stelekit/commit/ddc13569b59eef67afa7574b3db26674fd5ef346))
+* **ci:** resolve detekt ComplexCondition and config-cache failures ([640de97](https://github.com/tstapler/stelekit/commit/640de97916e7b49c1a95ab6a8b8a96605b5d27e9))
+* **fdroid:** add app icon and fastlane metadata to fix F-Droid listing ([85b1684](https://github.com/tstapler/stelekit/commit/85b1684e1d0e15b25129f5e776f4db3ae601735e))
+* **fdroid:** set DEMO_AVAILABLE when building site, bump archive_older to 5 ([b4d13dd](https://github.com/tstapler/stelekit/commit/b4d13ddc0c10dfc9ff8928dec57fb4ae0d66853b))
+
 ## [0.27.1](https://github.com/tstapler/stelekit/compare/v0.27.0...v0.27.1) (2026-05-24)
 
 
