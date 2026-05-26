@@ -117,24 +117,24 @@ class DatabaseWriteActor(
     private fun channelFor(priority: Priority) =
         if (priority == Priority.HIGH) highPriority else lowPriority
 
-    // Counts write operations that have been enqueued but whose DB round-trip has not yet
-    // completed. Incremented before send() in execute(), decremented after await() in execute().
-    // Used by hasPendingWrites to extend conflict detection into the actor-queue window.
-    // Volatile + plain arithmetic is sufficient: this is a best-effort visibility flag, not
-    // a safety-critical lock. The only requirement is that hasPendingWrites returns true as
-    // long as any call to execute() has not yet returned.
-    @Volatile private var _activeOps: Int = 0
+    // True while the actor coroutine is executing a processRequest call.
+    // Written exclusively by the single actor coroutine; read by callers.
+    // @Volatile gives the required single-writer/multi-reader visibility without atomics.
+    @Volatile private var _isActorProcessing: Boolean = false
 
     /**
-     * Returns true if any write operation is currently pending or in-flight through the actor.
-     * Covers both the channel-queue window (not yet dequeued) and the processing window
-     * (dequeued but DB transaction not yet committed).
+     * True while any write is queued in the channels or currently being processed.
+     *
+     * Thread-safe: [Channel.isEmpty] is safe to call from any thread/coroutine;
+     * [_isActorProcessing] is written only by the actor coroutine (@Volatile suffices
+     * for single-writer/multi-reader visibility). A request dequeued but not yet flagged
+     * is a negligible window — this is intentionally best-effort conflict protection.
      *
      * Used by conflict detection: an external file change arriving while a split/merge is
      * in-flight must trigger the conflict dialog rather than silently overwriting local data.
      */
     val hasPendingWrites: Boolean
-        get() = _activeOps > 0
+        get() = !highPriority.isEmpty || !lowPriority.isEmpty || _isActorProcessing
 
     // Own scope so the actor loop survives Compose scope cancellation (e.g. key(activeGraphId)
     // graph switch). Callers must call close() to stop the actor.
@@ -153,6 +153,7 @@ class DatabaseWriteActor(
                             highPriority.onReceive { it }
                             lowPriority.onReceive { it }
                         }
+                    _isActorProcessing = true
                     try {
                         processRequest(request)
                     } catch (e: CancellationException) {
@@ -170,6 +171,8 @@ class DatabaseWriteActor(
                         if (!request.deferred.isCompleted) {
                             request.deferred.complete(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
                         }
+                    } finally {
+                        _isActorProcessing = false
                     }
                 }
             } catch (e: CancellationException) {
@@ -387,14 +390,9 @@ class DatabaseWriteActor(
      * Use this for any write that doesn't have a dedicated typed method.
      */
     suspend fun execute(priority: Priority = Priority.HIGH, op: suspend () -> Either<DomainError, Unit>): Either<DomainError, Unit> {
-        _activeOps++
         val req = WriteRequest.Execute(op, priority)
         channelFor(priority).send(req)
-        return try {
-            req.deferred.await()
-        } finally {
-            _activeOps--
-        }
+        return req.deferred.await()
     }
 
     suspend fun saveBlock(block: Block): Either<DomainError, Unit> =

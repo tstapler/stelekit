@@ -134,7 +134,6 @@ sealed interface DepthModelUiState {
  * Call [close] when the editor is permanently dismissed (e.g. on back navigation after
  * the composable leaves composition permanently) to cancel in-flight DB writes cleanly.
  */
-@OptIn(DirectRepositoryWrite::class)
 class AnnotationEditorViewModel(
     private val measurementRepository: MeasurementAnnotationRepository,
     /** Optional — required for tag persistence. When null, tag changes update state only. */
@@ -445,6 +444,7 @@ class AnnotationEditorViewModel(
      * The [calibration] in the current state is used for unit conversion. If calibration
      * is absent (NONE), [valueMeters] is stored as null and the display shows pixel counts.
      */
+    @OptIn(DirectRepositoryWrite::class)
     private fun commitAnnotation(
         points: List<NormalizedPoint>,
         tool: AnnotationTool,
@@ -522,6 +522,7 @@ class AnnotationEditorViewModel(
      * This is critical: if calibration changes (e.g. user marks a reference object),
      * all existing annotations must be recalculated or they display stale values.
      */
+    @OptIn(DirectRepositoryWrite::class)
     fun updateCalibration(newCalibration: Calibration) {
         val st = _state.value
         val displayUnit = st.imageAnnotation?.unit ?: MeasurementUnit.METERS
@@ -566,6 +567,7 @@ class AnnotationEditorViewModel(
     }
 
     /** Delete an annotation by UUID. */
+    @OptIn(DirectRepositoryWrite::class)
     fun deleteAnnotation(uuid: String) {
         val before = _state.value
         pushUndo(before)

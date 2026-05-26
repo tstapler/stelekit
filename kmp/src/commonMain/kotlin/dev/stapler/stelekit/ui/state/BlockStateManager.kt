@@ -44,8 +44,9 @@ import kotlinx.coroutines.CancellationException
  * queue behind any in-progress Phase-3 bulk load without contending for the raw SQLite write
  * lock. The [DirectRepositoryWrite] opt-in remains for the fallback path (tests, in-memory
  * backend) and for structural operations that still call the repository directly.
+ * Each direct-repository call site carries a function-level @OptIn(DirectRepositoryWrite::class)
+ * so the bypass is explicit and visible at the narrowest possible scope.
  */
-@OptIn(DirectRepositoryWrite::class)
 class BlockStateManager(
     private val blockRepository: BlockRepository,
     private val graphLoader: GraphLoader,
@@ -64,17 +65,23 @@ class BlockStateManager(
     // When a DatabaseWriteActor is injected, user-edit writes go through it so they
     // are serialized behind any in-progress Phase-3 bulk load without holding a raw
     // SQLite write lock. Falls back to direct repository calls (tests, in-memory backend).
+    // Each helper carries @OptIn(DirectRepositoryWrite::class) at the narrowest scope so the
+    // bypass is explicit and visible; the class no longer carries a blanket opt-in.
+    @OptIn(DirectRepositoryWrite::class)
     private suspend fun writeBlock(block: Block) =
         writeActor?.saveBlock(block) ?: blockRepository.saveBlock(block)
 
+    @OptIn(DirectRepositoryWrite::class)
     private suspend fun writeContentOnly(blockUuid: String, content: String) =
         writeActor?.updateBlockContentOnly(blockUuid, content)
             ?: blockRepository.updateBlockContentOnly(blockUuid, content)
 
+    @OptIn(DirectRepositoryWrite::class)
     private suspend fun writePropertiesOnly(blockUuid: String, properties: Map<String, String>) =
         writeActor?.updateBlockPropertiesOnly(blockUuid, properties)
             ?: blockRepository.updateBlockPropertiesOnly(blockUuid, properties)
 
+    @OptIn(DirectRepositoryWrite::class)
     private suspend fun writeSplitBlock(
         blockUuid: String,
         cursorPosition: Int,
@@ -82,6 +89,7 @@ class BlockStateManager(
     ) = writeActor?.splitBlock(blockUuid, cursorPosition, newBlockUuid)
         ?: blockRepository.splitBlock(blockUuid, cursorPosition, newBlockUuid)
 
+    @OptIn(DirectRepositoryWrite::class)
     private suspend fun writeMergeBlocks(
         blockUuid: String,
         nextBlockUuid: String,
@@ -89,6 +97,7 @@ class BlockStateManager(
     ) = writeActor?.mergeBlocks(blockUuid, nextBlockUuid, separator)
         ?: blockRepository.mergeBlocks(blockUuid, nextBlockUuid, separator)
 
+    @OptIn(DirectRepositoryWrite::class)
     private suspend fun writeDeleteBlockStructural(blockUuid: String) =
         writeActor?.deleteBlockStructural(blockUuid)
             ?: blockRepository.deleteBlock(blockUuid)
@@ -169,6 +178,7 @@ class BlockStateManager(
      * Delete all currently selected blocks (and their subtrees) in a single
      * undo-able operation. Clears the selection when done.
      */
+    @OptIn(DirectRepositoryWrite::class)
     fun deleteSelectedBlocks(): Job = scope.launch {
         val selected = selection.selectedBlockUuids.value
         if (selected.isEmpty()) return@launch
@@ -200,6 +210,7 @@ class BlockStateManager(
      *
      * Wraps the entire operation in a single undo entry.
      */
+    @OptIn(DirectRepositoryWrite::class)
     fun moveSelectedBlocks(newParentUuid: String?, insertAfterUuid: String?): Job = scope.launch {
         val selected = selection.selectedBlockUuids.value
         if (selected.isEmpty()) return@launch
@@ -665,6 +676,7 @@ class BlockStateManager(
     private suspend fun takePageSnapshot(pageUuid: String): List<Block> =
         blockRepository.getBlocksForPage(pageUuid).first().getOrNull() ?: emptyList()
 
+    @OptIn(DirectRepositoryWrite::class)
     private suspend fun restorePageToSnapshot(pageUuid: String, snapshot: List<Block>) {
         val current = blockRepository.getBlocksForPage(pageUuid).first().getOrNull() ?: return
         val snapshotUuids = snapshot.map { it.uuid }.toSet()
@@ -696,6 +708,7 @@ class BlockStateManager(
         queueDiskSave(pageUuid)
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun indentBlock(blockUuid: String): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
@@ -708,6 +721,7 @@ class BlockStateManager(
         )
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun outdentBlock(blockUuid: String): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
@@ -720,6 +734,7 @@ class BlockStateManager(
         )
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun moveBlockUp(blockUuid: String): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
@@ -732,6 +747,7 @@ class BlockStateManager(
         )
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun moveBlockDown(blockUuid: String): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
