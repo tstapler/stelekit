@@ -1040,7 +1040,7 @@ class StelekitViewModel(
                 // Evict only this page's hierarchy cache so unrelated pages stay warm.
                 blockStateManager?.cacheEvictPage(currentPage.uuid)
 
-                // Three-tier protection:
+                // Four-tier protection:
                 // 1. Actively editing a block right now.
                 // 2. Page has dirty blocks (locally-modified, DB save confirmed but not yet
                 //    written to disk within the ~300ms debounce window).
@@ -1048,13 +1048,17 @@ class StelekitViewModel(
                 //    confirmation, but the file hasn't landed on disk yet. Without this tier
                 //    an external change arriving in that 300ms window bypasses the dialog and
                 //    silently overwrites local content.
+                // 4. A structural op (split/merge/delete) is in the actor queue but has not
+                //    yet committed to the DB. Without this tier an external change arriving
+                //    in the actor-queue window silently races with the structural op.
                 val dirtyUuids = blockStateManager?.dirtyBlockUuids ?: emptySet()
                 val pageHasDirtyBlocks = blockStateManager
                     ?.blocks?.value?.get(currentPage.uuid)
                     ?.any { it.uuid in dirtyUuids }
                     ?: false
                 val hasPendingDiskWrite = blockStateManager?.hasPendingDiskWrite(currentPage.uuid) ?: false
-                val shouldProtect = editingBlockUuid != null || pageHasDirtyBlocks || hasPendingDiskWrite
+                val hasActorPending = blockStateManager?.hasActorPendingWrites ?: false
+                val shouldProtect = editingBlockUuid != null || pageHasDirtyBlocks || hasPendingDiskWrite || hasActorPending
                 if (!shouldProtect) return@collect
 
                 // Cancel the pending disk write so auto-save cannot overwrite the disk file

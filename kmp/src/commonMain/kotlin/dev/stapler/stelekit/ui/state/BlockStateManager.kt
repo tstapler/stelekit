@@ -75,6 +75,24 @@ class BlockStateManager(
         writeActor?.updateBlockPropertiesOnly(blockUuid, properties)
             ?: blockRepository.updateBlockPropertiesOnly(blockUuid, properties)
 
+    private suspend fun writeSplitBlock(
+        blockUuid: String,
+        cursorPosition: Int,
+        newBlockUuid: String?,
+    ) = writeActor?.splitBlock(blockUuid, cursorPosition, newBlockUuid)
+        ?: blockRepository.splitBlock(blockUuid, cursorPosition, newBlockUuid)
+
+    private suspend fun writeMergeBlocks(
+        blockUuid: String,
+        nextBlockUuid: String,
+        separator: String,
+    ) = writeActor?.mergeBlocks(blockUuid, nextBlockUuid, separator)
+        ?: blockRepository.mergeBlocks(blockUuid, nextBlockUuid, separator)
+
+    private suspend fun writeDeleteBlockStructural(blockUuid: String) =
+        writeActor?.deleteBlockStructural(blockUuid)
+            ?: blockRepository.deleteBlock(blockUuid)
+
     // ---- Active page sessions ----
 
     private val _activePageUuids = MutableStateFlow<Set<String>>(emptySet())
@@ -586,6 +604,17 @@ class BlockStateManager(
         diskWriteDebounce.hasPending("disk-$pageUuid")
 
     /**
+     * Returns true if the [DatabaseWriteActor] has pending writes (structural ops in queue
+     * or in-flight). Returns false when no actor is configured (in-memory/test path).
+     *
+     * Used by conflict detection: an external file change arriving while a split/merge is
+     * in the actor queue must trigger the conflict dialog rather than silently overwriting
+     * local data.
+     */
+    val hasActorPendingWrites: Boolean
+        get() = writeActor?.hasPendingWrites ?: false
+
+    /**
      * Cancel any pending debounced disk write for [pageUuid] without executing it.
      *
      * Called when a conflict dialog is shown, so the pending auto-save cannot
@@ -743,7 +772,7 @@ class BlockStateManager(
         pendingNewBlockUuids.update { it + expectedNewUuid }
         requestEditBlock(expectedNewUuid)   // focus moves here, before DB
 
-        blockRepository.splitBlock(currentBlockUuid, cursorPosition, expectedNewUuid).onRight { newBlock ->
+        writeSplitBlock(currentBlockUuid, cursorPosition, expectedNewUuid).onRight { newBlock ->
             pendingNewBlockUuids.update { it - expectedNewUuid }
             // Repository was given expectedNewUuid — UUIDs always match; no correction needed.
             queueDiskSave(pageUuid)
@@ -796,7 +825,7 @@ class BlockStateManager(
         pendingNewBlockUuids.update { it + expectedNewUuid }
         requestEditBlock(expectedNewUuid)   // focus moves here, before DB
 
-        blockRepository.splitBlock(blockUuid, clampedCursor, expectedNewUuid).onRight { newBlock ->
+        writeSplitBlock(blockUuid, clampedCursor, expectedNewUuid).onRight { newBlock ->
             pendingNewBlockUuids.update { it - expectedNewUuid }
             // Repository was given expectedNewUuid — UUIDs always match; no correction needed.
             queueDiskSave(pageUuid)
@@ -943,7 +972,7 @@ class BlockStateManager(
             val preMergeEditCursor = _editingCursorIndex.value
             // Move focus before the DB round-trip so keyboard lands immediately
             requestEditBlock(prevBlock.uuid, prevBlock.content.length)
-            blockRepository.mergeBlocks(prevBlock.uuid, blockUuid, "").onRight {
+            writeMergeBlocks(prevBlock.uuid, blockUuid, "").onRight {
                 queueDiskSave(pageUuid)
                 val after = takePageSnapshot(pageUuid)
                 record(
@@ -983,7 +1012,7 @@ class BlockStateManager(
             val prevBlock = siblings[currentIndex - 1]
             // Move focus before the DB round-trip so keyboard lands immediately
             requestEditBlock(prevBlock.uuid, prevBlock.content.length)
-            blockRepository.mergeBlocks(prevBlock.uuid, blockUuid, "").onRight {
+            writeMergeBlocks(prevBlock.uuid, blockUuid, "").onRight {
                 afterOp(prevBlock.uuid, prevBlock.content.length)
             }.onLeft { err ->
                 logger.error("handleBackspace: DB merge failed for $blockUuid: $err")
@@ -995,7 +1024,7 @@ class BlockStateManager(
                 if (currentBlock.content.isEmpty()) {
                     // Move focus before the DB round-trip
                     requestEditBlock(parent.uuid, parent.content.length)
-                    val result = blockRepository.deleteBlock(blockUuid)
+                    val result = writeDeleteBlockStructural(blockUuid)
                     result.onRight {
                         afterOp(parent.uuid, parent.content.length)
                     }.onLeft { err ->
@@ -1005,7 +1034,7 @@ class BlockStateManager(
                 } else {
                     // Move focus before the DB round-trip
                     requestEditBlock(parent.uuid, parent.content.length)
-                    blockRepository.mergeBlocks(parent.uuid, blockUuid, "").onRight {
+                    writeMergeBlocks(parent.uuid, blockUuid, "").onRight {
                         afterOp(parent.uuid, parent.content.length)
                     }.onLeft { err ->
                         logger.error("handleBackspace: DB merge failed for $blockUuid: $err")
@@ -1018,7 +1047,7 @@ class BlockStateManager(
                 val nextBlock = siblings[1]
                 // Move focus before the DB round-trip
                 requestEditBlock(nextBlock.uuid, 0)
-                val result = blockRepository.deleteBlock(blockUuid)
+                val result = writeDeleteBlockStructural(blockUuid)
                 result.onRight {
                     afterOp(nextBlock.uuid, 0)
                 }.onLeft { err ->

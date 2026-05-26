@@ -56,6 +56,7 @@ class DatabaseWriteActor(
     private val blockRepository: BlockRepository,
     private val pageRepository: PageRepository,
     private val opLogger: OperationLogger? = null,
+    scope: CoroutineScope? = null,
 ) {
     private val logger = Logger("DatabaseWriteActor")
 
@@ -116,9 +117,31 @@ class DatabaseWriteActor(
     private fun channelFor(priority: Priority) =
         if (priority == Priority.HIGH) highPriority else lowPriority
 
+    // Counts write operations that have been enqueued but whose DB round-trip has not yet
+    // completed. Incremented before send() in execute(), decremented after await() in execute().
+    // Used by hasPendingWrites to extend conflict detection into the actor-queue window.
+    // Volatile + plain arithmetic is sufficient: this is a best-effort visibility flag, not
+    // a safety-critical lock. The only requirement is that hasPendingWrites returns true as
+    // long as any call to execute() has not yet returned.
+    @Volatile private var _activeOps: Int = 0
+
+    /**
+     * Returns true if any write operation is currently pending or in-flight through the actor.
+     * Covers both the channel-queue window (not yet dequeued) and the processing window
+     * (dequeued but DB transaction not yet committed).
+     *
+     * Used by conflict detection: an external file change arriving while a split/merge is
+     * in-flight must trigger the conflict dialog rather than silently overwriting local data.
+     */
+    val hasPendingWrites: Boolean
+        get() = _activeOps > 0
+
     // Own scope so the actor loop survives Compose scope cancellation (e.g. key(activeGraphId)
     // graph switch). Callers must call close() to stop the actor.
-    private val actorScope = CoroutineScope(SupervisorJob() + PlatformDispatcher.Default)
+    // When a scope is injected (e.g. from tests with UnconfinedTestDispatcher), use it directly
+    // so that virtual-time control works correctly in tests.
+    private val injectedScope: Boolean = scope != null
+    private val actorScope = scope ?: CoroutineScope(SupervisorJob() + PlatformDispatcher.Default)
 
     init {
         actorScope.launch {
@@ -364,9 +387,14 @@ class DatabaseWriteActor(
      * Use this for any write that doesn't have a dedicated typed method.
      */
     suspend fun execute(priority: Priority = Priority.HIGH, op: suspend () -> Either<DomainError, Unit>): Either<DomainError, Unit> {
+        _activeOps++
         val req = WriteRequest.Execute(op, priority)
         channelFor(priority).send(req)
-        return req.deferred.await()
+        return try {
+            req.deferred.await()
+        } finally {
+            _activeOps--
+        }
     }
 
     suspend fun saveBlock(block: Block): Either<DomainError, Unit> =
@@ -394,6 +422,54 @@ class DatabaseWriteActor(
         }
 
     /**
+     * Splits [blockUuid] at [cursorPosition] through the actor's serialized queue.
+     * Guaranteed to execute after any pending [updateBlockContentOnly] for the same block.
+     *
+     * Returns the newly created [Block] on success, or a [DomainError] on failure.
+     */
+    suspend fun splitBlock(
+        blockUuid: String,
+        cursorPosition: Int,
+        newBlockUuid: String?,
+    ): Either<DomainError, Block> {
+        var newBlock: Block? = null
+        val opResult = execute {
+            blockRepository.splitBlock(blockUuid, cursorPosition, newBlockUuid)
+                .onRight { newBlock = it }
+                .map { }
+        }
+        return opResult.fold(
+            ifLeft = { it.left() },
+            ifRight = {
+                newBlock?.right()
+                    ?: DomainError.DatabaseError.WriteFailed(
+                        "splitBlock returned no block for $blockUuid"
+                    ).left()
+            }
+        )
+    }
+
+    /**
+     * Merges [nextBlockUuid] into [blockUuid] through the actor's serialized queue.
+     * Guaranteed to execute after any pending [updateBlockContentOnly] for either block.
+     */
+    suspend fun mergeBlocks(
+        blockUuid: String,
+        nextBlockUuid: String,
+        separator: String,
+    ): Either<DomainError, Unit> =
+        execute { blockRepository.mergeBlocks(blockUuid, nextBlockUuid, separator) }
+
+    /**
+     * Deletes [blockUuid] through the actor's serialized queue.
+     * Distinct from [deleteBlock] (which logs to op-logger); this variant is for
+     * structural deletions triggered by backspace/merge where the block being removed
+     * has no content to log.
+     */
+    suspend fun deleteBlockStructural(blockUuid: String): Either<DomainError, Unit> =
+        execute { blockRepository.deleteBlock(blockUuid) }
+
+    /**
      * Executes [block] with all writes wrapped in a BATCH_START / BATCH_END log entry.
      * A single Ctrl+Z undoes all operations in the batch atomically.
      *
@@ -418,7 +494,9 @@ class DatabaseWriteActor(
     fun close() {
         highPriority.close()
         lowPriority.close()
-        actorScope.cancel()
+        // Only cancel the scope if we created it; injected scopes (e.g. test schedulers)
+        // are owned by the caller.
+        if (!injectedScope) actorScope.cancel()
     }
 
     companion object {
