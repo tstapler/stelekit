@@ -25,35 +25,18 @@ actual object SpanArchiver {
         }
 
         try {
-            // Streaming copy from existing file (if any) to temp file
-            FileOutputStream(tempFile).use { fos ->
-                GZIPOutputStream(fos).use { gzos ->
-                    val writer = gzos.bufferedWriter(Charsets.UTF_8)
-                    
-                    if (file.exists()) {
-                        try {
-                            java.io.FileInputStream(file).use { fis ->
-                                java.util.zip.GZIPInputStream(fis).use { gzis ->
-                                    gzis.bufferedReader(Charsets.UTF_8).useLines { lines ->
-                                        lines.forEach { line ->
-                                            writer.write(line)
-                                            writer.newLine()
-                                        }
-                                    }
-                                }
-                            }
-                        } catch (e: Exception) {
-                            // If the existing file is corrupted or unreadable, we ignore it and start fresh
-                        }
-                    }
+            // Construct wrapping stream chain; closing the outermost writer automatically
+            // flushes and closes the underlying GZIP and File Output streams.
+            val writer = GZIPOutputStream(FileOutputStream(tempFile)).bufferedWriter(Charsets.UTF_8)
+            writer.use { w ->
+                copyExistingArchive(file, w)
 
-                    // Append the new spans
-                    spans.forEach { span ->
-                        writer.write(json.encodeToString(SerializedSpan.serializer(), span))
-                        writer.newLine()
-                    }
-                    writer.flush()
+                // Append the new spans
+                for (span in spans) {
+                    w.write(json.encodeToString(SerializedSpan.serializer(), span))
+                    w.newLine()
                 }
+                w.flush()
             }
 
             // Atomically replace the existing file with the temp file
@@ -64,12 +47,28 @@ actual object SpanArchiver {
                 tempFile.delete()
             }
 
-            // Post-write check: a single large drain can push the file past MAX_BYTES;
-            // delete so the next drain starts fresh rather than appending to an over-limit file.
+            // Post-write check: a single large drain can push the file past MAX_BYTES
             if (file.exists() && file.length() > MAX_BYTES) file.delete()
         } catch (e: Exception) {
             android.util.Log.w("SpanArchiver", "Failed to archive spans", e)
             if (tempFile.exists()) tempFile.delete()
+        }
+    }
+
+    private fun copyExistingArchive(file: File, writer: java.io.BufferedWriter) {
+        if (!file.exists()) return
+        try {
+            // Closing the wrapping BufferedReader closes GZIPInputStream and FileInputStream
+            val reader = java.util.zip.GZIPInputStream(java.io.FileInputStream(file))
+                .bufferedReader(Charsets.UTF_8)
+            reader.use { r ->
+                for (line in r.lineSequence()) {
+                    writer.write(line)
+                    writer.newLine()
+                }
+            }
+        } catch (e: Exception) {
+            // If the existing file is corrupted or unreadable, ignore and start fresh
         }
     }
 }
