@@ -31,4 +31,26 @@ class OtelProviderStabilityTest {
         // 4. Clean up
         OtelProvider.shutdown()
     }
+
+    @Test
+    fun testOtelProviderReturnsNullWhenRingBufferDisabled() {
+        // 1. Initialise with enableRingBuffer = false
+        OtelProvider.initialize(OtelExporterConfig(enableStdout = false, enableRingBuffer = false))
+        
+        // Assert that the ring buffer is null
+        kotlin.test.assertNull(OtelProvider.ringBuffer, "Ring buffer should be null when initialized with enableRingBuffer = false")
+
+        // 2. Enable it now
+        OtelProvider.initialize(OtelExporterConfig(enableStdout = false, enableRingBuffer = true))
+        val firstRingBuffer = OtelProvider.ringBuffer
+        assertNotNull(firstRingBuffer, "Ring buffer should be non-null when enabled")
+
+        // 3. Disable it again
+        OtelProvider.initialize(OtelExporterConfig(enableStdout = false, enableRingBuffer = false))
+        kotlin.test.assertNull(OtelProvider.ringBuffer, "Ring buffer should transition to null when disabled")
+
+        // 4. Clean up
+        OtelProvider.shutdown()
+    }
 }
+

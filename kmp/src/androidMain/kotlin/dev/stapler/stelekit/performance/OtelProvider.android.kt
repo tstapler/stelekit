@@ -11,10 +11,11 @@ import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 
 actual object OtelProvider {
     private var sdk: OpenTelemetrySdk? = null
-    private val _ringBuffer = RingBufferSpanExporter(1000)
+    private var _ringBuffer: RingBufferSpanExporter? = null
+    private var _isRingBufferActive = false
 
     actual val isInitialized: Boolean get() = sdk != null
-    actual val ringBuffer: RingBufferSpanExporter? get() = if (sdk != null) _ringBuffer else null
+    actual val ringBuffer: RingBufferSpanExporter? get() = if (sdk != null && _isRingBufferActive) _ringBuffer else null
 
     actual fun initialize(config: OtelExporterConfig) {
         // Shutdown any existing SDK first if called repeatedly
@@ -26,11 +27,15 @@ actual object OtelProvider {
                 BatchSpanProcessor.builder(LoggingSpanExporter.create()).build()
             )
         }
+        _isRingBufferActive = config.enableRingBuffer
         if (config.enableRingBuffer) {
-            _ringBuffer.clear()
+            val rb = _ringBuffer ?: RingBufferSpanExporter(config.ringBufferCapacity).also { _ringBuffer = it }
+            rb.clear()
             tracerProviderBuilder.addSpanProcessor(
-                SimpleSpanProcessor.create(OtelRingBufferBridge(_ringBuffer))
+                SimpleSpanProcessor.create(OtelRingBufferBridge(rb))
             )
+        } else {
+            _ringBuffer?.clear()
         }
         sdk = OpenTelemetrySdk.builder()
             .setTracerProvider(tracerProviderBuilder.build())
@@ -49,6 +54,7 @@ actual object OtelProvider {
     actual fun shutdown() {
         sdk?.shutdown()
         sdk = null
-        _ringBuffer.clear()
+        _isRingBufferActive = false
+        _ringBuffer?.clear()
     }
 }
