@@ -18,6 +18,7 @@ class SteleKitRuleSetProvider : RuleSetProvider {
             SwallowedCancellationExceptionRule(config),
             RememberKeyForConstructorArgsRule(config),
             NoRunBlockingInLifecycleRule(config),
+            UnthemedTextInBackgroundContainerRule(config),
         ),
     )
 }

@@ -191,6 +191,7 @@ fun LogItem(log: LogEntry) {
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontFamily = FontFamily.Monospace
                     ),
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(top = 4.dp)
                 )
 

@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-27 02:39:23 UTC",
+  "gitSha": "be1652e",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 7,
+  "phase2Ms": 3,
+  "phase3Ms": 13,
+  "totalMs": 23,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 28,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.04,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 147,
+      "pct": 72.8
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 6,
+      "pct": 3.0
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 5,
+      "pct": 2.5
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 4,
+      "pct": 2.0
+    },
+    {
+      "frame": "long[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.net.URL_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.ref.SoftReference_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "kotlin.ranges.IntRange_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2182,
+      "pct": 99.5
+    },
+    {
+      "frame": "org/sqlite/SQLiteConnection.setAutoCommit_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "org/sqlite/jdbc4/JDBC4Statement.close_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/util/regex/Pattern$LastNode.match_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "UTF8::is_legal_utf8",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "jni_IsInstanceOf",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SymbolTable::do_add_if_needed",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ClassFileParser::parse_constant_pool",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "UNICODE::as_utf8",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "Method::line_number_from_bci",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}
