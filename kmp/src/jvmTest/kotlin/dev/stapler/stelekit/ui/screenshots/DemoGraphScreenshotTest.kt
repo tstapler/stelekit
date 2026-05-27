@@ -63,7 +63,7 @@ class DemoGraphScreenshotTest {
 
         composeTestRule.setContent {
             StelekitTheme(themeMode = StelekitThemeMode.LIGHT) {
-                JournalsView(viewModel = viewModel, blockRepository = blockRepo, isDebugMode = false, onLinkClick = {})
+                JournalsView(viewModel = viewModel, isDebugMode = false, onLinkClick = {})
             }
         }
         composeTestRule.waitForIdle()
@@ -84,7 +84,7 @@ class DemoGraphScreenshotTest {
 
         composeTestRule.setContent {
             StelekitTheme(themeMode = StelekitThemeMode.DARK) {
-                JournalsView(viewModel = viewModel, blockRepository = blockRepo, isDebugMode = false, onLinkClick = {})
+                JournalsView(viewModel = viewModel, isDebugMode = false, onLinkClick = {})
             }
         }
         composeTestRule.waitForIdle()

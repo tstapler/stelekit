@@ -9,7 +9,6 @@ import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.repository.BlockWithDepth
-import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.flow.Flow

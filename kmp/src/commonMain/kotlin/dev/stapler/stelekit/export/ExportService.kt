@@ -10,7 +10,7 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.parsing.InlineParser
 import dev.stapler.stelekit.parsing.ast.BlockRefNode
-import dev.stapler.stelekit.repository.BlockRepository
+import dev.stapler.stelekit.repository.BlockReadRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -28,7 +28,7 @@ import kotlinx.coroutines.CancellationException
 class ExportService(
     private val exporters: List<PageExporter>,
     var clipboard: ClipboardProvider,
-    private val blockRepository: BlockRepository
+    private val blockRepository: BlockReadRepository
 ) {
     private val exporterMap: Map<String, PageExporter> = exporters.associateBy { it.formatId }
 

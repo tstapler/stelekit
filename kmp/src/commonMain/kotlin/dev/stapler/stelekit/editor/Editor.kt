@@ -17,7 +17,7 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.CursorState
 import dev.stapler.stelekit.editor.commands.*
 import dev.stapler.stelekit.model.Block
-import dev.stapler.stelekit.repository.BlockRepository
+import dev.stapler.stelekit.repository.BlockReadRepository
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.editor.text.ITextOperations
 import dev.stapler.stelekit.editor.state.EditorState
@@ -36,7 +36,7 @@ import kotlinx.coroutines.CancellationException
  * Updated to use UUID-native storage.
  */
 class Editor(
-    private val blockRepository: BlockRepository,
+    private val blockRepository: BlockReadRepository,
     private val textOperations: ITextOperations,
     private val blockOperations: IBlockOperations,
     private val commandSystem: ICommandSystem,

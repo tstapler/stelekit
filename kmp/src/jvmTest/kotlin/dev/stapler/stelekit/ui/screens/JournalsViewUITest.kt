@@ -40,7 +40,6 @@ class JournalsViewUITest {
             MaterialTheme {
                 JournalsView(
                     viewModel = viewModel,
-                    blockRepository = blockRepo,
                     isDebugMode = false,
                     onLinkClick = {},
                 )
@@ -76,7 +75,6 @@ class JournalsViewUITest {
             MaterialTheme {
                 JournalsView(
                     viewModel = viewModel,
-                    blockRepository = emptyBlockRepo,
                     isDebugMode = false,
                     onLinkClick = {},
                 )

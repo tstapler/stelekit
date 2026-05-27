@@ -59,7 +59,6 @@ class JournalsViewSqlDelightTest {
             MaterialTheme {
                 JournalsView(
                     viewModel = viewModel,
-                    blockRepository = blockRepo,
                     isDebugMode = false,
                     onLinkClick = {},
                 )
