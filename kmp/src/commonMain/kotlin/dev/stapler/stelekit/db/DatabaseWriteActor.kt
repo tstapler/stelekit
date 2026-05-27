@@ -195,72 +195,87 @@ class DatabaseWriteActor(
                 if (result.isRight()) onWriteSuccess?.invoke(request)
                 request.deferred.complete(result)
             }
-            is WriteRequest.DeleteBlocksForPage -> {
-                if (opLogger != null) {
-                    try {
-                        val pageBlocks = blockRepository.getBlocksForPage(request.pageUuid).first().getOrNull()
-                        pageBlocks?.forEach { opLogger.logDelete(it) }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) {
-                        // Non-fatal: op log failure must not block the delete
-                    }
-                }
-                val result = blockRepository.deleteBlocksForPage(request.pageUuid)
-                if (result.isRight()) onWriteSuccess?.invoke(request)
-                request.deferred.complete(result)
-            }
-            is WriteRequest.DeleteBlocksForPages -> {
-                if (opLogger != null) {
-                    // Chunk page UUIDs so we fetch and delete together per chunk rather than
-                    // materializing all blocks across every page before the first delete runs.
-                    // Bounds peak memory to PAGE_DELETE_CHUNK × (blocks per page).
-                    for (chunk in request.pageUuids.chunked(PAGE_DELETE_CHUNK)) {
-                        try {
-                            for (uuid in chunk) {
-                                val pageBlocks = blockRepository.getBlocksForPage(uuid).first().getOrNull()
-                                pageBlocks?.forEach { opLogger.logDelete(it) }
-                            }
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            logger.warn("Op log pre-delete read failed (non-fatal)", e)
-                        }
-                        val chunkResult = blockRepository.deleteBlocksForPages(chunk)
-                        if (chunkResult.isLeft()) {
-                            request.deferred.complete(chunkResult)
-                            return
-                        }
-                    }
-                    onWriteSuccess?.invoke(request)
-                    request.deferred.complete(Unit.right())
-                } else {
-                    val result = blockRepository.deleteBlocksForPages(request.pageUuids)
-                    if (result.isRight()) onWriteSuccess?.invoke(request)
-                    request.deferred.complete(result)
-                }
-            }
+            is WriteRequest.DeleteBlocksForPage -> processDeleteBlocksForPage(request)
+            is WriteRequest.DeleteBlocksForPages -> processDeleteBlocksForPages(request)
             is WriteRequest.SaveBlocks -> processSaveBlocks(request)
-            is WriteRequest.Execute -> {
-                val waitMs = HistogramWriter.epochMs() - request.enqueueMs
-                if (waitMs > 10L) {
-                    ringBuffer?.record(SerializedSpan(
-                        name = "db.queue_wait",
-                        startEpochMs = request.enqueueMs,
-                        endEpochMs = request.enqueueMs + waitMs,
-                        durationMs = waitMs,
-                        attributes = mapOf(
-                            "priority" to request.priority.name,
-                            "session.id" to AppSession.id,
-                        ),
-                        statusCode = if (waitMs > 500L) "ERROR" else "OK",
-                        traceId = UuidGenerator.generateV7(),
-                        spanId = UuidGenerator.generateV7(),
-                    ))
-                }
-                request.deferred.complete(request.op())
+            is WriteRequest.Execute -> processExecute(request)
+        }
+    }
+
+    private suspend fun processDeleteBlocksForPage(request: WriteRequest.DeleteBlocksForPage) {
+        if (opLogger != null) {
+            try {
+                val pageBlocks = blockRepository.getBlocksForPage(request.pageUuid).first().getOrNull()
+                pageBlocks?.forEach { opLogger.logDelete(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Non-fatal: op log failure must not block the delete
             }
         }
+        val result = blockRepository.deleteBlocksForPage(request.pageUuid)
+        if (result.isRight()) onWriteSuccess?.invoke(request)
+        request.deferred.complete(result)
+    }
+
+    private suspend fun processDeleteBlocksForPages(request: WriteRequest.DeleteBlocksForPages) {
+        if (opLogger != null) {
+            // Chunk page UUIDs so we fetch and delete together per chunk rather than
+            // materializing all blocks across every page before the first delete runs.
+            // Bounds peak memory to PAGE_DELETE_CHUNK × (blocks per page).
+            for (chunk in request.pageUuids.chunked(PAGE_DELETE_CHUNK)) {
+                logDeletedBlocksForChunk(chunk)
+                val chunkResult = blockRepository.deleteBlocksForPages(chunk)
+                if (chunkResult.isLeft()) {
+                    request.deferred.complete(chunkResult)
+                    return
+                }
+            }
+            onWriteSuccess?.invoke(request)
+            request.deferred.complete(Unit.right())
+        } else {
+            val result = blockRepository.deleteBlocksForPages(request.pageUuids)
+            if (result.isRight()) onWriteSuccess?.invoke(request)
+            request.deferred.complete(result)
+        }
+    }
+
+    private suspend fun logDeletedBlocksForChunk(chunk: List<String>) {
+        val logger = opLogger ?: return
+        try {
+            for (uuid in chunk) {
+                val pageBlocks = blockRepository.getBlocksForPage(uuid).first().getOrNull()
+                pageBlocks?.forEach { logger.logDelete(it) }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            this.logger.warn("Op log pre-delete read failed (non-fatal)", e)
+        }
+    }
+
+    private suspend fun processExecute(request: WriteRequest.Execute) {
+        val waitMs = HistogramWriter.epochMs() - request.enqueueMs
+        if (waitMs > 10L) {
+            recordQueueWaitSpan(request, waitMs)
+        }
+        request.deferred.complete(request.op())
+    }
+
+    private fun recordQueueWaitSpan(request: WriteRequest.Execute, waitMs: Long) {
+        ringBuffer?.record(SerializedSpan(
+            name = "db.queue_wait",
+            startEpochMs = request.enqueueMs,
+            endEpochMs = request.enqueueMs + waitMs,
+            durationMs = waitMs,
+            attributes = mapOf(
+                "priority" to request.priority.name,
+                "session.id" to AppSession.id,
+            ),
+            statusCode = if (waitMs > 500L) "ERROR" else "OK",
+            traceId = UuidGenerator.generateV7(),
+            spanId = UuidGenerator.generateV7(),
+        ))
     }
 
     private suspend fun processSaveBlocks(first: WriteRequest.SaveBlocks) {
