@@ -79,20 +79,32 @@ fun PerformanceDashboard(
 
 @Composable
 private fun HistogramsTab(histogramWriter: HistogramWriter?) {
-    val operations = listOf("frame_duration", "graph_load", "navigation", "search")
-
+    // Dynamically discovers all operations that have recorded samples — no hardcoded list.
+    // New operations (cache_*, pool_wait, editor_input, etc.) appear automatically.
     val summaries by produceState<Map<String, PercentileSummary>>(emptyMap(), histogramWriter) {
         while (true) {
             if (histogramWriter != null) {
-                val result = withContext(PlatformDispatcher.DB) {
-                    operations
+                value = withContext(PlatformDispatcher.DB) {
+                    histogramWriter.queryAllOperations()
                         .mapNotNull { op -> histogramWriter.queryPercentiles(op)?.let { op to it } }
                         .toMap()
                 }
-                value = result
             }
             delay(2000)
         }
+    }
+
+    val operations = remember(summaries) { summaries.keys.sorted() }
+
+    if (histogramWriter == null || operations.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                if (histogramWriter == null) "No histogram writer available"
+                else "No samples recorded yet",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        return
     }
 
     LazyColumn(
