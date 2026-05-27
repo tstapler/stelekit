@@ -89,7 +89,6 @@ class JournalsViewScreenshotTest {
             StelekitTheme(themeMode = StelekitThemeMode.LIGHT) {
                 JournalsView(
                     viewModel = viewModel,
-                    blockRepository = blockRepo,
                     isDebugMode = true,
                     onLinkClick = {},
                 )
@@ -151,7 +150,6 @@ class JournalsViewScreenshotTest {
             StelekitTheme(themeMode = StelekitThemeMode.LIGHT) {
                 JournalsView(
                     viewModel = viewModel,
-                    blockRepository = blockRepo,
                     isDebugMode = true,
                     onLinkClick = {},
                 )

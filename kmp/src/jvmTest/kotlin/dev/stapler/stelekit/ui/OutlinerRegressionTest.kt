@@ -93,7 +93,6 @@ class OutlinerRegressionTest {
             MaterialTheme {
                 JournalsView(
                     viewModel = viewModel,
-                    blockRepository = blockRepo,
                     isDebugMode = true, // Show UUIDs for debugging
                     onLinkClick = {},
                 )

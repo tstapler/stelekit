@@ -111,7 +111,6 @@ internal fun ScreenRouter(
             )
             is Screen.Journals -> JournalsView(
                 viewModel = journalsViewModel,
-                blockRepository = repos.blockRepository,
                 isDebugMode = appState.isDebugMode,
                 onLinkClick = { viewModel.navigateToPageByName(it) },
                 searchViewModel = searchViewModel,
