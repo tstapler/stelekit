@@ -123,8 +123,9 @@ class InMemoryBlockRepository : BlockRepository {
         return Unit.right()
     }
 
-    override suspend fun clear() {
+    override suspend fun clear(): Either<DomainError, Unit> {
         blocks.value = emptyMap()
+        return Unit.right()
     }
 
     override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> {
@@ -503,7 +504,7 @@ class InMemoryBlockRepository : BlockRepository {
                     candidates.groupBy { it.content }
                         .filter { it.value.size > 1 }
                         .map { (_, trueGroup) ->
-                            DuplicateGroup(contentHash = hash, blocks = trueGroup, count = trueGroup.size)
+                            DuplicateGroup(contentHash = hash, blocks = trueGroup)
                         }
                 }
                 .flatten()

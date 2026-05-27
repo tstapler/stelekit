@@ -149,11 +149,11 @@ class DatabaseWriteActor(
                 while (isActive) {
                     // Prefer high-priority: non-blocking poll first, then suspend on either.
                     val request = highPriority.tryReceive().getOrNull()
+                        ?.also { _isActorProcessing = true }
                         ?: select {
-                            highPriority.onReceive { it }
-                            lowPriority.onReceive { it }
+                            highPriority.onReceive { _isActorProcessing = true; it }
+                            lowPriority.onReceive { _isActorProcessing = true; it }
                         }
-                    _isActorProcessing = true
                     try {
                         processRequest(request)
                     } catch (e: CancellationException) {
@@ -212,20 +212,33 @@ class DatabaseWriteActor(
             }
             is WriteRequest.DeleteBlocksForPages -> {
                 if (opLogger != null) {
-                    try {
-                        for (uuid in request.pageUuids) {
-                            val pageBlocks = blockRepository.getBlocksForPage(uuid).first().getOrNull()
-                            pageBlocks?.forEach { opLogger.logDelete(it) }
+                    // Chunk page UUIDs so we fetch and delete together per chunk rather than
+                    // materializing all blocks across every page before the first delete runs.
+                    // Bounds peak memory to PAGE_DELETE_CHUNK × (blocks per page).
+                    for (chunk in request.pageUuids.chunked(PAGE_DELETE_CHUNK)) {
+                        try {
+                            for (uuid in chunk) {
+                                val pageBlocks = blockRepository.getBlocksForPage(uuid).first().getOrNull()
+                                pageBlocks?.forEach { opLogger.logDelete(it) }
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            logger.warn("Op log pre-delete read failed (non-fatal)", e)
                         }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        logger.warn("Op log pre-delete read failed (non-fatal)", e)
+                        val chunkResult = blockRepository.deleteBlocksForPages(chunk)
+                        if (chunkResult.isLeft()) {
+                            request.deferred.complete(chunkResult)
+                            return
+                        }
                     }
+                    onWriteSuccess?.invoke(request)
+                    request.deferred.complete(Unit.right())
+                } else {
+                    val result = blockRepository.deleteBlocksForPages(request.pageUuids)
+                    if (result.isRight()) onWriteSuccess?.invoke(request)
+                    request.deferred.complete(result)
                 }
-                val result = blockRepository.deleteBlocksForPages(request.pageUuids)
-                if (result.isRight()) onWriteSuccess?.invoke(request)
-                request.deferred.complete(result)
             }
             is WriteRequest.SaveBlocks -> processSaveBlocks(request)
             is WriteRequest.Execute -> {
@@ -498,6 +511,13 @@ class DatabaseWriteActor(
     }
 
     companion object {
+        /**
+         * Page UUIDs processed per iteration in [DeleteBlocksForPages] when the op-logger is
+         * active. Bounds peak memory to PAGE_DELETE_CHUNK × (blocks per page) instead of
+         * materializing all blocks across every page before the first delete runs.
+         */
+        private const val PAGE_DELETE_CHUNK = 25
+
         /**
          * Creates a [Resource]-managed [DatabaseWriteActor].
          * The actor's [close] method is guaranteed to be called when the resource is released,

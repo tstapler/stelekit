@@ -385,7 +385,7 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
     override fun getUnlinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
     override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
     override fun findDuplicateBlocks(limit: Int): Flow<Either<DomainError, List<DuplicateGroup>>> = flowOf(emptyList<DuplicateGroup>().right())
-    override suspend fun clear() { _blocks.value = emptyMap() }
+    override suspend fun clear(): Either<DomainError, Unit> { _blocks.value = emptyMap(); return Unit.right() }
 
     private fun adjustDescendantLevels(
         parentUuid: String,

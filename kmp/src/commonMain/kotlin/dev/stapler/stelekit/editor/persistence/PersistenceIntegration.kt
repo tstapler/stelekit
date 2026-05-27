@@ -11,7 +11,7 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.BlockRepository
-import dev.stapler.stelekit.repository.DatascriptBlockRepository
+import dev.stapler.stelekit.repository.DatalogBlockRepository
 import dev.stapler.stelekit.ui.NotificationManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -389,7 +389,7 @@ object PersistenceExample {
         val scope = CoroutineScope(Dispatchers.Default)
         
         // Create mock dependencies (replace with real implementations)
-        val blockRepository = DatascriptBlockRepository()
+        val blockRepository = DatalogBlockRepository()
         val fileSystem = PlatformFileSystem()
         val graphWriter = GraphWriter(fileSystem)
         

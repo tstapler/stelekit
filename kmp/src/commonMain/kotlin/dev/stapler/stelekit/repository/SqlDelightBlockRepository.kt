@@ -930,7 +930,7 @@ class SqlDelightBlockRepository(
 
                 candidates.groupBy { it.content }.forEach { (_, trueGroup) ->
                     if (trueGroup.size > 1) {
-                        groups.add(DuplicateGroup(contentHash = hash, blocks = trueGroup, count = trueGroup.size))
+                        groups.add(DuplicateGroup(contentHash = hash, blocks = trueGroup))
                     }
                 }
             }
@@ -1041,11 +1041,18 @@ class SqlDelightBlockRepository(
         }
     }
 
-    override suspend fun clear(): Unit = withContext(PlatformDispatcher.DB) {
-        queries.deleteAllBlocks()
-        blockCache.invalidateAll()
-        hierarchyCache.invalidateAll()
-        ancestorsCache.invalidateAll()
+    override suspend fun clear(): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+        try {
+            queries.deleteAllBlocks()
+            blockCache.invalidateAll()
+            hierarchyCache.invalidateAll()
+            ancestorsCache.invalidateAll()
+            Unit.right()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+        }
     }
 
     companion object {

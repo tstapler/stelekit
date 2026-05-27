@@ -17,7 +17,7 @@ import kotlinx.coroutines.CancellationException
  * Updated to use UUID-native storage.
  */
 @OptIn(DirectRepositoryWrite::class)
-class DatascriptPropertyRepository : PropertyRepository {
+class DatalogPropertyRepository : PropertyRepository {
 
     private val properties = MutableStateFlow<Map<String, Map<String, Property>>>(emptyMap())
 

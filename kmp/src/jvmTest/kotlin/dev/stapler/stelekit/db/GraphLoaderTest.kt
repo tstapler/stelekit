@@ -1,7 +1,7 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.platform.PlatformFileSystem
-import dev.stapler.stelekit.repository.DatascriptBlockRepository
+import dev.stapler.stelekit.repository.DatalogBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -63,7 +63,7 @@ class GraphLoaderTest {
         try {
             val fileSystem = PlatformFileSystem()
             val pageRepository = InMemoryPageRepository()
-            val blockRepository = DatascriptBlockRepository()
+            val blockRepository = DatalogBlockRepository()
             val graphLoader = GraphLoader(fileSystem, pageRepository, blockRepository)
 
             graphLoader.loadGraph(graphDir.absolutePath) {}
@@ -90,7 +90,7 @@ class GraphLoaderTest {
         try {
             val fileSystem = PlatformFileSystem()
             val pageRepository = InMemoryPageRepository()
-            val blockRepository = DatascriptBlockRepository()
+            val blockRepository = DatalogBlockRepository()
             val graphLoader = GraphLoader(fileSystem, pageRepository, blockRepository)
 
             var phase1Complete = false

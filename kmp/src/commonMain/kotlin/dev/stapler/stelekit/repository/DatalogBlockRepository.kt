@@ -24,7 +24,7 @@ import kotlinx.coroutines.CancellationException
  * Updated to use UUID-native storage.
  */
 @OptIn(DirectRepositoryWrite::class)
-class DatascriptBlockRepository : BlockRepository {
+class DatalogBlockRepository : BlockRepository {
     private val logger = Logger("BlockRepo")
     private val writeMutex = Mutex()
 
@@ -533,13 +533,14 @@ class DatascriptBlockRepository : BlockRepository {
         }
     }
 
-    override suspend fun clear() {
+    override suspend fun clear(): Either<DomainError, Unit> {
         writeMutex.withLock {
             blocks.value = emptyMap()
             byUuid.value = emptyMap()
             byPageUuid.value = emptyMap()
             byParentUuid.value = emptyMap()
         }
+        return Unit.right()
     }
 
     private fun batchUpdateBlocks(updatedBlocks: Map<String, Block>) {

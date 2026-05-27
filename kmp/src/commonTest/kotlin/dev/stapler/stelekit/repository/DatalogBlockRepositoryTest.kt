@@ -17,14 +17,14 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class DatascriptBlockRepositoryTest {
+class DatalogBlockRepositoryTest {
 
-    private lateinit var repository: DatascriptBlockRepository
+    private lateinit var repository: DatalogBlockRepository
     private val now = Clock.System.now()
 
     @BeforeTest
     fun setup() {
-        repository = DatascriptBlockRepository()
+        repository = DatalogBlockRepository()
     }
 
     private fun createBlock(uuidSuffix: Long, parentUuidSuffix: Long? = null, position: Int, content: String = "Block $uuidSuffix"): Block {

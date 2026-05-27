@@ -20,7 +20,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
  * Updated to use UUID-native storage.
  */
 @OptIn(DirectRepositoryWrite::class)
-class DatascriptPageRepository : PageRepository {
+class DatalogPageRepository : PageRepository {
 
     private val pages = MutableStateFlow<Map<String, Page>>(emptyMap())
 

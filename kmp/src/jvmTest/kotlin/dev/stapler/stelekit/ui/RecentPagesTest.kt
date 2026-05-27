@@ -69,15 +69,17 @@ class RecentPagesTest {
             graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" }
         )
         return StelekitViewModel(
-            PlatformFileSystem(),
-            pageRepo,
-            blockRepo,
-            searchRepo,
-            graphLoader,
-            graphWriter,
-            settings,
-            scope,
-            blockStateManager = bsm
+            StelekitViewModelDependencies(
+                fileSystem = PlatformFileSystem(),
+                pageRepository = pageRepo,
+                blockRepository = blockRepo,
+                searchRepository = searchRepo,
+                graphLoader = graphLoader,
+                graphWriter = graphWriter,
+                platformSettings = settings,
+                scope = scope,
+                blockStateManager = bsm,
+            )
         ).also { viewModelRef = it }
     }
 

@@ -53,7 +53,7 @@ internal fun replaceHashtag(content: String, oldName: String, newName: String): 
     var result = content.replace("#[[${oldName}]]", "#[[${newName}]]")
     // Replace simple form with word-boundary anchor (avoid partial matches)
     val simpleRegex = Regex("#${Regex.escape(oldName)}(?=[\\s,\\.!?;\"\\[\\]]|$)")
-    result = result.replace(simpleRegex, "#${newName}")
+    result = result.replace(simpleRegex) { "#${newName}" }
     return result
 }
 
@@ -70,7 +70,7 @@ internal fun replaceHashtag(content: String, oldName: String, newName: String): 
 class BacklinkRenamer(
     private val pageRepository: PageRepository,
     private val blockRepository: BlockRepository,
-    private val graphWriter: GraphWriter,
+    private val graphWriter: GraphWriterPort,
     private val writeActor: DatabaseWriteActor
 ) {
     private val logger = Logger("BacklinkRenamer")
