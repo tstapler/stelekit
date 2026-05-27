@@ -43,7 +43,9 @@ class GraphLoaderWatcherTest {
             val fileSystem = PlatformFileSystem()
             val pageRepo = InMemoryPageRepository()
             val blockRepo = InMemoryBlockRepository()
-            val loader = GraphLoader(fileSystem, pageRepo, blockRepo)
+            // Use a 100ms poll interval so the watcher cycles fast enough for the test to
+            // observe whether suppression works within a short delay.
+            val loader = GraphLoader(fileSystem, pageRepo, blockRepo, watcherPollIntervalMs = 100L)
 
             // Load the (empty) graph so the watcher has a base state
             loader.loadGraph(graphDir.absolutePath) {}
@@ -65,6 +67,11 @@ class GraphLoaderWatcherTest {
             // Touch file (change mtime without changing content)
             delay(50)
             File(pagePath).setLastModified(System.currentTimeMillis())
+
+            // Wait for at least 2 watcher poll cycles (100ms each) so the watcher has a
+            // real chance to detect the mtime change and trigger — or correctly suppress it.
+            delay(300L)
+
 
             // If markFileWrittenByUs is working, the watcher must not re-parse the file
             // on an mtime-only change, so the page count must equal the baseline.

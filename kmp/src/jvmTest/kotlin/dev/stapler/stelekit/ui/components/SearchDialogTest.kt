@@ -1,4 +1,5 @@
 package dev.stapler.stelekit.ui.components
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 
@@ -9,6 +10,7 @@ import dev.stapler.stelekit.ui.fixtures.PopulatedFakeBlockRepository
 import dev.stapler.stelekit.ui.screens.SearchViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 
@@ -87,5 +89,30 @@ class SearchDialogTest {
                 androidx.compose.ui.test.hasText("Create page \"Test\"", substring = true)
             ).fetchSemanticsNodes().isNotEmpty()
         }
+    }
+
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    fun searchDialog_spaceKeyDoesNotDismiss() {
+        val viewModel = makeSearchViewModel()
+        var dismissCalled = false
+
+        composeTestRule.setContent {
+            MaterialTheme {
+                SearchDialog(
+                    visible = true,
+                    onDismiss = { dismissCalled = true },
+                    onNavigateToPage = {},
+                    onNavigateToBlock = {},
+                    onCreatePage = {},
+                    viewModel = viewModel
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Search pages and blocks...")
+            .performKeyInput { pressKey(Key.Spacebar) }
+
+        assertFalse("Pressing Space should not dismiss the search dialog", dismissCalled)
     }
 }
