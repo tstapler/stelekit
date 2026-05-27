@@ -124,6 +124,7 @@ class GraphFileWatcher(
 
     /** Stops the watcher job without cancelling the owned scope. */
     fun stopWatching() {
+        fileSystem.stopExternalChangeDetection()
         watcherJob?.cancel()
         watcherJob = null
     }
@@ -191,13 +192,14 @@ class GraphFileWatcher(
             val emitContent = if (changed.entry.filePath.endsWith(".md.stek")) "" else changed.content
 
             // Emit event so subscribers can suppress the re-import.
-            // Channel.RENDEZVOUS gives a synchronous rendezvous: the suppress() lambda sends
-            // true on the channel, and withTimeoutOrNull(200L) waits up to 200ms for it.
-            // SharedFlow.tryEmit is non-synchronous (buffers the event), so the old
-            // var suppressed / yield() pattern was always false.  The Channel approach is
-            // correct: suppress() is called synchronously by the subscriber, trySend is
-            // instant, and receive() picks it up within the timeout window.
-            val suppressChannel = Channel<Boolean>(Channel.RENDEZVOUS)
+            // Capacity-1 buffered channel: the suppress() lambda calls trySend(true), and
+            // withTimeoutOrNull(200L) below waits up to 200ms to receive it.
+            // Capacity 1 (instead of RENDEZVOUS) ensures trySend succeeds even if receive()
+            // hasn't started waiting yet — e.g. with Dispatchers.Unconfined collectors or
+            // test harnesses where the subscriber runs before the watcher resumes. A second
+            // spurious suppress signal cannot accumulate because the channel is drained by
+            // receive() before the next file's suppress channel is created.
+            val suppressChannel = Channel<Boolean>(1)
             val emitted = _externalFileChanges.tryEmit(ExternalFileChange(changed.entry.filePath, emitContent) {
                 suppressChannel.trySend(true)
             })
