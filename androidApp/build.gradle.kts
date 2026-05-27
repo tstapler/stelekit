@@ -76,6 +76,12 @@ android {
         compose = true
     }
 
+    lint {
+        // LogDetector causes an OOM (Metaspace) when analyzing AndroidLogSink.kt —
+        // this is a known lint tooling bug triggered by certain Kotlin when-expressions.
+        disable += setOf("LogConditional", "LongLogTag", "LogTagMismatch")
+    }
+
     compileOptions {
         // JGit 5.13.x in :kmp uses java.time and other Java 8+ APIs — desugaring required here too
         isCoreLibraryDesugaringEnabled = true
