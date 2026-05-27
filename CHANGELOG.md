@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.29.0](https://github.com/tstapler/stelekit/compare/v0.28.1...v0.29.0) (2026-05-27)
+
+
+### Features
+
+* **perf:** dynamic histogram dashboard — shows all recorded operations ([4e1d292](https://github.com/tstapler/stelekit/commit/4e1d2928ec28571f38943c8605c6fda0f44ea12c))
+* **perf:** EXPLAIN QUERY PLAN dashboard tab ([03bd38e](https://github.com/tstapler/stelekit/commit/03bd38e83c6c55ad18d7a9373685871768e7abe5))
+
+
+### Bug Fixes
+
+* **android:** disable LogDetector in androidApp and raise Metaspace limit ([f78312c](https://github.com/tstapler/stelekit/commit/f78312c61c3ab1b36ffba7bf19defe7e7f6551c4))
+* **android:** disable LogDetector lint rules to prevent Metaspace OOM ([4b4f7a0](https://github.com/tstapler/stelekit/commit/4b4f7a05bbe3b5e90d7985e915178d2a8ee65a3b))
+* **perf:** wire histogramWriter into GraphLoader so graph_load is recorded ([71e4600](https://github.com/tstapler/stelekit/commit/71e460058367aaafee50f778450ceabc150f9e2d))
+* **search:** prevent Space key from dismissing the search dialog ([#99](https://github.com/tstapler/stelekit/issues/99)) ([d83d343](https://github.com/tstapler/stelekit/commit/d83d34336a2d5304df0c69659ede2f38049ed3f3))
+
 ## [0.28.1](https://github.com/tstapler/stelekit/compare/v0.28.0...v0.28.1) (2026-05-27)
 
 
