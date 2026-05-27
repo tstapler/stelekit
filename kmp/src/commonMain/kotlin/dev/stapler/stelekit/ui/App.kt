@@ -396,6 +396,7 @@ private fun GraphContent(
             externalWriteActor = repos.writeActor,
             backgroundPageRepository = repos.backgroundPageRepository,
             sidecarManager = sidecarManager,
+            histogramWriter = repos.histogramWriter,
             spanRepository = repos.spanRepository,
         ).also { it.onBulkImportComplete = repos.onBulkImportComplete }
     }
