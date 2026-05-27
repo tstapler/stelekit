@@ -76,7 +76,7 @@ class GraphWriter(
     // Owned internal scope — callers must not inject a rememberCoroutineScope().
     private val ownedScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var scope: CoroutineScope? = null
-    private val debounceMs: Long = 500L
+    private var debounceMs: Long = 500L
 
     // Safety check: if more than this many blocks are deleted, require confirmation
     private val largeDeletionThreshold = 50
@@ -86,6 +86,7 @@ class GraphWriter(
      * Call this once when the application starts.
      */
     override fun startAutoSave(debounceMs: Long) {
+        this.debounceMs = debounceMs
         this.scope = ownedScope
     }
 
@@ -123,7 +124,9 @@ class GraphWriter(
     }
 
     /**
-     * Stop the auto-save processor and cancel the owned internal scope.
+     * Permanently stops the auto-save processor and cancels the owned scope.
+     * This is a terminal shutdown — do not call startAutoSave() after this.
+     * Intended to be called once during graph teardown.
      */
     override fun stopAutoSave() {
         scope = null
