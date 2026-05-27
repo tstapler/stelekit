@@ -144,6 +144,8 @@ internal fun ScreenRouter(
                     ringBuffer = repos.ringBuffer,
                     spanRepository = repos.spanRepository,
                     perfExporter = repos.perfExporter,
+                    queryPlanRepository = repos.queryPlanRepository,
+                    queryStatsCollector = repos.queryStatsCollector,
                 )
             }
             is Screen.GlobalUnlinkedReferences -> GlobalUnlinkedReferencesScreen(

@@ -32,6 +32,9 @@ import dev.stapler.stelekit.performance.HistogramWriter
 import dev.stapler.stelekit.performance.PerfExporter
 import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.PerformanceMonitor
+import dev.stapler.stelekit.performance.QueryPlanRepository
+import dev.stapler.stelekit.performance.QueryPlanRow
+import dev.stapler.stelekit.performance.QueryStatsCollector
 import dev.stapler.stelekit.performance.RingBufferSpanExporter
 import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.performance.SpanRepository
@@ -49,10 +52,12 @@ fun PerformanceDashboard(
     ringBuffer: RingBufferSpanExporter? = null,
     spanRepository: SpanRepository? = null,
     perfExporter: PerfExporter? = null,
+    queryPlanRepository: QueryPlanRepository? = null,
+    queryStatsCollector: QueryStatsCollector? = null,
     modifier: Modifier = Modifier,
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Histograms", "Spans", "Traces")
+    val tabs = listOf("Histograms", "Spans", "Traces", "Plans")
 
     Column(
         modifier = modifier
@@ -73,6 +78,7 @@ fun PerformanceDashboard(
             0 -> HistogramsTab(histogramWriter)
             1 -> SpansTab(spanRepository, ringBuffer, perfExporter)
             2 -> TracesTab()
+            3 -> QueryPlansTab(queryPlanRepository, queryStatsCollector)
         }
     }
 }
@@ -816,5 +822,138 @@ private fun getDurationColor(duration: Long): Color {
         duration > 1000 -> scheme.error
         duration > 100 -> scheme.secondary
         else -> scheme.primary
+    }
+}
+
+@Composable
+private fun QueryPlansTab(
+    queryPlanRepository: QueryPlanRepository?,
+    queryStatsCollector: QueryStatsCollector?,
+) {
+    if (queryPlanRepository == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("Query plan repository not available", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+
+    var plans by remember { mutableStateOf<Map<String, List<QueryPlanRow>>>(emptyMap()) }
+    var loading by remember { mutableStateOf(false) }
+    var selectedKey by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    fun loadPlans() {
+        scope.launch {
+            loading = true
+            val samples = withContext(PlatformDispatcher.DB) {
+                queryStatsCollector?.getSqlSamples() ?: emptyMap()
+            }
+            plans = withContext(PlatformDispatcher.DB) {
+                queryPlanRepository.explainAll(samples)
+            }
+            loading = false
+            if (selectedKey == null && plans.isNotEmpty()) selectedKey = plans.keys.first()
+        }
+    }
+
+    LaunchedEffect(Unit) { loadPlans() }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Query Plans (${plans.size})", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            if (loading) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
+            IconButton(onClick = { loadPlans() }) {
+                Text("↺", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        HorizontalDivider()
+
+        if (plans.isEmpty() && !loading) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("No queries captured yet — use the app then refresh", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            return@Column
+        }
+
+        Row(Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier.weight(0.4f).fillMaxHeight(),
+                contentPadding = PaddingValues(vertical = 4.dp)
+            ) {
+                items(plans.keys.sorted()) { key ->
+                    val rows = plans[key] ?: emptyList()
+                    val hasScan = rows.any { it.detail.startsWith("SCAN ") && !it.detail.contains("USING") }
+                    val bg = if (selectedKey == key) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().clickable { selectedKey = key }.padding(horizontal = 4.dp, vertical = 2.dp),
+                        color = bg,
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(Modifier.size(8.dp).background(if (hasScan) Color.Red else Color(0xFF4CAF50), MaterialTheme.shapes.small))
+                            Text(key, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+            VerticalDivider()
+            val key = selectedKey
+            if (key != null) {
+                val rows = plans[key] ?: emptyList()
+                LazyColumn(
+                    modifier = Modifier.weight(0.6f).fillMaxHeight(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    item {
+                        Text(key, style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(bottom = 8.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    items(rows) { row ->
+                        PlanRowItem(row)
+                    }
+                    if (rows.isEmpty()) {
+                        item { Text("No plan available", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall) }
+                    }
+                }
+            } else {
+                Box(Modifier.weight(0.6f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                    Text("Select a query", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlanRowItem(row: QueryPlanRow) {
+    val detail = row.detail
+    val isScan = detail.startsWith("SCAN ") && !detail.contains("USING")
+    val isSearch = detail.startsWith("SEARCH ")
+    val color = when {
+        isScan -> MaterialTheme.colorScheme.error
+        isSearch && detail.contains("USING") -> Color(0xFF4CAF50)
+        isSearch -> Color(0xFFFF9800)
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = (row.parentId * 16).dp.coerceAtMost(64.dp)),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(6.dp).background(color, MaterialTheme.shapes.small))
+        Text(detail, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace,
+            color = color, modifier = Modifier.weight(1f))
     }
 }
