@@ -963,4 +963,10 @@ android {
             excludes += "plugin.properties"
         }
     }
+
+    lint {
+        // LogDetector causes an OOM (Metaspace) when analyzing AndroidLogSink.kt —
+        // this is a known lint tooling bug triggered by certain Kotlin when-expressions.
+        disable += setOf("LogConditional", "LongLogTag", "LogTagMismatch")
+    }
 }
