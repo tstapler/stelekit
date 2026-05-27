@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.30.0](https://github.com/tstapler/stelekit/compare/v0.29.0...v0.30.0) (2026-05-27)
+
+
+### Features
+
+* **perf:** wire editor_input histogram and add SQL Stats dashboard tab ([e59697e](https://github.com/tstapler/stelekit/commit/e59697e34b05bd4ea51e20b0d7f7211d0bda1828))
+
+
+### Bug Fixes
+
+* **lint:** add explicit color to Text inside dynamic-background Surface ([6309871](https://github.com/tstapler/stelekit/commit/6309871b825be9199f35f028cf591bcb8396a2a7))
+
 ## [0.29.0](https://github.com/tstapler/stelekit/compare/v0.28.1...v0.29.0) (2026-05-27)
 
 
