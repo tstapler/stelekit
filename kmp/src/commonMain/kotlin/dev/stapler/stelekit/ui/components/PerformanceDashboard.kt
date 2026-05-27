@@ -903,7 +903,7 @@ private fun QueryPlansTab(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Box(Modifier.size(8.dp).background(if (hasScan) Color.Red else Color(0xFF4CAF50), MaterialTheme.shapes.small))
-                            Text(key, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(key, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
                 }
