@@ -446,7 +446,8 @@ private fun GraphContent(
             graphLoader = graphLoader,
             graphWriter = graphWriter,
             pageRepository = repos.pageRepository,
-            graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" }
+            graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" },
+            histogramWriter = repos.histogramWriter
         )
     }
 

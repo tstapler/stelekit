@@ -35,6 +35,7 @@ import dev.stapler.stelekit.performance.PerformanceMonitor
 import dev.stapler.stelekit.performance.QueryPlanRepository
 import dev.stapler.stelekit.performance.QueryPlanRow
 import dev.stapler.stelekit.performance.QueryStatsCollector
+import dev.stapler.stelekit.performance.QueryStatsRepository
 import dev.stapler.stelekit.performance.RingBufferSpanExporter
 import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.performance.SpanRepository
@@ -54,10 +55,11 @@ fun PerformanceDashboard(
     perfExporter: PerfExporter? = null,
     queryPlanRepository: QueryPlanRepository? = null,
     queryStatsCollector: QueryStatsCollector? = null,
+    queryStatsRepository: QueryStatsRepository? = null,
     modifier: Modifier = Modifier,
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Histograms", "Spans", "Traces", "Plans")
+    val tabs = listOf("Histograms", "Spans", "Traces", "Plans", "SQL Stats")
 
     Column(
         modifier = modifier
@@ -79,6 +81,7 @@ fun PerformanceDashboard(
             1 -> SpansTab(spanRepository, ringBuffer, perfExporter)
             2 -> TracesTab()
             3 -> QueryPlansTab(queryPlanRepository, queryStatsCollector)
+            4 -> QueryStatsTab(queryStatsRepository)
         }
     }
 }
@@ -955,5 +958,141 @@ private fun PlanRowItem(row: QueryPlanRow) {
         Box(Modifier.size(6.dp).background(color, MaterialTheme.shapes.small))
         Text(detail, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace,
             color = color, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun QueryStatsTab(queryStatsRepository: QueryStatsRepository?) {
+    if (queryStatsRepository == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("Query stats repository not available", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+
+    var sortByTotalMs by remember { mutableStateOf(true) }
+
+    val stats by produceState<List<dev.stapler.stelekit.performance.QueryStat>>(emptyList(), queryStatsRepository, sortByTotalMs) {
+        while (true) {
+            value = withContext(PlatformDispatcher.DB) {
+                val version = queryStatsRepository.getAllVersions().firstOrNull() ?: ""
+                if (sortByTotalMs) {
+                    queryStatsRepository.getTopByTotalMs(version, 50)
+                } else {
+                    queryStatsRepository.getTopByCalls(version, 50)
+                }
+            }
+            delay(5000)
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        // Sort toggle chips
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Sort:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            FilterChip(
+                selected = sortByTotalMs,
+                onClick = { sortByTotalMs = true },
+                label = { Text("By Total ms", style = MaterialTheme.typography.labelSmall) },
+            )
+            FilterChip(
+                selected = !sortByTotalMs,
+                onClick = { sortByTotalMs = false },
+                label = { Text("By Calls", style = MaterialTheme.typography.labelSmall) },
+            )
+        }
+        HorizontalDivider()
+
+        if (stats.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    "No query stats yet — stats flush every 30s",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            return@Column
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+        ) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("Table", modifier = Modifier.weight(1.5f), style = MaterialTheme.typography.labelSmall)
+                    Text("Op", modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall)
+                    Text("Calls", modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall)
+                    Text("Errors", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall)
+                    Text("Mean", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall)
+                    Text("p95", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall)
+                    Text("p99", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall)
+                }
+                HorizontalDivider()
+            }
+            items(stats) { stat ->
+                val p95 = stat.estimatePercentile(0.95)
+                val p99 = stat.estimatePercentile(0.99)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stat.tableName,
+                        modifier = Modifier.weight(1.5f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        stat.operation,
+                        modifier = Modifier.weight(0.7f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "${stat.calls}",
+                        modifier = Modifier.weight(0.7f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    Text(
+                        "${stat.errors}",
+                        modifier = Modifier.weight(0.5f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    Text(
+                        "${stat.meanMs}ms",
+                        modifier = Modifier.weight(0.6f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    Text(
+                        "${p95}ms",
+                        modifier = Modifier.weight(0.6f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    Text(
+                        text = "${p99}ms",
+                        modifier = Modifier.weight(0.6f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = p99Color(p99),
+                    )
+                }
+            }
+        }
     }
 }

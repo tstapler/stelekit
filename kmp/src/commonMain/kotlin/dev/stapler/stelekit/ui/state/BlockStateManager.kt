@@ -58,7 +58,8 @@ class BlockStateManager(
     private val graphWriter: GraphWriter? = null,
     private val pageRepository: PageRepository? = null,
     private val graphPathProvider: () -> String = { "" },
-    private val writeActor: DatabaseWriteActor? = null
+    private val writeActor: DatabaseWriteActor? = null,
+    private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
 ) {
     private val logger = Logger("BlockStateManager")
     private val diskWriteDebounce = DebounceManager(scope, 300L)
@@ -592,7 +593,9 @@ class BlockStateManager(
         // Mark dirty BEFORE saving so the observer merge keeps our version
         _dirtyBlocks.update { it + (blockUuid to version) }
 
+        val t0 = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
         val writeResult = writeContentOnly(blockUuid, content)
+        histogramWriter?.record("editor_input", dev.stapler.stelekit.performance.HistogramWriter.epochMs() - t0)
         if (writeResult.isLeft()) {
             logger.warn("applyContentChange: DB write failed for $blockUuid — content lives in-memory only")
         }
