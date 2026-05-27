@@ -29,6 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import arrow.core.right
 
 /**
  * Single source of truth for block state across all screens (JournalsView, PageView).
@@ -713,17 +714,28 @@ class BlockStateManager(
         val currentUuids = current.map { it.uuid }.toSet()
         val toDelete = currentUuids - snapshotUuids
         // Route the delete+save pair through the actor so it doesn't race with queued content saves.
+        var success = true
         writeActor?.execute {
             for (uuid in toDelete) {
                 blockRepository.deleteBlock(uuid, deleteChildren = false)
+                    .onLeft { logger.error("restorePageToSnapshot: deleteBlock failed: $it"); success = false }
             }
-            blockRepository.saveBlocks(snapshot)
+            if (success) {
+                blockRepository.saveBlocks(snapshot)
+                    .onLeft { logger.error("restorePageToSnapshot: saveBlocks failed: $it"); success = false }
+            }
+            Unit.right()
         } ?: run {
             for (uuid in toDelete) {
                 blockRepository.deleteBlock(uuid, deleteChildren = false)
+                    .onLeft { logger.error("restorePageToSnapshot: deleteBlock failed: $it"); success = false }
             }
-            blockRepository.saveBlocks(snapshot)
+            if (success) {
+                blockRepository.saveBlocks(snapshot)
+                    .onLeft { logger.error("restorePageToSnapshot: saveBlocks failed: $it"); success = false }
+            }
         }
+        if (!success) return
         _blocks.update { state ->
             val newBlocks = state.toMutableMap()
             newBlocks[pageUuid] = snapshot

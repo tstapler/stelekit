@@ -124,6 +124,7 @@ class GraphFileWatcher(
 
     /** Stops the watcher job without cancelling the owned scope. */
     fun stopWatching() {
+        fileSystem.stopExternalChangeDetection()
         watcherJob?.cancel()
         watcherJob = null
     }
