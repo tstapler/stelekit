@@ -216,16 +216,7 @@ class DatabaseWriteActor(
                     // materializing all blocks across every page before the first delete runs.
                     // Bounds peak memory to PAGE_DELETE_CHUNK × (blocks per page).
                     for (chunk in request.pageUuids.chunked(PAGE_DELETE_CHUNK)) {
-                        try {
-                            for (uuid in chunk) {
-                                val pageBlocks = blockRepository.getBlocksForPage(uuid).first().getOrNull()
-                                pageBlocks?.forEach { opLogger.logDelete(it) }
-                            }
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            logger.warn("Op log pre-delete read failed (non-fatal)", e)
-                        }
+                        logDeletesForChunk(chunk)
                         val chunkResult = blockRepository.deleteBlocksForPages(chunk)
                         if (chunkResult.isLeft()) {
                             request.deferred.complete(chunkResult)
@@ -260,6 +251,20 @@ class DatabaseWriteActor(
                 }
                 request.deferred.complete(request.op())
             }
+        }
+    }
+
+    /** Log deletes for each UUID in [chunk] via the op-logger (non-fatal). */
+    private suspend fun logDeletesForChunk(chunk: List<String>) {
+        try {
+            for (uuid in chunk) {
+                val pageBlocks = blockRepository.getBlocksForPage(uuid).first().getOrNull()
+                pageBlocks?.forEach { opLogger?.logDelete(it) }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("Op log pre-delete read failed (non-fatal)", e)
         }
     }
 

@@ -93,7 +93,7 @@ class GraphWriter(
      * Start the auto-save processor with an externally-supplied scope.
      * Intended for tests only — production code should use [startAutoSave] without args.
      */
-    fun startAutoSave(scope: CoroutineScope, debounceMs: Long = 500L) {
+    fun startAutoSave(scope: CoroutineScope, _debounceMs: Long = 500L) {
         this.scope = scope
     }
 

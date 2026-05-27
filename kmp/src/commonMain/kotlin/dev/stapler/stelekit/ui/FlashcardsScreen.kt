@@ -12,6 +12,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -33,7 +35,7 @@ internal fun FlashcardsScreen(blockStateManager: dev.stapler.stelekit.ui.state.B
         allBlocks.values.flatten().filter { FlashcardScheduler.isDue(it, today) }
     }
 
-    var currentIndex by remember(dueCards) { mutableStateOf(0) }
+    var currentIndex by remember(dueCards) { mutableIntStateOf(0) }
     var showBack by remember(currentIndex) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -130,7 +132,7 @@ internal fun FlashcardsScreen(blockStateManager: dev.stapler.stelekit.ui.state.B
             val card = dueCards[currentIndex]
 
             // Card with swipe gesture
-            var offsetX by remember(currentIndex) { mutableStateOf(0f) }
+            var offsetX by remember(currentIndex) { mutableFloatStateOf(0f) }
 
             Box(
                 modifier = Modifier
