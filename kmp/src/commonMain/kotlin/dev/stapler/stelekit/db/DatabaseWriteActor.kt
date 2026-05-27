@@ -295,6 +295,20 @@ class DatabaseWriteActor(
         ))
     }
 
+    /** Log deletes for each UUID in [chunk] via the op-logger (non-fatal). */
+    private suspend fun logDeletesForChunk(chunk: List<String>) {
+        try {
+            for (uuid in chunk) {
+                val pageBlocks = blockRepository.getBlocksForPage(uuid).first().getOrNull()
+                pageBlocks?.forEach { opLogger?.logDelete(it) }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("Op log pre-delete read failed (non-fatal)", e)
+        }
+    }
+
     private suspend fun processSaveBlocks(first: WriteRequest.SaveBlocks) {
         val sourceChannel = channelFor(first.priority)
         // Drain all consecutive same-priority SaveBlocks — coalesce into one transaction.

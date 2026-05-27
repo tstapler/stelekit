@@ -550,6 +550,11 @@ private fun TopicSuggestionChip(
         Text(
             text = suggestion.term,
             style = MaterialTheme.typography.bodySmall,
+            color = if (suggestion.accepted) {
+                MaterialTheme.colorScheme.onSecondaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
         )
         Spacer(Modifier.width(4.dp))
         if (suggestion.accepted) {

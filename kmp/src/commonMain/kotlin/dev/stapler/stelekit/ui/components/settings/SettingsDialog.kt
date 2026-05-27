@@ -80,6 +80,7 @@ fun SettingsDialog(
                         Text(
                             "Settings",
                             style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
 
