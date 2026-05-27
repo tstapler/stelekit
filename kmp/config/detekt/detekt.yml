@@ -24,6 +24,8 @@ stelekit:
     active: true
   NoRunBlockingInLifecycle:
     active: true
+  UnthemedTextInBackgroundContainer:
+    active: true
 
 # Compose Multiplatform rules (io.nlopez.compose.rules)
 Compose:

@@ -256,11 +256,12 @@ class DatabaseWriteActor(
         }
     }
 
+    /** Log deletes for each UUID in [chunk] via the op-logger (non-fatal). */
     private suspend fun logDeletesForChunk(chunk: List<String>) {
         try {
             for (uuid in chunk) {
                 val pageBlocks = blockRepository.getBlocksForPage(uuid).first().getOrNull()
-                pageBlocks?.forEach { opLogger!!.logDelete(it) }
+                pageBlocks?.forEach { opLogger?.logDelete(it) }
             }
         } catch (e: CancellationException) {
             throw e
