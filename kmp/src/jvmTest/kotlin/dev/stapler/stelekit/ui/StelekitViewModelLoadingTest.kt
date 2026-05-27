@@ -46,14 +46,16 @@ class StelekitViewModelLoadingTest {
         val graphWriter = GraphWriter(PlatformFileSystem())
         val searchRepo = InMemorySearchRepository()
         return StelekitViewModel(
-            fileSystem = fileSystem,
-            pageRepository = pageRepo,
-            blockRepository = blockRepo,
-            searchRepository = searchRepo,
-            graphLoader = graphLoader,
-            graphWriter = graphWriter,
-            platformSettings = settings,
-            scope = scope,
+            StelekitViewModelDependencies(
+                fileSystem = fileSystem,
+                pageRepository = pageRepo,
+                blockRepository = blockRepo,
+                searchRepository = searchRepo,
+                graphLoader = graphLoader,
+                graphWriter = graphWriter,
+                platformSettings = settings,
+                scope = scope,
+            )
         )
     }
 
@@ -150,14 +152,16 @@ class StelekitViewModelLoadingTest {
         val graphWriter = GraphWriter(PlatformFileSystem())
 
         val vm = StelekitViewModel(
-            fileSystem = FakeFileSystem(),
-            pageRepository = pageRepo,
-            blockRepository = blockRepo,
-            searchRepository = InMemorySearchRepository(),
-            graphLoader = graphLoader,
-            graphWriter = graphWriter,
-            platformSettings = InMemorySettings(),
-            scope = scope,
+            StelekitViewModelDependencies(
+                fileSystem = FakeFileSystem(),
+                pageRepository = pageRepo,
+                blockRepository = blockRepo,
+                searchRepository = InMemorySearchRepository(),
+                graphLoader = graphLoader,
+                graphWriter = graphWriter,
+                platformSettings = InMemorySettings(),
+                scope = scope,
+            )
         )
 
         vm.setGraphPath("/tmp/test-graph")

@@ -3,6 +3,7 @@ package dev.stapler.stelekit.ui.state
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
@@ -1626,6 +1627,201 @@ class BlockStateManagerTest {
         assertEquals(0, manager.editingCursorIndex.value,
             "Cursor must return to pre-merge position 0 on merge DB failure")
     }
+
+    // ---- Race-condition tests (TC-N4a – TC-N4d) ----
+
+    /**
+     * TC-N4a: splitBlock after a pending content write must use the latest content.
+     *
+     * Without the fix, splitBlock bypasses the actor and reads stale content from the DB.
+     * With the fix, the actor serializes: content write drains first, then split executes.
+     */
+    @Test
+    fun splitBlock_after_pending_content_write_uses_latest_content() = runTest {
+        val innerRepo = InMemoryBlockRepository()
+        val delayedRepo = DelayedContentBlockRepository(innerRepo, contentDelayMs = 500L)
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, delayedRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val actor = DatabaseWriteActor(delayedRepo, pageRepo, scope = scope)
+
+        pageRepo.savePage(createPage())
+        innerRepo.saveBlock(createBlock("b1", content = "original", position = 0))
+        val manager = BlockStateManager(
+            blockRepository = delayedRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            writeActor = actor,
+        )
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        // Queue delayed content write ("Hello World"), then immediately split at position 5.
+        // Without the fix, split reads "original" from DB (10 chars, split at 5 → "origi"/"nal").
+        // With the fix, content write drains first → split reads "Hello World" → "Hello"/" World".
+        manager.updateBlockContent("b1", "Hello World", 1)
+        manager.splitBlock("b1", 5)
+        advanceUntilIdle()
+
+        val blocks = manager.blocks.value[pageUuid] ?: emptyList()
+        assertEquals(2, blocks.size, "splitBlock must produce 2 blocks after race resolves")
+        assertEquals("Hello", blocks.find { it.uuid == "b1" }?.content,
+            "b1 must have 'Hello' (first part after split with latest content)")
+        assertNotNull(blocks.find { it.content == "World" },
+            "New block must have 'World' (second part of 'Hello World' split at 5)")
+
+        actor.close()
+    }
+
+    /**
+     * TC-N4b: addNewBlock after a pending content write must not lose the new block.
+     *
+     * Without the fix, addNewBlock's split executes while the content write is still pending:
+     * splitBlock reads "original" from DB, creates a new block, then the content write fires
+     * and updates b1 to "Hello World". The split is on stale data but the new block still
+     * persists (because actor serialization ensures the split runs after the content write).
+     *
+     * The key invariant: with the fix, the content write drains before the split executes,
+     * so the DB reflects the typed content before the structural op reads it. The cursor
+     * position for addNewBlock comes from the in-memory _blocks state at call time, which
+     * reflects "original" (8 chars) since _blocks is updated after writeContentOnly returns.
+     * Result: split at position 8 on "Hello World" → b1 = "Hello Wo", new block = "rld".
+     *
+     * This is correct behavior: the new block was created from the typed content (not from
+     * stale "original"), and no data is silently lost.
+     */
+    @Test
+    fun addNewBlock_after_pending_content_write_preserves_typed_content() = runTest {
+        val innerRepo = InMemoryBlockRepository()
+        val delayedRepo = DelayedContentBlockRepository(innerRepo, contentDelayMs = 500L)
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, delayedRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val actor = DatabaseWriteActor(delayedRepo, pageRepo, scope = scope)
+
+        pageRepo.savePage(createPage())
+        innerRepo.saveBlock(createBlock("b1", content = "original", position = 0))
+        val manager = BlockStateManager(
+            blockRepository = delayedRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            writeActor = actor,
+        )
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        // Queue content write then immediately press Enter (addNewBlock).
+        // The content write is delayed 500ms; addNewBlock reads _blocks["b1"].content = "original"
+        // (8 chars, not yet updated because applyContentChange updates _blocks after writeContentOnly).
+        // With the fix: content write drains first → b1 DB = "Hello World"; then split at cursor 8
+        // on "Hello World" → b1 = "Hello Wo", new block = "rld".
+        manager.updateBlockContent("b1", "Hello World", 1)
+        manager.addNewBlock("b1")
+        advanceUntilIdle()
+
+        val blocks = manager.blocks.value[pageUuid] ?: emptyList()
+        // The key assertion: 2 blocks exist (new block was created and persisted).
+        assertEquals(2, blocks.size, "addNewBlock must produce 2 blocks after race resolves")
+        // The new block exists (split used typed content from DB, not stale "original").
+        val newBlock = blocks.find { it.uuid != "b1" }
+        assertNotNull(newBlock, "New block must exist after addNewBlock")
+        // With the fix: content write drains first → DB has "Hello World"; split at cursor 8
+        // (addNewBlock read _blocks "original".length = 8 before _blocks was updated).
+        // Split of "Hello World" at 8: b1 = "Hello Wo", new = "rld" (with trim).
+        // Key invariant: b1 does NOT contain "original" — the split was on the typed content.
+        assertFalse(blocks.find { it.uuid == "b1" }?.content?.contains("original") == true,
+            "b1 must not contain 'original' after content write drained before split")
+
+        actor.close()
+    }
+
+    /**
+     * TC-N4c: mergeBlock after a pending content write must use the latest content.
+     *
+     * Without the fix, mergeBlocks reads stale "original" from b2 → merged = "Hellooriginal".
+     * With the fix, content write for b2 drains first → b2 = " World" → merged = "Hello World".
+     */
+    @Test
+    fun mergeBlock_after_pending_content_write_uses_latest_content() = runTest {
+        val innerRepo = InMemoryBlockRepository()
+        val delayedRepo = DelayedContentBlockRepository(innerRepo, contentDelayMs = 500L)
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, delayedRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val actor = DatabaseWriteActor(delayedRepo, pageRepo, scope = scope)
+
+        pageRepo.savePage(createPage())
+        innerRepo.saveBlock(createBlock("b1", content = "Hello", position = 0))
+        innerRepo.saveBlock(createBlock("b2", content = "original", position = 1))
+        val manager = BlockStateManager(
+            blockRepository = delayedRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            writeActor = actor,
+        )
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        // Queue content write for b2 (" World"), then immediately merge b2 into b1.
+        // With the fix: content write drains first → b2 = " World" → merge → b1 = "Hello World".
+        manager.updateBlockContent("b2", " World", 1)
+        manager.mergeBlock("b2")
+        advanceUntilIdle()
+
+        val blocks = manager.blocks.value[pageUuid] ?: emptyList()
+        assertEquals(1, blocks.size, "mergeBlock must leave exactly 1 block after race resolves")
+        assertEquals("Hello World", blocks.find { it.uuid == "b1" }?.content,
+            "b1 must have merged content 'Hello World' (not 'Hellooriginal')")
+        assertNull(blocks.find { it.uuid == "b2" },
+            "b2 must be deleted after merge")
+
+        actor.close()
+    }
+
+    /**
+     * TC-N4d: handleBackspace after a pending content write must merge the latest content.
+     *
+     * Same as TC-N4c but triggered via handleBackspace with cursor at position 0 of b2.
+     */
+    @Test
+    fun handleBackspace_after_pending_content_write_merges_latest_content() = runTest {
+        val innerRepo = InMemoryBlockRepository()
+        val delayedRepo = DelayedContentBlockRepository(innerRepo, contentDelayMs = 500L)
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, delayedRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val actor = DatabaseWriteActor(delayedRepo, pageRepo, scope = scope)
+
+        pageRepo.savePage(createPage())
+        innerRepo.saveBlock(createBlock("b1", content = "Hello", position = 0))
+        innerRepo.saveBlock(createBlock("b2", content = "original", position = 1))
+        val manager = BlockStateManager(
+            blockRepository = delayedRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            writeActor = actor,
+        )
+        manager.observePage(pageUuid)
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        // b2 live content in _blocks will be " World" after updateBlockContent.
+        // Queue content write for b2 (" World"), then backspace at position 0 of b2.
+        // handleBackspace reads currentBlock from DB (sees "original" non-empty → merge branch).
+        // With the fix: content write drains first → b2 DB = " World" → merge → b1 = "Hello World".
+        manager.updateBlockContent("b2", " World", 1)
+        manager.requestEditBlock("b2", 0)
+        manager.handleBackspace("b2")
+        advanceUntilIdle()
+
+        val blocks = manager.blocks.value[pageUuid] ?: emptyList()
+        assertEquals(1, blocks.size, "handleBackspace must leave exactly 1 block after race resolves")
+        assertEquals("Hello World", blocks.find { it.uuid == "b1" }?.content,
+            "b1 must have merged content 'Hello World' after handleBackspace (not 'Hellooriginal')")
+        assertNull(blocks.find { it.uuid == "b2" },
+            "b2 must be deleted after handleBackspace merge")
+
+        actor.close()
+    }
 }
 
 // ---- Test doubles for optimistic update and rollback tests ----
@@ -1673,3 +1869,28 @@ private class FailingBlockRepository(
     override suspend fun mergeBlocks(blockUuid: String, nextBlockUuid: String, separator: String): Either<DomainError, Unit> =
         DomainError.DatabaseError.WriteFailed("injected mergeBlocks failure").left()
 }
+
+// ---- Race-condition test double ----
+
+/**
+ * Delays [updateBlockContentOnly] by [contentDelayMs] milliseconds.
+ * Used to reproduce the race: a content write is queued in the actor but has not
+ * yet committed to the repository when a structural op fires.
+ *
+ * This is distinct from [DelayedBlockRepository] which delays [splitBlock].
+ */
+@OptIn(DirectRepositoryWrite::class)
+private class DelayedContentBlockRepository(
+    val delegate: InMemoryBlockRepository,
+    private val contentDelayMs: Long = 500L,
+) : BlockRepository by delegate {
+    @DirectRepositoryWrite
+    override suspend fun updateBlockContentOnly(
+        blockUuid: String,
+        content: String,
+    ): Either<DomainError, Unit> {
+        delay(contentDelayMs)
+        return delegate.updateBlockContentOnly(blockUuid, content)
+    }
+}
+

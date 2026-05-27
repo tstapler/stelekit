@@ -1,7 +1,7 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.platform.PlatformFileSystem
-import dev.stapler.stelekit.repository.DatascriptBlockRepository
+import dev.stapler.stelekit.repository.DatalogBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -20,7 +20,7 @@ class DemoGraphIntegrationTest {
     private val datePattern = Regex("^\\d{4}-\\d{2}-\\d{2}$")
     private val wikiLinkPattern = Regex("\\[\\[([^\\]]+)]]")
 
-    private fun loadDemoGraph(): Triple<List<dev.stapler.stelekit.model.Page>, InMemoryPageRepository, DatascriptBlockRepository> =
+    private fun loadDemoGraph(): Triple<List<dev.stapler.stelekit.model.Page>, InMemoryPageRepository, DatalogBlockRepository> =
         runBlocking {
             val url = javaClass.classLoader.getResource("demo-graph")
                 ?: fail("demo-graph not found in classpath")
@@ -28,7 +28,7 @@ class DemoGraphIntegrationTest {
 
             val fileSystem = PlatformFileSystem()
             val pageRepository = InMemoryPageRepository()
-            val blockRepository = DatascriptBlockRepository()
+            val blockRepository = DatalogBlockRepository()
             val graphLoader = GraphLoader(fileSystem, pageRepository, blockRepository)
 
             graphLoader.loadGraph(graphDir.absolutePath) {}

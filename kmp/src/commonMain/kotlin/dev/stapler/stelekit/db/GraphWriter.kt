@@ -46,11 +46,21 @@ class GraphWriter(
     @Deprecated("Use writeActor instead", level = DeprecationLevel.WARNING)
     private val pageRepository: PageRepository? = null,
     private val sidecarManager: SidecarManager? = null,
-    /** When non-null, all file writes are encrypted via paranoid-mode before hitting disk. */
-    @Volatile var cryptoLayer: CryptoLayer? = null,
+    /** Initial CryptoLayer value — use [setCryptoLayer] to change at runtime. */
+    initialCryptoLayer: CryptoLayer? = null,
     /** Graph root path — required to compute graph-root-relative AAD paths for encryption. */
     @Volatile var graphPath: String = "",
-) {
+) : GraphWriterPort {
+    /**
+     * Backing field for the CryptoLayer used to encrypt files in paranoid mode.
+     * Volatile so changes published by [setCryptoLayer] are visible across coroutine threads.
+     */
+    @Volatile private var cryptoLayer: CryptoLayer? = initialCryptoLayer
+
+    override fun setCryptoLayer(layer: CryptoLayer?) { cryptoLayer = layer }
+
+    override fun closeAndClearCryptoLayer() { cryptoLayer?.close(); cryptoLayer = null }
+
     private val logger = Logger("GraphWriter")
     private val saveMutex = Mutex()
 
@@ -63,6 +73,8 @@ class GraphWriter(
     // Per-page debounce: pageUuid → pending Job + latest request
     private val pendingByPage = mutableMapOf<String, Pair<Job, SaveRequest>>()
     private val pendingMutex = Mutex()
+    // Owned internal scope — callers must not inject a rememberCoroutineScope().
+    private val ownedScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var scope: CoroutineScope? = null
     private val debounceMs: Long = 500L
 
@@ -70,17 +82,25 @@ class GraphWriter(
     private val largeDeletionThreshold = 50
 
     /**
-     * Start the auto-save processor.
+     * Start the auto-save processor. Uses the writer's owned internal scope.
      * Call this once when the application starts.
      */
-    fun startAutoSave(scope: CoroutineScope, debounceMs: Long = this.debounceMs) {
+    override fun startAutoSave(debounceMs: Long) {
+        this.scope = ownedScope
+    }
+
+    /**
+     * Start the auto-save processor with an externally-supplied scope.
+     * Intended for tests only — production code should use [startAutoSave] without args.
+     */
+    fun startAutoSave(scope: CoroutineScope, _debounceMs: Long = 500L) {
         this.scope = scope
     }
 
     /**
      * Flush all pending saves to disk immediately (e.g. on app pause/shutdown).
      */
-    suspend fun flush() {
+    override suspend fun flush() {
         val pending = pendingMutex.withLock {
             val snapshot = pendingByPage.values.map { (job, req) -> job to req }
             pendingByPage.values.forEach { (job, _) -> job.cancel() }
@@ -103,10 +123,11 @@ class GraphWriter(
     }
 
     /**
-     * Stop the auto-save processor and flush remaining saves.
+     * Stop the auto-save processor and cancel the owned internal scope.
      */
-    fun stopAutoSave() {
+    override fun stopAutoSave() {
         scope = null
+        ownedScope.cancel()
     }
 
     /**
@@ -130,7 +151,7 @@ class GraphWriter(
     /**
      * Immediately save a page (bypasses debouncing).
      */
-    suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String) {
+    override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String) {
         savePageInternal(page, blocks, graphPath)
     }
 
@@ -139,7 +160,7 @@ class GraphWriter(
      * Calculates the new file path based on the new name and moves the file.
      * Returns true if successful, false otherwise.
      */
-    suspend fun renamePage(page: Page, newName: String, graphPath: String): Boolean = saveMutex.withLock {
+    override suspend fun renamePage(page: Page, newName: String, graphPath: String): Boolean = saveMutex.withLock {
         // IO boundary: all fileSystem calls must run on PlatformDispatcher.IO on Android.
         withContext(PlatformDispatcher.IO) {
         val oldPath = page.filePath
@@ -227,7 +248,7 @@ class GraphWriter(
     /**
      * Delete a page file.
      */
-    suspend fun deletePage(page: Page): Boolean = saveMutex.withLock {
+    override suspend fun deletePage(page: Page): Boolean = saveMutex.withLock {
         // IO boundary: all fileSystem calls must run on PlatformDispatcher.IO on Android.
         withContext(PlatformDispatcher.IO) {
         val path = page.filePath
@@ -520,7 +541,7 @@ class GraphWriter(
                 onFileWritten = onFileWritten,
                 pageRepository = pageRepository,
                 sidecarManager = sidecarManager,
-                cryptoLayer = cryptoLayer,
+                initialCryptoLayer = cryptoLayer,
                 graphPath = graphPath,
             )
             onRelease {

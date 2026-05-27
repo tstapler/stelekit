@@ -13,10 +13,12 @@ class SteleKitRuleSetProvider : RuleSetProvider {
             RegexInLambdaRule(config),
             MissingDirectRepositoryWriteRule(config),
             RepositoryWriteCallSiteRule(config),
+            ClassLevelDirectRepositoryWriteOptInRule(config),
             SaveBlockWithCopyRule(config),
             SwallowedCancellationExceptionRule(config),
             RememberKeyForConstructorArgsRule(config),
             NoRunBlockingInLifecycleRule(config),
+            UnthemedTextInBackgroundContainerRule(config),
         ),
     )
 }

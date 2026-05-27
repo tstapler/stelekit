@@ -3,7 +3,8 @@ package dev.stapler.stelekit.ui
 import dev.stapler.stelekit.db.BacklinkRenamer
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphLoader
-import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.db.GraphLoaderPort
+import dev.stapler.stelekit.db.GraphWriterPort
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.db.RenameResult
 import dev.stapler.stelekit.db.UndoManager
@@ -71,35 +72,32 @@ sealed class IndexingState {
  * and not concurrent with the parallel graph loading that causes SQLITE_BUSY. The opt-in is
  * intentional; new writes should prefer going through [writeActor] where possible.
  */
-@OptIn(DirectRepositoryWrite::class)
 class StelekitViewModel(
-    private val fileSystem: FileSystem,
-    private val pageRepository: PageRepository,
-    private val blockRepository: BlockRepository,
-    private val searchRepository: SearchRepository,
-    private val graphLoader: GraphLoader,
-    private val graphWriter: GraphWriter,
-    private val platformSettings: Settings,
+    deps: StelekitViewModelDependencies,
+) {
+    private val fileSystem: FileSystem = deps.fileSystem
+    private val pageRepository: PageRepository = deps.pageRepository
+    private val blockRepository: BlockRepository = deps.blockRepository
+    private val searchRepository: SearchRepository = deps.searchRepository
+    private val graphLoader: GraphLoaderPort = deps.graphLoader
+    private val graphWriter: GraphWriterPort = deps.graphWriter
+    private val platformSettings: Settings = deps.platformSettings
+    private val notificationManager: NotificationManager? = deps.notificationManager
+    private val journalService: JournalService =
+        deps.journalService ?: JournalService(deps.pageRepository, deps.blockRepository)
+    private val blockStateManager: BlockStateManager? = deps.blockStateManager
+    private val writeActor: DatabaseWriteActor? = deps.writeActor
+    private val undoManager: UndoManager? = deps.undoManager
+    private val exportService: ExportService? = deps.exportService
+    private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = deps.histogramWriter
+    private val bugReportBuilder: dev.stapler.stelekit.performance.BugReportBuilder? = deps.bugReportBuilder
+    private val debugFlagRepository: dev.stapler.stelekit.performance.DebugFlagRepository? = deps.debugFlagRepository
+    private val activeGitSyncService: StateFlow<GitSyncService?> = deps.activeGitSyncService
+    private val activeGraphIdProvider: () -> String? = deps.activeGraphIdProvider
+    private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(deps.ringBuffer)
     // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
     // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
-    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-    private val notificationManager: NotificationManager? = null,
-    private val journalService: JournalService = JournalService(pageRepository, blockRepository),
-    private val blockStateManager: BlockStateManager? = null,
-    private val writeActor: DatabaseWriteActor? = null,
-    private val undoManager: UndoManager? = null,
-    private val exportService: ExportService? = null,
-    private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
-    private val bugReportBuilder: dev.stapler.stelekit.performance.BugReportBuilder? = null,
-    private val debugFlagRepository: dev.stapler.stelekit.performance.DebugFlagRepository? = null,
-    ringBuffer: dev.stapler.stelekit.performance.RingBufferSpanExporter? = null,
-    // Optional git sync service — wired when git is configured for the active graph.
-    // Uses a StateFlow<GitSyncService?> so the ViewModel can switch services on graph change.
-    private val activeGitSyncService: StateFlow<GitSyncService?> = MutableStateFlow(null),
-    private val activeGraphIdProvider: () -> String? = { null },
-) {
-    private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(ringBuffer)
-    private val scope = scope
+    private val scope = deps.scope
     private val logger = Logger("StelekitViewModel")
 
     /**
@@ -208,7 +206,8 @@ class StelekitViewModel(
     // Lazy so tests that don't exercise rename don't fail on a missing actor at construction time.
     private val backlinkRenamer by lazy {
         BacklinkRenamer(
-            pageRepository, blockRepository, graphWriter,
+            pageRepository, blockRepository,
+            graphWriter,
             requireNotNull(writeActor) { "writeActor is required for rename operations" }
         )
     }
@@ -234,7 +233,7 @@ class StelekitViewModel(
     val indexingProgress: StateFlow<IndexingState> = _indexingProgress.asStateFlow()
 
     init {
-        blockStateManager?.let { graphLoader.activePageUuids = it.activePageUuids }
+        blockStateManager?.let { graphLoader.setActivePageUuids(it.activePageUuids) }
 
         updateCommands()
         observeSyncState()
@@ -345,6 +344,7 @@ class StelekitViewModel(
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun triggerReindex() {
         val path = _uiState.value.currentGraphPath
         if (path.isEmpty()) return
@@ -374,6 +374,7 @@ class StelekitViewModel(
         loadGraph(path)
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun loadGraph(path: String) {
         // Set loading state synchronously so callers observe isFullyLoaded=false immediately,
         // eliminating the race where StateFlow.first{isFullyLoaded} catches the initial default.
@@ -509,6 +510,7 @@ class StelekitViewModel(
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun toggleFavorite(page: Page) {
         scope.launch {
             pageRepository.toggleFavorite(page.uuid)
@@ -517,6 +519,7 @@ class StelekitViewModel(
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun toggleFavorite(pageUuid: String) {
         scope.launch {
             pageRepository.toggleFavorite(pageUuid)
@@ -524,6 +527,7 @@ class StelekitViewModel(
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun clear() {
         scope.launch {
             pageRepository.clear()
@@ -531,30 +535,35 @@ class StelekitViewModel(
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun indentBlock(blockUuid: String) {
         scope.launch {
             blockRepository.indentBlock(blockUuid)
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun outdentBlock(blockUuid: String) {
         scope.launch {
             blockRepository.outdentBlock(blockUuid)
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun moveBlockUp(blockUuid: String) {
         scope.launch {
             blockRepository.moveBlockUp(blockUuid)
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun moveBlockDown(blockUuid: String) {
         scope.launch {
             blockRepository.moveBlockDown(blockUuid)
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun moveBlock(blockUuid: String, newParentUuid: String?, newPosition: Int) {
         scope.launch {
             blockRepository.moveBlock(blockUuid, newParentUuid, newPosition)
@@ -565,6 +574,7 @@ class StelekitViewModel(
         _uiState.update { it.copy(editingBlockId = blockUuid, editingCursorIndex = cursorIndex) }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun addNewBlock(currentBlockUuid: String) {
         scope.launch {
             val currentBlockResult = blockRepository.getBlockByUuid(currentBlockUuid).first()
@@ -604,6 +614,7 @@ class StelekitViewModel(
     /**
      * Add a new block to the end of a page
      */
+    @OptIn(DirectRepositoryWrite::class)
     fun addBlockToPage(pageUuid: String) {
         scope.launch {
             val pageResult = pageRepository.getPageByUuid(pageUuid).first()
@@ -638,6 +649,7 @@ class StelekitViewModel(
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun splitBlock(blockUuid: String, cursorPosition: Int) {
         scope.launch {
             blockRepository.splitBlock(blockUuid, cursorPosition).onRight { newBlock ->
@@ -646,6 +658,7 @@ class StelekitViewModel(
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun mergeBlock(blockUuid: String) {
         scope.launch {
             val currentBlockResult = blockRepository.getBlockByUuid(blockUuid).first()
@@ -669,6 +682,7 @@ class StelekitViewModel(
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun handleBackspace(blockUuid: String) {
         scope.launch {
             val currentBlockResult = blockRepository.getBlockByUuid(blockUuid).first()
@@ -736,6 +750,7 @@ class StelekitViewModel(
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun navigateTo(screen: Screen, addToHistory: Boolean = true) {
         val navStart = kotlin.time.Clock.System.now().toEpochMilliseconds()
         _uiState.update { state ->
@@ -922,6 +937,7 @@ class StelekitViewModel(
      * Bulk delete pages by UUID. Deletes from database and removes disk files.
      * Refreshes the regular pages list after deletion.
      */
+    @OptIn(DirectRepositoryWrite::class)
     fun bulkDeletePages(uuids: List<String>) {
         scope.launch {
             uuids.forEach { uuid ->
@@ -946,6 +962,7 @@ class StelekitViewModel(
     /**
      * Create a new page with the given name
      */
+    @OptIn(DirectRepositoryWrite::class)
     private suspend fun createPage(pageName: String): Page? {
         return try {
             val now = kotlin.time.Clock.System.now()
@@ -1001,7 +1018,7 @@ class StelekitViewModel(
      * from GraphLoader to detect editing conflicts.
      */
     fun startAutoSave() {
-        graphWriter.startAutoSave(scope)
+        graphWriter.startAutoSave()
         observeExternalFileChanges()
         observeWriteErrors()
         logger.info("Auto-save started")
@@ -1040,7 +1057,7 @@ class StelekitViewModel(
                 // Evict only this page's hierarchy cache so unrelated pages stay warm.
                 blockStateManager?.cacheEvictPage(currentPage.uuid)
 
-                // Three-tier protection:
+                // Four-tier protection:
                 // 1. Actively editing a block right now.
                 // 2. Page has dirty blocks (locally-modified, DB save confirmed but not yet
                 //    written to disk within the ~300ms debounce window).
@@ -1048,13 +1065,17 @@ class StelekitViewModel(
                 //    confirmation, but the file hasn't landed on disk yet. Without this tier
                 //    an external change arriving in that 300ms window bypasses the dialog and
                 //    silently overwrites local content.
+                // 4. A structural op (split/merge/delete) is in the actor queue but has not
+                //    yet committed to the DB. Without this tier an external change arriving
+                //    in the actor-queue window silently races with the structural op.
                 val dirtyUuids = blockStateManager?.dirtyBlockUuids ?: emptySet()
                 val pageHasDirtyBlocks = blockStateManager
                     ?.blocks?.value?.get(currentPage.uuid)
                     ?.any { it.uuid in dirtyUuids }
                     ?: false
                 val hasPendingDiskWrite = blockStateManager?.hasPendingDiskWrite(currentPage.uuid) ?: false
-                val shouldProtect = editingBlockUuid != null || pageHasDirtyBlocks || hasPendingDiskWrite
+                val hasActorPending = blockStateManager?.hasActorPendingWrites ?: false
+                val shouldProtect = editingBlockUuid != null || pageHasDirtyBlocks || hasPendingDiskWrite || hasActorPending
                 if (!shouldProtect) return@collect
 
                 // Cancel the pending disk write so auto-save cannot overwrite the disk file
@@ -1175,6 +1196,7 @@ class StelekitViewModel(
      * The conflict dialog is dismissed and the block enters edit mode so the user
      * can resolve the markers immediately.
      */
+    @OptIn(DirectRepositoryWrite::class)
     fun manualResolve() {
         val conflict = _uiState.value.diskConflict ?: return
         if (conflict.editingBlockUuid.isBlank()) {
@@ -1197,7 +1219,8 @@ class StelekitViewModel(
             val blockResult = blockRepository.getBlockByUuid(conflict.editingBlockUuid).first()
             val block = blockResult.getOrNull() ?: return@launch
             val updatedBlock = block.copy(content = conflictContent, updatedAt = kotlin.time.Clock.System.now())
-            blockRepository.saveBlock(updatedBlock)
+            writeActor?.execute { blockRepository.saveBlock(updatedBlock) }
+                ?: blockRepository.saveBlock(updatedBlock)
             // Focus the block so the user can start editing immediately
             requestEditBlock(conflict.editingBlockUuid, 0)
         }
@@ -1207,6 +1230,7 @@ class StelekitViewModel(
      * Resolve disk conflict: preserve the user's content by appending it as a
      * new block on the page, then load the disk version.
      */
+    @OptIn(DirectRepositoryWrite::class)
     fun saveAsNewBlock() {
         val conflict = _uiState.value.diskConflict ?: return
         if (conflict.localContent.isBlank()) {
@@ -1228,7 +1252,8 @@ class StelekitViewModel(
                 createdAt = now,
                 updatedAt = now
             )
-            blockRepository.saveBlock(newBlock)
+            writeActor?.execute { blockRepository.saveBlock(newBlock) }
+                ?: blockRepository.saveBlock(newBlock)
             // Persist the new block to disk
             blockStateManager?.savePageNow(conflict.pageUuid)
         }
@@ -1479,16 +1504,14 @@ class StelekitViewModel(
      * Launched on the ViewModel's own scope to avoid [ForgottenCoroutineScopeException]
      * when called from a lifecycle observer that may fire after composition teardown.
      */
-    fun flushAndLockVault(graphLoader: GraphLoader, graphWriter: GraphWriter, vaultManager: VaultManager) {
+    fun flushAndLockVault(graphLoader: GraphLoaderPort, graphWriter: GraphWriterPort, vaultManager: VaultManager) {
         scope.launch {
             blockStateManager?.flush()  // drain in-memory block edits before DEK is zeroed
             graphWriter.flush()
-            // close() zeroes the CryptoLayer's owned DEK copy before nulling the reference,
-            // so the copy is wiped independently of session.dek that vaultManager.lock() zeroes.
-            graphLoader.cryptoLayer?.close()
-            graphLoader.cryptoLayer = null
-            graphWriter.cryptoLayer?.close()
-            graphWriter.cryptoLayer = null
+            // closeAndClearCryptoLayer() zeroes the CryptoLayer's owned DEK copy before nulling
+            // the port's reference, independently of session.dek that vaultManager.lock() zeroes.
+            graphLoader.closeAndClearCryptoLayer()
+            graphWriter.closeAndClearCryptoLayer()
             vaultManager.lock()
         }
     }

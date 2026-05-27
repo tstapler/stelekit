@@ -262,7 +262,7 @@ class JournalsViewModelEditorTest {
             return Unit.right()
         }
 
-        override suspend fun clear() { blocks.value = emptyMap() }
+        override suspend fun clear(): Either<DomainError, Unit> { blocks.value = emptyMap(); return Unit.right() }
     }
 
     class FakePageRepository : PageRepository {

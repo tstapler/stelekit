@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CancellationException
 
 @OptIn(DirectRepositoryWrite::class)
-class DatascriptReferenceRepository : ReferenceRepository {
+class DatalogReferenceRepository : ReferenceRepository {
 
     private val references = MutableStateFlow<Map<String, Set<String>>>(emptyMap())
 

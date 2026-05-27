@@ -27,6 +27,51 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 
+enum class GraphBackend {
+    SQLDELIGHT,
+    DATASCRIPT,
+    KUZU,
+    NEO4J,
+    IN_MEMORY
+}
+
+interface RepositoryFactory {
+    fun createBlockRepository(backend: GraphBackend): BlockRepository
+    fun createPageRepository(backend: GraphBackend): PageRepository
+    fun createPropertyRepository(backend: GraphBackend): PropertyRepository
+    fun createReferenceRepository(backend: GraphBackend): ReferenceRepository
+    fun createSearchRepository(backend: GraphBackend): SearchRepository
+    fun close()
+}
+
+data class RepositorySet(
+    val blockRepository: BlockRepository,
+    val pageRepository: PageRepository,
+    /** Write-only view of [pageRepository] with cache population disabled. For background indexing. */
+    val backgroundPageRepository: PageRepository = pageRepository,
+    val propertyRepository: PropertyRepository,
+    val referenceRepository: ReferenceRepository,
+    val searchRepository: SearchRepository,
+    val journalService: JournalService,
+    val writeActor: dev.stapler.stelekit.db.DatabaseWriteActor? = null,
+    val undoManager: dev.stapler.stelekit.db.UndoManager? = null,
+    val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
+    val debugFlagRepository: dev.stapler.stelekit.performance.DebugFlagRepository? = null,
+    val ringBuffer: dev.stapler.stelekit.performance.RingBufferSpanExporter? = null,
+    val spanRepository: dev.stapler.stelekit.performance.SpanRepository? = null,
+    val bugReportBuilder: dev.stapler.stelekit.performance.BugReportBuilder? = null,
+    val perfExporter: dev.stapler.stelekit.performance.PerfExporter? = null,
+    val spanEmitter: dev.stapler.stelekit.performance.SpanEmitter? = null,
+    val sloChecker: dev.stapler.stelekit.performance.SloChecker? = null,
+    val spanLogSink: dev.stapler.stelekit.performance.SpanLogSink? = null,
+    /** Callback that runs WAL checkpoint after bulk graph import. Pass to [GraphLoader.onBulkImportComplete]. */
+    val onBulkImportComplete: (suspend () -> Unit)? = null,
+    val queryStatsRepository: dev.stapler.stelekit.performance.QueryStatsRepository? = null,
+    val queryStatsCollector: dev.stapler.stelekit.performance.QueryStatsCollector? = null,
+    val imageAnnotationRepository: ImageAnnotationRepository = InMemoryImageAnnotationRepository(),
+    val measurementAnnotationRepository: MeasurementAnnotationRepository = InMemoryMeasurementAnnotationRepository(),
+)
+
 /**
  * Factory implementation for creating repository instances.
  * Supports cross-platform database initialization and backend switching.
@@ -62,7 +107,7 @@ class RepositoryFactoryImpl(
                 InMemoryBlockRepository()
             }
             GraphBackend.DATASCRIPT -> getOrCreateInstance("block_datascript") {
-                DatascriptBlockRepository()
+                DatalogBlockRepository()
             }
             GraphBackend.SQLDELIGHT -> getOrCreateInstance("block_sqldelight") {
                 SqlDelightBlockRepository(database)
@@ -77,7 +122,7 @@ class RepositoryFactoryImpl(
                 InMemoryPageRepository()
             }
             GraphBackend.DATASCRIPT -> getOrCreateInstance("page_datascript") {
-                DatascriptPageRepository()
+                DatalogPageRepository()
             }
             GraphBackend.SQLDELIGHT -> getOrCreateInstance("page_sqldelight") {
                 val repo = SqlDelightPageRepository(database)
@@ -93,7 +138,7 @@ class RepositoryFactoryImpl(
                 InMemoryPropertyRepository()
             }
             GraphBackend.DATASCRIPT -> getOrCreateInstance("property_datascript") {
-                DatascriptPropertyRepository()
+                DatalogPropertyRepository()
             }
             GraphBackend.SQLDELIGHT -> getOrCreateInstance("property_sqldelight") {
                 SqlDelightPropertyRepository(database)
@@ -108,7 +153,7 @@ class RepositoryFactoryImpl(
                 InMemoryReferenceRepository()
             }
             GraphBackend.DATASCRIPT -> getOrCreateInstance("reference_datascript") {
-                DatascriptReferenceRepository()
+                DatalogReferenceRepository()
             }
             GraphBackend.SQLDELIGHT -> getOrCreateInstance("reference_sqldelight") {
                 SqlDelightReferenceRepository(database)

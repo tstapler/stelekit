@@ -56,6 +56,7 @@ class DatabaseWriteActor(
     private val blockRepository: BlockRepository,
     private val pageRepository: PageRepository,
     private val opLogger: OperationLogger? = null,
+    scope: CoroutineScope? = null,
 ) {
     private val logger = Logger("DatabaseWriteActor")
 
@@ -116,9 +117,31 @@ class DatabaseWriteActor(
     private fun channelFor(priority: Priority) =
         if (priority == Priority.HIGH) highPriority else lowPriority
 
+    // True while the actor coroutine is executing a processRequest call.
+    // Written exclusively by the single actor coroutine; read by callers.
+    // @Volatile gives the required single-writer/multi-reader visibility without atomics.
+    @Volatile private var _isActorProcessing: Boolean = false
+
+    /**
+     * True while any write is queued in the channels or currently being processed.
+     *
+     * Thread-safe: [Channel.isEmpty] is safe to call from any thread/coroutine;
+     * [_isActorProcessing] is written only by the actor coroutine (@Volatile suffices
+     * for single-writer/multi-reader visibility). A request dequeued but not yet flagged
+     * is a negligible window — this is intentionally best-effort conflict protection.
+     *
+     * Used by conflict detection: an external file change arriving while a split/merge is
+     * in-flight must trigger the conflict dialog rather than silently overwriting local data.
+     */
+    val hasPendingWrites: Boolean
+        get() = !highPriority.isEmpty || !lowPriority.isEmpty || _isActorProcessing
+
     // Own scope so the actor loop survives Compose scope cancellation (e.g. key(activeGraphId)
     // graph switch). Callers must call close() to stop the actor.
-    private val actorScope = CoroutineScope(SupervisorJob() + PlatformDispatcher.Default)
+    // When a scope is injected (e.g. from tests with UnconfinedTestDispatcher), use it directly
+    // so that virtual-time control works correctly in tests.
+    private val injectedScope: Boolean = scope != null
+    private val actorScope = scope ?: CoroutineScope(SupervisorJob() + PlatformDispatcher.Default)
 
     init {
         actorScope.launch {
@@ -126,9 +149,10 @@ class DatabaseWriteActor(
                 while (isActive) {
                     // Prefer high-priority: non-blocking poll first, then suspend on either.
                     val request = highPriority.tryReceive().getOrNull()
+                        ?.also { _isActorProcessing = true }
                         ?: select {
-                            highPriority.onReceive { it }
-                            lowPriority.onReceive { it }
+                            highPriority.onReceive { _isActorProcessing = true; it }
+                            lowPriority.onReceive { _isActorProcessing = true; it }
                         }
                     try {
                         processRequest(request)
@@ -147,6 +171,8 @@ class DatabaseWriteActor(
                         if (!request.deferred.isCompleted) {
                             request.deferred.complete(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
                         }
+                    } finally {
+                        _isActorProcessing = false
                     }
                 }
             } catch (e: CancellationException) {
@@ -186,20 +212,24 @@ class DatabaseWriteActor(
             }
             is WriteRequest.DeleteBlocksForPages -> {
                 if (opLogger != null) {
-                    try {
-                        for (uuid in request.pageUuids) {
-                            val pageBlocks = blockRepository.getBlocksForPage(uuid).first().getOrNull()
-                            pageBlocks?.forEach { opLogger.logDelete(it) }
+                    // Chunk page UUIDs so we fetch and delete together per chunk rather than
+                    // materializing all blocks across every page before the first delete runs.
+                    // Bounds peak memory to PAGE_DELETE_CHUNK × (blocks per page).
+                    for (chunk in request.pageUuids.chunked(PAGE_DELETE_CHUNK)) {
+                        logDeletesForChunk(chunk)
+                        val chunkResult = blockRepository.deleteBlocksForPages(chunk)
+                        if (chunkResult.isLeft()) {
+                            request.deferred.complete(chunkResult)
+                            return
                         }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        logger.warn("Op log pre-delete read failed (non-fatal)", e)
                     }
+                    onWriteSuccess?.invoke(request)
+                    request.deferred.complete(Unit.right())
+                } else {
+                    val result = blockRepository.deleteBlocksForPages(request.pageUuids)
+                    if (result.isRight()) onWriteSuccess?.invoke(request)
+                    request.deferred.complete(result)
                 }
-                val result = blockRepository.deleteBlocksForPages(request.pageUuids)
-                if (result.isRight()) onWriteSuccess?.invoke(request)
-                request.deferred.complete(result)
             }
             is WriteRequest.SaveBlocks -> processSaveBlocks(request)
             is WriteRequest.Execute -> {
@@ -221,6 +251,20 @@ class DatabaseWriteActor(
                 }
                 request.deferred.complete(request.op())
             }
+        }
+    }
+
+    /** Log deletes for each UUID in [chunk] via the op-logger (non-fatal). */
+    private suspend fun logDeletesForChunk(chunk: List<String>) {
+        try {
+            for (uuid in chunk) {
+                val pageBlocks = blockRepository.getBlocksForPage(uuid).first().getOrNull()
+                pageBlocks?.forEach { opLogger?.logDelete(it) }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("Op log pre-delete read failed (non-fatal)", e)
         }
     }
 
@@ -394,6 +438,54 @@ class DatabaseWriteActor(
         }
 
     /**
+     * Splits [blockUuid] at [cursorPosition] through the actor's serialized queue.
+     * Guaranteed to execute after any pending [updateBlockContentOnly] for the same block.
+     *
+     * Returns the newly created [Block] on success, or a [DomainError] on failure.
+     */
+    suspend fun splitBlock(
+        blockUuid: String,
+        cursorPosition: Int,
+        newBlockUuid: String?,
+    ): Either<DomainError, Block> {
+        var newBlock: Block? = null
+        val opResult = execute {
+            blockRepository.splitBlock(blockUuid, cursorPosition, newBlockUuid)
+                .onRight { newBlock = it }
+                .map { }
+        }
+        return opResult.fold(
+            ifLeft = { it.left() },
+            ifRight = {
+                newBlock?.right()
+                    ?: DomainError.DatabaseError.WriteFailed(
+                        "splitBlock returned no block for $blockUuid"
+                    ).left()
+            }
+        )
+    }
+
+    /**
+     * Merges [nextBlockUuid] into [blockUuid] through the actor's serialized queue.
+     * Guaranteed to execute after any pending [updateBlockContentOnly] for either block.
+     */
+    suspend fun mergeBlocks(
+        blockUuid: String,
+        nextBlockUuid: String,
+        separator: String,
+    ): Either<DomainError, Unit> =
+        execute { blockRepository.mergeBlocks(blockUuid, nextBlockUuid, separator) }
+
+    /**
+     * Deletes [blockUuid] through the actor's serialized queue.
+     * Distinct from [deleteBlock] (which logs to op-logger); this variant is for
+     * structural deletions triggered by backspace/merge where the block being removed
+     * has no content to log.
+     */
+    suspend fun deleteBlockStructural(blockUuid: String): Either<DomainError, Unit> =
+        execute { blockRepository.deleteBlock(blockUuid) }
+
+    /**
      * Executes [block] with all writes wrapped in a BATCH_START / BATCH_END log entry.
      * A single Ctrl+Z undoes all operations in the batch atomically.
      *
@@ -418,10 +510,19 @@ class DatabaseWriteActor(
     fun close() {
         highPriority.close()
         lowPriority.close()
-        actorScope.cancel()
+        // Only cancel the scope if we created it; injected scopes (e.g. test schedulers)
+        // are owned by the caller.
+        if (!injectedScope) actorScope.cancel()
     }
 
     companion object {
+        /**
+         * Page UUIDs processed per iteration in [DeleteBlocksForPages] when the op-logger is
+         * active. Bounds peak memory to PAGE_DELETE_CHUNK × (blocks per page) instead of
+         * materializing all blocks across every page before the first delete runs.
+         */
+        private const val PAGE_DELETE_CHUNK = 25
+
         /**
          * Creates a [Resource]-managed [DatabaseWriteActor].
          * The actor's [close] method is guaranteed to be called when the resource is released,

@@ -53,7 +53,7 @@ internal fun replaceHashtag(content: String, oldName: String, newName: String): 
     var result = content.replace("#[[${oldName}]]", "#[[${newName}]]")
     // Replace simple form with word-boundary anchor (avoid partial matches)
     val simpleRegex = Regex("#${Regex.escape(oldName)}(?=[\\s,\\.!?;\"\\[\\]]|$)")
-    result = result.replace(simpleRegex, "#${newName}")
+    result = result.replace(simpleRegex) { "#${newName}" }
     return result
 }
 
@@ -67,11 +67,10 @@ internal fun replaceHashtag(content: String, oldName: String, newName: String): 
  * 4. Move the page file on disk via GraphWriter
  * 5. Rewrite affected pages' disk files with updated block content (up to 4 concurrent writes)
  */
-@OptIn(DirectRepositoryWrite::class)
 class BacklinkRenamer(
     private val pageRepository: PageRepository,
     private val blockRepository: BlockRepository,
-    private val graphWriter: GraphWriter,
+    private val graphWriter: GraphWriterPort,
     private val writeActor: DatabaseWriteActor
 ) {
     private val logger = Logger("BacklinkRenamer")
@@ -108,6 +107,7 @@ class BacklinkRenamer(
      * Executes the rename: updates the DB, rewrites block content, moves the file,
      * and rewrites all affected pages' disk files.
      */
+    @OptIn(DirectRepositoryWrite::class)
     suspend fun execute(page: Page, newName: String, graphPath: String): RenameResult {
         return try {
             // 1. Snapshot affected blocks BEFORE any rename so we use the old name in queries.

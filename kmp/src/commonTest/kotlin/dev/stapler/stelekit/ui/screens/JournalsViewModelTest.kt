@@ -81,7 +81,7 @@ class JournalsViewModelTest {
         override fun findDuplicateBlocks(limit: Int): Flow<Either<DomainError, List<DuplicateGroup>>> = flowOf(emptyList<DuplicateGroup>().right())
         override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> = Unit.right()
         override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> = Unit.right()
-        override suspend fun clear() {}
+        override suspend fun clear(): Either<DomainError, Unit> = Unit.right()
     }
 
     class FakePageRepository : PageRepository {

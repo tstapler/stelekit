@@ -77,15 +77,17 @@ class DiskConflictResolutionTest {
             graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" }
         )
         return StelekitViewModel(
-            PlatformFileSystem(),
-            pageRepo,
-            blockRepo,
-            searchRepo,
-            graphLoader,
-            graphWriter,
-            InMemorySettings(),
-            scope,
-            blockStateManager = bsm
+            StelekitViewModelDependencies(
+                fileSystem = PlatformFileSystem(),
+                pageRepository = pageRepo,
+                blockRepository = blockRepo,
+                searchRepository = searchRepo,
+                graphLoader = graphLoader,
+                graphWriter = graphWriter,
+                platformSettings = InMemorySettings(),
+                scope = scope,
+                blockStateManager = bsm,
+            )
         ).also { viewModelRef = it }
     }
 

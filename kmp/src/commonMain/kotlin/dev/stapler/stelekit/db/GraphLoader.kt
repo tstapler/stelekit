@@ -9,7 +9,6 @@ import kotlin.concurrent.Volatile
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.ParsedBlock
-import dev.stapler.stelekit.model.toDiscriminatorString
 import kotlin.time.Instant
 import dev.stapler.stelekit.outliner.JournalUtils
 import dev.stapler.stelekit.parser.MarkdownParser
@@ -25,14 +24,12 @@ import dev.stapler.stelekit.performance.CurrentSpanContext
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.performance.SpanRepository
-import dev.stapler.stelekit.util.ContentHasher
 import dev.stapler.stelekit.util.FileUtils
 import dev.stapler.stelekit.util.UuidGenerator
 import dev.stapler.stelekit.vault.CryptoLayer
 import dev.stapler.stelekit.vault.VaultError
 import kotlin.time.Clock
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,9 +64,9 @@ class GraphLoader(
     private val sidecarManager: SidecarManager? = null,
     private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
     private val spanRepository: SpanRepository? = null,
-    /** When non-null, all file reads are passed through paranoid-mode decryption. */
-    @Volatile var cryptoLayer: CryptoLayer? = null,
-) {
+    /** Initial CryptoLayer value — use [setCryptoLayer] to change at runtime. */
+    initialCryptoLayer: CryptoLayer? = null,
+) : GraphLoaderPort {
     private val logger = Logger("GraphLoader")
     private val markdownParser = MarkdownParser()
 
@@ -132,12 +129,23 @@ class GraphLoader(
     var onBulkImportComplete: (suspend () -> Unit)? = null
 
     /**
-     * Set of page UUIDs currently open in an active edit session. When non-null,
-     * [indexRemainingPages] skips these pages to avoid clobbering in-progress edits.
-     * Set by [dev.stapler.stelekit.ui.StelekitViewModel] after construction to break the
-     * circular dependency (BlockStateManager depends on GraphLoader).
+     * Backing field for the CryptoLayer used to decrypt/encrypt files in paranoid mode.
+     * Volatile so changes published by [setCryptoLayer] are visible across coroutine threads.
      */
-    var activePageUuids: StateFlow<Set<String>>? = null
+    @Volatile private var cryptoLayer: CryptoLayer? = initialCryptoLayer
+
+    override fun setCryptoLayer(layer: CryptoLayer?) { cryptoLayer = layer }
+
+    override fun closeAndClearCryptoLayer() { cryptoLayer?.close(); cryptoLayer = null }
+
+    /**
+     * Backing field for page UUIDs currently open in an active edit session.
+     * Set via [setActivePageUuids] after construction to break the circular dependency
+     * (BlockStateManager depends on GraphLoader).
+     */
+    private var activePageUuids: StateFlow<Set<String>>? = null
+
+    override fun setActivePageUuids(uuids: StateFlow<Set<String>>?) { activePageUuids = uuids }
 
     // Lightweight span tracking for the Spans waterfall tab.
     private fun genId(): String =
@@ -185,8 +193,13 @@ class GraphLoader(
     // If an external actor is provided (from RepositorySet), reuse it; otherwise create one locally.
     private val writeActor = externalWriteActor ?: DatabaseWriteActor(blockRepository, pageRepository)
 
-    // Watcher job
-    private var watcherJob: Job? = null
+    // File-change watcher — owns its own CoroutineScope internally.
+    private val fileWatcher = GraphFileWatcher(
+        fileSystem = fileSystem,
+        fileRegistry = fileRegistry,
+        readFile = ::readFileDecrypted,
+        onReloadFile = { filePath, content -> parseAndSavePage(filePath, content, dev.stapler.stelekit.parsing.ParseMode.FULL) },
+    )
 
     // Tracks the in-flight background indexing job so it can be cancelled under memory pressure.
     private var backgroundIndexJob: Job? = null
@@ -204,7 +217,7 @@ class GraphLoader(
      * Cancels any in-flight background indexing (Phase 2) immediately.
      * Safe to call from any thread. No-op if no indexing is running.
      */
-    fun cancelBackgroundWork() {
+    override fun cancelBackgroundWork() {
         backgroundIndexJob?.cancel()
         backgroundIndexJob = null
     }
@@ -223,66 +236,22 @@ class GraphLoader(
      * treat the change as a conflict.  If the event's [suppress] callback is invoked
      * before the next watcher tick, the automatic re-import is skipped.
      */
-    private val _externalFileChanges = MutableSharedFlow<ExternalFileChange>(extraBufferCapacity = 8)
-    val externalFileChanges: SharedFlow<ExternalFileChange> = _externalFileChanges.asSharedFlow()
+    override val externalFileChanges: SharedFlow<ExternalFileChange> = fileWatcher.externalFileChanges
 
     /**
      * Emitted when a DB write fails after all retries. Consumers (e.g. the ViewModel) can
      * surface an error banner and offer a retry action (re-calling [indexRemainingPages]).
      */
     private val _writeErrors = MutableSharedFlow<WriteError>(extraBufferCapacity = 16)
-    val writeErrors: SharedFlow<WriteError> = _writeErrors.asSharedFlow()
+    override val writeErrors: SharedFlow<WriteError> = _writeErrors.asSharedFlow()
 
-    // Mutex protecting gitMergeSuppressedFiles. The set is accessed concurrently by the
-    // 5-second polling loop and native-change callbacks — on JVM, unsynchronized HashSet
-    // mutation can corrupt the structure. suppressMutex is a kotlinx.coroutines.sync.Mutex
-    // (KMP-safe; already imported above).
-    //
-    // Single-shot suppression (subscriber calling suppress() on an ExternalFileChange event)
-    // no longer uses this mutex — it uses a local var per emission instead, removing the
-    // need for runBlocking in the suppress lambda.
-    private val suppressMutex = Mutex()
-
-    // Paths added by beginGitMerge() — kept for sticky suppression across watcher ticks.
-    // ALL accesses must be inside suppressMutex.withLock { }.
-    private val gitMergeSuppressedFiles = mutableSetOf<String>()
-
-    /**
-     * Derives a stable UUID for a block from its position in the page tree.
-     *
-     * The UUID is derived from position only (filePath + parentUuid + siblingIndex),
-     * making it stable across content edits. If the block already carries an explicit
-     * `id` property (written by Logseq or the user), that value is used verbatim.
-     */
     private fun generateUuid(
         parsedBlock: ParsedBlock,
         pagePath: String,
         blockIndex: Int,
         parentUuid: String? = null,
         sidecarMap: Map<String, SidecarManager.SidecarEntry>? = null,
-    ): String {
-        // If block has an ID property, use it
-        val existingId = parsedBlock.properties["id"]
-        if (existingId != null && existingId.isNotBlank()) {
-            return existingId
-        }
-
-        // If sidecar exists, look up by content hash for UUID recovery after git pull.
-        // This preserves stable UUIDs for blocks whose content hasn't changed but whose
-        // position shifted (e.g. after a git merge that reordered bullets).
-        if (sidecarMap != null) {
-            val hash = ContentHasher.sha256ForContent(parsedBlock.content)
-            val sidecarEntry = sidecarMap[hash]
-            if (sidecarEntry != null) return sidecarEntry.uuid
-        }
-
-        // Include parentUuid in seed so blocks at different nesting levels with the
-        // same sibling index don't collide (e.g. two bullets both at index 2 but
-        // under different parents would otherwise share a UUID, causing a UNIQUE
-        // constraint violation in saveBlocks).
-        val seed = "$pagePath:${parentUuid ?: "root"}:$blockIndex"
-        return UuidGenerator.generateDeterministic(seed)
-    }
+    ): String = MarkdownPageParser.generateUuid(parsedBlock, pagePath, blockIndex, parentUuid, sidecarMap)
 
     /**
      * Tries to find the page file by searching pages/ and journals/ directories.
@@ -303,7 +272,7 @@ class GraphLoader(
     /**
      * Priority-loads a page by name directly from disk.
      */
-    suspend fun loadPageByName(pageName: String): Page? {
+    override suspend fun loadPageByName(pageName: String): Page? {
         val filePath = resolvePageFilePath(pageName) ?: return null
         if (!tryAddPriorityFile(filePath)) {
             // Already loading — wait for it by polling the DB
@@ -377,12 +346,12 @@ class GraphLoader(
         }
     }
 
-    suspend fun loadGraphProgressive(
+    override suspend fun loadGraphProgressive(
         graphPath: String,
-        immediateJournalCount: Int = 10,
+        immediateJournalCount: Int,
         onProgress: (String) -> Unit,
         onPhase1Complete: () -> Unit,
-        onFullyLoaded: () -> Unit
+        onFullyLoaded: () -> Unit,
     ) {
         currentGraphPath = graphPath
         PerformanceMonitor.startTrace("loadGraphProgressive")
@@ -506,49 +475,7 @@ class GraphLoader(
     }
 
     fun startWatching(graphPath: String) {
-        fileSystem.stopExternalChangeDetection()
-        watcherJob?.cancel()
-        val externalChangeTrigger = Channel<Unit>(Channel.CONFLATED)
-        watcherJob = parallelScope.launch {
-            // 5-second polling fallback
-            launch {
-                logger.info("Started watching graph for changes: $graphPath")
-                while (isActive) {
-                    try {
-                        delay(5000) // Poll every 5 seconds
-                        val pagesDir = "$graphPath/pages"
-                        val journalsDir = "$graphPath/journals"
-
-                        checkDirectoryForChanges(pagesDir)
-                        checkDirectoryForChanges(journalsDir)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        if (e is CancellationException) throw e
-                        logger.warn("Error in graph watcher", e)
-                    }
-                }
-            }
-            // Platform-native fast-path (e.g. Android ContentObserver).
-            // Channel.CONFLATED coalesces rapid callback storms into at most one
-            // pending scan so we never queue up redundant directory scans.
-            launch {
-                for (ignored in externalChangeTrigger) {
-                    try {
-                        checkDirectoryForChanges("$graphPath/pages")
-                        checkDirectoryForChanges("$graphPath/journals")
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        if (e is CancellationException) throw e
-                        logger.warn("Error in external change handler", e)
-                    }
-                }
-            }
-        }
-        fileSystem.startExternalChangeDetection(parallelScope) {
-            externalChangeTrigger.trySend(Unit)
-        }
+        fileWatcher.startWatching(graphPath)
     }
 
     /**
@@ -559,7 +486,7 @@ class GraphLoader(
      * then flush all DB writes for the chunk in a single flushChunkWritesPreemptible call.
      * This reduces DatabaseWriteActor round-trips by ~90% vs. one-at-a-time parseAndSavePage.
      */
-    suspend fun indexRemainingPages(onProgress: (String) -> Unit) {
+    override suspend fun indexRemainingPages(onProgress: (String) -> Unit) {
         // Track the calling coroutine's job so cancelBackgroundWork() can cancel it.
         backgroundIndexJob = currentCoroutineContext()[Job]
         PerformanceMonitor.startTrace("indexRemainingPages")
@@ -621,62 +548,6 @@ class GraphLoader(
         }
     }
 
-    private suspend fun checkDirectoryForChanges(dirPath: String) {
-        val changeSet = fileRegistry.detectChanges(dirPath)
-
-        for (changed in changeSet.newFiles) {
-            logger.info("New file detected: ${changed.entry.filePath}")
-            fileSystem.invalidateShadow(changed.entry.filePath)
-            val content = if (changed.entry.filePath.endsWith(".md.stek")) {
-                readFileDecrypted(changed.entry.filePath) ?: continue
-            } else {
-                changed.content
-            }
-            parseAndSavePage(changed.entry.filePath, content, ParseMode.FULL)
-        }
-
-        for (changed in changeSet.changedFiles) {
-            logger.info("File modification detected: ${changed.entry.filePath}")
-            fileSystem.invalidateShadow(changed.entry.filePath)
-
-            // Sticky git-merge suppression: if the path was added by beginGitMerge,
-            // skip it without consuming the entry (it remains suppressed until endGitMerge).
-            val isMergeSuppressed = suppressMutex.withLock { gitMergeSuppressedFiles.contains(changed.entry.filePath) }
-            if (isMergeSuppressed) {
-                logger.debug("Skipping watcher reload for git-merge-suppressed file: ${changed.entry.filePath}")
-                continue
-            }
-
-            // For encrypted files, do NOT buffer the decrypted content in the SharedFlow.
-            // Emit with empty content; decrypt on-demand only if the change is not suppressed.
-            // This prevents up to 8 decrypted pages from sitting in the SharedFlow heap buffer.
-            val emitContent = if (changed.entry.filePath.endsWith(".md.stek")) "" else changed.content
-
-            // Emit event so subscribers can suppress the re-import.
-            // The suppress lambda is called synchronously within the same coroutine execution
-            // between tryEmit and yield(), so a plain local var is safe — no thread switch
-            // occurs in that window and no mutex is needed.
-            var suppressed = false
-            _externalFileChanges.tryEmit(ExternalFileChange(changed.entry.filePath, emitContent) {
-                suppressed = true
-            })
-            yield()
-            if (suppressed) {
-                continue
-            }
-
-            val content = if (changed.entry.filePath.endsWith(".md.stek")) {
-                readFileDecrypted(changed.entry.filePath) ?: continue
-            } else {
-                changed.content
-            }
-            parseAndSavePage(changed.entry.filePath, content, ParseMode.FULL)
-        }
-
-        for (filePath in changeSet.deletedPaths) {
-            logger.info("File deletion detected: $filePath")
-        }
-    }
 
     /**
      * Flush chunk writes with per-page atomicity.
@@ -729,8 +600,7 @@ class GraphLoader(
     }
 
     fun stopWatching() {
-        watcherJob?.cancel()
-        watcherJob = null
+        fileWatcher.close()
         writeActor.close()
     }
 
@@ -745,7 +615,7 @@ class GraphLoader(
      * Always paired with [endGitMerge].
      */
     suspend fun beginGitMerge(pathsBeingMerged: List<String>) {
-        suppressMutex.withLock { gitMergeSuppressedFiles.addAll(pathsBeingMerged) }
+        fileWatcher.beginGitMerge(pathsBeingMerged)
     }
 
     /**
@@ -753,7 +623,7 @@ class GraphLoader(
      * Must be called after [reloadFiles] completes (or if merge is aborted).
      */
     suspend fun endGitMerge() {
-        suppressMutex.withLock { gitMergeSuppressedFiles.clear() }
+        fileWatcher.endGitMerge()
     }
 
     /**
@@ -1241,11 +1111,6 @@ class GraphLoader(
         return PageLookupResult(skip = false, existingPage = existingPage, cachedBlocks = null)
     }
 
-    /**
-     * Constructs the [Page] model and extracts page-level properties from the first
-     * (property) block when applicable.  Returns the built [Page] and whether the
-     * property block was consumed (firstBlockSkipped).
-     */
     private fun buildPageModel(
         filePath: String,
         name: String,
@@ -1255,35 +1120,17 @@ class GraphLoader(
         now: kotlin.time.Instant,
         mode: ParseMode,
         parsedPage: dev.stapler.stelekit.model.ParsedPage,
-    ): Pair<Page, Boolean> {
-        val fileModTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
-        val updatedAt = if (fileModTime != 0L) Instant.fromEpochMilliseconds(fileModTime) else now
-        val createdAt = existingPage?.createdAt ?: updatedAt
-
-        var page = Page(
-            uuid = existingPage?.uuid ?: UuidGenerator.generateV7(),
-            name = name,
-            createdAt = createdAt,
-            updatedAt = updatedAt,
-            version = existingPage?.version ?: 0L,
-            properties = emptyMap(),
-            isJournal = isJournal,
-            journalDate = journalDate,
-            filePath = filePath,
-            isContentLoaded = mode == ParseMode.FULL
-        )
-
-        var firstBlockSkipped = false
-        if (parsedPage.blocks.isNotEmpty()) {
-            val firstBlock = parsedPage.blocks.first()
-            if (firstBlock.content.trim().isEmpty() && firstBlock.properties.isNotEmpty()) {
-                page = page.copy(properties = firstBlock.properties)
-                firstBlockSkipped = true
-            }
-        }
-
-        return Pair(page, firstBlockSkipped)
-    }
+    ): PageBuildResult = MarkdownPageParser.buildPageModel(
+        filePath = filePath,
+        name = name,
+        isJournal = isJournal,
+        journalDate = journalDate,
+        existingPage = existingPage,
+        now = now,
+        mode = mode,
+        parsedPage = parsedPage,
+        fileModTime = fileSystem.getLastModifiedTime(filePath),
+    )
 
     /**
      * Handles the METADATA_ONLY write path: creates stub blocks and dispatches them to
@@ -1373,11 +1220,11 @@ class GraphLoader(
         }
     }
 
-    suspend fun parseAndSavePage(
+    override suspend fun parseAndSavePage(
         filePath: String,
         content: String,
-        mode: ParseMode = ParseMode.FULL,
-        priority: DatabaseWriteActor.Priority = DatabaseWriteActor.Priority.HIGH,
+        mode: ParseMode,
+        priority: DatabaseWriteActor.Priority,
     ) {
         if (mode == ParseMode.METADATA_ONLY && isPriorityFile(filePath)) return
 
@@ -1490,7 +1337,7 @@ class GraphLoader(
         }
     }
 
-    private suspend fun processParsedBlocks(
+    private fun processParsedBlocks(
         parsedBlocks: List<ParsedBlock>,
         pagePath: String,
         pageUuid: String,
@@ -1502,66 +1349,20 @@ class GraphLoader(
         existingVersions: Map<String, Long> = emptyMap(),
         existingContent: Map<String, String> = emptyMap(),
         sidecarMap: Map<String, SidecarManager.SidecarEntry>? = null,
-    ) {
-        var previousSiblingUuid: String? = null
+    ) = MarkdownPageParser.processParsedBlocks(
+        parsedBlocks = parsedBlocks,
+        pagePath = pagePath,
+        pageUuid = pageUuid,
+        parentUuid = parentUuid,
+        baseLevel = baseLevel,
+        now = now,
+        destinationList = destinationList,
+        mode = mode,
+        existingVersions = existingVersions,
+        existingContent = existingContent,
+        sidecarMap = sidecarMap,
+    )
 
-        parsedBlocks.forEachIndexed { index, parsedBlock ->
-            val blockUuid = generateUuid(parsedBlock, pagePath, index, parentUuid, sidecarMap)
-            val currentVersion = existingVersions[blockUuid] ?: 0L
-            val oldContent = existingContent[blockUuid]
-
-            val versionToSave = if (oldContent == parsedBlock.content) currentVersion else {
-                if (currentVersion > 0) currentVersion + 1 else 0L
-            }
-
-            val mergedProperties = parsedBlock.properties.toMutableMap()
-            parsedBlock.scheduled?.let { mergedProperties["scheduled"] = it }
-            parsedBlock.deadline?.let { mergedProperties["deadline"] = it }
-
-            val block = Block(
-                uuid = blockUuid,
-                pageUuid = pageUuid,
-                parentUuid = parentUuid,
-                leftUuid = previousSiblingUuid,
-                content = parsedBlock.content,
-                level = baseLevel,
-                position = index,
-                createdAt = now,
-                updatedAt = now,
-                version = versionToSave,
-                properties = mergedProperties,
-                isLoaded = mode == ParseMode.FULL,
-                contentHash = ContentHasher.sha256ForContent(parsedBlock.content),
-                blockType = parsedBlock.blockType.toDiscriminatorString()
-            )
-
-            destinationList.add(block)
-            previousSiblingUuid = blockUuid
-            
-            if (parsedBlock.children.isNotEmpty()) {
-                processParsedBlocks(
-                    parsedBlocks = parsedBlock.children,
-                    pagePath = pagePath,
-                    pageUuid = pageUuid,
-                    parentUuid = blockUuid,
-                    baseLevel = baseLevel + 1,
-                    now = now,
-                    destinationList = destinationList,
-                    mode = mode,
-                    existingVersions = existingVersions,
-                    existingContent = existingContent,
-                    sidecarMap = sidecarMap,
-                )
-            }
-        }
-    }
-
-    /**
-     * Creates lightweight stub blocks with [isLoaded] = false for METADATA_ONLY
-     * mode.  Avoids the DB round-trips that [processParsedBlocks] requires
-     * (existing version lookups, content comparisons) so background loading
-     * stays fast.
-     */
     private fun createStubBlocks(
         parsedBlocks: List<ParsedBlock>,
         pagePath: String,
@@ -1570,63 +1371,5 @@ class GraphLoader(
         baseLevel: Int,
         now: kotlin.time.Instant,
         destination: MutableList<Block>
-    ) {
-        parsedBlocks.forEachIndexed { index, parsedBlock ->
-            val blockUuid = generateUuid(parsedBlock, pagePath, index, parentUuid)
-            val mergedProperties = parsedBlock.properties.toMutableMap()
-            parsedBlock.scheduled?.let { mergedProperties["scheduled"] = it }
-            parsedBlock.deadline?.let { mergedProperties["deadline"] = it }
-
-            destination.add(
-                Block(
-                    uuid = blockUuid,
-                    pageUuid = pageUuid,
-                    parentUuid = parentUuid,
-                    content = parsedBlock.content,
-                    level = baseLevel,
-                    position = index,
-                    createdAt = now,
-                    updatedAt = now,
-                    properties = mergedProperties,
-                    isLoaded = false,
-                    contentHash = ContentHasher.sha256ForContent(parsedBlock.content),
-                    blockType = parsedBlock.blockType.toDiscriminatorString()
-                )
-            )
-
-            if (parsedBlock.children.isNotEmpty()) {
-                createStubBlocks(parsedBlock.children, pagePath, pageUuid, blockUuid, baseLevel + 1, now, destination)
-            }
-        }
-    }
+    ) = MarkdownPageParser.createStubBlocks(parsedBlocks, pagePath, pageUuid, parentUuid, baseLevel, now, destination)
 }
-
-/**
- * An external (non-app-initiated) change detected by the file watcher.
- *
- * @param filePath  Absolute path of the file that changed.
- * @param content   New content read from disk.
- * @param suppress  Call this to tell GraphLoader to skip automatic re-import for
- *                  this event.  Must be called synchronously during the collector's
- *                  handling of the event (before the next watcher tick).
- */
-data class ExternalFileChange(
-    val filePath: String,
-    val content: String,
-    val suppress: () -> Unit
-)
-
-/**
- * Emitted when a database write fails persistently (i.e. even the per-request individual
- * retry in [DatabaseWriteActor] could not save the data). Consumers (e.g. the ViewModel)
- * should surface this to the user and offer a retry action.
- *
- * @param filePath   Source markdown file path, or page UUID if a file path is unavailable.
- * @param blockCount Number of blocks that could not be saved (0 for page-level failures).
- * @param cause      The domain error.
- */
-data class WriteError(
-    val filePath: String,
-    val blockCount: Int,
-    val cause: dev.stapler.stelekit.error.DomainError,
-)

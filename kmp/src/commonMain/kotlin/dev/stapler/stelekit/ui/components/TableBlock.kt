@@ -89,6 +89,7 @@ internal fun TableBlock(
             .horizontalScroll(rememberScrollState())
             .border(1.dp, borderColor, RoundedCornerShape(4.dp))
             .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.surface)
             .clickable { onStartEditing() }
     ) {
         Column(modifier = Modifier.wrapContentWidth(unbounded = true)) {
@@ -142,6 +143,11 @@ private fun TableCell(
         TableColumnAlignment.CENTER -> Alignment.Center
         TableColumnAlignment.RIGHT -> Alignment.CenterEnd
     }
+    val textColor = if (isHeader) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
     Box(
         modifier = Modifier
             .widthIn(min = 80.dp)
@@ -150,6 +156,7 @@ private fun TableCell(
     ) {
         Text(
             text = text,
+            color = textColor,
             style = if (isHeader) {
                 MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
             } else {

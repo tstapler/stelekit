@@ -26,12 +26,12 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class BlockOperationsEdgeCaseTest {
 
-    private lateinit var repository: DatascriptBlockRepository
+    private lateinit var repository: DatalogBlockRepository
     private val now = Clock.System.now()
 
     @BeforeTest
     fun setup() {
-        repository = DatascriptBlockRepository()
+        repository = DatalogBlockRepository()
     }
 
     private fun createBlock(

@@ -462,26 +462,32 @@ private fun GraphContent(
         )
     }
 
+    // ViewModel scope must NOT be rememberCoroutineScope() — that scope is cancelled when the
+    // composable leaves the composition, which would cancel all ViewModel coroutines on pause.
+    val viewModelScope = remember { kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default) }
     val viewModel = remember {
         StelekitViewModel(
-            fileSystem,
-            repos.pageRepository,
-            repos.blockRepository,
-            repos.searchRepository,
-            graphLoader,
-            graphWriter,
-            platformSettings,
-            journalService = repos.journalService,
-            blockStateManager = blockStateManager,
-            writeActor = repos.writeActor,
-            undoManager = repos.undoManager,
-            exportService = exportService,
-            bugReportBuilder = repos.bugReportBuilder,
-            debugFlagRepository = repos.debugFlagRepository,
-            histogramWriter = repos.histogramWriter,
-            ringBuffer = repos.ringBuffer,
-            activeGitSyncService = graphManager.activeGitSyncService,
-            activeGraphIdProvider = { graphManager.getActiveGraphId() },
+            StelekitViewModelDependencies(
+                fileSystem = fileSystem,
+                pageRepository = repos.pageRepository,
+                blockRepository = repos.blockRepository,
+                searchRepository = repos.searchRepository,
+                graphLoader = graphLoader,
+                graphWriter = graphWriter,
+                platformSettings = platformSettings,
+                journalService = repos.journalService,
+                blockStateManager = blockStateManager,
+                writeActor = repos.writeActor,
+                undoManager = repos.undoManager,
+                exportService = exportService,
+                bugReportBuilder = repos.bugReportBuilder,
+                debugFlagRepository = repos.debugFlagRepository,
+                histogramWriter = repos.histogramWriter,
+                ringBuffer = repos.ringBuffer,
+                activeGitSyncService = graphManager.activeGitSyncService,
+                activeGraphIdProvider = { graphManager.getActiveGraphId() },
+                scope = viewModelScope,
+            )
         ).also {
             viewModelRef = it
             it.startAutoSave()
@@ -550,11 +556,9 @@ private fun GraphContent(
             if (event is VaultEvent.Locked) {
                 // DEK is already zeroed at this point — do not flush (would write with zero-key).
                 // The primary lock path (user-initiated) already flushed before calling lock().
-                // close() zeroes the CryptoLayer's owned DEK copy before nulling the reference.
-                graphLoader.cryptoLayer?.close()
-                graphLoader.cryptoLayer = null
-                graphWriter.cryptoLayer?.close()
-                graphWriter.cryptoLayer = null
+                // closeAndClearCryptoLayer() zeroes the CryptoLayer's owned DEK copy then nulls it.
+                graphLoader.closeAndClearCryptoLayer()
+                graphWriter.closeAndClearCryptoLayer()
                 vaultState = VaultState.Locked   // show lock/unlock screen; gates graph content
             }
         }
@@ -584,8 +588,8 @@ private fun GraphContent(
                     // cryptoLayer != null will also see the correct graphPath (used as AAD base).
                     graphWriter.graphPath = activeGraphPath
                     graphLoader.setGraphPath(activeGraphPath)
-                    graphLoader.cryptoLayer = layer
-                    graphWriter.cryptoLayer = layer
+                    graphLoader.setCryptoLayer(layer)
+                    graphWriter.setCryptoLayer(layer)
                     // CryptoLayer must be injected before vaultState triggers graph load via LaunchedEffect
                     vaultState = VaultState.Unlocked(unlockResult.namespace)
                 }
@@ -612,8 +616,8 @@ private fun GraphContent(
                         val layer = dev.stapler.stelekit.vault.CryptoLayer(engine, unlockResult.dek)
                         graphWriter.graphPath = activeGraphPath
                         graphLoader.setGraphPath(activeGraphPath)
-                        graphLoader.cryptoLayer = layer
-                        graphWriter.cryptoLayer = layer
+                        graphLoader.setCryptoLayer(layer)
+                        graphWriter.setCryptoLayer(layer)
                         vaultManager = tempManager
                         isParanoidMode = true
                         vaultState = VaultState.Unlocked(unlockResult.namespace)
@@ -648,10 +652,8 @@ private fun GraphContent(
             {
                 scope.launch {
                     graphWriter.flush()
-                    graphLoader.cryptoLayer?.close()
-                    graphLoader.cryptoLayer = null
-                    graphWriter.cryptoLayer?.close()
-                    graphWriter.cryptoLayer = null
+                    graphLoader.closeAndClearCryptoLayer()
+                    graphWriter.closeAndClearCryptoLayer()
                     capturedVaultManager.lock()
                 }
                 Unit
@@ -1177,410 +1179,7 @@ private fun onGraphKeyEvent(
     }
 }
 
-/**
- * Routes the current [Screen] to its composable. Owns screen transition animations.
- * Forward navigation (historyIndex increases): slide in from right.
- * Back navigation (historyIndex decreases): slide in from left, suppress exit so the
- * system predictive-back preview is the only visual during the back swipe.
- *
- * Rule (ADR-001): every branch must call a named composable — no inline content.
- */
-@Composable
-private fun ScreenRouter(
-    screen: Screen,
-    repos: RepositorySet,
-    blockStateManager: dev.stapler.stelekit.ui.state.BlockStateManager,
-    journalsViewModel: JournalsViewModel,
-    allPagesViewModel: AllPagesViewModel,
-    libraryStatsViewModel: LibraryStatsViewModel,
-    viewModel: StelekitViewModel,
-    searchViewModel: SearchViewModel,
-    notificationManager: NotificationManager,
-    appState: AppState,
-    graphWriter: GraphWriter,
-    urlFetcher: UrlFetcher = NoOpUrlFetcher(),
-    onAttachImage: ((editingBlockUuid: String?) -> Unit)? = null,
-    onFileDrop: ((List<Any>) -> Unit)? = null,
-    onPasteImage: ((editingBlockUuid: String?) -> Boolean)? = null,
-) {
-    if (appState.isLoading) {
-        LoadingOverlay(
-            message = if (appState.statusMessage.isNotEmpty()) appState.statusMessage
-                      else "Loading your notes…"
-        )
-        return
-    }
 
-    val suggestionMatcher by viewModel.suggestionMatcher.collectAsState()
-
-    // Track navigation direction for slide transition orientation.
-    var previousHistoryIndex by remember { mutableStateOf(appState.historyIndex) }
-    val isBack = appState.historyIndex < previousHistoryIndex
-
-    AnimatedContent(
-        targetState = screen,
-        transitionSpec = {
-            if (isBack) {
-                // Back: enter from left; suppress exit (predictive back handles the visual)
-                (slideInHorizontally(tween(300)) { -it / 4 } + fadeIn(tween(300))) togetherWith
-                        fadeOut(tween(1)) // near-instant exit — system back gesture owns the animation
-            } else {
-                // Forward: enter from right, exit to left
-                (slideInHorizontally(tween(300)) { it / 4 } + fadeIn(tween(300))) togetherWith
-                        (slideOutHorizontally(tween(300)) { -it / 4 } + fadeOut(tween(300)))
-            }
-        },
-        label = "screen-transition"
-    ) { currentScreen ->
-        // Update direction tracking after composition
-        previousHistoryIndex = appState.historyIndex
-
-        when (currentScreen) {
-            is Screen.PageView -> PageView(
-                page = currentScreen.page,
-                blockRepository = repos.blockRepository,
-                pageRepository = repos.pageRepository,
-                blockStateManager = blockStateManager,
-                currentGraphPath = appState.currentGraphPath,
-                onToggleFavorite = { viewModel.toggleFavorite(it) },
-                onRefresh = { viewModel.refreshCurrentPage() },
-                onLinkClick = { viewModel.navigateToPageByName(it) },
-                viewModel = viewModel,
-                searchViewModel = searchViewModel,
-                writeActor = repos.writeActor,
-                isDebugMode = appState.isDebugMode,
-                isLeftHanded = appState.isLeftHanded,
-                onAttachImage = onAttachImage,
-                onFileDrop = onFileDrop,
-                onPasteImage = onPasteImage,
-            )
-            is Screen.Journals -> JournalsView(
-                viewModel = journalsViewModel,
-                blockRepository = repos.blockRepository,
-                isDebugMode = appState.isDebugMode,
-                onLinkClick = { viewModel.navigateToPageByName(it) },
-                searchViewModel = searchViewModel,
-                onSearchPages = { query -> viewModel.searchPages(query) },
-                suggestionMatcher = suggestionMatcher,
-                isLeftHanded = appState.isLeftHanded,
-                onOpenAnnotationEditor = { uuid -> viewModel.navigateToAnnotationEditor(uuid) },
-            )
-            is Screen.Flashcards -> {
-                NavigationTracingEffect("Flashcards")
-                FlashcardsScreen(blockStateManager)
-            }
-            is Screen.AllPages -> AllPagesScreen(
-                viewModel = allPagesViewModel,
-                onPageClick = { page -> viewModel.navigateTo(Screen.PageView(page)) },
-                onBulkDelete = { uuids -> viewModel.bulkDeletePages(uuids) }
-            )
-            is Screen.LibraryStats -> LibraryStatsScreen(viewModel = libraryStatsViewModel)
-            is Screen.Notifications -> {
-                NavigationTracingEffect("Notifications")
-                NotificationHistory(notificationManager)
-            }
-            is Screen.Logs -> {
-                NavigationTracingEffect("Logs")
-                LogDashboard()
-            }
-            is Screen.Performance -> {
-                NavigationTracingEffect("Performance")
-                PerformanceDashboard(
-                    histogramWriter = repos.histogramWriter,
-                    ringBuffer = repos.ringBuffer,
-                    spanRepository = repos.spanRepository,
-                    perfExporter = repos.perfExporter,
-                )
-            }
-            is Screen.GlobalUnlinkedReferences -> GlobalUnlinkedReferencesScreen(
-                pageRepository = repos.pageRepository,
-                blockRepository = repos.blockRepository,
-                writeActor = repos.writeActor,
-                graphPath = appState.currentGraphPath,
-                suggestionMatcher = suggestionMatcher,
-                onNavigateTo = { viewModel.navigateTo(it) },
-            )
-            is Screen.Import -> {
-                val graphPath = appState.currentGraphPath
-                val importScope = rememberCoroutineScope()
-                val importViewModel = remember(graphPath) {
-                    dev.stapler.stelekit.ui.screens.ImportViewModel(
-                        coroutineScope = importScope,
-                        pageRepository = repos.pageRepository,
-                        graphWriter = graphWriter,
-                        graphPath = graphPath,
-                        urlFetcher = urlFetcher,
-                        matcherFlow = viewModel.suggestionMatcher,
-                    )
-                }
-                dev.stapler.stelekit.ui.screens.ImportScreen(
-                    viewModel = importViewModel,
-                    onDismiss = {
-                        val savedName = importViewModel.state.value.savedPageName
-                        viewModel.goBack()
-                        if (savedName != null) {
-                            viewModel.navigateToPageByName(savedName)
-                        }
-                    },
-                )
-            }
-            is Screen.VaultUnlock -> {
-                // Vault unlock is handled by the outer StelekitApp scaffold — no-op here
-            }
-
-            is Screen.Gallery -> {
-                NavigationTracingEffect("Gallery")
-                val galleryViewModel = remember {
-                    GalleryViewModel(repos.imageAnnotationRepository)
-                }
-                DisposableEffect(galleryViewModel) {
-                    onDispose { galleryViewModel.close() }
-                }
-                GalleryScreen(
-                    viewModel = galleryViewModel,
-                    onOpenAnnotationEditor = { uuid ->
-                        viewModel.navigateToAnnotationEditor(uuid)
-                    },
-                    onNavigateToPage = { pageUuid ->
-                        viewModel.navigateToPageByUuid(pageUuid)
-                    },
-                )
-            }
-
-            is Screen.AnnotationEditor -> {
-                NavigationTracingEffect("AnnotationEditor")
-                val imageAnnotationUuid = currentScreen.imageAnnotationUuid
-                val annotationEditorViewModel = remember(imageAnnotationUuid) {
-                    AnnotationEditorViewModel(
-                        measurementRepository = repos.measurementAnnotationRepository,
-                        imageAnnotationRepository = repos.imageAnnotationRepository,
-                    )
-                }
-                // Collect the annotation reactively; initialize the viewModel once on first non-null load.
-                var initialized by remember(imageAnnotationUuid) { mutableStateOf(false) }
-                var resolvedAnnotation by remember(imageAnnotationUuid) {
-                    mutableStateOf<dev.stapler.stelekit.model.ImageAnnotation?>(null)
-                }
-                LaunchedEffect(imageAnnotationUuid) {
-                    repos.imageAnnotationRepository.getImageAnnotationByUuid(imageAnnotationUuid)
-                        .collect { either ->
-                            either.onRight { annotation ->
-                                resolvedAnnotation = annotation
-                                if (!initialized && annotation != null) {
-                                    initialized = true
-                                    annotationEditorViewModel.initialize(annotation)
-                                }
-                            }
-                        }
-                }
-                resolvedAnnotation?.let { annotation ->
-                    AnnotationEditorScreen(
-                        viewModel = annotationEditorViewModel,
-                        imageAnnotation = annotation,
-                        onNavigateBack = {
-                            if (currentScreen.pageUuid != null) {
-                                viewModel.navigateToPageByUuid(currentScreen.pageUuid)
-                            } else {
-                                viewModel.goBack()
-                            }
-                        },
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * All overlay dialogs for the graph content area, composed as a single layer.
- * Extracted from GraphContent so dialog additions don't modify the layout tree.
- * See ADR-001.
- */
-@Composable
-private fun GraphDialogLayer(
-    appState: AppState,
-    searchViewModel: SearchViewModel,
-    viewModel: StelekitViewModel,
-    notificationManager: NotificationManager,
-    fileSystem: FileSystem,
-    voiceSettings: VoiceSettings? = null,
-    onRebuildVoicePipeline: (() -> Unit)? = null,
-    deviceSttAvailable: Boolean = false,
-    deviceLlmAvailable: Boolean = false,
-    frameMetric: kotlinx.coroutines.flow.StateFlow<dev.stapler.stelekit.performance.FrameMetric>,
-    debugState: DebugMenuState = DebugMenuState(),
-    loadPageBlocks: (String) -> kotlinx.coroutines.flow.Flow<arrow.core.Either<dev.stapler.stelekit.error.DomainError, List<Block>>> = { kotlinx.coroutines.flow.flowOf(arrow.core.Either.Right(emptyList())) },
-    onDebugStateChange: (DebugMenuState) -> Unit = {},
-    isParanoidMode: Boolean = false,
-    isVaultUnlocked: Boolean = false,
-    onCreateVault: (suspend (CharArray) -> arrow.core.Either<dev.stapler.stelekit.vault.VaultError, Unit>)? = null,
-    onAddKeyslot: (suspend (CharArray) -> arrow.core.Either<dev.stapler.stelekit.vault.VaultError, Unit>)? = null,
-    onRemoveKeyslot: (suspend (Int) -> arrow.core.Either<dev.stapler.stelekit.vault.VaultError, Unit>)? = null,
-    onLockVault: (() -> Unit)? = null,
-    onListActiveSlots: (suspend () -> List<Int>)? = null,
-    gitSyncService: dev.stapler.stelekit.git.GitSyncService? = null,
-    gitRepository: dev.stapler.stelekit.git.GitRepository? = null,
-    gitConfigRepository: dev.stapler.stelekit.git.GitConfigRepository? = null,
-    activeGraphId: String? = null,
-) {
-    val scope = rememberCoroutineScope()
-
-    CommandPalette(
-        visible = appState.commandPaletteVisible,
-        commands = appState.commands,
-        onDismiss = { viewModel.setCommandPaletteVisible(false) }
-    )
-
-    val indexingProgress by viewModel.indexingProgress.collectAsState()
-    SearchDialog(
-        visible = appState.searchDialogVisible,
-        viewModel = searchViewModel,
-        onDismiss = { viewModel.setSearchDialogVisible(false) },
-        onNavigateToPage = { viewModel.navigateToPageByUuid(it) },
-        onNavigateToBlock = { viewModel.navigateToBlock(it) },
-        onCreatePage = { viewModel.navigateToPageByName(it) },
-        initialQuery = appState.searchDialogInitialQuery,
-        isIndexing = indexingProgress is IndexingState.InProgress,
-        loadPageBlocks = loadPageBlocks
-    )
-
-    SettingsDialog(
-        visible = appState.settingsVisible,
-        onDismiss = { viewModel.setSettingsVisible(false) },
-        currentTheme = appState.themeMode,
-        onThemeChange = { viewModel.setThemeMode(it) },
-        currentLanguage = appState.language,
-        onLanguageChange = { viewModel.setLanguage(it) },
-        onReindex = {
-            viewModel.triggerReindex()
-            viewModel.setSettingsVisible(false)
-        },
-        isLeftHanded = appState.isLeftHanded,
-        onLeftHandedChange = { viewModel.setLeftHanded(it) },
-        voiceSettings = voiceSettings,
-        onRebuildVoicePipeline = onRebuildVoicePipeline,
-        deviceSttAvailable = deviceSttAvailable,
-        deviceLlmAvailable = deviceLlmAvailable,
-        isParanoidMode = isParanoidMode,
-        isVaultUnlocked = isVaultUnlocked,
-        onCreateVault = onCreateVault,
-        onAddKeyslot = onAddKeyslot,
-        onRemoveKeyslot = onRemoveKeyslot,
-        onLockVault = onLockVault,
-        onListActiveSlots = onListActiveSlots,
-    )
-
-    val canShowGitSetup = appState.gitSetupVisible &&
-        gitSyncService != null && gitRepository != null && gitConfigRepository != null
-    if (canShowGitSetup) {
-        dev.stapler.stelekit.ui.screens.git.GitSetupScreen(
-            graphId = activeGraphId ?: "",
-            gitRepository = gitRepository,
-            gitConfigRepository = gitConfigRepository,
-            gitSyncService = gitSyncService,
-            onDismiss = { viewModel.dismissGitSetup() },
-            onSave = { viewModel.dismissGitSetup() },
-        )
-    }
-
-    if (appState.conflictResolutionVisible) {
-        val liveSyncState by viewModel.syncState.collectAsState()
-        val conflictFiles = if (liveSyncState is dev.stapler.stelekit.git.model.SyncState.ConflictPending)
-            (liveSyncState as dev.stapler.stelekit.git.model.SyncState.ConflictPending).conflicts.map { it.filePath }
-        else emptyList()
-
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { viewModel.dismissConflictResolution() },
-            title = { androidx.compose.material3.Text("Merge Conflict") },
-            text = {
-                androidx.compose.foundation.layout.Column {
-                    androidx.compose.material3.Text(
-                        "Git detected merge conflicts in ${conflictFiles.size} file(s). " +
-                        "Resolve them in your editor or use the options below."
-                    )
-                    if (conflictFiles.isNotEmpty()) {
-                        androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp))
-                        conflictFiles.forEach { path ->
-                            androidx.compose.material3.Text(
-                                "• $path",
-                                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { viewModel.dismissConflictResolution() }) {
-                    androidx.compose.material3.Text("Dismiss")
-                }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(
-                    onClick = {
-                        viewModel.dismissConflictResolution()
-                        viewModel.openGitSetup()
-                    }
-                ) {
-                    androidx.compose.material3.Text("Open Git Setup")
-                }
-            },
-        )
-    }
-
-    appState.diskConflict?.let { conflict ->
-        DiskConflictDialog(
-            conflict = conflict,
-            onKeepLocal = { viewModel.keepLocalChanges() },
-            onUseDisk = { viewModel.acceptDiskVersion() },
-            onSaveAsNew = { viewModel.saveAsNewBlock() },
-            onManualResolve = { viewModel.manualResolve() }
-        )
-    }
-
-    appState.renameDialogPage?.let { page ->
-        RenamePageDialog(
-            page = page,
-            busy = appState.renameDialogBusy,
-            error = appState.renameDialogError,
-            onConfirm = { newName -> viewModel.renamePage(page, newName) },
-            onDismiss = { viewModel.dismissRenameDialog() }
-        )
-    }
-
-    NotificationOverlay(
-        notificationManager = notificationManager,
-        modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
-    )
-
-    // Frame-time debug overlay — shown in top corner when enabled, regardless of dialog state.
-    PlatformFrameTimeOverlay(isEnabled = debugState.isFrameOverlayEnabled, frameMetric = frameMetric)
-
-    if (appState.isDebugMenuVisible && DebugBuildConfig.isDebugBuild) {
-        DebugMenuOverlay(
-            state = debugState,
-            onStateChange = { newState -> onDebugStateChange(newState) },
-            onExportBugReport = {
-                val json = viewModel.exportBugReport()
-                if (json == null) {
-                    notificationManager.show("Bug report unavailable — OTel not initialized")
-                } else {
-                    scope.launch {
-                        val path = fileSystem.pickSaveFileAsync("stelekit-bug-report.json", "application/json")
-                        when {
-                            path == null -> { /* user cancelled */ }
-                            fileSystem.writeFile(path, json) ->
-                                notificationManager.show("Bug report saved to ${fileSystem.displayNameForPath(path)}")
-                            else ->
-                                notificationManager.show("Failed to save bug report. Check storage permissions.")
-                        }
-                    }
-                }
-            },
-            onDismiss = { viewModel.dismissDebugMenu() }
-        )
-    }
-
-}
 
 /**
  * Status bar row — pure presentational composable. Receives only primitives;
@@ -1636,246 +1235,3 @@ private fun StatusBarContent(
         )
     }
 }
-
-@Composable
-private fun FlashcardsScreen(blockStateManager: dev.stapler.stelekit.ui.state.BlockStateManager) {
-    val allBlocks by blockStateManager.blocks.collectAsState()
-    val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
-
-    // Find all blocks with card:: true property that are due today
-    val dueCards = remember(allBlocks) {
-        allBlocks.values.flatten()
-            .filter { block ->
-                block.properties["card"] == "true" &&
-                    (block.properties["card-next-review"].let { dateStr ->
-                        if (dateStr == null) true  // new card, always due
-                        else runCatching { LocalDate.parse(dateStr) }.getOrNull()?.let { it <= today } ?: true
-                    })
-            }
-    }
-
-    var currentIndex by remember(dueCards) { mutableStateOf(0) }
-    var showBack by remember(currentIndex) { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
-    fun onPass() {
-        val card = dueCards.getOrNull(currentIndex) ?: return
-        val ease = card.properties["card-ease"]?.toDoubleOrNull() ?: 2.5
-        val interval = card.properties["card-interval"]?.toIntOrNull() ?: 1
-        val newInterval = maxOf(1, (interval * ease).toInt())
-        val newEase = minOf(2.5, ease + 0.1)
-        val nextReview = today.plus(newInterval, DateTimeUnit.DAY)
-        val newProps = card.properties.toMutableMap().apply {
-            put("card-next-review", nextReview.toString())
-            put("card-ease", kotlin.math.round(newEase * 100).toLong().let { "${it / 100}.${(it % 100).toString().padStart(2, '0')}" })
-            put("card-interval", newInterval.toString())
-        }
-        scope.launch { blockStateManager.updateBlockProperties(card.uuid, newProps) }
-        showBack = false
-        currentIndex++
-    }
-
-    fun onFail() {
-        val card = dueCards.getOrNull(currentIndex) ?: return
-        val ease = card.properties["card-ease"]?.toDoubleOrNull() ?: 2.5
-        val newEase = maxOf(1.3, ease - 0.2)
-        val nextReview = today.plus(1, DateTimeUnit.DAY)
-        val newProps = card.properties.toMutableMap().apply {
-            put("card-next-review", nextReview.toString())
-            put("card-ease", kotlin.math.round(newEase * 100).toLong().let { "${it / 100}.${(it % 100).toString().padStart(2, '0')}" })
-            put("card-interval", "1")
-        }
-        scope.launch { blockStateManager.updateBlockProperties(card.uuid, newProps) }
-        showBack = false
-        currentIndex++
-    }
-
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // Header
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "Flashcards",
-                style = MaterialTheme.typography.titleLarge
-            )
-            Text(
-                "${minOf(currentIndex, dueCards.size)} / ${dueCards.size}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        if (dueCards.isEmpty()) {
-            // Empty state
-            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        Icons.Default.Style,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        "No cards due for review",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Tag a block with card:: true to create a flashcard",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
-            }
-        } else if (currentIndex >= dueCards.size) {
-            // All done state
-            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        Icons.Default.Check,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        "All done!",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "You've reviewed all ${dueCards.size} cards",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(24.dp))
-                    OutlinedButton(onClick = { currentIndex = 0 }) {
-                        Text("Review again")
-                    }
-                }
-            }
-        } else {
-            val card = dueCards[currentIndex]
-
-            // Card with swipe gesture
-            var offsetX by remember(currentIndex) { mutableStateOf(0f) }
-            val swipeThreshold = 200f
-
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(vertical = 16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.7f)
-                        .offset { IntOffset(offsetX.roundToInt() / 4, 0) }
-                        .pointerInput(currentIndex) {
-                            detectHorizontalDragGestures(
-                                onDragEnd = {
-                                    when {
-                                        offsetX > swipeThreshold -> onPass()
-                                        offsetX < -swipeThreshold -> onFail()
-                                        else -> offsetX = 0f
-                                    }
-                                },
-                                onDragCancel = { offsetX = 0f }
-                            ) { _, dragAmount -> offsetX += dragAmount }
-                        }
-                        .clickable { showBack = !showBack },
-                    colors = CardDefaults.cardColors(
-                        containerColor = when {
-                            offsetX > 80f -> MaterialTheme.colorScheme.primaryContainer
-                            offsetX < -80f -> MaterialTheme.colorScheme.errorContainer
-                            else -> MaterialTheme.colorScheme.surface
-                        }
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize().padding(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            // Front: strip properties from content display
-                            val displayContent = card.content.lines()
-                                .filterNot { it.contains("::") }
-                                .joinToString("\n")
-                                .trim()
-                            Text(
-                                displayContent.ifBlank { card.content },
-                                style = MaterialTheme.typography.bodyLarge,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                            )
-                            if (!showBack) {
-                                Spacer(Modifier.height(24.dp))
-                                Text(
-                                    "Tap to reveal",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
-                            } else {
-                                // Back: show child blocks hint (we don't have them here easily, show "Answer revealed")
-                                Spacer(Modifier.height(16.dp))
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                                Text(
-                                    "How did you do?",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Pass/Fail buttons (shown after revealing back)
-            if (showBack) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = ::onFail,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Text("Again")
-                    }
-                    Button(
-                        onClick = ::onPass,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Good")
-                    }
-                }
-            } else {
-                // Swipe hint
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("← Fail", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
-                    Text("Pass →", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
-                }
-            }
-        }
-    }
-}
-

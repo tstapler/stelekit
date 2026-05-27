@@ -5,7 +5,7 @@
 package dev.stapler.stelekit.ui.screens
 
 import dev.stapler.stelekit.model.Page
-import dev.stapler.stelekit.repository.BlockRepository
+import dev.stapler.stelekit.repository.BlockSearchRepository
 import dev.stapler.stelekit.repository.PageRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,7 +37,7 @@ enum class PageTypeFilter { ALL, JOURNALS, PAGES }
 @OptIn(FlowPreview::class)
 class AllPagesViewModel(
     private val pageRepository: PageRepository,
-    private val blockRepository: BlockRepository,
+    private val blockRepository: BlockSearchRepository,
     // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
     // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

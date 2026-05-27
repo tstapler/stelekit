@@ -14,6 +14,8 @@ stelekit:
     active: true
   RepositoryWriteCallSite:
     active: true
+  ClassLevelDirectRepositoryWriteOptIn:
+    active: true
   SaveBlockWithCopy:
     active: true
   SwallowedCancellationException:
@@ -21,6 +23,8 @@ stelekit:
   RememberKeyForConstructorArgs:
     active: true
   NoRunBlockingInLifecycle:
+    active: true
+  UnthemedTextInBackgroundContainer:
     active: true
 
 # Compose Multiplatform rules (io.nlopez.compose.rules)

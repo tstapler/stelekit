@@ -59,15 +59,17 @@ open class ComposeUITestBase : BlockHoundTestBase() {
 
     val viewModel: StelekitViewModel by lazy {
         StelekitViewModel(
-            fileSystem = PlatformFileSystem(),
-            pageRepository = pageRepo,
-            blockRepository = blockRepo,
-            searchRepository = searchRepo,
-            graphLoader = graphLoader,
-            graphWriter = graphWriter,
-            platformSettings = platformSettings,
-            scope = scope,
-            blockStateManager = blockStateManager,
+            StelekitViewModelDependencies(
+                fileSystem = PlatformFileSystem(),
+                pageRepository = pageRepo,
+                blockRepository = blockRepo,
+                searchRepository = searchRepo,
+                graphLoader = graphLoader,
+                graphWriter = graphWriter,
+                platformSettings = platformSettings,
+                scope = scope,
+                blockStateManager = blockStateManager,
+            )
         )
     }
 }
