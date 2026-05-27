@@ -15,7 +15,7 @@ import dev.stapler.stelekit.model.MeasurementUnit
 import dev.stapler.stelekit.model.NormalizedPoint
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.sensor.PlatformImageFile
-import dev.stapler.stelekit.repository.BlockRepository
+import dev.stapler.stelekit.repository.BlockWriteRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.ImageAnnotationRepository
 import dev.stapler.stelekit.repository.JournalService
@@ -43,7 +43,7 @@ import kotlin.time.Clock
 class ImageImportService(
     private val fileSystem: FileSystem,
     private val imageAnnotationRepository: ImageAnnotationRepository? = null,
-    private val blockRepository: BlockRepository? = null,
+    private val blockRepository: BlockWriteRepository? = null,
     private val sidecarManager: ImageSidecarManager? = null,
     private val journalService: JournalService? = null,
     private val writeActor: DatabaseWriteActor? = null,

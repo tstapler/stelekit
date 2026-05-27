@@ -1,7 +1,7 @@
 package dev.stapler.stelekit.search
 
 import dev.stapler.stelekit.model.Block
-import dev.stapler.stelekit.repository.BlockRepository
+import dev.stapler.stelekit.repository.BlockReadRepository
 import dev.stapler.stelekit.repository.BlockWithDepth
 import kotlinx.coroutines.flow.firstOrNull
 import kotlin.math.sqrt
@@ -27,7 +27,7 @@ interface InferenceWorker {
  * Handles semantic search using text embeddings.
  */
 class VectorSearch(
-    private val blockRepository: BlockRepository,
+    private val blockRepository: BlockReadRepository,
     private val inferenceWorker: InferenceWorker
 ) {
     /**

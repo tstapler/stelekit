@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import arrow.atomic.AtomicBoolean
 import kotlin.math.sqrt
 
 /**
@@ -188,6 +189,19 @@ class AnnotationEditorViewModel(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val logger = Logger("AnnotationEditorViewModel")
 
+    /**
+     * Set to true on the first call to [initialize] to prevent a second call from
+     * re-issuing the one-shot repository load.
+     */
+    private val initialized = AtomicBoolean(false)
+
+    /**
+     * Set to true the first time any user action mutates [committedAnnotations] (commit or delete).
+     * The initial-load coroutine in [initialize] uses this to bail out if the user has already
+     * interacted — preventing stale repository results from overwriting optimistic UI state.
+     */
+    private val hasBeenMutated = AtomicBoolean(false)
+
     // ── Depth estimation coordinator ──────────────────────────────────────────
     private val depthCoordinator = DepthEstimationCoordinator(
         depthEstimator = monocularDepthEstimator,
@@ -272,21 +286,22 @@ class AnnotationEditorViewModel(
      * Call once after construction with the target image.
      */
     fun initialize(imageAnnotation: ImageAnnotation) {
+        // Guard: only run the repository load once per ViewModel instance. Calling initialize()
+        // a second time updates the calibration/image state but must not overwrite annotations
+        // that the user has already added or deleted in this session.
+        val firstCall = initialized.compareAndSet(false, true)
         _state.update { it.copy(imageAnnotation = imageAnnotation, calibration = imageAnnotation.calibration) }
+        if (!firstCall) return
         // Load persisted annotations once at startup. After that, committedAnnotations is managed
         // exclusively by optimistic local updates (commitAnnotation, undo, redo, deleteAnnotation).
         // A continuous collect would race with optimistic updates and corrupt undo/redo history.
         scope.launch {
             val result = measurementRepository.getMeasurementsForImage(imageAnnotation.uuid).first()
             result.onRight { list ->
-                _state.update { currentSt ->
-                    // Only apply the initial load if no annotations have been added yet
-                    // (guards against calling initialize() multiple times).
-                    if (currentSt.committedAnnotations.isEmpty()) {
-                        currentSt.copy(committedAnnotations = list)
-                    } else {
-                        currentSt
-                    }
+                // Skip the load if the user has already committed or deleted annotations;
+                // applying stale repository results would overwrite optimistic UI state.
+                if (!hasBeenMutated.value) {
+                    _state.update { currentSt -> currentSt.copy(committedAnnotations = list) }
                 }
             }
         }
@@ -485,6 +500,7 @@ class AnnotationEditorViewModel(
 
         val before = st
         pushUndo(before)
+        hasBeenMutated.value = true
 
         // Story 9.6: Fire haptic feedback on annotation commit. The callback is injected
         // at construction time; on Android the composable caller wires LocalHapticFeedback
@@ -571,6 +587,7 @@ class AnnotationEditorViewModel(
     fun deleteAnnotation(uuid: String) {
         val before = _state.value
         pushUndo(before)
+        hasBeenMutated.value = true
 
         _state.update { currentSt ->
             currentSt.copy(

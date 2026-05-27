@@ -19,6 +19,9 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.util.UuidGenerator
+import arrow.atomic.AtomicInt
+import arrow.atomic.update
+import arrow.atomic.value
 import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -123,18 +126,32 @@ class DatabaseWriteActor(
     @Volatile private var _isActorProcessing: Boolean = false
 
     /**
+     * Counts callers that have successfully sent a request but whose [CompletableDeferred.await]
+     * has not yet returned. Incremented just before [Channel.send] and decremented in the
+     * finally-block that wraps [CompletableDeferred.await], so the counter stays balanced even
+     * when [send] throws (e.g. channel closed) or when the calling coroutine is cancelled while
+     * suspended in [await].
+     *
+     * Uses [AtomicInt] (Arrow KMP-safe typealias for [java.util.concurrent.atomic.AtomicInteger]
+     * on JVM/Android, native atomics on iOS/WASM) to avoid the lost-update race that would occur
+     * with a plain @Volatile Int incremented by concurrent callers.
+     */
+    private val _activeOps = AtomicInt(0)
+
+    /**
      * True while any write is queued in the channels or currently being processed.
      *
      * Thread-safe: [Channel.isEmpty] is safe to call from any thread/coroutine;
      * [_isActorProcessing] is written only by the actor coroutine (@Volatile suffices
-     * for single-writer/multi-reader visibility). A request dequeued but not yet flagged
-     * is a negligible window — this is intentionally best-effort conflict protection.
+     * for single-writer/multi-reader visibility); [_activeOps] is an atomic counter
+     * incremented by every caller before [send] and decremented after [await] returns.
+     * Together they cover the full lifecycle of a write request from caller to result.
      *
      * Used by conflict detection: an external file change arriving while a split/merge is
      * in-flight must trigger the conflict dialog rather than silently overwriting local data.
      */
     val hasPendingWrites: Boolean
-        get() = !highPriority.isEmpty || !lowPriority.isEmpty || _isActorProcessing
+        get() = !highPriority.isEmpty || !lowPriority.isEmpty || _isActorProcessing || _activeOps.value != 0
 
     // Own scope so the actor loop survives Compose scope cancellation (e.g. key(activeGraphId)
     // graph switch). Callers must call close() to stop the actor.
@@ -195,43 +212,51 @@ class DatabaseWriteActor(
                 if (result.isRight()) onWriteSuccess?.invoke(request)
                 request.deferred.complete(result)
             }
-            is WriteRequest.DeleteBlocksForPage -> {
-                if (opLogger != null) {
-                    try {
-                        val pageBlocks = blockRepository.getBlocksForPage(request.pageUuid).first().getOrNull()
-                        pageBlocks?.forEach { opLogger.logDelete(it) }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) {
-                        // Non-fatal: op log failure must not block the delete
-                    }
-                }
-                val result = blockRepository.deleteBlocksForPage(request.pageUuid)
-                if (result.isRight()) onWriteSuccess?.invoke(request)
-                request.deferred.complete(result)
-            }
+            is WriteRequest.DeleteBlocksForPage -> processDeleteBlocksForPage(request)
             is WriteRequest.DeleteBlocksForPages -> processDeleteBlocksForPages(request)
             is WriteRequest.SaveBlocks -> processSaveBlocks(request)
-            is WriteRequest.Execute -> {
-                val waitMs = HistogramWriter.epochMs() - request.enqueueMs
-                if (waitMs > 10L) {
-                    ringBuffer?.record(SerializedSpan(
-                        name = "db.queue_wait",
-                        startEpochMs = request.enqueueMs,
-                        endEpochMs = request.enqueueMs + waitMs,
-                        durationMs = waitMs,
-                        attributes = mapOf(
-                            "priority" to request.priority.name,
-                            "session.id" to AppSession.id,
-                        ),
-                        statusCode = if (waitMs > 500L) "ERROR" else "OK",
-                        traceId = UuidGenerator.generateV7(),
-                        spanId = UuidGenerator.generateV7(),
-                    ))
-                }
-                request.deferred.complete(request.op())
+            is WriteRequest.Execute -> processExecute(request)
+        }
+    }
+
+    private suspend fun processDeleteBlocksForPage(request: WriteRequest.DeleteBlocksForPage) {
+        if (opLogger != null) {
+            try {
+                val pageBlocks = blockRepository.getBlocksForPage(request.pageUuid).first().getOrNull()
+                pageBlocks?.forEach { opLogger.logDelete(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Non-fatal: op log failure must not block the delete
             }
         }
+        val result = blockRepository.deleteBlocksForPage(request.pageUuid)
+        if (result.isRight()) onWriteSuccess?.invoke(request)
+        request.deferred.complete(result)
+    }
+
+    private suspend fun processExecute(request: WriteRequest.Execute) {
+        val waitMs = HistogramWriter.epochMs() - request.enqueueMs
+        if (waitMs > 10L) {
+            recordQueueWaitSpan(request, waitMs)
+        }
+        request.deferred.complete(request.op())
+    }
+
+    private fun recordQueueWaitSpan(request: WriteRequest.Execute, waitMs: Long) {
+        ringBuffer?.record(SerializedSpan(
+            name = "db.queue_wait",
+            startEpochMs = request.enqueueMs,
+            endEpochMs = request.enqueueMs + waitMs,
+            durationMs = waitMs,
+            attributes = mapOf(
+                "priority" to request.priority.name,
+                "session.id" to AppSession.id,
+            ),
+            statusCode = if (waitMs > 500L) "ERROR" else "OK",
+            traceId = UuidGenerator.generateV7(),
+            spanId = UuidGenerator.generateV7(),
+        ))
     }
 
     private suspend fun processDeleteBlocksForPages(request: WriteRequest.DeleteBlocksForPages) {
@@ -375,34 +400,29 @@ class DatabaseWriteActor(
 
     suspend fun savePage(page: Page, priority: Priority = Priority.HIGH): Either<DomainError, Unit> {
         val req = WriteRequest.SavePage(page, priority)
-        channelFor(priority).send(req)
-        return req.deferred.await()
+        return sendAndAwait(req)
     }
 
     suspend fun savePages(pages: List<Page>, priority: Priority = Priority.LOW): Either<DomainError, Unit> {
         if (pages.isEmpty()) return Unit.right()
         val req = WriteRequest.SavePages(pages, priority)
-        channelFor(priority).send(req)
-        return req.deferred.await()
+        return sendAndAwait(req)
     }
 
     suspend fun saveBlocks(blocks: List<Block>, priority: Priority = Priority.HIGH): Either<DomainError, Unit> {
         val req = WriteRequest.SaveBlocks(blocks, priority)
-        channelFor(priority).send(req)
-        return req.deferred.await()
+        return sendAndAwait(req)
     }
 
     suspend fun deleteBlocksForPage(pageUuid: String, priority: Priority = Priority.HIGH): Either<DomainError, Unit> {
         val req = WriteRequest.DeleteBlocksForPage(pageUuid, priority)
-        channelFor(priority).send(req)
-        return req.deferred.await()
+        return sendAndAwait(req)
     }
 
     suspend fun deleteBlocksForPages(pageUuids: List<String>, priority: Priority = Priority.LOW): Either<DomainError, Unit> {
         if (pageUuids.isEmpty()) return Unit.right()
         val req = WriteRequest.DeleteBlocksForPages(pageUuids, priority)
-        channelFor(priority).send(req)
-        return req.deferred.await()
+        return sendAndAwait(req)
     }
 
     /**
@@ -411,8 +431,32 @@ class DatabaseWriteActor(
      */
     suspend fun execute(priority: Priority = Priority.HIGH, op: suspend () -> Either<DomainError, Unit>): Either<DomainError, Unit> {
         val req = WriteRequest.Execute(op, priority)
-        channelFor(priority).send(req)
-        return req.deferred.await()
+        return sendAndAwait(req)
+    }
+
+    /**
+     * Increments [_activeOps], sends [req] to its priority channel, then awaits the result.
+     *
+     * The counter is decremented in all exit paths:
+     * - If [Channel.send] throws (channel closed / coroutine cancelled in send), the
+     *   increment is undone immediately and the exception propagates.
+     * - Once [send] returns, a finally-block around [CompletableDeferred.await] guarantees
+     *   the decrement regardless of whether [await] completes normally, throws, or is
+     *   cancelled — so [_activeOps] can never leak above zero.
+     */
+    private suspend fun sendAndAwait(req: WriteRequest): Either<DomainError, Unit> {
+        _activeOps.update { it + 1 }
+        try {
+            channelFor(req.priority).send(req)
+        } catch (e: Exception) {
+            _activeOps.update { it - 1 }
+            throw e
+        }
+        try {
+            return req.deferred.await()
+        } finally {
+            _activeOps.update { it - 1 }
+        }
     }
 
     suspend fun saveBlock(block: Block): Either<DomainError, Unit> =

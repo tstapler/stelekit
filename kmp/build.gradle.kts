@@ -380,6 +380,45 @@ configurations.all {
     )
 }
 
+// Display resolution helpers — work on X11, Wayland, and Wayland+XWayland.
+// Needed when $DISPLAY / $WAYLAND_DISPLAY are not forwarded into the Gradle daemon
+// (common on Wayland desktops and in SSH sessions without X forwarding).
+
+// Reads the effective UID from /proc (Linux only); null elsewhere.
+fun linuxUid(): String? = try {
+    IoFile("/proc/self/status").readLines()
+        .firstOrNull { it.startsWith("Uid:") }
+        ?.split("\\s+".toRegex())?.getOrNull(1)
+} catch (_: Exception) { null }
+
+// XDG_RUNTIME_DIR: env var → /proc UID probe → null.
+fun resolvedXdgRuntimeDir(): String? =
+    System.getenv("XDG_RUNTIME_DIR")?.takeIf { IoFile(it).isDirectory }
+        ?: linuxUid()?.let { uid -> "/run/user/$uid".takeIf { IoFile(it).isDirectory } }
+
+// DISPLAY: env var → XWayland lock-file probe → null.
+fun resolvedDisplay(): String? {
+    System.getenv("DISPLAY")?.takeIf { it.isNotBlank() }?.let { return it }
+    val lockPattern = Regex("\\.X\\d+-lock")
+    val lockName = IoFile("/tmp").list()?.filter { lockPattern.matches(it) }?.minOrNull()
+        ?: return null
+    return ":${lockName.removePrefix(".X").removeSuffix("-lock")}"
+}
+
+// WAYLAND_DISPLAY: env var → probe wayland-0 socket in XDG_RUNTIME_DIR → null.
+fun resolvedWaylandDisplay(): String? {
+    System.getenv("WAYLAND_DISPLAY")?.takeIf { it.isNotBlank() }?.let { return it }
+    val runtimeDir = resolvedXdgRuntimeDir() ?: return null
+    return if (IoFile("$runtimeDir/wayland-0").exists()) "wayland-0" else null
+}
+
+// Apply all three to a Test task (call once per task, not per property).
+fun Test.configureDisplayEnv() {
+    resolvedDisplay()?.let { environment("DISPLAY", it) }
+    resolvedWaylandDisplay()?.let { environment("WAYLAND_DISPLAY", it) }
+    resolvedXdgRuntimeDir()?.let { environment("XDG_RUNTIME_DIR", it) }
+}
+
 // Configure JVM test task for Compose Desktop UI tests
 tasks.named<Test>("jvmTest") {
     // BlockHound is installed programmatically via BlockHoundTestBase.installBlockHound().
@@ -390,6 +429,7 @@ tasks.named<Test>("jvmTest") {
         "--add-opens=java.base/java.lang=ALL-UNNAMED",
     )
     jvmArgs("-Djava.awt.headless=false")
+    configureDisplayEnv()
     // Enable software rendering for CI environments
     environment("LIBGL_ALWAYS_SOFTWARE", System.getenv("LIBGL_ALWAYS_SOFTWARE") ?: "")
     environment("GALLIUM_DRIVER", System.getenv("GALLIUM_DRIVER") ?: "")
@@ -430,6 +470,7 @@ tasks.register<Test>("jvmTestFast") {
         "--add-opens=java.base/java.lang=ALL-UNNAMED",
     )
     jvmArgs("-Djava.awt.headless=false")
+    configureDisplayEnv()
     environment("LIBGL_ALWAYS_SOFTWARE", System.getenv("LIBGL_ALWAYS_SOFTWARE") ?: "")
     environment("GALLIUM_DRIVER", System.getenv("GALLIUM_DRIVER") ?: "")
 

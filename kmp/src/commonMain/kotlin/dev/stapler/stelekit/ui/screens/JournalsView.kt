@@ -19,7 +19,6 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
-import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.ui.components.BlockList
 import dev.stapler.stelekit.ui.components.MobileBlockToolbar
 import dev.stapler.stelekit.ui.components.SearchDialog
@@ -39,7 +38,6 @@ import kotlinx.datetime.LocalDate
 @Composable
 fun JournalsView(
     viewModel: JournalsViewModel,
-    blockRepository: BlockRepository,
     isDebugMode: Boolean,
     onLinkClick: (String) -> Unit,
     searchViewModel: SearchViewModel? = null,

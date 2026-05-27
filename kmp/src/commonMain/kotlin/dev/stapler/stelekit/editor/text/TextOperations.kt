@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import dev.stapler.stelekit.model.Block
-import dev.stapler.stelekit.repository.BlockRepository
+import dev.stapler.stelekit.repository.BlockWriteRepository
 import dev.stapler.stelekit.editor.TextFormat
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import kotlinx.coroutines.CoroutineScope
@@ -25,7 +25,7 @@ import kotlinx.coroutines.CancellationException
  * Implementation of text operations for Logseq KMP editor
  */
 class TextOperations(
-    private val blockRepository: BlockRepository
+    private val blockRepository: BlockWriteRepository
 ) : ITextOperations {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
