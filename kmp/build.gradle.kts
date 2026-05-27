@@ -380,6 +380,17 @@ configurations.all {
     )
 }
 
+// Resolve X display for AWT/Compose tests: prefer $DISPLAY, fall back to any running
+// XWayland instance detected via /tmp/.X*-lock. Needed on Wayland desktops where
+// $DISPLAY is not forwarded into the Gradle daemon environment.
+fun resolvedDisplay(): String? {
+    System.getenv("DISPLAY")?.takeIf { it.isNotBlank() }?.let { return it }
+    val lockPattern = Regex("\\.X\\d+-lock")
+    val lockName = IoFile("/tmp").list()?.filter { lockPattern.matches(it) }?.minOrNull()
+        ?: return null
+    return ":${lockName.removePrefix(".X").removeSuffix("-lock")}"
+}
+
 // Configure JVM test task for Compose Desktop UI tests
 tasks.named<Test>("jvmTest") {
     // BlockHound is installed programmatically via BlockHoundTestBase.installBlockHound().
@@ -390,6 +401,8 @@ tasks.named<Test>("jvmTest") {
         "--add-opens=java.base/java.lang=ALL-UNNAMED",
     )
     jvmArgs("-Djava.awt.headless=false")
+    // Forward X display; auto-detects XWayland on Wayland desktops where $DISPLAY is unset
+    resolvedDisplay()?.let { environment("DISPLAY", it) }
     // Enable software rendering for CI environments
     environment("LIBGL_ALWAYS_SOFTWARE", System.getenv("LIBGL_ALWAYS_SOFTWARE") ?: "")
     environment("GALLIUM_DRIVER", System.getenv("GALLIUM_DRIVER") ?: "")
@@ -430,6 +443,7 @@ tasks.register<Test>("jvmTestFast") {
         "--add-opens=java.base/java.lang=ALL-UNNAMED",
     )
     jvmArgs("-Djava.awt.headless=false")
+    resolvedDisplay()?.let { environment("DISPLAY", it) }
     environment("LIBGL_ALWAYS_SOFTWARE", System.getenv("LIBGL_ALWAYS_SOFTWARE") ?: "")
     environment("GALLIUM_DRIVER", System.getenv("GALLIUM_DRIVER") ?: "")
 
