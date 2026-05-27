@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.28.1](https://github.com/tstapler/stelekit/compare/v0.28.0...v0.28.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **editor:** serialize structural block ops through DatabaseWriteActor ([#97](https://github.com/tstapler/stelekit/issues/97)) ([ab4e924](https://github.com/tstapler/stelekit/commit/ab4e924a923f9af92ceed793f2aa2b48e496bbed))
+* **images:** restore correct aspect ratio and add fullscreen lightbox ([#100](https://github.com/tstapler/stelekit/issues/100)) ([4ac845d](https://github.com/tstapler/stelekit/commit/4ac845d7c4120980e0395b4b580e05581e07a9be))
+* **perf:** resolve empty saved spans and OTel desync on reinitialisation ([#95](https://github.com/tstapler/stelekit/issues/95)) ([c61502a](https://github.com/tstapler/stelekit/commit/c61502a3265cc17c8090eb181a48a5fb9bb2cfaf))
+* **ui:** fix table dark-mode theming; add UnthemedTextInBackgroundContainer lint rule ([#98](https://github.com/tstapler/stelekit/issues/98)) ([be1652e](https://github.com/tstapler/stelekit/commit/be1652e64249d510b20a63c90cd1b4614de6ec85))
+
 ## [0.28.0](https://github.com/tstapler/stelekit/compare/v0.27.1...v0.28.0) (2026-05-24)
 
 
