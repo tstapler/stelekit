@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.1](https://github.com/tstapler/stelekit/compare/v0.30.0...v0.30.1) (2026-05-28)
+
+
+### Bug Fixes
+
+* **homebrew:** remove invalid quarantine stanza from cask definition ([b6a13b6](https://github.com/tstapler/stelekit/commit/b6a13b646d81f79bb7b9362f9173a5c742d33e02))
+
 ## [0.30.0](https://github.com/tstapler/stelekit/compare/v0.29.0...v0.30.0) (2026-05-27)
 
 
