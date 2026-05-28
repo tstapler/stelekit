@@ -10,9 +10,6 @@ cask "stelekit" do
 
   depends_on macos: ">= :ventura"
 
-  # Skip Gatekeeper quarantine — app is unsigned (no Apple Developer account)
-  quarantine false
-
   app "stelekit.app"
 
   # CLI shim so `stelekit` works from the terminal after cask install
@@ -22,4 +19,10 @@ cask "stelekit" do
     "~/Library/Application Support/SteleKit",
     "~/Library/Saved Application State/stelekit.savedState",
   ]
+
+  caveats <<~EOS
+    SteleKit is unsigned. If macOS Gatekeeper blocks the app on first launch,
+    right-click the app in Finder and choose "Open", or reinstall with:
+      brew install --cask --no-quarantine tstapler/stelekit/stelekit
+  EOS
 end
