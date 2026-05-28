@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-28 21:59:35 UTC",
+  "gitSha": "35fd303",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 4,
+  "phase3Ms": 19,
+  "totalMs": 32,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 30,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 136,
+      "pct": 72.3
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 11,
+      "pct": 5.9
+    },
+    {
+      "frame": "java.lang.Class[]_[k]",
+      "samples": 4,
+      "pct": 2.1
+    },
+    {
+      "frame": "long[]_[k]",
+      "samples": 4,
+      "pct": 2.1
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 3,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node[]_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.net.URL_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.util.HashMap_[k]",
+      "samples": 1,
+      "pct": 0.5
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2515,
+      "pct": 99.4
+    },
+    {
+      "frame": "SystemDictionary::resolve_instance_class_or_null",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "app/cash/sqldelight/BaseTransacterImpl.notifyQueries_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pread",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-6331e450-1d05-4f93-aaad-f9f51d398736-libsqlitejdbc.so",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/invoke/MethodType.isAllObject_[i]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "JVM_SetNativeThreadName",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SymbolTable::do_lookup",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/CoroutineContextKt.newCoroutineContext_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "OopMapStream::find_next",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}
