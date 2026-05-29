@@ -57,6 +57,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.plus
+import kotlinx.datetime.toLocalDateTime
 
 sealed class IndexingState {
     object Idle : IndexingState()
@@ -428,7 +434,13 @@ class StelekitViewModel(
 
                                 // Ensure today's journal exists so it appears at the top of the
                                 // journals list. No navigation — the list updates reactively.
-                                scope.launch { journalService.ensureTodayJournal() }
+                                scope.launch {
+                                    journalService.ensureTodayJournal()
+                                    lastJournalDate = Clock.System.now()
+                                        .toLocalDateTime(TimeZone.currentSystemDefault()).date
+                                }
+
+                                startMidnightBoundaryWatcher()
                             },
                             onFullyLoaded = {
                                 logger.info("Graph fully loaded")
@@ -1634,6 +1646,40 @@ class StelekitViewModel(
                         renameDialogBusy = false,
                         renameDialogError = result.error.message ?: "Rename failed"
                     ) }
+                }
+            }
+        }
+    }
+
+    private var midnightWatcherJob: kotlinx.coroutines.Job? = null
+    private var lastJournalDate: kotlinx.datetime.LocalDate? = null
+
+    internal fun millisUntilNextMidnight(clock: Clock = Clock.System): Long {
+        val tz = TimeZone.currentSystemDefault()
+        val now = clock.now()
+        val today = now.toLocalDateTime(tz).date
+        val tomorrowMidnight = today.plus(1, DateTimeUnit.DAY).atStartOfDayIn(tz)
+        return (tomorrowMidnight - now).inWholeMilliseconds.coerceAtLeast(1_000L)
+    }
+
+    private fun startMidnightBoundaryWatcher(clock: Clock = Clock.System) {
+        midnightWatcherJob?.cancel()
+        midnightWatcherJob = scope.launch(CoroutineName("midnight-boundary-watcher")) {
+            while (isActive) {
+                val delayMs = millisUntilNextMidnight(clock)
+                logger.info("Next journal boundary check in ${delayMs / 1000}s")
+                delay(delayMs)
+                val tz = TimeZone.currentSystemDefault()
+                val today = clock.now().toLocalDateTime(tz).date
+                if (today == lastJournalDate) continue
+                logger.info("Day boundary crossed — ensuring today's journal exists")
+                try {
+                    journalService.ensureTodayJournal()
+                    lastJournalDate = today
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.error("ensureTodayJournal failed at midnight boundary: ${e.message}")
                 }
             }
         }
