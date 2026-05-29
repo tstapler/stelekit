@@ -12,6 +12,29 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 
 /**
+ * Remaps highlight [ranges] from [stripped] coordinate space to [baseText] coordinate space.
+ *
+ * [parseMarkdownWithStyling] only removes characters (markdown markers) from [stripped] to
+ * produce [baseText], so every character in [baseText] has a corresponding character in
+ * [stripped]. We build a forward map `stripped[s] → baseText[b]` and use it to translate
+ * each range. Ranges that collapse to empty after remapping are dropped.
+ */
+private fun remapRanges(stripped: String, baseText: String, ranges: List<IntRange>): List<IntRange> {
+    val map = IntArray(stripped.length + 1) { baseText.length }
+    var b = 0
+    for (s in stripped.indices) {
+        map[s] = b.coerceAtMost(baseText.length)
+        if (b < baseText.length && stripped[s] == baseText[b]) b++
+    }
+    map[stripped.length] = baseText.length
+    return ranges.mapNotNull { r ->
+        val start = map[r.first.coerceAtMost(stripped.length)]
+        val end = map[(r.last + 1).coerceAtMost(stripped.length)]
+        if (start < end) start until end else null
+    }
+}
+
+/**
  * Strips `<em>…</em>` tags from [raw], returning the plain text and the list of
  * highlight ranges (start..last inclusive) in the stripped string.
  */
@@ -55,9 +78,10 @@ fun SnippetText(
     val annotated = remember(snippet, highlightColor) {
         val (strippedText, highlightRanges) = parseEmTags(snippet!!)
         val base = parseMarkdownWithStyling(strippedText, linkColor = Color.Unspecified, textColor = Color.Unspecified)
+        val remapped = remapRanges(strippedText, base.text, highlightRanges)
         buildAnnotatedString {
             append(base)
-            highlightRanges.forEach { range ->
+            remapped.forEach { range ->
                 addStyle(SpanStyle(fontWeight = FontWeight.Bold, color = highlightColor), range.first, range.last + 1)
             }
         }

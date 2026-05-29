@@ -529,7 +529,9 @@ fun SearchResultRow(
                 }
                 BasicText(
                     text = annotatedTitle,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal
+                    ),
                     maxLines = 1,
                     modifier = Modifier.weight(1f)
                 )
