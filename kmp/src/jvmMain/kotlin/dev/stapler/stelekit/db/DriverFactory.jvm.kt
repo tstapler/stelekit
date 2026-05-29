@@ -48,6 +48,20 @@ actual class DriverFactory actual constructor() {
             setProperty("synchronous", "NORMAL")
             setProperty("foreign_keys", "true")
             setProperty("busy_timeout", "30000")
+            // cache_size: negative = KiB; -32768 = 32 MB per connection.
+            // 8 pool connections × 32 MB = 256 MB total page cache (JVM has more RAM headroom).
+            setProperty("cache_size", "-32768")
+            // temp_store=2 (MEMORY): keep sort/join temp tables in RAM, not on disk.
+            setProperty("temp_store", "2")
+            // wal_autocheckpoint=4000: reduce checkpoint frequency on write-heavy workloads.
+            // Default is 1000 pages; 4000 matches the Android driver setting.
+            setProperty("wal_autocheckpoint", "4000")
+            // mmap_size=256MB: memory-mapped I/O per connection. OS lazily maps accessed pages only.
+            // Total across 8 pool connections: up to 2 GB virtual address space (not physical RAM).
+            // Safe on 64-bit JVMs (Linux/macOS/Windows x86-64 desktop targets — all supported platforms).
+            // On 32-bit JVMs this could exhaust virtual address space; however 32-bit desktop JVMs
+            // are not a supported target for SteleKit.
+            setProperty("mmap_size", "268435456")
         }
 
         // In-memory SQLite databases are connection-scoped: each connection gets a separate

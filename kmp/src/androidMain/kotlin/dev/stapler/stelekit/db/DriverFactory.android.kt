@@ -9,6 +9,25 @@ import io.requery.android.database.sqlite.RequerySQLiteOpenHelperFactory
 import kotlinx.coroutines.runBlocking
 
 /**
+ * Performance PRAGMAs applied in [WalConfiguredCallback.onConfigure] via rawQuery.
+ *
+ * Exposed as `internal` so [WalConfiguredCallbackTest] can assert the full list without
+ * relying on a real [SupportSQLiteDatabase] instance (which requires instrumented tests).
+ */
+internal val ANDROID_PRAGMAS: List<String> = listOf(
+    "PRAGMA journal_mode=WAL",
+    "PRAGMA synchronous=NORMAL",
+    "PRAGMA busy_timeout=10000",
+    "PRAGMA wal_autocheckpoint=4000",
+    "PRAGMA temp_store=MEMORY",
+    "PRAGMA cache_size=-8000",
+    // mmap_size=256MB: maps file pages into process address space, avoids read() syscall
+    // overhead on repeated reads. OS only maps pages actually accessed — not pre-allocated.
+    // Safe at minSdk 26 with Requery's bundled SQLite 3.49.0.
+    "PRAGMA mmap_size=268435456",
+)
+
+/**
  * Applies performance PRAGMAs in [onConfigure] via [SupportSQLiteDatabase.query] (rawQuery path).
  *
  * Requery's [RequerySQLiteOpenHelperFactory] restricts [SupportSQLiteDatabase.execSQL] for
@@ -25,20 +44,8 @@ private class WalConfiguredCallback(
     override fun onConfigure(db: SupportSQLiteDatabase) {
         super.onConfigure(db) // preserves foreign-key enforcement and other AndroidSqliteDriver defaults
         // rawQuery path: Requery allows query/rawQuery for all statement types including SET-PRAGMAs.
-        // WAL mode: concurrent reads during writes; persistent across connections once set.
-        // synchronous=NORMAL: fsync on WAL checkpoint only, safe with WAL.
-        // busy_timeout: retry for up to 10 s on SQLITE_BUSY before surfacing the error.
-        // wal_autocheckpoint=4000: reduce checkpoint frequency on write-heavy workloads (default 1000).
-        // temp_store=MEMORY: keep temp tables in RAM, not on Android storage.
-        // cache_size=-8000: 8 MB page cache; reduces repeated reads for large graphs (1000+ pages).
-        listOf(
-            "PRAGMA journal_mode=WAL",
-            "PRAGMA synchronous=NORMAL",
-            "PRAGMA busy_timeout=10000",
-            "PRAGMA wal_autocheckpoint=4000",
-            "PRAGMA temp_store=MEMORY",
-            "PRAGMA cache_size=-8000",
-        ).forEach { pragma ->
+        // See ANDROID_PRAGMAS for the full list and per-pragma rationale.
+        ANDROID_PRAGMAS.forEach { pragma ->
             try { db.query(pragma).close() } catch (_: Exception) { }
         }
     }

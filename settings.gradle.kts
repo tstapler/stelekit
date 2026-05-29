@@ -70,5 +70,3 @@ rootProject.name = "stelekit"
 
 include(":kmp")
 include(":androidApp")
-include(":macrobenchmark")
-include(":tools:flamegraph")
