@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-29 04:33:29 UTC",
+  "gitSha": "5cfb694",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 3,
+  "phase3Ms": 15,
+  "totalMs": 27,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 38,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 137,
+      "pct": 75.7
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 9,
+      "pct": 5.0
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 5,
+      "pct": 2.8
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 4,
+      "pct": 2.2
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 3,
+      "pct": 1.7
+    },
+    {
+      "frame": "java.lang.Object_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.util.ArrayList$Itr_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "long[]_[k]",
+      "samples": 2,
+      "pct": 1.1
+    },
+    {
+      "frame": "sun.util.locale.InternalLocaleBuilder_[k]",
+      "samples": 2,
+      "pct": 1.1
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2123,
+      "pct": 99.4
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-af03afcf-b0a1-4939-94c2-f7b15353084c-libsqlitejdbc.so",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "java/lang/ClassLoader.findLoadedClass0_[j]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "LinkResolver::resolve_method",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "_linkToStatic",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/String.length_[i]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/ThreadLocal$ThreadLocalMap.set_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SymbolTable::lookup_only",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "JVM_InternString@plt",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}
