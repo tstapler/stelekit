@@ -68,6 +68,7 @@ data class RepositorySet(
     val onBulkImportComplete: (suspend () -> Unit)? = null,
     val queryStatsRepository: dev.stapler.stelekit.performance.QueryStatsRepository? = null,
     val queryStatsCollector: dev.stapler.stelekit.performance.QueryStatsCollector? = null,
+    val queryPlanRepository: dev.stapler.stelekit.performance.QueryPlanRepository? = null,
     val imageAnnotationRepository: ImageAnnotationRepository = InMemoryImageAnnotationRepository(),
     val measurementAnnotationRepository: MeasurementAnnotationRepository = InMemoryMeasurementAnnotationRepository(),
 )
@@ -288,6 +289,11 @@ class RepositoryFactoryImpl(
 
         val walCallback: (suspend () -> Unit)? = sqlBlockRepo?.let { repo -> suspend { repo.walCheckpoint() } }
 
+        val queryPlanRepo = if (backend == GraphBackend.SQLDELIGHT) {
+            val rawDriver = activeDriver
+            if (rawDriver != null) dev.stapler.stelekit.performance.QueryPlanRepository(rawDriver) else null
+        } else null
+
         return RepositorySet(
             blockRepository = blockRepo,
             pageRepository = pageRepo,
@@ -310,6 +316,7 @@ class RepositoryFactoryImpl(
             onBulkImportComplete = walCallback,
             queryStatsRepository = queryStatsRepo,
             queryStatsCollector = collector,
+            queryPlanRepository = queryPlanRepo,
         )
     }
 

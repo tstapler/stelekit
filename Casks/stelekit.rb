@@ -1,7 +1,7 @@
 # Cask managed by the release workflow — do not edit sha256/version manually.
 cask "stelekit" do
-  version "0.27.1"
-  sha256 "5db287933f6450546c2a4b734f9ba49789fd128a6eaa7cee8efc98f70a8f3b8b"
+  version "0.30.1"
+  sha256 "0867c3293dd8a116faa08850dbb0f3a0bbd7731b455cc379d248c010411578da"
 
   url "https://github.com/tstapler/stelekit/releases/download/v#{version}/SteleKit-v#{version}-macos.dmg"
   name "SteleKit"
@@ -9,9 +9,6 @@ cask "stelekit" do
   homepage "https://github.com/tstapler/stelekit"
 
   depends_on macos: ">= :ventura"
-
-  # Skip Gatekeeper quarantine — app is unsigned (no Apple Developer account)
-  quarantine false
 
   app "stelekit.app"
 
@@ -22,4 +19,10 @@ cask "stelekit" do
     "~/Library/Application Support/SteleKit",
     "~/Library/Saved Application State/stelekit.savedState",
   ]
+
+  caveats <<~EOS
+    SteleKit is unsigned. If macOS Gatekeeper blocks the app on first launch,
+    right-click the app in Finder and choose "Open", or reinstall with:
+      brew install --cask --no-quarantine tstapler/stelekit/stelekit
+  EOS
 end

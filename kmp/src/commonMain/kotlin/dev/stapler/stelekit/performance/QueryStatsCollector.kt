@@ -44,6 +44,7 @@ class QueryStatsCollector(
         var b100: Long = 0,
         var b500: Long = 0,
         var bInf: Long = 0,
+        var sampleSql: String? = null,
     )
 
     init {
@@ -55,10 +56,11 @@ class QueryStatsCollector(
         }
     }
 
-    fun record(table: String, operation: String, durationMs: Long, isError: Boolean) {
+    fun record(table: String, operation: String, durationMs: Long, isError: Boolean, sql: String? = null) {
         val key = "$table:$operation"
         lock.withLock {
             val a = accum.getOrPut(key) { Accum() }
+            if (sql != null && a.sampleSql == null) a.sampleSql = sql
             a.calls++
             if (isError) a.errors++
             a.totalMs += durationMs
@@ -74,6 +76,13 @@ class QueryStatsCollector(
                 else              -> a.bInf++
             }
         }
+    }
+
+    /** Returns a snapshot of one sample SQL string per key (table:operation). */
+    fun getSqlSamples(): Map<String, String> = lock.withLock {
+        accum.entries
+            .mapNotNull { (key, a) -> a.sampleSql?.let { key to it } }
+            .toMap()
     }
 
     /** Flush accumulated stats to the repository immediately, bypassing the periodic timer. */

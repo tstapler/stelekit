@@ -29,6 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import arrow.core.right
 
 /**
  * Single source of truth for block state across all screens (JournalsView, PageView).
@@ -57,7 +58,8 @@ class BlockStateManager(
     private val graphWriter: GraphWriter? = null,
     private val pageRepository: PageRepository? = null,
     private val graphPathProvider: () -> String = { "" },
-    private val writeActor: DatabaseWriteActor? = null
+    private val writeActor: DatabaseWriteActor? = null,
+    private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
 ) {
     private val logger = Logger("BlockStateManager")
     private val diskWriteDebounce = DebounceManager(scope, 300L)
@@ -591,7 +593,9 @@ class BlockStateManager(
         // Mark dirty BEFORE saving so the observer merge keeps our version
         _dirtyBlocks.update { it + (blockUuid to version) }
 
+        val t0 = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
         val writeResult = writeContentOnly(blockUuid, content)
+        histogramWriter?.record("editor_input", dev.stapler.stelekit.performance.HistogramWriter.epochMs() - t0)
         if (writeResult.isLeft()) {
             logger.warn("applyContentChange: DB write failed for $blockUuid — content lives in-memory only")
         }
@@ -713,17 +717,28 @@ class BlockStateManager(
         val currentUuids = current.map { it.uuid }.toSet()
         val toDelete = currentUuids - snapshotUuids
         // Route the delete+save pair through the actor so it doesn't race with queued content saves.
+        var success = true
         writeActor?.execute {
             for (uuid in toDelete) {
                 blockRepository.deleteBlock(uuid, deleteChildren = false)
+                    .onLeft { logger.error("restorePageToSnapshot: deleteBlock failed: $it"); success = false }
             }
-            blockRepository.saveBlocks(snapshot)
+            if (success) {
+                blockRepository.saveBlocks(snapshot)
+                    .onLeft { logger.error("restorePageToSnapshot: saveBlocks failed: $it"); success = false }
+            }
+            Unit.right()
         } ?: run {
             for (uuid in toDelete) {
                 blockRepository.deleteBlock(uuid, deleteChildren = false)
+                    .onLeft { logger.error("restorePageToSnapshot: deleteBlock failed: $it"); success = false }
             }
-            blockRepository.saveBlocks(snapshot)
+            if (success) {
+                blockRepository.saveBlocks(snapshot)
+                    .onLeft { logger.error("restorePageToSnapshot: saveBlocks failed: $it"); success = false }
+            }
         }
+        if (!success) return
         _blocks.update { state ->
             val newBlocks = state.toMutableMap()
             newBlocks[pageUuid] = snapshot

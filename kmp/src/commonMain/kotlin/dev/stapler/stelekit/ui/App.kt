@@ -396,6 +396,7 @@ private fun GraphContent(
             externalWriteActor = repos.writeActor,
             backgroundPageRepository = repos.backgroundPageRepository,
             sidecarManager = sidecarManager,
+            histogramWriter = repos.histogramWriter,
             spanRepository = repos.spanRepository,
         ).also { it.onBulkImportComplete = repos.onBulkImportComplete }
     }
@@ -445,7 +446,8 @@ private fun GraphContent(
             graphLoader = graphLoader,
             graphWriter = graphWriter,
             pageRepository = repos.pageRepository,
-            graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" }
+            graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" },
+            histogramWriter = repos.histogramWriter
         )
     }
 

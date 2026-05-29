@@ -66,6 +66,8 @@ class GraphLoader(
     private val spanRepository: SpanRepository? = null,
     /** Initial CryptoLayer value — use [setCryptoLayer] to change at runtime. */
     initialCryptoLayer: CryptoLayer? = null,
+    /** Poll interval for the file watcher in milliseconds. Override in tests to speed up cycles. */
+    private val watcherPollIntervalMs: Long = 5_000L,
 ) : GraphLoaderPort {
     private val logger = Logger("GraphLoader")
     private val markdownParser = MarkdownParser()
@@ -199,6 +201,7 @@ class GraphLoader(
         fileRegistry = fileRegistry,
         readFile = ::readFileDecrypted,
         onReloadFile = { filePath, content -> parseAndSavePage(filePath, content, dev.stapler.stelekit.parsing.ParseMode.FULL) },
+        pollIntervalMs = watcherPollIntervalMs,
     )
 
     // Tracks the in-flight background indexing job so it can be cancelled under memory pressure.

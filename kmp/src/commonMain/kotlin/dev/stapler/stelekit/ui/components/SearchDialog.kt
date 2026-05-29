@@ -156,6 +156,9 @@ fun SearchDialog(
                         onDismiss()
                         true
                     }
+                    // Consume Space so it doesn't propagate to the backdrop clickable and dismiss the dialog.
+                    // The TextField's text input system already handles adding the space character independently.
+                    Key.Spacebar -> true
                     else -> false
                 }
             } else false

@@ -1,5 +1,65 @@
 # Changelog
 
+## [0.30.1](https://github.com/tstapler/stelekit/compare/v0.30.0...v0.30.1) (2026-05-28)
+
+
+### Bug Fixes
+
+* **homebrew:** remove invalid quarantine stanza from cask definition ([b6a13b6](https://github.com/tstapler/stelekit/commit/b6a13b646d81f79bb7b9362f9173a5c742d33e02))
+
+## [0.30.0](https://github.com/tstapler/stelekit/compare/v0.29.0...v0.30.0) (2026-05-27)
+
+
+### Features
+
+* **perf:** wire editor_input histogram and add SQL Stats dashboard tab ([e59697e](https://github.com/tstapler/stelekit/commit/e59697e34b05bd4ea51e20b0d7f7211d0bda1828))
+
+
+### Bug Fixes
+
+* **lint:** add explicit color to Text inside dynamic-background Surface ([6309871](https://github.com/tstapler/stelekit/commit/6309871b825be9199f35f028cf591bcb8396a2a7))
+
+## [0.29.0](https://github.com/tstapler/stelekit/compare/v0.28.1...v0.29.0) (2026-05-27)
+
+
+### Features
+
+* **perf:** dynamic histogram dashboard — shows all recorded operations ([4e1d292](https://github.com/tstapler/stelekit/commit/4e1d2928ec28571f38943c8605c6fda0f44ea12c))
+* **perf:** EXPLAIN QUERY PLAN dashboard tab ([03bd38e](https://github.com/tstapler/stelekit/commit/03bd38e83c6c55ad18d7a9373685871768e7abe5))
+
+
+### Bug Fixes
+
+* **android:** disable LogDetector in androidApp and raise Metaspace limit ([f78312c](https://github.com/tstapler/stelekit/commit/f78312c61c3ab1b36ffba7bf19defe7e7f6551c4))
+* **android:** disable LogDetector lint rules to prevent Metaspace OOM ([4b4f7a0](https://github.com/tstapler/stelekit/commit/4b4f7a05bbe3b5e90d7985e915178d2a8ee65a3b))
+* **perf:** wire histogramWriter into GraphLoader so graph_load is recorded ([71e4600](https://github.com/tstapler/stelekit/commit/71e460058367aaafee50f778450ceabc150f9e2d))
+* **search:** prevent Space key from dismissing the search dialog ([#99](https://github.com/tstapler/stelekit/issues/99)) ([d83d343](https://github.com/tstapler/stelekit/commit/d83d34336a2d5304df0c69659ede2f38049ed3f3))
+
+## [0.28.1](https://github.com/tstapler/stelekit/compare/v0.28.0...v0.28.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **editor:** serialize structural block ops through DatabaseWriteActor ([#97](https://github.com/tstapler/stelekit/issues/97)) ([ab4e924](https://github.com/tstapler/stelekit/commit/ab4e924a923f9af92ceed793f2aa2b48e496bbed))
+* **images:** restore correct aspect ratio and add fullscreen lightbox ([#100](https://github.com/tstapler/stelekit/issues/100)) ([4ac845d](https://github.com/tstapler/stelekit/commit/4ac845d7c4120980e0395b4b580e05581e07a9be))
+* **perf:** resolve empty saved spans and OTel desync on reinitialisation ([#95](https://github.com/tstapler/stelekit/issues/95)) ([c61502a](https://github.com/tstapler/stelekit/commit/c61502a3265cc17c8090eb181a48a5fb9bb2cfaf))
+* **ui:** fix table dark-mode theming; add UnthemedTextInBackgroundContainer lint rule ([#98](https://github.com/tstapler/stelekit/issues/98)) ([be1652e](https://github.com/tstapler/stelekit/commit/be1652e64249d510b20a63c90cd1b4614de6ec85))
+
+## [0.28.0](https://github.com/tstapler/stelekit/compare/v0.27.1...v0.28.0) (2026-05-24)
+
+
+### Features
+
+* **git:** wire git UI — sync badge, setup wizard, conflict dialog ([5cdb732](https://github.com/tstapler/stelekit/commit/5cdb732de6fa975e9143d540e74388f581fa7f49))
+
+
+### Bug Fixes
+
+* **ci:** resolve Benchmark config-cache crash and F-Droid repo-icon path ([ddc1356](https://github.com/tstapler/stelekit/commit/ddc13569b59eef67afa7574b3db26674fd5ef346))
+* **ci:** resolve detekt ComplexCondition and config-cache failures ([640de97](https://github.com/tstapler/stelekit/commit/640de97916e7b49c1a95ab6a8b8a96605b5d27e9))
+* **fdroid:** add app icon and fastlane metadata to fix F-Droid listing ([85b1684](https://github.com/tstapler/stelekit/commit/85b1684e1d0e15b25129f5e776f4db3ae601735e))
+* **fdroid:** set DEMO_AVAILABLE when building site, bump archive_older to 5 ([b4d13dd](https://github.com/tstapler/stelekit/commit/b4d13ddc0c10dfc9ff8928dec57fb4ae0d66853b))
+
 ## [0.27.1](https://github.com/tstapler/stelekit/compare/v0.27.0...v0.27.1) (2026-05-24)
 
 
