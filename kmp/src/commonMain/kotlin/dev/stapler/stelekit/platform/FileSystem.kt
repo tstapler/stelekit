@@ -98,10 +98,10 @@ interface FileSystem {
 
     /**
      * Syncs the shadow copy for [graphPath] from SAF using batch mtime queries.
-     * No-op on non-SAF file systems. Must complete before any [readFile] call during
-     * graph load — called sequentially before warm-start reconcile reads and before
-     * cold-start Phase 1 journals so externally-changed files are never served from
-     * a stale on-device cache.
+     * No-op on non-SAF file systems. Must complete before the parsing reads in
+     * [GraphLoader.loadJournalsImmediate] and [GraphLoader.loadDirectory] — called
+     * sequentially at the start of both warm-start reconcile and cold-start Phase 1
+     * so externally-changed files are never served from a stale on-device cache.
      */
     suspend fun syncShadow(graphPath: String) { /* no-op */ }
 }

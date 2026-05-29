@@ -397,8 +397,10 @@ class GraphLoader(
                         // to loadJournalsImmediate and loadDirectory below.
                         sanitizeDirectory(pagesDir)
                         sanitizeDirectory(journalsDir)
-                        // Shadow must be fresh before any readFile call so externally-changed
-                        // files are not read from a stale on-device cache.
+                        // Shadow must be fresh before the parsing reads in loadJournalsImmediate
+                        // and loadDirectory so externally-changed files are not served from a
+                        // stale on-device cache. (sanitizeDirectory above reads only for rename
+                        // detection and is unaffected by shadow staleness.)
                         fileSystem.syncShadow(graphPath)
                         loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
                         coroutineScope {
@@ -687,7 +689,8 @@ class GraphLoader(
             }
 
             // Drop any stale shadow so readFile goes to the real source (SAF on Android).
-            // Only reached when mtime confirmed the file is newer than the DB record.
+            // Reached when the page needs (re-)loading: either the file is newer than the
+            // DB record (mtime guard above) or blocks are missing/partial.
             fileSystem.invalidateShadow(filePath)
             val content = readFileDecrypted(filePath)
             if (content == null) {
