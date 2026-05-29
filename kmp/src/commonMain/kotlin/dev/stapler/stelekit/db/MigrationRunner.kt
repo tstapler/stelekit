@@ -227,6 +227,33 @@ object MigrationRunner {
                 """
             )
         ),
+        Migration(
+            name = "covering_indexes_page_blocks",
+            statements = listOf(
+                // Eliminates filesort for selectBlocksByPageUuidUnpaginated (called every page open).
+                // SQLite delivers rows in (page_uuid, position) order — no in-memory sort needed.
+                // Also benefits countBlocksByPageUuid (index-only scan, no table fetch).
+                "CREATE INDEX IF NOT EXISTS idx_blocks_page_position ON blocks(page_uuid, position)",
+                // Eliminates filesort for selectBlocksByParentUuidOrdered, selectBlockChildren,
+                // selectLastChild — all child-listing queries fired during tree expand/indent/move.
+                "CREATE INDEX IF NOT EXISTS idx_blocks_parent_position ON blocks(parent_uuid, position)",
+                // True covering index for selectBlocksHashByPageUuid: SELECT uuid, content_hash
+                // FROM blocks WHERE page_uuid = ? — zero table lookups, sequential index leaf scan.
+                // Replaces 500 random B-tree reads per save on large pages with one index scan.
+                "CREATE INDEX IF NOT EXISTS idx_blocks_page_hash ON blocks(page_uuid, uuid, content_hash)"
+            )
+        ),
+        Migration(
+            name = "drop_subsumed_blocks_single_column_indexes",
+            statements = listOf(
+                // idx_blocks_page_uuid(page_uuid) is fully subsumed by idx_blocks_page_position(page_uuid, position).
+                // idx_blocks_parent_uuid(parent_uuid) is fully subsumed by idx_blocks_parent_position(parent_uuid, position).
+                // Both composites handle all queries the single-column indexes served, with equal or better performance.
+                // Dropping them eliminates redundant write overhead on every blocks INSERT/UPDATE/DELETE.
+                "DROP INDEX IF EXISTS idx_blocks_page_uuid",
+                "DROP INDEX IF EXISTS idx_blocks_parent_uuid"
+            )
+        ),
     )
 
     /**

@@ -72,7 +72,6 @@ class GraphLoaderWatcherTest {
             // real chance to detect the mtime change and trigger — or correctly suppress it.
             delay(300L)
 
-
             // If markFileWrittenByUs is working, the watcher must not re-parse the file
             // on an mtime-only change, so the page count must equal the baseline.
             val pageCountAfter = pageRepo.getAllPages().first().getOrNull()?.size ?: 0
