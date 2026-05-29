@@ -394,6 +394,7 @@ class GraphLoaderProgressiveTest {
     fun `warm start reconcile calls syncShadow before reading changed files`() = runBlocking {
         val syncShadowCalled = AtomicBoolean(false)
         val readFileCalledBeforeSync = AtomicBoolean(false)
+        val readFileCalled = AtomicBoolean(false)
         val fullyLoadedLatch = CountDownLatch(1)
 
         val shadowAwareFs = object : FileSystem {
@@ -403,6 +404,7 @@ class GraphLoaderProgressiveTest {
                 if (path.endsWith(".md") && !syncShadowCalled.get()) {
                     readFileCalledBeforeSync.set(true)
                 }
+                if (path.endsWith(".md")) readFileCalled.set(true)
                 return "- content"
             }
             override fun writeFile(path: String, content: String) = true
@@ -451,6 +453,8 @@ class GraphLoaderProgressiveTest {
             "onFullyLoaded must be called within 10s")
         assertFalse(readFileCalledBeforeSync.get(),
             "readFile for changed journal must not be called before syncShadow on warm start reconcile")
+        assertTrue(syncShadowCalled.get(), "syncShadow must have been called during warm reconcile")
+        assertTrue(readFileCalled.get(), "readFile must have been called during warm reconcile")
 
         loader.cancelBackgroundWork()
     }
@@ -463,6 +467,7 @@ class GraphLoaderProgressiveTest {
     fun `cold start calls syncShadow before Phase 1 journal reads`() = runBlocking {
         val syncShadowCalled = AtomicBoolean(false)
         val readFileCalledBeforeSync = AtomicBoolean(false)
+        val readFileCalled = AtomicBoolean(false)
 
         val shadowAwareFs = object : FileSystem {
             override fun getDefaultGraphPath() = "/graph"
@@ -471,6 +476,7 @@ class GraphLoaderProgressiveTest {
                 if (path.endsWith(".md") && !syncShadowCalled.get()) {
                     readFileCalledBeforeSync.set(true)
                 }
+                if (path.endsWith(".md")) readFileCalled.set(true)
                 return "- content"
             }
             override fun writeFile(path: String, content: String) = true
@@ -502,6 +508,8 @@ class GraphLoaderProgressiveTest {
 
         assertFalse(readFileCalledBeforeSync.get(),
             "readFile for journal must not be called before syncShadow on cold start")
+        assertTrue(syncShadowCalled.get(), "syncShadow must have been called on cold start")
+        assertTrue(readFileCalled.get(), "readFile must have been called on cold start")
     }
 
     /**
@@ -512,6 +520,8 @@ class GraphLoaderProgressiveTest {
     fun `loadFullPage calls invalidateShadow before reading file`() = runBlocking {
         val invalidatedPaths = mutableSetOf<String>()
         val readFileCalledBeforeInvalidate = AtomicBoolean(false)
+        val readFileCalled = AtomicBoolean(false)
+        val invalidateCalled = AtomicBoolean(false)
         val filePath = "/graph/pages/my-page.md"
 
         val shadowAwareFs = object : FileSystem {
@@ -521,6 +531,7 @@ class GraphLoaderProgressiveTest {
                 if (path == filePath && path !in invalidatedPaths) {
                     readFileCalledBeforeInvalidate.set(true)
                 }
+                if (path == filePath) readFileCalled.set(true)
                 return "- fresh content"
             }
             override fun writeFile(path: String, content: String) = true
@@ -534,7 +545,10 @@ class GraphLoaderProgressiveTest {
             override fun pickDirectory() = null
             // Return newer mtime so the mtime guard in loadFullPage does not short-circuit
             override fun getLastModifiedTime(path: String): Long? = 9999L
-            override fun invalidateShadow(path: String) { invalidatedPaths.add(path) }
+            override fun invalidateShadow(path: String) {
+                invalidatedPaths.add(path)
+                if (path == filePath) invalidateCalled.set(true)
+            }
         }
 
         val navPageRepo = InMemoryPageRepository()
@@ -557,6 +571,8 @@ class GraphLoaderProgressiveTest {
 
         assertFalse(readFileCalledBeforeInvalidate.get(),
             "readFile must not be called before invalidateShadow in loadFullPage for externally-changed pages")
+        assertTrue(invalidateCalled.get(), "invalidateShadow must have been called for the page file")
+        assertTrue(readFileCalled.get(), "readFile must have been called by loadFullPage")
     }
 
     @Test

@@ -403,9 +403,7 @@ class GraphLoader(
                         // detection and is unaffected by shadow staleness.)
                         // Failure is non-fatal: proceed with potentially stale shadow rather than
                         // aborting the reconcile entirely.
-                        try { fileSystem.syncShadow(graphPath) }
-                        catch (e: CancellationException) { throw e }
-                        catch (e: Exception) { logger.warn("syncShadow failed on warm reconcile: ${e.message}") }
+                        syncShadowNonFatal(graphPath, "warm reconcile")
                         loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
                         coroutineScope {
                             launch { loadRemainingJournals(journalsDir, immediateJournalCount, onProgress) }
@@ -436,9 +434,7 @@ class GraphLoader(
             // current content immediately. syncShadow is a no-op on JVM.
             // Failure is non-fatal: proceed with potentially stale shadow rather than
             // aborting Phase 1 entirely.
-            try { fileSystem.syncShadow(graphPath) }
-            catch (e: CancellationException) { throw e }
-            catch (e: Exception) { logger.warn("syncShadow failed on cold start: ${e.message}") }
+            syncShadowNonFatal(graphPath, "cold start")
             val loadedImmediateCount = loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
             val phase1Duration = Clock.System.now() - phase1Start
             phase1Span.finish("OK", "journal.count" to loadedImmediateCount.toString(),
@@ -968,6 +964,12 @@ class GraphLoader(
 
     private suspend fun isPriorityFile(path: String): Boolean {
         return priorityFilesMutex.withLock { priorityFiles.contains(path) }
+    }
+
+    private suspend fun syncShadowNonFatal(graphPath: String, context: String) {
+        try { fileSystem.syncShadow(graphPath) }
+        catch (e: CancellationException) { throw e }
+        catch (e: Exception) { logger.warn("syncShadow failed on $context: ${e.message}") }
     }
 
     private data class ParseResult(
