@@ -434,11 +434,7 @@ class StelekitViewModel(
 
                                 // Ensure today's journal exists so it appears at the top of the
                                 // journals list. No navigation — the list updates reactively.
-                                scope.launch {
-                                    journalService.ensureTodayJournal()
-                                    lastJournalDate = Clock.System.now()
-                                        .toLocalDateTime(TimeZone.currentSystemDefault()).date
-                                }
+                                scope.launch { journalService.ensureTodayJournal() }
 
                                 startMidnightBoundaryWatcher()
                             },
@@ -1652,25 +1648,28 @@ class StelekitViewModel(
     }
 
     private var midnightWatcherJob: kotlinx.coroutines.Job? = null
-    private var lastJournalDate: kotlinx.datetime.LocalDate? = null
+    @Volatile private var lastJournalDate: kotlinx.datetime.LocalDate? = null
 
     internal fun millisUntilNextMidnight(clock: Clock = Clock.System): Long {
         val tz = TimeZone.currentSystemDefault()
         val now = clock.now()
         val today = now.toLocalDateTime(tz).date
         val tomorrowMidnight = today.plus(1, DateTimeUnit.DAY).atStartOfDayIn(tz)
-        return (tomorrowMidnight - now).inWholeMilliseconds.coerceAtLeast(1_000L)
+        return (tomorrowMidnight - now).inWholeMilliseconds.coerceAtLeast(MIN_MIDNIGHT_DELAY_MS)
     }
 
     private fun startMidnightBoundaryWatcher(clock: Clock = Clock.System) {
         midnightWatcherJob?.cancel()
         midnightWatcherJob = scope.launch(CoroutineName("midnight-boundary-watcher")) {
+            // Seed lastJournalDate from startup before entering the loop, so the first
+            // midnight crossing skips if today's journal was already created at startup.
+            val tz = TimeZone.currentSystemDefault()
+            lastJournalDate = clock.now().toLocalDateTime(tz).date
             while (isActive) {
                 val delayMs = millisUntilNextMidnight(clock)
                 logger.info("Next journal boundary check in ${delayMs / 1000}s")
                 delay(delayMs)
-                val tz = TimeZone.currentSystemDefault()
-                val today = clock.now().toLocalDateTime(tz).date
+                val today = clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
                 if (today == lastJournalDate) continue
                 logger.info("Day boundary crossed — ensuring today's journal exists")
                 try {
@@ -1683,5 +1682,9 @@ class StelekitViewModel(
                 }
             }
         }
+    }
+
+    companion object {
+        private const val MIN_MIDNIGHT_DELAY_MS = 1_000L
     }
 }

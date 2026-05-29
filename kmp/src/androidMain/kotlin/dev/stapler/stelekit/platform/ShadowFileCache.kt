@@ -30,6 +30,19 @@ internal class ShadowFileCache(context: Context, graphId: String) {
             treeDocId.replace(':', '-').replace('/', '-').replace(' ', '_').take(128)
     }
 
+    /**
+     * Returns a [File] resolved from [base]/[relativePath] only if the canonical path stays
+     * within [base]. Returns null and logs a warning if path traversal is detected.
+     */
+    private fun safeShadowFile(base: File, relativePath: String): File? {
+        val target = File(base, relativePath).canonicalFile
+        return if (target.path.startsWith(base.canonicalPath + File.separator) ||
+                   target.path == base.canonicalPath) target else {
+            Log.w(TAG, "safeShadowFile: path escape blocked for '$relativePath'")
+            null
+        }
+    }
+
     init {
         shadowRoot.mkdirs()
     }
@@ -48,7 +61,7 @@ internal class ShadowFileCache(context: Context, graphId: String) {
     ) = withContext(Dispatchers.IO) {
         val subdirFile = File(shadowRoot, subdir).also { it.mkdirs() }
         for ((fileName, safMtime) in fileModTimes) {
-            val shadowFile = File(subdirFile, fileName)
+            val shadowFile = safeShadowFile(subdirFile, fileName) ?: continue
             // Skip if shadow is already fresh (mtime matches SAF)
             if (shadowFile.exists() && safMtime > 0L && shadowFile.lastModified() >= safMtime) {
                 continue
@@ -70,14 +83,14 @@ internal class ShadowFileCache(context: Context, graphId: String) {
      * and is non-empty; returns null when shadow is absent (caller should fall back to SAF).
      */
     fun resolve(relativePath: String): File? {
-        val f = File(shadowRoot, relativePath)
+        val f = safeShadowFile(shadowRoot, relativePath) ?: return null
         return if (f.exists() && f.length() > 0) f else null
     }
 
     /** Writes [content] to the shadow after a successful SAF write. */
     fun update(relativePath: String, content: String) {
         try {
-            val f = File(shadowRoot, relativePath)
+            val f = safeShadowFile(shadowRoot, relativePath) ?: return
             f.parentFile?.mkdirs()
             f.writeText(content)
         } catch (e: Exception) {
@@ -105,7 +118,7 @@ internal class ShadowFileCache(context: Context, graphId: String) {
 
     /** Deletes the shadow file for [relativePath], forcing a re-sync on next access. */
     fun invalidate(relativePath: String) {
-        File(shadowRoot, relativePath).delete()
+        safeShadowFile(shadowRoot, relativePath)?.delete()
     }
 
     /** Deletes the entire shadow directory (called on SAF permission revoke). */

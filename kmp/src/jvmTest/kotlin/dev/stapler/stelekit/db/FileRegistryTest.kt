@@ -537,4 +537,60 @@ class FileRegistryTest {
         assertTrue(changes.changedFiles.isEmpty(),
             "Own write marked via markWrittenByUs must still be suppressed after shadow-invalidation fix")
     }
+
+    // ── Scenario 12: invalidateShadow is called before readFile ──────────────
+
+    @Test
+    fun `invalidateShadow is called before readFile for changed files`() = runTest {
+        val callOrder = mutableListOf<String>()
+        val filePath = "/graph/journals/2026_05_29.md"
+        // Stand-alone tracking FileSystem that records invalidateShadow and readFile call order.
+        val innerFiles = mutableMapOf(filePath to FakeFile("old content", 1000L))
+        val innerShadow = mutableMapOf(filePath to "old content")
+        val fs = object : FileSystem {
+            override fun getDefaultGraphPath() = "/graph"
+            override fun expandTilde(path: String) = path
+            override fun readFile(path: String): String? {
+                callOrder.add("read:$path")
+                // After invalidation shadow entry is removed; fall through to real file.
+                return innerShadow[path] ?: innerFiles[path]?.content
+            }
+            override fun writeFile(path: String, content: String): Boolean {
+                val existing = innerFiles[path]
+                innerFiles[path] = FakeFile(content, (existing?.modTime ?: 0L) + 1000L)
+                return true
+            }
+            override fun listFiles(path: String) =
+                innerFiles.keys.filter { it.startsWith("$path/") }.map { it.substringAfterLast("/") }
+            override fun listDirectories(path: String) = emptyList<String>()
+            override fun fileExists(path: String) = innerFiles.containsKey(path)
+            override fun directoryExists(path: String) = true
+            override fun createDirectory(path: String) = true
+            override fun deleteFile(path: String): Boolean { innerFiles.remove(path); return true }
+            override fun pickDirectory() = null
+            override fun getLastModifiedTime(path: String) = innerFiles[path]?.modTime
+            override fun invalidateShadow(path: String) {
+                callOrder.add("invalidate:$path")
+                innerShadow.remove(path)
+            }
+        }
+        val registry = FileRegistry(fs)
+        // Establish baseline — first detectChanges registers the file (may call readFile here)
+        registry.detectChanges("/graph/journals")
+
+        // Clear the call log so we only observe the second detectChanges (the change scenario)
+        callOrder.clear()
+
+        // Simulate external change — bumps mtime, updates underlying file but not shadow
+        val existing = innerFiles[filePath]!!
+        innerFiles[filePath] = FakeFile("new content", existing.modTime + 1000L)
+        registry.detectChanges("/graph/journals")
+
+        val invalidateIdx = callOrder.indexOfFirst { it == "invalidate:$filePath" }
+        val readIdx = callOrder.indexOfFirst { it == "read:$filePath" }
+        assertTrue(invalidateIdx >= 0, "invalidateShadow must be called")
+        assertTrue(readIdx >= 0, "readFile must be called")
+        assertTrue(invalidateIdx < readIdx,
+            "invalidateShadow must precede readFile, got order: $callOrder")
+    }
 }

@@ -3,11 +3,19 @@ package dev.stapler.stelekit.db
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
+import dev.stapler.stelekit.repository.InMemorySearchRepository
 import dev.stapler.stelekit.testing.FakeClock
+import dev.stapler.stelekit.ui.StelekitViewModel
+import dev.stapler.stelekit.ui.StelekitViewModelDependencies
+import dev.stapler.stelekit.ui.fixtures.InMemorySettings
 import dev.stapler.stelekit.util.UuidGenerator
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -675,13 +683,34 @@ class GraphLoaderProgressiveTest {
 
     // ── Midnight boundary watcher tests ──────────────────────────────────────
 
+    /** Builds a minimal StelekitViewModel for testing millisUntilNextMidnight. */
+    private fun buildMinimalViewModel(): StelekitViewModel {
+        val pageRepo = InMemoryPageRepository()
+        val blockRepo = InMemoryBlockRepository()
+        val searchRepo = InMemorySearchRepository()
+        val fs = PlatformFileSystem()
+        val loader = GraphLoader(fs, pageRepo, blockRepo)
+        val writer = GraphWriter(fs)
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        return StelekitViewModel(
+            StelekitViewModelDependencies(
+                pageRepository = pageRepo,
+                blockRepository = blockRepo,
+                searchRepository = searchRepo,
+                graphLoader = loader,
+                graphWriter = writer,
+                fileSystem = fs,
+                platformSettings = InMemorySettings(),
+                scope = scope,
+            )
+        )
+    }
+
     @Test
     fun `millisUntilNextMidnight returns positive value less than 24h`() {
-        val tz = TimeZone.currentSystemDefault()
-        val now = Clock.System.now()
-        val today = now.toLocalDateTime(tz).date
-        val tomorrowMidnight = today.plus(1, DateTimeUnit.DAY).atStartOfDayIn(tz)
-        val delayMs = (tomorrowMidnight - now).inWholeMilliseconds.coerceAtLeast(1_000L)
+        // Tests the production formula via the actual StelekitViewModel method.
+        val vm = buildMinimalViewModel()
+        val delayMs = vm.millisUntilNextMidnight(Clock.System)
 
         assertTrue(delayMs > 0, "Delay until next midnight must be positive")
         assertTrue(delayMs <= 24 * 60 * 60 * 1000L, "Delay must not exceed 24 hours")
@@ -689,13 +718,13 @@ class GraphLoaderProgressiveTest {
 
     @Test
     fun `millisUntilNextMidnight returns at least 1000ms when clock is exactly at midnight`() {
+        // Tests the production formula via the actual StelekitViewModel method with a FakeClock.
         val tz = TimeZone.currentSystemDefault()
         val midnightInstant = LocalDate(2026, 5, 29).atStartOfDayIn(tz)
         val fakeClock = FakeClock(midnightInstant)
-        val now = fakeClock.now()
-        val today = now.toLocalDateTime(tz).date
-        val tomorrowMidnight = today.plus(1, DateTimeUnit.DAY).atStartOfDayIn(tz)
-        val delay = (tomorrowMidnight - now).inWholeMilliseconds.coerceAtLeast(1_000L)
+
+        val vm = buildMinimalViewModel()
+        val delay = vm.millisUntilNextMidnight(fakeClock)
 
         assertTrue(delay >= 1000L,
             "coerceAtLeast(1_000L) must fire when clock is exactly at midnight; got $delay ms")
