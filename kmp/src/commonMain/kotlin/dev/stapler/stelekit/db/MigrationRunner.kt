@@ -243,6 +243,17 @@ object MigrationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_blocks_page_hash ON blocks(page_uuid, uuid, content_hash)"
             )
         ),
+        Migration(
+            name = "drop_subsumed_blocks_single_column_indexes",
+            statements = listOf(
+                // idx_blocks_page_uuid(page_uuid) is fully subsumed by idx_blocks_page_position(page_uuid, position).
+                // idx_blocks_parent_uuid(parent_uuid) is fully subsumed by idx_blocks_parent_position(parent_uuid, position).
+                // Both composites handle all queries the single-column indexes served, with equal or better performance.
+                // Dropping them eliminates redundant write overhead on every blocks INSERT/UPDATE/DELETE.
+                "DROP INDEX IF EXISTS idx_blocks_page_uuid",
+                "DROP INDEX IF EXISTS idx_blocks_parent_uuid"
+            )
+        ),
     )
 
     /**

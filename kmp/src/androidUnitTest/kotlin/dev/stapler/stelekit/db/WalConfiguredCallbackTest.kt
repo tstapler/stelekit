@@ -12,11 +12,18 @@ import kotlin.test.assertTrue
 class WalConfiguredCallbackTest {
 
     @Test
-    fun `androidPragmaList_should_containMmapSize_when_listInspected`() {
-        assertTrue(
-            ANDROID_PRAGMAS.contains("PRAGMA mmap_size=268435456"),
-            "Expected ANDROID_PRAGMAS to contain 'PRAGMA mmap_size=268435456' but got:\n$ANDROID_PRAGMAS"
+    fun `androidPragmaList_should_contain_all_performance_pragmas`() {
+        val required = listOf(
+            "PRAGMA mmap_size=67108864",
+            "PRAGMA wal_autocheckpoint=4000",
+            "PRAGMA temp_store=MEMORY",
+            "PRAGMA cache_size=-8000",
         )
+        required.forEach { pragma ->
+            assertTrue(
+                ANDROID_PRAGMAS.contains(pragma),
+                "Expected ANDROID_PRAGMAS to contain '$pragma' but got:\n$ANDROID_PRAGMAS"
+            )
+        }
     }
-
 }

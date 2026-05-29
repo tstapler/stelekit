@@ -55,6 +55,9 @@ actual class DriverFactory actual constructor() {
             setProperty("temp_store", "2")
             // wal_autocheckpoint=4000: reduce checkpoint frequency on write-heavy workloads.
             // Default is 1000 pages; 4000 matches the Android driver setting.
+            // wal_autocheckpoint: xerial sqlite-jdbc applies Properties as PRAGMAs alphabetically,
+            // so journal_mode=WAL is activated before wal_autocheckpoint fires (j < w). Safe with
+            // the current xerial version; if driver ordering ever changes, this becomes a silent no-op.
             setProperty("wal_autocheckpoint", "4000")
             // mmap_size=256MB: memory-mapped I/O per connection. OS lazily maps accessed pages only.
             // Total across 8 pool connections: up to 2 GB virtual address space (not physical RAM).

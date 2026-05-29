@@ -21,10 +21,11 @@ internal val ANDROID_PRAGMAS: List<String> = listOf(
     "PRAGMA wal_autocheckpoint=4000",
     "PRAGMA temp_store=MEMORY",
     "PRAGMA cache_size=-8000",
-    // mmap_size=256MB: maps file pages into process address space, avoids read() syscall
-    // overhead on repeated reads. OS only maps pages actually accessed — not pre-allocated.
-    // Safe at minSdk 26 with Requery's bundled SQLite 3.49.0.
-    "PRAGMA mmap_size=268435456",
+    // mmap_size=64MB: maps file pages into process address space, avoids read() syscall
+    // overhead on repeated reads. OS lazily maps only accessed pages — not pre-allocated.
+    // 64MB is conservative for mobile: covers typical graph sizes while leaving VA headroom
+    // on 32-bit ARM devices and staying safe on 1-2GB RAM handsets.
+    "PRAGMA mmap_size=67108864",
 )
 
 /**
@@ -82,12 +83,13 @@ actual class DriverFactory actual constructor() {
         // AndroidSqliteDriver handles schema creation (fresh installs) and numbered .sqm
         // migrations (via SQLiteOpenHelper.onUpgrade) automatically.
         // WalConfiguredCallback applies PRAGMAs in onConfigure via rawQuery (Requery-safe).
+        val schema = SteleDatabase.Schema.synchronous()
         val driver = AndroidSqliteDriver(
-            schema = SteleDatabase.Schema.synchronous(),
+            schema = schema,
             context = context,
             name = dbName,
             factory = RequerySQLiteOpenHelperFactory(),
-            callback = WalConfiguredCallback(SteleDatabase.Schema.synchronous()),
+            callback = WalConfiguredCallback(schema),
         )
 
         // Apply incremental DDL migrations (idempotent, hash-tracked).
