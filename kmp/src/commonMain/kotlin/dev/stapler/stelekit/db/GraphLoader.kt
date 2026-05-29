@@ -401,7 +401,10 @@ class GraphLoader(
                         // and loadDirectory so externally-changed files are not served from a
                         // stale on-device cache. (sanitizeDirectory above reads only for rename
                         // detection and is unaffected by shadow staleness.)
-                        fileSystem.syncShadow(graphPath)
+                        // Failure is non-fatal: proceed with potentially stale shadow rather than
+                        // aborting the reconcile entirely.
+                        try { fileSystem.syncShadow(graphPath) }
+                        catch (e: Exception) { logger.warn("syncShadow failed on warm reconcile: ${e.message}") }
                         loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
                         coroutineScope {
                             launch { loadRemainingJournals(journalsDir, immediateJournalCount, onProgress) }
@@ -430,7 +433,10 @@ class GraphLoader(
             val phase1Span = Span("graph_load.phase1_journals", traceId, rootSpan.spanId)
             // Shadow must be fresh before Phase 1 reads so externally-changed journals show
             // current content immediately. syncShadow is a no-op on JVM.
-            fileSystem.syncShadow(graphPath)
+            // Failure is non-fatal: proceed with potentially stale shadow rather than
+            // aborting Phase 1 entirely.
+            try { fileSystem.syncShadow(graphPath) }
+            catch (e: Exception) { logger.warn("syncShadow failed on cold start: ${e.message}") }
             val loadedImmediateCount = loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
             val phase1Duration = Clock.System.now() - phase1Start
             phase1Span.finish("OK", "journal.count" to loadedImmediateCount.toString(),
