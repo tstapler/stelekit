@@ -70,3 +70,4 @@ rootProject.name = "stelekit"
 
 include(":kmp")
 include(":androidApp")
+include(":tools:flamegraph")
