@@ -397,11 +397,16 @@ class GraphLoader(
                         // to loadJournalsImmediate and loadDirectory below.
                         sanitizeDirectory(pagesDir)
                         sanitizeDirectory(journalsDir)
+                        // Invalidate stale shadow entries before parsing reads so externally-
+                        // changed files are not served from the old on-device cache.
+                        // Uses a batch mtime cursor — no SAF content reads on this path.
+                        // Failure is non-fatal: proceed with potentially stale shadow rather than
+                        // aborting the reconcile entirely.
+                        invalidateStaleShadowNonFatal(graphPath, "warm reconcile")
                         loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
                         coroutineScope {
                             launch { loadRemainingJournals(journalsDir, immediateJournalCount, onProgress) }
                             launch { loadDirectory(pagesDir, onProgress, ParseMode.METADATA_ONLY) }
-                            launch { fileSystem.syncShadow(graphPath) }
                         }
                         val totalDuration = Clock.System.now() - startTime
                         logger.info("Warm reconcile complete. Duration: $totalDuration")
@@ -422,8 +427,15 @@ class GraphLoader(
                 return
             }
 
-            val phase1Start = Clock.System.now()
             val phase1Span = Span("graph_load.phase1_journals", traceId, rootSpan.spanId)
+            // Invalidate stale shadow entries before Phase 1 reads so externally-changed
+            // journals show current content. Uses a batch mtime cursor — no SAF content
+            // reads here; stale files are read from SAF lazily during journal loading.
+            // No-op on JVM. Failure is non-fatal.
+            invalidateStaleShadowNonFatal(graphPath, "cold start")
+            // phase1Start is placed after syncShadow so the span measures only journal
+            // parse time, not shadow-sync latency.
+            val phase1Start = Clock.System.now()
             val loadedImmediateCount = loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
             val phase1Duration = Clock.System.now() - phase1Start
             phase1Span.finish("OK", "journal.count" to loadedImmediateCount.toString(),
@@ -447,10 +459,6 @@ class GraphLoader(
 
                 launch(Dispatchers.Default) {
                     loadDirectory(pagesDir, onProgress, ParseMode.METADATA_ONLY)
-                }
-
-                launch {
-                    fileSystem.syncShadow(graphPath)
                 }
             }
             phase2Span.finish("OK")
@@ -685,6 +693,10 @@ class GraphLoader(
                 return
             }
 
+            // Drop any stale shadow so readFile goes to the real source (SAF on Android).
+            // Reached when the page needs (re-)loading: either the file is newer than the
+            // DB record (mtime guard above) or blocks are missing/partial.
+            fileSystem.invalidateShadow(filePath)
             val content = readFileDecrypted(filePath)
             if (content == null) {
                 logger.warn("Failed to read file: $filePath")
@@ -953,6 +965,21 @@ class GraphLoader(
 
     private suspend fun isPriorityFile(path: String): Boolean {
         return priorityFilesMutex.withLock { priorityFiles.contains(path) }
+    }
+
+    private suspend fun invalidateStaleShadowNonFatal(graphPath: String, context: String) {
+        try { withTimeout(SHADOW_STARTUP_TIMEOUT_MS) { fileSystem.invalidateStaleShadow(graphPath) } }
+        catch (e: TimeoutCancellationException) {
+            logger.warn("invalidateStaleShadow timed out on $context (${SHADOW_STARTUP_TIMEOUT_MS}ms) — proceeding with potentially stale shadow")
+        }
+        catch (e: CancellationException) { throw e }
+        catch (e: Exception) { logger.warn("invalidateStaleShadow failed on $context: ${e.message}") }
+    }
+
+    companion object {
+        // Timeout for the batch mtime cursor on startup. Two SAF cursor queries should
+        // complete well under 500ms; 2s is a conservative ceiling for slow providers.
+        private const val SHADOW_STARTUP_TIMEOUT_MS = 2_000L
     }
 
     private data class ParseResult(

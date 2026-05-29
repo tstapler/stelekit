@@ -12,6 +12,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.LocalDate
 import kotlin.time.Clock
+import kotlin.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -377,6 +378,225 @@ class GraphLoaderProgressiveTest {
         assertEquals(0, sanitizeCallsBeforePhase1.get(),
             "sanitizeDirectory (listFiles) must not run before Phase 1 on cold start; " +
             "got ${sanitizeCallsBeforePhase1.get()} call(s)")
+    }
+
+    // ── Shadow-freshness regression tests ────────────────────────────────────
+
+    /**
+     * Regression: warm-start reconcile must call invalidateStaleShadow BEFORE reading any files
+     * so that externally-changed files are not served from a stale on-device shadow cache.
+     *
+     * Setup: page in DB with old updatedAt (1000ms epoch) vs file mtime of 9999ms — the
+     * shouldSkip check will be false, so the file IS re-read. We verify that
+     * invalidateStaleShadow fired before readFile for the journal file.
+     */
+    @Test
+    fun `warm start reconcile calls invalidateStaleShadow before reading changed files`() = runBlocking {
+        val invalidateCalled = AtomicBoolean(false)
+        val readFileCalledBeforeInvalidate = AtomicBoolean(false)
+        val readFileCalled = AtomicBoolean(false)
+        val fullyLoadedLatch = CountDownLatch(1)
+
+        val shadowAwareFs = object : FileSystem {
+            override fun getDefaultGraphPath() = "/graph"
+            override fun expandTilde(path: String) = path
+            override fun readFile(path: String): String? {
+                if (path.endsWith(".md") && !invalidateCalled.get()) {
+                    readFileCalledBeforeInvalidate.set(true)
+                }
+                if (path.endsWith(".md")) readFileCalled.set(true)
+                return "- content"
+            }
+            override fun writeFile(path: String, content: String) = true
+            override fun listFiles(path: String): List<String> =
+                if (path.endsWith("/journals")) listOf("2026_04_13.md") else emptyList()
+            override fun listFilesWithModTimes(path: String): List<Pair<String, Long>> =
+                if (path.endsWith("/journals")) listOf("2026_04_13.md" to 9999L) else emptyList()
+            override fun listDirectories(path: String) = emptyList<String>()
+            override fun fileExists(path: String) = true
+            override fun directoryExists(path: String) = true
+            override fun createDirectory(path: String) = true
+            override fun deleteFile(path: String) = true
+            override fun pickDirectory() = null
+            override fun getLastModifiedTime(path: String): Long? = 9999L
+            override suspend fun invalidateStaleShadow(graphPath: String) {
+                // Yield repeatedly so any concurrently-dispatched readFile has a chance to
+                // run first — makes the test reliably detect a regression that moves invalidateStaleShadow
+                // back to a concurrent coroutine.
+                repeat(5) { kotlinx.coroutines.yield() }
+                invalidateCalled.set(true)
+            }
+        }
+
+        val warmPageRepo = InMemoryPageRepository()
+        val warmBlockRepo = InMemoryBlockRepository()
+        val oldInstant = Instant.fromEpochMilliseconds(1000L)
+
+        // Pre-populate: journal in DB from a prior session, updatedAt older than file mtime
+        warmPageRepo.savePage(
+            Page(
+                uuid = "j-shadow-1",
+                name = "2026-04-13",
+                filePath = "/graph/journals/2026_04_13.md",
+                createdAt = oldInstant, updatedAt = oldInstant,
+                isJournal = true, journalDate = LocalDate(2026, 4, 13)
+            )
+        )
+
+        val loader = GraphLoader(shadowAwareFs, warmPageRepo, warmBlockRepo)
+
+        withTimeout(10_000) {
+            loader.loadGraphProgressive(
+                graphPath = "/graph",
+                immediateJournalCount = 10,
+                onProgress = {},
+                onPhase1Complete = {},
+                onFullyLoaded = { fullyLoadedLatch.countDown() }
+            )
+        }
+
+        assertTrue(fullyLoadedLatch.await(10, TimeUnit.SECONDS),
+            "onFullyLoaded must be called within 10s")
+        assertFalse(readFileCalledBeforeInvalidate.get(),
+            "readFile for changed journal must not be called before invalidateStaleShadow on warm start reconcile")
+        assertTrue(invalidateCalled.get(), "invalidateStaleShadow must have been called during warm reconcile")
+        assertTrue(readFileCalled.get(), "readFile must have been called during warm reconcile")
+
+        loader.cancelBackgroundWork()
+    }
+
+    /**
+     * Regression: cold-start Phase 1 (blocking journals load) must call invalidateStaleShadow before
+     * readFile so externally-changed journals show current content on first open.
+     */
+    @Test
+    fun `cold start calls invalidateStaleShadow before Phase 1 journal reads`() = runBlocking {
+        val invalidateCalled = AtomicBoolean(false)
+        val readFileCalledBeforeInvalidate = AtomicBoolean(false)
+        val readFileCalled = AtomicBoolean(false)
+
+        val shadowAwareFs = object : FileSystem {
+            override fun getDefaultGraphPath() = "/graph"
+            override fun expandTilde(path: String) = path
+            override fun readFile(path: String): String? {
+                // Track only the journal content read (not sanitizeDirectory rename checks).
+                if (path == "/graph/journals/2026_04_13.md" && !invalidateCalled.get()) {
+                    readFileCalledBeforeInvalidate.set(true)
+                }
+                if (path == "/graph/journals/2026_04_13.md") readFileCalled.set(true)
+                return "- content"
+            }
+            override fun writeFile(path: String, content: String) = true
+            override fun listFiles(path: String): List<String> =
+                if (path.endsWith("/journals")) listOf("2026_04_13.md") else emptyList()
+            override fun listFilesWithModTimes(path: String): List<Pair<String, Long>> =
+                if (path.endsWith("/journals")) listOf("2026_04_13.md" to 9999L) else emptyList()
+            override fun listDirectories(path: String) = emptyList<String>()
+            override fun fileExists(path: String) = true
+            override fun directoryExists(path: String) = true
+            override fun createDirectory(path: String) = true
+            override fun deleteFile(path: String) = true
+            override fun pickDirectory() = null
+            override fun getLastModifiedTime(path: String): Long? = 9999L
+            override suspend fun invalidateStaleShadow(graphPath: String) { invalidateCalled.set(true) }
+        }
+
+        val loader = GraphLoader(shadowAwareFs, InMemoryPageRepository(), InMemoryBlockRepository())
+
+        withTimeout(10_000) {
+            loader.loadGraphProgressive(
+                graphPath = "/graph",
+                immediateJournalCount = 10,
+                onProgress = {},
+                onPhase1Complete = {},
+                onFullyLoaded = {}
+            )
+        }
+
+        assertFalse(readFileCalledBeforeInvalidate.get(),
+            "readFile for journal must not be called before invalidateStaleShadow on cold start")
+        assertTrue(invalidateCalled.get(), "invalidateStaleShadow must have been called on cold start")
+        assertTrue(readFileCalled.get(), "readFile must have been called on cold start")
+    }
+
+    /**
+     * Regression: loadFullPage (navigation-triggered) must call invalidateShadow before
+     * readFile so that a page modified externally since the last syncShadow is read fresh.
+     *
+     * Setup: page has a fully-loaded block (allBlocksLoaded=true) but the file's mtime (9999ms)
+     * is newer than page.updatedAt (1000ms), so the mtime guard fires and the file IS re-read.
+     * This exercises the mtime code path, not the "blocks missing" shortcut.
+     */
+    @Test
+    fun `loadFullPage calls invalidateShadow before reading file`() = runBlocking {
+        val invalidatedPaths = mutableSetOf<String>()
+        val readFileCalledBeforeInvalidate = AtomicBoolean(false)
+        val readFileCalled = AtomicBoolean(false)
+        val invalidateCalled = AtomicBoolean(false)
+        val filePath = "/graph/pages/my-page.md"
+
+        val shadowAwareFs = object : FileSystem {
+            override fun getDefaultGraphPath() = "/graph"
+            override fun expandTilde(path: String) = path
+            override fun readFile(path: String): String? {
+                if (path == filePath && path !in invalidatedPaths) {
+                    readFileCalledBeforeInvalidate.set(true)
+                }
+                if (path == filePath) readFileCalled.set(true)
+                return "- fresh content"
+            }
+            override fun writeFile(path: String, content: String) = true
+            override fun listFiles(path: String) = emptyList<String>()
+            override fun listFilesWithModTimes(path: String) = emptyList<Pair<String, Long>>()
+            override fun listDirectories(path: String) = emptyList<String>()
+            override fun fileExists(path: String) = path == filePath
+            override fun directoryExists(path: String) = true
+            override fun createDirectory(path: String) = true
+            override fun deleteFile(path: String) = true
+            override fun pickDirectory() = null
+            // Return newer mtime so the mtime guard in loadFullPage does not short-circuit
+            override fun getLastModifiedTime(path: String): Long? = 9999L
+            override fun invalidateShadow(path: String) {
+                invalidatedPaths.add(path)
+                if (path == filePath) invalidateCalled.set(true)
+            }
+        }
+
+        val navPageRepo = InMemoryPageRepository()
+        val navBlockRepo = InMemoryBlockRepository()
+        val oldInstant = Instant.fromEpochMilliseconds(1000L)
+        val pageUuid = "nav-page-1"
+
+        navPageRepo.savePage(
+            Page(
+                uuid = pageUuid,
+                name = "my-page",
+                filePath = filePath,
+                createdAt = oldInstant, updatedAt = oldInstant,
+                isContentLoaded = true
+            )
+        )
+        // Pre-populate a loaded block so allBlocksLoaded=true — the mtime guard is then
+        // evaluated and finds fileModTime (9999ms) > page.updatedAt (1000ms) → re-reads file.
+        navBlockRepo.saveBlocks(listOf(
+            dev.stapler.stelekit.model.Block(
+                uuid = "block-nav-1",
+                pageUuid = pageUuid,
+                content = "old content",
+                position = 0,
+                createdAt = oldInstant,
+                updatedAt = oldInstant,
+                isLoaded = true
+            )
+        ))
+
+        val loader = GraphLoader(shadowAwareFs, navPageRepo, navBlockRepo)
+        loader.loadFullPage(pageUuid)
+
+        assertFalse(readFileCalledBeforeInvalidate.get(),
+            "readFile must not be called before invalidateShadow in loadFullPage for externally-changed pages")
+        assertTrue(invalidateCalled.get(), "invalidateShadow must have been called for the page file")
+        assertTrue(readFileCalled.get(), "readFile must have been called by loadFullPage")
     }
 
     @Test

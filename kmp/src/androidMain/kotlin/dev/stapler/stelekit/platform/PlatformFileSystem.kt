@@ -609,6 +609,18 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         ShadowFlushActor(this, cache, queue).flush()
     }
 
+    override suspend fun invalidateStaleShadow(graphPath: String) {
+        val cache = shadowCache ?: return
+        if (!graphPath.startsWith("saf://")) return
+        val pagesPath = "$graphPath/pages"
+        val journalsPath = "$graphPath/journals"
+        // Batch cursor: 2 IPC calls total, no file content reads.
+        val pagesMods = listFilesWithModTimes(pagesPath)
+        val journalsMods = listFilesWithModTimes(journalsPath)
+        cache.invalidateStale("pages", pagesMods)
+        cache.invalidateStale("journals", journalsMods)
+    }
+
     override suspend fun syncShadow(graphPath: String) {
         val cache = shadowCache ?: return
         if (!graphPath.startsWith("saf://")) return
