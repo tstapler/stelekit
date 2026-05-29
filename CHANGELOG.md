@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.30.2](https://github.com/tstapler/stelekit/compare/v0.30.1...v0.30.2) (2026-05-29)
+
+
+### Bug Fixes
+
+* **android:** sync shadow cache before file reads to fix stale-content bug ([#105](https://github.com/tstapler/stelekit/issues/105)) ([b479bca](https://github.com/tstapler/stelekit/commit/b479bca311748df3290737d35a7b9bb5e2b89112))
+
+
+### Performance Improvements
+
+* **db:** mmap_size PRAGMA, JVM PRAGMA parity, covering indexes for hot block queries ([#104](https://github.com/tstapler/stelekit/issues/104)) ([5cfb694](https://github.com/tstapler/stelekit/commit/5cfb69499c9007069f16aa15813cbb06b6b82f0f))
+
 ## [0.30.1](https://github.com/tstapler/stelekit/compare/v0.30.0...v0.30.1) (2026-05-28)
 
 
