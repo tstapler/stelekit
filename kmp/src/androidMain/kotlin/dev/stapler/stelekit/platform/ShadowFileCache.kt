@@ -85,6 +85,24 @@ internal class ShadowFileCache(context: Context, graphId: String) {
         }
     }
 
+    /**
+     * Deletes shadow entries whose mtime is older than the corresponding SAF file.
+     *
+     * Uses [fileModTimes] from a batch SAF cursor (one IPC per directory, not per file).
+     * Never reads file content — local deletes only, so callers incur zero extra SAF IPC.
+     * After this call, stale entries are absent and [readFile] falls through to SAF naturally.
+     */
+    fun invalidateStale(subdir: String, fileModTimes: List<Pair<String, Long>>) {
+        val subdirFile = File(shadowRoot, subdir)
+        for ((fileName, safMtime) in fileModTimes) {
+            if (safMtime <= 0L) continue
+            val shadowFile = File(subdirFile, fileName)
+            if (shadowFile.exists() && shadowFile.lastModified() < safMtime) {
+                shadowFile.delete()
+            }
+        }
+    }
+
     /** Deletes the shadow file for [relativePath], forcing a re-sync on next access. */
     fun invalidate(relativePath: String) {
         File(shadowRoot, relativePath).delete()

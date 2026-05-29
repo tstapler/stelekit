@@ -397,13 +397,12 @@ class GraphLoader(
                         // to loadJournalsImmediate and loadDirectory below.
                         sanitizeDirectory(pagesDir)
                         sanitizeDirectory(journalsDir)
-                        // Shadow must be fresh before the parsing reads in loadJournalsImmediate
-                        // and loadDirectory so externally-changed files are not served from a
-                        // stale on-device cache. (sanitizeDirectory above reads only for rename
-                        // detection and is unaffected by shadow staleness.)
+                        // Invalidate stale shadow entries before parsing reads so externally-
+                        // changed files are not served from the old on-device cache.
+                        // Uses a batch mtime cursor — no SAF content reads on this path.
                         // Failure is non-fatal: proceed with potentially stale shadow rather than
                         // aborting the reconcile entirely.
-                        syncShadowNonFatal(graphPath, "warm reconcile")
+                        invalidateStaleShadowNonFatal(graphPath, "warm reconcile")
                         loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
                         coroutineScope {
                             launch { loadRemainingJournals(journalsDir, immediateJournalCount, onProgress) }
@@ -429,11 +428,11 @@ class GraphLoader(
             }
 
             val phase1Span = Span("graph_load.phase1_journals", traceId, rootSpan.spanId)
-            // Shadow must be fresh before Phase 1 reads so externally-changed journals show
-            // current content immediately. syncShadow is a no-op on JVM.
-            // Failure is non-fatal: proceed with potentially stale shadow rather than
-            // aborting Phase 1 entirely.
-            syncShadowNonFatal(graphPath, "cold start")
+            // Invalidate stale shadow entries before Phase 1 reads so externally-changed
+            // journals show current content. Uses a batch mtime cursor — no SAF content
+            // reads here; stale files are read from SAF lazily during journal loading.
+            // No-op on JVM. Failure is non-fatal.
+            invalidateStaleShadowNonFatal(graphPath, "cold start")
             // phase1Start is placed after syncShadow so the span measures only journal
             // parse time, not shadow-sync latency.
             val phase1Start = Clock.System.now()
@@ -968,19 +967,19 @@ class GraphLoader(
         return priorityFilesMutex.withLock { priorityFiles.contains(path) }
     }
 
-    private suspend fun syncShadowNonFatal(graphPath: String, context: String) {
-        try { withTimeout(SYNC_SHADOW_TIMEOUT_MS) { fileSystem.syncShadow(graphPath) } }
+    private suspend fun invalidateStaleShadowNonFatal(graphPath: String, context: String) {
+        try { withTimeout(SHADOW_STARTUP_TIMEOUT_MS) { fileSystem.invalidateStaleShadow(graphPath) } }
         catch (e: TimeoutCancellationException) {
-            logger.warn("syncShadow timed out on $context (${SYNC_SHADOW_TIMEOUT_MS}ms) — proceeding with potentially stale shadow")
+            logger.warn("invalidateStaleShadow timed out on $context (${SHADOW_STARTUP_TIMEOUT_MS}ms) — proceeding with potentially stale shadow")
         }
         catch (e: CancellationException) { throw e }
-        catch (e: Exception) { logger.warn("syncShadow failed on $context: ${e.message}") }
+        catch (e: Exception) { logger.warn("invalidateStaleShadow failed on $context: ${e.message}") }
     }
 
     companion object {
-        // Shadow sync timeout: generous enough for typical SAF batch queries (~100-200ms),
-        // strict enough to keep cold-start Phase 1 within budget on large graphs.
-        private const val SYNC_SHADOW_TIMEOUT_MS = 2_000L
+        // Timeout for the batch mtime cursor on startup. Two SAF cursor queries should
+        // complete well under 500ms; 2s is a conservative ceiling for slow providers.
+        private const val SHADOW_STARTUP_TIMEOUT_MS = 2_000L
     }
 
     private data class ParseResult(
