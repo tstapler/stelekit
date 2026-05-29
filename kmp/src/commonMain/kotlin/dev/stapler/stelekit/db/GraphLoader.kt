@@ -404,6 +404,7 @@ class GraphLoader(
                         // Failure is non-fatal: proceed with potentially stale shadow rather than
                         // aborting the reconcile entirely.
                         try { fileSystem.syncShadow(graphPath) }
+                        catch (e: CancellationException) { throw e }
                         catch (e: Exception) { logger.warn("syncShadow failed on warm reconcile: ${e.message}") }
                         loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
                         coroutineScope {
@@ -436,6 +437,7 @@ class GraphLoader(
             // Failure is non-fatal: proceed with potentially stale shadow rather than
             // aborting Phase 1 entirely.
             try { fileSystem.syncShadow(graphPath) }
+            catch (e: CancellationException) { throw e }
             catch (e: Exception) { logger.warn("syncShadow failed on cold start: ${e.message}") }
             val loadedImmediateCount = loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
             val phase1Duration = Clock.System.now() - phase1Start
