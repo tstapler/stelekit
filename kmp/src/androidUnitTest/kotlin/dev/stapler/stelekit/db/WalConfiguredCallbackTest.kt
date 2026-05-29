@@ -1,7 +1,6 @@
 package dev.stapler.stelekit.db
 
 import org.junit.Test
-import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -20,15 +19,4 @@ class WalConfiguredCallbackTest {
         )
     }
 
-    @Test
-    fun `androidPragmaList_should_notContainMmapSize_when_mmap_isAbsent`() {
-        // Sentinel test: verifies the test infrastructure can detect a missing pragma.
-        // If ANDROID_PRAGMAS somehow omits mmap_size, the positive test above will fail.
-        // This negative assertion confirms that a list WITHOUT mmap_size does NOT pass the check.
-        val listWithoutMmap = ANDROID_PRAGMAS.filter { !it.contains("mmap_size") }
-        assertFalse(
-            listWithoutMmap.contains("PRAGMA mmap_size=268435456"),
-            "A list without mmap_size must not contain the mmap_size pragma"
-        )
-    }
 }

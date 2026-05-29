@@ -33,12 +33,13 @@ class MigrationRunnerIndexTest {
 
     @Test
     fun `applyAll_should_createIdxBlocksPagePosition_when_migrationRuns`() {
-        val driver = DriverFactory().createDriver("jdbc:sqlite::memory:")
-        val planText = explainQueryPlan(
-            driver,
-            "SELECT uuid, page_uuid, position, content, level, parent_uuid FROM blocks WHERE page_uuid = ? ORDER BY position",
-            "dummy-page-uuid"
-        )
+        val planText = DriverFactory().createDriver("jdbc:sqlite::memory:").use { driver ->
+            explainQueryPlan(
+                driver,
+                "SELECT uuid, page_uuid, position, content, level, parent_uuid FROM blocks WHERE page_uuid = ? ORDER BY position",
+                "dummy-page-uuid"
+            )
+        }
         assertTrue(
             planText.contains("idx_blocks_page_position"),
             "Expected idx_blocks_page_position in query plan but got:\n$planText"
@@ -47,12 +48,13 @@ class MigrationRunnerIndexTest {
 
     @Test
     fun `applyAll_should_eliminateFilesort_when_pageBlocksQueried`() {
-        val driver = DriverFactory().createDriver("jdbc:sqlite::memory:")
-        val planText = explainQueryPlan(
-            driver,
-            "SELECT uuid, page_uuid, position, content, level, parent_uuid FROM blocks WHERE page_uuid = ? ORDER BY position",
-            "dummy-page-uuid"
-        )
+        val planText = DriverFactory().createDriver("jdbc:sqlite::memory:").use { driver ->
+            explainQueryPlan(
+                driver,
+                "SELECT uuid, page_uuid, position, content, level, parent_uuid FROM blocks WHERE page_uuid = ? ORDER BY position",
+                "dummy-page-uuid"
+            )
+        }
         assertFalse(
             planText.contains("USE TEMP B-TREE"),
             "Expected no filesort in query plan but got:\n$planText"
@@ -61,12 +63,13 @@ class MigrationRunnerIndexTest {
 
     @Test
     fun `applyAll_should_createIdxBlocksParentPosition_when_migrationRuns`() {
-        val driver = DriverFactory().createDriver("jdbc:sqlite::memory:")
-        val planText = explainQueryPlan(
-            driver,
-            "SELECT uuid, position, content FROM blocks WHERE parent_uuid = ? ORDER BY position",
-            "dummy-parent-uuid"
-        )
+        val planText = DriverFactory().createDriver("jdbc:sqlite::memory:").use { driver ->
+            explainQueryPlan(
+                driver,
+                "SELECT uuid, position, content FROM blocks WHERE parent_uuid = ? ORDER BY position",
+                "dummy-parent-uuid"
+            )
+        }
         assertTrue(
             planText.contains("idx_blocks_parent_position"),
             "Expected idx_blocks_parent_position in query plan but got:\n$planText"
@@ -75,12 +78,13 @@ class MigrationRunnerIndexTest {
 
     @Test
     fun `applyAll_should_createIdxBlocksPageHash_when_migrationRuns`() {
-        val driver = DriverFactory().createDriver("jdbc:sqlite::memory:")
-        val planText = explainQueryPlan(
-            driver,
-            "SELECT uuid, content_hash FROM blocks WHERE page_uuid = ?",
-            "dummy-page-uuid"
-        )
+        val planText = DriverFactory().createDriver("jdbc:sqlite::memory:").use { driver ->
+            explainQueryPlan(
+                driver,
+                "SELECT uuid, content_hash FROM blocks WHERE page_uuid = ?",
+                "dummy-page-uuid"
+            )
+        }
         assertTrue(
             planText.contains("idx_blocks_page_hash"),
             "Expected idx_blocks_page_hash in query plan but got:\n$planText"
