@@ -121,9 +121,16 @@ class FileRegistry(private val fileSystem: FileSystem) {
                     modTimes[filePath] = modTime
                     changedFiles.add(ChangedFile(FileEntry(fileName, filePath, modTime), ""))
                 } else {
-                    // Mod time changed — check content hash guard
+                    // Mod time changed — invalidate shadow first so readFile falls through
+                    // to the real file (SAF on Android) rather than a stale on-device cache.
+                    // On JVM, invalidateShadow is a no-op; zero cost on desktop.
+                    // markWrittenByUs stores the SAF-queried mtime so own-written files satisfy
+                    // modTime == lastKnown and never enter this branch.
+                    fileSystem.invalidateShadow(filePath)
                     val content = fileSystem.readFile(filePath) ?: continue
                     val newHash = content.hashCode()
+                    // hashCode() is a 32-bit guard — false-negative probability ~1/4B per file.
+                    // Accepted trade-off: one missed external edit is less harmful than per-file SHA computation on startup.
                     if (contentHashes[filePath] == newHash) {
                         // Same content (our own write) — update mod time, skip
                         modTimes[filePath] = modTime
@@ -140,7 +147,10 @@ class FileRegistry(private val fileSystem: FileSystem) {
         val deletedPaths = modTimes.keys
             .filter { it.startsWith("$dirPath/") && it !in currentPaths }
             .toList()
-        deletedPaths.forEach { modTimes.remove(it); contentHashes.remove(it) }
+        deletedPaths.forEach { path ->
+            modTimes.remove(path)
+            contentHashes.remove(path)
+        }
 
         ChangeSet(newFiles, changedFiles, deletedPaths)
     }

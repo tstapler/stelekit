@@ -6,8 +6,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
+import kotlin.time.DurationUnit
+import kotlin.time.Instant
+import kotlin.time.toDuration
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -238,5 +242,27 @@ class JournalServiceTest {
         val result = service.getPageByJournalDate(LocalDate(2026, 3, 15))
         assertNotNull(result)
         assertEquals("name-only", result.uuid)
+    }
+
+    // ---- Clock injection ----
+
+    @Test
+    fun ensureTodayJournal_uses_injected_clock_not_system_clock() = runTest {
+        val pageRepo = InMemoryPageRepository()
+        val blockRepo = InMemoryBlockRepository()
+        // Fix clock to a known date (2099-12-31) that cannot match today's system date.
+        val fixedDate = LocalDate(2099, 12, 31)
+        // Use local midnight + 1h so the date is unambiguous across all timezone offsets.
+        val fixedInstant = fixedDate.atStartOfDayIn(TimeZone.currentSystemDefault()) + 1.toDuration(DurationUnit.HOURS)
+        val fakeClock = object : Clock {
+            override fun now(): Instant = fixedInstant
+        }
+        val service = JournalService(pageRepo, blockRepo, clock = fakeClock)
+
+        val page = service.ensureTodayJournal()
+
+        assertEquals(fixedDate, page.journalDate,
+            "journalDate must match the fake clock's date, not today's system date")
+        assertTrue(page.isJournal)
     }
 }

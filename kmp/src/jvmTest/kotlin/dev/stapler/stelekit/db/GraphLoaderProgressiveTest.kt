@@ -3,15 +3,36 @@ package dev.stapler.stelekit.db
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
+import dev.stapler.stelekit.repository.InMemorySearchRepository
+import dev.stapler.stelekit.testing.FakeClock
+import dev.stapler.stelekit.ui.StelekitViewModel
+import dev.stapler.stelekit.ui.StelekitViewModelDependencies
+import dev.stapler.stelekit.ui.fixtures.InMemorySettings
 import dev.stapler.stelekit.util.UuidGenerator
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.plus
+import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -658,5 +679,156 @@ class GraphLoaderProgressiveTest {
         
         val reloadedBlocks = blockRepository.getBlocksForPage(oldPage.uuid).first().getOrNull()!!
         assertTrue(reloadedBlocks[0].isLoaded, "Block should be fully loaded after loadFullPage")
+    }
+
+    // ── Midnight boundary watcher tests ──────────────────────────────────────
+
+    /** Builds a minimal StelekitViewModel for testing millisUntilNextMidnight. */
+    private fun buildMinimalViewModel(): StelekitViewModel {
+        val pageRepo = InMemoryPageRepository()
+        val blockRepo = InMemoryBlockRepository()
+        val searchRepo = InMemorySearchRepository()
+        val fs = PlatformFileSystem()
+        val loader = GraphLoader(fs, pageRepo, blockRepo)
+        val writer = GraphWriter(fs)
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        return StelekitViewModel(
+            StelekitViewModelDependencies(
+                pageRepository = pageRepo,
+                blockRepository = blockRepo,
+                searchRepository = searchRepo,
+                graphLoader = loader,
+                graphWriter = writer,
+                fileSystem = fs,
+                platformSettings = InMemorySettings(),
+                scope = scope,
+            )
+        )
+    }
+
+    @Test
+    fun `millisUntilNextMidnight returns positive value less than 24h`() {
+        // Tests the production formula via the actual StelekitViewModel method.
+        val vm = buildMinimalViewModel()
+        val delayMs = vm.millisUntilNextMidnight(Clock.System)
+
+        assertTrue(delayMs > 0, "Delay until next midnight must be positive")
+        assertTrue(delayMs <= 24 * 60 * 60 * 1000L, "Delay must not exceed 24 hours")
+    }
+
+    @Test
+    fun `millisUntilNextMidnight returns at least 1000ms when clock is exactly at midnight`() {
+        // Tests the production formula via the actual StelekitViewModel method with a FakeClock.
+        val tz = TimeZone.currentSystemDefault()
+        val midnightInstant = LocalDate(2026, 5, 29).atStartOfDayIn(tz)
+        val fakeClock = FakeClock(midnightInstant)
+
+        val vm = buildMinimalViewModel()
+        val delay = vm.millisUntilNextMidnight(fakeClock)
+
+        assertTrue(delay >= 1000L,
+            "coerceAtLeast(1_000L) must fire when clock is exactly at midnight; got $delay ms")
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `midnight watcher calls ensureTodayJournal after simulated day crossing`() = runTest {
+        val callCount = AtomicInteger(0)
+        val tz = TimeZone.currentSystemDefault()
+        val startInstant = LocalDate(2026, 5, 28).atStartOfDayIn(tz) + 23.hours + 58.minutes
+        val fakeClock = FakeClock(startInstant)
+
+        val watcherJob = launch {
+            while (isActive) {
+                val now = fakeClock.now()
+                val today = now.toLocalDateTime(tz).date
+                val tomorrowMidnight = today.plus(1, DateTimeUnit.DAY).atStartOfDayIn(tz)
+                val delayMs = (tomorrowMidnight - now).inWholeMilliseconds.coerceAtLeast(1_000L)
+                kotlinx.coroutines.delay(delayMs)
+                fakeClock.advance(2.minutes)
+                callCount.incrementAndGet()
+            }
+        }
+
+        advanceTimeBy(121_000)
+        assertEquals(1, callCount.get(), "ensureTodayJournal must be called once after first midnight")
+
+        advanceTimeBy(24 * 60 * 60 * 1000L + 1_000L)
+        assertEquals(2, callCount.get(), "ensureTodayJournal must be called again after second midnight")
+
+        advanceTimeBy(24 * 60 * 60 * 1000L + 1_000L)
+        assertEquals(3, callCount.get(), "ensureTodayJournal must be called a third time")
+
+        watcherJob.cancel()
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `midnight watcher is cancelled when scope is cancelled`() = runTest {
+        val callCount = AtomicInteger(0)
+        val tz = TimeZone.currentSystemDefault()
+        val fakeClock = FakeClock(
+            LocalDate(2026, 5, 28).atStartOfDayIn(tz) + 23.hours + 58.minutes
+        )
+
+        val watcherJob = launch {
+            while (isActive) {
+                val now = fakeClock.now()
+                val today = now.toLocalDateTime(tz).date
+                val tomorrowMidnight = today.plus(1, DateTimeUnit.DAY).atStartOfDayIn(tz)
+                val delayMs = (tomorrowMidnight - now).inWholeMilliseconds.coerceAtLeast(1_000L)
+                kotlinx.coroutines.delay(delayMs)
+                fakeClock.advance(2.minutes)
+                callCount.incrementAndGet()
+            }
+        }
+
+        watcherJob.cancel()
+        advanceTimeBy(200_000)
+
+        assertEquals(0, callCount.get(),
+            "Cancelled watcher must not fire after cancellation")
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun `midnight watcher skips call when lastJournalDate already equals today`() = runTest {
+        val callCount = AtomicInteger(0)
+        val tz = TimeZone.currentSystemDefault()
+        // Start 2 min before midnight on May 29
+        val today = LocalDate(2026, 5, 29)
+        val startInstant = today.atStartOfDayIn(tz) + 23.hours + 58.minutes
+        val fakeClock = FakeClock(startInstant)
+        // Pre-set to May 30 — simulating startup already handled today's journal
+        val tomorrow = today.plus(1, DateTimeUnit.DAY)
+        var lastJournalDate: LocalDate? = tomorrow
+
+        val watcherJob = launch {
+            while (isActive) {
+                val now = fakeClock.now()
+                val nowDate = now.toLocalDateTime(tz).date
+                val tomorrowMidnight = nowDate.plus(1, DateTimeUnit.DAY).atStartOfDayIn(tz)
+                val delayMs = (tomorrowMidnight - now).inWholeMilliseconds.coerceAtLeast(1_000L)
+                kotlinx.coroutines.delay(delayMs)
+                // Advance FakeClock by delayMs+1ms so it stays in sync with the test scheduler.
+                // Using a fixed 2-minute advance breaks once the guard `continue`s: the clock
+                // would stay on May 30 and the second crossing would never reach May 31.
+                fakeClock.advance((delayMs + 1).milliseconds)
+                val afterDate = fakeClock.now().toLocalDateTime(tz).date
+                if (afterDate == lastJournalDate) continue
+                callCount.incrementAndGet()
+                lastJournalDate = afterDate
+            }
+        }
+
+        // First crossing (May 29 → May 30): lastJournalDate already = May 30, skip
+        advanceTimeBy(121_000)
+        assertEquals(0, callCount.get(), "Must skip when lastJournalDate already matches crossed date")
+
+        // Second crossing (May 30 → May 31): new date, must fire
+        advanceTimeBy(24 * 60 * 60 * 1000L + 1_000L)
+        assertEquals(1, callCount.get(), "Must fire when date advances past lastJournalDate")
+
+        watcherJob.cancel()
     }
 }

@@ -39,7 +39,8 @@ fun interface JournalDateResolver {
 class JournalService(
     private val pageRepository: PageRepository,
     private val blockRepository: BlockRepository,
-    private val writeActor: DatabaseWriteActor? = null
+    private val writeActor: DatabaseWriteActor? = null,
+    private val clock: Clock = Clock.System,
 ) : JournalDateResolver {
 
     private val logger = Logger("JournalService")
@@ -80,7 +81,7 @@ class JournalService(
      * @return the canonical journal [Page] for today.
      */
     suspend fun ensureTodayJournal(): Page = mutex.withLock {
-        val today = Clock.System.now()
+        val today = clock.now()
             .toLocalDateTime(TimeZone.currentSystemDefault()).date
         val hyphenName = today.toString()
         val underscoreName = hyphenName.replace('-', '_')
@@ -106,7 +107,7 @@ class JournalService(
             uuid = pageUuid,
             name = underscoreName,
             createdAt = today.atStartOfDayIn(TimeZone.currentSystemDefault()),
-            updatedAt = Clock.System.now(),
+            updatedAt = clock.now(),
             isJournal = true,
             journalDate = today
         )
@@ -122,8 +123,8 @@ class JournalService(
             pageUuid = pageUuid,
             content = "",
             position = 0,
-            createdAt = Clock.System.now(),
-            updatedAt = Clock.System.now()
+            createdAt = clock.now(),
+            updatedAt = clock.now()
         )
         if (writeActor != null) {
             writeActor.saveBlock(initialBlock)
@@ -165,8 +166,8 @@ class JournalService(
             pageUuid = page.uuid,
             content = content,
             position = nextPosition,
-            createdAt = Clock.System.now(),
-            updatedAt = Clock.System.now(),
+            createdAt = clock.now(),
+            updatedAt = clock.now(),
         )
         if (writeActor != null) {
             writeActor.saveBlock(newBlock)
@@ -192,8 +193,8 @@ class JournalService(
         val newPage = Page(
             uuid = pageUuid,
             name = title,
-            createdAt = Clock.System.now(),
-            updatedAt = Clock.System.now(),
+            createdAt = clock.now(),
+            updatedAt = clock.now(),
             isJournal = false,
         )
         if (writeActor != null) {
@@ -206,8 +207,8 @@ class JournalService(
             pageUuid = pageUuid,
             content = content,
             position = 0,
-            createdAt = Clock.System.now(),
-            updatedAt = Clock.System.now(),
+            createdAt = clock.now(),
+            updatedAt = clock.now(),
         )
         if (writeActor != null) {
             writeActor.saveBlock(newBlock)
@@ -223,7 +224,7 @@ class JournalService(
 
     private suspend fun healJournalDate(page: Page, date: LocalDate): Page {
         logger.info("Healing missing journal_date for page ${page.uuid} (name=${page.name})")
-        val healed = page.copy(journalDate = date, isJournal = true, updatedAt = Clock.System.now())
+        val healed = page.copy(journalDate = date, isJournal = true, updatedAt = clock.now())
         if (writeActor != null) {
             writeActor.savePage(healed)
         } else {
