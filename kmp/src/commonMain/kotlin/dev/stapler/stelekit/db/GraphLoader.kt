@@ -428,13 +428,15 @@ class GraphLoader(
                 return
             }
 
-            val phase1Start = Clock.System.now()
             val phase1Span = Span("graph_load.phase1_journals", traceId, rootSpan.spanId)
             // Shadow must be fresh before Phase 1 reads so externally-changed journals show
             // current content immediately. syncShadow is a no-op on JVM.
             // Failure is non-fatal: proceed with potentially stale shadow rather than
             // aborting Phase 1 entirely.
             syncShadowNonFatal(graphPath, "cold start")
+            // phase1Start is placed after syncShadow so the span measures only journal
+            // parse time, not shadow-sync latency.
+            val phase1Start = Clock.System.now()
             val loadedImmediateCount = loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
             val phase1Duration = Clock.System.now() - phase1Start
             phase1Span.finish("OK", "journal.count" to loadedImmediateCount.toString(),
@@ -967,9 +969,18 @@ class GraphLoader(
     }
 
     private suspend fun syncShadowNonFatal(graphPath: String, context: String) {
-        try { fileSystem.syncShadow(graphPath) }
+        try { withTimeout(SYNC_SHADOW_TIMEOUT_MS) { fileSystem.syncShadow(graphPath) } }
+        catch (e: TimeoutCancellationException) {
+            logger.warn("syncShadow timed out on $context (${SYNC_SHADOW_TIMEOUT_MS}ms) — proceeding with potentially stale shadow")
+        }
         catch (e: CancellationException) { throw e }
         catch (e: Exception) { logger.warn("syncShadow failed on $context: ${e.message}") }
+    }
+
+    companion object {
+        // Shadow sync timeout: generous enough for typical SAF batch queries (~100-200ms),
+        // strict enough to keep cold-start Phase 1 within budget on large graphs.
+        private const val SYNC_SHADOW_TIMEOUT_MS = 2_000L
     }
 
     private data class ParseResult(

@@ -419,7 +419,13 @@ class GraphLoaderProgressiveTest {
             override fun deleteFile(path: String) = true
             override fun pickDirectory() = null
             override fun getLastModifiedTime(path: String): Long? = 9999L
-            override suspend fun syncShadow(graphPath: String) { syncShadowCalled.set(true) }
+            override suspend fun syncShadow(graphPath: String) {
+                // Yield repeatedly so any concurrently-dispatched readFile has a chance to
+                // run first — makes the test reliably detect a regression that moves syncShadow
+                // back to a concurrent coroutine.
+                repeat(5) { kotlinx.coroutines.yield() }
+                syncShadowCalled.set(true)
+            }
         }
 
         val warmPageRepo = InMemoryPageRepository()
@@ -473,10 +479,11 @@ class GraphLoaderProgressiveTest {
             override fun getDefaultGraphPath() = "/graph"
             override fun expandTilde(path: String) = path
             override fun readFile(path: String): String? {
-                if (path.endsWith(".md") && !syncShadowCalled.get()) {
+                // Track only the journal content read (not sanitizeDirectory rename checks).
+                if (path == "/graph/journals/2026_04_13.md" && !syncShadowCalled.get()) {
                     readFileCalledBeforeSync.set(true)
                 }
-                if (path.endsWith(".md")) readFileCalled.set(true)
+                if (path == "/graph/journals/2026_04_13.md") readFileCalled.set(true)
                 return "- content"
             }
             override fun writeFile(path: String, content: String) = true
@@ -515,6 +522,10 @@ class GraphLoaderProgressiveTest {
     /**
      * Regression: loadFullPage (navigation-triggered) must call invalidateShadow before
      * readFile so that a page modified externally since the last syncShadow is read fresh.
+     *
+     * Setup: page has a fully-loaded block (allBlocksLoaded=true) but the file's mtime (9999ms)
+     * is newer than page.updatedAt (1000ms), so the mtime guard fires and the file IS re-read.
+     * This exercises the mtime code path, not the "blocks missing" shortcut.
      */
     @Test
     fun `loadFullPage calls invalidateShadow before reading file`() = runBlocking {
@@ -565,6 +576,19 @@ class GraphLoaderProgressiveTest {
                 isContentLoaded = true
             )
         )
+        // Pre-populate a loaded block so allBlocksLoaded=true — the mtime guard is then
+        // evaluated and finds fileModTime (9999ms) > page.updatedAt (1000ms) → re-reads file.
+        navBlockRepo.saveBlocks(listOf(
+            dev.stapler.stelekit.model.Block(
+                uuid = "block-nav-1",
+                pageUuid = pageUuid,
+                content = "old content",
+                position = 0,
+                createdAt = oldInstant,
+                updatedAt = oldInstant,
+                isLoaded = true
+            )
+        ))
 
         val loader = GraphLoader(shadowAwareFs, navPageRepo, navBlockRepo)
         loader.loadFullPage(pageUuid)
