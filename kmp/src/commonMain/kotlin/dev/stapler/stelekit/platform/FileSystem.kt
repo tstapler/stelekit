@@ -98,8 +98,10 @@ interface FileSystem {
 
     /**
      * Syncs the shadow copy for [graphPath] from SAF using batch mtime queries.
-     * No-op on non-SAF file systems. Should run concurrently with Phase 2 metadata loading
-     * so Phase 3 reads can use the shadow instead of SAF Binder IPC.
+     * No-op on non-SAF file systems. Must complete before any [readFile] call during
+     * graph load — called sequentially before warm-start reconcile reads and before
+     * cold-start Phase 1 journals so externally-changed files are never served from
+     * a stale on-device cache.
      */
     suspend fun syncShadow(graphPath: String) { /* no-op */ }
 }

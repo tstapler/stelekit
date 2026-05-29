@@ -397,11 +397,13 @@ class GraphLoader(
                         // to loadJournalsImmediate and loadDirectory below.
                         sanitizeDirectory(pagesDir)
                         sanitizeDirectory(journalsDir)
+                        // Shadow must be fresh before any readFile call so externally-changed
+                        // files are not read from a stale on-device cache.
+                        fileSystem.syncShadow(graphPath)
                         loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
                         coroutineScope {
                             launch { loadRemainingJournals(journalsDir, immediateJournalCount, onProgress) }
                             launch { loadDirectory(pagesDir, onProgress, ParseMode.METADATA_ONLY) }
-                            launch { fileSystem.syncShadow(graphPath) }
                         }
                         val totalDuration = Clock.System.now() - startTime
                         logger.info("Warm reconcile complete. Duration: $totalDuration")
@@ -424,6 +426,9 @@ class GraphLoader(
 
             val phase1Start = Clock.System.now()
             val phase1Span = Span("graph_load.phase1_journals", traceId, rootSpan.spanId)
+            // Shadow must be fresh before Phase 1 reads so externally-changed journals show
+            // current content immediately. syncShadow is a no-op on JVM.
+            fileSystem.syncShadow(graphPath)
             val loadedImmediateCount = loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
             val phase1Duration = Clock.System.now() - phase1Start
             phase1Span.finish("OK", "journal.count" to loadedImmediateCount.toString(),
@@ -447,10 +452,6 @@ class GraphLoader(
 
                 launch(Dispatchers.Default) {
                     loadDirectory(pagesDir, onProgress, ParseMode.METADATA_ONLY)
-                }
-
-                launch {
-                    fileSystem.syncShadow(graphPath)
                 }
             }
             phase2Span.finish("OK")
@@ -685,6 +686,9 @@ class GraphLoader(
                 return
             }
 
+            // Drop any stale shadow so readFile goes to the real source (SAF on Android).
+            // Only reached when mtime confirmed the file is newer than the DB record.
+            fileSystem.invalidateShadow(filePath)
             val content = readFileDecrypted(filePath)
             if (content == null) {
                 logger.warn("Failed to read file: $filePath")
