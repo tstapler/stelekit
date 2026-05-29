@@ -1648,7 +1648,7 @@ class StelekitViewModel(
     }
 
     private var midnightWatcherJob: kotlinx.coroutines.Job? = null
-    @Volatile private var lastJournalDate: kotlinx.datetime.LocalDate? = null
+    private var lastJournalDate: kotlinx.datetime.LocalDate? = null
 
     internal fun millisUntilNextMidnight(clock: Clock = Clock.System): Long {
         val tz = TimeZone.currentSystemDefault()
