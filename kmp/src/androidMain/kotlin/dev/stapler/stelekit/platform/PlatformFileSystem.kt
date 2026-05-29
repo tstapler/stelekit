@@ -617,10 +617,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         // Batch cursor: 2 IPC calls total, no file content reads.
         val pagesMods = listFilesWithModTimes(pagesPath)
         val journalsMods = listFilesWithModTimes(journalsPath)
-        withContext(Dispatchers.IO) {
-            cache.invalidateStale("pages", pagesMods)
-            cache.invalidateStale("journals", journalsMods)
-        }
+        cache.invalidateStale("pages", pagesMods)
+        cache.invalidateStale("journals", journalsMods)
     }
 
     override suspend fun syncShadow(graphPath: String) {
