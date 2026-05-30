@@ -7,6 +7,7 @@ import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.repository.InMemorySearchRepository
+import dev.stapler.stelekit.repository.JournalService
 import dev.stapler.stelekit.testing.FakeClock
 import dev.stapler.stelekit.ui.StelekitViewModel
 import dev.stapler.stelekit.ui.StelekitViewModelDependencies
@@ -16,6 +17,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -37,6 +39,7 @@ import kotlin.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -830,5 +833,71 @@ class GraphLoaderProgressiveTest {
         assertEquals(1, callCount.get(), "Must fire when date advances past lastJournalDate")
 
         watcherJob.cancel()
+    }
+
+    @Test
+    fun `midnight watcher calls ensureTodayJournal via real startMidnightBoundaryWatcher`() = runBlocking {
+        val pageRepo = InMemoryPageRepository()
+        val blockRepo = InMemoryBlockRepository()
+        val searchRepo = InMemorySearchRepository()
+        val fs = PlatformFileSystem()
+        val loader = GraphLoader(fs, pageRepo, blockRepo)
+        val writer = GraphWriter(fs)
+
+        val tz = TimeZone.currentSystemDefault()
+        // Place the fake clock 1 ms before midnight on May 28.
+        // millisUntilNextMidnight() returns 1 ms → coerceAtLeast(1 000) = 1 000 ms, so
+        // the watcher's first delay() fires after 1 real second.
+        // lastJournalDate is seeded to May 28.  Once the real delay fires, we want
+        // clock.now() to return May 29 so ensureTodayJournal() creates the right page.
+        val justBeforeMidnightMay29 = LocalDate(2026, 5, 29).atStartOfDayIn(tz) - 1.milliseconds
+        val fakeClock = FakeClock(justBeforeMidnightMay29)
+
+        // Wire the same FakeClock into JournalService so ensureTodayJournal resolves
+        // "today" using the fake time rather than Clock.System.
+        val journalService = JournalService(pageRepo, blockRepo, clock = fakeClock)
+
+        // vmScope uses real Dispatchers.Default so its internal observe-coroutines do not
+        // join the test scheduler and cause advanceUntilIdle() to spin forever.
+        val vmScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val vm = StelekitViewModel(
+            StelekitViewModelDependencies(
+                pageRepository = pageRepo,
+                blockRepository = blockRepo,
+                searchRepository = searchRepo,
+                graphLoader = loader,
+                graphWriter = writer,
+                fileSystem = fs,
+                platformSettings = InMemorySettings(),
+                scope = vmScope,
+                journalService = journalService,
+            )
+        )
+
+        vm.startMidnightBoundaryWatcher(fakeClock)
+
+        // Give the watcher coroutine time to start on Dispatchers.Default and seed
+        // lastJournalDate (= May 28) BEFORE we advance the clock past midnight.
+        // Without this yield, the test thread can race ahead and advance fakeClock to
+        // May 29 before the watcher reads it, causing lastJournalDate to be seeded as
+        // May 29 and the midnight-crossing check to be skipped.
+        kotlinx.coroutines.delay(200)
+
+        // Advance the fake clock into May 29 so clock.now() returns the new day when
+        // the watcher wakes up from its 1 000 ms real delay.
+        fakeClock.advance(1001.milliseconds)
+
+        // Poll until ensureTodayJournal creates the May 29 journal (fires after ~1 s).
+        val tomorrow = LocalDate(2026, 5, 29)
+        withTimeout(5000) {
+            while (pageRepo.getJournalPageByDate(tomorrow).first().getOrNull() == null) {
+                kotlinx.coroutines.delay(50)
+            }
+        }
+        val page = pageRepo.getJournalPageByDate(tomorrow).first().getOrNull()
+        assertNotNull(page, "startMidnightBoundaryWatcher must call ensureTodayJournal after midnight crossing")
+        assertEquals(tomorrow, page.journalDate)
+
+        vmScope.cancel()
     }
 }
