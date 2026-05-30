@@ -740,6 +740,7 @@ compose.desktop {
             val parts = rawVersion.split(".")
             packageVersion = if ((parts.firstOrNull()?.toIntOrNull() ?: 1) == 0)
                 "1.${parts.drop(1).joinToString(".")}" else rawVersion
+            jvmArgs("-Dapp.version=$rawVersion")
             modules("java.sql")
             macOS {
                 iconFile.set(project.file("src/jvmMain/resources/icons/icon.icns"))
