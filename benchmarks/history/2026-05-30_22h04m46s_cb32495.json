@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-30 22:04:46 UTC",
+  "gitSha": "cb32495",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 8,
+  "phase2Ms": 3,
+  "phase3Ms": 16,
+  "totalMs": 27,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 32,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 128,
+      "pct": 65.0
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 12,
+      "pct": 6.1
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 7,
+      "pct": 3.6
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.lang.Class[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.Label_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.io.File_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2115,
+      "pct": 99.4
+    },
+    {
+      "frame": "pread",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/util/zip/ZipFile.getEntry_[i]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SymbolTable::lookup_only",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SymbolTable::lookup_shared",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "FieldLayoutBuilder::compute_regular_layout",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "metaspace::FreeBlocks::remove_block",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "Method::is_accessor",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlinx/coroutines/selects/SelectImplementation.register_[0]",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}
