@@ -387,6 +387,31 @@ private fun GraphContent(
         val graphPath = activeGraphPath.ifEmpty { null }
         if (graphPath != null) SidecarManager(fileSystem, graphPath) else null
     }
+    val imageSidecarManager = remember {
+        if (activeGraphPath.isNotEmpty()) dev.stapler.stelekit.db.sidecar.ImageSidecarManager(fileSystem) else null
+    }
+    val imageImportService = remember(imageSidecarManager) {
+        if (imageSidecarManager != null && activeGraphPath.isNotEmpty()) {
+            dev.stapler.stelekit.db.ImageImportService(
+                fileSystem = fileSystem,
+                imageAnnotationRepository = repos.imageAnnotationRepository,
+                blockRepository = repos.blockRepository,
+                sidecarManager = imageSidecarManager,
+                journalService = repos.journalService,
+                writeActor = repos.writeActor,
+                measurementAnnotationRepository = repos.measurementAnnotationRepository,
+            )
+        } else null
+    }
+    LaunchedEffect(activeGraphPath) {
+        if (activeGraphPath.isNotEmpty() && imageSidecarManager != null) {
+            dev.stapler.stelekit.db.sidecar.ImageSidecarIndexer(
+                fileSystem = fileSystem,
+                imageAnnotationRepository = repos.imageAnnotationRepository,
+                measurementAnnotationRepository = repos.measurementAnnotationRepository,
+            ).rebuildFromSidecars(activeGraphPath)
+        }
+    }
     val graphLoader = remember {
         GraphLoader(
             fileSystem,
@@ -1051,6 +1076,33 @@ private fun GraphContent(
                                             }
                                             true
                                         } else false
+                                    }
+                                } else null,
+                                onImportImage = if (imageImportService != null) {
+                                    {
+                                        scope.launch {
+                                            val page = repos.journalService.ensureTodayJournal()
+                                            when (val captured = dev.stapler.stelekit.platform.sensor.SensorModule.cameraProvider.capturePhoto()) {
+                                                is arrow.core.Either.Left ->
+                                                    graphContentLogger.warn("Camera capture failed: ${captured.value}")
+                                                is arrow.core.Either.Right -> {
+                                                    val result = imageImportService.import(
+                                                        tempFile = captured.value,
+                                                        graphPath = activeGraphPath,
+                                                        pageUuid = page.uuid,
+                                                        source = dev.stapler.stelekit.model.ImageSource.CAMERA,
+                                                        insertToJournalPage = true,
+                                                    )
+                                                    result.onRight { annotation ->
+                                                        viewModel.navigateToAnnotationEditor(annotation.uuid, page.uuid)
+                                                    }
+                                                    result.onLeft { err ->
+                                                        graphContentLogger.warn("Image import failed: ${err.message}")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Unit
                                     }
                                 } else null,
                             )

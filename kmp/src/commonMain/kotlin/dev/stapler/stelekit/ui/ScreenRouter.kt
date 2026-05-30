@@ -57,6 +57,7 @@ internal fun ScreenRouter(
     onAttachImage: ((editingBlockUuid: String?) -> Unit)? = null,
     onFileDrop: ((List<Any>) -> Unit)? = null,
     onPasteImage: ((editingBlockUuid: String?) -> Boolean)? = null,
+    onImportImage: (() -> Unit)? = null,
 ) {
     if (appState.isLoading) {
         LoadingOverlay(
@@ -202,6 +203,7 @@ internal fun ScreenRouter(
                     onNavigateToPage = { pageUuid ->
                         viewModel.navigateToPageByUuid(pageUuid)
                     },
+                    onImportImage = onImportImage,
                 )
             }
 

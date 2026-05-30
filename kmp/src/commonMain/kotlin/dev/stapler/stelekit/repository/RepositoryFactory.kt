@@ -317,6 +317,12 @@ class RepositoryFactoryImpl(
             queryStatsRepository = queryStatsRepo,
             queryStatsCollector = collector,
             queryPlanRepository = queryPlanRepo,
+            imageAnnotationRepository = if (backend == GraphBackend.SQLDELIGHT)
+                SqlDelightImageAnnotationRepository(database)
+            else InMemoryImageAnnotationRepository(),
+            measurementAnnotationRepository = if (backend == GraphBackend.SQLDELIGHT)
+                SqlDelightMeasurementAnnotationRepository(database)
+            else InMemoryMeasurementAnnotationRepository(),
         )
     }
 

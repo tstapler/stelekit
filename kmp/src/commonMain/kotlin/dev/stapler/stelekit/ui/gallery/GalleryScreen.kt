@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,11 +47,13 @@ fun GalleryScreen(
     viewModel: GalleryViewModel,
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit,
     onNavigateToPage: (pageUuid: String) -> Unit,
+    onImportImage: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsState()
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize()) {
         // Header row: title + sort button
         Row(
             modifier = Modifier
@@ -138,6 +141,21 @@ fun GalleryScreen(
             }
         }
     }
+
+    if (onImportImage != null) {
+        FloatingActionButton(
+            onClick = onImportImage,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.AddAPhoto,
+                contentDescription = "Capture image for annotation",
+            )
+        }
+    }
+    } // Box
 }
 
 // ── Gallery card ──────────────────────────────────────────────────────────────
