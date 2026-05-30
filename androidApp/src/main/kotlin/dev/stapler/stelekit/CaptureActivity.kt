@@ -119,15 +119,15 @@ class CaptureActivity : ComponentActivity() {
         }
     }
 
-    // Task 1.3: Bug 3 mitigation — read in mandated null-safe order: clipData → EXTRA_TEXT → EXTRA_SUBJECT
+    // Task 1.3: Bug 3 mitigation
     private fun parseShareIntent(intent: Intent): ShareContent {
         if (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE) {
             return ShareContent("", null)
         }
-        val text = intent.clipData?.getItemAt(0)?.coerceToText(this)?.toString()
-            ?: intent.getStringExtra(Intent.EXTRA_TEXT)
-            ?: intent.getStringExtra(Intent.EXTRA_SUBJECT)
-            ?: ""
+        val clipText  = intent.clipData?.getItemAt(0)?.coerceToText(this)?.toString()
+        val extraText = intent.getStringExtra(Intent.EXTRA_TEXT)
+        val subject   = intent.getStringExtra(Intent.EXTRA_SUBJECT)
+        val text = buildShareText(clipText, extraText, subject)
 
         // Bug 2 mitigation: copy EXTRA_STREAM synchronously before any coroutine launch
         val imagePath = if (intent.type?.startsWith("image/") == true) {
@@ -170,6 +170,31 @@ class CaptureActivity : ComponentActivity() {
     companion object {
         private const val PREFS_NAME = "stelekit_capture_prefs"
         private const val KEY_TILE_PROMPTED = "pref_tile_prompt_shown"
+
+        /**
+         * Combines share intent text sources into a single string.
+         *
+         * Priority: clipData text > EXTRA_TEXT > EXTRA_SUBJECT.
+         * takeIf { isNotBlank() } prevents an empty clipData from eating the fallback chain.
+         * When EXTRA_SUBJECT (page title) and a URL body are both present and distinct,
+         * they are joined with a newline so neither is silently dropped.
+         */
+        internal fun buildShareText(
+            clipText: String?,
+            extraText: String?,
+            subject: String?,
+        ): String {
+            // takeIf { isNotBlank() } prevents an empty/blank source from blocking fallbacks
+            val body = clipText?.takeIf { it.isNotBlank() }
+                ?: extraText?.takeIf { it.isNotBlank() }
+                ?: ""
+            val title = subject?.takeIf { it.isNotBlank() }
+            return when {
+                title != null && body.isNotBlank() && title != body -> "$title\n$body"
+                body.isNotBlank() -> body
+                else -> title ?: ""
+            }
+        }
     }
 }
 
