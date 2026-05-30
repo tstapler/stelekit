@@ -1,3 +1,4 @@
+@file:Suppress("InMemoryPagination") // in-memory test fake — drop/take IS the right implementation
 package dev.stapler.stelekit.repository
 
 import arrow.core.Either

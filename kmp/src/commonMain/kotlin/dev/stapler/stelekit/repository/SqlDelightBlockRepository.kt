@@ -885,6 +885,9 @@ class SqlDelightBlockRepository(
                 if (batch.size < batchSize / 4) batchSize *= 2
             }
 
+            // accumulated is already bounded to ≤ offset+limit items by the loop above —
+            // this drop/take is on a small pre-limited list, not an unbounded SQL result.
+            @Suppress("InMemoryPagination")
             emit(accumulated.drop(offset).take(limit).right())
         } catch (e: CancellationException) {
             throw e

@@ -10,6 +10,7 @@ class SteleKitRuleSetProvider : RuleSetProvider {
     override fun instance(config: Config): RuleSet = RuleSet(
         ruleSetId,
         listOf(
+            InMemoryPaginationRule(config),
             RegexInLambdaRule(config),
             MissingDirectRepositoryWriteRule(config),
             RepositoryWriteCallSiteRule(config),
