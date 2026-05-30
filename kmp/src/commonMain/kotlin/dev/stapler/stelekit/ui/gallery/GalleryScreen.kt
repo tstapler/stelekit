@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -114,13 +115,11 @@ fun GalleryScreen(
                 }
             }
             state.images.isEmpty() -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "No annotated images yet",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                GalleryEmptyState(
+                    onCapturePhoto = { onImportImage?.invoke() ?: run { /* no-op if not wired */ } },
+                    onImportPhoto = null, // photo picker wiring is future work
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
             else -> {
                 LazyVerticalGrid(
@@ -142,7 +141,7 @@ fun GalleryScreen(
         }
     }
 
-    if (onImportImage != null) {
+    if (onImportImage != null && state.images.isNotEmpty()) {
         FloatingActionButton(
             onClick = onImportImage,
             modifier = Modifier
@@ -191,6 +190,32 @@ private fun GalleryCard(
                     .aspectRatio(1f)
                     .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)),
             )
+
+            // Show uncalibrated indicator if calibration method is NONE
+            if (image.calibration.method == CalibrationMethod.NONE) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(12.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "Tap to calibrate",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                }
+            }
 
             // Metadata section
             Column(

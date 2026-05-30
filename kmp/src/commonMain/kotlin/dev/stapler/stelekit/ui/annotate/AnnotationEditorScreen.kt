@@ -24,6 +24,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,7 +43,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -132,6 +139,13 @@ fun AnnotationEditorScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    var showCalibrationSheet by remember { mutableStateOf(false) }
+    var showCalibrationChangeWarning by remember { mutableStateOf(false) }
+    var isFirstCalibrationUse by remember { mutableStateOf(true) }
+    val canUndoCalibration by viewModel.canUndoCalibration.collectAsState()
+    val calibrationMessage by viewModel.calibrationChangeMessage.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     // Story 5.7: wire the active device into the ViewModel so injectMeasurementFromDevice()
     // can find it. Effect re-runs when activeDevice reference changes.
@@ -149,11 +163,27 @@ fun AnnotationEditorScreen(
         viewModel.initialize(imageAnnotation)
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    LaunchedEffect(calibrationMessage) {
+        val msg = calibrationMessage ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = msg,
+            actionLabel = if (canUndoCalibration) "Undo" else null,
+            duration = SnackbarDuration.Short,
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            viewModel.undoCalibration()
+        }
+        viewModel.clearCalibrationMessage()
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { paddingValues ->
+        Column(modifier = modifier.fillMaxSize().padding(paddingValues)) {
         // Calibration status indicator bar
-        CalibrationStatusBar(
+        CalibrationConfidenceBadge(
             calibration = state.calibration,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
         )
 
         // ARCore accuracy warning — shown only when ARCore/LiDAR depth calibration is active
@@ -183,29 +213,23 @@ fun AnnotationEditorScreen(
             }
         }
 
-        // "No calibration" dismissible banner
-        var showNoCalibrationBanner by remember { mutableStateOf(true) }
-        if (showNoCalibrationBanner && (cal == null || cal.method == CalibrationMethod.NONE)) {
-            Surface(
-                color = Color(0xFFFFF9C4),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = "No calibration set — measurements will not show real-world values. " +
-                            "Draw a reference line or connect a laser meter.",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = { showNoCalibrationBanner = false }) {
-                        Text("Dismiss")
+        // "No calibration" nudge banner
+        val isCalibrated = viewModel.isCalibrated()
+        if (!isCalibrated) {
+            CalibrationNudgeBanner(
+                isFirstUse = isFirstCalibrationUse,
+                onCalibrateClick = {
+                    if (state.committedAnnotations.isNotEmpty()) {
+                        showCalibrationChangeWarning = true
+                    } else {
+                        showCalibrationSheet = true
                     }
-                }
-            }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            // Once calibrated, mark first-use as done
+            LaunchedEffect(Unit) { isFirstCalibrationUse = false }
         }
 
         // Story 8.4: Tilt warning — shown when capture-time pitch > 15° or roll > 10°.
@@ -298,6 +322,14 @@ fun AnnotationEditorScreen(
                 modifier = Modifier.fillMaxSize(),
             )
 
+            // Accessibility layer: invisible semantic nodes over each annotation for TalkBack
+            AnnotationSemanticOverlay(
+                annotations = state.committedAnnotations,
+                canvasSize = canvasSize,
+                onAnnotationSelected = { uuid -> viewModel.selectAnnotation(uuid) },
+                modifier = Modifier.fillMaxSize(),
+            )
+
             // Layer 5: Annotation toolbar (bottom)
             AnnotationToolbar(
                 currentTool = state.currentTool,
@@ -309,6 +341,15 @@ fun AnnotationEditorScreen(
                 onRedo = { viewModel.redo() },
                 onDeleteSelect = { viewModel.deleteSelectedAnnotation() },
                 hasSelection = state.selectedAnnotationUuid != null,
+                isCalibrated = viewModel.isCalibrated(),
+                onCalibrate = {
+                    if (state.committedAnnotations.isNotEmpty()) {
+                        showCalibrationChangeWarning = true
+                    } else {
+                        showCalibrationSheet = true
+                    }
+                },
+                onUnitSelect = { /* TODO: wire unit change through viewModel */ },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(8.dp),
@@ -367,20 +408,40 @@ fun AnnotationEditorScreen(
                     modifier = Modifier.align(Alignment.Center),
                 )
             }
-        }
-    }
+        } // end Box
+        } // end Column
 
-    // GRID_REF calibration dialog — shown as overlay outside the Column
-    if (state.isGridRefDialogVisible) {
-        GridRefCalibrationDialog(
-            lengthText = state.gridRefLengthText,
-            selectedUnit = state.gridRefUnit,
-            onLengthTextChange = { viewModel.updateGridRefLengthText(it) },
-            onUnitChange = { viewModel.updateGridRefUnit(it) },
-            onConfirm = { viewModel.confirmGridRefCalibration() },
-            onDismiss = { viewModel.dismissGridRefDialog() },
-        )
-    }
+        // GRID_REF calibration dialog — shown as overlay outside the Column
+        if (state.isGridRefDialogVisible) {
+            GridRefCalibrationDialog(
+                lengthText = state.gridRefLengthText,
+                selectedUnit = state.gridRefUnit,
+                onLengthTextChange = { viewModel.updateGridRefLengthText(it) },
+                onUnitChange = { viewModel.updateGridRefUnit(it) },
+                onConfirm = { viewModel.confirmGridRefCalibration() },
+                onDismiss = { viewModel.dismissGridRefDialog() },
+            )
+        }
+
+        if (showCalibrationSheet) {
+            CalibrationSheet(
+                onDismiss = { showCalibrationSheet = false },
+                onDrawReference = { showCalibrationSheet = false /* user will draw on canvas */ },
+                onUseBle = { showCalibrationSheet = false /* BLE flow not yet implemented */ },
+            )
+        }
+
+        if (showCalibrationChangeWarning) {
+            CalibrationChangeWarningDialog(
+                existingAnnotationCount = state.committedAnnotations.size,
+                onKeepCurrentScale = { showCalibrationChangeWarning = false },
+                onChangeScale = {
+                    showCalibrationChangeWarning = false
+                    showCalibrationSheet = true
+                },
+            )
+        }
+    } // end Scaffold lambda
 }
 
 // ── Story 7.4: Drive export UI ────────────────────────────────────────────────

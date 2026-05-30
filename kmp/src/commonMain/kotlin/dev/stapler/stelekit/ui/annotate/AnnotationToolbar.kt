@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.LinearScale
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Redo
+import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -43,7 +44,9 @@ import dev.stapler.stelekit.model.MeasurementUnit
 /**
  * Bottom toolbar providing tool selection, undo/redo, unit selection, and annotation deletion.
  *
- * Active tool is highlighted with the primary color background.
+ * Active tool is highlighted with the primaryContainer color background.
+ * Measurement tools (DISTANCE, AREA, ANGLE, LABEL, GRID_REF) are disabled until the image is
+ * calibrated ([isCalibrated] = true). SELECT and CALIBRATE are always enabled.
  * Undo/redo buttons are disabled (alpha reduced) when no history is available.
  */
 @Composable
@@ -52,10 +55,13 @@ fun AnnotationToolbar(
     canUndo: Boolean,
     canRedo: Boolean,
     displayUnit: MeasurementUnit?,
+    isCalibrated: Boolean,
     onToolSelect: (AnnotationTool) -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onDeleteSelect: () -> Unit,
+    onCalibrate: () -> Unit,
+    onUnitSelect: (MeasurementUnit) -> Unit,
     hasSelection: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -78,6 +84,7 @@ fun AnnotationToolbar(
                 label = "Select",
                 isActive = currentTool == AnnotationTool.SELECT,
                 onSelect = onToolSelect,
+                enabled = true,
             )
             ToolButton(
                 tool = AnnotationTool.DISTANCE,
@@ -85,6 +92,7 @@ fun AnnotationToolbar(
                 label = "Distance",
                 isActive = currentTool == AnnotationTool.DISTANCE,
                 onSelect = onToolSelect,
+                enabled = isCalibrated,
             )
             ToolButton(
                 tool = AnnotationTool.AREA,
@@ -92,6 +100,7 @@ fun AnnotationToolbar(
                 label = "Area",
                 isActive = currentTool == AnnotationTool.AREA,
                 onSelect = onToolSelect,
+                enabled = isCalibrated,
             )
             ToolButton(
                 tool = AnnotationTool.ANGLE,
@@ -99,6 +108,7 @@ fun AnnotationToolbar(
                 label = "Angle",
                 isActive = currentTool == AnnotationTool.ANGLE,
                 onSelect = onToolSelect,
+                enabled = isCalibrated,
             )
             ToolButton(
                 tool = AnnotationTool.LABEL,
@@ -106,6 +116,7 @@ fun AnnotationToolbar(
                 label = "Label",
                 isActive = currentTool == AnnotationTool.LABEL,
                 onSelect = onToolSelect,
+                enabled = isCalibrated,
             )
             ToolButton(
                 tool = AnnotationTool.GRID_REF,
@@ -113,6 +124,10 @@ fun AnnotationToolbar(
                 label = "Ref",
                 isActive = currentTool == AnnotationTool.GRID_REF,
                 onSelect = onToolSelect,
+                enabled = isCalibrated,
+            )
+            CalibrateButton(
+                onClick = onCalibrate,
             )
         }
 
@@ -142,7 +157,7 @@ fun AnnotationToolbar(
                 Spacer(Modifier.width(8.dp))
                 UnitDropdown(
                     currentUnit = displayUnit,
-                    onUnitSelect = { /* forwarded via callback in a real app */ },
+                    onUnitSelect = onUnitSelect,
                 )
             }
 
@@ -167,19 +182,45 @@ private fun ToolButton(
     label: String,
     isActive: Boolean,
     onSelect: (AnnotationTool) -> Unit,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    val bg = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.85f) else Color.Transparent
+    val bg = if (isActive && enabled) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    val tint = when {
+        isActive && enabled -> MaterialTheme.colorScheme.onPrimaryContainer
+        !enabled -> Color(0xFF555555)
+        else -> Color(0xFFBBBBBB)
+    }
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(bg),
     ) {
-        IconButton(onClick = { onSelect(tool) }) {
+        IconButton(onClick = { onSelect(tool) }, enabled = enabled) {
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = if (isActive) Color.White else Color(0xFFBBBBBB),
+                tint = tint,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CalibrateButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.Transparent),
+    ) {
+        IconButton(onClick = onClick, enabled = true) {
+            Icon(
+                imageVector = Icons.Default.Straighten,
+                contentDescription = "Calibrate",
+                tint = Color(0xFFBBBBBB),
             )
         }
     }
