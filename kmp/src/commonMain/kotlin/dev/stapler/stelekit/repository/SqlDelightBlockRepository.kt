@@ -854,16 +854,38 @@ class SqlDelightBlockRepository(
 
     override fun getLinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> = flow {
         try {
-            val wikiCandidates = queries.selectBlocksWithContentLike("%[[${pageName}%")
-                .executeAsList().map { it.toBlockModel() }
-            val hashCandidates = queries.selectBlocksWithContentLike("%#${pageName}%")
-                .executeAsList().map { it.toBlockModel() }
+            // Iterative overfetch: load SQL pages until we have enough filtered results.
+            // Avoids scanning and loading the entire block table into memory for UI pagination.
+            // Batch size starts at 4x the needed window; grows by 2x each round if yield is poor.
+            val need = offset + limit
             val patterns = compileLinkPatterns(pageName)
-            val allLinked = (wikiCandidates + hashCandidates)
-                .distinctBy { it.uuid }
-                .filter { isLinkedReference(it.content, patterns) }
+            val seen = mutableSetOf<String>()
+            val accumulated = mutableListOf<Block>()
+            var sqlOffset = 0
+            var batchSize = maxOf(need * 4, 100)
 
-            emit(allLinked.drop(offset).take(limit).right())
+            while (accumulated.size < need) {
+                val wikiPage = queries.selectBlocksWithContentLikePaginated(
+                    "%[[${pageName}%", batchSize.toLong(), sqlOffset.toLong()
+                ).executeAsList().map { it.toBlockModel() }
+                val hashPage = queries.selectBlocksWithContentLikePaginated(
+                    "%#${pageName}%", batchSize.toLong(), sqlOffset.toLong()
+                ).executeAsList().map { it.toBlockModel() }
+
+                val batch = (wikiPage + hashPage)
+                    .filter { seen.add(it.uuid) }
+                    .filter { isLinkedReference(it.content, patterns) }
+                accumulated.addAll(batch)
+
+                val exhausted = wikiPage.size < batchSize && hashPage.size < batchSize
+                if (exhausted) break
+
+                sqlOffset += batchSize
+                // If yield was low (<25%), double the batch to reduce round-trips next iteration.
+                if (batch.size < batchSize / 4) batchSize *= 2
+            }
+
+            emit(accumulated.drop(offset).take(limit).right())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -952,12 +974,10 @@ class SqlDelightBlockRepository(
         patterns.wikiLink.containsMatchIn(content) || patterns.simpleHashtag.containsMatchIn(content)
 
     override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> =
-        queries.selectBlocksWithContentLike("%$query%")
+        queries.selectBlocksWithContentLikePaginated("%$query%", limit.toLong(), offset.toLong())
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
-            .map { list ->
-                list.drop(offset).take(limit).map { it.toBlockModel() }.right()
-            }
+            .map { list -> list.map { it.toBlockModel() }.right() }
 
     override fun findDuplicateBlocks(limit: Int): Flow<Either<DomainError, List<DuplicateGroup>>> = flow {
         try {
