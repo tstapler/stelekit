@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.32.0](https://github.com/tstapler/stelekit/compare/v0.31.1...v0.32.0) (2026-05-30)
+
+
+### Features
+
+* **android:** add voice-capture home screen widget ([8953afc](https://github.com/tstapler/stelekit/commit/8953afcc44751003dfba9d7b19599fb6b971ae2f))
+
+
+### Bug Fixes
+
+* **android:** fix share target not capturing URL or page title ([a630631](https://github.com/tstapler/stelekit/commit/a630631f23550ea0f6d5fab237cec70ef6373107))
+* **voice:** address all code review findings in voice pipeline ([cb32495](https://github.com/tstapler/stelekit/commit/cb324953df290f0109200d6ceb24ca0ce0e0250d))
+
 ## [0.31.1](https://github.com/tstapler/stelekit/compare/v0.31.0...v0.31.1) (2026-05-30)
 
 
