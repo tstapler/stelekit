@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.ui.components
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -13,6 +15,12 @@ import kotlin.test.assertTrue
  * Annotation item format: "canonicalName|origStart|origEnd"
  */
 class ParseMarkdownWithStylingTest {
+
+    private fun styled(text: String) = parseMarkdownWithStyling(
+        text = text,
+        linkColor = Color.Blue,
+        textColor = Color.Black,
+    )
 
     private fun matcher(vararg names: String): AhoCorasickMatcher =
         AhoCorasickMatcher(names.associateBy { it.lowercase() })
@@ -227,5 +235,55 @@ class ParseMarkdownWithStylingTest {
         val result = annotatedSuggestions(content, matcher("Meeting", "Meeting Notes"))
         assertEquals(1, result.size)
         assertEquals("Meeting Notes", result[0].item.substringBefore("|"))
+    }
+
+    // ── Bold / italic span tests ──────────────────────────────────────────────
+
+    @Test
+    fun bold_text_hasBoldSpanAndStrippedMarkers() {
+        val annotated = styled("**foo** bar")
+        assertEquals("foo bar", annotated.text)
+        assertTrue(annotated.spanStyles.any { it.item.fontWeight == FontWeight.Bold && it.start <= 0 && it.end >= 3 })
+    }
+
+    @Test
+    fun italic_text_hasItalicSpan() {
+        val annotated = styled("*foo* bar")
+        assertEquals("foo bar", annotated.text)
+        assertTrue(annotated.spanStyles.any { it.item.fontStyle == FontStyle.Italic && it.start <= 0 && it.end >= 3 })
+    }
+
+    @Test
+    fun boldItalic_composed() {
+        val annotated = styled("**_foo_**")
+        assertEquals("foo", annotated.text)
+        assertTrue(annotated.spanStyles.any { it.item.fontWeight == FontWeight.Bold && it.start <= 0 && it.end >= 3 })
+        assertTrue(annotated.spanStyles.any { it.item.fontStyle == FontStyle.Italic && it.start <= 0 && it.end >= 3 })
+    }
+
+    @Test
+    fun underscoreBold_hasBoldSpan() {
+        val annotated = styled("__foo__ bar")
+        assertEquals("foo bar", annotated.text)
+        assertTrue(annotated.spanStyles.any { it.item.fontWeight == FontWeight.Bold && it.start <= 0 && it.end >= 3 })
+    }
+
+    @Test
+    fun underscoreItalic_hasItalicSpan() {
+        val annotated = styled("_foo_ bar")
+        assertEquals("foo bar", annotated.text)
+        assertTrue(annotated.spanStyles.any { it.item.fontStyle == FontStyle.Italic && it.start <= 0 && it.end >= 3 })
+    }
+
+    @Test
+    fun bold_doesNotConsumeMarkers() {
+        val annotated = styled("**foo**")
+        assertEquals("foo", annotated.text)
+    }
+
+    @Test
+    fun plainText_noBoldItalicSpans() {
+        val annotated = styled("hello world")
+        assertTrue(annotated.spanStyles.none { it.item.fontWeight == FontWeight.Bold || it.item.fontStyle == FontStyle.Italic })
     }
 }
