@@ -18,6 +18,8 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOne
 import app.cash.sqldelight.coroutines.mapToOneOrNull
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -825,12 +827,19 @@ class SqlDelightBlockRepository(
 
     override fun getLinkedReferences(pageName: String): Flow<Either<DomainError, List<Block>>> = flow {
         try {
-            // Two LIKE passes: one for [[name]] wikilinks, one for #name simple hashtags.
-            // Results are merged and deduplicated by UUID before in-memory refinement.
-            val wikiCandidates = queries.selectBlocksWithContentLike("%[[${pageName}%")
-                .executeAsList().map { it.toBlockModel() }
-            val hashCandidates = queries.selectBlocksWithContentLike("%#${pageName}%")
-                .executeAsList().map { it.toBlockModel() }
+            // Two LIKE passes run concurrently — each acquires its own pool connection.
+            // On JVM, PooledJdbcSqliteDriver provides 8 connections so parallel reads are safe.
+            val (wikiCandidates, hashCandidates) = coroutineScope {
+                val wiki = async {
+                    queries.selectBlocksWithContentLike("%[[${pageName}%")
+                        .executeAsList().map { it.toBlockModel() }
+                }
+                val hash = async {
+                    queries.selectBlocksWithContentLike("%#${pageName}%")
+                        .executeAsList().map { it.toBlockModel() }
+                }
+                wiki.await() to hash.await()
+            }
             val candidates = (wikiCandidates + hashCandidates).distinctBy { it.uuid }
 
             val patterns = compileLinkPatterns(pageName)
