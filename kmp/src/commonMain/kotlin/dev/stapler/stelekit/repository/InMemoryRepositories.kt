@@ -150,6 +150,21 @@ class InMemoryBlockRepository : BlockRepository {
         return Unit.right()
     }
 
+    override suspend fun updateBlockContentsForRename(
+        updates: List<Pair<String, String>>,
+        oldPageName: String,
+        newPageName: String,
+    ): Either<DomainError, Unit> {
+        val current = blocks.value.toMutableMap()
+        val now = kotlin.time.Clock.System.now()
+        for ((uuid, content) in updates) {
+            val existing = current[uuid] ?: continue
+            current[uuid] = existing.copy(content = content, version = existing.version + 1, updatedAt = now)
+        }
+        blocks.value = current
+        return Unit.right()
+    }
+
     override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> {
         val current = blocks.value.toMutableMap()
         val existing = current[blockUuid] ?: return Unit.right()

@@ -219,6 +219,29 @@ class DatalogBlockRepository : BlockRepository {
         }
     }
 
+    override suspend fun updateBlockContentsForRename(
+        updates: List<Pair<String, String>>,
+        oldPageName: String,
+        newPageName: String,
+    ): Either<DomainError, Unit> {
+        return writeMutex.withLock {
+            try {
+                val now = kotlin.time.Clock.System.now()
+                val current = blocks.value.toMutableMap()
+                val batch = updates.mapNotNull { (uuid, content) ->
+                    val existing = current[uuid] ?: return@mapNotNull null
+                    uuid to existing.copy(content = content, version = existing.version + 1, updatedAt = now)
+                }.toMap()
+                batchUpdateBlocks(batch)
+                Unit.right()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            }
+        }
+    }
+
     override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {

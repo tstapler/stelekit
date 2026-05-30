@@ -308,6 +308,29 @@ class SqlDelightBlockRepository(
             }
         }
 
+    override suspend fun updateBlockContentsForRename(
+        updates: List<Pair<String, String>>,
+        oldPageName: String,
+        newPageName: String,
+    ): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+        try {
+            val now = Clock.System.now().toEpochMilliseconds()
+            queries.transaction {
+                for ((uuid, content) in updates) {
+                    queries.updateBlockContent(content, now, ContentHasher.sha256ForContent(content), uuid)
+                    blockCache.remove(uuid)
+                }
+                queries.recomputeBacklinkCountForPage(oldPageName)
+                queries.recomputeBacklinkCountForPage(newPageName)
+            }
+            Unit.right()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+        }
+    }
+
     override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {
             try {

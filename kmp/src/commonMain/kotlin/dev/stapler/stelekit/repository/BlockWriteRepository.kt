@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.repository
 
 import arrow.core.Either
+import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
 
@@ -31,6 +32,31 @@ interface BlockWriteRepository {
      */
     @DirectRepositoryWrite
     suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit>
+
+    /**
+     * Batch-update block content for a page rename. More efficient than N calls to
+     * [updateBlockContentOnly]: single transaction, no per-block content re-read,
+     * and backlink counts are recomputed only for the two pages whose counts changed.
+     *
+     * Implementations should override this for performance. The default delegates to
+     * [updateBlockContentOnly] in a loop, which is correct but not optimized.
+     *
+     * @param updates list of (blockUuid, newContent) — the caller must supply the new content
+     * @param oldPageName page being renamed (its backlink count decreases)
+     * @param newPageName new page name (its backlink count increases)
+     */
+    @DirectRepositoryWrite
+    suspend fun updateBlockContentsForRename(
+        updates: List<Pair<String, String>>,
+        oldPageName: String,
+        newPageName: String,
+    ): Either<DomainError, Unit> {
+        for ((uuid, content) in updates) {
+            val result = updateBlockContentOnly(uuid, content)
+            if (result.isLeft()) return result
+        }
+        return Unit.right()
+    }
 
     /**
      * Update only the properties of a block. Does NOT touch content or structural fields.
