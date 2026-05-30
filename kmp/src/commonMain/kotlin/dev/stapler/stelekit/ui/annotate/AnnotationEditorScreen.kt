@@ -404,6 +404,7 @@ fun AnnotationEditorScreen(
                 )
             }
 
+
             // Layer 5: Annotation toolbar (bottom)
             AnnotationToolbar(
                 currentTool = state.currentTool,
