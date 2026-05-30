@@ -315,13 +315,25 @@ class SqlDelightBlockRepository(
     ): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             val now = Clock.System.now().toEpochMilliseconds()
+            // Count wikilink refs gained by newPageName (in-memory, O(K)).
+            // oldPageName loses all its refs (we just rewrote every one), so its new count is 0.
+            // newPageName gains the wikilink refs that were just rewritten.
+            val wikilinkPrefix1 = "[[$newPageName]]"
+            val wikilinkPrefix2 = "[[$newPageName|"
+            val newPageGainedRefs = updates.count { (_, c) ->
+                c.contains(wikilinkPrefix1) || c.contains(wikilinkPrefix2)
+            }
             queries.transaction {
+                // Read newPageName's existing count before writes (O(1) via idx_pages_name).
+                val newPageExistingCount = queries.selectPageBacklinkCount(newPageName)
+                    .executeAsOneOrNull() ?: 0L
                 for ((uuid, content) in updates) {
                     queries.updateBlockContent(content, now, ContentHasher.sha256ForContent(content), uuid)
                     blockCache.remove(uuid)
                 }
-                queries.recomputeBacklinkCountForPage(oldPageName)
-                queries.recomputeBacklinkCountForPage(newPageName)
+                // Arithmetic update — no full-table LIKE scans.
+                queries.setPageBacklinkCount(0L, oldPageName)
+                queries.setPageBacklinkCount(newPageExistingCount + newPageGainedRefs, newPageName)
             }
             Unit.right()
         } catch (e: CancellationException) {
