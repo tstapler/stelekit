@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.31.0](https://github.com/tstapler/stelekit/compare/v0.30.2...v0.31.0) (2026-05-30)
+
+
+### Features
+
+* **ui:** render markdown bold/italic in page title, search results, and snippets ([#108](https://github.com/tstapler/stelekit/issues/108)) ([aa7e5a5](https://github.com/tstapler/stelekit/commit/aa7e5a525cffaf6f73e86a99a78c838baeb76a5d))
+
+
+### Bug Fixes
+
+* **watch:** shadow stale-read drops external sync changes; no new-day journal ([#107](https://github.com/tstapler/stelekit/issues/107)) ([4fade3d](https://github.com/tstapler/stelekit/commit/4fade3d620390961402af6772931ca7287b3d3eb))
+
 ## [0.30.2](https://github.com/tstapler/stelekit/compare/v0.30.1...v0.30.2) (2026-05-29)
 
 
