@@ -254,6 +254,34 @@ object MigrationRunner {
                 "DROP INDEX IF EXISTS idx_blocks_parent_uuid"
             )
         ),
+        Migration(
+            name = "query_stats_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS query_stats (
+                    app_version TEXT NOT NULL,
+                    table_name  TEXT NOT NULL,
+                    operation   TEXT NOT NULL,
+                    calls       INTEGER NOT NULL DEFAULT 0,
+                    errors      INTEGER NOT NULL DEFAULT 0,
+                    total_ms    INTEGER NOT NULL DEFAULT 0,
+                    min_ms      INTEGER NOT NULL DEFAULT 9999999,
+                    max_ms      INTEGER NOT NULL DEFAULT 0,
+                    b1          INTEGER NOT NULL DEFAULT 0,
+                    b5          INTEGER NOT NULL DEFAULT 0,
+                    b16         INTEGER NOT NULL DEFAULT 0,
+                    b50         INTEGER NOT NULL DEFAULT 0,
+                    b100        INTEGER NOT NULL DEFAULT 0,
+                    b500        INTEGER NOT NULL DEFAULT 0,
+                    b_inf       INTEGER NOT NULL DEFAULT 0,
+                    first_seen  INTEGER NOT NULL,
+                    last_seen   INTEGER NOT NULL,
+                    PRIMARY KEY (app_version, table_name, operation)
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_query_stats_version_ms ON query_stats(app_version, total_ms DESC)"
+            )
+        ),
     )
 
     /**
