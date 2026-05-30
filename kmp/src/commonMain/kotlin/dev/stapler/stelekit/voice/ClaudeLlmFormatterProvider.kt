@@ -15,7 +15,6 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import io.ktor.utils.io.errors.IOException
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -26,11 +25,12 @@ class ClaudeLlmFormatterProvider(
     private val circuitBreaker: CircuitBreaker = defaultCircuitBreaker(),
 ) : LlmFormatterProvider {
 
+    fun close() = httpClient.close()
+
     companion object {
         private const val MESSAGES_URL = "https://api.anthropic.com/v1/messages"
         private const val ANTHROPIC_VERSION = "2023-06-01"
         private const val CLAUDE_MODEL = "claude-haiku-4-5-20251001"
-        private val lenientJson = Json { ignoreUnknownKeys = true }
 
         /**
          * Default circuit breaker: opens after 3 consecutive failures, resets after 30 seconds,
@@ -45,7 +45,7 @@ class ClaudeLlmFormatterProvider(
 
         fun withDefaults(apiKey: String): ClaudeLlmFormatterProvider {
             val client = HttpClient {
-                install(ContentNegotiation) { json(lenientJson) }
+                install(ContentNegotiation) { json(LlmProviderSupport.voiceLenientJson) }
             }
             return ClaudeLlmFormatterProvider(client, apiKey)
         }
@@ -54,15 +54,12 @@ class ClaudeLlmFormatterProvider(
     override suspend fun format(transcript: String, systemPrompt: String): LlmResult {
         val maxTokens = LlmProviderSupport.estimateMaxTokens(transcript)
 
-        // Protect the HTTP call with the circuit breaker.
-        // If the breaker is open, protectEither returns Left(ExecutionRejected)
-        // which we map to NetworkError to match the existing LlmResult contract.
         val protectedResult = circuitBreaker.protectEither {
             httpCallInternal(systemPrompt, maxTokens)
         }
 
         return protectedResult.fold(
-            ifLeft = { LlmResult.Failure.NetworkError },  // circuit open → treat as network error
+            ifLeft = { LlmResult.Failure.NetworkError },
             ifRight = { it }
         )
     }
@@ -82,7 +79,8 @@ class ClaudeLlmFormatterProvider(
                     ClaudeRequest(
                         model = CLAUDE_MODEL,
                         maxTokens = maxTokens,
-                        messages = listOf(ClaudeMessage(role = "user", content = systemPrompt)),
+                        system = systemPrompt,
+                        messages = listOf(ClaudeMessage(role = "user", content = "Output the formatted Logseq note.")),
                     )
                 )
             }
@@ -90,7 +88,8 @@ class ClaudeLlmFormatterProvider(
             when (response.status.value) {
                 200 -> {
                     val body = response.body<ClaudeResponse>()
-                    val text = body.content.firstOrNull()?.text?.trim() ?: return LlmResult.Failure.NetworkError
+                    val text = body.content.firstOrNull { it.type == "text" }?.text?.trim()
+                        ?: return LlmResult.Failure.NetworkError
                     LlmResult.Success(
                         formattedText = text,
                         isLikelyTruncated = LlmProviderSupport.detectTruncation(text),
@@ -102,10 +101,8 @@ class ClaudeLlmFormatterProvider(
             throw e
         } catch (e: IOException) {
             LlmResult.Failure.NetworkError
-        } catch (e: CancellationException) {
-            throw e
         } catch (e: Exception) {
-            LlmResult.Failure.ApiError(-1, "Unexpected error: ${e.message}")
+            LlmResult.Failure.ApiError(-1, "Unexpected error")
         }
     }
 }
@@ -114,6 +111,7 @@ class ClaudeLlmFormatterProvider(
 private data class ClaudeRequest(
     val model: String,
     @SerialName("max_tokens") val maxTokens: Int,
+    val system: String,
     val messages: List<ClaudeMessage>,
 )
 

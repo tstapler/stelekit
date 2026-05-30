@@ -12,20 +12,20 @@ import io.ktor.client.request.headers
 import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.serialization.kotlinx.json.json
-import kotlinx.serialization.json.Json
 
 class WhisperSpeechToTextProvider(
     private val httpClient: HttpClient,
     private val apiKey: String,
 ) : SpeechToTextProvider {
 
+    fun close() = httpClient.close()
+
     companion object {
         private const val TRANSCRIPTIONS_URL = "https://api.openai.com/v1/audio/transcriptions"
-        private val lenientJson = Json { ignoreUnknownKeys = true }
 
         fun withDefaults(apiKey: String): WhisperSpeechToTextProvider {
             val client = HttpClient {
-                install(ContentNegotiation) { json(lenientJson) }
+                install(ContentNegotiation) { json(LlmProviderSupport.voiceLenientJson) }
             }
             return WhisperSpeechToTextProvider(client, apiKey)
         }

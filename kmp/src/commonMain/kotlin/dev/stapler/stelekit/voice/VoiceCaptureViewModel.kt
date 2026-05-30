@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
+import kotlinx.coroutines.CancellationException
+import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
@@ -25,9 +27,8 @@ class VoiceCaptureViewModel(
     private val currentOpenPageUuid: () -> String? = { null },
     // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
     // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
-    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
-    private val scope = scope
     private val logger = Logger("VoiceCaptureViewModel")
     private val _state = MutableStateFlow<VoiceCaptureState>(VoiceCaptureState.Idle)
     val state: StateFlow<VoiceCaptureState> = _state.asStateFlow()
@@ -134,43 +135,49 @@ class VoiceCaptureViewModel(
         }
 
         val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
-        val timeLabel = "${now.hour.toString().padStart(2, '0')}:${now.minute.toString().padStart(2, '0')}:${now.second.toString().padStart(2, '0')}"
-        val dateLabel = "${now.year}-${now.monthNumber.toString().padStart(2, '0')}-${now.dayOfMonth.toString().padStart(2, '0')}"
+        val timeLabel = now.toTimeLabel()
+        val dateLabel = now.toDateLabel()
         val pageTitle = "Voice Note $dateLabel $timeLabel"
 
         val targetPageUuid = currentOpenPageUuid()
-
-        val wordCount = rawTranscript.split(Regex("\\s+")).count { it.isNotBlank() }
+        val wordCount = LlmProviderSupport.wordCount(rawTranscript)
         val useTranscriptPage = wordCount >= pipeline.transcriptPageWordThreshold
 
-        val inlineBlock = if (useTranscriptPage) {
+        val transcriptPageContent = if (useTranscriptPage) {
             val sourcePage: String = if (targetPageUuid != null) {
                 journalService.getPageNameByUuid(targetPageUuid) ?: dateLabel.replace('-', '_')
             } else {
                 dateLabel.replace('-', '_')
             }
-
-            val transcriptPageContent = buildTranscriptPageContent(
+            buildTranscriptPageContent(
                 sourcePage = sourcePage,
                 formattedText = if (llmProducedOutput) formattedText else null,
                 rawTranscript = rawTranscript,
                 includeRawTranscript = pipeline.includeRawTranscript,
             )
-            journalService.createTranscriptPage(pageTitle, transcriptPageContent)
+        } else null
 
-            buildVoiceNoteBlock(
-                pageTitle = pageTitle,
-                timeLabel = timeLabel,
-                formattedText = formattedText,
-            )
+        val inlineBlock = if (useTranscriptPage) {
+            buildVoiceNoteBlock(pageTitle = pageTitle, timeLabel = timeLabel, formattedText = formattedText)
         } else {
             buildVoiceNoteBlockInline(timeLabel = timeLabel, formattedText = formattedText)
         }
 
-        if (targetPageUuid != null) {
-            journalService.appendToPage(targetPageUuid, inlineBlock)
-        } else {
-            journalService.appendToToday(inlineBlock)
+        try {
+            if (transcriptPageContent != null) {
+                journalService.createTranscriptPage(pageTitle, transcriptPageContent)
+            }
+            if (targetPageUuid != null) {
+                journalService.appendToPage(targetPageUuid, inlineBlock)
+            } else {
+                journalService.appendToToday(inlineBlock)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error("Journal write failed: ${e.message}")
+            _state.value = VoiceCaptureState.Error(PipelineStage.JOURNAL, "Failed to save note")
+            return
         }
 
         _state.value = VoiceCaptureState.Done(
@@ -180,6 +187,7 @@ class VoiceCaptureViewModel(
     }
 
     fun close() {
+        pipeline.close()
         scope.cancel()
     }
 }
@@ -223,3 +231,9 @@ internal fun buildTranscriptPageContent(
         }
     }
 }
+
+internal fun LocalDateTime.toTimeLabel(): String =
+    "${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:${second.toString().padStart(2, '0')}"
+
+internal fun LocalDateTime.toDateLabel(): String =
+    "${year}-${monthNumber.toString().padStart(2, '0')}-${dayOfMonth.toString().padStart(2, '0')}"
