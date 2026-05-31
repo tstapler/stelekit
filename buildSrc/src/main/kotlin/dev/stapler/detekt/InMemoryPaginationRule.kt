@@ -32,13 +32,11 @@ import org.jetbrains.kotlin.psi.KtNameReferenceExpression
  * ```kotlin
  * // Pagination at the SQL layer
  * queries.selectBlocksPaginated(pattern, limit.toLong(), offset.toLong()).executeAsList()
- *
- * // Lazy sequences — no memory issue (the chain is not materialised)
- * sequence.drop(n).take(m).toList()
  * ```
  *
  * Suppress with `@Suppress("InMemoryPagination")` when the pattern is intentional
- * (e.g. slicing a small already-materialised list in a test helper).
+ * (e.g. lazy sequences whose chain is never materialised, slicing a small already-bounded list,
+ * or a test helper).
  */
 class InMemoryPaginationRule(config: Config = Config.empty) : Rule(config) {
 
