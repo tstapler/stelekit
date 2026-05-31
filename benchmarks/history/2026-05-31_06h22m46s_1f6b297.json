@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-31 06:22:46 UTC",
+  "gitSha": "1f6b297",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 8,
+  "phase2Ms": 3,
+  "phase3Ms": 15,
+  "totalMs": 25,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 36,
+  "jankLoadP50Ms": 1,
+  "jankLoadP95Ms": 1,
+  "jankFactor": 0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 136,
+      "pct": 68.7
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 6,
+      "pct": 3.0
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 6,
+      "pct": 3.0
+    },
+    {
+      "frame": "java.net.URL_[k]",
+      "samples": 4,
+      "pct": 2.0
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.String[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "jdk.internal.util.StrongReferenceKey_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "sun.util.locale.LocaleObjectCache$CacheEntry_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2912,
+      "pct": 99.5
+    },
+    {
+      "frame": "pread",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "CodeHeap::find_blob",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/invoke/LambdaProxyClassArchive.find_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlin/ResultKt.throwOnFailure_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/StringBuilder.length_[j]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/Thread.getName_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "inflate_fast",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}
