@@ -34,6 +34,7 @@ import kotlin.time.Clock
 class PaginationEnforcementTest {
 
     private lateinit var capturingDriver: StatementCapturingDriver
+    private lateinit var database: SteleDatabase
     private lateinit var blockRepo: SqlDelightBlockRepository
     private lateinit var pageRepo: SqlDelightPageRepository
 
@@ -43,10 +44,13 @@ class PaginationEnforcementTest {
     fun setup() {
         val base = DriverFactory().createDriver("jdbc:sqlite::memory:")
         capturingDriver = StatementCapturingDriver(base)
-        val database = SteleDatabase(capturingDriver)
+        database = SteleDatabase(capturingDriver)
         blockRepo = SqlDelightBlockRepository(database)
         pageRepo = SqlDelightPageRepository(database)
     }
+
+    private fun backlinkCountFor(pageName: String): Long =
+        database.steleDatabaseQueries.selectPageBacklinkCount(pageName).executeAsOneOrNull() ?: 0L
 
     // ── searchBlocksByContent ────────────────────────────────────────────────
 
@@ -111,6 +115,40 @@ class PaginationEnforcementTest {
         linkScans.forEach { sql ->
             assertSqlHasLimit(sql)
         }
+    }
+
+    // ── updateBlockContentsForRename backlink arithmetic ─────────────────────
+
+    @Test
+    fun `updateBlockContentsForRename sets oldName count to 0 and adds to newName count`() = runTest {
+        insertPage("old-name")
+        insertPage("new-name")
+        val linkingPage = insertPage("linking-page")
+
+        // 3 blocks referencing [[old-name]] — these will be renamed
+        val blocks = (0 until 3).map { i ->
+            insertBlock(linkingPage.uuid, "See [[old-name]] for details $i")
+        }
+
+        // 1 block already referencing [[new-name]] — represents a pre-existing backlink
+        insertBlock(linkingPage.uuid, "[[new-name]] already had a reference")
+        // Seed the initial backlink counts as the rename arithmetic reads the existing count
+        database.steleDatabaseQueries.recomputeBacklinkCountForPage("old-name")
+        database.steleDatabaseQueries.recomputeBacklinkCountForPage("new-name")
+        val existingNewNameCount = backlinkCountFor("new-name") // should be 1
+
+        val updates = blocks.map { b ->
+            b.uuid to b.content.replace("[[old-name]]", "[[new-name]]")
+        }
+        blockRepo.updateBlockContentsForRename(updates, "old-name", "new-name")
+
+        // old-name lost all its wikilink references → count must be 0
+        assertEquals(0L, backlinkCountFor("old-name"),
+            "oldName backlink count must be 0 after all refs renamed away")
+
+        // new-name gained 3 wikilink refs on top of its pre-existing 1
+        assertEquals(existingNewNameCount + 3, backlinkCountFor("new-name"),
+            "newName backlink count must be existing ($existingNewNameCount) + 3 gained wikilink refs")
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

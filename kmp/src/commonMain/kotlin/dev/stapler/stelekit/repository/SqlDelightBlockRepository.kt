@@ -977,6 +977,9 @@ class SqlDelightBlockRepository(
     private fun isLinkedReference(content: String, patterns: LinkPatterns): Boolean =
         patterns.wikiLink.containsMatchIn(content) || patterns.simpleHashtag.containsMatchIn(content)
 
+    // Results are ordered by created_at DESC (most recent first) — a change from the
+    // previous unbounded scan which had no guaranteed order. Recency-first matches typical
+    // search UX expectations (recent blocks surface before older ones).
     override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> =
         queries.selectBlocksWithContentLikePaginated("%$query%", limit.toLong(), offset.toLong())
             .asFlow()
