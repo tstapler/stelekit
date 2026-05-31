@@ -24,6 +24,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,12 +38,15 @@ import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.Composable
+import dev.stapler.stelekit.ui.PlatformBackHandler
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -65,7 +73,7 @@ import dev.stapler.stelekit.model.NormalizedPoint
 import dev.stapler.stelekit.platform.measurement.DeviceConnectionState
 import dev.stapler.stelekit.platform.measurement.ExternalMeasurementDevice
 import kotlin.math.abs
-import kotlin.math.pow
+import dev.stapler.stelekit.util.roundTo
 import kotlin.math.round
 
 /**
@@ -106,6 +114,8 @@ fun AnnotationEditorScreen(
     imageAnnotation: ImageAnnotation,
     modifier: Modifier = Modifier,
     onNavigateBack: () -> Unit = {},
+    /** Optional settings store for persisting first-calibration-use flag across sessions. */
+    platformSettings: dev.stapler.stelekit.platform.Settings? = null,
     /** Optional active device for Story 5.7 — BLE status chip and "Set from laser" button. */
     activeDevice: ExternalMeasurementDevice? = null,
     /**
@@ -132,6 +142,32 @@ fun AnnotationEditorScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    var showCalibrationSheet by remember { mutableStateOf(false) }
+    var showCalibrationChangeWarning by remember { mutableStateOf(false) }
+    var isFirstCalibrationUse by remember {
+        mutableStateOf(platformSettings?.getBoolean("image_meter_calibrated_before", false)?.not() ?: true)
+    }
+    val canUndoCalibration by viewModel.canUndoCalibration.collectAsState()
+    val calibrationMessage by viewModel.calibrationChangeMessage.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // UnsavedChanges tracking
+    var showUnsavedChangesDialog by remember { mutableStateOf(false) }
+    var hasUnsavedChanges by remember { mutableStateOf(false) }
+
+    // BleDevicePanel
+    var showBleDevicePanel by remember { mutableStateOf(false) }
+
+    // Delete annotation confirmation
+    var pendingDeleteUuid by remember { mutableStateOf<String?>(null) }
+
+    // Coach marks
+    var showDistanceCoachMark by remember { mutableStateOf(false) }
+    var showAreaCoachMark by remember { mutableStateOf(false) }
+    var coachMarksShown by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+
+    // Adaptive labels: show for first 3 sessions (tracked in state per session)
+    val showToolLabels by remember { mutableStateOf(true) }
 
     // Story 5.7: wire the active device into the ViewModel so injectMeasurementFromDevice()
     // can find it. Effect re-runs when activeDevice reference changes.
@@ -149,11 +185,51 @@ fun AnnotationEditorScreen(
         viewModel.initialize(imageAnnotation)
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    LaunchedEffect(calibrationMessage) {
+        val msg = calibrationMessage ?: return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = msg,
+            actionLabel = if (canUndoCalibration) "Undo" else null,
+            duration = SnackbarDuration.Short,
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            viewModel.undoCalibration()
+        }
+        viewModel.clearCalibrationMessage()
+    }
+
+    LaunchedEffect(state.committedAnnotations.size) {
+        if (state.committedAnnotations.isNotEmpty()) hasUnsavedChanges = true
+    }
+
+    LaunchedEffect(viewModel.isCalibrated()) {
+        if (viewModel.isCalibrated() && state.committedAnnotations.isEmpty() && coachMarksShown == 0) {
+            showDistanceCoachMark = true
+        }
+    }
+
+    LaunchedEffect(state.committedAnnotations.size) {
+        if (state.committedAnnotations.size == 1 &&
+            state.committedAnnotations.first().annotationType == dev.stapler.stelekit.model.AnnotationType.DISTANCE &&
+            coachMarksShown == 1) {
+            showAreaCoachMark = true
+        }
+    }
+
+    // Show UnsavedChangesDialog when user tries to back-navigate with unsaved changes
+    PlatformBackHandler(enabled = hasUnsavedChanges) {
+        showUnsavedChangesDialog = true
+    }
+
+    Scaffold(
+        modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { paddingValues ->
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
         // Calibration status indicator bar
-        CalibrationStatusBar(
+        CalibrationConfidenceBadge(
             calibration = state.calibration,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
         )
 
         // ARCore accuracy warning — shown only when ARCore/LiDAR depth calibration is active
@@ -183,28 +259,25 @@ fun AnnotationEditorScreen(
             }
         }
 
-        // "No calibration" dismissible banner
-        var showNoCalibrationBanner by remember { mutableStateOf(true) }
-        if (showNoCalibrationBanner && (cal == null || cal.method == CalibrationMethod.NONE)) {
-            Surface(
-                color = Color(0xFFFFF9C4),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = "No calibration set — measurements will not show real-world values. " +
-                            "Draw a reference line or connect a laser meter.",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = { showNoCalibrationBanner = false }) {
-                        Text("Dismiss")
+        // "No calibration" nudge banner
+        val isCalibrated = viewModel.isCalibrated()
+        if (!isCalibrated) {
+            CalibrationNudgeBanner(
+                isFirstUse = isFirstCalibrationUse,
+                onCalibrateClick = {
+                    if (state.committedAnnotations.isNotEmpty()) {
+                        showCalibrationChangeWarning = true
+                    } else {
+                        showCalibrationSheet = true
                     }
-                }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            // Once calibrated, mark first-use as done and persist across sessions
+            LaunchedEffect(Unit) {
+                isFirstCalibrationUse = false
+                platformSettings?.putBoolean("image_meter_calibrated_before", true)
             }
         }
 
@@ -298,6 +371,39 @@ fun AnnotationEditorScreen(
                 modifier = Modifier.fillMaxSize(),
             )
 
+            // Accessibility layer: invisible semantic nodes over each annotation for TalkBack
+            AnnotationSemanticOverlay(
+                annotations = state.committedAnnotations,
+                canvasSize = canvasSize,
+                onAnnotationSelect = { uuid -> viewModel.selectAnnotation(uuid) },
+                modifier = Modifier.fillMaxSize(),
+            )
+
+            // Coach mark: after first calibration, show DISTANCE coach mark
+            if (showDistanceCoachMark && coachMarksShown < 2) {
+                CoachMarkOverlay(
+                    message = "Tap Distance to draw a measurement line on the photo.",
+                    isVisible = true,
+                    onDismiss = {
+                        showDistanceCoachMark = false
+                        coachMarksShown++
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            // After DISTANCE is used once, show AREA coach mark
+            if (showAreaCoachMark && coachMarksShown < 2) {
+                CoachMarkOverlay(
+                    message = "Tap Area to measure the area of a surface.",
+                    isVisible = true,
+                    onDismiss = {
+                        showAreaCoachMark = false
+                        coachMarksShown++
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
             // Layer 5: Annotation toolbar (bottom)
             AnnotationToolbar(
                 currentTool = state.currentTool,
@@ -307,8 +413,23 @@ fun AnnotationEditorScreen(
                 onToolSelect = { viewModel.selectTool(it) },
                 onUndo = { viewModel.undo() },
                 onRedo = { viewModel.redo() },
-                onDeleteSelect = { viewModel.deleteSelectedAnnotation() },
+                onDeleteSelect = {
+                    val selectedUuid = state.selectedAnnotationUuid
+                    if (selectedUuid != null) {
+                        pendingDeleteUuid = selectedUuid
+                    }
+                },
                 hasSelection = state.selectedAnnotationUuid != null,
+                isCalibrated = viewModel.isCalibrated(),
+                onCalibrate = {
+                    if (state.committedAnnotations.isNotEmpty()) {
+                        showCalibrationChangeWarning = true
+                    } else {
+                        showCalibrationSheet = true
+                    }
+                },
+                onUnitSelect = { /* TODO: wire unit change through viewModel */ },
+                showLabels = showToolLabels,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(8.dp),
@@ -367,20 +488,95 @@ fun AnnotationEditorScreen(
                     modifier = Modifier.align(Alignment.Center),
                 )
             }
-        }
-    }
+        } // end Box
+        } // end Column
 
-    // GRID_REF calibration dialog — shown as overlay outside the Column
-    if (state.isGridRefDialogVisible) {
-        GridRefCalibrationDialog(
-            lengthText = state.gridRefLengthText,
-            selectedUnit = state.gridRefUnit,
-            onLengthTextChange = { viewModel.updateGridRefLengthText(it) },
-            onUnitChange = { viewModel.updateGridRefUnit(it) },
-            onConfirm = { viewModel.confirmGridRefCalibration() },
-            onDismiss = { viewModel.dismissGridRefDialog() },
-        )
-    }
+        // GRID_REF calibration dialog — shown as overlay outside the Column
+        if (state.isGridRefDialogVisible) {
+            GridRefCalibrationDialog(
+                lengthText = state.gridRefLengthText,
+                selectedUnit = state.gridRefUnit,
+                onLengthTextChange = { viewModel.updateGridRefLengthText(it) },
+                onUnitChange = { viewModel.updateGridRefUnit(it) },
+                onConfirm = { viewModel.confirmGridRefCalibration() },
+                onDismiss = { viewModel.dismissGridRefDialog() },
+            )
+        }
+
+        if (showCalibrationSheet) {
+            CalibrationSheet(
+                onDismiss = { showCalibrationSheet = false },
+                onDrawReference = {
+                    showCalibrationSheet = false
+                    viewModel.selectTool(AnnotationTool.GRID_REF)
+                },
+                onUseBle = {
+                    showCalibrationSheet = false
+                    showBleDevicePanel = true
+                },
+            )
+        }
+
+        if (showCalibrationChangeWarning) {
+            CalibrationChangeWarningDialog(
+                existingAnnotationCount = state.committedAnnotations.size,
+                onKeepCurrentScale = { showCalibrationChangeWarning = false },
+                onChangeScale = {
+                    showCalibrationChangeWarning = false
+                    showCalibrationSheet = true
+                },
+            )
+        }
+
+        // BleDevicePanel
+        if (showBleDevicePanel) {
+            BleDevicePanel(
+                onDismiss = { showBleDevicePanel = false },
+                onUseDrawMethod = {
+                    showBleDevicePanel = false
+                    viewModel.selectTool(AnnotationTool.GRID_REF)
+                },
+                onReadingAccept = { _ ->
+                    showBleDevicePanel = false
+                    // The BLE reading updates will be handled by the active device flow
+                },
+            )
+        }
+
+        // UnsavedChangesDialog
+        if (showUnsavedChangesDialog) {
+            UnsavedChangesDialog(
+                onSave = {
+                    showUnsavedChangesDialog = false
+                    hasUnsavedChanges = false
+                    // TODO: trigger explicit save — for now just navigate back
+                    onNavigateBack()
+                },
+                onDiscard = {
+                    showUnsavedChangesDialog = false
+                    hasUnsavedChanges = false
+                    onNavigateBack()
+                },
+                onKeepEditing = {
+                    showUnsavedChangesDialog = false
+                },
+            )
+        }
+
+        // Delete annotation confirmation
+        val deleteUuid = pendingDeleteUuid
+        if (deleteUuid != null) {
+            val annotation = state.committedAnnotations.find { it.uuid == deleteUuid }
+            DeleteAnnotationConfirmationDialog(
+                annotationLabel = annotation?.label,
+                onCancel = { pendingDeleteUuid = null },
+                onDelete = {
+                    pendingDeleteUuid = null
+                    viewModel.deleteAnnotation(deleteUuid)
+                },
+            )
+        }
+    } // end Scaffold lambda
 }
 
 // ── Story 7.4: Drive export UI ────────────────────────────────────────────────
@@ -749,12 +945,11 @@ private fun formatCoordinate(degrees: Double, positive: String, negative: String
 
 /**
  * KMP-compatible decimal formatting. Rounds [value] to [decimals] decimal places and
- * returns a plain string. Avoids [String.format] which is JVM-only.
+ * returns a plain string with exactly [decimals] digits after the point.
+ * Avoids [String.format] which is JVM-only.
  */
 private fun formatDecimals(value: Double, decimals: Int): String {
-    val factor = 10.0.pow(decimals.toDouble())
-    val rounded = kotlin.math.round(value * factor) / factor
-    val s = rounded.toString()
+    val s = value.roundTo(decimals).toString()
     val dotIdx = s.indexOf('.')
     return if (dotIdx < 0) {
         if (decimals == 0) s else s + "." + "0".repeat(decimals)

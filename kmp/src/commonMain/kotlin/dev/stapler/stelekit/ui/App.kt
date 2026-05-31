@@ -99,6 +99,7 @@ import dev.stapler.stelekit.voice.VoiceSettings
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
 import kotlinx.datetime.DateTimeUnit
@@ -398,6 +399,39 @@ private fun GraphContent(
     val sidecarManager = remember {
         val graphPath = activeGraphPath.ifEmpty { null }
         if (graphPath != null) SidecarManager(fileSystem, graphPath) else null
+    }
+    val imageSidecarManager = remember {
+        if (activeGraphPath.isNotEmpty()) dev.stapler.stelekit.db.sidecar.ImageSidecarManager(fileSystem) else null
+    }
+    val imageImportService = remember(imageSidecarManager) {
+        if (imageSidecarManager != null && activeGraphPath.isNotEmpty()) {
+            dev.stapler.stelekit.db.ImageImportService(
+                fileSystem = fileSystem,
+                imageAnnotationRepository = repos.imageAnnotationRepository,
+                blockRepository = repos.blockRepository,
+                sidecarManager = imageSidecarManager,
+                journalService = repos.journalService,
+                writeActor = repos.writeActor,
+                measurementAnnotationRepository = repos.measurementAnnotationRepository,
+            )
+        } else null
+    }
+    LaunchedEffect(activeGraphPath) {
+        if (activeGraphPath.isNotEmpty() && imageSidecarManager != null) {
+            // Only rebuild if DB has no annotations — avoids full-scan on every open
+            val hasExisting = repos.imageAnnotationRepository.getAllImageAnnotations()
+                .first()
+                .getOrNull()
+                ?.isNotEmpty() == true
+            if (!hasExisting) {
+                dev.stapler.stelekit.db.sidecar.ImageSidecarIndexer(
+                    fileSystem = fileSystem,
+                    imageAnnotationRepository = repos.imageAnnotationRepository,
+                    measurementAnnotationRepository = repos.measurementAnnotationRepository,
+                ).rebuildFromSidecars(activeGraphPath)
+                    .onLeft { err -> graphContentLogger.warn("Sidecar reindex failed: ${err.message}") }
+            }
+        }
     }
     val graphLoader = remember {
         GraphLoader(
@@ -1094,6 +1128,35 @@ private fun GraphContent(
                                         } else false
                                     }
                                 } else null,
+                                onImportImage = if (imageImportService != null &&
+                                    dev.stapler.stelekit.platform.sensor.SensorModule.cameraProvider.isAvailable) {
+                                    {
+                                        scope.launch {
+                                            val page = repos.journalService.ensureTodayJournal()
+                                            when (val captured = dev.stapler.stelekit.platform.sensor.SensorModule.cameraProvider.capturePhoto()) {
+                                                is arrow.core.Either.Left ->
+                                                    graphContentLogger.warn("Camera capture failed: ${captured.value}")
+                                                is arrow.core.Either.Right -> {
+                                                    val result = imageImportService.import(
+                                                        tempFile = captured.value,
+                                                        graphPath = activeGraphPath,
+                                                        pageUuid = page.uuid,
+                                                        source = dev.stapler.stelekit.model.ImageSource.CAMERA,
+                                                        insertToJournalPage = false,
+                                                    )
+                                                    result.onRight { annotation ->
+                                                        viewModel.navigateToAnnotationEditor(annotation.uuid, page.uuid)
+                                                    }
+                                                    result.onLeft { err ->
+                                                        graphContentLogger.warn("Image import failed: ${err.message}")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Unit
+                                    }
+                                } else null,
+                                platformSettings = platformSettings,
                             )
                         },
                         statusBar = {

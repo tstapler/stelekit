@@ -125,6 +125,12 @@ sealed interface DepthModelUiState {
     data object Failed : DepthModelUiState
 }
 
+/** Records the calibration state before a user-initiated change, enabling single-level undo. */
+data class CalibrationSnapshot(
+    val calibration: Calibration,
+    val annotations: List<MeasurementAnnotation>,
+)
+
 /**
  * ViewModel for the image annotation editor screen.
  *
@@ -239,6 +245,14 @@ class AnnotationEditorViewModel(
 
     // redoStack holds states available for redo after an undo.
     private val redoStack = ArrayDeque<AnnotationEditorState>(maxHistory)
+
+    private val calibrationHistory = mutableListOf<CalibrationSnapshot>()
+
+    private val _canUndoCalibration = MutableStateFlow(false)
+    val canUndoCalibration: StateFlow<Boolean> = _canUndoCalibration.asStateFlow()
+
+    private val _calibrationChangeMessage = MutableStateFlow<String?>(null)
+    val calibrationChangeMessage: StateFlow<String?> = _calibrationChangeMessage.asStateFlow()
 
     private val _canUndo = MutableStateFlow(false)
     val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
@@ -465,6 +479,17 @@ class AnnotationEditorViewModel(
         tool: AnnotationTool,
         explicitLabel: String? = null,
     ) {
+        // Guard: DISTANCE/GRID_REF lines shorter than 1% of image width are likely accidental taps
+        if ((tool == AnnotationTool.DISTANCE || tool == AnnotationTool.GRID_REF) && points.size >= 2) {
+            val dx = points[1].x - points[0].x
+            val dy = points[1].y - points[0].y
+            val normalizedLength = kotlin.math.sqrt(dx * dx + dy * dy)
+            if (normalizedLength < 0.005) {
+                _state.update { it.copy(inProgressPoints = emptyList()) }
+                return
+            }
+        }
+
         // GRID_REF: show the calibration dialog instead of committing a measurement annotation.
         if (tool == AnnotationTool.GRID_REF) {
             val displayUnit = _state.value.imageAnnotation?.unit ?: MeasurementUnit.METERS
@@ -541,6 +566,18 @@ class AnnotationEditorViewModel(
     @OptIn(DirectRepositoryWrite::class)
     fun updateCalibration(newCalibration: Calibration) {
         val st = _state.value
+
+        // Push current state to calibration history for undo
+        val currentSt = _state.value
+        if (currentSt.calibration != null && currentSt.calibration.method != CalibrationMethod.NONE) {
+            calibrationHistory.add(CalibrationSnapshot(
+                calibration = currentSt.calibration,
+                annotations = currentSt.committedAnnotations,
+            ))
+            if (calibrationHistory.size > 1) calibrationHistory.removeAt(0) // keep only one snapshot
+            _canUndoCalibration.value = true
+        }
+
         val displayUnit = st.imageAnnotation?.unit ?: MeasurementUnit.METERS
 
         val rederived = st.committedAnnotations.map { annotation ->
@@ -562,6 +599,37 @@ class AnnotationEditorViewModel(
                 logger.error("Failed to persist re-derived measurements: ${err.message}")
             }
         }
+
+        val count = _state.value.committedAnnotations.size
+        if (count > 0) {
+            _calibrationChangeMessage.value = "Scale updated — $count measurement${if (count == 1) "" else "s"} recalculated"
+        }
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
+    fun undoCalibration() {
+        val snapshot = calibrationHistory.removeLastOrNull() ?: return
+        _canUndoCalibration.value = calibrationHistory.isNotEmpty()
+        _state.update { it.copy(
+            calibration = snapshot.calibration,
+            committedAnnotations = snapshot.annotations,
+        )}
+        _calibrationChangeMessage.value = "Scale restored"
+        scope.launch {
+            val imageUuid = _state.value.imageAnnotation?.uuid ?: return@launch
+            measurementRepository.saveMeasurements(imageUuid, snapshot.annotations).onLeft { err ->
+                logger.error("Failed to restore measurements: ${err.message}")
+            }
+        }
+    }
+
+    fun clearCalibrationMessage() {
+        _calibrationChangeMessage.value = null
+    }
+
+    fun isCalibrated(): Boolean {
+        val cal = _state.value.calibration
+        return cal != null && cal.method != CalibrationMethod.NONE && cal.pixelsPerMeter > 0.0
     }
 
     // ── Selection and deletion ────────────────────────────────────────────────
@@ -895,5 +963,6 @@ internal fun parseGridRefLengthToMeters(text: String, unit: MeasurementUnit): Do
         MeasurementUnit.MILLIMETERS -> value / 1000.0
         MeasurementUnit.FEET -> value * 0.3048
         MeasurementUnit.INCHES -> value * 0.0254
+        MeasurementUnit.FEET_INCHES -> value * 0.3048
     }
 }

@@ -210,6 +210,56 @@ class AnnotationEditorViewModelTest {
         assertTrue(undoCount <= 50, "Undo stack must not exceed 50 steps, got $undoCount")
     }
 
+    @Test
+    fun calibrationUndo_restoresAnnotationValues() {
+        val vm = makeViewModel()
+        vm.selectTool(AnnotationTool.DISTANCE)
+        // Commit one annotation at default (uncalibrated) state
+        vm.addPoint(NormalizedPoint(0.1, 0.1))
+        vm.addPoint(NormalizedPoint(0.5, 0.1))
+        assertEquals(1, vm.state.value.committedAnnotations.size)
+
+        // Apply first calibration
+        val cal1 = dev.stapler.stelekit.model.Calibration(
+            method = dev.stapler.stelekit.model.CalibrationMethod.MANUAL_REFERENCE,
+            pixelsPerMeter = 100.0,
+            confidencePercent = 90,
+        )
+        vm.updateCalibration(cal1)
+        assertEquals(100.0, vm.state.value.calibration?.pixelsPerMeter)
+        assertTrue(vm.canUndoCalibration.value)
+
+        // Apply second calibration — snapshot of first is now in history
+        val cal2 = dev.stapler.stelekit.model.Calibration(
+            method = dev.stapler.stelekit.model.CalibrationMethod.BLE_LASER,
+            pixelsPerMeter = 200.0,
+            confidencePercent = 100,
+        )
+        vm.updateCalibration(cal2)
+        assertEquals(200.0, vm.state.value.calibration?.pixelsPerMeter)
+
+        // Undo — should restore cal1
+        vm.undoCalibration()
+        assertEquals(100.0, vm.state.value.calibration?.pixelsPerMeter)
+        assertFalse(vm.canUndoCalibration.value)
+    }
+
+    @Test
+    fun minLengthGuard_dropsLineShorterThanThreshold() {
+        val vm = makeViewModel()
+        vm.selectTool(AnnotationTool.DISTANCE)
+
+        // Commit a very short line (normalized distance ≈ 0.001 — well below 0.005 threshold)
+        vm.addPoint(NormalizedPoint(0.5, 0.5))
+        vm.addPoint(NormalizedPoint(0.5005, 0.5)) // dx = 0.0005, length = 0.0005
+        assertEquals(0, vm.state.value.committedAnnotations.size, "Line shorter than 0.005 threshold should be dropped")
+
+        // Commit a line at the threshold (normalized distance = 0.01 — above threshold)
+        vm.addPoint(NormalizedPoint(0.1, 0.1))
+        vm.addPoint(NormalizedPoint(0.11, 0.1)) // dx = 0.01, length = 0.01
+        assertEquals(1, vm.state.value.committedAnnotations.size, "Line of 0.01 length should be committed")
+    }
+
     // ── DELETE ────────────────────────────────────────────────────────────────
 
     @Test

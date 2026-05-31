@@ -57,6 +57,8 @@ internal fun ScreenRouter(
     onAttachImage: ((editingBlockUuid: String?) -> Unit)? = null,
     onFileDrop: ((List<Any>) -> Unit)? = null,
     onPasteImage: ((editingBlockUuid: String?) -> Boolean)? = null,
+    onImportImage: (() -> Unit)? = null,
+    platformSettings: dev.stapler.stelekit.platform.Settings? = null,
 ) {
     if (appState.isLoading) {
         LoadingOverlay(
@@ -202,6 +204,7 @@ internal fun ScreenRouter(
                     onNavigateToPage = { pageUuid ->
                         viewModel.navigateToPageByUuid(pageUuid)
                     },
+                    onImportImage = onImportImage,
                 )
             }
 
@@ -235,6 +238,7 @@ internal fun ScreenRouter(
                     AnnotationEditorScreen(
                         viewModel = annotationEditorViewModel,
                         imageAnnotation = annotation,
+                        platformSettings = platformSettings,
                         onNavigateBack = {
                             if (currentScreen.pageUuid != null) {
                                 viewModel.navigateToPageByUuid(currentScreen.pageUuid)

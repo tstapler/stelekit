@@ -19,7 +19,13 @@ import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.LinearScale
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Redo
+import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -43,7 +49,9 @@ import dev.stapler.stelekit.model.MeasurementUnit
 /**
  * Bottom toolbar providing tool selection, undo/redo, unit selection, and annotation deletion.
  *
- * Active tool is highlighted with the primary color background.
+ * Active tool is highlighted with the primaryContainer color background.
+ * Measurement tools (DISTANCE, AREA, ANGLE, LABEL, GRID_REF) are disabled until the image is
+ * calibrated ([isCalibrated] = true). SELECT and CALIBRATE are always enabled.
  * Undo/redo buttons are disabled (alpha reduced) when no history is available.
  */
 @Composable
@@ -52,12 +60,16 @@ fun AnnotationToolbar(
     canUndo: Boolean,
     canRedo: Boolean,
     displayUnit: MeasurementUnit?,
+    isCalibrated: Boolean,
     onToolSelect: (AnnotationTool) -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onDeleteSelect: () -> Unit,
+    onCalibrate: () -> Unit,
+    onUnitSelect: (MeasurementUnit) -> Unit,
     hasSelection: Boolean,
     modifier: Modifier = Modifier,
+    showLabels: Boolean = true,
 ) {
     Column(
         modifier = modifier
@@ -78,6 +90,8 @@ fun AnnotationToolbar(
                 label = "Select",
                 isActive = currentTool == AnnotationTool.SELECT,
                 onSelect = onToolSelect,
+                enabled = true,
+                showLabels = showLabels,
             )
             ToolButton(
                 tool = AnnotationTool.DISTANCE,
@@ -85,6 +99,8 @@ fun AnnotationToolbar(
                 label = "Distance",
                 isActive = currentTool == AnnotationTool.DISTANCE,
                 onSelect = onToolSelect,
+                enabled = isCalibrated,
+                showLabels = showLabels,
             )
             ToolButton(
                 tool = AnnotationTool.AREA,
@@ -92,6 +108,8 @@ fun AnnotationToolbar(
                 label = "Area",
                 isActive = currentTool == AnnotationTool.AREA,
                 onSelect = onToolSelect,
+                enabled = isCalibrated,
+                showLabels = showLabels,
             )
             ToolButton(
                 tool = AnnotationTool.ANGLE,
@@ -99,6 +117,8 @@ fun AnnotationToolbar(
                 label = "Angle",
                 isActive = currentTool == AnnotationTool.ANGLE,
                 onSelect = onToolSelect,
+                enabled = isCalibrated,
+                showLabels = showLabels,
             )
             ToolButton(
                 tool = AnnotationTool.LABEL,
@@ -106,6 +126,8 @@ fun AnnotationToolbar(
                 label = "Label",
                 isActive = currentTool == AnnotationTool.LABEL,
                 onSelect = onToolSelect,
+                enabled = isCalibrated,
+                showLabels = showLabels,
             )
             ToolButton(
                 tool = AnnotationTool.GRID_REF,
@@ -113,6 +135,12 @@ fun AnnotationToolbar(
                 label = "Ref",
                 isActive = currentTool == AnnotationTool.GRID_REF,
                 onSelect = onToolSelect,
+                enabled = isCalibrated,
+                showLabels = showLabels,
+            )
+            CalibrateButton(
+                onClick = onCalibrate,
+                showLabels = showLabels,
             )
         }
 
@@ -142,7 +170,7 @@ fun AnnotationToolbar(
                 Spacer(Modifier.width(8.dp))
                 UnitDropdown(
                     currentUnit = displayUnit,
-                    onUnitSelect = { /* forwarded via callback in a real app */ },
+                    onUnitSelect = onUnitSelect,
                 )
             }
 
@@ -160,6 +188,7 @@ fun AnnotationToolbar(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ToolButton(
     tool: AnnotationTool,
@@ -168,19 +197,99 @@ private fun ToolButton(
     isActive: Boolean,
     onSelect: (AnnotationTool) -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    showLabels: Boolean = true,
 ) {
-    val bg = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.85f) else Color.Transparent
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(bg),
+    val bg = if (isActive && enabled) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    val tint = when {
+        isActive && enabled -> MaterialTheme.colorScheme.onPrimaryContainer
+        !enabled -> Color(0xFF555555)
+        else -> Color(0xFFBBBBBB)
+    }
+    val tooltipState = rememberTooltipState()
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text("$label (${toolShortcut(tool)})") } },
+        state = tooltipState,
     ) {
-        IconButton(onClick = { onSelect(tool) }) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = if (isActive) Color.White else Color(0xFFBBBBBB),
-            )
+        Column(
+            modifier = modifier,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(bg),
+            ) {
+                IconButton(onClick = { onSelect(tool) }, enabled = enabled) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = label,
+                        tint = tint,
+                    )
+                }
+            }
+            if (showLabels) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isActive && enabled) MaterialTheme.colorScheme.onPrimaryContainer
+                            else if (!enabled) Color(0xFF555555)
+                            else Color(0xFFBBBBBB),
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+private fun toolShortcut(tool: AnnotationTool): String = when (tool) {
+    AnnotationTool.SELECT -> "S"
+    AnnotationTool.DISTANCE -> "D"
+    AnnotationTool.AREA -> "A"
+    AnnotationTool.ANGLE -> "G"
+    AnnotationTool.LABEL -> "L"
+    AnnotationTool.GRID_REF -> "R"
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CalibrateButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    showLabels: Boolean = true,
+) {
+    val tooltipState = rememberTooltipState()
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text("Calibrate (C)") } },
+        state = tooltipState,
+    ) {
+        Column(
+            modifier = modifier,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Transparent),
+            ) {
+                IconButton(onClick = onClick, enabled = true) {
+                    Icon(
+                        imageVector = Icons.Default.Straighten,
+                        contentDescription = "Calibrate",
+                        tint = Color(0xFFBBBBBB),
+                    )
+                }
+            }
+            if (showLabels) {
+                Text(
+                    text = "Calibrate",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFBBBBBB),
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -202,7 +311,7 @@ private fun UnitDropdown(
         ) {
             MeasurementUnit.entries.forEach { unit ->
                 DropdownMenuItem(
-                    text = { Text("${unit.name.lowercase().replaceFirstChar { it.uppercase() }} (${unit.symbol()})") },
+                    text = { Text(unit.displayName()) },
                     onClick = {
                         onUnitSelect(unit)
                         expanded = false
