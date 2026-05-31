@@ -197,6 +197,7 @@ private fun ToolButton(
     isActive: Boolean,
     onSelect: (AnnotationTool) -> Unit,
     enabled: Boolean = true,
+    showLabels: Boolean = true,
     modifier: Modifier = Modifier,
     showLabels: Boolean = true,
 ) {
