@@ -169,24 +169,6 @@ fun AnnotationEditorScreen(
     // Adaptive labels: show for first 3 sessions (tracked in state per session)
     val showToolLabels by remember { mutableStateOf(true) }
 
-    // UnsavedChanges tracking
-    var showUnsavedChangesDialog by remember { mutableStateOf(false) }
-    var hasUnsavedChanges by remember { mutableStateOf(false) }
-
-    // BleDevicePanel
-    var showBleDevicePanel by remember { mutableStateOf(false) }
-
-    // Delete annotation confirmation
-    var pendingDeleteUuid by remember { mutableStateOf<String?>(null) }
-
-    // Coach marks
-    var showDistanceCoachMark by remember { mutableStateOf(false) }
-    var showAreaCoachMark by remember { mutableStateOf(false) }
-    var coachMarksShown by remember { mutableStateOf(0) }
-
-    // Adaptive labels: show for first 3 sessions (tracked in state per session)
-    val showToolLabels by remember { mutableStateOf(true) }
-
     // Story 5.7: wire the active device into the ViewModel so injectMeasurementFromDevice()
     // can find it. Effect re-runs when activeDevice reference changes.
     LaunchedEffect(activeDevice) {

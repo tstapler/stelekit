@@ -196,9 +196,8 @@ private fun ToolButton(
     label: String,
     isActive: Boolean,
     onSelect: (AnnotationTool) -> Unit,
-    enabled: Boolean = true,
-    showLabels: Boolean = true,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     showLabels: Boolean = true,
 ) {
     val bg = if (isActive && enabled) MaterialTheme.colorScheme.primaryContainer else Color.Transparent

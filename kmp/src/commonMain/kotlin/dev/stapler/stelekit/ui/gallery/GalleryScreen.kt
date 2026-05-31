@@ -48,8 +48,8 @@ fun GalleryScreen(
     viewModel: GalleryViewModel,
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit,
     onNavigateToPage: (pageUuid: String) -> Unit,
-    onImportImage: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onImportImage: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsState()
 
