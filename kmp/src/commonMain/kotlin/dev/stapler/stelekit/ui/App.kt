@@ -1115,6 +1115,7 @@ private fun GraphContent(
                                         Unit
                                     }
                                 } else null,
+                                platformSettings = platformSettings,
                             )
                         },
                         statusBar = {
