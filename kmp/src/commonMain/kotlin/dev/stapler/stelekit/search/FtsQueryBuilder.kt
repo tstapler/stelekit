@@ -10,12 +10,14 @@ package dev.stapler.stelekit.search
  * - A `*` prefix-match wildcard is appended to every plain token, supporting
  *   search-as-you-type and partial word matching.
  * - Dangerous bare operators (AND/OR/NOT at the start) are stripped.
- * - Characters that would break FTS5 syntax (`:`, `^`, `~`, `{`, `}`, `[`, `]`, `!`)
+ * - Characters that would break FTS5 syntax (`:`, `^`, `~`, `{`, `}`, `[`, `]`, `!`, `#`)
  *   are removed from plain tokens.
+ * - Hyphens (`-`) act as token boundaries: `"2026-03-15"` becomes three tokens
+ *   `2026`, `03`, `15`, each receiving its own `*` wildcard.
  */
 object FtsQueryBuilder {
 
-    private val STRIP_CHARS = Regex("""[-:^~{}\[\]!#]""")
+    private val STRIP_CHARS = Regex("""[:^~{}\[\]!#]""")
     private val LEADING_OPERATORS = setOf("AND", "OR", "NOT")
 
     /**
@@ -107,7 +109,7 @@ object FtsQueryBuilder {
     private fun flushTokens(buf: StringBuilder, out: MutableList<Segment>) {
         val text = buf.toString().trim()
         if (text.isNotBlank()) {
-            text.split(Regex("\\s+"))
+            text.split(Regex("[-\\s]+"))
                 .filter { it.isNotBlank() }
                 .forEach { out.add(Segment.Token(it)) }
         }

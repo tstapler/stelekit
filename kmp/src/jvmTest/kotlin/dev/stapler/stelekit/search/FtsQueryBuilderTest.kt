@@ -64,8 +64,8 @@ class FtsQueryBuilderTest {
 
     @Test fun sqlCommentStripped() {
         val result = build("taxes -- DROP TABLE")
-        // Hyphens are stripped so '--' tokens become empty and are removed
-        assertTrue(!result.contains("--"), "Hyphen-stripped tokens should not produce '--': $result")
+        // Hyphens are treated as separators; '--' splits into empty tokens which are filtered out
+        assertTrue(!result.contains("--"), "Hyphen-separated empty tokens should not appear in output: $result")
         assertTrue(result.contains("taxes"), "Valid token should remain: $result")
     }
 
@@ -80,4 +80,27 @@ class FtsQueryBuilderTest {
     @Test fun buildOrTwoTokens() = assertEquals("2025* OR taxes*", FtsQueryBuilder.buildOr("2025 taxes"))
     @Test fun buildOrSingleToken() = assertEquals("taxes*", FtsQueryBuilder.buildOr("taxes"))
     @Test fun buildOrEmptyReturnsEmpty() = assertEquals("", FtsQueryBuilder.buildOr(""))
+
+    // ── Hyphenated inputs ─────────────────────────────────────────────────
+
+    @Test fun hyphenatedDateSplitsIntoTokens() =
+        assertEquals("2026* AND 03* AND 15*", build("2026-03-15"))
+
+    @Test fun hyphenatedCompoundName() =
+        assertEquals("project* AND alpha*", build("project-alpha"))
+
+    @Test fun hyphenOnlyReturnsEmpty() =
+        assertEquals("", build("-"))
+
+    @Test fun multipleHyphensReturnsEmpty() =
+        assertEquals("", build("---"))
+
+    @Test fun leadingTrailingHyphenStripped() =
+        assertEquals("project*", build("-project-"))
+
+    @Test fun mixedSpacesAndHyphens() =
+        assertEquals("2026* AND 03* AND meeting*", build("2026-03 meeting"))
+
+    @Test fun buildOrHyphenatedDate() =
+        assertEquals("2026* OR 03* OR 15*", FtsQueryBuilder.buildOr("2026-03-15"))
 }
