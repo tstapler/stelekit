@@ -73,7 +73,7 @@ import dev.stapler.stelekit.model.NormalizedPoint
 import dev.stapler.stelekit.platform.measurement.DeviceConnectionState
 import dev.stapler.stelekit.platform.measurement.ExternalMeasurementDevice
 import kotlin.math.abs
-import kotlin.math.pow
+import dev.stapler.stelekit.util.roundTo
 import kotlin.math.round
 
 /**
@@ -945,12 +945,11 @@ private fun formatCoordinate(degrees: Double, positive: String, negative: String
 
 /**
  * KMP-compatible decimal formatting. Rounds [value] to [decimals] decimal places and
- * returns a plain string. Avoids [String.format] which is JVM-only.
+ * returns a plain string with exactly [decimals] digits after the point.
+ * Avoids [String.format] which is JVM-only.
  */
 private fun formatDecimals(value: Double, decimals: Int): String {
-    val factor = 10.0.pow(decimals.toDouble())
-    val rounded = kotlin.math.round(value * factor) / factor
-    val s = rounded.toString()
+    val s = value.roundTo(decimals).toString()
     val dotIdx = s.indexOf('.')
     return if (dotIdx < 0) {
         if (decimals == 0) s else s + "." + "0".repeat(decimals)
