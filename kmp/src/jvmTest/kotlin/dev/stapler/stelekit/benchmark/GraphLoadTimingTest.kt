@@ -418,6 +418,7 @@ class GraphLoadTimingTest {
             println("[real graph] SKIPPED — set -DSTELEKIT_GRAPH_PATH=/your/graph to run")
             return@runBlocking
         }
+        val tempDir = BenchmarkGraphUtils.copyGraphToTempDir(graphPath, "stelekit-real-bench")
         val dbFile = Files.createTempFile("stelekit-real-bench", ".db").toFile().also { it.deleteOnExit() }
         val scope  = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
@@ -425,13 +426,14 @@ class GraphLoadTimingTest {
             val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope)
             val loader  = GraphLoader(fileSystem, repoSet.pageRepository, repoSet.blockRepository,
                                       externalWriteActor = repoSet.writeActor, histogramWriter = repoSet.histogramWriter)
-            loadAndTime(graphPath, loader, "real graph / SQLite") {
+            loadAndTime(tempDir.absolutePath, loader, "real graph / SQLite") {
                 repoSet.pageRepository.getAllPages().first().getOrNull()?.size ?: 0
             }.also { }
             factory.close()
         } finally {
             scope.cancel()
             dbFile.delete()
+            tempDir.deleteRecursively()
         }
     }
 
@@ -512,6 +514,7 @@ class GraphLoadTimingTest {
             return@runBlocking
         }
 
+        val tempDir = BenchmarkGraphUtils.copyGraphToTempDir(graphPath, "stelekit-jank-real")
         val dbFile = Files.createTempFile("stelekit-jank-real", ".db").toFile().also { it.deleteOnExit() }
         val scope  = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
@@ -524,12 +527,13 @@ class GraphLoadTimingTest {
             val loader  = GraphLoader(fileSystem, repoSet.pageRepository, repoSet.blockRepository,
                                       externalWriteActor = actor, histogramWriter = repoSet.histogramWriter)
 
-            val results = runWriteLatencyBenchmark(graphPath, actor, loader, "real graph")
+            val results = runWriteLatencyBenchmark(tempDir.absolutePath, actor, loader, "real graph")
             printWriteLatencyReport("real graph", results)
             factory.close()
         } finally {
             scope.cancel()
             dbFile.delete()
+            tempDir.deleteRecursively()
         }
     }
 }

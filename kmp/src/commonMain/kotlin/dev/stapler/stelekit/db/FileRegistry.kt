@@ -1,3 +1,4 @@
+@file:Suppress("InMemoryPagination") // slicing a file-path list — no SQL involved
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.outliner.JournalUtils

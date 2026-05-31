@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import arrow.core.flatMap
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.repository.BlockRepository
@@ -114,21 +115,15 @@ class BacklinkRenamer(
             val affectedBlocks = affectedBlocksForRename(page.name)
             val affectedPageUuids = affectedBlocks.map { it.pageUuid }.distinct()
 
-            // 2. Rename the page row in the DB.
-            writeActor.execute { pageRepository.renamePage(page.uuid, newName) }
-                .onLeft { e -> throw RuntimeException(e.message) }
-
-            // 3. Rewrite block content in DB: [[OldName]] → [[NewName]] (aliases included)
-            //    and #OldName / #[[OldName]] → #NewName / #[[NewName]].
-            val contentErrors = mutableListOf<String>()
-            affectedBlocks.forEach { block ->
-                val updated = replaceHashtag(replaceWikilink(block.content, page.name, newName), page.name, newName)
-                val result = writeActor.execute { blockRepository.updateBlockContentOnly(block.uuid, updated) }
-                if (result.isLeft()) contentErrors.add(block.uuid)
+            // 2+3. Rename page row and batch-update block content in a single actor call
+            //      so no competing writes can interleave between the two DB steps.
+            val updates = affectedBlocks.map { block ->
+                block.uuid to replaceHashtag(replaceWikilink(block.content, page.name, newName), page.name, newName)
             }
-            if (contentErrors.isNotEmpty()) {
-                logger.warn("Failed to update content for ${contentErrors.size} blocks during rename '${page.name}' → '$newName': $contentErrors")
-            }
+            writeActor.execute {
+                pageRepository.renamePage(page.uuid, newName)
+                    .flatMap { blockRepository.updateBlockContentsForRename(updates, page.name, newName) }
+            }.onLeft { e -> throw RuntimeException(e.message) }
 
             // 4. Move the page file on disk (old path → new path).
             val moved = graphWriter.renamePage(page, newName, graphPath)

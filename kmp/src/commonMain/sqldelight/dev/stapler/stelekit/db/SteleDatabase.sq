@@ -673,6 +673,15 @@ UPDATE pages SET backlink_count = (
     WHERE blocks.content LIKE '%[[' || pages.name || ']]%'
 ) WHERE pages.name = ?;
 
+-- Set backlink count directly (O(1) via idx_pages_name).
+-- Used by rename: caller computes the new count arithmetically instead of scanning all blocks.
+setPageBacklinkCount:
+UPDATE pages SET backlink_count = ? WHERE name = ?;
+
+-- Read backlink count for a single page (O(1) via idx_pages_name).
+selectPageBacklinkCount:
+SELECT backlink_count FROM pages WHERE name = ?;
+
 -- Metadata table for schema versioning and graph-level facts
 CREATE TABLE metadata (
     key TEXT NOT NULL PRIMARY KEY,

@@ -8,6 +8,8 @@ config:
 # Custom SteleKit rules (compiled from buildSrc)
 stelekit:
   active: true
+  InMemoryPagination:
+    active: true
   RegexInLambda:
     active: true
   MissingDirectRepositoryWrite:

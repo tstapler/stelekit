@@ -403,6 +403,10 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     suspend fun recomputeBacklinkCountForPage(name: String): Long =
         queries.recomputeBacklinkCountForPage(name)
 
+    @DirectSqlWrite
+    suspend fun setPageBacklinkCount(name: String, count: Long): Long =
+        queries.setPageBacklinkCount(count, name)
+
     // ── Git config writes ─────────────────────────────────────────────────────
 
     @DirectSqlWrite

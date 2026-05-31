@@ -18,6 +18,8 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOne
 import app.cash.sqldelight.coroutines.mapToOneOrNull
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -307,6 +309,32 @@ class SqlDelightBlockRepository(
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
         }
+
+    override suspend fun updateBlockContentsForRename(
+        updates: List<Pair<String, String>>,
+        oldPageName: String,
+        newPageName: String,
+    ): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+        try {
+            val now = Clock.System.now().toEpochMilliseconds()
+            queries.transaction {
+                for ((uuid, content) in updates) {
+                    queries.updateBlockContent(content, now, ContentHasher.sha256ForContent(content), uuid)
+                    blockCache.remove(uuid)
+                }
+                // oldPageName: SET 0 — all its refs were just rewritten away, no scan needed.
+                // newPageName: recompute via LIKE scan — arithmetic read is unreliable because renamePage
+                // already renamed the row, so selectPageBacklinkCount(newName) would return OldName's stale count.
+                queries.setPageBacklinkCount(0L, oldPageName)
+                queries.recomputeBacklinkCountForPage(newPageName)
+            }
+            Unit.right()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+        }
+    }
 
     override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {
@@ -790,12 +818,19 @@ class SqlDelightBlockRepository(
 
     override fun getLinkedReferences(pageName: String): Flow<Either<DomainError, List<Block>>> = flow {
         try {
-            // Two LIKE passes: one for [[name]] wikilinks, one for #name simple hashtags.
-            // Results are merged and deduplicated by UUID before in-memory refinement.
-            val wikiCandidates = queries.selectBlocksWithContentLike("%[[${pageName}%")
-                .executeAsList().map { it.toBlockModel() }
-            val hashCandidates = queries.selectBlocksWithContentLike("%#${pageName}%")
-                .executeAsList().map { it.toBlockModel() }
+            // Two LIKE passes run concurrently — each acquires its own pool connection.
+            // On JVM, PooledJdbcSqliteDriver provides 8 connections so parallel reads are safe.
+            val (wikiCandidates, hashCandidates) = coroutineScope {
+                val wiki = async {
+                    queries.selectBlocksWithContentLike("%[[${pageName}%")
+                        .executeAsList().map { it.toBlockModel() }
+                }
+                val hash = async {
+                    queries.selectBlocksWithContentLike("%#${pageName}%")
+                        .executeAsList().map { it.toBlockModel() }
+                }
+                wiki.await() to hash.await()
+            }
             val candidates = (wikiCandidates + hashCandidates).distinctBy { it.uuid }
 
             val patterns = compileLinkPatterns(pageName)
@@ -810,16 +845,42 @@ class SqlDelightBlockRepository(
 
     override fun getLinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> = flow {
         try {
-            val wikiCandidates = queries.selectBlocksWithContentLike("%[[${pageName}%")
-                .executeAsList().map { it.toBlockModel() }
-            val hashCandidates = queries.selectBlocksWithContentLike("%#${pageName}%")
-                .executeAsList().map { it.toBlockModel() }
+            // Iterative overfetch: load SQL pages until we have enough filtered results.
+            // Avoids scanning and loading the entire block table into memory for UI pagination.
+            // Batch size starts at 4x the needed window; grows by 2x each round if yield is poor.
+            val need = offset + limit
             val patterns = compileLinkPatterns(pageName)
-            val allLinked = (wikiCandidates + hashCandidates)
-                .distinctBy { it.uuid }
-                .filter { isLinkedReference(it.content, patterns) }
+            val seen = mutableSetOf<String>()
+            val accumulated = mutableListOf<Block>()
+            var sqlOffset = 0
+            var batchSize = maxOf(need * 4, 100)
+            var iterations = 0
 
-            emit(allLinked.drop(offset).take(limit).right())
+            while (accumulated.size < need && iterations++ < MAX_LINKED_REF_ITERATIONS) {
+                val wikiPage = queries.selectBlocksWithContentLikePaginated(
+                    "%[[${pageName}%", batchSize.toLong(), sqlOffset.toLong()
+                ).executeAsList().map { it.toBlockModel() }
+                val hashPage = queries.selectBlocksWithContentLikePaginated(
+                    "%#${pageName}%", batchSize.toLong(), sqlOffset.toLong()
+                ).executeAsList().map { it.toBlockModel() }
+
+                val batch = (wikiPage + hashPage)
+                    .filter { seen.add(it.uuid) }
+                    .filter { isLinkedReference(it.content, patterns) }
+                accumulated.addAll(batch)
+
+                val exhausted = wikiPage.size < batchSize && hashPage.size < batchSize
+                if (exhausted) break
+
+                sqlOffset += batchSize
+                // If yield was low (<25%), double the batch to reduce round-trips next iteration.
+                if (batch.size < batchSize / 4) batchSize = minOf(batchSize * 2, MAX_LINKED_REF_BATCH)
+            }
+
+            // accumulated is already bounded to ≤ offset+limit items by the loop above —
+            // this drop/take is on a small pre-limited list, not an unbounded SQL result.
+            @Suppress("InMemoryPagination")
+            emit(accumulated.drop(offset).take(limit).right())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -907,13 +968,14 @@ class SqlDelightBlockRepository(
     private fun isLinkedReference(content: String, patterns: LinkPatterns): Boolean =
         patterns.wikiLink.containsMatchIn(content) || patterns.simpleHashtag.containsMatchIn(content)
 
+    // Results are ordered by created_at DESC (most recent first) — a change from the
+    // previous unbounded scan which had no guaranteed order. Recency-first matches typical
+    // search UX expectations (recent blocks surface before older ones).
     override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> =
-        queries.selectBlocksWithContentLike("%$query%")
+        queries.selectBlocksWithContentLikePaginated("%$query%", limit.toLong(), offset.toLong())
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
-            .map { list ->
-                list.drop(offset).take(limit).map { it.toBlockModel() }.right()
-            }
+            .map { list -> list.map { it.toBlockModel() }.right() }
 
     override fun findDuplicateBlocks(limit: Int): Flow<Either<DomainError, List<DuplicateGroup>>> = flow {
         try {
@@ -1065,5 +1127,13 @@ class SqlDelightBlockRepository(
          * edits (addBlockToPage, splitBlock) wait at most one chunk before acquiring the lock.
          */
         private const val WRITE_CHUNK_SIZE = 50
+
+        /**
+         * Maximum batch size for linked reference queries in [getLinkedReferences].
+         * Prevents unbounded growth when pageName is a common word on large graphs.
+         */
+        private const val MAX_LINKED_REF_BATCH = 2_000
+        // Hard upper bound on overfetch loop iterations: 50 × 2000 = 100k candidates max.
+        private const val MAX_LINKED_REF_ITERATIONS = 50
     }
 }

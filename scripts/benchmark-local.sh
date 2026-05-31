@@ -4,6 +4,7 @@
 # Usage:
 #   ./scripts/benchmark-local.sh                        # synthetic graph only
 #   ./scripts/benchmark-local.sh /path/to/your/graph   # include real-graph test
+#   SAF_LATENCY=true ./scripts/benchmark-local.sh /path  # simulate Android SAF (50ms write)
 #
 # Prerequisites (macOS):
 #   brew install async-profiler librsvg
@@ -55,9 +56,12 @@ fi
 
 # ── run benchmark ────────────────────────────────────────────────────────────
 
-GRADLE_ARGS=(":kmp:jvmTestProfile" "--rerun-tasks" "--no-daemon")
-[[ -n "$GRAPH_PATH" ]] && GRADLE_ARGS+=("-PgraphPath=$GRAPH_PATH")
-[[ -n "$AP_LIB" ]]    && GRADLE_ARGS+=("-PapLib=$AP_LIB")
+SAF_LATENCY="${SAF_LATENCY:-}"
+
+GRADLE_ARGS=(":kmp:jvmTestProfile" "--rerun-tasks" "--no-daemon" "--no-configuration-cache")
+[[ -n "$GRAPH_PATH" ]]  && GRADLE_ARGS+=("-PgraphPath=$GRAPH_PATH")
+[[ -n "$AP_LIB" ]]      && GRADLE_ARGS+=("-PapLib=$AP_LIB")
+[[ "$SAF_LATENCY" == "true" ]] && GRADLE_ARGS+=("-PsafLatency=true")
 
 cd "$REPO_ROOT"
 ./gradlew "${GRADLE_ARGS[@]}"

@@ -137,6 +137,8 @@ class QueryPlanAuditTest {
             "SELECT * FROM pages WHERE name LIKE '%test%'"),
         AuditQuery("selectPagesByNameLikePaginated",
             "SELECT * FROM pages WHERE name LIKE '%test%' ORDER BY name LIMIT 10 OFFSET 0"),
+        AuditQuery("selectPageBacklinkCount",
+            "SELECT backlink_count FROM pages WHERE name = 'x'"),
 
         // ── block_references ─────────────────────────────────────────────────────────────────
         AuditQuery("selectOutgoingReferences",
