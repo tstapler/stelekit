@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.0](https://github.com/tstapler/stelekit/compare/v0.34.0...v0.35.0) (2026-05-31)
+
+
+### Features
+
+* **export:** page export — 4 formats, clipboard, loading state, 108 tests ([#119](https://github.com/tstapler/stelekit/issues/119)) ([d840725](https://github.com/tstapler/stelekit/commit/d8407250d66ddf392e3c1d613a1e1aac73083628))
+
 ## [0.34.0](https://github.com/tstapler/stelekit/compare/v0.33.0...v0.34.0) (2026-05-31)
 
 
