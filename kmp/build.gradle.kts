@@ -507,14 +507,17 @@ tasks.register<Test>("jvmTestProfile") {
     classpath = tasks.named<Test>("jvmTest").get().classpath
     testClassesDirs = tasks.named<Test>("jvmTest").get().testClassesDirs
 
-    val graphPath  = (project.findProperty("graphPath")  as? String).orEmpty()
+    val graphPath   = (project.findProperty("graphPath")   as? String).orEmpty()
     val benchConfig = (project.findProperty("benchConfig") as? String) ?: "XLARGE"
-    systemProperty("STELEKIT_GRAPH_PATH",    graphPath)
-    systemProperty("STELEKIT_BENCH_CONFIG",  benchConfig)
+    val safLatency  = (project.findProperty("safLatency")  as? String) ?: "false"
+    systemProperty("STELEKIT_GRAPH_PATH",       graphPath)
+    systemProperty("STELEKIT_BENCH_CONFIG",     benchConfig)
+    systemProperty("stelekit.benchmark.saf",    safLatency)
     systemProperty("benchmark.output.dir", layout.buildDirectory.dir("reports").get().asFile.absolutePath)
 
     filter {
         includeTestsMatching("dev.stapler.stelekit.benchmark.GraphLoadTimingTest")
+        includeTestsMatching("dev.stapler.stelekit.benchmark.UserSessionBenchmarkTest")
     }
 
     val jfrFile     = layout.buildDirectory.file("reports/graph-load.jfr").get().asFile
