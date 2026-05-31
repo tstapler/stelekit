@@ -65,19 +65,18 @@ class VaultCredentialStore(
 
     override fun store(key: String, value: String) {
         val layer = cryptoLayer ?: return
-        val current = cache ?: mutableMapOf()
-        current[key] = value
-        cache = current
-        saveCredentials(layer, current)
+        val updated = (cache ?: emptyMap()).toMutableMap().also { it[key] = value }
+        cache = updated
+        saveCredentials(layer, updated)
     }
 
     override fun delete(key: String) {
         val layer = cryptoLayer ?: return
         val current = cache ?: return
-        if (current.remove(key) != null) {
-            cache = current
-            saveCredentials(layer, current)
-        }
+        if (!current.containsKey(key)) return
+        val updated = current.toMutableMap().also { it.remove(key) }
+        cache = updated
+        saveCredentials(layer, updated)
     }
 
     /**

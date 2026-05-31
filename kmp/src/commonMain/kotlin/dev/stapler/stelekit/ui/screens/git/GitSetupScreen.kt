@@ -96,7 +96,11 @@ fun GitSetupScreen(
     // Form state
     var useExistingClone by remember { mutableStateOf(if (!initialUseExistingClone) false else true) }
     var cloneUrl by remember { mutableStateOf("") }
-    var repoRoot by remember { mutableStateOf(existingConfig?.repoRoot ?: graphPath) }
+    var repoRoot by remember {
+        mutableStateOf(
+            existingConfig?.repoRoot ?: if (initialUseExistingClone) graphPath else ""
+        )
+    }
     var sshPassphrase by remember { mutableStateOf("") }
     var wikiSubdir by remember { mutableStateOf(existingConfig?.wikiSubdir ?: "") }
     var authType by remember { mutableStateOf(existingConfig?.authType ?: GitAuthType.NONE) }
