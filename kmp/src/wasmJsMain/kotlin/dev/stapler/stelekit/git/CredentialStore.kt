@@ -3,8 +3,8 @@
 
 package dev.stapler.stelekit.git
 
-actual class CredentialStore actual constructor() {
-    actual fun store(key: String, value: String) {}
-    actual fun retrieve(key: String): String? = null
-    actual fun delete(key: String) {}
+actual class CredentialStore actual constructor() : dev.stapler.stelekit.git.CredentialAccess {
+    actual override fun store(key: String, value: String) {}
+    actual override fun retrieve(key: String): String? = null
+    actual override fun delete(key: String) {}
 }
