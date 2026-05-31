@@ -99,8 +99,15 @@ import dev.stapler.stelekit.voice.VoiceSettings
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import kotlin.math.roundToInt
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.performance.PercentileSummary
+import dev.stapler.stelekit.performance.QueryStat
+import dev.stapler.stelekit.performance.SerializedSpan
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
@@ -737,10 +744,47 @@ private fun GraphContent(
         mutableStateOf(repos.debugFlagRepository?.loadDebugMenuState() ?: DebugMenuState())
     }
 
-    // Sync span capture toggle → ring buffer enabled flag so histograms remain always-on
-    // but span recording only runs when explicitly requested.
+    // Sync span capture toggle → ring buffer enabled flag (defaults to true in DebugMenuState).
     androidx.compose.runtime.LaunchedEffect(debugMenuState.isSpanCaptureEnabled) {
         repos.ringBuffer?.enabled = debugMenuState.isSpanCaptureEnabled
+    }
+
+    // ── Eager performance data collection ────────────────────────────────────────────────────
+    // All three collections start when the graph loads so the Performance screen shows
+    // populated data immediately on first open, without a blank → loaded flash.
+
+    val perfSpans: MutableStateFlow<List<SerializedSpan>> = remember { MutableStateFlow(emptyList()) }
+    val perfHistograms: MutableStateFlow<Map<String, PercentileSummary>> = remember { MutableStateFlow(emptyMap()) }
+    val perfQueryStats: MutableStateFlow<List<QueryStat>> = remember { MutableStateFlow(emptyList()) }
+
+    // Span data: reactive SQLDelight flow — fires whenever new spans are written to SQLite.
+    androidx.compose.runtime.LaunchedEffect("perf.spans", repos.spanRepository) {
+        repos.spanRepository?.getRecentSpans(500)?.collect { spans -> perfSpans.value = spans }
+    }
+
+    // Histogram summaries: poll every 2s (same cadence as the old HistogramsTab produceState).
+    androidx.compose.runtime.LaunchedEffect("perf.histograms", repos.histogramWriter) {
+        val writer = repos.histogramWriter ?: return@LaunchedEffect
+        while (true) {
+            perfHistograms.value = withContext(PlatformDispatcher.DB) {
+                writer.queryAllOperations()
+                    .mapNotNull { op -> writer.queryPercentiles(op)?.let { op to it } }
+                    .toMap()
+            }
+            kotlinx.coroutines.delay(2_000)
+        }
+    }
+
+    // Query stats: poll every 5s (same cadence as the old QueryStatsTab produceState).
+    androidx.compose.runtime.LaunchedEffect("perf.queryStats", repos.queryStatsRepository) {
+        val repo = repos.queryStatsRepository ?: return@LaunchedEffect
+        while (true) {
+            perfQueryStats.value = withContext(PlatformDispatcher.DB) {
+                val version = repo.getAllVersions().firstOrNull() ?: ""
+                repo.getTopByTotalMs(version, 50)
+            }
+            kotlinx.coroutines.delay(5_000)
+        }
     }
 
     PlatformJankStatsEffect(
@@ -1157,6 +1201,9 @@ private fun GraphContent(
                                     }
                                 } else null,
                                 platformSettings = platformSettings,
+                                perfSpans = perfSpans,
+                                perfHistograms = perfHistograms,
+                                perfQueryStats = perfQueryStats,
                             )
                         },
                         statusBar = {
