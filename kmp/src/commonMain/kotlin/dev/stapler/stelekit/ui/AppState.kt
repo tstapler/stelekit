@@ -112,8 +112,9 @@ data class AppState(
     val syncState: SyncState = SyncState.Idle,
     val gitConfig: GitConfig? = null,
     val gitSetupVisible: Boolean = false,
+    val gitSetupInitialStep: Int = 1,
+    val gitSetupOpenForClone: Boolean = false,
     val conflictResolutionVisible: Boolean = false,
-    val gitLogVisible: Boolean = false,
 ) {
     val canGoBack: Boolean get() = historyIndex > 0
     val canGoForward: Boolean get() = historyIndex < navigationHistory.size - 1

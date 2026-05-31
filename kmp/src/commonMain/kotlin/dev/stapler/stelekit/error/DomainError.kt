@@ -147,3 +147,18 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.AttachmentError.PickerFailed -> "Could not open file picker: $message"
     is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory: $message"
 }
+
+fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
+    is DomainError.GitError.AuthFailed -> "Authentication failed — tap to update credentials"
+    is DomainError.GitError.Offline -> "Offline — sync will resume when connected"
+    is DomainError.GitError.DetachedHead -> "Repository is in detached HEAD state"
+    is DomainError.GitError.StaleLockFile -> "Stale git lock file — tap to retry"
+    is DomainError.GitError.MergeConflict -> "Merge conflict in $conflictCount file(s) — resolve to continue"
+    is DomainError.GitError.FetchFailed -> "Fetch failed — tap to retry"
+    is DomainError.GitError.PushFailed -> "Push failed — tap to retry"
+    is DomainError.GitError.CommitFailed -> "Commit failed — tap to retry"
+    is DomainError.GitError.CloneFailed -> "Clone failed: $message"
+    is DomainError.GitError.NotAGitRepo -> "Not a git repository"
+    is DomainError.GitError.NotSupported -> "Git not supported on this platform"
+    is DomainError.GitError.EditingInProgress -> "Editing in progress — sync will resume when idle"
+}

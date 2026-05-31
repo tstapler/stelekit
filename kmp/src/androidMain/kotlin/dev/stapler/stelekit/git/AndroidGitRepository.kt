@@ -10,6 +10,7 @@ import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
@@ -34,8 +35,15 @@ import java.io.File
  */
 class AndroidGitRepository(
     private val sshKeyProvider: (() -> ByteArray)? = null,
-    private val credentialStore: CredentialStore = CredentialStore(),
+    credentialAccess: dev.stapler.stelekit.git.CredentialAccess = CredentialStore(),
 ) : GitRepository {
+
+    private val logger = Logger("AndroidGitRepository")
+
+    @Volatile var credentialAccess: dev.stapler.stelekit.git.CredentialAccess = credentialAccess
+        internal set
+
+    override fun setCredentialAccess(access: CredentialAccess) { credentialAccess = access }
 
     override suspend fun isGitRepo(path: String): Boolean = withContext(PlatformDispatcher.IO) {
         File(path, ".git").exists()
@@ -60,6 +68,10 @@ class AndroidGitRepository(
         onProgress: (String) -> Unit,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
         try {
+            // Resolve suspend credentials before entering JGit's synchronous territory
+            val preResolvedToken: String? = if (auth is GitAuth.HttpsToken) auth.tokenProvider() else null
+            val job = coroutineContext[kotlinx.coroutines.Job]
+
             val cmd = Git.cloneRepository()
                 .setURI(url)
                 .setDirectory(File(localPath))
@@ -68,10 +80,10 @@ class AndroidGitRepository(
                     override fun beginTask(title: String, totalWork: Int) { onProgress(title) }
                     override fun update(completed: Int) {}
                     override fun endTask() {}
-                    override fun isCancelled() = false
+                    override fun isCancelled() = job?.isCancelled == true
                 })
 
-            configureAuth(cmd, auth)
+            configureAuth(cmd, auth, preResolvedToken)
             cmd.call().close()
             Unit.right()
         } catch (e: TransportException) {
@@ -396,7 +408,7 @@ class AndroidGitRepository(
 
     private fun openGit(repoRoot: String): Git = Git.open(File(repoRoot))
 
-    private fun buildJschSessionFactory(keyPath: String): JschConfigSessionFactory {
+    private fun buildJschSessionFactory(keyPath: String, passphrase: String? = null): JschConfigSessionFactory {
         return object : JschConfigSessionFactory() {
             override fun configure(host: OpenSshConfig.Host, session: Session) {
                 session.setConfig("StrictHostKeyChecking", "accept-new")
@@ -405,10 +417,15 @@ class AndroidGitRepository(
             override fun createDefaultJSch(fs: FS): JSch {
                 val jsch = super.createDefaultJSch(fs)
                 val keyBytes = sshKeyProvider?.invoke()
+                val passphraseBytes = passphrase?.toByteArray(Charsets.UTF_8)
                 if (keyBytes != null) {
-                    jsch.addIdentity("stelekit-key", keyBytes, null, null)
+                    jsch.addIdentity("stelekit-key", keyBytes, null, passphraseBytes)
                 } else if (keyPath.isNotEmpty()) {
-                    jsch.addIdentity(keyPath)
+                    if (passphraseBytes != null) {
+                        jsch.addIdentity(keyPath, passphraseBytes)
+                    } else {
+                        jsch.addIdentity(keyPath)
+                    }
                 }
                 return jsch
             }
@@ -421,13 +438,14 @@ class AndroidGitRepository(
     ) {
         when (config.authType) {
             GitAuthType.HTTPS_TOKEN -> {
-                val token = config.httpsTokenKey?.let { credentialStore.retrieve(it) } ?: return
+                val token = config.httpsTokenKey?.let { credentialAccess.retrieve(it) } ?: return
                 cmd.setCredentialsProvider(UsernamePasswordCredentialsProvider("", token))
             }
             GitAuthType.SSH_KEY -> {
+                val passphrase = config.sshKeyPassphraseKey?.let { credentialAccess.retrieve(it) }
                 cmd.setTransportConfigCallback { transport ->
                     if (transport is org.eclipse.jgit.transport.SshTransport && config.sshKeyPath != null) {
-                        transport.sshSessionFactory = buildJschSessionFactory(config.sshKeyPath)
+                        transport.sshSessionFactory = buildJschSessionFactory(config.sshKeyPath, passphrase)
                     }
                 }
             }
@@ -438,12 +456,14 @@ class AndroidGitRepository(
     private fun configureAuth(
         cmd: org.eclipse.jgit.api.TransportCommand<*, *>,
         auth: GitAuth,
+        preResolvedToken: String?,
     ) {
         when (auth) {
             is GitAuth.HttpsToken -> {
-                val token = runCatching {
-                    kotlinx.coroutines.runBlocking { auth.tokenProvider() }
-                }.getOrNull() ?: return
+                val token = preResolvedToken ?: run {
+                    logger.warn("HTTPS token unavailable for clone — proceeding unauthenticated")
+                    return
+                }
                 cmd.setCredentialsProvider(
                     UsernamePasswordCredentialsProvider(auth.username, token)
                 )

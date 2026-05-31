@@ -12,6 +12,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
@@ -40,6 +42,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.error.toSyncErrorMessage
 import dev.stapler.stelekit.git.model.SyncState
 import kotlinx.coroutines.delay
 
@@ -50,36 +54,56 @@ import kotlinx.coroutines.delay
  * - [SyncState.Fetching / Merging / Pushing / Committing]: animated spinning sync icon
  * - [SyncState.MergeAvailable(n)]: blue cloud-download icon with "↓ n" label
  * - [SyncState.ConflictPending]: amber warning icon with "Conflict" label
- * - [SyncState.Error]: red error icon with "Error" label
+ * - [SyncState.Error]: red error icon with "Error" label (routes to onAuthError if AuthFailed)
  * - [SyncState.Success]: brief green checkmark, fades after 3 seconds
  *
  * @param syncState Current sync state from [GitSyncService].
  * @param onSyncClick Called when the manual sync icon button is tapped.
+ * @param isGitConfigured Whether git sync has been configured for the current graph.
+ * @param onAuthError Called when the sync error is an authentication failure.
  */
 @Composable
 fun SyncStatusBadge(
     syncState: SyncState,
     onSyncClick: () -> Unit,
+    isGitConfigured: Boolean = true,
+    onAuthError: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    if (!isGitConfigured) {
+        Box(modifier = modifier.padding(horizontal = 4.dp)) {
+            Text(
+                "Set up sync",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier
+                    .clickable { onSyncClick() }
+                    .padding(4.dp),
+            )
+        }
+        return
+    }
+
     Row(
         modifier = modifier.padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Badge area — state-specific icon and label
-        SyncStateBadge(syncState = syncState)
+        SyncStateBadge(syncState = syncState, onSyncClick = onSyncClick, onAuthError = onAuthError)
 
         Spacer(modifier = Modifier.width(4.dp))
 
         // Manual sync button — always visible
         IconButton(
             onClick = onSyncClick,
+            enabled = isGitConfigured,
             modifier = Modifier.size(32.dp),
         ) {
             Icon(
                 imageVector = Icons.Default.Sync,
-                contentDescription = "Sync now",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                contentDescription = if (isGitConfigured) "Sync now" else "Git sync not configured",
+                tint = if (isGitConfigured) MaterialTheme.colorScheme.onSurfaceVariant
+                       else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
                 modifier = Modifier.size(16.dp),
             )
         }
@@ -87,7 +111,12 @@ fun SyncStatusBadge(
 }
 
 @Composable
-private fun SyncStateBadge(syncState: SyncState, modifier: Modifier = Modifier) {
+private fun SyncStateBadge(
+    syncState: SyncState,
+    onSyncClick: () -> Unit,
+    onAuthError: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
     when (syncState) {
         is SyncState.Idle -> {
             // No visible badge when idle
@@ -105,20 +134,22 @@ private fun SyncStateBadge(syncState: SyncState, modifier: Modifier = Modifier) 
         }
 
         is SyncState.MergeAvailable -> {
-            Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.CloudDownload,
-                    contentDescription = "Updates available",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp),
-                )
-                if (syncState.commitCount > 0) {
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text(
-                        text = "↓ ${syncState.commitCount}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
+            Box(modifier = modifier.clickable { onSyncClick() }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.CloudDownload,
+                        contentDescription = "Updates available",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp),
                     )
+                    if (syncState.commitCount > 0) {
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text(
+                            text = "↓ ${syncState.commitCount}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                 }
             }
         }
@@ -140,19 +171,46 @@ private fun SyncStateBadge(syncState: SyncState, modifier: Modifier = Modifier) 
             }
         }
 
+        is SyncState.CredentialVaultLocked -> {
+            Row(
+                modifier = modifier.clickable { onSyncClick() },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = "Vault locked — tap to unlock",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(modifier = Modifier.width(2.dp))
+                Text(
+                    text = "Vault locked",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                )
+            }
+        }
+
         is SyncState.Error -> {
-            Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+            val isAuthError = syncState.error is DomainError.GitError.AuthFailed
+            Row(
+                modifier = modifier.clickable {
+                    if (isAuthError && onAuthError != null) onAuthError() else onSyncClick()
+                },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Icon(
                     imageVector = Icons.Default.Error,
-                    contentDescription = "Sync error",
+                    contentDescription = if (isAuthError) "Authentication failed — tap to update credentials" else "Sync error — tap to retry",
                     tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(16.dp),
                 )
                 Spacer(modifier = Modifier.width(2.dp))
                 Text(
-                    text = "Error",
+                    text = syncState.error.toSyncErrorMessage(),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error,
+                    maxLines = 2,
                 )
             }
         }

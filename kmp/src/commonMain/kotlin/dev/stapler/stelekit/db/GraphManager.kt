@@ -4,6 +4,10 @@
 
 package dev.stapler.stelekit.db
 
+import arrow.core.Either
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.GitAuth
+import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.migration.ChangeApplier
 import dev.stapler.stelekit.migration.ChangelogRepository
@@ -76,6 +80,11 @@ class GraphManager(
     // Set externally via registerGitSyncService() after GraphLoader/GraphWriter are wired.
     private val _activeGitSyncService = MutableStateFlow<dev.stapler.stelekit.git.GitSyncService?>(null)
     val activeGitSyncService: StateFlow<dev.stapler.stelekit.git.GitSyncService?> = _activeGitSyncService.asStateFlow()
+
+    // Vault credential store for the currently active graph (non-null when paranoid mode is on).
+    // Populated by wiring in App.kt after vault unlock.
+    private val _activeVaultCredentialStore = kotlinx.coroutines.flow.MutableStateFlow<dev.stapler.stelekit.git.VaultCredentialStore?>(null)
+    val activeVaultCredentialStore: kotlinx.coroutines.flow.StateFlow<dev.stapler.stelekit.git.VaultCredentialStore?> = _activeVaultCredentialStore.asStateFlow()
 
     init {
         loadRegistry()
@@ -242,6 +251,22 @@ class GraphManager(
         return graphId
     }
     
+    /**
+     * Clones a remote git repository to [localPath] and registers it as a new graph.
+     * Returns the new graphId on success, or a [DomainError.GitError] on failure.
+     * The clone step runs on [PlatformDispatcher.IO]; registration runs on the calling dispatcher.
+     */
+    suspend fun cloneAndAdd(
+        gitRepository: GitRepository,
+        url: String,
+        localPath: String,
+        auth: GitAuth,
+        onProgress: (String) -> Unit,
+    ): Either<DomainError.GitError, String> {
+        val cloneResult = gitRepository.clone(url, localPath, auth, onProgress)
+        return cloneResult.map { addGraph(localPath) }
+    }
+
     fun removeGraph(id: String): Boolean {
         // Cancel any active coroutines for this graph
         activeGraphJobs.remove(id)?.cancel()
@@ -257,6 +282,16 @@ class GraphManager(
         )
         _graphRegistry.value = updated
         saveRegistry()
+
+        // Clean up git credentials stored for this graph
+        try {
+            val cs = dev.stapler.stelekit.git.CredentialStore()
+            cs.delete("git_https_token_$id")
+            cs.delete("git_ssh_passphrase_$id")
+        } catch (_: Exception) {
+            // Non-critical — credential cleanup failure should not prevent graph removal
+        }
+
         return true
     }
     
@@ -290,6 +325,7 @@ class GraphManager(
         // Shutdown any git sync service from the previous graph
         _activeGitSyncService.value?.shutdown()
         _activeGitSyncService.value = null
+        _activeVaultCredentialStore.value = null
 
         // Close current factory and its database connection
         currentFactory?.close()
@@ -415,6 +451,9 @@ class GraphManager(
         if (!content.contains(".stele-vault")) {
             println("WARNING: $gitignorePath does not contain '.stele-vault' — vault header file may be accidentally committed to git.")
         }
+        if (!content.contains(".stele-credentials")) {
+            println("WARNING: $gitignorePath does not contain '.stele-credentials' — vault credential file may be accidentally committed to git.")
+        }
         if (!content.contains("_hidden_reserve")) {
             println("WARNING: $gitignorePath does not contain '_hidden_reserve/' — hidden volume directory may be accidentally committed to git, exposing its existence.")
         }
@@ -429,6 +468,15 @@ class GraphManager(
      */
     fun registerGitSyncService(service: dev.stapler.stelekit.git.GitSyncService?) {
         _activeGitSyncService.value = service
+    }
+
+    /**
+     * Registers the [VaultCredentialStore] for the currently active graph.
+     * Called from App.kt when a paranoid-mode graph is active.
+     * Set to null for non-paranoid graphs.
+     */
+    fun registerVaultCredentialStore(store: dev.stapler.stelekit.git.VaultCredentialStore?) {
+        _activeVaultCredentialStore.value = store
     }
 
     /**
@@ -457,6 +505,7 @@ class GraphManager(
         // Shutdown git sync service
         _activeGitSyncService.value?.shutdown()
         _activeGitSyncService.value = null
+        _activeVaultCredentialStore.value = null
 
         // Close database connection
         currentFactory?.close()

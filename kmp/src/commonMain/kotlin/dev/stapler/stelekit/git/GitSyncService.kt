@@ -43,6 +43,8 @@ class GitSyncService(
     private val configRepository: GitConfigRepository,
     private val networkMonitor: NetworkMonitor,
     private val fileSystem: FileSystem,
+    /** Returns the active [CredentialAccess] for checking vault availability before sync. Null means always available. */
+    private val credentialAccessProvider: (() -> CredentialAccess)? = null,
 ) {
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
@@ -71,6 +73,13 @@ class GitSyncService(
                 val err = DomainError.GitError.Offline
                 _syncState.value = SyncState.Error(err)
                 return@withContext err.left()
+            }
+
+            // 1.5 Check credential availability (vault may be locked)
+            val credAccess = try { credentialAccessProvider?.invoke() } catch (_: Exception) { null }
+            if (credAccess != null && !credAccess.isAvailable()) {
+                _syncState.value = SyncState.CredentialVaultLocked
+                return@withContext DomainError.GitError.AuthFailed("Vault is locked — unlock the vault to resume sync").left()
             }
 
             // 2. Load config
@@ -191,6 +200,12 @@ class GitSyncService(
                 return@withContext err.left()
             }
 
+            val credAccess = try { credentialAccessProvider?.invoke() } catch (_: Exception) { null }
+            if (credAccess != null && !credAccess.isAvailable()) {
+                _syncState.value = SyncState.CredentialVaultLocked
+                return@withContext DomainError.GitError.AuthFailed("Vault is locked").left()
+            }
+
             val config = when (val result = configRepository.getConfig(graphId)) {
                 is Either.Left -> {
                     return@withContext DomainError.GitError.FetchFailed(
@@ -301,6 +316,59 @@ class GitSyncService(
         _syncState.value = SyncState.Idle
         Unit.right()
     }
+
+    /**
+     * Resolves each conflicting file by accepting either the local or remote side,
+     * then commits the merge. Simpler than [resolveConflict] — no hunk-level parsing needed.
+     */
+    suspend fun resolveConflictBySide(
+        graphId: String,
+        fileResolutions: Map<String, MergeSide>,
+    ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
+        val config = when (val result = configRepository.getConfig(graphId)) {
+            is Either.Left -> return@withContext DomainError.GitError.CommitFailed(
+                result.value.message
+            ).left()
+            is Either.Right -> result.value
+        } ?: return@withContext DomainError.GitError.CommitFailed("No git config for $graphId").left()
+
+        for ((filePath, side) in fileResolutions) {
+            gitRepository.checkoutFile(config, filePath, side).onLeft { return@withContext it.left() }
+            gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
+        }
+
+        val message = buildCommitMessage(config, isMerge = true)
+        gitRepository.commit(config, message).onLeft { return@withContext it.left() }
+
+        val resolvedPaths = fileResolutions.keys.toList()
+        graphLoader.beginGitMerge(resolvedPaths)
+        try {
+            graphLoader.reloadFiles(resolvedPaths)
+        } finally {
+            graphLoader.endGitMerge()
+        }
+
+        _syncState.value = SyncState.Idle
+        Unit.right()
+    }
+
+    /**
+     * Aborts an in-progress git merge, leaving the repository in its pre-merge state.
+     * Call this when the user cancels conflict resolution.
+     */
+    suspend fun abortActiveMerge(graphId: String): Either<DomainError.GitError, Unit> =
+        withContext(PlatformDispatcher.IO) {
+            val config = when (val result = configRepository.getConfig(graphId)) {
+                is Either.Left -> return@withContext DomainError.GitError.CommitFailed(
+                    result.value.message
+                ).left()
+                is Either.Right -> result.value
+            } ?: return@withContext Unit.right()
+
+            gitRepository.abortMerge(config).also { result ->
+                if (result.isRight()) _syncState.value = SyncState.Idle
+            }
+        }
 
     /**
      * Starts a periodic sync loop that calls [fetchOnly] every [intervalMinutes] minutes.

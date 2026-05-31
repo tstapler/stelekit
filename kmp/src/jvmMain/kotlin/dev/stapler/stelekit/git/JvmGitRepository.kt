@@ -8,10 +8,12 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.ConflictHunk
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import org.eclipse.jgit.api.Git
@@ -30,8 +32,20 @@ import java.time.Instant
  * All I/O runs on PlatformDispatcher.IO.
  */
 class JvmGitRepository(
-    private val credentialStore: CredentialStore = CredentialStore(),
+    credentialAccess: dev.stapler.stelekit.git.CredentialAccess = CredentialStore(),
 ) : GitRepository {
+
+    private val logger = Logger("JvmGitRepository")
+
+    /**
+     * Active credential store — swapped to [VaultCredentialStore] when paranoid mode is on
+     * and the vault is unlocked, or back to [CredentialStore] (PBKDF2) when locked.
+     * @Volatile ensures visibility across the IO dispatcher thread pool.
+     */
+    @Volatile var credentialAccess: dev.stapler.stelekit.git.CredentialAccess = credentialAccess
+        internal set
+
+    override fun setCredentialAccess(access: CredentialAccess) { credentialAccess = access }
 
     override suspend fun isGitRepo(path: String): Boolean = withContext(PlatformDispatcher.IO) {
         try {
@@ -68,6 +82,10 @@ class JvmGitRepository(
         onProgress: (String) -> Unit,
     ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
         try {
+            // Resolve suspend credentials before entering JGit's synchronous territory
+            val preResolvedToken: String? = if (auth is GitAuth.HttpsToken) auth.tokenProvider() else null
+            val job = coroutineContext[kotlinx.coroutines.Job]
+
             val cmd = Git.cloneRepository()
                 .setURI(url)
                 .setDirectory(File(localPath))
@@ -76,11 +94,11 @@ class JvmGitRepository(
                     override fun beginTask(title: String, totalWork: Int) { onProgress(title) }
                     override fun update(completed: Int) {}
                     override fun endTask() {}
-                    override fun isCancelled() = false
+                    override fun isCancelled() = job?.isCancelled == true
                     override fun showDuration(enabled: Boolean) {}
                 })
 
-            configureAuth(cmd, auth)
+            configureAuth(cmd, auth, preResolvedToken)
             cmd.call().close()
             Unit.right()
         } catch (e: TransportException) {
@@ -441,11 +459,15 @@ class JvmGitRepository(
     ) {
         when (config.authType) {
             GitAuthType.HTTPS_TOKEN -> {
-                val token = config.httpsTokenKey?.let { credentialStore.retrieve(it) } ?: return
+                val token = config.httpsTokenKey?.let { credentialAccess.retrieve(it) } ?: return
                 cmd.setCredentialsProvider(UsernamePasswordCredentialsProvider("", token))
             }
             GitAuthType.SSH_KEY -> {
                 val keyPath = config.sshKeyPath ?: return
+                // Retrieve stored passphrase (null = no passphrase or vault locked)
+                val passphrase = config.sshKeyPassphraseKey?.let { credentialAccess.retrieve(it) }
+                // TODO(vault-cred): Wire passphrase into MINA sshd KeyPasswordProvider for encrypted key support.
+                // The passphrase is retrieved correctly; the KeyPasswordProvider integration is a follow-up task.
                 val sshFactory = SshdSessionFactoryBuilder()
                     .setPreferredAuthentications("publickey")
                     .setHomeDirectory(File(System.getProperty("user.home")))
@@ -464,13 +486,14 @@ class JvmGitRepository(
     private fun configureAuth(
         cmd: org.eclipse.jgit.api.TransportCommand<*, *>,
         auth: GitAuth,
+        preResolvedToken: String?,
     ) {
         when (auth) {
             is GitAuth.HttpsToken -> {
-                // For clone, we can use blocking token retrieval since we're already in IO context
-                val token = runCatching {
-                    kotlinx.coroutines.runBlocking { auth.tokenProvider() }
-                }.getOrNull() ?: return
+                val token = preResolvedToken ?: run {
+                    logger.warn("HTTPS token unavailable for clone — proceeding unauthenticated")
+                    return
+                }
                 cmd.setCredentialsProvider(
                     UsernamePasswordCredentialsProvider(auth.username, token)
                 )
