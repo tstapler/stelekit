@@ -311,7 +311,7 @@ private fun UnitDropdown(
         ) {
             MeasurementUnit.entries.forEach { unit ->
                 DropdownMenuItem(
-                    text = { Text("${unit.name.lowercase().replaceFirstChar { it.uppercase() }} (${unit.symbol()})") },
+                    text = { Text(unit.displayName()) },
                     onClick = {
                         onUnitSelect(unit)
                         expanded = false

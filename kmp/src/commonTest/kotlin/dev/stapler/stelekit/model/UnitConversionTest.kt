@@ -82,6 +82,12 @@ class UnitConversionTest {
     }
 
     @Test
+    fun formatFractionalInches_should_format_fifteen_sixteenths() {
+        // 0.9375 in = 15/16" — not reducible, hardest fraction case
+        assertEquals("15/16\"", formatFractionalInches(0.9375))
+    }
+
+    @Test
     fun metersToDisplayString_feetInches_produces_construction_format() {
         // 64.25 inches = 5' 4 1/4"
         assertEquals("5' 4 1/4\"", metersToDisplayString(1.63195, MeasurementUnit.FEET_INCHES))
