@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.34.0](https://github.com/tstapler/stelekit/compare/v0.33.0...v0.34.0) (2026-05-31)
+
+
+### Features
+
+* **image-meter:** activate image meter — wiring, full UX spec, accessibility, imperial units ([#113](https://github.com/tstapler/stelekit/issues/113)) ([69f95b1](https://github.com/tstapler/stelekit/commit/69f95b1874042afd85ec47c919a128796753317c))
+
+
+### Bug Fixes
+
+* **android:** make shadow cache reliably pick up external file changes ([3982384](https://github.com/tstapler/stelekit/commit/3982384966c57f16944d583bec93a20ae9557c20))
+* **ci:** trigger F-Droid update on release publish, not every push ([7c3e2dd](https://github.com/tstapler/stelekit/commit/7c3e2ddf031c38e01fa579ca81c93d33ec3f1093))
+
 ## [0.33.0](https://github.com/tstapler/stelekit/compare/v0.32.0...v0.33.0) (2026-05-31)
 
 
