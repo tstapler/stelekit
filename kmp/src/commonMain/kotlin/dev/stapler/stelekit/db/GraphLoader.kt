@@ -725,6 +725,7 @@ class GraphLoader(
 
             var loadedCount = 0
             for (entry in immediateFiles) {
+                fileSystem.invalidateShadow(entry.filePath)
                 val content = readFileDecrypted(entry.filePath) ?: continue
                 try {
                     parseAndSavePage(entry.filePath, content, ParseMode.FULL)
@@ -759,6 +760,7 @@ class GraphLoader(
                 remainingFiles.chunked(50).map { chunk ->
                     async(Dispatchers.Default) {
                         val count = chunk.count { entry ->
+                            fileSystem.invalidateShadow(entry.filePath)
                             val content = readFileDecrypted(entry.filePath) ?: return@count false
                             try {
                                 parseAndSavePage(entry.filePath, content, ParseMode.METADATA_ONLY)
@@ -903,6 +905,10 @@ class GraphLoader(
 
                                 if (isPriorityFile(filePath)) return@count true
 
+                                // Always drop any stale shadow before reading so the reconcile
+                                // cannot serve old cached content for files it has determined
+                                // need re-parsing. Mirrors loadFullPage's own-invalidate pattern.
+                                fileSystem.invalidateShadow(filePath)
                                 val content = readFileDecrypted(filePath) ?: return@count false
                                 try {
                                     val parseResult = parsePageWithoutSaving(filePath, content, mode)

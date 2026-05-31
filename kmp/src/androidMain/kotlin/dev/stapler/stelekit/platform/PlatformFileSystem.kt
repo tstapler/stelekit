@@ -8,6 +8,7 @@ import android.provider.OpenableColumns
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 
@@ -43,6 +44,11 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         private const val TAG = "PlatformFileSystem"
         const val PREFS_NAME = "stelekit_prefs"
         const val KEY_SAF_TREE_URI = "saf_tree_uri"
+
+        // Set to false after the first invalidateStaleShadow call in this process.
+        // Allows a full shadow purge on cold start so external writes (e.g. Termux)
+        // are always picked up rather than served from the stale on-device cache.
+        private val freshProcess = AtomicBoolean(true)
 
         fun toSafRoot(treeUri: Uri): String = "saf://${Uri.encode(Uri.decode(treeUri.toString()))}"
 
@@ -113,7 +119,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val id: String,
         val name: String,
         val mimeType: String,
-        val lastModified: Long
+        val lastModified: Long,
+        val size: Long = 0L,
     )
 
     private fun parseDocumentUri(safPath: String): Uri {
@@ -188,7 +195,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
             DocumentsContract.Document.COLUMN_MIME_TYPE,
-            DocumentsContract.Document.COLUMN_LAST_MODIFIED
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            DocumentsContract.Document.COLUMN_SIZE,
         )
         val results = mutableListOf<DocumentInfo>()
         ctx.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
@@ -196,12 +204,14 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             val nameCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
             val mimeCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
             val modCol  = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+            val sizeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
             while (cursor.moveToNext()) {
                 results.add(DocumentInfo(
                     id = cursor.getString(idCol),
                     name = cursor.getString(nameCol),
                     mimeType = cursor.getString(mimeCol),
-                    lastModified = cursor.getLong(modCol)
+                    lastModified = cursor.getLong(modCol),
+                    size = if (sizeCol >= 0) cursor.getLong(sizeCol) else 0L,
                 ))
             }
         }
@@ -564,7 +574,13 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     override fun updateShadow(path: String, content: String) {
         if (!path.startsWith("saf://")) return
         val relativePath = relativePathFromSaf(path)
-        if (relativePath.isNotEmpty()) shadowCache?.update(relativePath, content)
+        if (relativePath.isEmpty()) return
+        // For direct-access paths, stamp shadow with the actual file mtime so
+        // invalidateStale sees shadow.mtime == file.mtime (both from real FS).
+        // For write-behind paths the SAF file doesn't exist yet; ShadowFlushActor
+        // stamps the mtime after the flush succeeds.
+        val mtime = if (isDirectAccess()) getLastModifiedTime(path) ?: 0L else 0L
+        shadowCache?.update(relativePath, content, mtime)
     }
 
     override fun invalidateShadow(path: String) {
@@ -612,13 +628,55 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     override suspend fun invalidateStaleShadow(graphPath: String) {
         val cache = shadowCache ?: return
         if (!graphPath.startsWith("saf://")) return
+
+        // On the first call in this process, purge the entire shadow directory.
+        // External tools (e.g. Termux) can write files while the app is dead; the
+        // SAF provider may return stale metadata on cold start, making mtime-based
+        // invalidation unreliable. A full purge guarantees freshness at the cost of
+        // one SAF-backed startup for each cold-start cycle.
+        if (freshProcess.getAndSet(false)) {
+            Log.d(TAG, "invalidateStaleShadow: first call after process start — purging shadow for $graphPath")
+            cache.deleteAll()
+            return
+        }
+
         val pagesPath = "$graphPath/pages"
         val journalsPath = "$graphPath/journals"
-        // Batch cursor: 2 IPC calls total, no file content reads.
-        val pagesMods = listFilesWithModTimes(pagesPath)
-        val journalsMods = listFilesWithModTimes(journalsPath)
-        cache.invalidateStale("pages", pagesMods)
-        cache.invalidateStale("journals", journalsMods)
+        // Two IPC calls: mtime + size from a single SAF cursor per directory.
+        val pagesMeta = listFilesWithMetadata(pagesPath)
+        val journalsMeta = listFilesWithMetadata(journalsPath)
+        cache.invalidateStale("pages", pagesMeta)
+        cache.invalidateStale("journals", journalsMeta)
+    }
+
+    // Returns (fileName, lastModified, size) for each file in the directory.
+    // Used by invalidateStaleShadow to detect staleness by both mtime and size.
+    private fun listFilesWithMetadata(path: String): List<Triple<String, Long, Long>> {
+        if (isDirectAccess()) {
+            val realPath = if (path.startsWith("saf://")) resolveToRealPath(path) else path
+            if (realPath != null) {
+                return try {
+                    val dir = File(realPath)
+                    if (!dir.exists() || !dir.isDirectory) return emptyList()
+                    dir.listFiles()?.filter { it.isFile }
+                        ?.map { Triple(it.name, it.lastModified(), it.length()) }
+                        ?: emptyList()
+                } catch (_: Exception) { emptyList() }
+            }
+        }
+        if (!path.startsWith("saf://")) return emptyList()
+        return try {
+            val docUri = parseDocumentUri(path)
+            queryChildren(docUri)
+                .filter { it.mimeType != DocumentsContract.Document.MIME_TYPE_DIR }
+                .map { Triple(it.name, it.lastModified, it.size) }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "listFilesWithMetadata: permission denied for $path", e)
+            emptyList()
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "listFilesWithMetadata: invalid URI for $path", e)
+            emptyList()
+        }
     }
 
     override suspend fun syncShadow(graphPath: String) {

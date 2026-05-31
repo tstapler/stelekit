@@ -87,30 +87,59 @@ internal class ShadowFileCache(context: Context, graphId: String) {
         return if (f.exists() && f.length() > 0) f else null
     }
 
-    /** Writes [content] to the shadow after a successful SAF write. */
-    fun update(relativePath: String, content: String) {
+    /**
+     * Writes [content] to the shadow after a successful SAF write.
+     *
+     * [safMtime] should be the SAF-reported mtime of the just-written file. When provided,
+     * the shadow file's mtime is stamped with this value so [invalidateStale] comparisons
+     * remain reliable — without it, shadow.lastModified() reflects the current wall clock
+     * (which is always later than the SAF mtime), causing the shadow to appear "newer" than
+     * the SAF file and preventing correct invalidation in a narrow time window.
+     */
+    fun update(relativePath: String, content: String, safMtime: Long = 0L) {
         try {
             val f = safeShadowFile(shadowRoot, relativePath) ?: return
             f.parentFile?.mkdirs()
             f.writeText(content)
+            if (safMtime > 0L) f.setLastModified(safMtime)
         } catch (e: Exception) {
             Log.w(TAG, "update: failed to write shadow for $relativePath", e)
         }
     }
 
+    /** Stamps the shadow file's mtime without changing its content. Used by [ShadowFlushActor]
+     *  after a write-behind flush to synchronize shadow.mtime with the SAF file's mtime. */
+    fun stampMtime(relativePath: String, mtime: Long) {
+        if (mtime <= 0L) return
+        try {
+            safeShadowFile(shadowRoot, relativePath)?.takeIf { it.exists() }?.setLastModified(mtime)
+        } catch (e: Exception) {
+            Log.w(TAG, "stampMtime: failed for $relativePath", e)
+        }
+    }
+
     /**
-     * Deletes shadow entries whose mtime is older than the corresponding SAF file.
+     * Deletes shadow entries that are stale compared to the corresponding SAF file.
      *
-     * Uses [fileModTimes] from a batch SAF cursor (one IPC per directory, not per file).
+     * A shadow entry is considered stale when EITHER:
+     * - the SAF mtime is newer than the shadow mtime, OR
+     * - the SAF file size differs from the shadow file size (catches cases where the
+     *   SAF provider returns a stale mtime — e.g. after Termux writes a file while
+     *   the app is backgrounded and the provider has not yet refreshed its metadata).
+     *
+     * Uses [fileMetadata] from a batch SAF cursor (one IPC per directory, not per file).
      * Never reads file content — local deletes only, so callers incur zero extra SAF IPC.
      * After this call, stale entries are absent and [readFile] falls through to SAF naturally.
      */
-    fun invalidateStale(subdir: String, fileModTimes: List<Pair<String, Long>>) {
+    fun invalidateStale(subdir: String, fileMetadata: List<Triple<String, Long, Long>>) {
         val subdirFile = File(shadowRoot, subdir)
-        for ((fileName, safMtime) in fileModTimes) {
-            if (safMtime <= 0L) continue
+        for ((fileName, safMtime, safSize) in fileMetadata) {
+            if (safMtime <= 0L && safSize <= 0L) continue
             val shadowFile = File(subdirFile, fileName)
-            if (shadowFile.exists() && shadowFile.lastModified() < safMtime) {
+            if (!shadowFile.exists()) continue
+            val mtimeStale = safMtime > 0L && shadowFile.lastModified() < safMtime
+            val sizeChanged = safSize > 0L && shadowFile.length() != safSize
+            if (mtimeStale || sizeChanged) {
                 shadowFile.delete()
             }
         }

@@ -57,6 +57,13 @@ internal class ShadowFlushActor(
             val ok = fileSystem.writeFile(safPath, content)
             if (ok) {
                 queue.dequeue(safPath)
+                // Stamp shadow mtime with the post-flush SAF mtime so the shadow is not
+                // incorrectly deleted by invalidateStale on the next startup. Without this,
+                // shadow.mtime = time of write-behind write < SAF mtime = time of flush,
+                // causing the shadow to appear stale even though its content is correct.
+                fileSystem.getLastModifiedTime(safPath)?.let { mtime ->
+                    shadowCache.stampMtime(relativePath, mtime)
+                }
                 Log.d(TAG, "flushPage: flushed $relativePath to SAF")
             } else {
                 Log.w(TAG, "flushPage: SAF write failed for $relativePath — will retry")
