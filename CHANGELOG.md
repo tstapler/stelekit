@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.0](https://github.com/tstapler/stelekit/compare/v0.32.0...v0.33.0) (2026-05-31)
+
+
+### Features
+
+* **git:** vault-integrated credentials, conflict resolution, git sync UX ([#116](https://github.com/tstapler/stelekit/issues/116)) ([5b4fc9d](https://github.com/tstapler/stelekit/commit/5b4fc9d4e432a81191ba651bd7a41e9832ca637a))
+
 ## [0.32.0](https://github.com/tstapler/stelekit/compare/v0.31.1...v0.32.0) (2026-05-31)
 
 
