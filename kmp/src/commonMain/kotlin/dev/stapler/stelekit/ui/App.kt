@@ -1078,7 +1078,8 @@ private fun GraphContent(
                                         } else false
                                     }
                                 } else null,
-                                onImportImage = if (imageImportService != null) {
+                                onImportImage = if (imageImportService != null &&
+                                    dev.stapler.stelekit.platform.sensor.SensorModule.cameraProvider.isAvailable) {
                                     {
                                         scope.launch {
                                             val page = repos.journalService.ensureTodayJournal()
@@ -1091,7 +1092,7 @@ private fun GraphContent(
                                                         graphPath = activeGraphPath,
                                                         pageUuid = page.uuid,
                                                         source = dev.stapler.stelekit.model.ImageSource.CAMERA,
-                                                        insertToJournalPage = true,
+                                                        insertToJournalPage = false,
                                                     )
                                                     result.onRight { annotation ->
                                                         viewModel.navigateToAnnotationEditor(annotation.uuid, page.uuid)

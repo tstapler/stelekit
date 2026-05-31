@@ -484,7 +484,7 @@ class AnnotationEditorViewModel(
             val dx = points[1].x - points[0].x
             val dy = points[1].y - points[0].y
             val normalizedLength = kotlin.math.sqrt(dx * dx + dy * dy)
-            if (normalizedLength < 0.01) {
+            if (normalizedLength < 0.005) {
                 _state.update { it.copy(inProgressPoints = emptyList()) }
                 return
             }
