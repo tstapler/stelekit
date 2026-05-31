@@ -114,6 +114,8 @@ fun AnnotationEditorScreen(
     imageAnnotation: ImageAnnotation,
     modifier: Modifier = Modifier,
     onNavigateBack: () -> Unit = {},
+    /** Optional settings store for persisting first-calibration-use flag across sessions. */
+    platformSettings: dev.stapler.stelekit.platform.Settings? = null,
     /** Optional active device for Story 5.7 — BLE status chip and "Set from laser" button. */
     activeDevice: ExternalMeasurementDevice? = null,
     /**
@@ -142,7 +144,9 @@ fun AnnotationEditorScreen(
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var showCalibrationSheet by remember { mutableStateOf(false) }
     var showCalibrationChangeWarning by remember { mutableStateOf(false) }
-    var isFirstCalibrationUse by remember { mutableStateOf(true) }
+    var isFirstCalibrationUse by remember {
+        mutableStateOf(platformSettings?.getBoolean("image_meter_calibrated_before", false)?.not() ?: true)
+    }
     val canUndoCalibration by viewModel.canUndoCalibration.collectAsState()
     val calibrationMessage by viewModel.calibrationChangeMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -270,8 +274,11 @@ fun AnnotationEditorScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
         } else {
-            // Once calibrated, mark first-use as done
-            LaunchedEffect(Unit) { isFirstCalibrationUse = false }
+            // Once calibrated, mark first-use as done and persist across sessions
+            LaunchedEffect(Unit) {
+                isFirstCalibrationUse = false
+                platformSettings?.putBoolean("image_meter_calibrated_before", true)
+            }
         }
 
         // Story 8.4: Tilt warning — shown when capture-time pitch > 15° or roll > 10°.

@@ -99,6 +99,7 @@ import dev.stapler.stelekit.voice.VoiceSettings
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
 import kotlinx.datetime.DateTimeUnit
@@ -405,11 +406,19 @@ private fun GraphContent(
     }
     LaunchedEffect(activeGraphPath) {
         if (activeGraphPath.isNotEmpty() && imageSidecarManager != null) {
-            dev.stapler.stelekit.db.sidecar.ImageSidecarIndexer(
-                fileSystem = fileSystem,
-                imageAnnotationRepository = repos.imageAnnotationRepository,
-                measurementAnnotationRepository = repos.measurementAnnotationRepository,
-            ).rebuildFromSidecars(activeGraphPath)
+            // Only rebuild if DB has no annotations — avoids full-scan on every open
+            val hasExisting = repos.imageAnnotationRepository.getAllImageAnnotations()
+                .first()
+                .getOrNull()
+                ?.isNotEmpty() == true
+            if (!hasExisting) {
+                dev.stapler.stelekit.db.sidecar.ImageSidecarIndexer(
+                    fileSystem = fileSystem,
+                    imageAnnotationRepository = repos.imageAnnotationRepository,
+                    measurementAnnotationRepository = repos.measurementAnnotationRepository,
+                ).rebuildFromSidecars(activeGraphPath)
+                    .onLeft { err -> graphContentLogger.warn("Sidecar reindex failed: ${err.message}") }
+            }
         }
     }
     val graphLoader = remember {

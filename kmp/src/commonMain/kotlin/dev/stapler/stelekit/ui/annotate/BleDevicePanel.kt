@@ -47,6 +47,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
+private const val MOCK_CONNECTION_DELAY_MS = 2_000L
+
 sealed interface BleDevicePanelState {
     data object Scanning : BleDevicePanelState
     data object NoDevicesFound : BleDevicePanelState
@@ -57,6 +59,37 @@ sealed interface BleDevicePanelState {
     data class ReadingReceived(val device: ExternalMeasurementDevice, val valueMeters: Double) : BleDevicePanelState
     data class PermissionDenied(val isPermanent: Boolean) : BleDevicePanelState
     data object BluetoothOff : BleDevicePanelState
+}
+
+@Composable
+private fun ConnectedAwaitingContent(
+    deviceName: String,
+    onUseDrawMethod: () -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(
+            imageVector = Icons.Default.CheckCircle,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp),
+        )
+        Text("Connected: $deviceName", style = MaterialTheme.typography.bodyMedium)
+    }
+    Spacer(modifier = Modifier.height(16.dp))
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = "Point laser at your reference, then press the measure button on the device.",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(12.dp),
+        )
+    }
+    TextButton(onClick = onUseDrawMethod) {
+        Text("Use draw method instead")
+    }
 }
 
 private fun formatMeters(valueMeters: Double): String {
@@ -180,8 +213,8 @@ fun BleDevicePanel(
                                     onClick = {
                                         panelState = BleDevicePanelState.Connecting(device.deviceName)
                                         scope.launch {
-                                            delay(2000)
-                                            // TODO: wire device.connect() when available
+                                            // TODO: replace delay with device.connect() when real BLE connection is wired
+                                            delay(MOCK_CONNECTION_DELAY_MS)
                                             panelState = BleDevicePanelState.Connected(device)
                                         }
                                     },
@@ -210,67 +243,17 @@ fun BleDevicePanel(
                 }
 
                 is BleDevicePanelState.Connected -> {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Text(
-                            text = "Connected: ${state.device.deviceName}",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Surface(
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text(
-                            text = "Point laser at your reference, then press the measure button on the device.",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(8.dp),
-                        )
-                    }
-                    TextButton(onClick = onUseDrawMethod) {
-                        Text("Use draw method instead")
-                    }
+                    ConnectedAwaitingContent(
+                        deviceName = state.device.deviceName,
+                        onUseDrawMethod = onUseDrawMethod,
+                    )
                 }
 
                 is BleDevicePanelState.AwaitingReading -> {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Text(
-                            text = "Connected: ${state.device.deviceName}",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Surface(
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        shape = MaterialTheme.shapes.small,
-                    ) {
-                        Text(
-                            text = "Point laser at your reference, then press the measure button on the device.",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(8.dp),
-                        )
-                    }
-                    TextButton(onClick = onUseDrawMethod) {
-                        Text("Use draw method instead")
-                    }
+                    ConnectedAwaitingContent(
+                        deviceName = state.device.deviceName,
+                        onUseDrawMethod = onUseDrawMethod,
+                    )
                 }
 
                 is BleDevicePanelState.ReadingReceived -> {
