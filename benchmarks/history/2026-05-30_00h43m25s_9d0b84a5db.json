@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-30 00:43:25 UTC",
+  "gitSha": "9d0b84a5db",
+  "branch": "stelekit-profiling",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 5,
+  "phase2Ms": 2,
+  "phase3Ms": 11,
+  "totalMs": 18,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 17,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.06,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 19592,
+      "pct": 37.2
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 5163,
+      "pct": 9.8
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 4565,
+      "pct": 8.7
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 3096,
+      "pct": 5.9
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 2181,
+      "pct": 4.1
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 1307,
+      "pct": 2.5
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 1233,
+      "pct": 2.3
+    },
+    {
+      "frame": "java.util.LinkedHashMap_[k]",
+      "samples": 1166,
+      "pct": 2.2
+    },
+    {
+      "frame": "java.util.HashMap$Node[]_[k]",
+      "samples": 1151,
+      "pct": 2.2
+    },
+    {
+      "frame": "java.nio.DirectByteBuffer_[k]",
+      "samples": 1134,
+      "pct": 2.2
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "org/sqlite/core/NativeDB.step",
+      "samples": 4190,
+      "pct": 56.1
+    },
+    {
+      "frame": "org/sqlite/core/NativeDB.prepare_utf8",
+      "samples": 1991,
+      "pct": 26.7
+    },
+    {
+      "frame": "dev/stapler/stelekit/parsing/lexer/Lexer.nextToken_[j]",
+      "samples": 132,
+      "pct": 1.8
+    },
+    {
+      "frame": "org/sqlite/core/NativeDB.finalize",
+      "samples": 104,
+      "pct": 1.4
+    },
+    {
+      "frame": "dev/stapler/stelekit/parser/MarkdownParser.reconstructContent_[j]",
+      "samples": 88,
+      "pct": 1.2
+    },
+    {
+      "frame": "java/util/HashMap.putVal_[i]",
+      "samples": 70,
+      "pct": 0.9
+    },
+    {
+      "frame": "dev/stapler/stelekit/model/Validation.validateString_[j]",
+      "samples": 63,
+      "pct": 0.8
+    },
+    {
+      "frame": "kotlin/collections/ArraysKt___ArraysKt.joinToString$default_[i]",
+      "samples": 39,
+      "pct": 0.5
+    },
+    {
+      "frame": "java/lang/Long.toString_[i]",
+      "samples": 34,
+      "pct": 0.5
+    },
+    {
+      "frame": "dev/stapler/stelekit/util/ContentHasher.sha256_[j]",
+      "samples": 28,
+      "pct": 0.4
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}

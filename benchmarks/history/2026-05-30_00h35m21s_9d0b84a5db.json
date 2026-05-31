@@ -1,0 +1,97 @@
+{
+  "timestamp": "2026-05-30 00:35:21 UTC",
+  "gitSha": "9d0b84a5db",
+  "branch": "stelekit-profiling",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 4,
+  "phase2Ms": 2,
+  "phase3Ms": 9,
+  "totalMs": 14,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 18,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.06,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 503,
+      "pct": 55.7
+    },
+    {
+      "frame": "java.io.FileOutputStream$1_[k]",
+      "samples": 172,
+      "pct": 19.0
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 49,
+      "pct": 5.4
+    },
+    {
+      "frame": "java.io.File_[k]",
+      "samples": 48,
+      "pct": 5.3
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 32,
+      "pct": 3.5
+    },
+    {
+      "frame": "java.util.ArrayList_[k]",
+      "samples": 14,
+      "pct": 1.6
+    },
+    {
+      "frame": "java.io.FileDescriptor_[k]",
+      "samples": 9,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 8,
+      "pct": 0.9
+    },
+    {
+      "frame": "java.io.FileCleanable_[k]",
+      "samples": 5,
+      "pct": 0.6
+    },
+    {
+      "frame": "java.lang.Object_[k]",
+      "samples": 4,
+      "pct": 0.4
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "kotlinx/coroutines/flow/internal/SafeCollector.invokeSuspend_[0]",
+      "samples": 1,
+      "pct": 33.3
+    },
+    {
+      "frame": "org/sqlite/core/NativeDB.step",
+      "samples": 1,
+      "pct": 33.3
+    },
+    {
+      "frame": "dev/stapler/stelekit/repository/RepositoryFactoryImpl$wireCacheCallbacks$1.invokeSuspend_[0]",
+      "samples": 1,
+      "pct": 33.3
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}

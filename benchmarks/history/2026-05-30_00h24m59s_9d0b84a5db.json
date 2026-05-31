@@ -1,0 +1,102 @@
+{
+  "timestamp": "2026-05-30 00:24:59 UTC",
+  "gitSha": "9d0b84a5db",
+  "branch": "stelekit-profiling",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 5,
+  "phase2Ms": 2,
+  "phase3Ms": 9,
+  "totalMs": 16,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 18,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.06,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 548,
+      "pct": 60.0
+    },
+    {
+      "frame": "java.io.FileOutputStream$1_[k]",
+      "samples": 156,
+      "pct": 17.1
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 57,
+      "pct": 6.2
+    },
+    {
+      "frame": "java.io.File_[k]",
+      "samples": 32,
+      "pct": 3.5
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 24,
+      "pct": 2.6
+    },
+    {
+      "frame": "java.util.ArrayList_[k]",
+      "samples": 10,
+      "pct": 1.1
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 8,
+      "pct": 0.9
+    },
+    {
+      "frame": "java.util.ArrayList$Itr_[k]",
+      "samples": 8,
+      "pct": 0.9
+    },
+    {
+      "frame": "java.lang.String[]_[k]",
+      "samples": 6,
+      "pct": 0.7
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 5,
+      "pct": 0.5
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "org/sqlite/core/NativeDB.prepare_utf8",
+      "samples": 2,
+      "pct": 40.0
+    },
+    {
+      "frame": "java/util/concurrent/atomic/AtomicIntegerFieldUpdater$AtomicIntegerFieldUpdaterImpl.accessCheck_[j]",
+      "samples": 1,
+      "pct": 20.0
+    },
+    {
+      "frame": "java/io/FileInputStream.open0",
+      "samples": 1,
+      "pct": 20.0
+    },
+    {
+      "frame": "dev/stapler/stelekit/editor/commands/EssentialCommands.getAll_[0]",
+      "samples": 1,
+      "pct": 20.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}
