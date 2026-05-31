@@ -61,6 +61,13 @@ fun PerformanceDashboard(
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf("Histograms", "Spans", "Traces", "Plans", "SQL Stats")
 
+    // Subscribe to span data as soon as the Performance screen opens, not lazily on tab click.
+    // Without this, the Spans tab shows a blank-then-populated flash because collectAsState
+    // inside SpansTab only starts when SpansTab is composed (i.e. when the user clicks the tab).
+    val preloadedSpans by (spanRepository?.getRecentSpans(500)
+        ?: kotlinx.coroutines.flow.flowOf(emptyList()))
+        .collectAsState(emptyList())
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -78,7 +85,7 @@ fun PerformanceDashboard(
 
         when (selectedTab) {
             0 -> HistogramsTab(histogramWriter)
-            1 -> SpansTab(spanRepository, ringBuffer, perfExporter)
+            1 -> SpansTab(spanRepository, ringBuffer, perfExporter, preloadedSpans)
             2 -> TracesTab()
             3 -> QueryPlansTab(queryPlanRepository, queryStatsCollector)
             4 -> QueryStatsTab(queryStatsRepository)
@@ -179,6 +186,7 @@ private fun SpansTab(
     spanRepository: SpanRepository?,
     ringBuffer: RingBufferSpanExporter?,
     perfExporter: PerfExporter? = null,
+    preloadedSpans: List<SerializedSpan> = emptyList(),
 ) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -186,8 +194,10 @@ private fun SpansTab(
     // SQLite-persisted spans merged with in-flight ring buffer spans.
     // The ring buffer holds spans from the last 0–5s that haven't been drained to SQLite yet,
     // so without this merge those recent spans are invisible when navigating back to this page.
+    // Use preloadedSpans (fetched at PerformanceDashboard level) as the initial value so this
+    // tab shows data immediately on first composition instead of flashing empty.
     val sqliteSpans by (spanRepository?.getRecentSpans(500) ?: kotlinx.coroutines.flow.flowOf(emptyList<SerializedSpan>()))
-        .collectAsState(emptyList())
+        .collectAsState(preloadedSpans)
 
     val currentSqliteSpans = rememberUpdatedState(sqliteSpans)
     val liveSpans by produceState(sqliteSpans, ringBuffer, spanRepository) {
