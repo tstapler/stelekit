@@ -17,6 +17,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class VoiceCaptureViewModelTest {
@@ -380,7 +381,11 @@ class VoiceCaptureViewModelTest {
         )
         vm.onMicTapped()
         advanceUntilIdle()
-        assertIs<VoiceCaptureState.Done>(vm.state.first())
+
+        val doneState = vm.state.first()
+        assertIs<VoiceCaptureState.Done>(doneState)
+        assertNull(doneState.transcriptPageTitle, "Short transcript must not create a transcript page")
+        assertNull(doneState.savedToPageName, "No page open means savedToPageName must be null")
     }
 
     @Test
@@ -403,7 +408,11 @@ class VoiceCaptureViewModelTest {
         )
         vm.onMicTapped()
         advanceUntilIdle()
-        assertIs<VoiceCaptureState.Done>(vm.state.first())
+
+        val doneState = vm.state.first()
+        assertIs<VoiceCaptureState.Done>(doneState)
+        assertNull(doneState.transcriptPageTitle, "Short transcript must not create a transcript page even with open page")
+        assertNotNull(doneState.savedToPageName, "Short transcript with open page must set savedToPageName")
         val blocks = blockRepo.getBlocksForPage(targetPage.uuid).first().getOrNull().orEmpty()
         assertTrue(blocks.any { it.content.contains("📝 Voice note") })
     }
@@ -594,12 +603,17 @@ class VoiceCaptureViewModelTest {
         vm.onMicTapped()
         advanceUntilIdle()
 
-        assertIs<VoiceCaptureState.Done>(vm.state.first())
+        val doneState = vm.state.first()
+        assertIs<VoiceCaptureState.Done>(doneState)
+        assertNotNull(doneState.transcriptPageTitle, "Done.transcriptPageTitle must be non-null for long transcript")
+        assertNull(doneState.savedToPageName, "Done.savedToPageName must be null when no page is open")
         val journalPage = journalService.ensureTodayJournal()
         val blocks = blockRepo.getBlocksForPage(journalPage.uuid).first().getOrNull().orEmpty()
         val voiceBlock = blocks.firstOrNull { it.content.contains("📝 Voice note") }
         assertNotNull(voiceBlock, "Expected voice note block in journal")
         assertTrue(voiceBlock!!.content.contains("[[Voice Note "), "Long transcript block must contain wikilink")
+        assertTrue(voiceBlock.content.contains("[[${doneState.transcriptPageTitle}]]"),
+            "Wikilink in journal block must match Done.transcriptPageTitle")
     }
 
     @Test
@@ -619,7 +633,10 @@ class VoiceCaptureViewModelTest {
         vm.onMicTapped()
         advanceUntilIdle()
 
-        assertIs<VoiceCaptureState.Done>(vm.state.first())
+        val doneState = vm.state.first()
+        assertIs<VoiceCaptureState.Done>(doneState)
+        assertNotNull(doneState.transcriptPageTitle, "Done.transcriptPageTitle must be non-null for long transcript")
+        assertNotNull(doneState.savedToPageName, "Done.savedToPageName must be non-null when page is open")
         // Verify transcript page was created
         val journalPage = journalService.ensureTodayJournal()
         val journalBlocks = blockRepo.getBlocksForPage(journalPage.uuid).first().getOrNull().orEmpty()

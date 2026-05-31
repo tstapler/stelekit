@@ -87,7 +87,8 @@ class VoiceCaptureViewModel(
                 }
                 TranscriptResult.Failure.PermissionDenied -> {
                     _state.value = VoiceCaptureState.Error(
-                        PipelineStage.RECORDING, "Microphone permission denied"
+                        PipelineStage.RECORDING, "Microphone permission denied",
+                        VoiceErrorKind.PERMISSION_DENIED,
                     )
                 }
                 is TranscriptResult.Success -> processTranscript(transcriptResult.text.trim())
@@ -103,7 +104,8 @@ class VoiceCaptureViewModel(
             file = result
             if (result.isEmpty) {
                 _state.value = VoiceCaptureState.Error(
-                    PipelineStage.RECORDING, "Microphone permission denied"
+                    PipelineStage.RECORDING, "Microphone permission denied",
+                    VoiceErrorKind.PERMISSION_DENIED,
                 )
                 return null
             }
@@ -140,15 +142,19 @@ class VoiceCaptureViewModel(
         val pageTitle = "Voice Note $dateLabel $timeLabel"
 
         val targetPageUuid = currentOpenPageUuid()
+        val targetPageName: String? = try {
+            if (targetPageUuid != null) journalService.getPageNameByUuid(targetPageUuid) else null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("Could not resolve page name for UUID $targetPageUuid: ${e.message}")
+            null
+        }
         val wordCount = LlmProviderSupport.wordCount(rawTranscript)
         val useTranscriptPage = wordCount >= pipeline.transcriptPageWordThreshold
 
         val transcriptPageContent = if (useTranscriptPage) {
-            val sourcePage: String = if (targetPageUuid != null) {
-                journalService.getPageNameByUuid(targetPageUuid) ?: dateLabel.replace('-', '_')
-            } else {
-                dateLabel.replace('-', '_')
-            }
+            val sourcePage = targetPageName ?: dateLabel.replace('-', '_')
             buildTranscriptPageContent(
                 sourcePage = sourcePage,
                 formattedText = if (llmProducedOutput) formattedText else null,
@@ -183,6 +189,8 @@ class VoiceCaptureViewModel(
         _state.value = VoiceCaptureState.Done(
             insertedText = formattedText,
             isLikelyTruncated = isLikelyTruncated,
+            transcriptPageTitle = if (useTranscriptPage) pageTitle else null,
+            savedToPageName = targetPageName,
         )
     }
 

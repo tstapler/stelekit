@@ -4,8 +4,11 @@
 package dev.stapler.stelekit
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -45,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -52,6 +56,7 @@ import dev.stapler.stelekit.app.R
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.voice.VoiceCaptureState
+import dev.stapler.stelekit.voice.VoiceErrorKind
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 
@@ -106,26 +111,28 @@ private fun VoiceCaptureScreen(
 ) {
     val state by viewModel.state.collectAsState()
 
-    // Auto-dismiss after a brief "Saved!" flash
+    // Auto-dismiss after confirmation flash; Close button is always available for early exit
     LaunchedEffect(state) {
         if (state is VoiceCaptureState.Done) {
-            delay(1500)
+            delay(3000)
             onDismiss()
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Translucent dim layer — tap to cancel
+        // Translucent dim layer — interactive only during Recording (stop) and Done (close)
+        val overlayInteractionSource = remember { MutableInteractionSource() }
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.4f))
                 .clickable(
+                    enabled = state is VoiceCaptureState.Recording || state is VoiceCaptureState.Done,
                     indication = null,
-                    interactionSource = remember { MutableInteractionSource() },
+                    interactionSource = overlayInteractionSource,
                 ) {
                     when (state) {
-                        is VoiceCaptureState.Recording -> viewModel.onMicTapped() // stop recording
+                        is VoiceCaptureState.Recording -> viewModel.onMicTapped()
                         is VoiceCaptureState.Done      -> onDismiss()
                         else                           -> Unit
                     }
@@ -162,29 +169,23 @@ private fun VoiceCaptureScreen(
 
                 when (val s = state) {
                     VoiceCaptureState.Idle -> {
-                        // Transient; shown only if pipeline hasn't started yet
-                        CircularProgressIndicator(modifier = Modifier.size(40.dp))
+                        IdleContent(onCancel = { viewModel.cancel(); onDismiss() })
                     }
-
                     VoiceCaptureState.Recording -> {
                         RecordingContent(onStop = viewModel::onMicTapped, onCancel = { viewModel.cancel(); onDismiss() })
                     }
-
                     VoiceCaptureState.Transcribing -> {
                         ProcessingContent(label = "Transcribing…")
                     }
-
                     VoiceCaptureState.Formatting -> {
                         ProcessingContent(label = "Formatting…")
                     }
-
                     is VoiceCaptureState.Done -> {
-                        DoneContent()
+                        DoneContent(state = s, onDismiss = onDismiss)
                     }
-
                     is VoiceCaptureState.Error -> {
                         ErrorContent(
-                            message = s.message,
+                            error = s,
                             onRetry = { viewModel.dismissError(); viewModel.onMicTapped() },
                             onDismiss = onDismiss,
                         )
@@ -198,12 +199,21 @@ private fun VoiceCaptureScreen(
 }
 
 @Composable
+private fun IdleContent(onCancel: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        CircularProgressIndicator(modifier = Modifier.size(40.dp))
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(onClick = onCancel) { Text("Cancel") }
+    }
+}
+
+@Composable
 private fun RecordingContent(onStop: () -> Unit, onCancel: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = "Recording…",
             style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.error,
+            color = MaterialTheme.colorScheme.primary,
         )
         Spacer(Modifier.height(8.dp))
         Text(
@@ -231,7 +241,7 @@ private fun RecordingContent(onStop: () -> Unit, onCancel: () -> Unit) {
                     modifier = Modifier.size(32.dp),
                 )
             }
-            Spacer(Modifier.width(88.dp)) // balance the row
+            Spacer(Modifier.width(88.dp))
         }
     }
 }
@@ -246,34 +256,92 @@ private fun ProcessingContent(label: String) {
 }
 
 @Composable
-private fun DoneContent() {
+private fun DoneContent(state: VoiceCaptureState.Done, onDismiss: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        val titleText = if (state.isLikelyTruncated) {
+            "⚠️  Saved — recording may be incomplete"
+        } else {
+            "✓  Note saved"
+        }
+        val titleColor = if (state.isLikelyTruncated) {
+            MaterialTheme.colorScheme.tertiary
+        } else {
+            MaterialTheme.colorScheme.primary
+        }
         Text(
-            text = "✓  Saved to today's journal",
+            text = titleText,
             style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
+            color = titleColor,
         )
         Spacer(Modifier.height(4.dp))
+        val destination = if (state.savedToPageName != null) {
+            "Saved to [[${state.savedToPageName}]]"
+        } else {
+            "Saved to today's journal"
+        }
         Text(
-            text = "Closing…",
+            text = destination,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (state.transcriptPageTitle != null) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Full transcript: [[${state.transcriptPageTitle}]]",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(onClick = onDismiss) { Text("Close") }
     }
 }
 
 @Composable
-private fun ErrorContent(message: String, onRetry: () -> Unit, onDismiss: () -> Unit) {
+private fun ErrorContent(
+    error: VoiceCaptureState.Error,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.error,
-        )
+        Surface(
+            color = MaterialTheme.colorScheme.errorContainer,
+            shape = RoundedCornerShape(8.dp),
+        ) {
+            Text(
+                text = error.message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+        }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onDismiss) { Text("Dismiss") }
-            Button(onClick = onRetry) { Text("Retry") }
+            when (error.kind) {
+                VoiceErrorKind.PERMISSION_DENIED -> {
+                    Button(onClick = {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", context.packageName, null)
+                        }
+                        context.startActivity(intent)
+                        onDismiss()
+                    }) { Text("Open Settings") }
+                }
+                VoiceErrorKind.NO_GRAPH -> {
+                    Button(onClick = {
+                        context.startActivity(
+                            Intent(context, MainActivity::class.java)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                        onDismiss()
+                    }) { Text("Open SteleKit") }
+                }
+                VoiceErrorKind.GENERIC -> {
+                    Button(onClick = onRetry) { Text("Record Again") }
+                }
+            }
         }
     }
 }

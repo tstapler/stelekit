@@ -4,11 +4,22 @@ package dev.stapler.stelekit.voice
 
 enum class PipelineStage { RECORDING, TRANSCRIBING, FORMATTING, JOURNAL }
 
+enum class VoiceErrorKind { PERMISSION_DENIED, NO_GRAPH, GENERIC }
+
 sealed interface VoiceCaptureState {
     data object Idle : VoiceCaptureState
     data object Recording : VoiceCaptureState
     data object Transcribing : VoiceCaptureState
     data object Formatting : VoiceCaptureState
-    data class Done(val insertedText: String, val isLikelyTruncated: Boolean = false) : VoiceCaptureState
-    data class Error(val stage: PipelineStage, val message: String) : VoiceCaptureState
+    data class Done(
+        val insertedText: String,
+        val isLikelyTruncated: Boolean = false,
+        val transcriptPageTitle: String? = null,
+        val savedToPageName: String? = null,
+    ) : VoiceCaptureState
+    data class Error(
+        val stage: PipelineStage,
+        val message: String,
+        val kind: VoiceErrorKind = VoiceErrorKind.GENERIC,
+    ) : VoiceCaptureState
 }

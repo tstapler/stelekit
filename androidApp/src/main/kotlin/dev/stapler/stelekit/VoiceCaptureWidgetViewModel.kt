@@ -38,7 +38,8 @@ class VoiceCaptureWidgetViewModel(app: Application) : AndroidViewModel(app) {
         if (repoSet == null) {
             _state.value = VoiceCaptureState.Error(
                 dev.stapler.stelekit.voice.PipelineStage.RECORDING,
-                "No graph configured — open SteleKit first"
+                "No graph configured — open SteleKit first",
+                dev.stapler.stelekit.voice.VoiceErrorKind.NO_GRAPH,
             )
             return
         }
