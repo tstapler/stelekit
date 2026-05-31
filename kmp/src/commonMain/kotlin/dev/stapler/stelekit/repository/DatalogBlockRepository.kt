@@ -121,6 +121,11 @@ class DatalogBlockRepository : BlockRepository {
         }
     }
 
+    override fun getBlocksByUuids(uuids: List<String>): Flow<Either<DomainError, List<Block>>> {
+        val uuidSet = uuids.toHashSet()
+        return blocks.map { map -> map.values.filter { it.uuid in uuidSet }.right() }
+    }
+
     override fun getLinkedReferences(pageName: String): Flow<Either<DomainError, List<Block>>> {
         val wikiLinkPattern = "\\[\\[${Regex.escape(pageName)}\\]\\]".toRegex(RegexOption.IGNORE_CASE)
         return blocks.map { map ->

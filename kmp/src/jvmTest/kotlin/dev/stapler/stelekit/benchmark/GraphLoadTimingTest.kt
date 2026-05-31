@@ -500,6 +500,73 @@ class GraphLoadTimingTest {
     }
 
     /**
+     * Regression guard: navigating to a large page (150 blocks) must complete in < 2 s
+     * even when the database already contains thousands of blocks.
+     *
+     * This catches a class of regressions where selectBlocksByPageUuid degrades into a
+     * full table scan on a populated database (observed in production: p99 = 203 seconds
+     * on Android v0.33.0 without the idx_blocks_page_uuid_position composite index).
+     *
+     * The test also validates that blocks:select p99 stays below 200 ms.
+     */
+    @Test
+    fun `large page navigation is fast with populated database`() = runBlocking {
+        val cfg   = syntheticConfig()
+        val dir   = tempDir("stelekit-large-page")
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            // Populate the DB with a normal-sized synthetic graph (200 pages × ~9 blocks each)
+            SyntheticGraphGenerator(cfg).generate(dir)
+            val factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite:${File(dir, "largepage.db").absolutePath}")
+            val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope)
+            val loader  = GraphLoader(fileSystem, repoSet.pageRepository, repoSet.blockRepository,
+                                      externalWriteActor = repoSet.writeActor, histogramWriter = repoSet.histogramWriter)
+            loader.loadGraphProgressive(
+                graphPath             = dir.absolutePath,
+                immediateJournalCount = 10,
+                onProgress            = {},
+                onPhase1Complete      = {},
+                onFullyLoaded         = {},
+            )
+            loader.indexRemainingPages {}
+
+            // Write a dense page with 150 blocks to the pages/ directory
+            val densePageContent = buildString {
+                repeat(150) { i -> appendLine("- Dense block content number $i with [[some link]] and more text") }
+            }
+            val pagesDir = File(dir, "pages").also { it.mkdirs() }
+            File(pagesDir, "Dense Page.md").writeText(densePageContent)
+
+            // Measure navigation — this is the hot path that was broken in v0.33.0
+            val loadMs = measureTime {
+                loader.loadPageByName("Dense Page")
+            }.inWholeMilliseconds
+
+            println("\n[large-page] Navigation to 150-block page: ${loadMs}ms")
+            assertTrue(loadMs < 2_000,
+                "Large-page navigation took ${loadMs}ms — regression detected " +
+                "(index idx_blocks_page_uuid_position may be missing; expected < 2000ms)")
+
+            // Check blocks:select p99 from accumulated query stats
+            repoSet.queryStatsCollector?.drainNow()
+            val blocksSelectStat = repoSet.queryStatsRepository
+                ?.getTopByTotalMs("unknown", 50)
+                ?.find { it.tableName == "blocks" && it.operation == "select" }
+            if (blocksSelectStat != null) {
+                val p99 = blocksSelectStat.estimatePercentile(0.99)
+                println("[large-page] blocks:select p99=${p99}ms (calls=${blocksSelectStat.calls})")
+                assertTrue(p99 < 200,
+                    "blocks:select p99=${p99}ms exceeds 200ms — likely missing composite index " +
+                    "idx_blocks_page_uuid_position (production impact: p99 was 203 seconds on Android)")
+            }
+            factory.close()
+        } finally {
+            scope.cancel()
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
      * Same jank simulation against the user's real graph library.
      * Requires: -DSTELEKIT_GRAPH_PATH=/path/to/your/graph
      *

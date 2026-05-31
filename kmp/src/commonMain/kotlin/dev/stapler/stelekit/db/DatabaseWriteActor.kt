@@ -363,23 +363,22 @@ class DatabaseWriteActor(
     }
 
     /**
-     * Load existing blocks by UUID for INSERT vs UPDATE classification.
-     * Returns a map of uuid -> existing Block (only for blocks that already exist).
+     * Batch-fetch existing blocks by UUID for INSERT vs UPDATE classification.
+     * Uses a single [BlockRepository.getBlocksByUuids] round-trip instead of N individual
+     * [BlockRepository.getBlockByUuid] calls — eliminates the N+1 IO-dispatch pattern that
+     * caused 44-second saveBlocks latency for large pages (163 blocks × IO-thread contention).
      */
     private suspend fun loadExistingBlocks(blocks: List<Block>): Map<String, Block> {
         if (opLogger == null || blocks.isEmpty()) return emptyMap()
-        val result = mutableMapOf<String, Block>()
-        for (block in blocks) {
-            try {
-                val existing = blockRepository.getBlockByUuid(block.uuid).first().getOrNull()
-                if (existing != null) result[block.uuid] = existing
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                // Non-fatal: if lookup fails we skip logging for this block
-            }
+        return try {
+            blockRepository.getBlocksByUuids(blocks.map { it.uuid })
+                .first().getOrNull().orEmpty()
+                .associateBy { it.uuid }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyMap()
         }
-        return result
     }
 
     /**

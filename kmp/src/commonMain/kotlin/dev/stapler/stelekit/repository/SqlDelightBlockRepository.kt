@@ -228,6 +228,18 @@ class SqlDelightBlockRepository(
             .conflate()
             .map { list -> list.map { it.toBlockModel() }.right() }
 
+    override fun getBlocksByUuids(uuids: List<String>): Flow<Either<DomainError, List<Block>>> = flow {
+        if (uuids.isEmpty()) { emit(emptyList<Block>().right()); return@flow }
+        try {
+            val blocks = queries.selectBlocksByUuids(uuids).executeAsList().map { it.toBlockModel() }
+            emit(blocks.right())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
+        }
+    }.flowOn(PlatformDispatcher.DB)
+
     override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             // Chunk into bounded transactions so the SQLite write lock is never held for more

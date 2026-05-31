@@ -1,0 +1,13 @@
+-- Schema version 6: composite index (page_uuid, position) for fast page-scoped block fetches.
+--
+-- Without this index, SELECT * FROM blocks WHERE page_uuid = ? ORDER BY position performs a
+-- full table scan on populated databases because idx_blocks_page_uuid does not cover the
+-- ORDER BY position clause. SQLite's planner picks heap-scan + sort over index-scan + sort
+-- once table statistics are available, producing p99 latencies of 200+ seconds in production.
+--
+-- The composite index covers both the filter and the sort, eliminating the scan entirely.
+
+CREATE INDEX IF NOT EXISTS idx_blocks_page_uuid_position ON blocks(page_uuid, position);
+
+-- Refresh planner statistics so the new index is picked up immediately on first open.
+ANALYZE blocks;

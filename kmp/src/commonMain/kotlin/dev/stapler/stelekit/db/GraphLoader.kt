@@ -166,6 +166,9 @@ class GraphLoader(
                 statusCode = statusCode, traceId = traceId,
                 spanId = spanId, parentSpanId = parentSpanId,
             )
+            // Write to in-memory ring buffer immediately — visible in the Spans UI without
+            // waiting for the actor queue. The actor path below persists to the DB.
+            writeActor.ringBuffer?.record(serialized)
             if (spanRepository != null) {
                 writeActor.execute(DatabaseWriteActor.Priority.LOW) {
                     spanRepository.insertSpan(serialized)
