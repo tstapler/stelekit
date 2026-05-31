@@ -26,6 +26,11 @@ enum class MeasurementUnit {
     MILLIMETERS,
     FEET,
     INCHES,
+    /**
+     * US construction format: feet and inches with fractional inches to the nearest 1/16".
+     * Example: 1.6256 m → "5' 4 1/4\"" (5 feet, 4.25 inches).
+     */
+    FEET_INCHES,
     ;
 
     fun symbol(): String = when (this) {
@@ -34,6 +39,7 @@ enum class MeasurementUnit {
         MILLIMETERS -> "mm"
         FEET -> "ft"
         INCHES -> "in"
+        FEET_INCHES -> "ft-in"
     }
 }
 
@@ -110,16 +116,75 @@ fun metersToDisplay(meters: Double, unit: MeasurementUnit): Double = when (unit)
     MeasurementUnit.MILLIMETERS -> meters * 1000.0
     MeasurementUnit.FEET -> meters * 3.280839895
     MeasurementUnit.INCHES -> meters * 39.3700787402
+    MeasurementUnit.FEET_INCHES -> meters * 3.280839895 // raw feet; formatted separately
 }
 
 /**
- * Format [meters] as a human-readable string with the given [unit] symbol.
+ * Format [meters] as a human-readable string in the given [unit].
  *
- * Example: `metersToDisplayString(1.5, MeasurementUnit.MILLIMETERS)` → `"1500.0 mm"`
+ * For [MeasurementUnit.FEET_INCHES], produces US construction format with fractional
+ * inches to the nearest 1/16": e.g. `1.6256 m` → `"5' 4 1/4\""`.
+ *
+ * For [MeasurementUnit.INCHES], produces fractional display to the nearest 1/16":
+ * e.g. `0.3175 m` → `"12 1/2\""`.
+ *
+ * All other units round to 3 significant decimal places.
  */
 fun metersToDisplayString(meters: Double, unit: MeasurementUnit): String {
-    val value = metersToDisplay(meters, unit)
-    return "${value} ${unit.symbol()}"
+    return when (unit) {
+        MeasurementUnit.FEET_INCHES -> formatFeetInches(meters)
+        MeasurementUnit.INCHES -> formatFractionalInches(meters * 39.3700787402)
+        else -> {
+            val value = metersToDisplay(meters, unit)
+            "${roundToDecimals(value, 3)} ${unit.symbol()}"
+        }
+    }
+}
+
+/**
+ * Format [meters] as `N' M F"` where N = whole feet, M = whole inches, F = fractional inches.
+ *
+ * Fractional inches are rounded to the nearest 1/16" and displayed as a reduced fraction
+ * (e.g. `4/16` → `1/4`). Zero fractions are omitted. Zero whole inches are omitted when
+ * the fractional part is also zero.
+ *
+ * Examples:
+ * - 1.6256 m → `"5' 4 1/4\""`
+ * - 1.8288 m → `"6' 0\""`
+ * - 0.3175 m → `"1' 0 1/2\""`
+ */
+fun formatFeetInches(meters: Double): String {
+    val totalInches = meters * 39.3700787402
+    val wholeFeet = totalInches.toLong() / 12L
+    val remainingInches = totalInches - wholeFeet * 12.0
+    return "${wholeFeet}' ${formatFractionalInches(remainingInches)}"
+}
+
+/**
+ * Format [inches] as whole inches plus a reduced fraction to the nearest 1/16".
+ *
+ * Examples: `4.25` → `"4 1/4\""`, `12.0` → `"12\""`, `0.0625` → `"1/16\""`.
+ */
+fun formatFractionalInches(inches: Double): String {
+    val sixteenths = kotlin.math.round(inches * 16.0).toLong()
+    val wholeInches = sixteenths / 16L
+    val fracSixteenths = sixteenths % 16L
+    return if (fracSixteenths == 0L) {
+        "$wholeInches\""
+    } else {
+        val gcd = gcd(fracSixteenths, 16L)
+        val num = fracSixteenths / gcd
+        val den = 16L / gcd
+        if (wholeInches == 0L) "$num/$den\"" else "$wholeInches $num/$den\""
+    }
+}
+
+private fun gcd(a: Long, b: Long): Long = if (b == 0L) a else gcd(b, a % b)
+
+private fun roundToDecimals(value: Double, decimals: Int): Double {
+    var factor = 1.0
+    repeat(decimals) { factor *= 10.0 }
+    return kotlin.math.round(value * factor) / factor
 }
 
 /**

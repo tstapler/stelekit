@@ -963,5 +963,6 @@ internal fun parseGridRefLengthToMeters(text: String, unit: MeasurementUnit): Do
         MeasurementUnit.MILLIMETERS -> value / 1000.0
         MeasurementUnit.FEET -> value * 0.3048
         MeasurementUnit.INCHES -> value * 0.0254
+        MeasurementUnit.FEET_INCHES -> value * 0.3048
     }
 }
