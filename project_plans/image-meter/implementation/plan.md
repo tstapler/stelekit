@@ -8,20 +8,20 @@ This plan delivers native image annotation with scaled measurements inside Stele
 
 | Concern | Decision | Rationale | ADR |
 |---|---|---|---|
-| Image block type | `blockType = "image_annotation"` extending existing Block model | Reuses all existing block infrastructure: rendering, back-links, search, page linking | [ADR-001] |
-| Measurement storage | SQLDelight tables (fast query) + JSON sidecar at `.stelekit/images/<uuid>.measure.json` (portability) | NFR-2/NFR-3: sidecar is the portable ground truth; SQLDelight serves gallery UX | [ADR-001] |
-| Annotation canvas | Compose Canvas `DrawScope` + ZoomImage host (commonMain) | KMP-native, no third-party annotation lib; ZoomImage handles large-image subsampling | [ADR-002] |
+| Image block type | `blockType = "image_annotation"` extending existing Block model | Reuses all existing block infrastructure: rendering, back-links, search, page linking | [ADR-004] |
+| Measurement storage | SQLDelight tables (fast query) + JSON sidecar at `.stelekit/images/<uuid>.measure.json` (portability) | NFR-2/NFR-3: sidecar is the portable ground truth; SQLDelight serves gallery UX | [ADR-004] |
+| Annotation canvas | Compose Canvas `DrawScope` + ZoomImage host (commonMain) | KMP-native, no third-party annotation lib; ZoomImage handles large-image subsampling | [ADR-001] |
 | Camera capture | CameraK (KMP wrapper) with CameraX 1.5 androidMain fallback | Best available KMP abstraction; escape hatch to CameraX without touching commonMain | [ADR-002] |
-| Photo import on Android | Android Photo Picker API (system overlay) | Google Photos Library API `photoslibrary.readonly` scope removed March 2025; Picker is the only supported path | [ADR-003] |
-| BLE laser rangefinder | Kable (Android/iOS/macOS) behind `ExternalMeasurementDevice` interface | Coroutine-native; protocol implementations are pluggable via `MeasurementDeviceRegistry` | [ADR-004] |
-| USB serial (OTG) | usb-serial-for-android (kai-morich fork), androidMain only | LGPL 2.1; only production-grade option; legal risk confirmed acceptable (dynamic linking) | [ADR-004] |
-| ARCore depth | ARCore Depth API, androidMain, gated on `isDepthModeSupported()` | 8–10 cm absolute error; used as tertiary calibration fallback with explicit accuracy warning | [ADR-005] |
-| Monocular ML depth | Depth Anything V2 ViT-S via ONNX Runtime (androidMain); Core ML (iosMain) | ~500–800 ms on Snapdragon 695; inference-on-demand only, never real-time; confidence badge displayed | [ADR-005] |
-| Google OAuth | Credential Manager API (Android); ASWebAuthenticationSession (iOS); localhost redirect (JVM) | Modern replacement for deprecated GoogleSignIn; per NFR-4, tokens in platform credential storage | [ADR-003] |
-| Google Drive export | Drive REST API v3 via Ktor (commonMain) | Drive Android API deprecated Dec 2018; Ktor already in project | [ADR-003] |
+| Photo import on Android | Android Photo Picker API (system overlay) | Google Photos Library API `photoslibrary.readonly` scope removed March 2025; Picker is the only supported path | [ADR-002] |
+| BLE laser rangefinder | Kable (Android/iOS/macOS) behind `ExternalMeasurementDevice` interface | Coroutine-native; protocol implementations are pluggable via `MeasurementDeviceRegistry` | [ADR-003] |
+| USB serial (OTG) | usb-serial-for-android (kai-morich fork), androidMain only | LGPL 2.1; only production-grade option; legal risk confirmed acceptable (dynamic linking) | [ADR-005] |
+| ARCore depth | ARCore Depth API, androidMain, gated on `isDepthModeSupported()` | 8–10 cm absolute error; used as tertiary calibration fallback with explicit accuracy warning | [ADR-003] |
+| Monocular ML depth | Depth Anything V2 ViT-S via ONNX Runtime (androidMain); Core ML (iosMain) | ~500–800 ms on Snapdragon 695; inference-on-demand only, never real-time; confidence badge displayed | [ADR-003] |
+| Google OAuth | Credential Manager API (Android); ASWebAuthenticationSession (iOS); localhost redirect (JVM) | Modern replacement for deprecated GoogleSignIn; per NFR-4, tokens in platform credential storage | [ADR-002] |
+| Google Drive export | Drive REST API v3 via Ktor (commonMain) | Drive Android API deprecated Dec 2018; Ktor already in project | [ADR-002] |
 | Error handling | Arrow `Either` at all repository/service boundaries | Matches existing codebase convention; DomainError hierarchy extended with SensorError | — |
 | All SQL writes | `DatabaseWriteActor` + `RestrictedDatabaseQueries` | Existing write-serialization contract; new tables follow existing pattern exactly | — |
-| Image coordinate system | Normalized [0,1] space stored in SQLDelight; viewport transform applied at draw time | Resolution-independent; zoom/pan never invalidates stored annotations | [ADR-002] |
+| Image coordinate system | Normalized [0,1] space stored in SQLDelight; viewport transform applied at draw time | Resolution-independent; zoom/pan never invalidates stored annotations | [ADR-001] |
 
 ## Epic Structure
 
@@ -76,7 +76,7 @@ This plan delivers native image annotation with scaled measurements inside Stele
   - Task 1.5.1: Define sidecar JSON schema (version 1) and `@Serializable` data classes in `commonMain` under `db/sidecar/`
   - Task 1.5.2: Implement `ImageSidecarManager` with `writeSidecar(annotation, measurements)` and `readSidecar(uuid)` using `FileSystem.writeFileBytes()` / `readFileBytes()`; sidecar path `<graph>/.stelekit/images/<uuid>.measure.json`
   - Task 1.5.3: Implement `ImageSidecarIndexer.rebuildFromSidecars(graphPath)` that walks `*.measure.json` files and upserts into SQLDelight tables — recovery path when DB is lost
-  - Task 1.5.4: Round-trip serialization tests for all `AnnotationType` variants (commonTest) [ADR-001 validation]
+  - Task 1.5.4: Round-trip serialization tests for all `AnnotationType` variants (commonTest) [ADR-004 validation]
   - Task 1.5.5: Extend `FileSystem` interface with `readFileBytes(path): ByteArray` and `writeFileBytes(path, data)` if not already present; add platform `actual` implementations for `androidMain`, `iosMain`, `jvmMain`
 
 - Story 1.6: Image file storage conventions [S]
@@ -111,7 +111,7 @@ This plan delivers native image annotation with scaled measurements inside Stele
   - Task 2.3.3: For camera capture: auto-insert the block into today's journal page (US-4.6) via `JournalRepository.todayPage()` + `BlockRepository.addBlock()`
   - Task 2.3.4: Integration test: import a JPEG fixture → verify `image_annotations` row, sidecar JSON, and block all created (jvmTest)
 
-- Story 2.4: Android Photo Picker integration [M] [ADR-003]
+- Story 2.4: Android Photo Picker integration [M] [ADR-002]
   - Task 2.4.1: Integrate `ActivityResultContracts.PickVisualMedia` (Android Photo Picker, API 33+ / backported via Play Services) in `androidMain`; no `READ_MEDIA_IMAGES` permission needed
   - Task 2.4.2: On selection, copy the content URI bytes to `assets/images/` via `FileSystem.writeFileBytes()`; never persist the content URI (temporary grant)
   - Task 2.4.3: Pass resulting `PlatformImageFile` to `ImageImportService.import()`
@@ -142,7 +142,7 @@ This plan delivers native image annotation with scaled measurements inside Stele
   - Task 3.1.4: Implement `commitAnnotation(points, tool)` that computes the domain value (distance/area/angle in meters/m²/degrees) from `calibration.pixelsPerMeter` and the pixel-space point list and writes via `MeasurementAnnotationRepository`
   - Task 3.1.5: Unit tests for measurement computation math: pixel → meters, polygon area, angle between three points (commonTest)
 
-- Story 3.2: ZoomImage host with annotation Canvas overlay [L] [ADR-002]
+- Story 3.2: ZoomImage host with annotation Canvas overlay [L] [ADR-001]
   - Task 3.2.1: Create `ui/annotate/AnnotationEditorScreen.kt` with `Box(fillMaxSize)` containing: Layer 1 = `ZoomImage` (Coil 3 model, `rememberZoomState()`), Layer 2 = committed annotations `Canvas`, Layer 3 = in-progress `Canvas` with gesture handling, Layer 4 = `MeasurementLabelOverlay`, Layer 5 = `AnnotationToolbar`
   - Task 3.2.2: Implement coordinate transform helpers: `Offset.toNormalized(imageSize, zoomState)` and `NormalizedPoint.toScreen(imageSize, zoomState)` — applied at draw time only, never stored
   - Task 3.2.3: Implement `detectAnnotationGestures` using `Modifier.pointerInput`: tap adds a point to `inProgressPoints`; after the required number of points for the active tool, `commitAnnotation()` is called
@@ -184,15 +184,15 @@ This plan delivers native image annotation with scaled measurements inside Stele
   - Task 4.2.2: Surface calibration confidence as a color-coded badge in `AnnotationEditorScreen`: green (BLE/manual), yellow (ARCore), orange (EXIF), red (ML)
   - Task 4.2.3: Unit tests with EXIF values from Pixel 8 and Samsung S24 sample images (commonTest)
 
-- Story 4.3: ARCore depth calibration (US-2.2) [L] [ADR-005]
+- Story 4.3: ARCore depth calibration (US-2.2) [L] [ADR-003]
   - Task 4.3.1: Create `platform/sensor/DepthSensorProvider.kt` interface in `commonMain`; `actual` implementations: `ARCoreDepthProvider` (androidMain), `LidarDepthProvider` (iosMain, ARKit), `NoOpDepthProvider` (jvmMain/wasmJsMain)
   - Task 4.3.2: Implement `ARCoreDepthProvider` in `androidMain`: check `session.isDepthModeSupported(DepthMode.AUTOMATIC)` at startup; `acquireDepthFrame()` returns `DepthFrame` with confidence map and depth values; fallback to `null.right()` if not supported
   - Task 4.3.3: Implement `CalibrationService.computeFromDepthFrame(depthFrame, tapPoint): Calibration` — samples depth at user tap point, sets `method = ARCORE_DEPTH`, `confidencePercent` derived from ARCore confidence value at that pixel
-  - Task 4.3.4: Display explicit accuracy warning in UI: "ARCore depth accuracy ±8–10 cm. Not suitable for measurements under 15 cm." (per pitfalls research) [ADR-005 constraint]
+  - Task 4.3.4: Display explicit accuracy warning in UI: "ARCore depth accuracy ±8–10 cm. Not suitable for measurements under 15 cm." (per pitfalls research) [ADR-003 constraint]
   - Task 4.3.5: Gate the ARCore path on `DepthSensorProvider.isAvailable`; if `false`, skip to next calibration method in the fallback chain
   - Task 4.3.6: Integration test on emulator with mocked ARCore depth session (androidUnitTest)
 
-- Story 4.4: Monocular ML depth — Depth Anything V2 via ONNX Runtime (US-2.5) [L] [ADR-005]
+- Story 4.4: Monocular ML depth — Depth Anything V2 via ONNX Runtime (US-2.5) [L] [ADR-003]
   - Task 4.4.1: Bundle Depth Anything V2 ViT-S ONNX model (from `fabio-sim/Depth-Anything-ONNX`) as an Android asset; iOS via Core ML converted model
   - Task 4.4.2: Implement `MonocularDepthEstimator` in `androidMain` using `onnxruntime-android`; gate model load on `Build.VERSION.SDK_INT >= 26` and `ActivityManager.getMemoryInfo().totalMem >= 3GB`
   - Task 4.4.3: Implement `CalibrationService.computeFromMLDepth(depthMap, tapPoint, imageSize): Calibration` — samples depth at user tap, sets `method = MONOCULAR_ML`, `confidencePercent = 15` (with range warning)
@@ -213,14 +213,14 @@ This plan delivers native image annotation with scaled measurements inside Stele
 
 **Stories**:
 
-- Story 5.1: `ExternalMeasurementDevice` interface and device registry [M] [ADR-004]
+- Story 5.1: `ExternalMeasurementDevice` interface and device registry [M] [ADR-005]
   - Task 5.1.1: Create `platform/measurement/ExternalMeasurementDevice.kt` interface in `commonMain` with `connect()`, `disconnect()`, `readMeasurement()`, `measurementFlow()`, `connectionState: StateFlow<DeviceConnectionState>`
   - Task 5.1.2: Create `MeasurementDeviceRegistry` object and `MeasurementDeviceFactory` interface in `commonMain`
   - Task 5.1.3: Create `MeasurementDeviceScanner` interface and `CompositeMeasurementDeviceScanner` that aggregates results from all registered factories
   - Task 5.1.4: Create `MeasurementReading` and `DeviceConnectionState` data types
   - Task 5.1.5: Unit tests for composite scanner aggregation (commonTest)
 
-- Story 5.2: Kable BLE infrastructure (Android/iOS) [L] [ADR-004]
+- Story 5.2: Kable BLE infrastructure (Android/iOS) [L] [ADR-005]
   - Task 5.2.1: Add Kable dependency to `androidMain` and `iosMain` source sets in `kmp/build.gradle.kts`
   - Task 5.2.2: Implement `KableBleDeviceFactory` in `androidMain`/`iosMain` using Kable `Scanner { }` for discovery; advertise via `MeasurementDeviceRegistry.register()`
   - Task 5.2.3: Declare Android BLE permissions in `AndroidManifest.xml`: `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT` (API 31+); request at runtime before scan; check `ContextCompat.checkSelfPermission` before every scan call
@@ -308,7 +308,7 @@ This plan delivers native image annotation with scaled measurements inside Stele
 
 **Stories**:
 
-- Story 7.1: OAuth token management [L] [ADR-003]
+- Story 7.1: OAuth token management [L] [ADR-002]
   - Task 7.1.1: Define `GoogleTokenStore` interface in `commonMain` with `saveTokens()`, `getAccessToken()`, `getRefreshToken()`, `clearTokens()`
   - Task 7.1.2: Implement `AndroidGoogleTokenStore` in `androidMain` using `EncryptedSharedPreferences` backed by Android Keystore (following existing `EncryptionManager` pattern)
   - Task 7.1.3: Implement `IosGoogleTokenStore` in `iosMain` using Keychain (`SecItemAdd`/`SecItemCopyMatching`)
@@ -335,7 +335,7 @@ This plan delivers native image annotation with scaled measurements inside Stele
   - Task 7.4.4: Use WorkManager with `NetworkType.CONNECTED` constraint for large uploads; show upload progress in notification
   - Task 7.4.5: Integration test: mock `GoogleApiClient` → verify annotated JPEG + JSON sidecar both uploaded with correct filenames (jvmTest)
 
-- Story 7.5: Google Photos Picker import (system overlay) [M] [ADR-003]
+- Story 7.5: Google Photos Picker import (system overlay) [M] [ADR-002]
   - Task 7.5.1: Implement Google Photos Picker flow via REST Picker API: create session → open WebView/custom tab showing picker UI → receive selected media item IDs on callback
   - Task 7.5.2: Download selected media bytes using `baseUrl` (re-fetched on import; not stored long-term per API contract) via `GoogleApiClient.downloadPhoto()`
   - Task 7.5.3: Pass downloaded bytes to `ImageImportService.import()` with `source = GOOGLE_PHOTOS`; store `mediaItemId` (not `baseUrl`) in `ImageAnnotation.sourceUri`
@@ -520,11 +520,11 @@ This plan delivers native image annotation with scaled measurements inside Stele
 
 | ADR | Decision | Location |
 |---|---|---|
-| ADR-001 | Image block representation: `image_annotation` blockType + dual-layer storage (SQLDelight + JSON sidecar) | [decisions/ADR-001-image-annotation-block-type.md] |
-| ADR-002 | Annotation canvas: Compose Canvas DrawScope + ZoomImage (no third-party annotation lib); normalized coordinate system | [decisions/ADR-002-annotation-canvas-architecture.md] |
-| ADR-003 | Google Photos import via system Picker API (not Library API — scopes revoked March 2025); Drive REST API v3 via Ktor; Credential Manager OAuth | [decisions/ADR-003-google-integration.md] |
-| ADR-004 | BLE via Kable behind `ExternalMeasurementDevice` interface + `MeasurementDeviceRegistry` plugin pattern; USB serial via usb-serial-for-android (LGPL 2.1) | [decisions/ADR-004-external-measurement-device.md] |
-| ADR-005 | Calibration fallback chain: BLE laser (primary) → manual reference → ARCore (tertiary, ±8–10 cm, explicit warning) → EXIF (quaternary, ±15%) → ML depth (last resort, ±15%, not real-time); ARCore 5 m distance cap | [decisions/ADR-005-calibration-chain.md] |
+| ADR-001 | Annotation canvas: Compose Canvas DrawScope + ZoomImage (no third-party annotation lib); normalized coordinate system | [decisions/ADR-001-annotation-layer-compose-canvas-zoomimage.md] |
+| ADR-002 | Google Photos import via system Picker API (not Library API — scopes revoked March 2025); Drive REST API v3 via Ktor; Credential Manager OAuth | [decisions/ADR-002-google-photos-import-photo-picker.md] |
+| ADR-003 | Calibration fallback chain: BLE laser (primary) → manual reference → ARCore (tertiary, ±8–10 cm, explicit warning) → EXIF (quaternary, ±15%) → ML depth (last resort, ±15%, not real-time); ARCore 5 m distance cap | [decisions/ADR-003-calibration-ble-laser-primary-arcore-supplement.md] |
+| ADR-004 | Image block representation: `image_annotation` blockType + dual-layer storage (SQLDelight + JSON sidecar) | [decisions/ADR-004-image-data-model-image-annotation-block-type.md] |
+| ADR-005 | BLE connection reliability strategy: Kable behind `ExternalMeasurementDevice` interface + `MeasurementDeviceRegistry` plugin pattern; USB serial via usb-serial-for-android (LGPL 2.1); GATT 133 backoff | [decisions/ADR-005-ble-connection-reliability-strategy.md] |
 
 ---
 

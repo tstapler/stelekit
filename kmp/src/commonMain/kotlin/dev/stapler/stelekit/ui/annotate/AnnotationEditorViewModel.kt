@@ -479,6 +479,17 @@ class AnnotationEditorViewModel(
         tool: AnnotationTool,
         explicitLabel: String? = null,
     ) {
+        // Guard: DISTANCE/GRID_REF lines shorter than 1% of image width are likely accidental taps
+        if ((tool == AnnotationTool.DISTANCE || tool == AnnotationTool.GRID_REF) && points.size >= 2) {
+            val dx = points[1].x - points[0].x
+            val dy = points[1].y - points[0].y
+            val normalizedLength = kotlin.math.sqrt(dx * dx + dy * dy)
+            if (normalizedLength < 0.01) {
+                _state.update { it.copy(inProgressPoints = emptyList()) }
+                return
+            }
+        }
+
         // GRID_REF: show the calibration dialog instead of committing a measurement annotation.
         if (tool == AnnotationTool.GRID_REF) {
             val displayUnit = _state.value.imageAnnotation?.unit ?: MeasurementUnit.METERS

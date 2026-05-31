@@ -21,6 +21,11 @@ import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -63,6 +68,7 @@ fun AnnotationToolbar(
     onCalibrate: () -> Unit,
     onUnitSelect: (MeasurementUnit) -> Unit,
     hasSelection: Boolean,
+    showLabels: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -85,6 +91,7 @@ fun AnnotationToolbar(
                 isActive = currentTool == AnnotationTool.SELECT,
                 onSelect = onToolSelect,
                 enabled = true,
+                showLabels = showLabels,
             )
             ToolButton(
                 tool = AnnotationTool.DISTANCE,
@@ -93,6 +100,7 @@ fun AnnotationToolbar(
                 isActive = currentTool == AnnotationTool.DISTANCE,
                 onSelect = onToolSelect,
                 enabled = isCalibrated,
+                showLabels = showLabels,
             )
             ToolButton(
                 tool = AnnotationTool.AREA,
@@ -101,6 +109,7 @@ fun AnnotationToolbar(
                 isActive = currentTool == AnnotationTool.AREA,
                 onSelect = onToolSelect,
                 enabled = isCalibrated,
+                showLabels = showLabels,
             )
             ToolButton(
                 tool = AnnotationTool.ANGLE,
@@ -109,6 +118,7 @@ fun AnnotationToolbar(
                 isActive = currentTool == AnnotationTool.ANGLE,
                 onSelect = onToolSelect,
                 enabled = isCalibrated,
+                showLabels = showLabels,
             )
             ToolButton(
                 tool = AnnotationTool.LABEL,
@@ -117,6 +127,7 @@ fun AnnotationToolbar(
                 isActive = currentTool == AnnotationTool.LABEL,
                 onSelect = onToolSelect,
                 enabled = isCalibrated,
+                showLabels = showLabels,
             )
             ToolButton(
                 tool = AnnotationTool.GRID_REF,
@@ -125,9 +136,11 @@ fun AnnotationToolbar(
                 isActive = currentTool == AnnotationTool.GRID_REF,
                 onSelect = onToolSelect,
                 enabled = isCalibrated,
+                showLabels = showLabels,
             )
             CalibrateButton(
                 onClick = onCalibrate,
+                showLabels = showLabels,
             )
         }
 
@@ -175,6 +188,7 @@ fun AnnotationToolbar(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ToolButton(
     tool: AnnotationTool,
@@ -183,6 +197,7 @@ private fun ToolButton(
     isActive: Boolean,
     onSelect: (AnnotationTool) -> Unit,
     enabled: Boolean = true,
+    showLabels: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val bg = if (isActive && enabled) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
@@ -191,37 +206,84 @@ private fun ToolButton(
         !enabled -> Color(0xFF555555)
         else -> Color(0xFFBBBBBB)
     }
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(bg),
+    val tooltipState = rememberTooltipState()
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text("$label (${toolShortcut(tool)})") } },
+        state = tooltipState,
     ) {
-        IconButton(onClick = { onSelect(tool) }, enabled = enabled) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = tint,
-            )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                modifier = modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(bg),
+            ) {
+                IconButton(onClick = { onSelect(tool) }, enabled = enabled) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = label,
+                        tint = tint,
+                    )
+                }
+            }
+            if (showLabels) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isActive && enabled) MaterialTheme.colorScheme.onPrimaryContainer
+                            else if (!enabled) Color(0xFF555555)
+                            else Color(0xFFBBBBBB),
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
 
+private fun toolShortcut(tool: AnnotationTool): String = when (tool) {
+    AnnotationTool.SELECT -> "S"
+    AnnotationTool.DISTANCE -> "D"
+    AnnotationTool.AREA -> "A"
+    AnnotationTool.ANGLE -> "G"
+    AnnotationTool.LABEL -> "L"
+    AnnotationTool.GRID_REF -> "R"
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CalibrateButton(
     onClick: () -> Unit,
+    showLabels: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color.Transparent),
+    val tooltipState = rememberTooltipState()
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text("Calibrate (C)") } },
+        state = tooltipState,
     ) {
-        IconButton(onClick = onClick, enabled = true) {
-            Icon(
-                imageVector = Icons.Default.Straighten,
-                contentDescription = "Calibrate",
-                tint = Color(0xFFBBBBBB),
-            )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                modifier = modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Transparent),
+            ) {
+                IconButton(onClick = onClick, enabled = true) {
+                    Icon(
+                        imageVector = Icons.Default.Straighten,
+                        contentDescription = "Calibrate",
+                        tint = Color(0xFFBBBBBB),
+                    )
+                }
+            }
+            if (showLabels) {
+                Text(
+                    text = "Calibrate",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFBBBBBB),
+                    maxLines = 1,
+                )
+            }
         }
     }
 }

@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.Composable
+import dev.stapler.stelekit.ui.PlatformBackHandler
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -147,6 +148,24 @@ fun AnnotationEditorScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    // UnsavedChanges tracking
+    var showUnsavedChangesDialog by remember { mutableStateOf(false) }
+    var hasUnsavedChanges by remember { mutableStateOf(false) }
+
+    // BleDevicePanel
+    var showBleDevicePanel by remember { mutableStateOf(false) }
+
+    // Delete annotation confirmation
+    var pendingDeleteUuid by remember { mutableStateOf<String?>(null) }
+
+    // Coach marks
+    var showDistanceCoachMark by remember { mutableStateOf(false) }
+    var showAreaCoachMark by remember { mutableStateOf(false) }
+    var coachMarksShown by remember { mutableStateOf(0) }
+
+    // Adaptive labels: show for first 3 sessions (tracked in state per session)
+    val showToolLabels by remember { mutableStateOf(true) }
+
     // Story 5.7: wire the active device into the ViewModel so injectMeasurementFromDevice()
     // can find it. Effect re-runs when activeDevice reference changes.
     LaunchedEffect(activeDevice) {
@@ -174,6 +193,29 @@ fun AnnotationEditorScreen(
             viewModel.undoCalibration()
         }
         viewModel.clearCalibrationMessage()
+    }
+
+    LaunchedEffect(state.committedAnnotations.size) {
+        if (state.committedAnnotations.isNotEmpty()) hasUnsavedChanges = true
+    }
+
+    LaunchedEffect(viewModel.isCalibrated()) {
+        if (viewModel.isCalibrated() && state.committedAnnotations.isEmpty() && coachMarksShown == 0) {
+            showDistanceCoachMark = true
+        }
+    }
+
+    LaunchedEffect(state.committedAnnotations.size) {
+        if (state.committedAnnotations.size == 1 &&
+            state.committedAnnotations.first().annotationType == dev.stapler.stelekit.model.AnnotationType.DISTANCE &&
+            coachMarksShown == 1) {
+            showAreaCoachMark = true
+        }
+    }
+
+    // Show UnsavedChangesDialog when user tries to back-navigate with unsaved changes
+    PlatformBackHandler(enabled = hasUnsavedChanges) {
+        showUnsavedChangesDialog = true
     }
 
     Scaffold(
@@ -330,6 +372,31 @@ fun AnnotationEditorScreen(
                 modifier = Modifier.fillMaxSize(),
             )
 
+            // Coach mark: after first calibration, show DISTANCE coach mark
+            if (showDistanceCoachMark && coachMarksShown < 2) {
+                CoachMarkOverlay(
+                    message = "Tap Distance to draw a measurement line on the photo.",
+                    isVisible = true,
+                    onDismiss = {
+                        showDistanceCoachMark = false
+                        coachMarksShown++
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            // After DISTANCE is used once, show AREA coach mark
+            if (showAreaCoachMark && coachMarksShown < 2) {
+                CoachMarkOverlay(
+                    message = "Tap Area to measure the area of a surface.",
+                    isVisible = true,
+                    onDismiss = {
+                        showAreaCoachMark = false
+                        coachMarksShown++
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+
             // Layer 5: Annotation toolbar (bottom)
             AnnotationToolbar(
                 currentTool = state.currentTool,
@@ -339,7 +406,12 @@ fun AnnotationEditorScreen(
                 onToolSelect = { viewModel.selectTool(it) },
                 onUndo = { viewModel.undo() },
                 onRedo = { viewModel.redo() },
-                onDeleteSelect = { viewModel.deleteSelectedAnnotation() },
+                onDeleteSelect = {
+                    val selectedUuid = state.selectedAnnotationUuid
+                    if (selectedUuid != null) {
+                        pendingDeleteUuid = selectedUuid
+                    }
+                },
                 hasSelection = state.selectedAnnotationUuid != null,
                 isCalibrated = viewModel.isCalibrated(),
                 onCalibrate = {
@@ -350,6 +422,7 @@ fun AnnotationEditorScreen(
                     }
                 },
                 onUnitSelect = { /* TODO: wire unit change through viewModel */ },
+                showLabels = showToolLabels,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(8.dp),
@@ -426,8 +499,14 @@ fun AnnotationEditorScreen(
         if (showCalibrationSheet) {
             CalibrationSheet(
                 onDismiss = { showCalibrationSheet = false },
-                onDrawReference = { showCalibrationSheet = false /* user will draw on canvas */ },
-                onUseBle = { showCalibrationSheet = false /* BLE flow not yet implemented */ },
+                onDrawReference = {
+                    showCalibrationSheet = false
+                    viewModel.selectTool(AnnotationTool.GRID_REF)
+                },
+                onUseBle = {
+                    showCalibrationSheet = false
+                    showBleDevicePanel = true
+                },
             )
         }
 
@@ -438,6 +517,55 @@ fun AnnotationEditorScreen(
                 onChangeScale = {
                     showCalibrationChangeWarning = false
                     showCalibrationSheet = true
+                },
+            )
+        }
+
+        // BleDevicePanel
+        if (showBleDevicePanel) {
+            BleDevicePanel(
+                onDismiss = { showBleDevicePanel = false },
+                onUseDrawMethod = {
+                    showBleDevicePanel = false
+                    viewModel.selectTool(AnnotationTool.GRID_REF)
+                },
+                onReadingAccepted = { _ ->
+                    showBleDevicePanel = false
+                    // The BLE reading updates will be handled by the active device flow
+                },
+            )
+        }
+
+        // UnsavedChangesDialog
+        if (showUnsavedChangesDialog) {
+            UnsavedChangesDialog(
+                onSave = {
+                    showUnsavedChangesDialog = false
+                    hasUnsavedChanges = false
+                    // TODO: trigger explicit save — for now just navigate back
+                    onNavigateBack()
+                },
+                onDiscard = {
+                    showUnsavedChangesDialog = false
+                    hasUnsavedChanges = false
+                    onNavigateBack()
+                },
+                onKeepEditing = {
+                    showUnsavedChangesDialog = false
+                },
+            )
+        }
+
+        // Delete annotation confirmation
+        val deleteUuid = pendingDeleteUuid
+        if (deleteUuid != null) {
+            val annotation = state.committedAnnotations.find { it.uuid == deleteUuid }
+            DeleteAnnotationConfirmationDialog(
+                annotationLabel = annotation?.label,
+                onCancel = { pendingDeleteUuid = null },
+                onDelete = {
+                    pendingDeleteUuid = null
+                    viewModel.deleteAnnotation(deleteUuid)
                 },
             )
         }
