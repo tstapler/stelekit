@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Sync
@@ -72,6 +73,10 @@ fun LeftSidebar(
     syncState: SyncState = SyncState.Idle,
     onSyncClick: () -> Unit = {},
     onGitSetup: () -> Unit = {},
+    isGitConfigured: Boolean = false,
+    onAuthError: (() -> Unit)? = null,
+    onCloneGraph: () -> Unit = {},
+    gitSyncedGraphId: String? = null,
     modifier: Modifier = Modifier
 ) {
     val isMobile = LocalWindowSizeClass.current.isMobile
@@ -114,7 +119,9 @@ fun LeftSidebar(
                 activeGraphId = activeGraphId,
                 onGraphSelected = onGraphSelected,
                 onAddGraph = onAddGraph,
-                onRemoveGraph = onRemoveGraph
+                onRemoveGraph = onRemoveGraph,
+                onCloneGraph = onCloneGraph,
+                gitSyncedGraphId = gitSyncedGraphId,
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -122,6 +129,8 @@ fun LeftSidebar(
             SyncStatusBadge(
                 syncState = syncState,
                 onSyncClick = onSyncClick,
+                isGitConfigured = isGitConfigured,
+                onAuthError = onAuthError,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
             )
 
@@ -212,6 +221,8 @@ fun GraphSwitcher(
     onGraphSelected: (String) -> Unit,
     onAddGraph: () -> Unit,
     onRemoveGraph: (String) -> Unit,
+    onCloneGraph: () -> Unit = {},
+    gitSyncedGraphId: String? = null,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -268,6 +279,7 @@ fun GraphSwitcher(
                         GraphItem(
                             graph = graph,
                             isActive = graph.id == activeGraphId,
+                            isSynced = graph.id == gitSyncedGraphId,
                             onSelect = {
                                 onGraphSelected(graph.id)
                                 expanded = false
@@ -291,27 +303,30 @@ fun GraphSwitcher(
                 text = {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Add Graph...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Open local folder...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                     }
                 },
-                onClick = {
-                    onAddGraph()
-                    expanded = false
+                onClick = { onAddGraph(); expanded = false },
+                contentPadding = PaddingValues(0.dp),
+            )
+
+            DropdownMenuItem(
+                text = {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Clone from URL...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                    }
                 },
-                contentPadding = PaddingValues(0.dp)
+                onClick = { onCloneGraph(); expanded = false },
+                contentPadding = PaddingValues(0.dp),
             )
         }
     }
@@ -348,6 +363,7 @@ fun GraphSwitcher(
 fun GraphItem(
     graph: GraphInfo,
     isActive: Boolean,
+    isSynced: Boolean = false,
     onSelect: () -> Unit,
     onRemove: (() -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -376,6 +392,14 @@ fun GraphItem(
                 color = if (isActive) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )
+            if (isSynced) {
+                Icon(
+                    imageVector = Icons.Default.Sync,
+                    contentDescription = "Git sync active",
+                    modifier = Modifier.size(14.dp).padding(end = 2.dp),
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                )
+            }
             if (onRemove != null) {
                 IconButton(
                     onClick = onRemove,

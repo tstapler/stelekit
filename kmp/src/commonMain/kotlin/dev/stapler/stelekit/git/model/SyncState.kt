@@ -12,6 +12,8 @@ sealed class SyncState {
     data object Merging : SyncState()
     data object Pushing : SyncState()
     data object Committing : SyncState()
+    /** Emitted when sync requires credentials but the vault is locked. */
+    data object CredentialVaultLocked : SyncState()
     data class ConflictPending(val conflicts: List<ConflictFile>) : SyncState()
     data class Error(val error: DomainError.GitError) : SyncState()
     data class Success(

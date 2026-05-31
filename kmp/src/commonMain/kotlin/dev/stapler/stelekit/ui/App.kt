@@ -383,6 +383,18 @@ private fun GraphContent(
         )
     }
 
+    // Vault-integrated credential store — non-null when paranoid mode is on and CryptoEngine is available.
+    // Swapped into gitRepository.credentialAccess on vault unlock/lock.
+    val vaultCredentialStore = remember(activeGraphPath, isParanoidMode, cryptoEngine) {
+        if (isParanoidMode && cryptoEngine != null && activeGraphPath.isNotEmpty()) {
+            dev.stapler.stelekit.git.VaultCredentialStore(activeGraphPath, cryptoEngine, fileSystem)
+        } else null
+    }
+
+    LaunchedEffect(vaultCredentialStore) {
+        graphManager.registerVaultCredentialStore(vaultCredentialStore)
+    }
+
     val sidecarManager = remember {
         val graphPath = activeGraphPath.ifEmpty { null }
         if (graphPath != null) SidecarManager(fileSystem, graphPath) else null
@@ -425,6 +437,7 @@ private fun GraphContent(
             configRepository = gitConfigRepository,
             networkMonitor = networkMonitor,
             fileSystem = fileSystem,
+            credentialAccessProvider = { vaultCredentialStore ?: dev.stapler.stelekit.git.CredentialStore() },
         )
     }
     DisposableEffect(gitSyncService) {
@@ -561,6 +574,9 @@ private fun GraphContent(
                 // closeAndClearCryptoLayer() zeroes the CryptoLayer's owned DEK copy then nulls it.
                 graphLoader.closeAndClearCryptoLayer()
                 graphWriter.closeAndClearCryptoLayer()
+                vaultCredentialStore?.onVaultLocked()
+                // Revert git repository to PBKDF2 fallback store
+                gitRepository?.setCredentialAccess(dev.stapler.stelekit.git.CredentialStore())
                 vaultState = VaultState.Locked   // show lock/unlock screen; gates graph content
             }
         }
@@ -592,6 +608,9 @@ private fun GraphContent(
                     graphLoader.setGraphPath(activeGraphPath)
                     graphLoader.setCryptoLayer(layer)
                     graphWriter.setCryptoLayer(layer)
+                    vaultCredentialStore?.onVaultUnlocked(unlockResult.dek)
+                    // Swap git repository credential access to vault store
+                    gitRepository?.setCredentialAccess(vaultCredentialStore ?: dev.stapler.stelekit.git.CredentialStore())
                     // CryptoLayer must be injected before vaultState triggers graph load via LaunchedEffect
                     vaultState = VaultState.Unlocked(unlockResult.namespace)
                 }
@@ -620,6 +639,17 @@ private fun GraphContent(
                         graphLoader.setGraphPath(activeGraphPath)
                         graphLoader.setCryptoLayer(layer)
                         graphWriter.setCryptoLayer(layer)
+                        vaultCredentialStore?.onVaultUnlocked(unlockResult.dek)
+                        // Swap git repository credential access to vault store
+                        gitRepository?.setCredentialAccess(vaultCredentialStore ?: dev.stapler.stelekit.git.CredentialStore())
+                        // Migrate existing credentials from PBKDF2 store into vault
+                        val graphId = graphManager.getActiveGraphId() ?: ""
+                        if (graphId.isNotEmpty()) {
+                            vaultCredentialStore?.migrateFrom(
+                                source = dev.stapler.stelekit.git.CredentialStore(),
+                                keys = listOf("git_https_token_$graphId", "git_ssh_passphrase_$graphId"),
+                            )
+                        }
                         vaultManager = tempManager
                         isParanoidMode = true
                         vaultState = VaultState.Unlocked(unlockResult.namespace)
@@ -948,8 +978,19 @@ private fun GraphContent(
                                 onRemoveGraph = { scope.launch { graphManager.removeGraph(it) } },
                                 onCollapse = { viewModel.toggleSidebar() },
                                 syncState = syncState,
-                                onSyncClick = { viewModel.triggerSync() },
+                                onSyncClick = {
+                                    if (syncState is dev.stapler.stelekit.git.model.SyncState.CredentialVaultLocked) {
+                                        // Vault is locked — lock() re-shows the unlock screen
+                                        vaultManager?.lock()
+                                    } else {
+                                        viewModel.triggerSync()
+                                    }
+                                },
                                 onGitSetup = { viewModel.openGitSetup() },
+                                isGitConfigured = appState.gitConfig != null,
+                                onAuthError = { viewModel.openGitSetupForCredentials() },
+                                onCloneGraph = { viewModel.openGitSetupForClone() },
+                                gitSyncedGraphId = if (appState.gitConfig != null) activeGraphId else null,
                             )
                         },
                         rightSidebar = {
@@ -1132,6 +1173,16 @@ private fun GraphContent(
                         gitRepository = gitRepository,
                         gitConfigRepository = gitConfigRepository,
                         activeGraphId = activeGraphId,
+                        onCloneAndAdd = if (gitRepository != null) {
+                            { url, localPath, auth, onProgress ->
+                                graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress)
+                            }
+                        } else null,
+                        graphPath = activeGraphPath,
+                        onCloneComplete = { newGraphId ->
+                            scope.launch { graphManager.switchGraph(newGraphId) }
+                        },
+                        onAuthError = { viewModel.openGitSetupForCredentials() },
                     )
 
                     } // CompositionLocalProvider(LocalWindowSizeClass)

@@ -187,7 +187,17 @@ class StelekitViewModel(
 
     /** Dismisses the git setup wizard. */
     fun dismissGitSetup() {
-        _uiState.update { it.copy(gitSetupVisible = false) }
+        _uiState.update { it.copy(gitSetupVisible = false, gitSetupInitialStep = 1, gitSetupOpenForClone = false) }
+    }
+
+    /** Opens the git setup wizard pre-navigated to Step 3 (credentials). */
+    fun openGitSetupForCredentials() {
+        _uiState.update { it.copy(gitSetupVisible = true, gitSetupInitialStep = 3) }
+    }
+
+    /** Opens the git setup wizard in clone-from-URL mode (pre-selects clone, starts at step 2). */
+    fun openGitSetupForClone() {
+        _uiState.update { it.copy(gitSetupVisible = true, gitSetupInitialStep = 2, gitSetupOpenForClone = true) }
     }
 
     /** Dismisses the conflict resolution screen. */

@@ -7,8 +7,8 @@ package dev.stapler.stelekit.git
  * Secure storage for git credentials (SSH passphrases, HTTPS tokens).
  * Each platform provides an appropriate secure backend.
  */
-expect class CredentialStore() {
-    fun store(key: String, value: String)
-    fun retrieve(key: String): String?
-    fun delete(key: String)
+expect class CredentialStore() : CredentialAccess {
+    override fun store(key: String, value: String)
+    override fun retrieve(key: String): String?
+    override fun delete(key: String)
 }

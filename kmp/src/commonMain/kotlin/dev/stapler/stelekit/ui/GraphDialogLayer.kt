@@ -4,16 +4,9 @@
 
 package dev.stapler.stelekit.ui
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
@@ -29,6 +22,7 @@ import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.FrameMetric
 import dev.stapler.stelekit.performance.DebugMenuState
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.ui.screens.git.ConflictResolutionScreen
 import dev.stapler.stelekit.ui.screens.git.GitSetupScreen
 import dev.stapler.stelekit.vault.VaultError
 import kotlinx.coroutines.flow.Flow
@@ -76,6 +70,10 @@ internal fun GraphDialogLayer(
     gitRepository: GitRepository? = null,
     gitConfigRepository: GitConfigRepository? = null,
     activeGraphId: String? = null,
+    onCloneAndAdd: (suspend (url: String, localPath: String, auth: dev.stapler.stelekit.git.GitAuth, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
+    graphPath: String = "",
+    onCloneComplete: ((String) -> Unit)? = null,
+    onAuthError: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -134,50 +132,40 @@ internal fun GraphDialogLayer(
             gitSyncService = gitSyncService,
             onDismiss = { viewModel.dismissGitSetup() },
             onSave = { viewModel.dismissGitSetup() },
+            onCloneAndAdd = onCloneAndAdd,
+            graphPath = graphPath,
+            onCloneComplete = onCloneComplete,
+            initialStep = appState.gitSetupInitialStep,
+            initialUseExistingClone = !appState.gitSetupOpenForClone,
+            existingConfig = null,
         )
     }
 
     if (appState.conflictResolutionVisible) {
         val liveSyncState by viewModel.syncState.collectAsState()
         val conflictFiles = if (liveSyncState is SyncState.ConflictPending)
-            (liveSyncState as SyncState.ConflictPending).conflicts.map { it.filePath }
+            (liveSyncState as SyncState.ConflictPending).conflicts
         else emptyList()
 
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissConflictResolution() },
-            title = { Text("Merge Conflict") },
-            text = {
-                Column {
-                    Text(
-                        "Git detected merge conflicts in ${conflictFiles.size} file(s). " +
-                        "Resolve them in your editor or use the options below."
+        ConflictResolutionScreen(
+            conflicts = conflictFiles,
+            onResolve = { fileResolutions ->
+                val id = activeGraphId ?: return@ConflictResolutionScreen arrow.core.Either.Left(
+                    dev.stapler.stelekit.error.DomainError.GitError.CommitFailed("No active graph")
+                )
+                gitSyncService?.resolveConflictBySide(id, fileResolutions)
+                    ?: arrow.core.Either.Left(
+                        dev.stapler.stelekit.error.DomainError.GitError.CommitFailed("Git sync not available")
                     )
-                    if (conflictFiles.isNotEmpty()) {
-                        Spacer(Modifier.height(8.dp))
-                        conflictFiles.forEach { path ->
-                            Text(
-                                "• $path",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    }
-                }
             },
-            confirmButton = {
-                TextButton(onClick = { viewModel.dismissConflictResolution() }) {
-                    Text("Dismiss")
+            onAbortMerge = if (gitSyncService != null && activeGraphId != null) {
+                {
+                    val id = activeGraphId
+                    gitSyncService.abortActiveMerge(id)
+                    viewModel.dismissConflictResolution()
                 }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.dismissConflictResolution()
-                        viewModel.openGitSetup()
-                    }
-                ) {
-                    Text("Open Git Setup")
-                }
-            },
+            } else null,
+            onDismiss = { viewModel.dismissConflictResolution() },
         )
     }
 

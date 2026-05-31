@@ -17,10 +17,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -39,8 +42,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import arrow.core.Either
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.CredentialStore
+import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitConfigRepository
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitSyncService
@@ -75,15 +83,25 @@ fun GitSetupScreen(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     existingConfig: GitConfig? = null,
+    initialStep: Int = 1,
+    initialUseExistingClone: Boolean = true,
+    graphPath: String = "",
     onSave: () -> Unit = {},
+    onCloneAndAdd: (suspend (url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
+    onCloneComplete: ((String) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
-    var step by remember { mutableIntStateOf(1) }
+    var step by remember { mutableIntStateOf(initialStep) }
 
     // Form state
-    var useExistingClone by remember { mutableStateOf(true) }
+    var useExistingClone by remember { mutableStateOf(if (!initialUseExistingClone) false else true) }
     var cloneUrl by remember { mutableStateOf("") }
-    var repoRoot by remember { mutableStateOf(existingConfig?.repoRoot ?: "") }
+    var repoRoot by remember {
+        mutableStateOf(
+            existingConfig?.repoRoot ?: if (initialUseExistingClone) graphPath else ""
+        )
+    }
+    var sshPassphrase by remember { mutableStateOf("") }
     var wikiSubdir by remember { mutableStateOf(existingConfig?.wikiSubdir ?: "") }
     var authType by remember { mutableStateOf(existingConfig?.authType ?: GitAuthType.NONE) }
     var sshKeyPath by remember { mutableStateOf(existingConfig?.sshKeyPath ?: "") }
@@ -105,11 +123,25 @@ fun GitSetupScreen(
     var saving by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }
 
+    // Clone state
+    var cloneInProgress by remember { mutableStateOf(false) }
+    var cloneProgress by remember { mutableStateOf("") }
+    var cloneError by remember { mutableStateOf<String?>(null) }
+
+    val stepLabel = when (step) {
+        1 -> "Repository mode"
+        2 -> "Repository path"
+        3 -> "Authentication"
+        4 -> "Sync settings"
+        5 -> "Test & save"
+        else -> "Git Sync Setup"
+    }
+
     Scaffold(
         modifier = modifier,
         topBar = {
             TopAppBar(
-                title = { Text("Git Sync Setup (Step $step / 5)") },
+                title = { Text("Git Sync — $stepLabel") },
                 actions = {
                     TextButton(onClick = onDismiss) { Text("Cancel") }
                 }
@@ -142,18 +174,26 @@ fun GitSetupScreen(
                     onWikiSubdirChange = { wikiSubdir = it },
                     onBack = { step = 1 },
                     onNext = { step = 3 },
+                    nextEnabled = repoRoot.isNotBlank() && (useExistingClone || cloneUrl.isNotBlank()),
                 )
 
-                3 -> Step3Auth(
-                    authType = authType,
-                    onAuthTypeChange = { authType = it },
-                    sshKeyPath = sshKeyPath,
-                    onSshKeyPathChange = { sshKeyPath = it },
-                    httpsToken = httpsToken,
-                    onHttpsTokenChange = { httpsToken = it },
-                    onBack = { step = 2 },
-                    onNext = { step = 4 },
-                )
+                3 -> {
+                    var tokenVisible by remember { mutableStateOf(false) }
+                    Step3Auth(
+                        authType = authType,
+                        onAuthTypeChange = { authType = it },
+                        sshKeyPath = sshKeyPath,
+                        onSshKeyPathChange = { sshKeyPath = it },
+                        httpsToken = httpsToken,
+                        onHttpsTokenChange = { httpsToken = it },
+                        tokenVisible = tokenVisible,
+                        onToggleTokenVisible = { tokenVisible = !tokenVisible },
+                        sshPassphrase = sshPassphrase,
+                        onSshPassphraseChange = { sshPassphrase = it },
+                        onBack = { step = 2 },
+                        onNext = { step = 4 },
+                    )
+                }
 
                 4 -> Step4Branch(
                     remoteBranch = remoteBranch,
@@ -180,10 +220,16 @@ fun GitSetupScreen(
                                 credentialStore.store(key, httpsToken)
                                 key
                             } else null
+                            val testSshPassphraseKey = if (authType == GitAuthType.SSH_KEY && sshPassphrase.isNotBlank()) {
+                                val key = "git_ssh_passphrase_$graphId"
+                                credentialStore.store(key, sshPassphrase)
+                                key
+                            } else null
                             val config = buildConfig(
                                 graphId, repoRoot, wikiSubdir, authType,
                                 sshKeyPath, remoteBranch, pollIntervalMinutes,
                                 httpsTokenKey = testHttpsTokenKey,
+                                sshKeyPassphraseKey = testSshPassphraseKey,
                             )
                             val result = gitRepository.fetch(config)
                             testInProgress = false
@@ -196,10 +242,71 @@ fun GitSetupScreen(
                             }
                         }
                     },
+                    cloneInProgress = cloneInProgress,
+                    cloneProgress = cloneProgress,
+                    cloneError = cloneError,
                     onSave = {
                         scope.launch {
                             saving = true
                             saveError = null
+                            cloneError = null
+
+                            // If cloning a new repo, clone first
+                            if (!useExistingClone && onCloneAndAdd != null) {
+                                cloneInProgress = true
+                                cloneProgress = ""
+                                val cloneAuth = when (authType) {
+                                    GitAuthType.HTTPS_TOKEN -> GitAuth.HttpsToken(
+                                        username = "",
+                                        tokenProvider = { httpsToken.takeIf { it.isNotBlank() } }
+                                    )
+                                    GitAuthType.SSH_KEY -> GitAuth.SshKey(
+                                        keyPath = sshKeyPath,
+                                        passphraseProvider = { sshPassphrase.takeIf { it.isNotBlank() } },
+                                    )
+                                    GitAuthType.NONE -> GitAuth.None
+                                }
+                                val cloneResult = onCloneAndAdd(cloneUrl, repoRoot, cloneAuth) { progress ->
+                                    cloneProgress = progress
+                                }
+                                cloneInProgress = false
+                                if (cloneResult.isLeft()) {
+                                    cloneError = "Clone failed: ${(cloneResult as Either.Left).value.message}"
+                                    saving = false
+                                    return@launch
+                                }
+                                val newGraphId = (cloneResult as Either.Right).value
+                                val httpsTokenKey = if (authType == GitAuthType.HTTPS_TOKEN && httpsToken.isNotBlank()) {
+                                    val tokenKey = "git_https_token_$newGraphId"
+                                    credentialStore.store(tokenKey, httpsToken)
+                                    tokenKey
+                                } else {
+                                    null
+                                }
+                                val sshPassphraseKey = if (authType == GitAuthType.SSH_KEY && sshPassphrase.isNotBlank()) {
+                                    val passphraseKey = "git_ssh_passphrase_$newGraphId"
+                                    credentialStore.store(passphraseKey, sshPassphrase)
+                                    passphraseKey
+                                } else {
+                                    null
+                                }
+                                val config = buildConfig(
+                                    newGraphId,
+                                    repoRoot, wikiSubdir, authType, sshKeyPath, remoteBranch, pollIntervalMinutes,
+                                    httpsTokenKey = httpsTokenKey,
+                                    sshKeyPassphraseKey = sshPassphraseKey,
+                                )
+                                val saveResult = gitConfigRepository.saveConfig(config)
+                                saving = false
+                                if (saveResult.isRight()) {
+                                    onCloneComplete?.invoke(newGraphId)
+                                    onSave()
+                                } else {
+                                    saveError = "Failed to save configuration."
+                                }
+                                return@launch
+                            }
+
                             val httpsTokenKey = if (authType == GitAuthType.HTTPS_TOKEN && httpsToken.isNotBlank()) {
                                 val tokenKey = "git_https_token_$graphId"
                                 credentialStore.store(tokenKey, httpsToken)
@@ -207,10 +314,18 @@ fun GitSetupScreen(
                             } else {
                                 existingConfig?.httpsTokenKey
                             }
+                            val sshPassphraseKey = if (authType == GitAuthType.SSH_KEY && sshPassphrase.isNotBlank()) {
+                                val passphraseKey = "git_ssh_passphrase_$graphId"
+                                credentialStore.store(passphraseKey, sshPassphrase)
+                                passphraseKey
+                            } else {
+                                existingConfig?.sshKeyPassphraseKey
+                            }
                             val config = buildConfig(
                                 graphId, repoRoot, wikiSubdir, authType,
                                 sshKeyPath, remoteBranch, pollIntervalMinutes,
                                 httpsTokenKey = httpsTokenKey,
+                                sshKeyPassphraseKey = sshPassphraseKey,
                             )
                             val result = gitConfigRepository.saveConfig(config)
                             saving = false
@@ -269,6 +384,7 @@ private fun Step2RepoPath(
     onWikiSubdirChange: (String) -> Unit,
     onBack: () -> Unit,
     onNext: () -> Unit,
+    nextEnabled: Boolean = repoRoot.isNotBlank(),
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Repository path", style = MaterialTheme.typography.titleMedium)
@@ -306,7 +422,7 @@ private fun Step2RepoPath(
             OutlinedButton(onClick = onBack) { Text("Back") }
             Button(
                 onClick = onNext,
-                enabled = repoRoot.isNotBlank(),
+                enabled = nextEnabled,
             ) { Text("Next") }
         }
     }
@@ -320,6 +436,10 @@ private fun Step3Auth(
     onSshKeyPathChange: (String) -> Unit,
     httpsToken: String,
     onHttpsTokenChange: (String) -> Unit,
+    tokenVisible: Boolean,
+    onToggleTokenVisible: () -> Unit,
+    sshPassphrase: String,
+    onSshPassphraseChange: (String) -> Unit,
     onBack: () -> Unit,
     onNext: () -> Unit,
 ) {
@@ -350,6 +470,23 @@ private fun Step3Auth(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
+            var passphraseVisible by remember { mutableStateOf(false) }
+            OutlinedTextField(
+                value = sshPassphrase,
+                onValueChange = onSshPassphraseChange,
+                label = { Text("SSH key passphrase (leave empty if none)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                visualTransformation = if (passphraseVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { passphraseVisible = !passphraseVisible }) {
+                        Icon(
+                            imageVector = if (passphraseVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (passphraseVisible) "Hide passphrase" else "Show passphrase",
+                        )
+                    }
+                },
+            )
         }
 
         if (authType == GitAuthType.HTTPS_TOKEN) {
@@ -359,9 +496,18 @@ private fun Step3Auth(
                 label = { Text("Personal access token") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                visualTransformation = if (tokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = onToggleTokenVisible) {
+                        Icon(
+                            imageVector = if (tokenVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (tokenVisible) "Hide token" else "Show token",
+                        )
+                    }
+                },
             )
             Text(
-                "Token is stored securely on device and never transmitted in plaintext.",
+                "Token is encrypted on disk using device-specific keys. For stronger protection, use SSH key auth.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -430,6 +576,9 @@ private fun Step5TestAndSave(
     saveError: String?,
     onBack: () -> Unit,
     onTestConnection: () -> Unit,
+    cloneInProgress: Boolean = false,
+    cloneProgress: String = "",
+    cloneError: String? = null,
     onSave: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -465,6 +614,25 @@ private fun Step5TestAndSave(
             }
         }
 
+        if (cloneInProgress) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = cloneProgress.ifBlank { "Cloning repository…" },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
+        cloneError?.let { error ->
+            Text(
+                text = error,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
         saveError?.let { error ->
             Text(
                 text = error,
@@ -477,10 +645,10 @@ private fun Step5TestAndSave(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            OutlinedButton(onClick = onBack, enabled = !saving) { Text("Back") }
+            OutlinedButton(onClick = onBack, enabled = !saving && !cloneInProgress) { Text("Back") }
             Button(
                 onClick = onSave,
-                enabled = !saving,
+                enabled = !saving && !cloneInProgress,
                 modifier = Modifier.weight(1f).padding(start = 8.dp),
             ) {
                 if (saving) {
@@ -506,6 +674,7 @@ private fun buildConfig(
     remoteBranch: String,
     pollIntervalMinutes: Int,
     httpsTokenKey: String? = null,
+    sshKeyPassphraseKey: String? = null,
 ): GitConfig = GitConfig(
     graphId = graphId,
     repoRoot = repoRoot,
@@ -515,4 +684,5 @@ private fun buildConfig(
     remoteBranch = remoteBranch,
     pollIntervalMinutes = pollIntervalMinutes,
     httpsTokenKey = httpsTokenKey,
+    sshKeyPassphraseKey = sshKeyPassphraseKey,
 )
