@@ -88,7 +88,7 @@ fun GitSetupScreen(
     graphPath: String = "",
     onSave: () -> Unit = {},
     onCloneAndAdd: (suspend (url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
-    onCloneCompleted: ((String) -> Unit)? = null,
+    onCloneComplete: ((String) -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     var step by remember { mutableIntStateOf(initialStep) }
@@ -206,9 +206,6 @@ fun GitSetupScreen(
                     testSuccess = testSuccess,
                     saving = saving,
                     saveError = saveError,
-                    cloneInProgress = cloneInProgress,
-                    cloneProgress = cloneProgress,
-                    cloneError = cloneError,
                     onBack = { step = 4 },
                     onTestConnection = {
                         scope.launch {
@@ -241,6 +238,9 @@ fun GitSetupScreen(
                             }
                         }
                     },
+                    cloneInProgress = cloneInProgress,
+                    cloneProgress = cloneProgress,
+                    cloneError = cloneError,
                     onSave = {
                         scope.launch {
                             saving = true
@@ -295,7 +295,7 @@ fun GitSetupScreen(
                                 val saveResult = gitConfigRepository.saveConfig(config)
                                 saving = false
                                 if (saveResult.isRight()) {
-                                    onCloneCompleted?.invoke(newGraphId)
+                                    onCloneComplete?.invoke(newGraphId)
                                     onSave()
                                 } else {
                                     saveError = "Failed to save configuration."
@@ -570,11 +570,11 @@ private fun Step5TestAndSave(
     testSuccess: Boolean,
     saving: Boolean,
     saveError: String?,
+    onBack: () -> Unit,
+    onTestConnection: () -> Unit,
     cloneInProgress: Boolean = false,
     cloneProgress: String = "",
     cloneError: String? = null,
-    onBack: () -> Unit,
-    onTestConnection: () -> Unit,
     onSave: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

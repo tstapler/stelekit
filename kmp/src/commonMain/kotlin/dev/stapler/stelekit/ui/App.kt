@@ -1179,7 +1179,7 @@ private fun GraphContent(
                             }
                         } else null,
                         graphPath = activeGraphPath,
-                        onCloneCompleted = { newGraphId ->
+                        onCloneComplete = { newGraphId ->
                             scope.launch { graphManager.switchGraph(newGraphId) }
                         },
                         onAuthError = { viewModel.openGitSetupForCredentials() },

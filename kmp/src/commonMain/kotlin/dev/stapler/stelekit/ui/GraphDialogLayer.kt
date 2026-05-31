@@ -72,7 +72,7 @@ internal fun GraphDialogLayer(
     activeGraphId: String? = null,
     onCloneAndAdd: (suspend (url: String, localPath: String, auth: dev.stapler.stelekit.git.GitAuth, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
     graphPath: String = "",
-    onCloneCompleted: ((String) -> Unit)? = null,
+    onCloneComplete: ((String) -> Unit)? = null,
     onAuthError: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
@@ -134,7 +134,7 @@ internal fun GraphDialogLayer(
             onSave = { viewModel.dismissGitSetup() },
             onCloneAndAdd = onCloneAndAdd,
             graphPath = graphPath,
-            onCloneCompleted = onCloneCompleted,
+            onCloneComplete = onCloneComplete,
             initialStep = appState.gitSetupInitialStep,
             initialUseExistingClone = !appState.gitSetupOpenForClone,
             existingConfig = null,

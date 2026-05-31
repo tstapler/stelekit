@@ -453,6 +453,7 @@ class JvmGitRepository(
         return Git.open(File(repoRoot))
     }
 
+    @Suppress("UnusedPrivateProperty")
     private fun configureAuthFromConfig(
         cmd: org.eclipse.jgit.api.TransportCommand<*, *>,
         config: GitConfig,

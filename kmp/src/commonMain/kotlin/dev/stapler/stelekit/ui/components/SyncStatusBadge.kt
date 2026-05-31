@@ -66,9 +66,9 @@ import kotlinx.coroutines.delay
 fun SyncStatusBadge(
     syncState: SyncState,
     onSyncClick: () -> Unit,
+    modifier: Modifier = Modifier,
     isGitConfigured: Boolean = true,
     onAuthError: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     if (!isGitConfigured) {
         Box(modifier = modifier.padding(horizontal = 4.dp)) {
@@ -114,8 +114,8 @@ fun SyncStatusBadge(
 private fun SyncStateBadge(
     syncState: SyncState,
     onSyncClick: () -> Unit,
-    onAuthError: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onAuthError: (() -> Unit)? = null,
 ) {
     when (syncState) {
         is SyncState.Idle -> {

@@ -15,6 +15,7 @@ import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.model.wikiRoot
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.NetworkMonitor
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -76,7 +77,7 @@ class GitSyncService(
             }
 
             // 1.5 Check credential availability (vault may be locked)
-            val credAccess = try { credentialAccessProvider?.invoke() } catch (_: Exception) { null }
+            val credAccess = try { credentialAccessProvider?.invoke() } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
             if (credAccess != null && !credAccess.isAvailable()) {
                 _syncState.value = SyncState.CredentialVaultLocked
                 return@withContext DomainError.GitError.AuthFailed("Vault is locked — unlock the vault to resume sync").left()
@@ -200,7 +201,7 @@ class GitSyncService(
                 return@withContext err.left()
             }
 
-            val credAccess = try { credentialAccessProvider?.invoke() } catch (_: Exception) { null }
+            val credAccess = try { credentialAccessProvider?.invoke() } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
             if (credAccess != null && !credAccess.isAvailable()) {
                 _syncState.value = SyncState.CredentialVaultLocked
                 return@withContext DomainError.GitError.AuthFailed("Vault is locked").left()
