@@ -95,7 +95,11 @@ private fun ConnectedAwaitingContent(
 
 private fun formatMeters(valueMeters: Double): String {
     return if (valueMeters >= 1.0) {
-        "${"%.3f".format(valueMeters)} m"
+        val factor = 1000.0
+        val rounded = kotlin.math.round(valueMeters * factor) / factor
+        val intPart = rounded.toLong()
+        val fracPart = kotlin.math.abs((rounded - intPart) * factor).toLong()
+        "$intPart.${fracPart.toString().padStart(3, '0')} m"
     } else {
         "${(valueMeters * 1000).toInt()} mm"
     }
