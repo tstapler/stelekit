@@ -863,8 +863,9 @@ class SqlDelightBlockRepository(
             val accumulated = mutableListOf<Block>()
             var sqlOffset = 0
             var batchSize = maxOf(need * 4, 100)
+            var iterations = 0
 
-            while (accumulated.size < need) {
+            while (accumulated.size < need && iterations++ < MAX_LINKED_REF_ITERATIONS) {
                 val wikiPage = queries.selectBlocksWithContentLikePaginated(
                     "%[[${pageName}%", batchSize.toLong(), sqlOffset.toLong()
                 ).executeAsList().map { it.toBlockModel() }
@@ -1138,5 +1139,7 @@ class SqlDelightBlockRepository(
          * Prevents unbounded growth when pageName is a common word on large graphs.
          */
         private const val MAX_LINKED_REF_BATCH = 2_000
+        // Hard upper bound on overfetch loop iterations: 50 × 2000 = 100k candidates max.
+        private const val MAX_LINKED_REF_ITERATIONS = 50
     }
 }

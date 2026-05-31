@@ -85,7 +85,7 @@ class PaginationEnforcementTest {
 
         // Both queries must have used LIMIT
         capturingDriver.capturedSelects
-            .filter { it.contains("LIKE") }
+            .filter { it.uppercase().contains("LIKE") }
             .forEach { assertSqlHasLimit(it) }
     }
 
@@ -106,7 +106,7 @@ class PaginationEnforcementTest {
 
         assertEquals(5, results.size)
         // Every SELECT that ran during this call must use LIMIT — no unbounded scan allowed
-        val linkScans = capturingDriver.capturedSelects.filter { it.contains("target-page") || it.contains("LIKE") }
+        val linkScans = capturingDriver.capturedSelects.filter { it.uppercase().contains("LIKE") }
         assertTrue(linkScans.isNotEmpty(), "Expected at least one LIKE query to run")
         linkScans.forEach { sql ->
             assertSqlHasLimit(sql)
