@@ -882,7 +882,7 @@ class SqlDelightBlockRepository(
 
                 sqlOffset += batchSize
                 // If yield was low (<25%), double the batch to reduce round-trips next iteration.
-                if (batch.size < batchSize / 4) batchSize *= 2
+                if (batch.size < batchSize / 4) batchSize = minOf(batchSize * 2, MAX_LINKED_REF_BATCH)
             }
 
             // accumulated is already bounded to ≤ offset+limit items by the loop above —
@@ -1132,5 +1132,11 @@ class SqlDelightBlockRepository(
          * edits (addBlockToPage, splitBlock) wait at most one chunk before acquiring the lock.
          */
         private const val WRITE_CHUNK_SIZE = 50
+
+        /**
+         * Maximum batch size for linked reference queries in [getLinkedReferences].
+         * Prevents unbounded growth when pageName is a common word on large graphs.
+         */
+        private const val MAX_LINKED_REF_BATCH = 2_000
     }
 }

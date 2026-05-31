@@ -60,7 +60,7 @@ class PaginationEnforcementTest {
             .first().getOrNull() ?: error("null result")
 
         assertEquals(5, results.size)
-        val selectSql = capturingDriver.capturedSelects.first { it.contains("search_target_content".let { "" }) }
+        val selectSql = capturingDriver.capturedSelects.first { it.uppercase().contains("LIKE") }
         assertSqlHasLimit(selectSql)
     }
 
