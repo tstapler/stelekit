@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.32.0](https://github.com/tstapler/stelekit/compare/v0.31.1...v0.32.0) (2026-05-31)
+
+
+### Features
+
+* **android:** add voice-capture home screen widget ([8953afc](https://github.com/tstapler/stelekit/commit/8953afcc44751003dfba9d7b19599fb6b971ae2f))
+
+
+### Bug Fixes
+
+* **android:** fix share target not capturing URL or page title ([a630631](https://github.com/tstapler/stelekit/commit/a630631f23550ea0f6d5fab237cec70ef6373107))
+* **search:** treat hyphens as token boundaries in FtsQueryBuilder ([#114](https://github.com/tstapler/stelekit/issues/114)) ([1b4f0ae](https://github.com/tstapler/stelekit/commit/1b4f0ae9ce784b1cbd5e1eb167d4ca200c198928))
+* **voice:** address all code review findings in voice pipeline ([cb32495](https://github.com/tstapler/stelekit/commit/cb324953df290f0109200d6ceb24ca0ce0e0250d))
+* **voice:** address UX review findings and code quality issues ([a25cb9e](https://github.com/tstapler/stelekit/commit/a25cb9e1b9e1ba60aef0345aacf40ecf351cc660))
+
+
+### Performance Improvements
+
+* **rename:** 97% latency reduction + pagination fixes + editor improvements ([#115](https://github.com/tstapler/stelekit/issues/115)) ([82186f9](https://github.com/tstapler/stelekit/commit/82186f9ffc9b9b58a7a0b2d873f5501f43856103))
+
 ## [0.31.1](https://github.com/tstapler/stelekit/compare/v0.31.0...v0.31.1) (2026-05-30)
 
 
