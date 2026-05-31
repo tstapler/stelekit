@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-30 13:54:17 UTC",
+  "gitSha": "f2b21ce",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 9,
+  "phase2Ms": 4,
+  "phase3Ms": 15,
+  "totalMs": 27,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 30,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 147,
+      "pct": 72.8
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 7,
+      "pct": 3.5
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 5,
+      "pct": 2.5
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 4,
+      "pct": 2.0
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "java.lang.Object_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.util.HashMap$Node_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "jdk.internal.ref.CleanerImpl$PhantomCleanableRef_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.util.HashMap$Node[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2118,
+      "pct": 99.4
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-b0b60cbb-9348-45c4-acb3-d17c36fefd72-libsqlitejdbc.so",
+      "samples": 4,
+      "pct": 0.2
+    },
+    {
+      "frame": "kotlin/ranges/IntProgression.<init>_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/StringConcatHelper.prepend_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "Dictionary::find",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/util/concurrent/atomic/AtomicReferenceFieldUpdater$AtomicReferenceFieldUpdaterImpl.get_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "Method::is_not_compilable",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SystemDictionary::resolve_or_fail",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "InstanceKlass::allocate_instance",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pread",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}

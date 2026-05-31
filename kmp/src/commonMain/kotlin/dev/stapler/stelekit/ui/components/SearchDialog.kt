@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
@@ -521,12 +522,17 @@ fun SearchResultRow(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                val searchTitleLinkColor = MaterialTheme.colorScheme.primary
+                val searchTitleTextColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                val annotatedTitle = remember(title, isSelected, searchTitleLinkColor, searchTitleTextColor) {
+                    parseMarkdownWithStyling(title, linkColor = searchTitleLinkColor, textColor = searchTitleTextColor)
+                }
+                BasicText(
+                    text = annotatedTitle,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal
+                    ),
                     maxLines = 1,
-                    fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
                     modifier = Modifier.weight(1f)
                 )
                 if (relativeDate != null) {

@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.31.1](https://github.com/tstapler/stelekit/compare/v0.31.0...v0.31.1) (2026-05-30)
+
+
+### Bug Fixes
+
+* **db:** add migration 5 to create query_stats for existing databases ([f35bf24](https://github.com/tstapler/stelekit/commit/f35bf2457940beb3179e4b9d31c81c3dd75f76b9))
+* **db:** register query_stats migration in MigrationRunner for JVM ([dda495c](https://github.com/tstapler/stelekit/commit/dda495c5f3fadaf6a1a4f434a725a1805972eab8))
+* **desktop:** pass app.version to packaged distribution via jvmArgs ([a9d462e](https://github.com/tstapler/stelekit/commit/a9d462e0a42c5d7cb1e8bfb273a0c331091ce8c8))
+
+## [0.31.0](https://github.com/tstapler/stelekit/compare/v0.30.2...v0.31.0) (2026-05-30)
+
+
+### Features
+
+* **ui:** render markdown bold/italic in page title, search results, and snippets ([#108](https://github.com/tstapler/stelekit/issues/108)) ([aa7e5a5](https://github.com/tstapler/stelekit/commit/aa7e5a525cffaf6f73e86a99a78c838baeb76a5d))
+
+
+### Bug Fixes
+
+* **watch:** shadow stale-read drops external sync changes; no new-day journal ([#107](https://github.com/tstapler/stelekit/issues/107)) ([4fade3d](https://github.com/tstapler/stelekit/commit/4fade3d620390961402af6772931ca7287b3d3eb))
+
 ## [0.30.2](https://github.com/tstapler/stelekit/compare/v0.30.1...v0.30.2) (2026-05-29)
 
 

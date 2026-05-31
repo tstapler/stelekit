@@ -3,6 +3,7 @@ package dev.stapler.stelekit.ui.screens
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Star
@@ -37,6 +38,7 @@ import dev.stapler.stelekit.ui.StelekitViewModel
 import androidx.compose.runtime.CompositionLocalProvider
 import dev.stapler.stelekit.ui.components.BlockList
 import dev.stapler.stelekit.ui.components.LocalGraphRootPath
+import dev.stapler.stelekit.ui.components.parseMarkdownWithStyling
 import dev.stapler.stelekit.ui.components.pageDropTarget
 import dev.stapler.stelekit.ui.components.MobileBlockToolbar
 import dev.stapler.stelekit.ui.components.ReferencesPanel
@@ -186,10 +188,14 @@ fun PageView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = page.name,
+                    val pageTitleLinkColor = MaterialTheme.colorScheme.primary
+                    val pageTitleTextColor = MaterialTheme.colorScheme.onBackground
+                    val annotatedPageTitle = remember(page.name, pageTitleLinkColor, pageTitleTextColor) {
+                        parseMarkdownWithStyling(page.name, linkColor = pageTitleLinkColor, textColor = pageTitleTextColor)
+                    }
+                    BasicText(
+                        text = annotatedPageTitle,
                         style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(onClick = { viewModel.showRenameDialog(page) }) {

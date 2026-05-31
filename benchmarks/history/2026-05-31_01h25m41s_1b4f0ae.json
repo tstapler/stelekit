@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-31 01:25:41 UTC",
+  "gitSha": "1b4f0ae",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 4,
+  "phase3Ms": 15,
+  "totalMs": 27,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 35,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 146,
+      "pct": 65.5
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 8,
+      "pct": 3.6
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 6,
+      "pct": 2.7
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 6,
+      "pct": 2.7
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 5,
+      "pct": 2.2
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 5,
+      "pct": 2.2
+    },
+    {
+      "frame": "java.util.jar.JarFile$JarFileEntry_[k]",
+      "samples": 3,
+      "pct": 1.3
+    },
+    {
+      "frame": "long[]_[k]",
+      "samples": 3,
+      "pct": 1.3
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 2,
+      "pct": 0.9
+    },
+    {
+      "frame": "java.util.HashMap$Node[]_[k]",
+      "samples": 2,
+      "pct": 0.9
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2132,
+      "pct": 99.3
+    },
+    {
+      "frame": "pread",
+      "samples": 3,
+      "pct": 0.1
+    },
+    {
+      "frame": "I2C/C2I adapters(0xbb)",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "java/net/URLStreamHandler.setURL_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "app/cash/sqldelight/driver/jdbc/JdbcDriver.newTransaction_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "SymbolTable::do_lookup",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "TypeArrayKlass::allocate_common",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "jdk/internal/reflect/ConstructorAccessorImpl.<init>_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "open",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}

@@ -1658,7 +1658,7 @@ class StelekitViewModel(
         return (tomorrowMidnight - now).inWholeMilliseconds.coerceAtLeast(MIN_MIDNIGHT_DELAY_MS)
     }
 
-    private fun startMidnightBoundaryWatcher(clock: Clock = Clock.System) {
+    internal fun startMidnightBoundaryWatcher(clock: Clock = Clock.System) {
         midnightWatcherJob?.cancel()
         midnightWatcherJob = scope.launch(CoroutineName("midnight-boundary-watcher")) {
             // Seed lastJournalDate from startup before entering the loop, so the first

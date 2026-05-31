@@ -435,6 +435,41 @@ class SearchRepositoryIntegrationTests {
             "Case-insensitive exact-match should promote 'Taxes' to first position")
     }
 
+    // ── AC-2: METADATA_ONLY pages appear in title search ───────────────────
+
+    @Test
+    fun metadataOnlyPageAppearsInSearch() = runTest {
+        // Use a non-hyphenated name to isolate FTS trigger coverage
+        // from the FtsQueryBuilder hyphen-splitting fix tested in FtsQueryBuilderTest
+        val pageUuid = generateUuid(800)
+        pageRepo.savePage(createTestPage(pageUuid, "metadata stub").copy(isContentLoaded = false))
+
+        val request = SearchRequest(query = "metadata stub", limit = 10)
+        val result = repository.searchWithFilters(request).last()
+        assertTrue(result.isRight())
+        assertTrue(
+            result.getOrNull()?.pages?.any { it.name == "metadata stub" } == true,
+            "METADATA_ONLY page (isContentLoaded=false) must appear in title search"
+        )
+    }
+
+    // ── AC-1 round-trip: hyphenated page name is found by partial prefix ────
+
+    @Test
+    fun hyphenatedPageNameFoundByPartialPrefix() = runTest {
+        val pageUuid = generateUuid(801)
+        pageRepo.savePage(createTestPage(pageUuid, "2026-03-15"))
+
+        // Search for a prefix of the date — exercises the full FTS round-trip
+        val request = SearchRequest(query = "2026-03", limit = 10)
+        val result = repository.searchWithFilters(request).last()
+        assertTrue(result.isRight())
+        assertTrue(
+            result.getOrNull()?.pages?.any { it.name == "2026-03-15" } == true,
+            "Searching '2026-03' must find page named '2026-03-15' via FTS5 hyphen-splitting"
+        )
+    }
+
     // ── TC-9: no exact match — BM25 order is not overridden ─────────────────
 
     @Test

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.voice
 
+import arrow.resilience.CircuitBreaker
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -15,22 +16,39 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import io.ktor.utils.io.errors.IOException
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 class OpenAiLlmFormatterProvider(
     private val httpClient: HttpClient,
     private val apiKey: String,
-    private val baseUrl: String = "https://api.openai.com",
+    baseUrl: String = "https://api.openai.com",
+    private val circuitBreaker: CircuitBreaker = defaultCircuitBreaker(),
 ) : LlmFormatterProvider {
+
+    private val completionsUrl: String
+
+    init {
+        require(baseUrl.startsWith("https://")) { "baseUrl must use HTTPS" }
+        completionsUrl = "$baseUrl/v1/chat/completions"
+    }
+
+    fun close() = httpClient.close()
 
     companion object {
         private const val OPENAI_MODEL = "gpt-4o-mini"
-        private val lenientJson = Json { ignoreUnknownKeys = true }
+
+        fun defaultCircuitBreaker(): CircuitBreaker = CircuitBreaker(
+            openingStrategy = CircuitBreaker.OpeningStrategy.Count(maxFailures = 3),
+            resetTimeout = 30.seconds,
+            exponentialBackoffFactor = 2.0,
+            maxResetTimeout = 5.minutes,
+        )
 
         fun withDefaults(apiKey: String, baseUrl: String = "https://api.openai.com"): OpenAiLlmFormatterProvider {
             val client = HttpClient {
-                install(ContentNegotiation) { json(lenientJson) }
+                install(ContentNegotiation) { json(LlmProviderSupport.voiceLenientJson) }
             }
             return OpenAiLlmFormatterProvider(client, apiKey, baseUrl)
         }
@@ -38,8 +56,15 @@ class OpenAiLlmFormatterProvider(
 
     override suspend fun format(transcript: String, systemPrompt: String): LlmResult {
         val maxTokens = LlmProviderSupport.estimateMaxTokens(transcript)
-        val completionsUrl = "$baseUrl/v1/chat/completions"
+        return circuitBreaker.protectEither {
+            httpCallInternal(systemPrompt, maxTokens)
+        }.fold(
+            ifLeft = { LlmResult.Failure.NetworkError },
+            ifRight = { it },
+        )
+    }
 
+    private suspend fun httpCallInternal(systemPrompt: String, maxTokens: Int): LlmResult {
         return try {
             val response = httpClient.post(completionsUrl) {
                 headers {
@@ -51,8 +76,10 @@ class OpenAiLlmFormatterProvider(
                         model = OPENAI_MODEL,
                         maxTokens = maxTokens,
                         messages = listOf(
+                            // systemPrompt already contains the transcript via {{TRANSCRIPT}} substitution;
+                            // send it in the system role only — do not re-send the raw transcript as a user turn.
                             OpenAiMessage(role = "system", content = systemPrompt),
-                            OpenAiMessage(role = "user", content = transcript),
+                            OpenAiMessage(role = "user", content = "Output the formatted Logseq note."),
                         ),
                     )
                 )
@@ -71,10 +98,8 @@ class OpenAiLlmFormatterProvider(
             throw e
         } catch (e: IOException) {
             LlmResult.Failure.NetworkError
-        } catch (e: CancellationException) {
-            throw e
         } catch (e: Exception) {
-            LlmResult.Failure.ApiError(-1, "Unexpected error: ${e.message}")
+            LlmResult.Failure.ApiError(-1, "Unexpected error")
         }
     }
 }
