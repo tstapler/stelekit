@@ -24,8 +24,13 @@ class MarkdownExporter : PageExporter {
                 append("---\n\n")
             }
 
-            // H1 heading
-            append("# ${page.name}\n\n")
+            // H1 heading: use journal date (ISO format) for journal pages, page name otherwise
+            val heading = if (page.isJournal && page.journalDate != null) {
+                page.journalDate.toString()
+            } else {
+                page.name
+            }
+            append("# $heading\n\n")
 
             // Block tree
             writeBlocks(sortedBlocks, this, resolvedRefs)

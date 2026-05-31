@@ -115,6 +115,8 @@ data class AppState(
     val gitSetupInitialStep: Int = 1,
     val gitSetupOpenForClone: Boolean = false,
     val conflictResolutionVisible: Boolean = false,
+    // Export in-flight: true while an exportPage/exportSelectedBlocks coroutine is running
+    val isExporting: Boolean = false,
 ) {
     val canGoBack: Boolean get() = historyIndex > 0
     val canGoForward: Boolean get() = historyIndex < navigationHistory.size - 1

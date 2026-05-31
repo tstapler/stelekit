@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.error.DomainError.ExportError
 
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
@@ -43,22 +44,31 @@ class ExportService(
     ): Either<DomainError, Unit> = withContext(Dispatchers.Default) {
         try {
             val exporter = exporterMap[formatId]
-                ?: error("Unknown export format: $formatId")
+                ?: return@withContext ExportError.SerializationFailed("Unknown export format: $formatId").left()
             val resolvedRefs = resolveBlockRefs(collectBlockRefUuids(blocks))
-            val output = exporter.export(page, blocks, resolvedRefs)
-            if (formatId == "html") {
-                val plainText = exporterMap["plain-text"]
-                    ?.export(page, blocks, resolvedRefs)
-                    ?: output
-                clipboard.writeHtml(output, plainText)
-            } else {
-                clipboard.writeText(output)
+            val output = runCatching { exporter.export(page, blocks, resolvedRefs) }
+                .getOrElse { e ->
+                    if (e is CancellationException) throw e
+                    return@withContext ExportError.SerializationFailed(e.message ?: "unknown").left()
+                }
+            runCatching {
+                if (formatId == "html") {
+                    val plainText = exporterMap["plain-text"]
+                        ?.export(page, blocks, resolvedRefs)
+                        ?: output
+                    clipboard.writeHtml(output, plainText)
+                } else {
+                    clipboard.writeText(output)
+                }
+            }.getOrElse { e ->
+                if (e is CancellationException) throw e
+                return@withContext ExportError.ClipboardFailed(e.message ?: "unknown").left()
             }
             Unit.right()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            ExportError.SerializationFailed(e.message ?: "unknown").left()
         }
     }
 
@@ -79,7 +89,7 @@ class ExportService(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            ExportError.SerializationFailed(e.message ?: "unknown").left()
         }
     }
 

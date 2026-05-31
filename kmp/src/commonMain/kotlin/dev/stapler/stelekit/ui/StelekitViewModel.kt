@@ -1552,14 +1552,24 @@ class StelekitViewModel(
         val page = _uiState.value.currentPage ?: return
         val blocks = blockStateManager?.blocksForPage(page.uuid) ?: return
         val sortedBlocks = BlockSorter.sort(blocks)
+        if (exportService == null) {
+            notificationManager?.show("Export unavailable", NotificationType.ERROR)
+            return
+        }
+        _uiState.update { it.copy(isExporting = true) }
         scope.launch(Dispatchers.Default) {
-            val service = exportService ?: return@launch
-            val result = service.exportToClipboard(page, sortedBlocks, formatId)
-            withContext(Dispatchers.Main) {
-                result.onRight {
-                    notificationManager?.show("Copied as ${formatDisplayName(formatId)}", NotificationType.SUCCESS)
-                }.onLeft { e ->
-                    notificationManager?.show("Export failed: ${e.message}", NotificationType.ERROR)
+            try {
+                val result = exportService.exportToClipboard(page, sortedBlocks, formatId)
+                withContext(Dispatchers.Main) {
+                    result.onRight {
+                        notificationManager?.show("Copied as ${formatDisplayName(formatId)}", NotificationType.SUCCESS)
+                    }.onLeft { e ->
+                        notificationManager?.show("Export failed: ${e.message}", NotificationType.ERROR)
+                    }
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    _uiState.update { it.copy(isExporting = false) }
                 }
             }
         }
@@ -1577,15 +1587,25 @@ class StelekitViewModel(
             return
         }
         val allBlocks = blockStateManager?.blocksForPage(page.uuid) ?: return
+        if (exportService == null) {
+            notificationManager?.show("Export unavailable", NotificationType.ERROR)
+            return
+        }
+        _uiState.update { it.copy(isExporting = true) }
         scope.launch(Dispatchers.Default) {
-            val service = exportService ?: return@launch
-            val subtreeBlocks = service.subtreeBlocks(allBlocks, selectedUuids)
-            val result = service.exportToClipboard(page, subtreeBlocks, formatId)
-            withContext(Dispatchers.Main) {
-                result.onRight {
-                    notificationManager?.show("Copied as ${formatDisplayName(formatId)}", NotificationType.SUCCESS)
-                }.onLeft { e ->
-                    notificationManager?.show("Export failed: ${e.message}", NotificationType.ERROR)
+            try {
+                val subtreeBlocks = exportService.subtreeBlocks(allBlocks, selectedUuids)
+                val result = exportService.exportToClipboard(page, subtreeBlocks, formatId)
+                withContext(Dispatchers.Main) {
+                    result.onRight {
+                        notificationManager?.show("Copied as ${formatDisplayName(formatId)}", NotificationType.SUCCESS)
+                    }.onLeft { e ->
+                        notificationManager?.show("Export failed: ${e.message}", NotificationType.ERROR)
+                    }
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    _uiState.update { it.copy(isExporting = false) }
                 }
             }
         }
