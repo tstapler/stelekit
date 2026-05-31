@@ -1556,6 +1556,7 @@ class StelekitViewModel(
             notificationManager?.show("Export unavailable", NotificationType.ERROR)
             return
         }
+        if (_uiState.value.isExporting) return
         _uiState.update { it.copy(isExporting = true) }
         scope.launch(Dispatchers.Default) {
             try {
@@ -1591,6 +1592,7 @@ class StelekitViewModel(
             notificationManager?.show("Export unavailable", NotificationType.ERROR)
             return
         }
+        if (_uiState.value.isExporting) return
         _uiState.update { it.copy(isExporting = true) }
         scope.launch(Dispatchers.Default) {
             try {

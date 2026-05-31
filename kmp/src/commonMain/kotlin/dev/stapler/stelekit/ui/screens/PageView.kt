@@ -238,6 +238,7 @@ fun PageView(
                             ).forEach { (formatId, label) ->
                                 DropdownMenuItem(
                                     text = { Text(label) },
+                                    enabled = !isExporting,
                                     onClick = {
                                         exportMenuExpanded = false
                                         viewModel.exportPage(formatId)
