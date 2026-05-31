@@ -36,13 +36,13 @@ import kotlin.math.roundToInt
  *
  * @param annotations All annotations currently visible on the canvas.
  * @param canvasSize The pixel size of the canvas as reported by [androidx.compose.ui.layout.onGloballyPositioned].
- * @param onAnnotationSelected Callback invoked with the annotation's UUID when selected.
+ * @param onAnnotationSelect Callback invoked with the annotation's UUID when selected.
  */
 @Composable
 fun AnnotationSemanticOverlay(
     annotations: List<MeasurementAnnotation>,
     canvasSize: IntSize,
-    onAnnotationSelected: (String) -> Unit,
+    onAnnotationSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.fillMaxSize()) {
@@ -50,7 +50,7 @@ fun AnnotationSemanticOverlay(
             AnnotationSemanticNode(
                 annotation = annotation,
                 canvasSize = canvasSize,
-                onSelect = { onAnnotationSelected(annotation.uuid) },
+                onSelect = { onAnnotationSelect(annotation.uuid) },
             )
         }
     }

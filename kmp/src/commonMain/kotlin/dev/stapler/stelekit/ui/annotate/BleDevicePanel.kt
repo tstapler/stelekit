@@ -66,29 +66,30 @@ private fun ConnectedAwaitingContent(
     deviceName: String,
     onUseDrawMethod: () -> Unit,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Icon(
-            imageVector = Icons.Default.CheckCircle,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(20.dp),
-        )
-        Text("Connected: $deviceName", style = MaterialTheme.typography.bodyMedium)
-    }
-    Spacer(modifier = Modifier.height(16.dp))
-    Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        shape = MaterialTheme.shapes.small,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Text(
-            text = "Point laser at your reference, then press the measure button on the device.",
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(12.dp),
-        )
-    }
-    TextButton(onClick = onUseDrawMethod) {
-        Text("Use draw method instead")
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
+            Text("Connected: $deviceName", style = MaterialTheme.typography.bodyMedium)
+        }
+        Surface(
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                text = "Point laser at your reference, then press the measure button on the device.",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(12.dp),
+            )
+        }
+        TextButton(onClick = onUseDrawMethod) {
+            Text("Use draw method instead")
+        }
     }
 }
 
@@ -106,7 +107,7 @@ fun BleDevicePanel(
     onDismiss: () -> Unit,
     onUseDrawMethod: () -> Unit,
     /** Called with the measured distance in meters when user confirms "Use this measurement". */
-    onReadingAccepted: (Double) -> Unit,
+    onReadingAccept: (Double) -> Unit,
 ) {
     var panelState by remember { mutableStateOf<BleDevicePanelState>(BleDevicePanelState.Scanning) }
     val scope = rememberCoroutineScope()
@@ -277,7 +278,7 @@ fun BleDevicePanel(
                         }
                         Button(
                             onClick = {
-                                onReadingAccepted(state.valueMeters)
+                                onReadingAccept(state.valueMeters)
                                 onDismiss()
                             },
                         ) {

@@ -150,7 +150,6 @@ fun AnnotationEditorScreen(
     val canUndoCalibration by viewModel.canUndoCalibration.collectAsState()
     val calibrationMessage by viewModel.calibrationChangeMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
 
     // UnsavedChanges tracking
     var showUnsavedChangesDialog by remember { mutableStateOf(false) }
@@ -165,7 +164,7 @@ fun AnnotationEditorScreen(
     // Coach marks
     var showDistanceCoachMark by remember { mutableStateOf(false) }
     var showAreaCoachMark by remember { mutableStateOf(false) }
-    var coachMarksShown by remember { mutableStateOf(0) }
+    var coachMarksShown by remember { androidx.compose.runtime.mutableIntStateOf(0) }
 
     // Adaptive labels: show for first 3 sessions (tracked in state per session)
     val showToolLabels by remember { mutableStateOf(true) }
@@ -223,9 +222,10 @@ fun AnnotationEditorScreen(
     }
 
     Scaffold(
+        modifier = modifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { paddingValues ->
-        Column(modifier = modifier.fillMaxSize().padding(paddingValues)) {
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
         // Calibration status indicator bar
         CalibrationConfidenceBadge(
             calibration = state.calibration,
@@ -375,7 +375,7 @@ fun AnnotationEditorScreen(
             AnnotationSemanticOverlay(
                 annotations = state.committedAnnotations,
                 canvasSize = canvasSize,
-                onAnnotationSelected = { uuid -> viewModel.selectAnnotation(uuid) },
+                onAnnotationSelect = { uuid -> viewModel.selectAnnotation(uuid) },
                 modifier = Modifier.fillMaxSize(),
             )
 
@@ -536,7 +536,7 @@ fun AnnotationEditorScreen(
                     showBleDevicePanel = false
                     viewModel.selectTool(AnnotationTool.GRID_REF)
                 },
-                onReadingAccepted = { _ ->
+                onReadingAccept = { _ ->
                     showBleDevicePanel = false
                     // The BLE reading updates will be handled by the active device flow
                 },

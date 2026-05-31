@@ -68,8 +68,8 @@ fun AnnotationToolbar(
     onCalibrate: () -> Unit,
     onUnitSelect: (MeasurementUnit) -> Unit,
     hasSelection: Boolean,
-    showLabels: Boolean = true,
     modifier: Modifier = Modifier,
+    showLabels: Boolean = true,
 ) {
     Column(
         modifier = modifier
@@ -196,9 +196,9 @@ private fun ToolButton(
     label: String,
     isActive: Boolean,
     onSelect: (AnnotationTool) -> Unit,
+    modifier: Modifier = Modifier,
     enabled: Boolean = true,
     showLabels: Boolean = true,
-    modifier: Modifier = Modifier,
 ) {
     val bg = if (isActive && enabled) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     val tint = when {
@@ -212,9 +212,12 @@ private fun ToolButton(
         tooltip = { PlainTooltip { Text("$label (${toolShortcut(tool)})") } },
         state = tooltipState,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            modifier = modifier,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Box(
-                modifier = modifier
+                modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(bg),
             ) {
@@ -253,8 +256,8 @@ private fun toolShortcut(tool: AnnotationTool): String = when (tool) {
 @Composable
 private fun CalibrateButton(
     onClick: () -> Unit,
-    showLabels: Boolean = true,
     modifier: Modifier = Modifier,
+    showLabels: Boolean = true,
 ) {
     val tooltipState = rememberTooltipState()
     TooltipBox(
@@ -262,9 +265,12 @@ private fun CalibrateButton(
         tooltip = { PlainTooltip { Text("Calibrate (C)") } },
         state = tooltipState,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            modifier = modifier,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Box(
-                modifier = modifier
+                modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color.Transparent),
             ) {
