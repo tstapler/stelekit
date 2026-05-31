@@ -100,6 +100,11 @@ sealed interface DomainError {
         data class PickerFailed(override val message: String) : AttachmentError
         data class AssetsDirectoryFailed(override val message: String) : AttachmentError
     }
+
+    sealed interface ExportError : DomainError {
+        data class SerializationFailed(override val message: String) : ExportError
+        data class ClipboardFailed(override val message: String) : ExportError
+    }
 }
 
 fun Throwable.toDatabaseError(): DomainError.DatabaseError.WriteFailed =
@@ -146,6 +151,8 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.AttachmentError.CopyFailed -> "Attachment failed: $message"
     is DomainError.AttachmentError.PickerFailed -> "Could not open file picker: $message"
     is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory: $message"
+    is DomainError.ExportError.SerializationFailed -> "Export failed: $message"
+    is DomainError.ExportError.ClipboardFailed -> "Clipboard write failed: $message"
 }
 
 fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {

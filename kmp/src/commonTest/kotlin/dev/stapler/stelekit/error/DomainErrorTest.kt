@@ -45,6 +45,8 @@ class DomainErrorTest {
             DomainError.SensorError.PermissionDenied("camera"),
             DomainError.SensorError.HardwareUnavailable("lidar"),
             DomainError.SensorError.CaptureFailed("capture failed"),
+            DomainError.ExportError.SerializationFailed("serialization failed"),
+            DomainError.ExportError.ClipboardFailed("clipboard failed"),
         )
         for (err in errors) {
             // exhaustive when — compile error if any branch is missing
@@ -89,6 +91,8 @@ class DomainErrorTest {
                 is DomainError.SensorError.CaptureFailed -> err.message
                 is DomainError.BleError.ConnectionFailed -> err.message
                 is DomainError.BleError.Gatt133 -> err.message
+                is DomainError.ExportError.ClipboardFailed -> err.message
+                is DomainError.ExportError.SerializationFailed -> err.message
             }
             assert(msg.isNotEmpty()) { "Expected non-empty message for $err" }
         }

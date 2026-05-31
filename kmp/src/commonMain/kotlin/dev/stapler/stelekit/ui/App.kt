@@ -973,6 +973,7 @@ private fun GraphContent(
                                 onGoForward = { viewModel.goForward() },
                                 onMenuToggle = { viewModel.toggleSidebar() },
                                 onExportPage = { formatId -> viewModel.exportPage(formatId) },
+                                isExporting = appState.isExporting,
                                 onShowDebugMenu = if (DebugBuildConfig.isDebugBuild) {{ viewModel.showDebugMenu() }} else null,
                             )
                         },

@@ -110,6 +110,7 @@ internal fun ScreenRouter(
                 onAttachImage = onAttachImage,
                 onFileDrop = onFileDrop,
                 onPasteImage = onPasteImage,
+                isExporting = appState.isExporting,
             )
             is Screen.Journals -> JournalsView(
                 viewModel = journalsViewModel,

@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.*
@@ -88,6 +89,7 @@ fun PageView(
      */
     onFileDrop: ((List<Any>) -> Unit)? = null,
     onPasteImage: ((editingBlockUuid: String?) -> Boolean)? = null,
+    isExporting: Boolean = false,
 ) {
     NavigationTracingEffect("PageView/${page.name}")
     val focusManager = LocalFocusManager.current
@@ -211,6 +213,39 @@ fun PageView(
                             contentDescription = if (page.isFavorite) "Unfavorite" else "Favorite",
                             tint = if (page.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                    var exportMenuExpanded by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(
+                            onClick = { exportMenuExpanded = true },
+                            enabled = !isExporting
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Export page",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = exportMenuExpanded,
+                            onDismissRequest = { exportMenuExpanded = false }
+                        ) {
+                            listOf(
+                                "markdown" to "Copy as Markdown",
+                                "plain-text" to "Copy as Plain Text",
+                                "html" to "Copy as HTML",
+                                "json" to "Copy as JSON"
+                            ).forEach { (formatId, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    enabled = !isExporting,
+                                    onClick = {
+                                        exportMenuExpanded = false
+                                        viewModel.exportPage(formatId)
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
 

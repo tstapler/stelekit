@@ -13,19 +13,25 @@ class MarkdownExporter : PageExporter {
     override fun export(page: Page, blocks: List<Block>, resolvedRefs: Map<String, String>): String {
         val sortedBlocks = BlockSorter.sort(blocks)
         return buildString {
+            // H1 heading: use journal date (ISO format) for journal pages, page name otherwise
+            val heading = if (page.isJournal && page.journalDate != null) {
+                page.journalDate.toString()
+            } else {
+                page.name
+            }
+
             // YAML frontmatter: page properties excluding 'id'
             val frontmatterProps = page.properties.filterKeys { it != "id" }
             if (frontmatterProps.isNotEmpty()) {
                 append("---\n")
-                append("title: ${page.name}\n")
+                append("title: ${yamlEscape(heading)}\n")
                 frontmatterProps.forEach { (key, value) ->
                     append("$key: ${yamlEscape(value)}\n")
                 }
                 append("---\n\n")
             }
 
-            // H1 heading
-            append("# ${page.name}\n\n")
+            append("# $heading\n\n")
 
             // Block tree
             writeBlocks(sortedBlocks, this, resolvedRefs)

@@ -45,6 +45,7 @@ fun TopBar(
     onGoForward: () -> Unit = {},
     onMenuToggle: () -> Unit = {},
     onExportPage: ((formatId: String) -> Unit)? = null,
+    isExporting: Boolean = false,
     onShowDebugMenu: (() -> Unit)? = null,
 ) {
     val isMobile = LocalWindowSizeClass.current.isMobile
@@ -144,6 +145,24 @@ fun TopBar(
                             onResetOnboarding()
                         }
                     )
+                    if (onExportPage != null && appState.currentPage != null) {
+                        HorizontalDivider()
+                        listOf(
+                            "markdown" to "Export as Markdown",
+                            "plain-text" to "Export as Plain Text",
+                            "html" to "Export as HTML",
+                            "json" to "Export as JSON"
+                        ).forEach { (formatId, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                enabled = !isExporting,
+                                onClick = {
+                                    overflowMenuExpanded = false
+                                    onExportPage.invoke(formatId)
+                                }
+                            )
+                        }
+                    }
                     HorizontalDivider()
                     Text(
                         t("settings.language"),
@@ -245,7 +264,7 @@ fun TopBar(
                     exportFormats.forEach { (formatId, label) ->
                         DropdownMenuItem(
                             text = { Text(label) },
-                            enabled = appState.currentPage != null,
+                            enabled = appState.currentPage != null && !isExporting,
                             onClick = {
                                 fileMenuExpanded = false
                                 onExportPage?.invoke(formatId)
