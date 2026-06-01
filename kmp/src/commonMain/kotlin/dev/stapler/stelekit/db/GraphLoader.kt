@@ -154,15 +154,19 @@ class GraphLoader(
         kotlin.random.Random.nextLong().toULong().toString(16).padStart(16, '0')
 
     /**
-     * Replaces absolute filesystem paths with a stable opaque token for span attributes.
-     * Vault paths and page names in telemetry are privacy-sensitive — they reveal vault
+     * Replaces any non-empty string with a stable opaque token for span attributes.
+     * Vault paths AND page names in telemetry are privacy-sensitive — they reveal vault
      * location and note titles in exports, bug reports, and the SQLite spans table.
-     * The hash is deterministic per session so correlated spans remain linkable.
+     *
+     * Uses the first 8 hex chars of SHA-256 (via [ContentHasher]) rather than
+     * `String.hashCode()`, which is brute-forceable for short, low-entropy titles.
+     * The digest is deterministic per value so correlated spans remain linkable.
      */
-    private fun String.redactPath(): String =
-        if (contains('/') || contains('\\'))
-            "<path:${hashCode().toUInt().toString(16)}>"
-        else this
+    private fun String.redactPath(): String {
+        if (isEmpty()) return this
+        val hash = dev.stapler.stelekit.util.ContentHasher.sha256ForContent(this).take(8)
+        return "<redacted:$hash>"
+    }
 
     private inner class Span(val name: String, val traceId: String, val parentSpanId: String = "") {
         val spanId: String = genId()

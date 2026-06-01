@@ -744,7 +744,7 @@ private fun GraphContent(
         mutableStateOf(repos.debugFlagRepository?.loadDebugMenuState() ?: DebugMenuState())
     }
 
-    // Sync span capture toggle → ring buffer enabled flag (defaults to true in DebugMenuState).
+    // Sync span capture toggle → ring buffer enabled flag (defaults to false in DebugMenuState).
     androidx.compose.runtime.LaunchedEffect(debugMenuState.isSpanCaptureEnabled) {
         repos.ringBuffer?.enabled = debugMenuState.isSpanCaptureEnabled
     }
