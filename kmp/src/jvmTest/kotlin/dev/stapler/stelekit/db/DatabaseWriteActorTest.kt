@@ -376,6 +376,46 @@ class DatabaseWriteActorTest {
         actor.close()
     }
 
+    // ──────────────── batch lookup (loadExistingBlocks) ──────────────────────
+
+    @Test
+    fun `saveBlocks issues single batch getBlocksByUuids not N individual calls`() = runBlocking {
+        // Regression guard: old code did N individual getBlockByUuid calls from inside the actor,
+        // causing IO-thread saturation for large pages. New code must issue a single batch call.
+        var getByUuidCalls = 0
+        var getByUuidsCalls = 0
+        val blockRepo = object : FakeBlockRepository() {
+            override fun getBlockByUuid(uuid: String) =
+                super.getBlockByUuid(uuid).also { getByUuidCalls++ }
+            override suspend fun getBlocksByUuids(uuids: List<String>) =
+                super.getBlocksByUuids(uuids).also { getByUuidsCalls++ }
+        }
+        val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
+
+        actor.saveBlocks(listOf(block("b1"), block("b2"), block("b3")))
+
+        assertEquals(0, getByUuidCalls, "individual getBlockByUuid must not be called")
+        assertEquals(1, getByUuidsCalls, "exactly one batch getBlocksByUuids call")
+        actor.close()
+    }
+
+    @Test
+    fun `loadExistingBlocks runs even when opLogger is null`() = runBlocking {
+        // Regression guard: old code had `if (opLogger == null) return emptyMap()` which
+        // silently disabled the batch fetch in any code path without an OperationLogger.
+        var getByUuidsCalls = 0
+        val blockRepo = object : FakeBlockRepository() {
+            override suspend fun getBlocksByUuids(uuids: List<String>) =
+                super.getBlocksByUuids(uuids).also { getByUuidsCalls++ }
+        }
+        val actor = DatabaseWriteActor(blockRepo, FakePageRepository(), opLogger = null)
+
+        actor.saveBlocks(listOf(block("b1"), block("b2"), block("b3")))
+
+        assertEquals(1, getByUuidsCalls, "batch lookup must run regardless of opLogger")
+        actor.close()
+    }
+
     // ──────────────── ordering guarantee ─────────────────────────────────────
 
     @Test

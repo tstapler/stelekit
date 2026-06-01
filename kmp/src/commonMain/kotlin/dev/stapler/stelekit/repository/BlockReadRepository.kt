@@ -1,9 +1,11 @@
 package dev.stapler.stelekit.repository
 
 import arrow.core.Either
+import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 /**
  * Read-only view of the block store.
@@ -46,6 +48,26 @@ interface BlockReadRepository {
      * Get all blocks for a specific page
      */
     fun getBlocksForPage(pageUuid: String): Flow<Either<DomainError, List<Block>>>
+
+    /**
+     * Batch-fetch blocks by UUID set in a single round-trip.
+     * Used by [dev.stapler.stelekit.db.DatabaseWriteActor] to look up pre-existing blocks
+     * before a save batch, replacing N individual [getBlockByUuid] calls.
+     *
+     * Production implementations (SQLDelight) chunk the list to stay below SQLite's
+     * per-statement bind-variable limit (999 on Android API < 30).
+     *
+     * The default implementation falls back to per-UUID lookups and is suitable for test
+     * fakes. Production implementations should override with a `WHERE uuid IN ?` query.
+     */
+    suspend fun getBlocksByUuids(uuids: List<String>): Either<DomainError, List<Block>> {
+        if (uuids.isEmpty()) return emptyList<Block>().right()
+        val results = mutableListOf<Block>()
+        for (uuid in uuids) {
+            getBlockByUuid(uuid).first().getOrNull()?.let { results.add(it) }
+        }
+        return results.right()
+    }
 
     /** Evict all in-memory caches without touching the database. No-op by default. */
     suspend fun cacheEvictAll() {}

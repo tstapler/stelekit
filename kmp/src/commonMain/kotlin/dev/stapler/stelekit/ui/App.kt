@@ -99,8 +99,15 @@ import dev.stapler.stelekit.voice.VoiceSettings
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import kotlin.math.roundToInt
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.performance.PercentileSummary
+import dev.stapler.stelekit.performance.QueryStat
+import dev.stapler.stelekit.performance.SerializedSpan
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
@@ -737,10 +744,62 @@ private fun GraphContent(
         mutableStateOf(repos.debugFlagRepository?.loadDebugMenuState() ?: DebugMenuState())
     }
 
-    // Sync span capture toggle → ring buffer enabled flag so histograms remain always-on
-    // but span recording only runs when explicitly requested.
+    // Sync span capture toggle → ring buffer enabled flag (defaults to false in DebugMenuState).
     androidx.compose.runtime.LaunchedEffect(debugMenuState.isSpanCaptureEnabled) {
         repos.ringBuffer?.enabled = debugMenuState.isSpanCaptureEnabled
+    }
+
+    // ── Eager performance data collection ────────────────────────────────────────────────────
+    // Data collection starts when the Performance screen is first opened so the tabs show
+    // content immediately on first render. Pollers run only while the graph is loaded and
+    // the user has visited the Performance screen at least once — no background DB reads
+    // on devices that never open the Performance screen.
+
+    val perfSpans: MutableStateFlow<List<SerializedSpan>> = remember { MutableStateFlow(emptyList()) }
+    val perfHistograms: MutableStateFlow<Map<String, PercentileSummary>> = remember { MutableStateFlow(emptyMap()) }
+    val perfQueryStats: MutableStateFlow<List<QueryStat>> = remember { MutableStateFlow(emptyList()) }
+
+    // Set to true the first time the user navigates to Screen.Performance; never resets.
+    // This gates the pollers so we don't run background DB reads for users who never open
+    // the Performance screen.
+    val perfScreenEverOpened = remember { MutableStateFlow(false) }
+    androidx.compose.runtime.LaunchedEffect(viewModel) {
+        viewModel.uiState.collect { state ->
+            if (state.currentScreen is Screen.Performance) perfScreenEverOpened.value = true
+        }
+    }
+
+    // Span data: reactive SQLDelight flow — fires whenever new spans are written to SQLite.
+    // Starts immediately (spans are cheap to subscribe to; the reactive query only fires on writes).
+    androidx.compose.runtime.LaunchedEffect(repos.spanRepository) {
+        repos.spanRepository?.getRecentSpans(500)?.collect { spans -> perfSpans.value = spans }
+    }
+
+    // Histogram summaries: poll every 2s, but only after Performance screen first opened.
+    androidx.compose.runtime.LaunchedEffect(repos.histogramWriter) {
+        val writer = repos.histogramWriter ?: return@LaunchedEffect
+        perfScreenEverOpened.first { it }   // suspend until first Performance screen visit
+        while (true) {
+            perfHistograms.value = withContext(PlatformDispatcher.DB) {
+                writer.queryAllOperations()
+                    .mapNotNull { op -> writer.queryPercentiles(op)?.let { op to it } }
+                    .toMap()
+            }
+            kotlinx.coroutines.delay(2_000)
+        }
+    }
+
+    // Query stats: poll every 5s, but only after Performance screen first opened.
+    androidx.compose.runtime.LaunchedEffect(repos.queryStatsRepository) {
+        val repo = repos.queryStatsRepository ?: return@LaunchedEffect
+        perfScreenEverOpened.first { it }   // suspend until first Performance screen visit
+        while (true) {
+            perfQueryStats.value = withContext(PlatformDispatcher.DB) {
+                val version = repo.getAllVersions().firstOrNull() ?: ""
+                repo.getTopByTotalMs(version, 50)
+            }
+            kotlinx.coroutines.delay(5_000)
+        }
     }
 
     PlatformJankStatsEffect(
@@ -1158,6 +1217,9 @@ private fun GraphContent(
                                     }
                                 } else null,
                                 platformSettings = platformSettings,
+                                perfSpans = perfSpans,
+                                perfHistograms = perfHistograms,
+                                perfQueryStats = perfQueryStats,
                             )
                         },
                         statusBar = {

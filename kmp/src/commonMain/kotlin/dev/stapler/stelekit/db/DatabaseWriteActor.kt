@@ -350,11 +350,11 @@ class DatabaseWriteActor(
             )
             // Combined transaction failed — retry each request individually so that
             // pages with valid blocks still succeed and each caller gets accurate feedback.
+            // Reuse the already-fetched existingByUuid map — no additional DB round-trip needed.
             batch.forEach { req ->
-                val reqExisting = loadExistingBlocks(req.blocks)
                 val reqResult = blockRepository.saveBlocks(req.blocks)
                 if (reqResult.isRight()) {
-                    logSaveBlocks(req.blocks, reqExisting)
+                    logSaveBlocks(req.blocks, existingByUuid)
                     onWriteSuccess?.invoke(req)
                 }
                 req.deferred.complete(reqResult)
@@ -363,23 +363,24 @@ class DatabaseWriteActor(
     }
 
     /**
-     * Load existing blocks by UUID for INSERT vs UPDATE classification.
-     * Returns a map of uuid -> existing Block (only for blocks that already exist).
+     * Batch-fetch existing blocks by UUID for INSERT vs UPDATE classification.
+     * Uses a single [BlockRepository.getBlocksByUuids] round-trip (chunked internally to
+     * respect SQLite's 999-variable limit) instead of N individual lookups.
+     *
+     * Always runs regardless of [opLogger] — the batch fetch is a performance fix, not
+     * just a logging aid. The [opLogger] guard is applied only inside [logSaveBlocks].
      */
     private suspend fun loadExistingBlocks(blocks: List<Block>): Map<String, Block> {
-        if (opLogger == null || blocks.isEmpty()) return emptyMap()
-        val result = mutableMapOf<String, Block>()
-        for (block in blocks) {
-            try {
-                val existing = blockRepository.getBlockByUuid(block.uuid).first().getOrNull()
-                if (existing != null) result[block.uuid] = existing
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                // Non-fatal: if lookup fails we skip logging for this block
-            }
+        if (blocks.isEmpty()) return emptyMap()
+        return try {
+            blockRepository.getBlocksByUuids(blocks.map { it.uuid })
+                .getOrNull().orEmpty()
+                .associateBy { it.uuid }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyMap()
         }
-        return result
     }
 
     /**

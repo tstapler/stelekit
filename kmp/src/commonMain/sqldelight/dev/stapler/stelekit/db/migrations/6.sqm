@@ -1,0 +1,24 @@
+-- Schema version 6: composite index (page_uuid, position) for fast page-scoped block fetches.
+--
+-- Without this index, SELECT * FROM blocks WHERE page_uuid = ? ORDER BY position performs a
+-- full table scan on populated databases because idx_blocks_page_uuid does not cover the
+-- ORDER BY position clause. The composite index covers both the filter and the sort,
+-- eliminating the scan entirely.
+--
+-- idx_blocks_page_uuid is also dropped because (page_uuid, position) is a strict superset:
+-- the composite index serves all prefix lookups on page_uuid alone just as efficiently,
+-- eliminating a redundant B-tree that was paying write amplification on every block insert.
+
+CREATE INDEX IF NOT EXISTS idx_blocks_page_uuid_position ON blocks(page_uuid, position);
+
+-- Drop the now-superseded single-column index.
+-- idx_blocks_page_uuid_position covers all queries that previously used idx_blocks_page_uuid.
+DROP INDEX IF EXISTS idx_blocks_page_uuid;
+
+-- ANALYZE updates sqlite_stat1 so the query planner uses the new index immediately.
+-- Note: on Android API < 32 (SQLite < 3.38) this statement may not commit statistics
+-- atomically inside a migration transaction on some drivers. The Android driver also
+-- applies "PRAGMA optimize" on every connection open (see DriverFactory.android.kt) which
+-- refreshes stale statistics automatically, so the planner will pick up correct stats by
+-- the next connection at the latest.
+ANALYZE blocks;

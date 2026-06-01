@@ -153,6 +153,23 @@ class GraphLoader(
     private fun genId(): String =
         kotlin.random.Random.nextLong().toULong().toString(16).padStart(16, '0')
 
+    /**
+     * Replaces a string with a stable opaque token for span attributes when the graph is
+     * in paranoid (encrypted) mode — `cryptoLayer != null`.
+     *
+     * For unencrypted graphs the value is passed through unchanged: the data is already
+     * in plaintext on disk, so showing real paths in telemetry adds no additional exposure.
+     *
+     * When redacting, uses the first 8 hex chars of SHA-256 (via [ContentHasher]) so the
+     * token is deterministic and spans remain linkable, without leaking the original value
+     * to brute-force via `String.hashCode()`.
+     */
+    private fun String.redactPath(): String {
+        if (isEmpty() || cryptoLayer == null) return this
+        val hash = dev.stapler.stelekit.util.ContentHasher.sha256ForContent(this).take(8)
+        return "<redacted:$hash>"
+    }
+
     private inner class Span(val name: String, val traceId: String, val parentSpanId: String = "") {
         val spanId: String = genId()
         private val startMs: Long = Clock.System.now().toEpochMilliseconds()
@@ -166,6 +183,9 @@ class GraphLoader(
                 statusCode = statusCode, traceId = traceId,
                 spanId = spanId, parentSpanId = parentSpanId,
             )
+            // Write to in-memory ring buffer immediately — visible in the Spans UI without
+            // waiting for the actor queue. The actor path below persists to the DB.
+            writeActor.ringBuffer?.record(serialized)
             if (spanRepository != null) {
                 writeActor.execute(DatabaseWriteActor.Priority.LOW) {
                     spanRepository.insertSpan(serialized)
@@ -337,11 +357,11 @@ class GraphLoader(
 
             // Start watching after initial load
             startWatching(graphPath)
-            rootSpan.finish("OK", "graph.path" to graphPath, "duration.ms" to duration.inWholeMilliseconds.toString())
+            rootSpan.finish("OK", "graph.path" to graphPath.redactPath(), "duration.ms" to duration.inWholeMilliseconds.toString())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            rootSpan.finish("ERROR", "graph.path" to graphPath, "error.message" to (e.message ?: "unknown"))
+            rootSpan.finish("ERROR", "graph.path" to graphPath.redactPath(), "error.message" to (e.message ?: "unknown"))
             throw e
         } finally {
             CurrentSpanContext.set(null)
@@ -423,7 +443,7 @@ class GraphLoader(
                         backgroundIndexJob = null
                     }
                 }
-                rootSpan.finish("OK", "graph.path" to graphPath, "warm_start" to "true")
+                rootSpan.finish("OK", "graph.path" to graphPath.redactPath(), "warm_start" to "true")
                 return
             }
 
@@ -472,12 +492,12 @@ class GraphLoader(
 
             // Start watching after initial load
             startWatching(graphPath)
-            rootSpan.finish("OK", "graph.path" to graphPath,
+            rootSpan.finish("OK", "graph.path" to graphPath.redactPath(),
                 "duration.ms" to totalDuration.inWholeMilliseconds.toString())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            rootSpan.finish("ERROR", "graph.path" to graphPath, "error.message" to (e.message ?: "unknown"))
+            rootSpan.finish("ERROR", "graph.path" to graphPath.redactPath(), "error.message" to (e.message ?: "unknown"))
             throw e
         } finally {
             CurrentSpanContext.set(null)
@@ -1121,7 +1141,7 @@ class GraphLoader(
         } else {
             pageRepository.getPageByName(name).first().getOrNull()
         }
-        lookupSpan.finish("OK", "page.name" to name, "page.found" to (existingPage != null).toString())
+        lookupSpan.finish("OK", "page.name" to name.redactPath(), "page.found" to (existingPage != null).toString())
 
         // Skip METADATA_ONLY if page is already fully loaded (don't overwrite full content)
         if (mode == ParseMode.METADATA_ONLY && existingPage != null) {
@@ -1367,7 +1387,7 @@ class GraphLoader(
                 }
             } finally {
                 CurrentSpanContext.set(null)
-                rootSpan.finish("OK", "file.path" to filePath)
+                rootSpan.finish("OK", "file.path" to filePath.redactPath())
                 PerformanceMonitor.endTrace("parseAndSavePage")
             }
         }

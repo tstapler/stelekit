@@ -16,7 +16,12 @@ import dev.stapler.stelekit.db.GraphWriterPort
 import dev.stapler.stelekit.domain.NoOpUrlFetcher
 import dev.stapler.stelekit.domain.UrlFetcher
 import dev.stapler.stelekit.performance.NavigationTracingEffect
+import dev.stapler.stelekit.performance.PercentileSummary
+import dev.stapler.stelekit.performance.QueryStat
+import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.repository.RepositorySet
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreen
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel
 import dev.stapler.stelekit.ui.components.*
@@ -59,6 +64,9 @@ internal fun ScreenRouter(
     onPasteImage: ((editingBlockUuid: String?) -> Boolean)? = null,
     onImportImage: (() -> Unit)? = null,
     platformSettings: dev.stapler.stelekit.platform.Settings? = null,
+    perfSpans: StateFlow<List<SerializedSpan>> = MutableStateFlow(emptyList()),
+    perfHistograms: StateFlow<Map<String, PercentileSummary>> = MutableStateFlow(emptyMap()),
+    perfQueryStats: StateFlow<List<QueryStat>> = MutableStateFlow(emptyList()),
 ) {
     if (appState.isLoading) {
         LoadingOverlay(
@@ -143,13 +151,15 @@ internal fun ScreenRouter(
             is Screen.Performance -> {
                 NavigationTracingEffect("Performance")
                 PerformanceDashboard(
-                    histogramWriter = repos.histogramWriter,
                     ringBuffer = repos.ringBuffer,
                     spanRepository = repos.spanRepository,
                     perfExporter = repos.perfExporter,
                     queryPlanRepository = repos.queryPlanRepository,
                     queryStatsCollector = repos.queryStatsCollector,
                     queryStatsRepository = repos.queryStatsRepository,
+                    perfSpans = perfSpans,
+                    perfHistograms = perfHistograms,
+                    perfQueryStats = perfQueryStats,
                 )
             }
             is Screen.GlobalUnlinkedReferences -> GlobalUnlinkedReferencesScreen(

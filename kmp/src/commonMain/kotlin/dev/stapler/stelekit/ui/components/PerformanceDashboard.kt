@@ -28,18 +28,20 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.stapler.stelekit.performance.HistogramWriter
 import dev.stapler.stelekit.performance.PerfExporter
 import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import dev.stapler.stelekit.performance.QueryPlanRepository
 import dev.stapler.stelekit.performance.QueryPlanRow
+import dev.stapler.stelekit.performance.QueryStat
 import dev.stapler.stelekit.performance.QueryStatsCollector
 import dev.stapler.stelekit.performance.QueryStatsRepository
 import dev.stapler.stelekit.performance.RingBufferSpanExporter
 import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.performance.SpanRepository
 import dev.stapler.stelekit.performance.TraceEvent
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.delay
@@ -49,13 +51,15 @@ import kotlinx.coroutines.CancellationException
 
 @Composable
 fun PerformanceDashboard(
-    histogramWriter: HistogramWriter? = null,
     ringBuffer: RingBufferSpanExporter? = null,
     spanRepository: SpanRepository? = null,
     perfExporter: PerfExporter? = null,
     queryPlanRepository: QueryPlanRepository? = null,
     queryStatsCollector: QueryStatsCollector? = null,
     queryStatsRepository: QueryStatsRepository? = null,
+    perfSpans: StateFlow<List<SerializedSpan>> = MutableStateFlow(emptyList()),
+    perfHistograms: StateFlow<Map<String, PercentileSummary>> = MutableStateFlow(emptyMap()),
+    perfQueryStats: StateFlow<List<QueryStat>> = MutableStateFlow(emptyList()),
     modifier: Modifier = Modifier,
 ) {
     var selectedTab by remember { mutableStateOf(0) }
@@ -77,41 +81,24 @@ fun PerformanceDashboard(
         }
 
         when (selectedTab) {
-            0 -> HistogramsTab(histogramWriter)
-            1 -> SpansTab(spanRepository, ringBuffer, perfExporter)
+            0 -> HistogramsTab(perfHistograms)
+            1 -> SpansTab(spanRepository, ringBuffer, perfExporter, perfSpans)
             2 -> TracesTab()
             3 -> QueryPlansTab(queryPlanRepository, queryStatsCollector)
-            4 -> QueryStatsTab(queryStatsRepository)
+            4 -> QueryStatsTab(queryStatsRepository, perfQueryStats)
         }
     }
 }
 
 @Composable
-private fun HistogramsTab(histogramWriter: HistogramWriter?) {
-    // Dynamically discovers all operations that have recorded samples — no hardcoded list.
-    // New operations (cache_*, pool_wait, editor_input, etc.) appear automatically.
-    val summaries by produceState<Map<String, PercentileSummary>>(emptyMap(), histogramWriter) {
-        while (true) {
-            if (histogramWriter != null) {
-                value = withContext(PlatformDispatcher.DB) {
-                    histogramWriter.queryAllOperations()
-                        .mapNotNull { op -> histogramWriter.queryPercentiles(op)?.let { op to it } }
-                        .toMap()
-                }
-            }
-            delay(2000)
-        }
-    }
-
+private fun HistogramsTab(histogramSummaries: StateFlow<Map<String, PercentileSummary>>) {
+    // Data is pre-collected by a background poller in GraphContent (App.kt) — no polling here.
+    val summaries by histogramSummaries.collectAsState()
     val operations = remember(summaries) { summaries.keys.sorted() }
 
-    if (histogramWriter == null || operations.isEmpty()) {
+    if (operations.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                if (histogramWriter == null) "No histogram writer available"
-                else "No samples recorded yet",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text("No samples recorded yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
     }
@@ -179,20 +166,22 @@ private fun SpansTab(
     spanRepository: SpanRepository?,
     ringBuffer: RingBufferSpanExporter?,
     perfExporter: PerfExporter? = null,
+    perfSpans: StateFlow<List<SerializedSpan>> = MutableStateFlow(emptyList()),
 ) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // SQLite-persisted spans merged with in-flight ring buffer spans.
-    // The ring buffer holds spans from the last 0–5s that haven't been drained to SQLite yet,
-    // so without this merge those recent spans are invisible when navigating back to this page.
-    val sqliteSpans by (spanRepository?.getRecentSpans(500) ?: kotlinx.coroutines.flow.flowOf(emptyList<SerializedSpan>()))
-        .collectAsState(emptyList())
+    // Data is pre-collected by GraphContent (App.kt) — subscribe to the pre-populated
+    // StateFlow so the tab shows data immediately without a blank flash.
+    // The ring buffer merge below adds spans from the last 0–5s not yet drained to SQLite.
+    val sqliteSpans by perfSpans.collectAsState()
 
     val currentSqliteSpans = rememberUpdatedState(sqliteSpans)
-    val liveSpans by produceState(sqliteSpans, ringBuffer, spanRepository) {
+    val liveSpans by produceState(sqliteSpans, ringBuffer, perfSpans) {
         if (ringBuffer == null) {
-            value = currentSqliteSpans.value
+            // No ring buffer — collect from the upstream StateFlow so we stay reactive
+            // rather than exiting and showing a frozen snapshot.
+            perfSpans.collect { value = it }
             return@produceState
         }
         while (true) {
@@ -962,7 +951,10 @@ private fun PlanRowItem(row: QueryPlanRow) {
 }
 
 @Composable
-private fun QueryStatsTab(queryStatsRepository: QueryStatsRepository?) {
+private fun QueryStatsTab(
+    queryStatsRepository: QueryStatsRepository?,
+    preloadedStats: StateFlow<List<QueryStat>> = MutableStateFlow(emptyList()),
+) {
     if (queryStatsRepository == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("Query stats repository not available", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -972,19 +964,21 @@ private fun QueryStatsTab(queryStatsRepository: QueryStatsRepository?) {
 
     var sortByTotalMs by remember { mutableStateOf(true) }
 
-    val stats by produceState<List<dev.stapler.stelekit.performance.QueryStat>>(emptyList(), queryStatsRepository, sortByTotalMs) {
-        while (true) {
-            value = withContext(PlatformDispatcher.DB) {
+    // For the default sort (by total ms), collect from the pre-populated upstream StateFlow
+    // that GraphContent polls every 5s — no duplicate polling needed here.
+    // When the user toggles to "by calls", re-query once and update; the upstream poller
+    // only tracks "by total ms" so the alternative sort needs its own one-shot fetch.
+    val preloaded by preloadedStats.collectAsState()
+    var callsStats by remember { mutableStateOf<List<QueryStat>>(emptyList()) }
+    LaunchedEffect(sortByTotalMs) {
+        if (!sortByTotalMs) {
+            callsStats = withContext(PlatformDispatcher.DB) {
                 val version = queryStatsRepository.getAllVersions().firstOrNull() ?: ""
-                if (sortByTotalMs) {
-                    queryStatsRepository.getTopByTotalMs(version, 50)
-                } else {
-                    queryStatsRepository.getTopByCalls(version, 50)
-                }
+                queryStatsRepository.getTopByCalls(version, 50)
             }
-            delay(5000)
         }
     }
+    val stats = if (sortByTotalMs) preloaded else callsStats
 
     Column(Modifier.fillMaxSize()) {
         // Sort toggle chips

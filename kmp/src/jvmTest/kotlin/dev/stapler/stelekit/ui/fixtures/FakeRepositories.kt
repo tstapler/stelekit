@@ -145,6 +145,11 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
             blocks.values.filter { it.pageUuid == pageUuid }.sortedBy { it.position }.right()
         }
 
+    override suspend fun getBlocksByUuids(uuids: List<String>): Either<DomainError, List<Block>> {
+        val uuidSet = uuids.toHashSet()
+        return _blocks.value.values.filter { it.uuid in uuidSet }.right()
+    }
+
     override fun getBlockChildren(blockUuid: String): Flow<Either<DomainError, List<Block>>> =
         _blocks.map { blocks ->
             blocks.values.filter { it.parentUuid == blockUuid }.sortedBy { it.position }.right()

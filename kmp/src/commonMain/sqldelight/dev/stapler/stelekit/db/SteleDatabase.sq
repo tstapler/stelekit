@@ -275,6 +275,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 selectBlocksHashByPageUuid:
 SELECT uuid, content_hash FROM blocks WHERE page_uuid = ?;
 
+-- Batch lookup by UUID set — used by DatabaseWriteActor.loadExistingBlocks to replace N
+-- individual selectBlockByUuid calls with one round-trip (eliminates N+1 IO dispatch).
+selectBlocksByUuids:
+SELECT * FROM blocks WHERE uuid IN ?;
+
 -- Deduplication queries
 selectBlocksByContentHash:
 SELECT * FROM blocks WHERE content_hash = ? ORDER BY created_at;

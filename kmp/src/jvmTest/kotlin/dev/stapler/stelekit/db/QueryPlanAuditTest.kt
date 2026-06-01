@@ -97,6 +97,8 @@ class QueryPlanAuditTest {
             "SELECT COUNT(*) FROM blocks"),
         AuditQuery("selectBlocksHashByPageUuid",
             "SELECT uuid, content_hash FROM blocks WHERE page_uuid = 'x'"),
+        AuditQuery("selectBlocksByUuids",
+            "SELECT * FROM blocks WHERE uuid IN ('x')"),
         AuditQuery("selectBlocksByContentHash",
             "SELECT * FROM blocks WHERE content_hash = 'x' ORDER BY created_at"),
         AuditQuery("selectDuplicateBlockHashes",
@@ -264,6 +266,27 @@ class QueryPlanAuditTest {
         val conn = sqliteDriver.getConnection()
         val failures = mutableListOf<String>()
         try {
+            // Seed rows and run ANALYZE so the query planner sees realistic statistics.
+            // An empty schema always uses indexes regardless of query shape; a populated
+            // schema with statistics mirrors the conditions that caused SCAN blocks in
+            // production (p99 = 203 seconds on Android with ~5 000+ blocks).
+            conn.createStatement().use { seed ->
+                repeat(1000) { i ->
+                    seed.execute(
+                        "INSERT OR IGNORE INTO pages(uuid,name,namespace,file_path,created_at,updated_at," +
+                        "properties,version,is_favorite,is_journal,journal_date,is_content_loaded,backlink_count) " +
+                        "VALUES('p$i','Page $i',NULL,NULL,0,0,NULL,0,0,0,NULL,1,0)"
+                    )
+                }
+                repeat(5000) { i ->
+                    seed.execute(
+                        "INSERT OR IGNORE INTO blocks(uuid,page_uuid,parent_uuid,left_uuid,content," +
+                        "level,position,created_at,updated_at,properties,version,content_hash,block_type) " +
+                        "VALUES('b$i','p${i % 1000}',NULL,NULL,'content $i',0,${i % 50},0,0,NULL,0,'hash$i','bullet')"
+                    )
+                }
+                seed.execute("ANALYZE")
+            }
             conn.createStatement().use { stmt ->
                 for (q in QUERIES) {
                     val rs = stmt.executeQuery("EXPLAIN QUERY PLAN ${q.sql}")

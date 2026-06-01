@@ -106,6 +106,11 @@ class InMemoryBlockRepository : BlockRepository {
         }
     }
 
+    override suspend fun getBlocksByUuids(uuids: List<String>): Either<DomainError, List<Block>> {
+        val uuidSet = uuids.toHashSet()
+        return blocks.value.values.filter { it.uuid in uuidSet }.right()
+    }
+
     override suspend fun deleteBlocksForPage(pageUuid: String): Either<DomainError, Unit> {
         val current = this.blocks.value.toMutableMap()
         val toRemove = current.values.filter { it.pageUuid == pageUuid }.map { it.uuid }
