@@ -528,6 +528,16 @@ class StelekitViewModel(
         }
     }
 
+    fun reloadCurrentPageFromDisk() {
+        val currentScreen = _uiState.value.currentScreen
+        if (currentScreen is Screen.PageView) {
+            scope.launch {
+                graphLoader.loadFullPage(currentScreen.page.uuid, force = true)
+                refreshCurrentPage()
+            }
+        }
+    }
+
     @OptIn(DirectRepositoryWrite::class)
     fun toggleFavorite(page: Page) {
         scope.launch {
@@ -820,6 +830,11 @@ class StelekitViewModel(
         )
         if (screen is Screen.PageView) {
             refreshCurrentPage()
+            scope.launch {
+                // Re-read from disk on every navigation so stale in-memory copies are evicted.
+                // Uses the mtime guard internally so this is cheap when nothing changed.
+                graphLoader.loadFullPage(screen.page.uuid)
+            }
             // Fire-and-forget visit tracking — does not block navigation
             scope.launch {
                 searchRepository.recordPageVisit(screen.page.uuid)

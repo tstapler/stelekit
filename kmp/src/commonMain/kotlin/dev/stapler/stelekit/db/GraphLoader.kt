@@ -672,7 +672,7 @@ class GraphLoader(
         }
     }
 
-    suspend fun loadFullPage(pageUuid: String) {
+    override suspend fun loadFullPage(pageUuid: String, force: Boolean) {
         PerformanceMonitor.startTrace("loadFullPage")
         var filePath: String? = null
         try {
@@ -696,10 +696,10 @@ class GraphLoader(
             // A page is fully loaded if all its blocks are loaded
             val allBlocksLoaded = blocks.isNotEmpty() && blocks.all { it.isLoaded }
 
-            if (allBlocksLoaded) {
+            if (!force && allBlocksLoaded) {
                 val fileModTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
-                
-                if (fileModTime != 0L && 
+
+                if (fileModTime != 0L &&
                     page.updatedAt.toEpochMilliseconds() >= fileModTime) {
                     logger.debug("Skipping loadFullPage, already up to date: $filePath")
                     return

@@ -114,6 +114,7 @@ internal fun ScreenRouter(
                 isDebugMode = appState.isDebugMode,
                 isLeftHanded = appState.isLeftHanded,
                 capabilities = capabilities,
+                onReloadFromDisk = { viewModel.reloadCurrentPageFromDisk() },
                 isExporting = appState.isExporting,
             )
             is Screen.Journals -> JournalsView(

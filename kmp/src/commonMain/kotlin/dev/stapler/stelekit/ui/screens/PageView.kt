@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
@@ -68,6 +69,7 @@ fun PageView(
     isDebugMode: Boolean = false,
     isLeftHanded: Boolean = false,
     capabilities: EditorCapabilities = EditorCapabilities(),
+    onReloadFromDisk: (() -> Unit)? = null,
     isExporting: Boolean = false,
 ) {
     NavigationTracingEffect("PageView/${page.name}")
@@ -172,6 +174,15 @@ fun PageView(
                         style = MaterialTheme.typography.headlineMedium,
                         modifier = Modifier.weight(1f)
                     )
+                    if (onReloadFromDisk != null) {
+                        IconButton(onClick = onReloadFromDisk) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Reload from disk",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                     IconButton(onClick = { viewModel.showRenameDialog(page) }) {
                         Icon(
                             imageVector = Icons.Default.Edit,

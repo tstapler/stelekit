@@ -130,6 +130,26 @@ jobs:
         env:
           # True when demo files are present from either current run or fallback
           DEMO_AVAILABLE: ${{ steps.download-demo.outcome == 'success' || steps.download-demo-fallback.outcome == 'success' }}
+      - name: Restore fdroid content from last successful fdroid run
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LAST_RUN=$(gh run list --workflow fdroid.yml --status success --limit 1 \
+            --json databaseId --jq '.[0].databaseId // empty')
+          if [ -n "$LAST_RUN" ]; then
+            gh run download "$LAST_RUN" --name fdroid-content --dir fdroid-content/ || true
+            if [ -d fdroid-content/repo ]; then
+              mkdir -p site/dist/fdroid
+              cp -r fdroid-content/repo site/dist/fdroid/
+              if [ -d fdroid-content/archive ]; then
+                cp -r fdroid-content/archive site/dist/fdroid/
+              fi
+              echo "Restored fdroid content from run $LAST_RUN"
+            fi
+          else
+            echo "No previous successful fdroid run found; fdroid content will be absent"
+          fi
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site/dist/

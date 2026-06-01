@@ -65,6 +65,13 @@ interface GraphLoaderPort {
     suspend fun loadPageByName(pageName: String): Page?
 
     /**
+     * Loads or re-reads a page by UUID from disk into the database.
+     * When [force] is true the mtime guard is bypassed and the file is always re-read,
+     * which is the right behaviour for a user-triggered "reload from disk" action.
+     */
+    suspend fun loadFullPage(pageUuid: String, force: Boolean = false)
+
+    /**
      * Cancels any in-flight background indexing immediately.
      */
     fun cancelBackgroundWork()
