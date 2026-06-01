@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.35.1](https://github.com/tstapler/stelekit/compare/v0.35.0...v0.35.1) (2026-06-01)
+
+
+### Bug Fixes
+
+* **ci:** call fdroid workflow directly from release.yml ([ed631b9](https://github.com/tstapler/stelekit/commit/ed631b9610310c550bb70be2fba808aa3c1ddaa2))
+
+
+### Performance Improvements
+
+* **db:** fix blocks full-table-scan, batch loadExistingBlocks, eager perf UI ([#121](https://github.com/tstapler/stelekit/issues/121)) ([c4f33a8](https://github.com/tstapler/stelekit/commit/c4f33a88b4caf5e84ab37e74295f07d8815c2c81))
+
 ## [0.35.0](https://github.com/tstapler/stelekit/compare/v0.34.0...v0.35.0) (2026-05-31)
 
 
