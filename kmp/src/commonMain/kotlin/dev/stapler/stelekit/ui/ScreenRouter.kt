@@ -59,9 +59,7 @@ internal fun ScreenRouter(
     appState: AppState,
     graphWriter: GraphWriterPort,
     urlFetcher: UrlFetcher = NoOpUrlFetcher(),
-    onAttachImage: ((editingBlockUuid: String?) -> Unit)? = null,
-    onFileDrop: ((List<Any>) -> Unit)? = null,
-    onPasteImage: ((editingBlockUuid: String?) -> Boolean)? = null,
+    capabilities: EditorCapabilities = EditorCapabilities(),
     onImportImage: (() -> Unit)? = null,
     platformSettings: dev.stapler.stelekit.platform.Settings? = null,
     perfSpans: StateFlow<List<SerializedSpan>> = MutableStateFlow(emptyList()),
@@ -115,9 +113,7 @@ internal fun ScreenRouter(
                 writeActor = repos.writeActor,
                 isDebugMode = appState.isDebugMode,
                 isLeftHanded = appState.isLeftHanded,
-                onAttachImage = onAttachImage,
-                onFileDrop = onFileDrop,
-                onPasteImage = onPasteImage,
+                capabilities = capabilities,
                 isExporting = appState.isExporting,
             )
             is Screen.Journals -> JournalsView(
@@ -129,6 +125,7 @@ internal fun ScreenRouter(
                 suggestionMatcher = suggestionMatcher,
                 isLeftHanded = appState.isLeftHanded,
                 onOpenAnnotationEditor = { uuid -> viewModel.navigateToAnnotationEditor(uuid) },
+                capabilities = capabilities,
             )
             is Screen.Flashcards -> {
                 NavigationTracingEffect("Flashcards")

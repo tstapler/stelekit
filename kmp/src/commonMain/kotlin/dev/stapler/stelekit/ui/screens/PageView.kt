@@ -38,12 +38,12 @@ import dev.stapler.stelekit.ui.state.BlockStateManager
 import dev.stapler.stelekit.ui.StelekitViewModel
 import androidx.compose.runtime.CompositionLocalProvider
 import dev.stapler.stelekit.ui.components.BlockList
+import dev.stapler.stelekit.ui.components.EditorCapabilities
+import dev.stapler.stelekit.ui.components.EditorToolbar
 import dev.stapler.stelekit.ui.components.LocalGraphRootPath
 import dev.stapler.stelekit.ui.components.parseMarkdownWithStyling
 import dev.stapler.stelekit.ui.components.pageDropTarget
-import dev.stapler.stelekit.ui.components.MobileBlockToolbar
 import dev.stapler.stelekit.ui.components.ReferencesPanel
-import dev.stapler.stelekit.ui.components.SearchDialog
 import dev.stapler.stelekit.ui.components.SuggestionItem
 import dev.stapler.stelekit.ui.components.SuggestionNavigatorPanel
 import dev.stapler.stelekit.ui.i18n.t
@@ -67,28 +67,7 @@ fun PageView(
     writeActor: DatabaseWriteActor? = null,
     isDebugMode: Boolean = false,
     isLeftHanded: Boolean = false,
-    /**
-     * Platform-provided callback to open a file picker and attach an image.
-     * Supply a non-null lambda from the platform-specific screen wrapper
-     * (e.g. JvmMediaAttachmentService on desktop, rememberAndroidMediaAttachmentService on Android).
-     * When null, the attach-image toolbar button is hidden.
-     *
-     * The lambda receives the currently-editing block UUID (or null if no block is focused).
-     * It is responsible for:
-     *   1. Opening the platform file picker.
-     *   2. Copying the file to `<graphRoot>/assets/`.
-     *   3. Calling blockStateManager.insertTextAtCursor(blockUuid, "![altText](relativePath)")
-     *      on the editing block if one is active.
-     */
-    onAttachImage: ((editingBlockUuid: String?) -> Unit)? = null,
-    /**
-     * Platform-provided callback invoked when files are drag-and-dropped onto the page area.
-     * The list contains opaque file handles (typed as [Any] to stay platform-agnostic in
-     * commonMain; on JVM they are [java.io.File] instances).
-     * When null, drop events are ignored.
-     */
-    onFileDrop: ((List<Any>) -> Unit)? = null,
-    onPasteImage: ((editingBlockUuid: String?) -> Boolean)? = null,
+    capabilities: EditorCapabilities = EditorCapabilities(),
     isExporting: Boolean = false,
 ) {
     NavigationTracingEffect("PageView/${page.name}")
@@ -114,13 +93,6 @@ fun PageView(
     var navigatorSuggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
     var navigatorIndex by remember { mutableStateOf(0) }
 
-    // Link picker state
-    var showLinkPicker by remember { mutableStateOf(false) }
-    var linkPickerBlockUuid by remember { mutableStateOf<String?>(null) }
-    var linkPickerCursorIndex by remember { mutableStateOf<Int?>(null) }
-    var linkPickerSelectionRange by remember { mutableStateOf<IntRange?>(null) }
-    var linkPickerInitialQuery by remember { mutableStateOf<String?>(null) }
-
     val blocks = allBlocks[page.uuid] ?: emptyList()
 
     // Start observing this page's blocks on enter, stop on leave
@@ -139,11 +111,11 @@ fun PageView(
     CompositionLocalProvider(LocalGraphRootPath provides currentGraphPath.ifEmpty { null }) {
 
     Box(modifier = Modifier.fillMaxSize().imePadding()
-        .let { m -> if (onPasteImage != null) m.onPreviewKeyEvent { event ->
+        .let { m -> if (capabilities.onPasteImage != null) m.onPreviewKeyEvent { event ->
             event.type == KeyEventType.KeyDown &&
             (event.isCtrlPressed || event.isMetaPressed) &&
             event.key == Key.V &&
-            onPasteImage(editingBlockUuid)
+            capabilities.onPasteImage.invoke(editingBlockUuid)
         } else m }
         .onKeyEvent { event ->
         if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
@@ -175,7 +147,7 @@ fun PageView(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 24.dp)
-                .let { m -> if (onFileDrop != null) m.pageDropTarget(onFileDrop) else m }
+                .let { m -> if (capabilities.onFileDrop != null) m.pageDropTarget(capabilities.onFileDrop) else m }
                 .pointerInput(Unit) {
                     detectTapGestures(onTap = {
                         focusManager.clearFocus()
@@ -400,71 +372,14 @@ fun PageView(
             )
         }
 
-        // Link picker dialog
-        if (showLinkPicker && searchViewModel != null) {
-            SearchDialog(
-                visible = true,
-                onDismiss = { showLinkPicker = false },
-                onNavigateToPage = { /* not used in link picker mode */ },
-                onNavigateToBlock = { /* not used in link picker mode */ },
-                onCreatePage = { pageName ->
-                    linkPickerBlockUuid?.let { blockUuid ->
-                        blockStateManager.acceptLinkPickerResult(blockUuid, pageName, linkPickerSelectionRange, linkPickerCursorIndex)
-                    }
-                    showLinkPicker = false
-                },
-                viewModel = searchViewModel,
-                initialQuery = linkPickerInitialQuery ?: "",
-                onPageSelected = { pageName ->
-                    linkPickerBlockUuid?.let { blockUuid ->
-                        blockStateManager.acceptLinkPickerResult(blockUuid, pageName, linkPickerSelectionRange, linkPickerCursorIndex)
-                    }
-                    showLinkPicker = false
-                }
-            )
-        }
-
-        MobileBlockToolbar(
-            editingBlockId = editingBlockUuid,
-            onIndent = { blockUuid -> blockStateManager.indentBlock(blockUuid) },
-            onOutdent = { blockUuid -> blockStateManager.outdentBlock(blockUuid) },
-            onMoveUp = { blockUuid -> blockStateManager.moveBlockUp(blockUuid) },
-            onMoveDown = { blockUuid -> blockStateManager.moveBlockDown(blockUuid) },
-            onAddBlock = { blockUuid -> blockStateManager.addNewBlock(blockUuid) },
-            onUndo = { blockStateManager.undo() },
-            onRedo = { blockStateManager.redo() },
-            onFormat = { action -> blockStateManager.requestFormat(action) },
-            onAttachImage = if (onAttachImage != null) {
-                { onAttachImage(editingBlockUuid) }
-            } else null,
-            onLinkPicker = if (searchViewModel != null) {
-                {
-                    val curBlockUuid = editingBlockUuid
-                    // Read selection directly from StateFlow — avoids root-scope recomposition
-                    val sel = blockStateManager.editingSelectionRange.value
-                    linkPickerBlockUuid = curBlockUuid
-                    // editingCursorIndex is only set via requestEditBlock; fall back to
-                    // selection start so cursor-move link insertion lands at the caret
-                    linkPickerCursorIndex = editingCursorIndex ?: sel?.first
-                    linkPickerSelectionRange = sel
-                    linkPickerInitialQuery = if (sel != null && sel.first < sel.last && curBlockUuid != null) {
-                        val block = allBlocks.values.flatten().find { it.uuid == curBlockUuid }
-                        block?.content?.substring(
-                            sel.first.coerceAtMost(block.content.length),
-                            sel.last.coerceAtMost(block.content.length)
-                        )
-                    } else null
-                    showLinkPicker = true
-                }
-            } else null,
-            isInSelectionMode = isInSelectionMode,
-            selectedCount = selectedBlockUuids.size,
-            onDeleteSelected = { blockStateManager.deleteSelectedBlocks() },
-            onClearSelection = { blockStateManager.clearSelection() },
+        EditorToolbar(
+            blockStateManager = blockStateManager,
+            capabilities = capabilities,
+            searchViewModel = searchViewModel,
             isLeftHanded = isLeftHanded,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .onSizeChanged { toolbarHeight = it.height }
+                .onSizeChanged { toolbarHeight = it.height },
         )
     }
 

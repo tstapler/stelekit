@@ -1110,69 +1110,18 @@ private fun GraphContent(
                                 appState = appState,
                                 graphWriter = graphWriter,
                                 urlFetcher = urlFetcher,
-                                onAttachImage = if (attachmentService != null) {
-                                    { editingBlockUuid ->
-                                        val graphRoot = appState.currentGraphPath
-                                        scope.launch {
-                                            val result = attachmentService.pickAndAttach(
-                                                graphRoot = graphRoot,
-                                                pageRelativePath = ""
-                                            ) ?: return@launch
-                                            result.fold(
-                                                ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
-                                                    graphContentLogger.warn("Image attachment failed: $err")
-                                                },
-                                                ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                                                    val safeAlt = attachment.displayName.replace("]", "\\]")
-                                                    val safePath = attachment.relativePath.replace(")", "\\)")
-                                                    val markdown = "![${safeAlt}](${safePath})"
-                                                    if (editingBlockUuid != null) {
-                                                        blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
-                                                    }
-                                                }
-                                            )
-                                        }
-                                    }
-                                } else null,
-                                onFileDrop = if (attachmentService != null) {
-                                    { files ->
-                                        val graphRoot = appState.currentGraphPath
-                                        val pageUuid = (appState.currentScreen as? Screen.PageView)?.page?.uuid
-                                        if (pageUuid != null) {
-                                            scope.launch {
-                                                files.forEach { file ->
-                                                    val result = attachmentService.attachFilePath(
-                                                        filePath = file.toString(),
-                                                        graphRoot = graphRoot
-                                                    ) ?: return@forEach
-                                                    result.fold(
-                                                        ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
-                                                            graphContentLogger.warn("Drag-and-drop attachment failed: $err")
-                                                        },
-                                                        ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                                                            val safeAlt = attachment.displayName.replace("]", "\\]")
-                                                            val safePath = attachment.relativePath.replace(")", "\\)")
-                                                            blockStateManager.addBlockWithContent(
-                                                                pageUuid = pageUuid,
-                                                                content = "![${safeAlt}](${safePath})"
-                                                            )
-                                                        }
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                } else null,
-                                onPasteImage = if (attachmentService != null) {
-                                    { editingBlockUuid ->
-                                        if (attachmentService.hasClipboardImage()) {
+                                capabilities = dev.stapler.stelekit.ui.components.EditorCapabilities(
+                                    onAttachImage = if (attachmentService != null) {
+                                        { editingBlockUuid ->
                                             val graphRoot = appState.currentGraphPath
                                             scope.launch {
-                                                val result = attachmentService.pasteFromClipboard(graphRoot)
-                                                    ?: return@launch
+                                                val result = attachmentService.pickAndAttach(
+                                                    graphRoot = graphRoot,
+                                                    pageRelativePath = ""
+                                                ) ?: return@launch
                                                 result.fold(
                                                     ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
-                                                        graphContentLogger.warn("Clipboard paste failed: $err")
+                                                        graphContentLogger.warn("Image attachment failed: $err")
                                                     },
                                                     ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
                                                         val safeAlt = attachment.displayName.replace("]", "\\]")
@@ -1184,10 +1133,63 @@ private fun GraphContent(
                                                     }
                                                 )
                                             }
-                                            true
-                                        } else false
-                                    }
-                                } else null,
+                                        }
+                                    } else null,
+                                    onFileDrop = if (attachmentService != null) {
+                                        { files ->
+                                            val graphRoot = appState.currentGraphPath
+                                            val pageUuid = (appState.currentScreen as? Screen.PageView)?.page?.uuid
+                                            if (pageUuid != null) {
+                                                scope.launch {
+                                                    files.forEach { file ->
+                                                        val result = attachmentService.attachFilePath(
+                                                            filePath = file.toString(),
+                                                            graphRoot = graphRoot
+                                                        ) ?: return@forEach
+                                                        result.fold(
+                                                            ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
+                                                                graphContentLogger.warn("Drag-and-drop attachment failed: $err")
+                                                            },
+                                                            ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
+                                                                val safeAlt = attachment.displayName.replace("]", "\\]")
+                                                                val safePath = attachment.relativePath.replace(")", "\\)")
+                                                                blockStateManager.addBlockWithContent(
+                                                                    pageUuid = pageUuid,
+                                                                    content = "![${safeAlt}](${safePath})"
+                                                                )
+                                                            }
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else null,
+                                    onPasteImage = if (attachmentService != null) {
+                                        { editingBlockUuid ->
+                                            if (attachmentService.hasClipboardImage()) {
+                                                val graphRoot = appState.currentGraphPath
+                                                scope.launch {
+                                                    val result = attachmentService.pasteFromClipboard(graphRoot)
+                                                        ?: return@launch
+                                                    result.fold(
+                                                        ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
+                                                            graphContentLogger.warn("Clipboard paste failed: $err")
+                                                        },
+                                                        ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
+                                                            val safeAlt = attachment.displayName.replace("]", "\\]")
+                                                            val safePath = attachment.relativePath.replace(")", "\\)")
+                                                            val markdown = "![${safeAlt}](${safePath})"
+                                                            if (editingBlockUuid != null) {
+                                                                blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                                true
+                                            } else false
+                                        }
+                                    } else null,
+                                ),
                                 onImportImage = if (imageImportService != null &&
                                     dev.stapler.stelekit.platform.sensor.SensorModule.cameraProvider.isAvailable) {
                                     {

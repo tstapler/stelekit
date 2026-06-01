@@ -20,12 +20,11 @@ import dev.stapler.stelekit.domain.AhoCorasickMatcher
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.ui.components.BlockList
-import dev.stapler.stelekit.ui.components.MobileBlockToolbar
-import dev.stapler.stelekit.ui.components.SearchDialog
+import dev.stapler.stelekit.ui.components.EditorCapabilities
+import dev.stapler.stelekit.ui.components.EditorToolbar
 import dev.stapler.stelekit.ui.components.SuggestionItem
 import dev.stapler.stelekit.ui.components.SuggestionNavigatorPanel
 import dev.stapler.stelekit.performance.NavigationTracingEffect
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import kotlinx.datetime.LocalDate
 
@@ -45,6 +44,7 @@ fun JournalsView(
     suggestionMatcher: AhoCorasickMatcher? = null,
     isLeftHanded: Boolean = false,
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
+    capabilities: EditorCapabilities = EditorCapabilities(),
     modifier: Modifier = Modifier
 ) {
     NavigationTracingEffect("Journals")
@@ -57,7 +57,6 @@ fun JournalsView(
     val selectedBlockUuids by viewModel.selectedBlockUuids.collectAsState()
     val isInSelectionMode by viewModel.isInSelectionMode.collectAsState()
     val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     var toolbarHeight by remember { mutableStateOf(0) }
 
@@ -69,13 +68,6 @@ fun JournalsView(
     // Navigator panel state — empty list means closed
     var navigatorSuggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
     var navigatorIndex by remember { mutableStateOf(0) }
-
-    // Link picker state
-    var showLinkPicker by remember { mutableStateOf(false) }
-    var linkPickerBlockUuid by remember { mutableStateOf<String?>(null) }
-    var linkPickerCursorIndex by remember { mutableStateOf<Int?>(null) }
-    var linkPickerSelectionRange by remember { mutableStateOf<IntRange?>(null) }
-    var linkPickerInitialQuery by remember { mutableStateOf<String?>(null) }
 
     // Infinite scroll detection
     val shouldLoadMore = remember {
@@ -229,64 +221,14 @@ fun JournalsView(
             )
         }
 
-        // Link picker dialog
-        if (showLinkPicker && searchViewModel != null) {
-            SearchDialog(
-                visible = true,
-                onDismiss = { showLinkPicker = false },
-                onNavigateToPage = { /* not used in link picker mode */ },
-                onNavigateToBlock = { /* not used in link picker mode */ },
-                onCreatePage = { pageName ->
-                    linkPickerBlockUuid?.let { blockUuid ->
-                        viewModel.acceptLinkPickerResult(blockUuid, pageName, linkPickerSelectionRange, linkPickerCursorIndex)
-                    }
-                    showLinkPicker = false
-                },
-                viewModel = searchViewModel,
-                initialQuery = linkPickerInitialQuery ?: "",
-                onPageSelected = { pageName ->
-                    linkPickerBlockUuid?.let { blockUuid ->
-                        viewModel.acceptLinkPickerResult(blockUuid, pageName, linkPickerSelectionRange, linkPickerCursorIndex)
-                    }
-                    showLinkPicker = false
-                }
-            )
-        }
-
-        MobileBlockToolbar(
-            editingBlockId = editingBlockUuid,
-            onIndent = { blockUuid -> scope.launch { viewModel.indentBlock(blockUuid) } },
-            onOutdent = { blockUuid -> scope.launch { viewModel.outdentBlock(blockUuid) } },
-            onMoveUp = { blockUuid -> scope.launch { viewModel.moveBlockUp(blockUuid) } },
-            onMoveDown = { blockUuid -> scope.launch { viewModel.moveBlockDown(blockUuid) } },
-            onAddBlock = { blockUuid -> scope.launch { viewModel.addNewBlock(blockUuid) } },
-            onUndo = { scope.launch { viewModel.undo() } },
-            onRedo = { scope.launch { viewModel.redo() } },
-            onFormat = { action -> viewModel.requestFormat(action) },
-            onLinkPicker = if (searchViewModel != null) {
-                {
-                    val curBlockUuid = editingBlockUuid
-                    // Read selection directly from StateFlow — avoids root-scope recomposition
-                    val sel = viewModel.editingSelectionRange.value
-                    linkPickerBlockUuid = curBlockUuid
-                    // editingCursorIndex is only set via requestEditBlock; fall back to
-                    // selection start so cursor-move link insertion lands at the caret
-                    linkPickerCursorIndex = editingCursorIndex ?: sel?.first
-                    linkPickerSelectionRange = sel
-                    linkPickerInitialQuery = if (sel != null && sel.first < sel.last && curBlockUuid != null) {
-                        val block = allBlocks.values.flatten().find { it.uuid == curBlockUuid }
-                        block?.content?.substring(
-                            sel.first.coerceAtMost(block.content.length),
-                            sel.last.coerceAtMost(block.content.length)
-                        )
-                    } else null
-                    showLinkPicker = true
-                }
-            } else null,
+        EditorToolbar(
+            blockStateManager = viewModel.blockStateManager,
+            capabilities = capabilities,
+            searchViewModel = searchViewModel,
             isLeftHanded = isLeftHanded,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .onSizeChanged { toolbarHeight = it.height }
+                .onSizeChanged { toolbarHeight = it.height },
         )
     }
 }
