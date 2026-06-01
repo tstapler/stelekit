@@ -154,16 +154,18 @@ class GraphLoader(
         kotlin.random.Random.nextLong().toULong().toString(16).padStart(16, '0')
 
     /**
-     * Replaces any non-empty string with a stable opaque token for span attributes.
-     * Vault paths AND page names in telemetry are privacy-sensitive — they reveal vault
-     * location and note titles in exports, bug reports, and the SQLite spans table.
+     * Replaces a string with a stable opaque token for span attributes when the graph is
+     * in paranoid (encrypted) mode — `cryptoLayer != null`.
      *
-     * Uses the first 8 hex chars of SHA-256 (via [ContentHasher]) rather than
-     * `String.hashCode()`, which is brute-forceable for short, low-entropy titles.
-     * The digest is deterministic per value so correlated spans remain linkable.
+     * For unencrypted graphs the value is passed through unchanged: the data is already
+     * in plaintext on disk, so showing real paths in telemetry adds no additional exposure.
+     *
+     * When redacting, uses the first 8 hex chars of SHA-256 (via [ContentHasher]) so the
+     * token is deterministic and spans remain linkable, without leaking the original value
+     * to brute-force via `String.hashCode()`.
      */
     private fun String.redactPath(): String {
-        if (isEmpty()) return this
+        if (isEmpty() || cryptoLayer == null) return this
         val hash = dev.stapler.stelekit.util.ContentHasher.sha256ForContent(this).take(8)
         return "<redacted:$hash>"
     }
