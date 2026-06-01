@@ -500,6 +500,10 @@ jobs:
           # Publish: all artifacts are attached — promote from draft to live release
           gh release edit "$VER" --draft=false
 
+      # NOTE: fdroid.yml cannot be triggered via 'release: published' here because
+      # GITHUB_TOKEN-triggered events do not fire other workflows. It is called
+      # directly via the 'update-fdroid-pages' job below instead.
+
       - name: Create or update release (workflow_dispatch)
         if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
@@ -542,3 +546,19 @@ jobs:
 
             ---
             _Full changelog is auto-generated below._
+
+  # ── F-Droid repo update ────────────────────────────────────────────────────
+  # Called directly after github-release because GITHUB_TOKEN-triggered events
+  # (gh release edit --draft=false) cannot fire the release: [published] trigger
+  # in fdroid.yml — GitHub blocks cross-workflow events from GITHUB_TOKEN.
+  update-fdroid-pages:
+    name: Update F-Droid Repo
+    needs: [github-release]
+    if: ${{ always() && needs.github-release.result == 'success' }}
+    uses: ./.github/workflows/fdroid.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+      actions: read
+    secrets: inherit
