@@ -153,6 +153,17 @@ class GraphLoader(
     private fun genId(): String =
         kotlin.random.Random.nextLong().toULong().toString(16).padStart(16, '0')
 
+    /**
+     * Replaces absolute filesystem paths with a stable opaque token for span attributes.
+     * Vault paths and page names in telemetry are privacy-sensitive — they reveal vault
+     * location and note titles in exports, bug reports, and the SQLite spans table.
+     * The hash is deterministic per session so correlated spans remain linkable.
+     */
+    private fun String.redactPath(): String =
+        if (contains('/') || contains('\\'))
+            "<path:${hashCode().toUInt().toString(16)}>"
+        else this
+
     private inner class Span(val name: String, val traceId: String, val parentSpanId: String = "") {
         val spanId: String = genId()
         private val startMs: Long = Clock.System.now().toEpochMilliseconds()
@@ -340,11 +351,11 @@ class GraphLoader(
 
             // Start watching after initial load
             startWatching(graphPath)
-            rootSpan.finish("OK", "graph.path" to graphPath, "duration.ms" to duration.inWholeMilliseconds.toString())
+            rootSpan.finish("OK", "graph.path" to graphPath.redactPath(), "duration.ms" to duration.inWholeMilliseconds.toString())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            rootSpan.finish("ERROR", "graph.path" to graphPath, "error.message" to (e.message ?: "unknown"))
+            rootSpan.finish("ERROR", "graph.path" to graphPath.redactPath(), "error.message" to (e.message ?: "unknown"))
             throw e
         } finally {
             CurrentSpanContext.set(null)
@@ -426,7 +437,7 @@ class GraphLoader(
                         backgroundIndexJob = null
                     }
                 }
-                rootSpan.finish("OK", "graph.path" to graphPath, "warm_start" to "true")
+                rootSpan.finish("OK", "graph.path" to graphPath.redactPath(), "warm_start" to "true")
                 return
             }
 
@@ -475,12 +486,12 @@ class GraphLoader(
 
             // Start watching after initial load
             startWatching(graphPath)
-            rootSpan.finish("OK", "graph.path" to graphPath,
+            rootSpan.finish("OK", "graph.path" to graphPath.redactPath(),
                 "duration.ms" to totalDuration.inWholeMilliseconds.toString())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            rootSpan.finish("ERROR", "graph.path" to graphPath, "error.message" to (e.message ?: "unknown"))
+            rootSpan.finish("ERROR", "graph.path" to graphPath.redactPath(), "error.message" to (e.message ?: "unknown"))
             throw e
         } finally {
             CurrentSpanContext.set(null)
@@ -1124,7 +1135,7 @@ class GraphLoader(
         } else {
             pageRepository.getPageByName(name).first().getOrNull()
         }
-        lookupSpan.finish("OK", "page.name" to name, "page.found" to (existingPage != null).toString())
+        lookupSpan.finish("OK", "page.name" to name.redactPath(), "page.found" to (existingPage != null).toString())
 
         // Skip METADATA_ONLY if page is already fully loaded (don't overwrite full content)
         if (mode == ParseMode.METADATA_ONLY && existingPage != null) {
@@ -1370,7 +1381,7 @@ class GraphLoader(
                 }
             } finally {
                 CurrentSpanContext.set(null)
-                rootSpan.finish("OK", "file.path" to filePath)
+                rootSpan.finish("OK", "file.path" to filePath.redactPath())
                 PerformanceMonitor.endTrace("parseAndSavePage")
             }
         }

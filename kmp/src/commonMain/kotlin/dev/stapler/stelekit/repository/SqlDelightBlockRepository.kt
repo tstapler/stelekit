@@ -228,17 +228,24 @@ class SqlDelightBlockRepository(
             .conflate()
             .map { list -> list.map { it.toBlockModel() }.right() }
 
-    override fun getBlocksByUuids(uuids: List<String>): Flow<Either<DomainError, List<Block>>> = flow {
-        if (uuids.isEmpty()) { emit(emptyList<Block>().right()); return@flow }
-        try {
-            val blocks = queries.selectBlocksByUuids(uuids).executeAsList().map { it.toBlockModel() }
-            emit(blocks.right())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
+    override suspend fun getBlocksByUuids(uuids: List<String>): Either<DomainError, List<Block>> =
+        withContext(PlatformDispatcher.DB) {
+            if (uuids.isEmpty()) return@withContext emptyList<Block>().right()
+            try {
+                // Chunk to stay below SQLite's per-statement bind-variable limit (999 on
+                // Android API < 30 / SQLite < 3.32). 500 is a safe ceiling that also keeps
+                // each round-trip small — a 1000-block page issues two queries instead of one
+                // massive IN list, still far fewer than the old N individual lookups.
+                val blocks = uuids.chunked(BATCH_UUID_CHUNK_SIZE).flatMap { chunk ->
+                    queries.selectBlocksByUuids(chunk).executeAsList()
+                }.map { it.toBlockModel() }
+                blocks.right()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            }
         }
-    }.flowOn(PlatformDispatcher.DB)
 
     override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
@@ -1139,6 +1146,13 @@ class SqlDelightBlockRepository(
          * edits (addBlockToPage, splitBlock) wait at most one chunk before acquiring the lock.
          */
         private const val WRITE_CHUNK_SIZE = 50
+
+        /**
+         * Maximum UUIDs per [getBlocksByUuids] IN-clause chunk.
+         * SQLite's SQLITE_MAX_VARIABLE_NUMBER is 999 on Android API < 30 (SQLite < 3.32).
+         * 500 stays well below that limit while keeping round-trips to ≤ 2 for most pages.
+         */
+        private const val BATCH_UUID_CHUNK_SIZE = 500
 
         /**
          * Maximum batch size for linked reference queries in [getLinkedReferences].

@@ -750,21 +750,35 @@ private fun GraphContent(
     }
 
     // ── Eager performance data collection ────────────────────────────────────────────────────
-    // All three collections start when the graph loads so the Performance screen shows
-    // populated data immediately on first open, without a blank → loaded flash.
+    // Data collection starts when the Performance screen is first opened so the tabs show
+    // content immediately on first render. Pollers run only while the graph is loaded and
+    // the user has visited the Performance screen at least once — no background DB reads
+    // on devices that never open the Performance screen.
 
     val perfSpans: MutableStateFlow<List<SerializedSpan>> = remember { MutableStateFlow(emptyList()) }
     val perfHistograms: MutableStateFlow<Map<String, PercentileSummary>> = remember { MutableStateFlow(emptyMap()) }
     val perfQueryStats: MutableStateFlow<List<QueryStat>> = remember { MutableStateFlow(emptyList()) }
 
+    // Set to true the first time the user navigates to Screen.Performance; never resets.
+    // This gates the pollers so we don't run background DB reads for users who never open
+    // the Performance screen.
+    val perfScreenEverOpened = remember { MutableStateFlow(false) }
+    androidx.compose.runtime.LaunchedEffect(viewModel) {
+        viewModel.uiState.collect { state ->
+            if (state.currentScreen is Screen.Performance) perfScreenEverOpened.value = true
+        }
+    }
+
     // Span data: reactive SQLDelight flow — fires whenever new spans are written to SQLite.
-    androidx.compose.runtime.LaunchedEffect("perf.spans", repos.spanRepository) {
+    // Starts immediately (spans are cheap to subscribe to; the reactive query only fires on writes).
+    androidx.compose.runtime.LaunchedEffect(repos.spanRepository) {
         repos.spanRepository?.getRecentSpans(500)?.collect { spans -> perfSpans.value = spans }
     }
 
-    // Histogram summaries: poll every 2s (same cadence as the old HistogramsTab produceState).
-    androidx.compose.runtime.LaunchedEffect("perf.histograms", repos.histogramWriter) {
+    // Histogram summaries: poll every 2s, but only after Performance screen first opened.
+    androidx.compose.runtime.LaunchedEffect(repos.histogramWriter) {
         val writer = repos.histogramWriter ?: return@LaunchedEffect
+        perfScreenEverOpened.first { it }   // suspend until first Performance screen visit
         while (true) {
             perfHistograms.value = withContext(PlatformDispatcher.DB) {
                 writer.queryAllOperations()
@@ -775,9 +789,10 @@ private fun GraphContent(
         }
     }
 
-    // Query stats: poll every 5s (same cadence as the old QueryStatsTab produceState).
-    androidx.compose.runtime.LaunchedEffect("perf.queryStats", repos.queryStatsRepository) {
+    // Query stats: poll every 5s, but only after Performance screen first opened.
+    androidx.compose.runtime.LaunchedEffect(repos.queryStatsRepository) {
         val repo = repos.queryStatsRepository ?: return@LaunchedEffect
+        perfScreenEverOpened.first { it }   // suspend until first Performance screen visit
         while (true) {
             perfQueryStats.value = withContext(PlatformDispatcher.DB) {
                 val version = repo.getAllVersions().firstOrNull() ?: ""

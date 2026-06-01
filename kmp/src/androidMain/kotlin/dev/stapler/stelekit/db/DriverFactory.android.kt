@@ -26,6 +26,11 @@ internal val ANDROID_PRAGMAS: List<String> = listOf(
     // 64MB is conservative for mobile: covers typical graph sizes while leaving VA headroom
     // on 32-bit ARM devices and staying safe on 1-2GB RAM handsets.
     "PRAGMA mmap_size=67108864",
+    // PRAGMA optimize: selectively runs ANALYZE on tables/indexes whose statistics are
+    // significantly outdated. Ensures the query planner uses correct row-count estimates
+    // after large imports, without the cost of a full ANALYZE on every open.
+    // Safe no-op on tables that are already up-to-date.
+    "PRAGMA optimize",
 )
 
 /**

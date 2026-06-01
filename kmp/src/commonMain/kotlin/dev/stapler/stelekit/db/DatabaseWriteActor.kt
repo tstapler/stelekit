@@ -350,11 +350,11 @@ class DatabaseWriteActor(
             )
             // Combined transaction failed — retry each request individually so that
             // pages with valid blocks still succeed and each caller gets accurate feedback.
+            // Reuse the already-fetched existingByUuid map — no additional DB round-trip needed.
             batch.forEach { req ->
-                val reqExisting = loadExistingBlocks(req.blocks)
                 val reqResult = blockRepository.saveBlocks(req.blocks)
                 if (reqResult.isRight()) {
-                    logSaveBlocks(req.blocks, reqExisting)
+                    logSaveBlocks(req.blocks, existingByUuid)
                     onWriteSuccess?.invoke(req)
                 }
                 req.deferred.complete(reqResult)
@@ -364,15 +364,17 @@ class DatabaseWriteActor(
 
     /**
      * Batch-fetch existing blocks by UUID for INSERT vs UPDATE classification.
-     * Uses a single [BlockRepository.getBlocksByUuids] round-trip instead of N individual
-     * [BlockRepository.getBlockByUuid] calls — eliminates the N+1 IO-dispatch pattern that
-     * caused 44-second saveBlocks latency for large pages (163 blocks × IO-thread contention).
+     * Uses a single [BlockRepository.getBlocksByUuids] round-trip (chunked internally to
+     * respect SQLite's 999-variable limit) instead of N individual lookups.
+     *
+     * Always runs regardless of [opLogger] — the batch fetch is a performance fix, not
+     * just a logging aid. The [opLogger] guard is applied only inside [logSaveBlocks].
      */
     private suspend fun loadExistingBlocks(blocks: List<Block>): Map<String, Block> {
-        if (opLogger == null || blocks.isEmpty()) return emptyMap()
+        if (blocks.isEmpty()) return emptyMap()
         return try {
             blockRepository.getBlocksByUuids(blocks.map { it.uuid })
-                .first().getOrNull().orEmpty()
+                .getOrNull().orEmpty()
                 .associateBy { it.uuid }
         } catch (e: CancellationException) {
             throw e

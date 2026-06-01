@@ -177,9 +177,11 @@ private fun SpansTab(
     val sqliteSpans by perfSpans.collectAsState()
 
     val currentSqliteSpans = rememberUpdatedState(sqliteSpans)
-    val liveSpans by produceState(sqliteSpans, ringBuffer, spanRepository) {
+    val liveSpans by produceState(sqliteSpans, ringBuffer, perfSpans) {
         if (ringBuffer == null) {
-            value = currentSqliteSpans.value
+            // No ring buffer — collect from the upstream StateFlow so we stay reactive
+            // rather than exiting and showing a frozen snapshot.
+            perfSpans.collect { value = it }
             return@produceState
         }
         while (true) {
@@ -962,21 +964,21 @@ private fun QueryStatsTab(
 
     var sortByTotalMs by remember { mutableStateOf(true) }
 
-    // Use pre-loaded stats (by total ms) as initial value so the tab shows data immediately.
-    // The produceState loop takes over after its first emission; sort-toggle re-queries as before.
-    val stats by produceState(preloadedStats.value, queryStatsRepository, sortByTotalMs) {
-        while (true) {
-            value = withContext(PlatformDispatcher.DB) {
+    // For the default sort (by total ms), collect from the pre-populated upstream StateFlow
+    // that GraphContent polls every 5s — no duplicate polling needed here.
+    // When the user toggles to "by calls", re-query once and update; the upstream poller
+    // only tracks "by total ms" so the alternative sort needs its own one-shot fetch.
+    val preloaded by preloadedStats.collectAsState()
+    var callsStats by remember { mutableStateOf<List<QueryStat>>(emptyList()) }
+    LaunchedEffect(sortByTotalMs) {
+        if (!sortByTotalMs) {
+            callsStats = withContext(PlatformDispatcher.DB) {
                 val version = queryStatsRepository.getAllVersions().firstOrNull() ?: ""
-                if (sortByTotalMs) {
-                    queryStatsRepository.getTopByTotalMs(version, 50)
-                } else {
-                    queryStatsRepository.getTopByCalls(version, 50)
-                }
+                queryStatsRepository.getTopByCalls(version, 50)
             }
-            delay(5000)
         }
     }
+    val stats = if (sortByTotalMs) preloaded else callsStats
 
     Column(Modifier.fillMaxSize()) {
         // Sort toggle chips

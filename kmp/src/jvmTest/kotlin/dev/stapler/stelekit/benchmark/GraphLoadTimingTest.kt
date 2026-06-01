@@ -22,6 +22,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import java.nio.file.Files
 import kotlin.test.Test
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.measureTime
@@ -511,11 +512,16 @@ class GraphLoadTimingTest {
      */
     @Test
     fun `large page navigation is fast with populated database`() = runBlocking {
-        val cfg   = syntheticConfig()
-        val dir   = tempDir("stelekit-large-page")
+        // Use a fixed config large enough to reproduce the production regression (> 5 000 blocks).
+        // NOT syntheticConfig() — this test must always seed a realistic dataset regardless of
+        // the STELEKIT_BENCH_CONFIG system property so the regression guard is never weakened.
+        val cfg = SyntheticGraphGenerator.Config(pageCount = 500, journalCount = 50, linkDensity = 0.3f)
+        // PlatformFileSystem.validatePath requires paths within user.home. Use a subdirectory of
+        // the home dir rather than /tmp so GraphLoader's directoryExists check doesn't reject it.
+        val dir = java.io.File(System.getProperty("user.home"), ".stelekit-test-large-page-${System.nanoTime()}")
+            .also { it.mkdirs() }
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
-            // Populate the DB with a normal-sized synthetic graph (200 pages × ~9 blocks each)
             SyntheticGraphGenerator(cfg).generate(dir)
             val factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite:${File(dir, "largepage.db").absolutePath}")
             val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope)
@@ -547,12 +553,16 @@ class GraphLoadTimingTest {
                 "Large-page navigation took ${loadMs}ms — regression detected " +
                 "(index idx_blocks_page_uuid_position may be missing; expected < 2000ms)")
 
-            // Check blocks:select p99 from accumulated query stats
+            // Flush and assert blocks:select p99. If the query stats repository is wired,
+            // the stat MUST be present — silently passing when stats aren't flushed masks
+            // the regression guard.
             repoSet.queryStatsCollector?.drainNow()
-            val blocksSelectStat = repoSet.queryStatsRepository
-                ?.getTopByTotalMs("unknown", 50)
-                ?.find { it.tableName == "blocks" && it.operation == "select" }
-            if (blocksSelectStat != null) {
+            if (repoSet.queryStatsRepository != null) {
+                val blocksSelectStat = repoSet.queryStatsRepository
+                    .getTopByTotalMs("unknown", 50)
+                    .find { it.tableName == "blocks" && it.operation == "select" }
+                assertNotNull(blocksSelectStat,
+                    "blocks:select stat must be present when queryStatsRepository is wired")
                 val p99 = blocksSelectStat.estimatePercentile(0.99)
                 println("[large-page] blocks:select p99=${p99}ms (calls=${blocksSelectStat.calls})")
                 assertTrue(p99 < 200,
