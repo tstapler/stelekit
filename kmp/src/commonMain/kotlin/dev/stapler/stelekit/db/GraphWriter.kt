@@ -50,6 +50,18 @@ class GraphWriter(
     initialCryptoLayer: CryptoLayer? = null,
     /** Graph root path — required to compute graph-root-relative AAD paths for encryption. */
     @Volatile var graphPath: String = "",
+    /**
+     * Called immediately before writing a file to disk. Allows the caller to pre-mark the
+     * file as a pending own-write in [FileRegistry] so the watcher never sees our write as
+     * an external change. Must be paired with [onClearPendingWrite] for saga compensation.
+     */
+    private val onPreWrite: (suspend (filePath: String) -> Unit)? = null,
+    /**
+     * Called in saga compensation when a file write fails. Must clear the pending-write
+     * sentinel set by [onPreWrite] so the file is not permanently suppressed from
+     * external-change detection.
+     */
+    private val onClearPendingWrite: (suspend (filePath: String) -> Unit)? = null,
 ) : GraphWriterPort {
     /**
      * Backing field for the CryptoLayer used to encrypt files in paranoid mode.
@@ -364,6 +376,26 @@ class GraphWriter(
             var succeeded = false
             runCatching {
                 saga {
+                    // Step 0: pre-mark pending write to close the watcher race window.
+                    // Must be called before the file write so detectChanges never sees the
+                    // new mtime without knowing we wrote it. Compensation clears the sentinel
+                    // so the file is not permanently suppressed if the write fails.
+                    saga(
+                        action = { onPreWrite?.invoke(filePath) },
+                        compensation = { _ ->
+                            try {
+                                // Clear the sentinel so subsequent external edits are still detected.
+                                // Without this, a failed write leaves Long.MAX_VALUE in modTimes
+                                // and the file is never detected as externally changed again.
+                                onClearPendingWrite?.invoke(filePath)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                logger.error("Saga compensation: failed to clear pending write for $filePath", e)
+                            }
+                        }
+                    )
+
                     // Step 1: write markdown file — rollback restores previous content
                     val cryptoLayerNow = capturedCryptoLayer
                     // Compensation data — shadow-first for plaintext (zero IPC when warm).
@@ -537,6 +569,8 @@ class GraphWriter(
             sidecarManager: SidecarManager? = null,
             cryptoLayer: CryptoLayer? = null,
             graphPath: String = "",
+            onPreWrite: (suspend (String) -> Unit)? = null,
+            onClearPendingWrite: (suspend (String) -> Unit)? = null,
         ): Resource<GraphWriter> = resource {
             val writer = GraphWriter(
                 fileSystem = fileSystem,
@@ -546,6 +580,8 @@ class GraphWriter(
                 sidecarManager = sidecarManager,
                 initialCryptoLayer = cryptoLayer,
                 graphPath = graphPath,
+                onPreWrite = onPreWrite,
+                onClearPendingWrite = onClearPendingWrite,
             )
             onRelease {
                 try { writer.flush() } catch (_: Exception) { /* best-effort flush */ }

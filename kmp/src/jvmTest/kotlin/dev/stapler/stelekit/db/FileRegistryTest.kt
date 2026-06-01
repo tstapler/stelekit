@@ -593,4 +593,56 @@ class FileRegistryTest {
         assertTrue(invalidateIdx < readIdx,
             "invalidateShadow must precede readFile, got order: $callOrder")
     }
+
+    // ── TC-07: preMarkPendingWrite suppresses detectChanges ───────────────────
+
+    @Test
+    fun `TC-07 preMarkPendingWrite suppresses own write detection in detectChanges`() = runTest {
+        val fs = FakeFs()
+        fs.externalWrite("/graph/pages/page.md", "- V1")
+        val registry = FileRegistry(fs)
+        registry.detectChanges("/graph/pages") // register baseline (modTime = 1000)
+
+        // Act: pre-mark before the write (simulates GraphWriter.savePageInternal Step 0)
+        registry.preMarkPendingWrite("/graph/pages/page.md")
+        // Now simulate what the external OS would show after GraphWriter writes:
+        // bump real modTime as if the write happened
+        val file = fs.files["/graph/pages/page.md"]!!
+        fs.files["/graph/pages/page.md"] = FakeFile("- V2", file.modTime + 1000L)
+
+        // The sentinel Long.MAX_VALUE means modTime (1000+1000 = 2000) > Long.MAX_VALUE is false
+        val changes = registry.detectChanges("/graph/pages")
+
+        assertTrue(changes.changedFiles.isEmpty(),
+            "preMarkPendingWrite must suppress detection: modTime can never exceed Long.MAX_VALUE sentinel")
+        assertTrue(changes.newFiles.isEmpty(), "No new files expected")
+    }
+
+    // ── TC-08: clearPendingWrite restores detection after saga rollback ───────
+
+    @Test
+    fun `TC-08 clearPendingWrite removes sentinel so subsequent external edits are detected`() = runTest {
+        val fs = FakeFs()
+        fs.externalWrite("/graph/pages/page.md", "- V1")
+        val registry = FileRegistry(fs)
+        registry.detectChanges("/graph/pages") // register baseline
+
+        // Simulate saga: pre-mark, then compensation (write failed)
+        registry.preMarkPendingWrite("/graph/pages/page.md")
+        registry.clearPendingWrite("/graph/pages/page.md") // sentinel removed
+
+        // Now a real external edit arrives
+        fs.externalWrite("/graph/pages/page.md", "- V2 from external")
+
+        val changes = registry.detectChanges("/graph/pages")
+
+        // After clearPendingWrite the file is in "unknown" state: modTimes[path] was removed,
+        // so detectChanges treats it as a new file OR detects it as changed depending on
+        // whether the path was already removed from modTimes.
+        // Either way, the file MUST appear in newFiles or changedFiles — not suppressed.
+        val detected = changes.newFiles.isNotEmpty() || changes.changedFiles.isNotEmpty()
+        assertTrue(detected,
+            "After clearPendingWrite, subsequent external edits must still be detected. " +
+            "newFiles=${changes.newFiles.size}, changedFiles=${changes.changedFiles.size}")
+    }
 }

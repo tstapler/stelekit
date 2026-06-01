@@ -459,6 +459,8 @@ private fun GraphContent(
             repos.writeActor,
             onFileWritten = graphLoader::markFileWrittenByUs,
             sidecarManager = sidecarManager,
+            onPreWrite = { filePath -> graphLoader.fileRegistry.preMarkPendingWrite(filePath) },
+            onClearPendingWrite = { filePath -> graphLoader.fileRegistry.clearPendingWrite(filePath) },
         )
     }
 

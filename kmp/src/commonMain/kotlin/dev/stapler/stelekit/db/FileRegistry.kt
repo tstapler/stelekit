@@ -190,6 +190,40 @@ class FileRegistry(private val fileSystem: FileSystem) {
         contentHashes[filePath] = contentHash
     }
 
+    /** Returns the stored content hash for [filePath], or null if not yet hashed. */
+    suspend fun getContentHash(filePath: String): Int? = detectMutex.withLock {
+        contentHashes[filePath]
+    }
+
+    /**
+     * Marks [filePath] as a pending own-write. Prevents the watcher from treating the file as
+     * an external change during the window between this call and [markWrittenByUs].
+     *
+     * Implementation: stores sentinel value [Long.MAX_VALUE] in modTimes so that the
+     * `modTime > lastKnown` check in [detectChanges] can never be true for any real mtime.
+     * [markWrittenByUs] replaces it with the real post-write mtime.
+     *
+     * IMPORTANT: If the write fails (saga compensation runs), call [clearPendingWrite] to remove
+     * the sentinel. Without this, the file is permanently suppressed from external-change
+     * detection for the lifetime of this [FileRegistry] instance.
+     */
+    suspend fun preMarkPendingWrite(filePath: String) = detectMutex.withLock {
+        modTimes[filePath] = Long.MAX_VALUE
+    }
+
+    /**
+     * Removes the pending-write sentinel for [filePath]. Must be called from saga compensation
+     * if the file write fails after [preMarkPendingWrite] was called.
+     * Restores the file to the "unknown" state so the next [detectChanges] treats it as a
+     * new/unknown file and re-scans it.
+     */
+    suspend fun clearPendingWrite(filePath: String) = detectMutex.withLock {
+        // Only clear if it's still the sentinel; markWrittenByUs may have already replaced it.
+        if (modTimes[filePath] == Long.MAX_VALUE) {
+            modTimes.remove(filePath)
+        }
+    }
+
     // ---- Cleanup ----
 
     suspend fun clear() = detectMutex.withLock {

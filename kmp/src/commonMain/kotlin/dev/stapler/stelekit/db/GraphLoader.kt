@@ -147,7 +147,61 @@ class GraphLoader(
      */
     private var activePageUuids: StateFlow<Set<String>>? = null
 
-    override fun setActivePageUuids(uuids: StateFlow<Set<String>>?) { activePageUuids = uuids }
+    /**
+     * Derived set of file paths for actively-edited pages. Updated whenever [activePageUuids]
+     * emits a new set. Passed to [GraphFileWatcher] as a lambda so the watcher can skip
+     * auto-reload for pages being edited — without creating a new cross-layer dependency.
+     *
+     * UUID→path resolution happens here (inside GraphLoader which has PageRepository access);
+     * GraphFileWatcher never imports PageRepository.
+     */
+    @Volatile private var activePageFilePaths: Set<String> = emptySet()
+
+    /** Job for the activePageFilePaths collector. Cancelled and replaced by each [setActivePageUuids] call. */
+    private var activePageFilePathsJob: Job? = null
+
+    override fun setActivePageUuids(uuids: StateFlow<Set<String>>?) {
+        activePageUuids = uuids
+        // Cancel any existing collector before starting a new one to prevent coroutine leaks
+        // on graph close / vault lock. Without this, the previous collector keeps running,
+        // holds a reference to the old StateFlow, and calls pageRepository on a closed scope.
+        activePageFilePathsJob?.cancel()
+        activePageFilePathsJob = null
+        if (uuids != null) {
+            activePageFilePathsJob = parallelScope.launch {
+                uuids.collect { uuidSet ->
+                    activePageFilePaths = uuidSet.mapNotNull { uuid ->
+                        pageRepository.getPageByUuid(uuid).first().getOrNull()?.filePath
+                    }.toSet()
+                }
+            }
+        } else {
+            activePageFilePaths = emptySet()
+        }
+    }
+
+    // ---- Dirty set for cache invalidation ----------------------------------------
+
+    /**
+     * Paths that the watcher has flagged as externally changed. Checked in [loadFullPage]
+     * to bypass the mtime guard when the watcher has confirmed an external edit.
+     *
+     * Guarded by [dirtyMutex] — both the watcher coroutine (via [addDirty]) and the
+     * loadFullPage coroutine (via [checkAndClearDirty]) access this set concurrently.
+     */
+    private val dirtyPaths = mutableSetOf<String>()
+    private val dirtyMutex = kotlinx.coroutines.sync.Mutex()
+
+    /** Adds [path] to the dirty set (called from the watcher when an external change is detected). */
+    internal suspend fun addDirty(path: String) = dirtyMutex.withLock { dirtyPaths.add(path) }
+
+    /**
+     * Checks whether [path] is in the dirty set and removes it atomically.
+     * Returns true if the path was present (and has now been consumed).
+     */
+    internal suspend fun checkAndClearDirty(path: String): Boolean = dirtyMutex.withLock {
+        dirtyPaths.remove(path)
+    }
 
     // Lightweight span tracking for the Spans waterfall tab.
     private fun genId(): String =
@@ -222,6 +276,12 @@ class GraphLoader(
         readFile = ::readFileDecrypted,
         onReloadFile = { filePath, content -> parseAndSavePage(filePath, content, dev.stapler.stelekit.parsing.ParseMode.FULL) },
         pollIntervalMs = watcherPollIntervalMs,
+        // Suspend lambda: called directly from checkDirectoryForChanges (already suspend) to
+        // guarantee dirty flag is set before onReloadFile is called — no ordering race possible.
+        onDirtyFile = { filePath -> addDirty(filePath) },
+        // Lambda returning the current set of file paths for actively-edited pages.
+        // Resolved by GraphLoader (which has PageRepository access); watcher never imports it.
+        activePageFilePaths = { activePageFilePaths },
     )
 
     // Tracks the in-flight background indexing job so it can be cancelled under memory pressure.
@@ -668,7 +728,7 @@ class GraphLoader(
     suspend fun reloadFiles(filePaths: List<String>) {
         for (path in filePaths) {
             val content = readFileDecrypted(path) ?: continue
-            parseAndSavePage(path, content, ParseMode.FULL, DatabaseWriteActor.Priority.HIGH)
+            parseAndSavePage(path, content, ParseMode.FULL, DatabaseWriteActor.Priority.HIGH, forceReload = true)
         }
     }
 
@@ -690,22 +750,60 @@ class GraphLoader(
                 return
             }
 
-            // OPTIMIZATION: If page is already loaded and file hasn't changed, skip reload
+            // OPTIMIZATION: If page is already loaded and file hasn't changed, skip reload.
+            // New guard: watcher-driven dirty set replaces the unreliable mtime check.
             val blocksResult = blockRepository.getBlocksForPage(page.uuid).first()
             val blocks = blocksResult.getOrNull() ?: emptyList()
             // A page is fully loaded if all its blocks are loaded
             val allBlocksLoaded = blocks.isNotEmpty() && blocks.all { it.isLoaded }
 
-            if (!force && allBlocksLoaded) {
-                val fileModTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
-
-                if (fileModTime != 0L &&
-                    page.updatedAt.toEpochMilliseconds() >= fileModTime) {
-                    logger.debug("Skipping loadFullPage, already up to date: $filePath")
-                    return
+            var forceReload = force
+            if (!forceReload && allBlocksLoaded) {
+                val isDirty = checkAndClearDirty(filePath)
+                if (!isDirty) {
+                    if (fileWatcher.isRunning) {
+                        // Watcher is running (JVM/Android): trust the dirty set.
+                        // No dirty entry means the watcher has not detected an external change.
+                        // NOTE: isRunning is false during the short startup window between
+                        // onPhase1Complete and startWatching completing — during this window
+                        // we fall through to the content-hash path below, which is correct.
+                        logger.debug("Skipping loadFullPage, watcher reports no change: $filePath")
+                        return
+                    } else {
+                        // No watcher (iOS/WASM): fall back to content-hash check at navigation time.
+                        val storedHash = fileRegistry.getContentHash(filePath)
+                        if (storedHash != null) {
+                            // Read the file once for the hash comparison.
+                            fileSystem.invalidateShadow(filePath)
+                            val diskContent = fileSystem.readFile(filePath)
+                            if (diskContent != null && diskContent.hashCode() == storedHash) {
+                                logger.debug("Skipping loadFullPage, content hash unchanged: $filePath")
+                                return
+                            }
+                            // Hash mismatch — pass the already-read content to parseAndSavePage
+                            // to avoid a second disk read (halves I/O on iOS/WASM reload path).
+                            if (diskContent != null) {
+                                if (!tryAddPriorityFile(filePath)) {
+                                    logger.debug("Coalescing load request for $filePath")
+                                    return
+                                }
+                                try {
+                                    parseAndSavePage(filePath, diskContent, ParseMode.FULL, forceReload = true)
+                                } finally {
+                                    removePriorityFile(filePath)
+                                }
+                                return
+                            }
+                            // diskContent == null (read failed) → fall through to reload via readFileDecrypted
+                        }
+                        // No stored hash (first load) → fall through to full reload
+                    }
                 }
-            } else if (blocks.isNotEmpty()) {
-                 logger.warn("Force reloading page ${page.name} because blocks are not fully loaded (inconsistency detected)")
+                // isDirty == true → set forceReload so both inner guards are also bypassed
+                forceReload = true
+            } else if (blocks.isNotEmpty() && !forceReload) {
+                logger.warn("Force reloading page ${page.name} because blocks are not fully loaded (inconsistency detected)")
+                forceReload = true
             }
 
             if (!tryAddPriorityFile(filePath)) {
@@ -714,8 +812,8 @@ class GraphLoader(
             }
 
             // Drop any stale shadow so readFile goes to the real source (SAF on Android).
-            // Reached when the page needs (re-)loading: either the file is newer than the
-            // DB record (mtime guard above) or blocks are missing/partial.
+            // Reached when the page needs (re-)loading: dirty-set hit, missing blocks, or
+            // content-hash mismatch (iOS/WASM).
             fileSystem.invalidateShadow(filePath)
             val content = readFileDecrypted(filePath)
             if (content == null) {
@@ -723,7 +821,7 @@ class GraphLoader(
                 return
             }
 
-            parseAndSavePage(filePath, content, ParseMode.FULL)
+            parseAndSavePage(filePath, content, ParseMode.FULL, forceReload = forceReload)
         } finally {
             filePath?.let { removePriorityFile(it) }
             PerformanceMonitor.endTrace("loadFullPage")
@@ -1134,6 +1232,7 @@ class GraphLoader(
         mode: ParseMode,
         traceId: String,
         parentSpanId: String,
+        forceReload: Boolean = false,
     ): PageLookupResult {
         val lookupSpan = Span("db.lookupPage", traceId, parentSpanId)
         val existingPage = if (isJournal && journalDate != null) {
@@ -1150,13 +1249,16 @@ class GraphLoader(
 
         // OPTIMIZATION: If mode is FULL, but page is already loaded and fresh, skip.
         // Blocks are cached here to avoid a second DB round-trip at the diff-merge step.
+        // When forceReload=true (dirty-set hit from loadFullPage), skip this guard entirely —
+        // the caller has already determined the page is stale and must be reloaded.
         if (mode == ParseMode.FULL && existingPage != null) {
             val fileModTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
             val getBlocksSpan = Span("db.getBlocks", traceId, parentSpanId)
             val blocks = blockRepository.getBlocksForPage(existingPage.uuid).first().getOrNull() ?: emptyList()
             getBlocksSpan.finish("OK", "block.count" to blocks.size.toString())
             val allBlocksLoaded = blocks.isNotEmpty() && blocks.all { it.isLoaded }
-            if (fileModTime != 0L &&
+            if (!forceReload &&
+                fileModTime != 0L &&
                 existingPage.updatedAt.toEpochMilliseconds() >= fileModTime &&
                 allBlocksLoaded) {
                 return PageLookupResult(skip = true)
@@ -1276,11 +1378,27 @@ class GraphLoader(
         }
     }
 
+    /**
+     * Internal overload that accepts [forceReload] to bypass the inner mtime guard in
+     * [lookupExistingPageAndCheckFreshness]. Called from [loadFullPage] when the dirty-set
+     * path triggers a reload (both the outer and inner mtime guards must be bypassed together).
+     *
+     * The public [GraphLoaderPort.parseAndSavePage] interface does not expose [forceReload] —
+     * it is an internal implementation detail of the cache-invalidation pipeline.
+     */
     override suspend fun parseAndSavePage(
         filePath: String,
         content: String,
         mode: ParseMode,
         priority: DatabaseWriteActor.Priority,
+    ) = parseAndSavePage(filePath, content, mode, priority, forceReload = false)
+
+    private suspend fun parseAndSavePage(
+        filePath: String,
+        content: String,
+        mode: ParseMode,
+        priority: DatabaseWriteActor.Priority = DatabaseWriteActor.Priority.HIGH,
+        forceReload: Boolean,
     ) {
         if (mode == ParseMode.METADATA_ONLY && isPriorityFile(filePath)) return
 
@@ -1315,7 +1433,7 @@ class GraphLoader(
                 val now = Clock.System.now()
 
                 val lookup = lookupExistingPageAndCheckFreshness(
-                    filePath, name, isJournal, journalDate, mode, traceId, rootSpan.spanId
+                    filePath, name, isJournal, journalDate, mode, traceId, rootSpan.spanId, forceReload
                 )
                 if (lookup.skip) return@withLock
 

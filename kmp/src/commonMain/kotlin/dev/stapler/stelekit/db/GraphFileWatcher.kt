@@ -32,11 +32,19 @@ import kotlinx.coroutines.withTimeoutOrNull
  * Callers supply two callbacks:
  * - [readFile]: reads (and optionally decrypts) a file from disk.
  * - [onReloadFile]: called when a file change should be imported into the DB.
+ * - [onDirtyFile]: called (suspend) to mark a file path as externally changed in the
+ *   loader's dirty set. Must be suspend to match the dirty-set mutex; calling it directly
+ *   from within checkDirectoryForChanges (also suspend) eliminates any ordering race.
+ * - [activePageFilePaths]: lambda returning the set of file paths for pages currently in an
+ *   active edit session. When a changed file matches, onReloadFile is skipped (dirty flag is
+ *   still set and the conflict dialog is still emitted via externalFileChanges).
  *
- * @param fileSystem   Platform filesystem abstraction.
- * @param fileRegistry Shared mod-time / content-hash registry.
- * @param readFile     Reads (and decrypts) a file; returns null on failure.
- * @param onReloadFile Called to import a changed file into the database.
+ * @param fileSystem          Platform filesystem abstraction.
+ * @param fileRegistry        Shared mod-time / content-hash registry.
+ * @param readFile            Reads (and decrypts) a file; returns null on failure.
+ * @param onReloadFile        Called to import a changed file into the database.
+ * @param onDirtyFile         Called to mark a file as externally changed in the dirty set.
+ * @param activePageFilePaths Returns the set of file paths currently being actively edited.
  */
 class GraphFileWatcher(
     private val fileSystem: FileSystem,
@@ -44,6 +52,8 @@ class GraphFileWatcher(
     private val readFile: (filePath: String) -> String?,
     private val onReloadFile: suspend (filePath: String, content: String) -> Unit,
     private val pollIntervalMs: Long = 5_000L,
+    private val onDirtyFile: (suspend (filePath: String) -> Unit)? = null,
+    private val activePageFilePaths: (() -> Set<String>)? = null,
 ) {
     private val logger = Logger("GraphFileWatcher")
 
@@ -51,6 +61,16 @@ class GraphFileWatcher(
     private val scope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
 
     private var watcherJob: Job? = null
+
+    /**
+     * Returns true when the watcher job is active (started and not yet stopped/closed).
+     *
+     * NOTE: There is a short startup window on JVM/Android between [loadGraphProgressive]
+     * returning from Phase 1 (calling onPhase1Complete) and [startWatching] being called.
+     * During this window, [isRunning] is false even on JVM/Android. [GraphLoader.loadFullPage]
+     * will fall back to the content-hash path during this window — correct but ~10-30ms slower.
+     */
+    val isRunning: Boolean get() = watcherJob?.isActive == true
 
     /**
      * Emitted when the file watcher detects an external modification to a file.
@@ -208,6 +228,22 @@ class GraphFileWatcher(
             }
             val suppressed = withTimeoutOrNull(200L) { suppressChannel.receive() } == true
             if (suppressed) {
+                continue
+            }
+
+            // Mark the file as dirty in the loader's dirty set. This must happen BEFORE
+            // onReloadFile so that if loadFullPage is called concurrently, the dirty flag
+            // is already present. onDirtyFile is suspend to avoid the ordering race that a
+            // fire-and-forget launch wrapper would introduce.
+            onDirtyFile?.invoke(changed.entry.filePath)
+
+            // Active-page guard: if the changed file corresponds to a page currently being
+            // edited, skip the auto-reload (dirty flag was already set above so the reload
+            // will happen on next navigation). The conflict dialog already fired via
+            // externalFileChanges above — the user can still choose to accept or discard.
+            val isActivePage = activePageFilePaths?.invoke()?.contains(changed.entry.filePath) == true
+            if (isActivePage) {
+                logger.debug("Skipping auto-reload for actively-edited page: ${changed.entry.filePath}")
                 continue
             }
 

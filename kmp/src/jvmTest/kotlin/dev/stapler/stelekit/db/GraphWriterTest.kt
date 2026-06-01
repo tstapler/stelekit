@@ -199,4 +199,59 @@ class GraphWriterTest {
             tempDir.deleteRecursively()
         }
     }
+
+    // ── TC-15: GraphWriter saga compensation calls clearPendingWrite ──────────
+
+    /**
+     * TC-15: When savePageInternal fails (saga compensation triggered), onClearPendingWrite
+     * must be called to remove the Long.MAX_VALUE sentinel from FileRegistry modTimes.
+     * Without this, subsequent external edits are permanently suppressed.
+     *
+     * Fails against pre-fix code: onClearPendingWrite does not exist.
+     */
+    @Test
+    fun `TC-15 savePageInternal calls clearPendingWrite in saga compensation when write fails`() {
+        runBlocking {
+            var preWriteCount = 0
+            var clearPendingWriteCount = 0
+
+            // FakeFileSystem with all writes disabled — triggers saga compensation
+            val failingFs = object : FakeFileSystem() {
+                override fun fileExists(path: String) = false
+                override fun readFile(path: String): String? = null
+                // writeFile, markDirty, and writeFileBytes return false by default in FakeFileSystem
+                // (writeFile returns true by default — override to fail)
+                override fun writeFile(path: String, content: String): Boolean = false
+            }
+
+            val writer = GraphWriter(
+                fileSystem = failingFs,
+                onPreWrite = { preWriteCount++ },
+                onClearPendingWrite = { clearPendingWriteCount++ },
+            )
+            writer.startAutoSave(500L)
+
+            val now = Clock.System.now()
+            val page = Page(
+                uuid = "tc15-uuid-1",
+                name = "TestPageTC15",
+                createdAt = now,
+                updatedAt = now,
+                journalDate = null,
+                properties = emptyMap(),
+                filePath = "/tmp/pages/TestPageTC15.md",
+            )
+
+            // Attempt to save — write fails → saga compensation runs
+            writer.savePage(page, emptyList(), "/tmp")
+
+            // preMarkPendingWrite should have been called (Step 0)
+            assertEquals(1, preWriteCount,
+                "onPreWrite must be called before the write attempt")
+
+            // clearPendingWrite must have been called in saga compensation
+            assertEquals(1, clearPendingWriteCount,
+                "onClearPendingWrite must be called in saga compensation when write fails")
+        }
+    }
 }

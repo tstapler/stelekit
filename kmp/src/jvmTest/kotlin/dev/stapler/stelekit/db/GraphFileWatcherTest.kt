@@ -9,6 +9,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -94,6 +95,8 @@ class GraphFileWatcherTest {
     private fun buildWatcher(
         fileSystem: WatcherFakeFileSystem,
         onReloadFile: suspend (filePath: String, content: String) -> Unit,
+        onDirtyFile: (suspend (filePath: String) -> Unit)? = null,
+        activePageFilePaths: (() -> Set<String>)? = null,
     ): WatcherFixture {
         val registry = FileRegistry(fileSystem)
         val watcher = GraphFileWatcher(
@@ -102,6 +105,8 @@ class GraphFileWatcherTest {
             readFile = { path -> fileSystem.readFile(path) },
             onReloadFile = onReloadFile,
             pollIntervalMs = 50L, // fast polling for tests
+            onDirtyFile = onDirtyFile,
+            activePageFilePaths = activePageFilePaths,
         )
         return WatcherFixture(watcher, registry)
     }
@@ -121,7 +126,7 @@ class GraphFileWatcherTest {
         fileSystem.addFile(filePath, "- Hello\n", initialModTime)
 
         var reloadCalled = false
-        val fixture = buildWatcher(fileSystem) { _, _ -> reloadCalled = true }
+        val fixture = buildWatcher(fileSystem, onReloadFile = { _, _ -> reloadCalled = true })
         val watcher = fixture.watcher
 
         watcher.startWatching(graphPath)
@@ -165,7 +170,7 @@ class GraphFileWatcherTest {
         fileSystem.addFile(filePath, "- Hello\n", initialModTime)
 
         var reloadCalled = false
-        val fixture = buildWatcher(fileSystem) { _, _ -> reloadCalled = true }
+        val fixture = buildWatcher(fileSystem, onReloadFile = { _, _ -> reloadCalled = true })
         val watcher = fixture.watcher
 
         watcher.startWatching(graphPath)
@@ -192,7 +197,7 @@ class GraphFileWatcherTest {
     @Test
     fun close_cancelsOwnedScope() = runTest {
         val fileSystem = WatcherFakeFileSystem()
-        val fixture = buildWatcher(fileSystem) { _, _ -> }
+        val fixture = buildWatcher(fileSystem, onReloadFile = { _, _ -> })
 
         fixture.watcher.startWatching("/graph")
         fixture.watcher.close()
@@ -210,7 +215,7 @@ class GraphFileWatcherTest {
         fileSystem.addFile(filePath, "- Initial\n", 1000L)
 
         var reloadCalled = false
-        val fixture = buildWatcher(fileSystem) { _, _ -> reloadCalled = true }
+        val fixture = buildWatcher(fileSystem, onReloadFile = { _, _ -> reloadCalled = true })
         val watcher = fixture.watcher
 
         watcher.startWatching(graphPath)
@@ -238,7 +243,7 @@ class GraphFileWatcherTest {
         fileSystem.addFile(filePath, "- Original\n", 1000L)
 
         var reloadCalled = false
-        val fixture = buildWatcher(fileSystem) { _, _ -> reloadCalled = true }
+        val fixture = buildWatcher(fileSystem, onReloadFile = { _, _ -> reloadCalled = true })
         val watcher = fixture.watcher
 
         watcher.startWatching(graphPath)
@@ -265,7 +270,7 @@ class GraphFileWatcherTest {
         val filePath = "$graphPath/pages/PostMerge.md"
         fileSystem.addFile(filePath, "- Original\n", 1000L)
 
-        val fixture = buildWatcher(fileSystem) { _, _ -> }
+        val fixture = buildWatcher(fileSystem, onReloadFile = { _, _ -> })
         val watcher = fixture.watcher
 
         watcher.startWatching(graphPath)
@@ -285,6 +290,153 @@ class GraphFileWatcherTest {
         }
 
         assertTrue(eventEmitted, "ExternalFileChange should fire after endGitMerge()")
+
+        watcher.close()
+    }
+
+    // ─── TC-04: Active-page guard skips onReloadFile ──────────────────────────
+
+    /**
+     * TC-04: When a changed file is in activePageFilePaths, onReloadFile must NOT be called,
+     * but onDirtyFile MUST be called and externalFileChanges MUST be emitted.
+     */
+    @Test
+    fun `TC-04 checkDirectoryForChanges skips onReloadFile for actively edited pages`() = runTest {
+        val fileSystem = WatcherFakeFileSystem()
+        val graphPath = "/graph"
+        val filePath = "$graphPath/pages/active.md"
+        fileSystem.addFile(filePath, "- V1\n", 1000L)
+
+        var reloadCount = 0
+        var dirtyCount = 0
+
+        val fixture = buildWatcher(
+            fileSystem = fileSystem,
+            onReloadFile = { _, _ -> reloadCount++ },
+            onDirtyFile = { dirtyCount++ },
+            activePageFilePaths = { setOf(filePath) },
+        )
+        val watcher = fixture.watcher
+
+        watcher.startWatching(graphPath)
+        fixture.registry.scanDirectory("$graphPath/pages")
+
+        // Simulate external edit
+        fileSystem.addFile(filePath, "- V2\n", 2000L)
+
+        // Give the watcher time to fire (50ms poll) + suppression window (200ms)
+        withContext(Dispatchers.Default) { delay(600L) }
+
+        assertEquals(0, reloadCount, "onReloadFile must NOT be called for an actively-edited page")
+        assertEquals(1, dirtyCount, "onDirtyFile MUST be called even for actively-edited pages")
+
+        watcher.close()
+    }
+
+    // ─── TC-05: externalFileChanges IS emitted for active pages ───────────────
+
+    /**
+     * TC-05: Even for actively-edited pages, the externalFileChanges SharedFlow must emit
+     * (conflict dialog must still fire). The onReloadFile skip happens AFTER the emit.
+     */
+    @Test
+    fun `TC-05 checkDirectoryForChanges emits externalFileChanges even for active pages`() = runTest {
+        val fileSystem = WatcherFakeFileSystem()
+        val graphPath = "/graph"
+        val filePath = "$graphPath/pages/active.md"
+        fileSystem.addFile(filePath, "- V1\n", 1000L)
+
+        var reloadCount = 0
+        var eventCount = 0
+
+        val fixture = buildWatcher(
+            fileSystem = fileSystem,
+            onReloadFile = { _, _ -> reloadCount++ },
+            activePageFilePaths = { setOf(filePath) },
+        )
+        val watcher = fixture.watcher
+
+        watcher.startWatching(graphPath)
+        fixture.registry.scanDirectory("$graphPath/pages")
+
+        val collectJob = launch {
+            watcher.externalFileChanges.first()
+            eventCount++
+        }
+
+        fileSystem.addFile(filePath, "- V2\n", 2000L)
+
+        withContext(Dispatchers.Default) {
+            withTimeout(3000L) { collectJob.join() }
+            delay(300L) // let suppression window pass
+        }
+
+        assertEquals(1, eventCount, "externalFileChanges must be emitted for actively-edited pages (conflict dialog)")
+        assertEquals(0, reloadCount, "onReloadFile must NOT be called for an actively-edited page")
+
+        watcher.close()
+    }
+
+    // ─── TC-11: isRunning reflects watcher job lifecycle ──────────────────────
+
+    /**
+     * TC-11: isRunning must return false before startWatching, true after, false after stopWatching.
+     */
+    @Test
+    fun `TC-11 isRunning reflects watcher job lifecycle`() = runTest {
+        val fileSystem = WatcherFakeFileSystem()
+        val fixture = buildWatcher(fileSystem, onReloadFile = { _, _ -> })
+        val watcher = fixture.watcher
+
+        assertFalse(watcher.isRunning, "isRunning must be false before startWatching")
+
+        watcher.startWatching("/graph")
+        assertTrue(watcher.isRunning, "isRunning must be true after startWatching")
+
+        watcher.stopWatching()
+        assertFalse(watcher.isRunning, "isRunning must be false after stopWatching")
+
+        watcher.close()
+    }
+
+    // ─── TC-16: onDirtyFile is called before onReloadFile (ordering) ─────────
+
+    /**
+     * TC-16: onDirtyFile must be called BEFORE onReloadFile within the same coroutine context.
+     * This ordering guarantee ensures that if loadFullPage is called concurrently with the
+     * watcher processing a change, the dirty flag is already present.
+     */
+    @Test
+    fun `TC-16 onDirtyFile is called before onReloadFile within the same coroutine context`() = runTest {
+        val fileSystem = WatcherFakeFileSystem()
+        val graphPath = "/graph"
+        val filePath = "$graphPath/pages/note.md"
+        fileSystem.addFile(filePath, "- V1\n", 1000L)
+
+        val events = mutableListOf<String>()
+
+        val fixture = buildWatcher(
+            fileSystem = fileSystem,
+            onReloadFile = { _, _ -> events.add("reload") },
+            onDirtyFile = { events.add("dirty") },
+            activePageFilePaths = { emptySet() }, // not an active page
+        )
+        val watcher = fixture.watcher
+
+        watcher.startWatching(graphPath)
+        fixture.registry.scanDirectory("$graphPath/pages")
+
+        fileSystem.addFile(filePath, "- V2\n", 2000L)
+
+        withContext(Dispatchers.Default) { delay(600L) }
+
+        assertTrue(events.isNotEmpty(), "At least one event must have been recorded")
+        val dirtyIdx = events.indexOfFirst { it == "dirty" }
+        val reloadIdx = events.indexOfFirst { it == "reload" }
+        assertTrue(dirtyIdx >= 0, "dirty event must be recorded")
+        assertTrue(reloadIdx >= 0, "reload event must be recorded")
+        assertTrue(dirtyIdx < reloadIdx,
+            "dirty must precede reload, got ordering: $events")
 
         watcher.close()
     }
