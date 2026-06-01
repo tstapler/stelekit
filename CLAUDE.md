@@ -8,6 +8,8 @@ SteleKit is a Kotlin Multiplatform (KMP) migration of Logseq — a Markdown-base
 
 ## Build & Run Commands
 
+**Always use `./gradlew`, never the system `gradle` command.** The wrapper pins Gradle 9.5.0; the system install is 9.3.1 and cannot share daemons with wrapper builds — using it silently doubles the daemon count and memory footprint.
+
 ```bash
 # Run desktop app
 ./gradlew run
