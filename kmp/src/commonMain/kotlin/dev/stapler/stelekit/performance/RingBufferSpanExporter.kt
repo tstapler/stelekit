@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.performance
 
+import dev.stapler.stelekit.cache.PlatformLock
+import dev.stapler.stelekit.cache.withLock
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -22,7 +24,7 @@ data class SerializedSpan(
  * on different threads (backgroundIndexDispatcher, DatabaseWriteActor coroutine, UI frame loop)
  * can all call [record] concurrently without corruption or ConcurrentModificationException.
  *
- * On wasmJs (single-threaded) the synchronized block is a no-op.
+ * On wasmJs (single-threaded) [PlatformLock] is a no-op.
  *
  * When capacity is exceeded the oldest entry is dropped.
  *
@@ -31,25 +33,25 @@ data class SerializedSpan(
  */
 class RingBufferSpanExporter(val capacity: Int = 1000) {
     @kotlin.concurrent.Volatile var enabled: Boolean = false
-    private val lock = Any()
+    private val lock = PlatformLock()
     private val buffer = ArrayDeque<SerializedSpan>(capacity)
 
     fun record(span: SerializedSpan) {
         if (!enabled) return
-        synchronized(lock) {
+        lock.withLock {
             if (buffer.size >= capacity) buffer.removeFirst()
             buffer.addLast(span)
         }
     }
 
-    fun snapshot(): List<SerializedSpan> = synchronized(lock) { buffer.toList() }
+    fun snapshot(): List<SerializedSpan> = lock.withLock { buffer.toList() }
 
     /** Returns all buffered spans and clears the buffer. */
-    fun drain(): List<SerializedSpan> = synchronized(lock) {
+    fun drain(): List<SerializedSpan> = lock.withLock {
         val all = buffer.toList()
         buffer.clear()
         all
     }
 
-    fun clear() = synchronized(lock) { buffer.clear() }
+    fun clear() = lock.withLock { buffer.clear() }
 }
