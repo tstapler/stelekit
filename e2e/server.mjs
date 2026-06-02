@@ -33,6 +33,8 @@ http.createServer((req, res) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  // Prevent HTTP cache from serving stale JS/WASM during development.
+  res.setHeader('Cache-Control', 'no-store');
 
   fs.readFile(filePath, (err, data) => {
     if (err) {

@@ -27,7 +27,7 @@ class DemoFileSystem : FileSystem {
             - Your notes stay in plain Markdown files. No proprietary format.
             - Navigate to [[Getting Started]] to see how the outliner works.
         """.trimIndent(),
-        "pages/getting-started.md" to """
+        "pages/Getting Started.md" to """
             - SteleKit is a local-first outliner
               - Everything is a block
               - Blocks nest to any depth
@@ -42,7 +42,7 @@ class DemoFileSystem : FileSystem {
               - Type `[[page name]]` to link to any page
               - Backlinks are tracked automatically — see [[Backlinks Demo]]
         """.trimIndent(),
-        "pages/backlinks-demo.md" to """
+        "pages/Backlinks Demo.md" to """
             - This page demonstrates bidirectional linking
             - [[Getting Started]] links here, so it appears in the backlinks panel
               - Open [[Getting Started]] and look for the Backlinks section on the right
@@ -62,15 +62,17 @@ class DemoFileSystem : FileSystem {
     override fun writeFile(path: String, content: String): Boolean = true
 
     override fun listFiles(path: String): List<String> {
+        // Return file NAMES only (not full paths) — callers reconstruct "$path/$name" themselves.
         val prefix = path.removePrefix("/demo/").let { if (it.isEmpty()) "" else "$it/" }
         return demoFiles.keys
             .filter { if (prefix.isEmpty()) true else it.startsWith(prefix) }
-            .map { "/demo/$it" }
+            .map { it.removePrefix(prefix) }
     }
 
     override fun listDirectories(path: String): List<String> {
+        // Return directory NAMES only — callers construct full paths themselves.
         return if (path == "/demo" || path == "/demo/") {
-            listOf("/demo/journals", "/demo/pages")
+            listOf("journals", "pages")
         } else emptyList()
     }
 
