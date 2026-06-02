@@ -36,7 +36,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import arrow.atomic.Atomic
 import arrow.atomic.AtomicBoolean
+import arrow.atomic.getAndUpdate
+import arrow.atomic.value
 import kotlin.math.sqrt
 
 /**
@@ -246,7 +249,10 @@ class AnnotationEditorViewModel(
     // redoStack holds states available for redo after an undo.
     private val redoStack = ArrayDeque<AnnotationEditorState>(maxHistory)
 
-    private val calibrationHistory = mutableListOf<CalibrationSnapshot>()
+    // Single-entry calibration undo history. Written from Dispatchers.Default (updateCalibration)
+    // and read from the main thread (undoCalibration), so an Atomic reference is used for
+    // thread safety without introducing JVM-only types (CopyOnWriteArrayList is JVM-only).
+    private val calibrationHistory = Atomic<CalibrationSnapshot?>(null)
 
     private val _canUndoCalibration = MutableStateFlow(false)
     val canUndoCalibration: StateFlow<Boolean> = _canUndoCalibration.asStateFlow()
@@ -567,14 +573,12 @@ class AnnotationEditorViewModel(
     fun updateCalibration(newCalibration: Calibration) {
         val st = _state.value
 
-        // Push current state to calibration history for undo
-        val currentSt = _state.value
-        if (currentSt.calibration != null && currentSt.calibration.method != CalibrationMethod.NONE) {
-            calibrationHistory.add(CalibrationSnapshot(
-                calibration = currentSt.calibration,
-                annotations = currentSt.committedAnnotations,
-            ))
-            if (calibrationHistory.size > 1) calibrationHistory.removeAt(0) // keep only one snapshot
+        // Push current state to calibration history for undo (single-entry — keeps most recent only)
+        if (st.calibration != null && st.calibration.method != CalibrationMethod.NONE) {
+            calibrationHistory.value = CalibrationSnapshot(
+                calibration = st.calibration,
+                annotations = st.committedAnnotations,
+            )
             _canUndoCalibration.value = true
         }
 
@@ -608,8 +612,8 @@ class AnnotationEditorViewModel(
 
     @OptIn(DirectRepositoryWrite::class)
     fun undoCalibration() {
-        val snapshot = calibrationHistory.removeLastOrNull() ?: return
-        _canUndoCalibration.value = calibrationHistory.isNotEmpty()
+        val snapshot = calibrationHistory.getAndUpdate { null } ?: return
+        _canUndoCalibration.value = false
         _state.update { it.copy(
             calibration = snapshot.calibration,
             committedAnnotations = snapshot.annotations,
@@ -775,6 +779,7 @@ class AnnotationEditorViewModel(
     // ── External measurement device (Story 5.7) ──────────────────────────────
 
     /** Currently active external measurement device (BLE laser, keyboard, USB). */
+    @Volatile
     private var activeDevice: ExternalMeasurementDevice? = null
 
     /**
@@ -909,7 +914,6 @@ class AnnotationEditorViewModel(
      */
     fun close() {
         depthCoordinator.close()
-        scope.launch { /* drain */ }.cancel()
         scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
     }
 }

@@ -114,11 +114,12 @@ fun BleDevicePanel(
     onReadingAccept: (Double) -> Unit,
 ) {
     var panelState by remember { mutableStateOf<BleDevicePanelState>(BleDevicePanelState.Scanning) }
+    var retryCount by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        delay(300)
+    LaunchedEffect(retryCount) {
         panelState = BleDevicePanelState.Scanning
+        delay(300)
 
         val collectedDevices = mutableListOf<ExternalMeasurementDevice>()
         val result = withTimeoutOrNull(10_000L) {
@@ -180,7 +181,7 @@ fun BleDevicePanel(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { panelState = BleDevicePanelState.Scanning }) {
+                        OutlinedButton(onClick = { retryCount++ }) {
                             Text("Try Again")
                         }
                         TextButton(onClick = onUseDrawMethod) {

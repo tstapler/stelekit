@@ -226,6 +226,9 @@ internal fun ScreenRouter(
                         imageAnnotationRepository = repos.imageAnnotationRepository,
                     )
                 }
+                DisposableEffect(annotationEditorViewModel) {
+                    onDispose { annotationEditorViewModel.close() }
+                }
                 // Collect the annotation reactively; initialize the viewModel once on first non-null load.
                 var initialized by remember(imageAnnotationUuid) { mutableStateOf(false) }
                 var resolvedAnnotation by remember(imageAnnotationUuid) {

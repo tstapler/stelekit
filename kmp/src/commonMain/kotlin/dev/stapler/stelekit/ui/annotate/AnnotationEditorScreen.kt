@@ -200,19 +200,16 @@ fun AnnotationEditorScreen(
 
     LaunchedEffect(state.committedAnnotations.size) {
         if (state.committedAnnotations.isNotEmpty()) hasUnsavedChanges = true
+        if (state.committedAnnotations.size == 1 &&
+            state.committedAnnotations.first().annotationType == dev.stapler.stelekit.model.AnnotationType.DISTANCE &&
+            coachMarksShown == 1) {
+            showAreaCoachMark = true
+        }
     }
 
     LaunchedEffect(viewModel.isCalibrated()) {
         if (viewModel.isCalibrated() && state.committedAnnotations.isEmpty() && coachMarksShown == 0) {
             showDistanceCoachMark = true
-        }
-    }
-
-    LaunchedEffect(state.committedAnnotations.size) {
-        if (state.committedAnnotations.size == 1 &&
-            state.committedAnnotations.first().annotationType == dev.stapler.stelekit.model.AnnotationType.DISTANCE &&
-            coachMarksShown == 1) {
-            showAreaCoachMark = true
         }
     }
 
@@ -429,7 +426,10 @@ fun AnnotationEditorScreen(
                         showCalibrationSheet = true
                     }
                 },
-                onUnitSelect = { /* TODO: wire unit change through viewModel */ },
+                // TODO: add viewModel.setDisplayUnit(unit) when the ViewModel supports unit changes.
+                // Until then this is intentionally a no-op — the unit dropdown is visible but
+                // selecting a unit has no effect. The unit shown reflects imageAnnotation.unit only.
+                onUnitSelect = {},
                 showLabels = showToolLabels,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -537,9 +537,16 @@ fun AnnotationEditorScreen(
                     showBleDevicePanel = false
                     viewModel.selectTool(AnnotationTool.GRID_REF)
                 },
-                onReadingAccept = { _ ->
+                onReadingAccept = { valueMeters ->
                     showBleDevicePanel = false
-                    // The BLE reading updates will be handled by the active device flow
+                    // TODO: BleDevicePanel manages its own device connection internally and does not
+                    // call viewModel.setActiveDevice(device) before accepting a reading. As a result,
+                    // viewModel.injectMeasurementFromDevice() cannot be called here — it would find
+                    // no active device and be a no-op.
+                    // Full fix requires BleDevicePanel to expose the connected ExternalMeasurementDevice
+                    // in its onReadingAccept callback (change signature to (ExternalMeasurementDevice, Double))
+                    // so the caller can do: viewModel.setActiveDevice(device); viewModel.injectMeasurementFromDevice()
+                    // For now the reading (valueMeters=$valueMeters) is discarded — a known limitation.
                 },
             )
         }
@@ -1013,7 +1020,9 @@ internal fun GridRefCalibrationDialog(
                             expanded = unitMenuExpanded,
                             onDismissRequest = { unitMenuExpanded = false },
                         ) {
-                            MeasurementUnit.entries.forEach { unit ->
+                            // FEET_INCHES is excluded: the dialog only accepts decimal input,
+                            // not the compound "N' M\"" format that FEET_INCHES implies.
+                            MeasurementUnit.entries.filter { it != MeasurementUnit.FEET_INCHES }.forEach { unit ->
                                 DropdownMenuItem(
                                     text = { Text(unit.symbol()) },
                                     onClick = {
