@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.36.0](https://github.com/tstapler/stelekit/compare/v0.35.1...v0.36.0) (2026-06-02)
+
+
+### Features
+
+* **ui:** add reload-from-disk button + fix stale page reads + fix fdroid 404 ([c05854b](https://github.com/tstapler/stelekit/commit/c05854b23dd18483400c87dbabcf9ba9b5d63a5a))
+
+
+### Bug Fixes
+
+* **db:** replace mtime guard with watcher-driven dirty set for cache invalidation ([443c4e1](https://github.com/tstapler/stelekit/commit/443c4e1d4971b86939fec829f77f8ec0f799e5ec))
+
 ## [0.35.1](https://github.com/tstapler/stelekit/compare/v0.35.0...v0.35.1) (2026-06-01)
 
 
