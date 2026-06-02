@@ -33,10 +33,13 @@ jobs:
       - name: Install fdroidserver
         run: |
           sudo apt-get install -y aapt zipalign
-          # uv is pre-installed on ubuntu-latest. Sync the fdroid uv project from
-          # the lockfile so CI and local dev use identical dependency versions.
-          # Locally: uv run --directory fdroid fdroid update --create-metadata
-          uv sync --directory fdroid --frozen
+          # Ensure uv is available (pre-installed on ubuntu-latest; install via
+          # pip3 as fallback if the runner image is older).
+          command -v uv >/dev/null 2>&1 || pip3 install --user uv
+          # Sync the fdroid uv project from the lockfile so CI and local dev use
+          # identical dependency versions.
+          # Local equivalent: uv run --directory fdroid fdroid update --create-metadata
+          uv sync --directory fdroid
 
       - name: Restore fdroid repo signing keystore
         env:
