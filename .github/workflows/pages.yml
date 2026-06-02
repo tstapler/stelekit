@@ -61,8 +61,10 @@ jobs:
         run: test -d kmp/build/dist/wasmJs/productionExecutable/
       - name: Assert no single file exceeds 90 MB
         run: |
-          find kmp/build/dist/wasmJs/productionExecutable -type f -size +90M \
-            -exec echo "FILE TOO LARGE: {}" \; | grep . && exit 1 || true
+          if find kmp/build/dist/wasmJs/productionExecutable -type f -size +90M | grep -q .; then
+            find kmp/build/dist/wasmJs/productionExecutable -type f -size +90M -exec echo "FILE TOO LARGE: {}" \;
+            exit 1
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
