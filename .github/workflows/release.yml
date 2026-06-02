@@ -547,15 +547,31 @@ jobs:
             ---
             _Full changelog is auto-generated below._
 
-  # ── F-Droid repo update ────────────────────────────────────────────────────
+  # ── F-Droid index build ────────────────────────────────────────────────────
   # Called directly after github-release because GITHUB_TOKEN-triggered events
   # (gh release edit --draft=false) cannot fire the release: [published] trigger
   # in fdroid.yml — GitHub blocks cross-workflow events from GITHUB_TOKEN.
-  update-fdroid-pages:
-    name: Update F-Droid Repo
+  #
+  # fdroid.yml uploads the fdroid-content artifact; deploy-pages (below) downloads
+  # it and assembles+deploys the site in a single pass — no duplicate site build.
+  update-fdroid:
+    name: Build F-Droid Index
     needs: [github-release]
     if: ${{ always() && needs.github-release.result == 'success' }}
     uses: ./.github/workflows/fdroid.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets: inherit
+
+  # ── Site deploy (with fresh F-Droid index) ────────────────────────────────
+  # Runs after fdroid.yml so pages.yml finds the fdroid-content artifact in the
+  # current run (reusable workflows share the parent run's artifact space).
+  deploy-pages:
+    name: Deploy Site
+    needs: [update-fdroid]
+    if: ${{ always() && needs.update-fdroid.result == 'success' }}
+    uses: ./.github/workflows/pages.yml
     permissions:
       contents: read
       pages: write

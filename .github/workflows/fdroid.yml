@@ -1,15 +1,13 @@
 name: F-Droid Repo Update
 
 on:
-  # Trigger only when a release is actually published so we don't run on every
-  # push to main. workflow_run fired on every Release workflow completion (most
-  # of which just update the release PR without publishing), flooding the pages
-  # concurrency queue and causing most runs to be cancelled.
+  # Direct trigger when a release is published. Note: GITHUB_TOKEN-triggered
+  # release events cannot fire other workflows, so release.yml also calls this
+  # directly via workflow_call after publishing.
   release:
     types: [published]
   workflow_dispatch:
-  # Called directly from release.yml after the GitHub release is published,
-  # because GITHUB_TOKEN-triggered events cannot fire other workflows.
+  # Called from release.yml after the GitHub release is published.
   workflow_call:
 
 concurrency:
@@ -18,17 +16,13 @@ concurrency:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
   actions: read
 
 jobs:
   update-fdroid:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'release' || github.event_name == 'workflow_call'
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - uses: actions/checkout@v4
@@ -42,29 +36,31 @@ jobs:
         env:
           FDROID_KEYSTORE_BASE64: ${{ secrets.FDROID_KEYSTORE_BASE64 }}
         run: |
-          echo "$FDROID_KEYSTORE_BASE64" | base64 -d > fdroid/keystore.p12
+          [ -n "$FDROID_KEYSTORE_BASE64" ] || { echo "FDROID_KEYSTORE_BASE64 is unset"; exit 1; }
+          echo "$FDROID_KEYSTORE_BASE64" | base64 -d > /tmp/fdroid-keystore.p12
+          [ -s /tmp/fdroid-keystore.p12 ] || { echo "Keystore decoded to empty file"; exit 1; }
 
       - name: Append keystore credentials to fdroid config
         env:
           FDROID_KEY_PASS: ${{ secrets.FDROID_KEY_PASS }}
           FDROID_STORE_PASS: ${{ secrets.FDROID_STORE_PASS }}
         run: |
-          cat >> fdroid/config.yml <<EOF
-          keystore: keystore.p12
-          keystorepass: ${FDROID_STORE_PASS}
-          keypass: ${FDROID_KEY_PASS}
-          EOF
+          printf 'keystore: /tmp/fdroid-keystore.p12\nkeystorepass: %s\nkeypass: %s\n' \
+            "$FDROID_STORE_PASS" "$FDROID_KEY_PASS" >> fdroid/config.yml
 
       - name: Download signed APKs from all releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p fdroid/repo
-          gh release list --limit 100 --json tagName --jq '.[].tagName' | while read -r tag; do
+          DOWNLOADED=0
+          while IFS= read -r tag; do
             gh release download "$tag" \
               --pattern "SteleKit-*-android.apk" \
-              --dir fdroid/repo/ || true
-          done
+              --dir fdroid/repo/ 2>/dev/null && DOWNLOADED=$((DOWNLOADED + 1)) || true
+          done < <(gh release list --limit 100 --json tagName --jq '.[].tagName')
+          echo "Downloaded $DOWNLOADED APK(s)"
+          [ "$DOWNLOADED" -gt 0 ] || { echo "No APKs downloaded — refusing to publish empty F-Droid repo"; exit 1; }
 
       - name: Seed repo icon
         run: |
@@ -75,53 +71,14 @@ jobs:
         working-directory: fdroid
         run: fdroid update --create-metadata --verbose
 
-      - name: Download last Wasm demo artifact
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          LAST_RUN=$(gh run list --workflow pages.yml --status success --limit 1 \
-            --json databaseId --jq '.[0].databaseId // empty')
-          if [ -n "$LAST_RUN" ]; then
-            gh run download "$LAST_RUN" --name demo-dist --dir site/public/demo/ || true
-          fi
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: site/package-lock.json
-
-      - name: Build Astro site
-        working-directory: site
-        run: |
-          npm ci
-          # Expose the demo iframe only when the demo files were actually downloaded.
-          DEMO_AVAILABLE=$(test -f public/demo/index.html && echo true || echo false)
-          DEMO_AVAILABLE=$DEMO_AVAILABLE npm run build
-
-      - name: Merge fdroid repo into site output
-        run: |
-          mkdir -p site/dist/fdroid
-          cp -r fdroid/repo site/dist/fdroid/
-          if [ -d fdroid/archive ]; then
-            cp -r fdroid/archive site/dist/fdroid/
-          fi
-
-      - name: Upload fdroid content as artifact
+      - name: Upload fdroid content
         uses: actions/upload-artifact@v4
         with:
           name: fdroid-content
           path: |
             fdroid/repo
             fdroid/archive
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 90
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site/dist/
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      # Pages deployment is handled by pages.yml, which downloads this artifact
+      # and assembles the full site in a single build+deploy step.

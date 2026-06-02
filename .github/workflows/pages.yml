@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # Called from release.yml after fdroid.yml uploads its artifact, so that the
+  # Pages deploy picks up the fresh F-Droid index without a separate site build.
+  workflow_call:
 
 permissions:
   contents: read
@@ -27,6 +30,12 @@ jobs:
         # Use the full push range (github.event.before → HEAD) so multi-commit pushes
         # don't miss changes that landed in earlier commits of the same push.
         run: |
+          # On workflow_call (release deploy), skip the expensive Wasm rebuild.
+          # The release has already been tested; the last artifact is current enough.
+          if [ "${{ github.event_name }}" = "workflow_call" ]; then
+            echo "kmp=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           BEFORE="${{ github.event.before }}"
           # All-zeros SHA means initial branch push — assume kmp changed to be safe
           if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
@@ -94,6 +103,8 @@ jobs:
     if: always() && (needs.build-demo.result == 'success' || needs.build-demo.result == 'skipped')
     steps:
       - uses: actions/checkout@v4
+
+      # ── Demo artifact ─────────────────────────────────────────────────────
       # Try current run first (when build-demo ran); fall back to last successful run
       # so site-only edits keep the previously-built demo live.
       - id: download-demo
@@ -126,20 +137,22 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ github.token }}
-      - uses: actions/configure-pages@v5
-      - uses: actions/setup-node@v4
+
+      # ── F-Droid content ───────────────────────────────────────────────────
+      # Primary: current run — present when fdroid.yml ran before us in the same
+      # release.yml workflow (artifacts are shared across reusable workflow calls
+      # within the same parent run).
+      - id: download-fdroid
+        name: Download fdroid content (current run)
+        uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: site/package-lock.json
-      - run: npm ci
-        working-directory: site
-      - run: npm run build
-        working-directory: site
-        env:
-          # True when demo files are present from either current run or fallback
-          DEMO_AVAILABLE: ${{ steps.download-demo.outcome == 'success' || steps.download-demo-fallback.outcome == 'success' }}
-      - name: Restore fdroid content from last successful fdroid run
+          name: fdroid-content
+          path: fdroid-content/
+      # Fallback: restore from the most recent successful fdroid.yml run.
+      - id: download-fdroid-fallback
+        name: Restore fdroid content (last successful fdroid run)
+        if: steps.download-fdroid.outcome == 'failure'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -148,17 +161,42 @@ jobs:
             --json databaseId --jq '.[0].databaseId // empty')
           if [ -n "$LAST_RUN" ]; then
             gh run download "$LAST_RUN" --name fdroid-content --dir fdroid-content/ || true
-            if [ -d fdroid-content/fdroid/repo ]; then
-              mkdir -p site/dist/fdroid
-              cp -r fdroid-content/fdroid/repo site/dist/fdroid/
-              if [ -d fdroid-content/fdroid/archive ]; then
-                cp -r fdroid-content/fdroid/archive site/dist/fdroid/
-              fi
-              echo "Restored fdroid content from run $LAST_RUN"
-            fi
+            [ -d fdroid-content/fdroid/repo ] && \
+              echo "Restored fdroid-content from run $LAST_RUN" || \
+              echo "Artifact present but fdroid/repo missing in run $LAST_RUN"
           else
             echo "No previous successful fdroid run found; fdroid content will be absent"
           fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - name: Install site dependencies
+        run: npm ci
+        working-directory: site
+      - name: Build Astro site
+        run: npm run build
+        working-directory: site
+        env:
+          # True when demo files are present from either current run or fallback
+          DEMO_AVAILABLE: ${{ steps.download-demo.outcome == 'success' || steps.download-demo-fallback.outcome == 'success' }}
+
+      - name: Merge fdroid content into site output
+        run: |
+          if [ -d fdroid-content/fdroid/repo ]; then
+            mkdir -p site/dist/fdroid
+            cp -r fdroid-content/fdroid/repo site/dist/fdroid/
+            if [ -d fdroid-content/fdroid/archive ]; then
+              cp -r fdroid-content/fdroid/archive site/dist/fdroid/
+            fi
+            echo "F-Droid content merged into site output"
+          else
+            echo "No fdroid content available; /fdroid/repo will be absent from the deploy"
+          fi
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site/dist/
