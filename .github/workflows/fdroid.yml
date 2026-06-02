@@ -78,7 +78,8 @@ jobs:
         # (ResParserError: res1 must be zero!, KeyError: 'resources.arsc').
         # Pre-scan and remove them so fdroid update doesn't abort entirely.
         # Locally: uv run --directory fdroid python3 fdroid/scan_apks.py fdroid/repo/
-        run: uv run --directory fdroid python3 fdroid/scan_apks.py fdroid/repo/
+        # Paths are relative to fdroid/ because --directory changes cwd there.
+        run: uv run --directory fdroid python3 scan_apks.py repo/
 
       - name: Seed repo icon
         run: |
