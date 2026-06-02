@@ -122,14 +122,15 @@ fun BleDevicePanel(
         delay(300)
 
         val collectedDevices = mutableListOf<ExternalMeasurementDevice>()
-        val result = withTimeoutOrNull(10_000L) {
+        withTimeoutOrNull(10_000L) {
             MeasurementDeviceRegistry.getAllDevices().collect { device ->
                 collectedDevices.add(device)
                 panelState = BleDevicePanelState.DevicesFound(collectedDevices.toList())
             }
         }
 
-        if (result == null && collectedDevices.isEmpty()) {
+        // Transition to NoDevicesFound if we have nothing — covers both timeout and empty-flow cases
+        if (collectedDevices.isEmpty()) {
             panelState = BleDevicePanelState.NoDevicesFound
         }
     }

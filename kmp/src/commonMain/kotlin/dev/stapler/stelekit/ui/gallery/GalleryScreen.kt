@@ -116,7 +116,7 @@ fun GalleryScreen(
             }
             state.images.isEmpty() -> {
                 GalleryEmptyState(
-                    onCapturePhoto = { onImportImage?.invoke() ?: run { /* no-op if not wired */ } },
+                    onCapturePhoto = onImportImage,
                     onImportPhoto = null, // photo picker wiring is future work
                     modifier = Modifier.fillMaxSize(),
                 )

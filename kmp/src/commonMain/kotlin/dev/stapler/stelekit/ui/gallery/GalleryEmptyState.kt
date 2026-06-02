@@ -30,12 +30,13 @@ import androidx.compose.ui.unit.dp
 /**
  * Empty-state composable displayed in [GalleryScreen] when no annotated images exist yet.
  *
- * Shows a camera icon, explanatory copy, a primary "Capture Photo" button, and an optional
- * "Import from Gallery" text button when [onImportPhoto] is non-null.
+ * Shows a camera icon, explanatory copy, an optional "Capture Photo" button when
+ * [onCapturePhoto] is non-null (i.e. camera is available on this platform/configuration),
+ * and an optional "Import from Gallery" text button when [onImportPhoto] is non-null.
  */
 @Composable
 fun GalleryEmptyState(
-    onCapturePhoto: () -> Unit,
+    onCapturePhoto: (() -> Unit)?,
     onImportPhoto: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
@@ -73,14 +74,16 @@ fun GalleryEmptyState(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            Button(onClick = onCapturePhoto) {
-                Icon(
-                    imageVector = Icons.Default.CameraAlt,
-                    contentDescription = null,
-                    modifier = Modifier.size(ButtonDefaults.IconSize),
-                )
-                Spacer(modifier = Modifier.size(ButtonDefaults.IconSpacing))
-                Text("Capture Photo")
+            if (onCapturePhoto != null) {
+                Button(onClick = onCapturePhoto) {
+                    Icon(
+                        imageVector = Icons.Default.CameraAlt,
+                        contentDescription = null,
+                        modifier = Modifier.size(ButtonDefaults.IconSize),
+                    )
+                    Spacer(modifier = Modifier.size(ButtonDefaults.IconSpacing))
+                    Text("Capture Photo")
+                }
             }
 
             if (onImportPhoto != null) {
