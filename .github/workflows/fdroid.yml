@@ -57,9 +57,11 @@ jobs:
           mkdir -p fdroid/repo
           DOWNLOADED=0
           while IFS= read -r tag; do
-            gh release download "$tag" \
+            if gh release download "$tag" \
               --pattern "SteleKit-*-android.apk" \
-              --dir fdroid/repo/ 2>/dev/null && DOWNLOADED=$((DOWNLOADED + 1)) || true
+              --dir fdroid/repo/ 2>/dev/null; then
+              DOWNLOADED=$((DOWNLOADED + 1))
+            fi
           done < <(gh release list --limit 100 --json tagName --jq '.[].tagName')
           echo "Downloaded $DOWNLOADED APK(s)"
           [ "$DOWNLOADED" -gt 0 ] || { echo "No APKs downloaded — refusing to publish empty F-Droid repo"; exit 1; }
