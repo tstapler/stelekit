@@ -128,7 +128,7 @@ fun SearchDialog(
                                     if (onPageSelected != null) {
                                         onPageSelected(item.page.name)
                                     } else {
-                                        onNavigateToPage(item.page.uuid)
+                                        onNavigateToPage(item.page.uuid.value)
                                     }
                                     onDismiss()
                                 }
@@ -136,12 +136,12 @@ fun SearchDialog(
                                     if (onPageSelected != null) {
                                         onPageSelected(item.page.name)
                                     } else {
-                                        onNavigateToPage(item.page.uuid)
+                                        onNavigateToPage(item.page.uuid.value)
                                     }
                                     onDismiss()
                                 }
                                 is SearchResultItem.BlockItem -> {
-                                    onNavigateToBlock(item.block.uuid)
+                                    onNavigateToBlock(item.block.uuid.value)
                                     onDismiss()
                                 }
                                 is SearchResultItem.CreatePageItem -> {
@@ -242,7 +242,7 @@ fun SearchDialog(
                                         if (onPageSelected != null) {
                                             onPageSelected(page.page.name)
                                         } else {
-                                            onNavigateToPage(page.page.uuid)
+                                            onNavigateToPage(page.page.uuid.value)
                                         }
                                         onDismiss()
                                     }
@@ -291,7 +291,7 @@ fun SearchDialog(
                                                             if (onPageSelected != null) {
                                                                 onPageSelected(item.page.name)
                                                             } else {
-                                                                onNavigateToPage(item.page.uuid)
+                                                                onNavigateToPage(item.page.uuid.value)
                                                             }
                                                             onDismiss()
                                                         }
@@ -306,7 +306,7 @@ fun SearchDialog(
                                                             if (onPageSelected != null) {
                                                                 onPageSelected(item.page.name)
                                                             } else {
-                                                                onNavigateToPage(item.page.uuid)
+                                                                onNavigateToPage(item.page.uuid.value)
                                                             }
                                                             onDismiss()
                                                         }
@@ -320,7 +320,7 @@ fun SearchDialog(
                                                         snippet = item.snippet,
                                                         isSelected = index == selectedIndex,
                                                         onClick = {
-                                                            onNavigateToBlock(item.block.uuid)
+                                                            onNavigateToBlock(item.block.uuid.value)
                                                             onDismiss()
                                                         }
                                                     )

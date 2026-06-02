@@ -98,7 +98,7 @@ class AllPagesViewModel(
     }
 
     fun selectAll() {
-        _selectedUuids.update { pages.value.map { it.page.uuid }.toSet() }
+        _selectedUuids.update { pages.value.map { it.page.uuid.value }.toSet() }
     }
 
     fun clearSelection() {

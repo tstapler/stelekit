@@ -12,7 +12,9 @@ import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.repository.InMemoryPropertyRepository
@@ -90,15 +92,15 @@ class DryRunTest {
     }
 
     private fun makePage(uuid: String, name: String) = Page(
-        uuid = uuid,
+        uuid = PageUuid(uuid),
         name = name,
         createdAt = now,
         updatedAt = now,
     )
 
     private fun makeBlock(uuid: String, pageUuid: String, content: String, position: Int = 0) = Block(
-        uuid = uuid,
-        pageUuid = pageUuid,
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid(pageUuid),
         content = content,
         position = position,
         createdAt = now,
@@ -182,7 +184,7 @@ class DryRunTest {
             checksumBody = "dry-run-destructive-body"
             allowDestructive = true
             apply {
-                forBlocks(where = { it.uuid == "block-uuid-destroy-1234" }) {
+                forBlocks(where = { it.uuid.value == "block-uuid-destroy-1234" }) {
                     deleteBlock()
                 }
             }

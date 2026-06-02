@@ -2,6 +2,8 @@ package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -122,7 +124,7 @@ class UndoManager(
             OperationLogger.OpType.INSERT_BLOCK.name -> {
                 // Undo of insert = delete
                 val after = payload.after ?: return
-                writeActor.deleteBlock(after.uuid).onLeft { e ->
+                writeActor.deleteBlock(BlockUuid(after.uuid)).onLeft { e ->
                     logger.error("UndoManager: failed to delete block ${after.uuid}: ${e.message}")
                 }
             }
@@ -165,7 +167,7 @@ class UndoManager(
             }
             OperationLogger.OpType.DELETE_BLOCK.name -> {
                 val before = payload.before ?: return
-                writeActor.deleteBlock(before.uuid)
+                writeActor.deleteBlock(BlockUuid(before.uuid))
             }
             else -> { /* structural markers */ }
         }
@@ -190,8 +192,8 @@ class UndoManager(
     private fun snapshotToBlock(snapshot: OperationLogger.BlockSnapshot, pageUuid: String): Block {
         val now = Clock.System.now()
         return Block(
-            uuid = snapshot.uuid,
-            pageUuid = pageUuid,
+            uuid = BlockUuid(snapshot.uuid),
+            pageUuid = PageUuid(pageUuid),
             content = snapshot.content,
             position = snapshot.position,
             parentUuid = snapshot.parentUuid,

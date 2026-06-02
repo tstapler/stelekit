@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.migration
 
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.repository.RepositorySet
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
@@ -354,7 +355,7 @@ class MigrationRunner(
                 is BlockChange.UpsertPageProperty -> dest.add(change.pageUuid)
                 is BlockChange.DeletePageProperty -> dest.add(change.pageUuid)
                 is BlockChange.RenamePage -> dest.add(change.pageUuid)
-                is BlockChange.InsertBlock -> dest.add(change.block.pageUuid)
+                is BlockChange.InsertBlock -> dest.add(change.block.pageUuid.value)
                 is BlockChange.DeletePage -> { /* page deleted — nothing to flush */ }
                 is BlockChange.UpsertProperty -> resolveBlockPageUuid(change.blockUuid, repoSet, dest)
                 is BlockChange.DeleteProperty -> resolveBlockPageUuid(change.blockUuid, repoSet, dest)
@@ -369,7 +370,7 @@ class MigrationRunner(
         repoSet: RepositorySet,
         dest: MutableSet<String>,
     ) {
-        val block = repoSet.blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
-        if (block != null) dest.add(block.pageUuid)
+        val block = repoSet.blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull()
+        if (block != null) dest.add(block.pageUuid.value)
     }
 }

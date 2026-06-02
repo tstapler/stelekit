@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
@@ -47,7 +48,7 @@ class FileSystemCallCountTest {
     private val graphPath = "/tmp/fs-count-test-graph"
 
     private fun makePage(filePath: String? = "$graphPath/pages/fs-count-test-page.md") = Page(
-        uuid = pageUuid,
+        uuid = PageUuid(pageUuid),
         name = "FS Count Test Page",
         filePath = filePath,
         createdAt = now,

@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.search
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.repository.BlockReadRepository
 import dev.stapler.stelekit.repository.BlockWithDepth
 import kotlinx.coroutines.flow.firstOrNull
@@ -70,7 +71,7 @@ class VectorSearch(
         rootUuid: String,
         limit: Int = 10
     ): List<Pair<Block, Double>> {
-        val hierarchyResult = blockRepository.getBlockHierarchy(rootUuid).firstOrNull()
+        val hierarchyResult = blockRepository.getBlockHierarchy(BlockUuid(rootUuid)).firstOrNull()
         val blocks = hierarchyResult?.getOrNull()?.map { it.block } ?: return emptyList()
         return search(query, blocks, limit)
     }

@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.ParsedBlock
 import dev.stapler.stelekit.model.ParsedPage
 import dev.stapler.stelekit.model.toDiscriminatorString
@@ -86,7 +88,7 @@ object MarkdownPageParser {
         val createdAt = existingPage?.createdAt ?: updatedAt
 
         var page = Page(
-            uuid = existingPage?.uuid ?: UuidGenerator.generateV7(),
+            uuid = existingPage?.uuid ?: PageUuid(UuidGenerator.generateV7()),
             name = name,
             createdAt = createdAt,
             updatedAt = updatedAt,
@@ -123,20 +125,21 @@ object MarkdownPageParser {
     fun processParsedBlocks(
         parsedBlocks: List<ParsedBlock>,
         pagePath: String,
-        pageUuid: String,
+        pageUuid: PageUuid,
         parentUuid: String?,
         baseLevel: Int,
         now: Instant,
         destinationList: MutableList<Block>,
         mode: ParseMode,
-        existingVersions: Map<String, Long> = emptyMap(),
-        existingContent: Map<String, String> = emptyMap(),
+        existingVersions: Map<BlockUuid, Long> = emptyMap(),
+        existingContent: Map<BlockUuid, String> = emptyMap(),
         sidecarMap: Map<String, SidecarManager.SidecarEntry>? = null,
     ) {
         var previousSiblingUuid: String? = null
 
         parsedBlocks.forEachIndexed { index, parsedBlock ->
-            val blockUuid = generateUuid(parsedBlock, pagePath, index, parentUuid, sidecarMap)
+            val blockUuidStr = generateUuid(parsedBlock, pagePath, index, parentUuid, sidecarMap)
+            val blockUuid = BlockUuid(blockUuidStr)
             val currentVersion = existingVersions[blockUuid] ?: 0L
             val oldContent = existingContent[blockUuid]
 
@@ -162,14 +165,14 @@ object MarkdownPageParser {
             )
 
             destinationList.add(block)
-            previousSiblingUuid = blockUuid
+            previousSiblingUuid = blockUuidStr
 
             if (parsedBlock.children.isNotEmpty()) {
                 processParsedBlocks(
                     parsedBlocks = parsedBlock.children,
                     pagePath = pagePath,
                     pageUuid = pageUuid,
-                    parentUuid = blockUuid,
+                    parentUuid = blockUuidStr,
                     baseLevel = baseLevel + 1,
                     now = now,
                     destinationList = destinationList,
@@ -191,14 +194,15 @@ object MarkdownPageParser {
     fun createStubBlocks(
         parsedBlocks: List<ParsedBlock>,
         pagePath: String,
-        pageUuid: String,
+        pageUuid: PageUuid,
         parentUuid: String?,
         baseLevel: Int,
         now: Instant,
         destination: MutableList<Block>
     ) {
         parsedBlocks.forEachIndexed { index, parsedBlock ->
-            val blockUuid = generateUuid(parsedBlock, pagePath, index, parentUuid)
+            val blockUuidStr = generateUuid(parsedBlock, pagePath, index, parentUuid)
+            val blockUuid = BlockUuid(blockUuidStr)
 
             destination.add(
                 Block(
@@ -218,7 +222,7 @@ object MarkdownPageParser {
             )
 
             if (parsedBlock.children.isNotEmpty()) {
-                createStubBlocks(parsedBlock.children, pagePath, pageUuid, blockUuid, baseLevel + 1, now, destination)
+                createStubBlocks(parsedBlock.children, pagePath, pageUuid, blockUuidStr, baseLevel + 1, now, destination)
             }
         }
     }

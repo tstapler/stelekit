@@ -42,7 +42,7 @@ internal fun FlashcardsScreen(blockStateManager: dev.stapler.stelekit.ui.state.B
     fun onPass() {
         val card = dueCards.getOrNull(currentIndex) ?: return
         val newProps = FlashcardScheduler.computeNextReview(card, pass = true, today = today)
-        scope.launch { blockStateManager.updateBlockProperties(card.uuid, newProps) }
+        scope.launch { blockStateManager.updateBlockProperties(card.uuid.value, newProps) }
         showBack = false
         currentIndex++
     }
@@ -50,7 +50,7 @@ internal fun FlashcardsScreen(blockStateManager: dev.stapler.stelekit.ui.state.B
     fun onFail() {
         val card = dueCards.getOrNull(currentIndex) ?: return
         val newProps = FlashcardScheduler.computeNextReview(card, pass = false, today = today)
-        scope.launch { blockStateManager.updateBlockProperties(card.uuid, newProps) }
+        scope.launch { blockStateManager.updateBlockProperties(card.uuid.value, newProps) }
         showBack = false
         currentIndex++
     }

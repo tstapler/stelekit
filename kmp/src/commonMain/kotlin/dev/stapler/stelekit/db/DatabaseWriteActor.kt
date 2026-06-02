@@ -9,7 +9,9 @@ import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.performance.AppSession
 import dev.stapler.stelekit.performance.HistogramWriter
 import dev.stapler.stelekit.performance.RingBufferSpanExporter
@@ -92,13 +94,13 @@ class DatabaseWriteActor(
         ) : WriteRequest()
 
         class DeleteBlocksForPage(
-            val pageUuid: String,
+            val pageUuid: PageUuid,
             override val priority: Priority = Priority.HIGH,
             override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
         ) : WriteRequest()
 
         class DeleteBlocksForPages(
-            val pageUuids: List<String>,
+            val pageUuids: List<PageUuid>,
             override val priority: Priority = Priority.LOW,
             override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
         ) : WriteRequest()
@@ -282,7 +284,7 @@ class DatabaseWriteActor(
     }
 
     /** Log deletes for each UUID in [chunk] via the op-logger (non-fatal). */
-    private suspend fun logDeletesForChunk(chunk: List<String>) {
+    private suspend fun logDeletesForChunk(chunk: List<PageUuid>) {
         try {
             for (uuid in chunk) {
                 val pageBlocks = blockRepository.getBlocksForPage(uuid).first().getOrNull()
@@ -370,7 +372,7 @@ class DatabaseWriteActor(
      * Always runs regardless of [opLogger] — the batch fetch is a performance fix, not
      * just a logging aid. The [opLogger] guard is applied only inside [logSaveBlocks].
      */
-    private suspend fun loadExistingBlocks(blocks: List<Block>): Map<String, Block> {
+    private suspend fun loadExistingBlocks(blocks: List<Block>): Map<BlockUuid, Block> {
         if (blocks.isEmpty()) return emptyMap()
         return try {
             blockRepository.getBlocksByUuids(blocks.map { it.uuid })
@@ -387,7 +389,7 @@ class DatabaseWriteActor(
      * Log INSERT or UPDATE operations for each block in the batch.
      * Blocks not present in [existingByUuid] are treated as inserts.
      */
-    private suspend fun logSaveBlocks(blocks: List<Block>, existingByUuid: Map<String, Block>) {
+    private suspend fun logSaveBlocks(blocks: List<Block>, existingByUuid: Map<BlockUuid, Block>) {
         val logger = opLogger ?: return
         for (block in blocks) {
             val existing = existingByUuid[block.uuid]
@@ -415,12 +417,12 @@ class DatabaseWriteActor(
         return sendAndAwait(req)
     }
 
-    suspend fun deleteBlocksForPage(pageUuid: String, priority: Priority = Priority.HIGH): Either<DomainError, Unit> {
+    suspend fun deleteBlocksForPage(pageUuid: PageUuid, priority: Priority = Priority.HIGH): Either<DomainError, Unit> {
         val req = WriteRequest.DeleteBlocksForPage(pageUuid, priority)
         return sendAndAwait(req)
     }
 
-    suspend fun deleteBlocksForPages(pageUuids: List<String>, priority: Priority = Priority.LOW): Either<DomainError, Unit> {
+    suspend fun deleteBlocksForPages(pageUuids: List<PageUuid>, priority: Priority = Priority.LOW): Either<DomainError, Unit> {
         if (pageUuids.isEmpty()) return Unit.right()
         val req = WriteRequest.DeleteBlocksForPages(pageUuids, priority)
         return sendAndAwait(req)
@@ -463,13 +465,13 @@ class DatabaseWriteActor(
     suspend fun saveBlock(block: Block): Either<DomainError, Unit> =
         execute { blockRepository.saveBlock(block) }
 
-    suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> =
+    suspend fun updateBlockContentOnly(blockUuid: BlockUuid, content: String): Either<DomainError, Unit> =
         execute { blockRepository.updateBlockContentOnly(blockUuid, content) }
 
-    suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> =
+    suspend fun updateBlockPropertiesOnly(blockUuid: BlockUuid, properties: Map<String, String>): Either<DomainError, Unit> =
         execute { blockRepository.updateBlockPropertiesOnly(blockUuid, properties) }
 
-    suspend fun deleteBlock(blockUuid: String): Either<DomainError, Unit> =
+    suspend fun deleteBlock(blockUuid: BlockUuid): Either<DomainError, Unit> =
         execute {
             if (opLogger != null) {
                 try {
@@ -491,9 +493,9 @@ class DatabaseWriteActor(
      * Returns the newly created [Block] on success, or a [DomainError] on failure.
      */
     suspend fun splitBlock(
-        blockUuid: String,
+        blockUuid: BlockUuid,
         cursorPosition: Int,
-        newBlockUuid: String?,
+        newBlockUuid: BlockUuid?,
     ): Either<DomainError, Block> {
         var newBlock: Block? = null
         val opResult = execute {
@@ -517,8 +519,8 @@ class DatabaseWriteActor(
      * Guaranteed to execute after any pending [updateBlockContentOnly] for either block.
      */
     suspend fun mergeBlocks(
-        blockUuid: String,
-        nextBlockUuid: String,
+        blockUuid: BlockUuid,
+        nextBlockUuid: BlockUuid,
         separator: String,
     ): Either<DomainError, Unit> =
         execute { blockRepository.mergeBlocks(blockUuid, nextBlockUuid, separator) }
@@ -529,7 +531,7 @@ class DatabaseWriteActor(
      * structural deletions triggered by backspace/merge where the block being removed
      * has no content to log.
      */
-    suspend fun deleteBlockStructural(blockUuid: String): Either<DomainError, Unit> =
+    suspend fun deleteBlockStructural(blockUuid: BlockUuid): Either<DomainError, Unit> =
         execute { blockRepository.deleteBlock(blockUuid) }
 
     /**
@@ -551,7 +553,7 @@ class DatabaseWriteActor(
         }
     }
 
-    suspend fun deletePage(pageUuid: String): Either<DomainError, Unit> =
+    suspend fun deletePage(pageUuid: PageUuid): Either<DomainError, Unit> =
         execute { pageRepository.deletePage(pageUuid) }
 
     fun close() {

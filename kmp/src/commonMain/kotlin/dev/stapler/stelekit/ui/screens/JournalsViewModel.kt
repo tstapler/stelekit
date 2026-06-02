@@ -103,7 +103,7 @@ class JournalsViewModel(
     }
 
     private fun observeBlocksForPages(pages: List<Page>) {
-        val currentUuids = pages.map { it.uuid }.toSet()
+        val currentUuids = pages.map { it.uuid.value }.toSet()
 
         // Unobserve pages that are no longer visible
         val observed = blocks.value.keys
@@ -115,7 +115,7 @@ class JournalsViewModel(
 
         // Observe new pages
         for (page in pages) {
-            blockStateManager.observePage(page.uuid, page.isContentLoaded)
+            blockStateManager.observePage(page.uuid.value, page.isContentLoaded)
         }
     }
 

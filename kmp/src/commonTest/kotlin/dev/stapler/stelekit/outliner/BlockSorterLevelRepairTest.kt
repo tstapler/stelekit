@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.outliner
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import kotlin.time.Clock
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -12,8 +14,8 @@ class BlockSorterLevelRepairTest {
         val pageUuid = "00000000-0000-0000-0000-000000000001"
         val parentUuid = parentUuidSuffix?.let { "00000000-0000-0000-0000-${it.toString().padStart(12, '0')}" }
         return Block(
-            uuid = uuid,
-            pageUuid = pageUuid,
+            uuid = BlockUuid(uuid),
+            pageUuid = PageUuid(pageUuid),
             parentUuid = parentUuid,
             content = content,
             level = level,
@@ -65,8 +67,8 @@ class BlockSorterLevelRepairTest {
         // pop order: UUID 1, UUID 2, UUID 3
         
         assertEquals(3, sorted.size)
-        assertEquals("00000000-0000-0000-0000-000000000001", sorted[0].uuid)
-        assertEquals("00000000-0000-0000-0000-000000000002", sorted[1].uuid)
-        assertEquals("00000000-0000-0000-0000-000000000003", sorted[2].uuid)
+        assertEquals(BlockUuid("00000000-0000-0000-0000-000000000001"), sorted[0].uuid)
+        assertEquals(BlockUuid("00000000-0000-0000-0000-000000000002"), sorted[1].uuid)
+        assertEquals(BlockUuid("00000000-0000-0000-0000-000000000003"), sorted[2].uuid)
     }
 }

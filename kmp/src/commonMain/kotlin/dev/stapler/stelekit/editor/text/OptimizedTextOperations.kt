@@ -17,6 +17,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import dev.stapler.stelekit.editor.TextFormat
@@ -522,7 +523,7 @@ class OptimizedTextOperations(
         // Security: validate content length
         require(content.length <= MAX_CONTENT_LENGTH) { "Content exceeds maximum length" }
         
-        val block = blockRepository.getBlockByUuid(blockId).first().getOrNull()
+        val block = blockRepository.getBlockByUuid(BlockUuid(blockId)).first().getOrNull()
         if (block != null) {
             val updatedBlock = block.copy(content = content)
             blockRepository.saveBlock(updatedBlock)

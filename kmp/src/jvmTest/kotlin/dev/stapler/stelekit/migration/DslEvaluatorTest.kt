@@ -4,7 +4,9 @@
 package dev.stapler.stelekit.migration
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.repository.InMemoryPropertyRepository
@@ -24,7 +26,7 @@ class DslEvaluatorTest {
     private val now = Clock.System.now()
 
     private fun makePage(uuid: String, name: String) = Page(
-        uuid = uuid,
+        uuid = PageUuid(uuid),
         name = name,
         createdAt = now,
         updatedAt = now,
@@ -37,8 +39,8 @@ class DslEvaluatorTest {
         position: Int = 0,
         properties: Map<String, String> = emptyMap(),
     ) = Block(
-        uuid = uuid,
-        pageUuid = pageUuid,
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid(pageUuid),
         content = content,
         position = position,
         createdAt = now,

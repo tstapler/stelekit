@@ -6,6 +6,8 @@ package dev.stapler.stelekit.migration
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.OperationLogger
 import dev.stapler.stelekit.db.replaceWikilink
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.RepositorySet
 import kotlinx.coroutines.flow.first
@@ -35,7 +37,7 @@ class ChangeApplier(
             try {
                 when (change) {
                     is BlockChange.UpsertProperty -> {
-                        val block = repoSet.blockRepository.getBlockByUuid(change.blockUuid)
+                        val block = repoSet.blockRepository.getBlockByUuid(BlockUuid(change.blockUuid))
                             .first().getOrNull()
                         if (block == null) {
                             skipped++
@@ -52,7 +54,7 @@ class ChangeApplier(
                     }
 
                     is BlockChange.DeleteProperty -> {
-                        val block = repoSet.blockRepository.getBlockByUuid(change.blockUuid)
+                        val block = repoSet.blockRepository.getBlockByUuid(BlockUuid(change.blockUuid))
                             .first().getOrNull()
                         if (block == null) {
                             skipped++
@@ -69,7 +71,7 @@ class ChangeApplier(
                     }
 
                     is BlockChange.SetContent -> {
-                        val block = repoSet.blockRepository.getBlockByUuid(change.blockUuid)
+                        val block = repoSet.blockRepository.getBlockByUuid(BlockUuid(change.blockUuid))
                             .first().getOrNull()
                         if (block == null) {
                             skipped++
@@ -86,14 +88,14 @@ class ChangeApplier(
                     }
 
                     is BlockChange.DeleteBlock -> {
-                        val block = repoSet.blockRepository.getBlockByUuid(change.blockUuid)
+                        val block = repoSet.blockRepository.getBlockByUuid(BlockUuid(change.blockUuid))
                             .first().getOrNull()
                         if (block == null) {
                             skipped++
                             continue
                         }
                         writeActor.execute {
-                            val result = repoSet.blockRepository.deleteBlock(change.blockUuid)
+                            val result = repoSet.blockRepository.deleteBlock(BlockUuid(change.blockUuid))
                             if (result.isRight()) opLogger?.logDelete(block)
                             result
                         }.onLeft { e -> throw RuntimeException(e.message) }
@@ -110,7 +112,7 @@ class ChangeApplier(
                     }
 
                     is BlockChange.UpsertPageProperty -> {
-                        val page = repoSet.pageRepository.getPageByUuid(change.pageUuid)
+                        val page = repoSet.pageRepository.getPageByUuid(PageUuid(change.pageUuid))
                             .first().getOrNull()
                         if (page == null) {
                             skipped++
@@ -124,7 +126,7 @@ class ChangeApplier(
                     }
 
                     is BlockChange.DeletePageProperty -> {
-                        val page = repoSet.pageRepository.getPageByUuid(change.pageUuid)
+                        val page = repoSet.pageRepository.getPageByUuid(PageUuid(change.pageUuid))
                             .first().getOrNull()
                         if (page == null) {
                             skipped++
@@ -144,7 +146,7 @@ class ChangeApplier(
 
                     is BlockChange.DeletePage -> {
                         writeActor.execute {
-                            repoSet.pageRepository.deletePage(change.pageUuid)
+                            repoSet.pageRepository.deletePage(PageUuid(change.pageUuid))
                         }.onLeft { e -> throw RuntimeException(e.message) }
                         applied++
                     }
@@ -168,7 +170,7 @@ class ChangeApplier(
         writeActor.executeBatch(batchId) {
             // 1. Rename the page row in DB.
             writeActor.execute {
-                repoSet.pageRepository.renamePage(change.pageUuid, change.newName)
+                repoSet.pageRepository.renamePage(PageUuid(change.pageUuid), change.newName)
             }.onLeft { e -> throw RuntimeException(e.message) }
 
             // 2. Find all blocks that reference [[OldName]] and rewrite them.

@@ -7,6 +7,8 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.outliner.TreeOperations
 import kotlinx.coroutines.flow.Flow
@@ -38,22 +40,22 @@ class DatalogBlockRepository : BlockRepository {
     private val byPageUuid = MutableStateFlow<Map<String, List<Block>>>(emptyMap())
     private val byParentUuid = MutableStateFlow<Map<String?, List<Block>>>(emptyMap())
 
-    override fun getBlockByUuid(uuid: String): Flow<Either<DomainError, Block?>> {
+    override fun getBlockByUuid(uuid: BlockUuid): Flow<Either<DomainError, Block?>> {
         return blocks.map { map ->
-            map[uuid].right()
+            map[uuid.value].right()
         }
     }
 
-    override fun getBlockChildren(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
+    override fun getBlockChildren(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> {
         return byParentUuid.map { map ->
-            (map[blockUuid]?.sortedBy { it.position } ?: emptyList()).right()
+            (map[blockUuid.value]?.sortedBy { it.position } ?: emptyList()).right()
         }
     }
 
-    override fun getBlockHierarchy(rootUuid: String): Flow<Either<DomainError, List<BlockWithDepth>>> {
+    override fun getBlockHierarchy(rootUuid: BlockUuid): Flow<Either<DomainError, List<BlockWithDepth>>> {
         return blocks.map { map ->
             val result = mutableListOf<BlockWithDepth>()
-            collectHierarchy(map, rootUuid, 0, result)
+            collectHierarchy(map, rootUuid.value, 0, result)
             result.right()
         }
     }
@@ -66,23 +68,23 @@ class DatalogBlockRepository : BlockRepository {
     ) {
         val block = allBlocks[uuid] ?: return
         result.add(BlockWithDepth(block, depth))
-        val children = byParentUuid.value[block.uuid]?.sortedBy { it.position } ?: emptyList()
+        val children = byParentUuid.value[block.uuid.value]?.sortedBy { it.position } ?: emptyList()
         children.forEach { child ->
-            collectHierarchy(allBlocks, child.uuid, depth + 1, result)
+            collectHierarchy(allBlocks, child.uuid.value, depth + 1, result)
         }
     }
 
-    override fun getBlockAncestors(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
+    override fun getBlockAncestors(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> {
         return blocks.map { map ->
             val ancestors = mutableListOf<Block>()
-            var currentUuid: String? = blockUuid
+            var currentUuid: String? = blockUuid.value
             while (currentUuid != null) {
                 val block = map[currentUuid] ?: break
                 if (block.parentUuid != null) {
                     val parent = map[block.parentUuid]
                     if (parent != null) {
                         ancestors.add(parent)
-                        currentUuid = parent.uuid
+                        currentUuid = parent.uuid.value
                     } else {
                         break
                     }
@@ -94,17 +96,17 @@ class DatalogBlockRepository : BlockRepository {
         }
     }
 
-    override fun getBlockParent(blockUuid: String): Flow<Either<DomainError, Block?>> {
+    override fun getBlockParent(blockUuid: BlockUuid): Flow<Either<DomainError, Block?>> {
         return blocks.map { map ->
-            val block = map[blockUuid] ?: return@map null.right()
+            val block = map[blockUuid.value] ?: return@map null.right()
             val parent = block.parentUuid?.let { map[it] }
             parent.right()
         }
     }
 
-    override fun getBlockSiblings(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
+    override fun getBlockSiblings(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> {
         return blocks.map { map ->
-            val block = map[blockUuid] ?: return@map emptyList<Block>().right()
+            val block = map[blockUuid.value] ?: return@map emptyList<Block>().right()
             val siblings = if (block.parentUuid != null) {
                 map.values.filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid && it.uuid != blockUuid }
             } else {
@@ -114,16 +116,16 @@ class DatalogBlockRepository : BlockRepository {
         }
     }
 
-    override fun getBlocksForPage(pageUuid: String): Flow<Either<DomainError, List<Block>>> {
+    override fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>> {
         return byPageUuid.map { map ->
-            val blocks = map[pageUuid] ?: emptyList()
+            val blocks = map[pageUuid.value] ?: emptyList()
             blocks.sortedBy { it.position }.right()
         }
     }
 
-    override suspend fun getBlocksByUuids(uuids: List<String>): Either<DomainError, List<Block>> {
-        val uuidSet = uuids.toHashSet()
-        return blocks.value.values.filter { it.uuid in uuidSet }.right()
+    override suspend fun getBlocksByUuids(uuids: List<BlockUuid>): Either<DomainError, List<Block>> {
+        val uuidSet = uuids.map { it.value }.toHashSet()
+        return blocks.value.values.filter { it.uuid.value in uuidSet }.right()
     }
 
     override fun getLinkedReferences(pageName: String): Flow<Either<DomainError, List<Block>>> {
@@ -132,7 +134,7 @@ class DatalogBlockRepository : BlockRepository {
             val linkedBlocks = map.values.filter { block ->
                 wikiLinkPattern.containsMatchIn(block.content)
             }
-            linkedBlocks.sortedBy { it.pageUuid }.right()
+            linkedBlocks.sortedBy { it.pageUuid.value }.right()
         }
     }
 
@@ -142,7 +144,7 @@ class DatalogBlockRepository : BlockRepository {
             val linkedBlocks = map.values.filter { block ->
                 wikiLinkPattern.containsMatchIn(block.content)
             }
-            linkedBlocks.sortedBy { it.pageUuid }.drop(offset).take(limit).right()
+            linkedBlocks.sortedBy { it.pageUuid.value }.drop(offset).take(limit).right()
         }
     }
 
@@ -154,7 +156,7 @@ class DatalogBlockRepository : BlockRepository {
                 plainTextPattern.containsMatchIn(block.content) &&
                     !wikiLinkPattern.containsMatchIn(block.content)
             }
-            unlinkedBlocks.sortedBy { it.pageUuid }.right()
+            unlinkedBlocks.sortedBy { it.pageUuid.value }.right()
         }
     }
 
@@ -166,7 +168,7 @@ class DatalogBlockRepository : BlockRepository {
                 plainTextPattern.containsMatchIn(block.content) &&
                     !wikiLinkPattern.containsMatchIn(block.content)
             }
-            unlinkedBlocks.sortedBy { it.pageUuid }.drop(offset).take(limit).right()
+            unlinkedBlocks.sortedBy { it.pageUuid.value }.drop(offset).take(limit).right()
         }
     }
 
@@ -182,7 +184,7 @@ class DatalogBlockRepository : BlockRepository {
     override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
-                val updateMap = blocks.associateBy { it.uuid }
+                val updateMap = blocks.associateBy { it.uuid.value }
                 batchUpdateBlocks(updateMap)
                 Unit.right()
             } catch (e: CancellationException) {
@@ -197,7 +199,7 @@ class DatalogBlockRepository : BlockRepository {
     override suspend fun saveBlock(block: Block): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
-                val updateMap = mapOf(block.uuid to block)
+                val updateMap = mapOf(block.uuid.value to block)
                 batchUpdateBlocks(updateMap)
                 Unit.right()
             } catch (e: CancellationException) {
@@ -209,13 +211,13 @@ class DatalogBlockRepository : BlockRepository {
         }
     }
 
-    override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> {
+    override suspend fun updateBlockContentOnly(blockUuid: BlockUuid, content: String): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val current = blocks.value.toMutableMap()
-                val existing = current[blockUuid] ?: return@withLock Unit.right()
+                val existing = current[blockUuid.value] ?: return@withLock Unit.right()
                 val updated = existing.copy(content = content, version = existing.version + 1, updatedAt = kotlin.time.Clock.System.now())
-                batchUpdateBlocks(mapOf(blockUuid to updated))
+                batchUpdateBlocks(mapOf(blockUuid.value to updated))
                 Unit.right()
             } catch (e: CancellationException) {
                 throw e
@@ -226,7 +228,7 @@ class DatalogBlockRepository : BlockRepository {
     }
 
     override suspend fun updateBlockContentsForRename(
-        updates: List<Pair<String, String>>,
+        updates: List<Pair<BlockUuid, String>>,
         oldPageName: String,
         newPageName: String,
     ): Either<DomainError, Unit> {
@@ -235,8 +237,8 @@ class DatalogBlockRepository : BlockRepository {
                 val now = kotlin.time.Clock.System.now()
                 val current = blocks.value.toMutableMap()
                 val batch = updates.mapNotNull { (uuid, content) ->
-                    val existing = current[uuid] ?: return@mapNotNull null
-                    uuid to existing.copy(content = content, version = existing.version + 1, updatedAt = now)
+                    val existing = current[uuid.value] ?: return@mapNotNull null
+                    uuid.value to existing.copy(content = content, version = existing.version + 1, updatedAt = now)
                 }.toMap()
                 batchUpdateBlocks(batch)
                 Unit.right()
@@ -248,12 +250,12 @@ class DatalogBlockRepository : BlockRepository {
         }
     }
 
-    override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> {
+    override suspend fun updateBlockPropertiesOnly(blockUuid: BlockUuid, properties: Map<String, String>): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val current = blocks.value.toMutableMap()
-                val existing = current[blockUuid] ?: return@withLock Unit.right()
-                batchUpdateBlocks(mapOf(blockUuid to existing.copy(properties = properties)))
+                val existing = current[blockUuid.value] ?: return@withLock Unit.right()
+                batchUpdateBlocks(mapOf(blockUuid.value to existing.copy(properties = properties)))
                 Unit.right()
             } catch (e: CancellationException) {
                 throw e
@@ -263,28 +265,28 @@ class DatalogBlockRepository : BlockRepository {
         }
     }
 
-    override suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean): Either<DomainError, Unit> {
+    override suspend fun deleteBlock(blockUuid: BlockUuid, deleteChildren: Boolean): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val current = blocks.value.toMutableMap()
-                if (!current.containsKey(blockUuid)) return@withLock Unit.right()
+                if (!current.containsKey(blockUuid.value)) return@withLock Unit.right()
 
                 if (deleteChildren) {
-                    val uuidsToDelete = mutableListOf(blockUuid)
+                    val uuidsToDelete = mutableListOf(blockUuid.value)
                     var index = 0
                     while (index < uuidsToDelete.size) {
                         val currentUuid = uuidsToDelete[index]
                         val children = current.values.filter { it.parentUuid == currentUuid }
                         children.forEach { child ->
-                            uuidsToDelete.add(child.uuid)
+                            uuidsToDelete.add(child.uuid.value)
                         }
                         index++
                     }
                     uuidsToDelete.forEach { current.remove(it) }
                 } else {
-                    current.remove(blockUuid)
+                    current.remove(blockUuid.value)
                 }
-                
+
                 blocks.value = current
                 refreshIndexes(current)
                 Unit.right()
@@ -296,7 +298,7 @@ class DatalogBlockRepository : BlockRepository {
         }
     }
 
-    override suspend fun deleteBulk(blockUuids: List<String>, deleteChildren: Boolean): Either<DomainError, Unit> {
+    override suspend fun deleteBulk(blockUuids: List<BlockUuid>, deleteChildren: Boolean): Either<DomainError, Unit> {
         blockUuids.forEach { uuid ->
             deleteBlock(uuid, deleteChildren)
         }
@@ -304,16 +306,16 @@ class DatalogBlockRepository : BlockRepository {
     }
 
     override suspend fun moveBlock(
-        blockUuid: String,
-        newParentUuid: String?,
+        blockUuid: BlockUuid,
+        newParentUuid: BlockUuid?,
         newPosition: Int
     ): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val currentBlocks = blocks.value
-                val block = currentBlocks[blockUuid] ?: return@withLock Unit.right()
+                val block = currentBlocks[blockUuid.value] ?: return@withLock Unit.right()
 
-                if (block.parentUuid == newParentUuid && block.position == newPosition) {
+                if (block.parentUuid == newParentUuid?.value && block.position == newPosition) {
                     return@withLock Unit.right()
                 }
 
@@ -322,11 +324,11 @@ class DatalogBlockRepository : BlockRepository {
                     .filter { it.parentUuid == oldParentUuid && it.uuid != blockUuid }
                     .sortedBy { it.position }
 
-                val newSiblings = if (oldParentUuid == newParentUuid) {
+                val newSiblings = if (oldParentUuid == newParentUuid?.value) {
                     oldSiblings.toMutableList().apply { add(newPosition.coerceIn(0, size), block) }
                 } else {
                     currentBlocks.values
-                        .filter { it.parentUuid == newParentUuid }
+                        .filter { it.parentUuid == newParentUuid?.value }
                         .sortedBy { it.position }
                         .toMutableList().apply { add(newPosition.coerceIn(0, size), block) }
                 }
@@ -334,27 +336,27 @@ class DatalogBlockRepository : BlockRepository {
                 val updatedBlocks = mutableMapOf<String, Block>()
 
                 // Update moved block and its descendants
-                val newLevel = if (newParentUuid == null) 0 else (currentBlocks[newParentUuid]?.level ?: -1) + 1
+                val newLevel = if (newParentUuid == null) 0 else (currentBlocks[newParentUuid.value]?.level ?: -1) + 1
                 val levelOffset = newLevel - block.level
                 val hierarchy = mutableListOf<BlockWithDepth>()
-                collectHierarchy(currentBlocks, block.uuid, block.level, hierarchy)
+                collectHierarchy(currentBlocks, block.uuid.value, block.level, hierarchy)
 
                 hierarchy.forEach { (b, _) ->
-                    updatedBlocks[b.uuid] = b.copy(
-                        parentUuid = if (b.uuid == blockUuid) newParentUuid else b.parentUuid,
+                    updatedBlocks[b.uuid.value] = b.copy(
+                        parentUuid = if (b.uuid == blockUuid) newParentUuid?.value else b.parentUuid,
                         level = b.level + levelOffset
                     )
                 }
 
                 // Update siblings in old parent
-                if (oldParentUuid != newParentUuid) {
-                    TreeOperations.reorderSiblings(oldSiblings).forEach { updatedBlocks[it.uuid] = it }
+                if (oldParentUuid != newParentUuid?.value) {
+                    TreeOperations.reorderSiblings(oldSiblings).forEach { updatedBlocks[it.uuid.value] = it }
                 }
 
                 // Update siblings in new parent
                 TreeOperations.reorderSiblings(newSiblings).forEach {
-                    val existing = updatedBlocks[it.uuid]
-                    updatedBlocks[it.uuid] = existing?.copy(position = it.position, leftUuid = it.leftUuid) ?: it
+                    val existing = updatedBlocks[it.uuid.value]
+                    updatedBlocks[it.uuid.value] = existing?.copy(position = it.position, leftUuid = it.leftUuid) ?: it
                 }
 
                 batchUpdateBlocks(updatedBlocks)
@@ -367,11 +369,11 @@ class DatalogBlockRepository : BlockRepository {
         }
     }
 
-    override suspend fun indentBlock(blockUuid: String): Either<DomainError, Unit> {
+    override suspend fun indentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val currentBlocks = blocks.value
-                val block = currentBlocks[blockUuid] ?: return@withLock Unit.right()
+                val block = currentBlocks[blockUuid.value] ?: return@withLock Unit.right()
                 val siblings = currentBlocks.values
                     .filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid }
                     .sortedBy { it.position }
@@ -381,25 +383,25 @@ class DatalogBlockRepository : BlockRepository {
 
                 val newParent = siblings[index - 1]
                 val newParentChildren = currentBlocks.values
-                    .filter { it.parentUuid == newParent.uuid && it.pageUuid == block.pageUuid }
+                    .filter { it.parentUuid == newParent.uuid.value && it.pageUuid == block.pageUuid }
                     .sortedBy { it.position }
 
                 val result = TreeOperations.indent(block, siblings, newParentChildren.lastOrNull())
-                
+
                 if (result != null) {
-                    val updates = result.associateBy { it.uuid }.toMutableMap()
-                    
+                    val updates = result.associateBy { it.uuid.value }.toMutableMap()
+
                     val remainingSiblings = siblings.filter { it.uuid != blockUuid }.toMutableList()
-                    result.forEach { updated -> 
+                    result.forEach { updated ->
                         val idx = remainingSiblings.indexOfFirst { it.uuid == updated.uuid }
                         if (idx != -1) remainingSiblings[idx] = updated
                     }
-                    
+
                     val movedBlock = result.find { it.uuid == blockUuid }!!
                     val newSiblings = newParentChildren + movedBlock
-                    
-                    TreeOperations.reorderSiblings(remainingSiblings).forEach { updates[it.uuid] = it }
-                    TreeOperations.reorderSiblings(newSiblings).forEach { updates[it.uuid] = it }
+
+                    TreeOperations.reorderSiblings(remainingSiblings).forEach { updates[it.uuid.value] = it }
+                    TreeOperations.reorderSiblings(newSiblings).forEach { updates[it.uuid.value] = it }
 
                     batchUpdateBlocks(updates)
                     Unit.right()
@@ -414,11 +416,11 @@ class DatalogBlockRepository : BlockRepository {
         }
     }
 
-    override suspend fun outdentBlock(blockUuid: String): Either<DomainError, Unit> {
+    override suspend fun outdentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val currentBlocks = blocks.value
-                val block = currentBlocks[blockUuid] ?: return@withLock Unit.right()
+                val block = currentBlocks[blockUuid.value] ?: return@withLock Unit.right()
                 val parentUuid = block.parentUuid ?: return@withLock Unit.right()
 
                 val parent = currentBlocks[parentUuid]
@@ -433,17 +435,17 @@ class DatalogBlockRepository : BlockRepository {
 
                 val result = TreeOperations.outdent(block, parent, siblings, parentSiblings)
                 if (result != null) {
-                    val updates = result.associateBy { it.uuid }.toMutableMap()
+                    val updates = result.associateBy { it.uuid.value }.toMutableMap()
 
                     val movedBlock = result.find { it.uuid == blockUuid }!!
 
                     val remainingOldSiblings = siblings.filter { it.uuid != blockUuid }
-                    TreeOperations.reorderSiblings(remainingOldSiblings).forEach { updates[it.uuid] = it }
+                    TreeOperations.reorderSiblings(remainingOldSiblings).forEach { updates[it.uuid.value] = it }
 
-                    val parentIndex = parentSiblings.indexOfFirst { it.uuid == parentUuid }
+                    val parentIndex = parentSiblings.indexOfFirst { it.uuid.value == parentUuid }
                     val newSiblingsList = parentSiblings.toMutableList()
                     newSiblingsList.add(parentIndex + 1, movedBlock)
-                    TreeOperations.reorderSiblings(newSiblingsList).forEach { updates[it.uuid] = it }
+                    TreeOperations.reorderSiblings(newSiblingsList).forEach { updates[it.uuid.value] = it }
 
                     batchUpdateBlocks(updates)
                     Unit.right()
@@ -458,11 +460,11 @@ class DatalogBlockRepository : BlockRepository {
         }
     }
 
-    override suspend fun moveBlockUp(blockUuid: String): Either<DomainError, Unit> {
+    override suspend fun moveBlockUp(blockUuid: BlockUuid): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val currentBlocks = blocks.value
-                val block = currentBlocks[blockUuid] ?: return@withLock Unit.right()
+                val block = currentBlocks[blockUuid.value] ?: return@withLock Unit.right()
                 val siblings = currentBlocks.values
                     .filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid }
                     .sortedBy { it.position }
@@ -475,7 +477,7 @@ class DatalogBlockRepository : BlockRepository {
                 siblings[index - 1] = siblings[index]
                 siblings[index] = prev
 
-                val updates = TreeOperations.reorderSiblings(siblings).associateBy { it.uuid }
+                val updates = TreeOperations.reorderSiblings(siblings).associateBy { it.uuid.value }
                 batchUpdateBlocks(updates)
                 Unit.right()
             } catch (e: CancellationException) {
@@ -486,11 +488,11 @@ class DatalogBlockRepository : BlockRepository {
         }
     }
 
-    override suspend fun moveBlockDown(blockUuid: String): Either<DomainError, Unit> {
+    override suspend fun moveBlockDown(blockUuid: BlockUuid): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val currentBlocks = blocks.value
-                val block = currentBlocks[blockUuid] ?: return@withLock Unit.right()
+                val block = currentBlocks[blockUuid.value] ?: return@withLock Unit.right()
                 val siblings = currentBlocks.values
                     .filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid }
                     .sortedBy { it.position }
@@ -503,7 +505,7 @@ class DatalogBlockRepository : BlockRepository {
                 siblings[index + 1] = siblings[index]
                 siblings[index] = next
 
-                val updates = TreeOperations.reorderSiblings(siblings).associateBy { it.uuid }
+                val updates = TreeOperations.reorderSiblings(siblings).associateBy { it.uuid.value }
                 batchUpdateBlocks(updates)
                 Unit.right()
             } catch (e: CancellationException) {
@@ -514,23 +516,23 @@ class DatalogBlockRepository : BlockRepository {
         }
     }
 
-    override suspend fun mergeBlocks(blockUuid: String, nextBlockUuid: String, separator: String): Either<DomainError, Unit> {
+    override suspend fun mergeBlocks(blockUuid: BlockUuid, nextBlockUuid: BlockUuid, separator: String): Either<DomainError, Unit> {
         return Unit.right()
     }
 
     override suspend fun splitBlock(
-        blockUuid: String,
+        blockUuid: BlockUuid,
         cursorPosition: Int,
-        newBlockUuid: String?,
+        newBlockUuid: BlockUuid?,
     ): Either<DomainError, Block> {
         return DomainError.DatabaseError.WriteFailed("splitBlock not implemented").left()
     }
 
-    override suspend fun deleteBlocksForPage(pageUuid: String): Either<DomainError, Unit> {
+    override suspend fun deleteBlocksForPage(pageUuid: PageUuid): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
                 val current = blocks.value.toMutableMap()
-                val toRemove = current.values.filter { it.pageUuid == pageUuid }.map { it.uuid }
+                val toRemove = current.values.filter { it.pageUuid == pageUuid }.map { it.uuid.value }
                 toRemove.forEach { current.remove(it) }
                 blocks.value = current
                 refreshIndexes(current)
@@ -543,13 +545,13 @@ class DatalogBlockRepository : BlockRepository {
         }
     }
 
-    override suspend fun deleteBlocksForPages(pageUuids: List<String>): Either<DomainError, Unit> {
+    override suspend fun deleteBlocksForPages(pageUuids: List<PageUuid>): Either<DomainError, Unit> {
         if (pageUuids.isEmpty()) return Unit.right()
         return writeMutex.withLock {
             try {
-                val uuidSet = pageUuids.toSet()
+                val uuidSet = pageUuids.map { it.value }.toSet()
                 val current = blocks.value.toMutableMap()
-                val toRemove = current.values.filter { it.pageUuid in uuidSet }.map { it.uuid }
+                val toRemove = current.values.filter { it.pageUuid.value in uuidSet }.map { it.uuid.value }
                 toRemove.forEach { current.remove(it) }
                 blocks.value = current
                 refreshIndexes(current)
@@ -578,7 +580,7 @@ class DatalogBlockRepository : BlockRepository {
         blocks.value = current
         refreshIndexes(current)
     }
-    
+
     override fun countLinkedReferences(pageName: String): Flow<Either<DomainError, Long>> =
         flowOf(0L.right())
 
@@ -588,7 +590,7 @@ class DatalogBlockRepository : BlockRepository {
     private fun refreshIndexes(currentBlocks: Map<String, Block>) {
         val allBlocks = currentBlocks.values
         byUuid.value = currentBlocks
-        byPageUuid.value = allBlocks.groupBy { it.pageUuid }
+        byPageUuid.value = allBlocks.groupBy { it.pageUuid.value }
         byParentUuid.value = allBlocks.groupBy { it.parentUuid }
     }
 }

@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.export
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -21,7 +23,7 @@ class MarkdownExporterTest {
         isJournal: Boolean = false,
         journalDate: LocalDate? = null,
     ) = Page(
-        uuid = "page-1",
+        uuid = PageUuid("page-1"),
         name = name,
         createdAt = now,
         updatedAt = now,
@@ -38,8 +40,8 @@ class MarkdownExporterTest {
         parentUuid: String? = null,
         properties: Map<String, String> = emptyMap(),
     ) = Block(
-        uuid = uuid,
-        pageUuid = "page-1",
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid("page-1"),
         parentUuid = parentUuid,
         content = content,
         level = level,
@@ -224,8 +226,8 @@ class MarkdownExporterTest {
     @Test
     fun `U-MD-20 block content with newline is preserved verbatim`() {
         val multilineBlock = Block(
-            uuid = "code-block",
-            pageUuid = "page-1",
+            uuid = BlockUuid("code-block"),
+            pageUuid = PageUuid("page-1"),
             content = "line one\nline two",
             level = 0,
             position = 0,

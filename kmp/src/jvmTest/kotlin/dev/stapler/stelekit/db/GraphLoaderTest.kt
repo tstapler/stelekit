@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.DatalogBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
@@ -121,7 +122,7 @@ class GraphLoaderTest {
             assertEquals(false, firstBlock.isLoaded, "Block should be a stub initially")
 
             // Loading the full page promotes stubs to real blocks
-            graphLoader.loadFullPage(contentsPage.uuid)
+            graphLoader.loadFullPage(contentsPage.uuid.value)
 
             val reloadedBlocks = blockRepository.getBlocksForPage(contentsPage.uuid).first().getOrNull() ?: emptyList()
             assertTrue(reloadedBlocks.isNotEmpty(), "Blocks should still be present after full load")

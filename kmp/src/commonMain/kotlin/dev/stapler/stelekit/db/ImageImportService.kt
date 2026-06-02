@@ -7,6 +7,8 @@ import dev.stapler.stelekit.db.sidecar.ImageSidecarManager
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSensorData
 import dev.stapler.stelekit.model.ImageSource
@@ -168,8 +170,8 @@ class ImageImportService(
             "unit" to annotation.unit.name.lowercase(),
         )
         val block = Block(
-            uuid = blockUuid,
-            pageUuid = pageUuid,
+            uuid = BlockUuid(blockUuid),
+            pageUuid = PageUuid(pageUuid),
             content = blockContent,
             position = 0,
             createdAt = now,

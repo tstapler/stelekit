@@ -331,11 +331,11 @@ class RepositoryFactoryImpl(
         actor.onWriteSuccess = { request ->
             when (request) {
                 is DatabaseWriteActor.WriteRequest.SaveBlocks ->
-                    request.blocks.forEach { sqlBlockRepo.evictBlock(it.uuid) }
+                    request.blocks.forEach { sqlBlockRepo.evictBlock(it.uuid.value) }
                 is DatabaseWriteActor.WriteRequest.DeleteBlocksForPage ->
-                    sqlBlockRepo.evictHierarchyForPage(request.pageUuid)
+                    sqlBlockRepo.evictHierarchyForPage(request.pageUuid.value)
                 is DatabaseWriteActor.WriteRequest.DeleteBlocksForPages ->
-                    request.pageUuids.forEach { sqlBlockRepo.evictHierarchyForPage(it) }
+                    request.pageUuids.forEach { sqlBlockRepo.evictHierarchyForPage(it.value) }
                 // Execute requests wrap arbitrary lambdas — no block UUID to extract.
                 // Entries written via Execute (e.g. saveBlock) rely on TTL expiry for
                 // cache invalidation rather than explicit eviction.

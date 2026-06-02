@@ -848,7 +848,7 @@ private fun GraphContent(
         VoiceCaptureViewModel(
             voicePipeline,
             repos.journalService,
-            currentOpenPageUuid = { viewModel.uiState.value.currentPage?.uuid },
+            currentOpenPageUuid = { viewModel.uiState.value.currentPage?.uuid?.value },
         )
     }
     DisposableEffect(voiceCaptureViewModel) {
@@ -1130,7 +1130,7 @@ private fun GraphContent(
                                                         val safePath = attachment.relativePath.replace(")", "\\)")
                                                         val markdown = "![${safeAlt}](${safePath})"
                                                         if (editingBlockUuid != null) {
-                                                            blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                                                            blockStateManager.insertTextAtCursor(editingBlockUuid.value, markdown)
                                                         }
                                                     }
                                                 )
@@ -1140,7 +1140,7 @@ private fun GraphContent(
                                     onFileDrop = if (attachmentService != null) {
                                         { files ->
                                             val graphRoot = appState.currentGraphPath
-                                            val pageUuid = (appState.currentScreen as? Screen.PageView)?.page?.uuid
+                                            val pageUuid = (appState.currentScreen as? Screen.PageView)?.page?.uuid?.value
                                             if (pageUuid != null) {
                                                 scope.launch {
                                                     files.forEach { file ->
@@ -1182,7 +1182,7 @@ private fun GraphContent(
                                                             val safePath = attachment.relativePath.replace(")", "\\)")
                                                             val markdown = "![${safeAlt}](${safePath})"
                                                             if (editingBlockUuid != null) {
-                                                                blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                                                                blockStateManager.insertTextAtCursor(editingBlockUuid.value, markdown)
                                                             }
                                                         }
                                                     )
@@ -1204,12 +1204,12 @@ private fun GraphContent(
                                                     val result = imageImportService.import(
                                                         tempFile = captured.value,
                                                         graphPath = activeGraphPath,
-                                                        pageUuid = page.uuid,
+                                                        pageUuid = page.uuid.value,
                                                         source = dev.stapler.stelekit.model.ImageSource.CAMERA,
                                                         insertToJournalPage = false,
                                                     )
                                                     result.onRight { annotation ->
-                                                        viewModel.navigateToAnnotationEditor(annotation.uuid, page.uuid)
+                                                        viewModel.navigateToAnnotationEditor(annotation.uuid, page.uuid.value)
                                                     }
                                                     result.onLeft { err ->
                                                         graphContentLogger.warn("Image import failed: ${err.message}")
@@ -1287,7 +1287,7 @@ private fun GraphContent(
                         deviceLlmAvailable = deviceLlmAvailable,
                         frameMetric = frameMetricState,
                         debugState = debugMenuState,
-                        loadPageBlocks = repos.blockRepository::getBlocksForPage,
+                        loadPageBlocks = { pageUuidStr -> repos.blockRepository.getBlocksForPage(dev.stapler.stelekit.model.PageUuid(pageUuidStr)) },
                         onDebugStateChange = { newState ->
                             debugMenuState = newState
                             viewModel.onDebugMenuStateChange(newState)

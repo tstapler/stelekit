@@ -11,6 +11,8 @@ import dev.stapler.stelekit.cache.RepoCacheConfig
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.util.ContentHasher
 import dev.stapler.stelekit.util.UuidGenerator
@@ -73,35 +75,35 @@ class SqlDelightBlockRepository(
     private fun extractWikilinks(content: String): Set<String> =
         WIKILINK_REGEX.findAll(content).map { it.groupValues[1].trim() }.toHashSet()
 
-    override fun getBlockByUuid(uuid: String): Flow<Either<DomainError, Block?>> =
-        queries.selectBlockByUuid(uuid)
+    override fun getBlockByUuid(uuid: BlockUuid): Flow<Either<DomainError, Block?>> =
+        queries.selectBlockByUuid(uuid.value)
             .asFlow()
             .mapToOneOrNull(PlatformDispatcher.DB)
             .map { row ->
                 val block = row?.toBlockModel()
-                if (block != null) blockCache.put(block.uuid, block)
+                if (block != null) blockCache.put(block.uuid.value, block)
                 block.right()
             }
 
-    override fun getBlockChildren(blockUuid: String): Flow<Either<DomainError, List<Block>>> =
-        queries.selectBlockChildren(blockUuid, Long.MAX_VALUE, 0L)
+    override fun getBlockChildren(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> =
+        queries.selectBlockChildren(blockUuid.value, Long.MAX_VALUE, 0L)
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
             .map { list ->
                 val blocks = list.map { it.toBlockModel() }
-                blocks.forEach { blockCache.put(it.uuid, it) }
+                blocks.forEach { blockCache.put(it.uuid.value, it) }
                 blocks.right()
             }
 
-    override fun getBlockHierarchy(rootUuid: String): Flow<Either<DomainError, List<BlockWithDepth>>> = flow {
+    override fun getBlockHierarchy(rootUuid: BlockUuid): Flow<Either<DomainError, List<BlockWithDepth>>> = flow {
         try {
-            val entry = hierarchyCache.get(rootUuid)
+            val entry = hierarchyCache.get(rootUuid.value)
             if (entry != null && !isHierarchyCacheExpired(entry)) {
                 emit(entry.blocks.right())
                 return@flow
             }
 
-            val rootRow = queries.selectBlockByUuid(rootUuid).executeAsOneOrNull()
+            val rootRow = queries.selectBlockByUuid(rootUuid.value).executeAsOneOrNull()
             if (rootRow == null) {
                 emit(emptyList<BlockWithDepth>().right())
             } else {
@@ -114,11 +116,11 @@ class SqlDelightBlockRepository(
                 while (currentLevel.isNotEmpty()) {
                     val nextLevelUuids = mutableListOf<String>()
                     currentLevel.forEach { block ->
-                        if (block.uuid !in visitedUuids) {
-                            visitedUuids.add(block.uuid)
-                            blockCache.put(block.uuid, block)
+                        if (block.uuid.value !in visitedUuids) {
+                            visitedUuids.add(block.uuid.value)
+                            blockCache.put(block.uuid.value, block)
                             resultList.add(BlockWithDepth(block, currentDepth))
-                            nextLevelUuids.add(block.uuid)
+                            nextLevelUuids.add(block.uuid.value)
                         }
                     }
                     if (nextLevelUuids.isEmpty()) break
@@ -129,13 +131,13 @@ class SqlDelightBlockRepository(
                     if (currentDepth > 100) break
                 }
 
-                hierarchyCache.put(rootUuid, HierarchyCacheEntry(resultList, Clock.System.now().toEpochMilliseconds()))
+                hierarchyCache.put(rootUuid.value, HierarchyCacheEntry(resultList, Clock.System.now().toEpochMilliseconds()))
                 val pageUuid = resultList.firstOrNull()?.block?.pageUuid
                 if (pageUuid != null) {
                     hierarchyIndexMutex.withLock {
-                        val set = hierarchyPageIndex.getOrPut(pageUuid) { mutableSetOf() }
-                        set.removeAll { it != rootUuid && !hierarchyCache.containsKey(it) }
-                        set.add(rootUuid)
+                        val set = hierarchyPageIndex.getOrPut(pageUuid.value) { mutableSetOf() }
+                        set.removeAll { it != rootUuid.value && !hierarchyCache.containsKey(it) }
+                        set.add(rootUuid.value)
                     }
                 }
                 emit(resultList.right())
@@ -147,15 +149,15 @@ class SqlDelightBlockRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getBlockAncestors(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flow {
+    override fun getBlockAncestors(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flow {
         try {
-            val cached = ancestorsCache.get(blockUuid)
+            val cached = ancestorsCache.get(blockUuid.value)
             if (cached != null) {
                 emit(cached.right())
                 return@flow
             }
 
-            val row = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
+            val row = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
             if (row == null) {
                 emit(emptyList<Block>().right())
             } else {
@@ -165,7 +167,7 @@ class SqlDelightBlockRepository(
                     val parent = blockCache.get(currentParentUuid)
                         ?: queries.selectBlockByUuid(currentParentUuid).executeAsOneOrNull()?.toBlockModel()
                     if (parent != null) {
-                        blockCache.put(parent.uuid, parent)
+                        blockCache.put(parent.uuid.value, parent)
                         ancestors.add(parent)
                         currentParentUuid = parent.parentUuid
                     } else {
@@ -173,7 +175,7 @@ class SqlDelightBlockRepository(
                     }
                 }
                 val result = ancestors.reversed()
-                ancestorsCache.put(blockUuid, result)
+                ancestorsCache.put(blockUuid.value, result)
                 emit(result.right())
             }
         } catch (e: CancellationException) {
@@ -183,9 +185,9 @@ class SqlDelightBlockRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getBlockParent(blockUuid: String): Flow<Either<DomainError, Block?>> = flow {
+    override fun getBlockParent(blockUuid: BlockUuid): Flow<Either<DomainError, Block?>> = flow {
         try {
-            val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
+            val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
             if (block == null || block.parent_uuid == null) {
                 emit(null.right())
             } else {
@@ -199,9 +201,9 @@ class SqlDelightBlockRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getBlockSiblings(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flow {
+    override fun getBlockSiblings(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flow {
         try {
-            val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
+            val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
             if (block == null) {
                 emit(emptyList<Block>().right())
             } else {
@@ -221,14 +223,14 @@ class SqlDelightBlockRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getBlocksForPage(pageUuid: String): Flow<Either<DomainError, List<Block>>> =
-        queries.selectBlocksByPageUuidUnpaginated(pageUuid)
+    override fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>> =
+        queries.selectBlocksByPageUuidUnpaginated(pageUuid.value)
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
             .conflate()
             .map { list -> list.map { it.toBlockModel() }.right() }
 
-    override suspend fun getBlocksByUuids(uuids: List<String>): Either<DomainError, List<Block>> =
+    override suspend fun getBlocksByUuids(uuids: List<BlockUuid>): Either<DomainError, List<Block>> =
         withContext(PlatformDispatcher.DB) {
             if (uuids.isEmpty()) return@withContext emptyList<Block>().right()
             try {
@@ -236,7 +238,7 @@ class SqlDelightBlockRepository(
                 // Android API < 30 / SQLite < 3.32). 500 is a safe ceiling that also keeps
                 // each round-trip small — a 1000-block page issues two queries instead of one
                 // massive IN list, still far fewer than the old N individual lookups.
-                val blocks = uuids.chunked(BATCH_UUID_CHUNK_SIZE).flatMap { chunk ->
+                val blocks = uuids.map { it.value }.chunked(BATCH_UUID_CHUNK_SIZE).flatMap { chunk ->
                     queries.selectBlocksByUuids(chunk).executeAsList()
                 }.map { it.toBlockModel() }
                 blocks.right()
@@ -261,8 +263,8 @@ class SqlDelightBlockRepository(
                 queries.transaction {
                     chunk.forEach { block ->
                         queries.insertBlock(
-                            block.uuid,
-                            block.pageUuid,
+                            block.uuid.value,
+                            block.pageUuid.value,
                             block.parentUuid,
                             block.leftUuid,
                             block.content,
@@ -289,8 +291,8 @@ class SqlDelightBlockRepository(
     override suspend fun saveBlock(block: Block): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             queries.insertBlock(
-                block.uuid,
-                block.pageUuid,
+                block.uuid.value,
+                block.pageUuid.value,
                 block.parentUuid,
                 block.leftUuid,
                 block.content,
@@ -312,13 +314,13 @@ class SqlDelightBlockRepository(
         }
     }
 
-    override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> =
+    override suspend fun updateBlockContentOnly(blockUuid: BlockUuid, content: String): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {
             try {
-                val oldContent = blockCache.get(blockUuid)?.content
-                    ?: queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()?.content ?: ""
-                queries.updateBlockContent(content, Clock.System.now().toEpochMilliseconds(), ContentHasher.sha256ForContent(content), blockUuid)
-                blockCache.remove(blockUuid)
+                val oldContent = blockCache.get(blockUuid.value)?.content
+                    ?: queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()?.content ?: ""
+                queries.updateBlockContent(content, Clock.System.now().toEpochMilliseconds(), ContentHasher.sha256ForContent(content), blockUuid.value)
+                blockCache.remove(blockUuid.value)
                 val changedPages = extractWikilinks(oldContent) + extractWikilinks(content)
                 changedPages.forEach { queries.recomputeBacklinkCountForPage(it) }
                 Unit.right()
@@ -330,7 +332,7 @@ class SqlDelightBlockRepository(
         }
 
     override suspend fun updateBlockContentsForRename(
-        updates: List<Pair<String, String>>,
+        updates: List<Pair<BlockUuid, String>>,
         oldPageName: String,
         newPageName: String,
     ): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
@@ -338,8 +340,8 @@ class SqlDelightBlockRepository(
             val now = Clock.System.now().toEpochMilliseconds()
             queries.transaction {
                 for ((uuid, content) in updates) {
-                    queries.updateBlockContent(content, now, ContentHasher.sha256ForContent(content), uuid)
-                    blockCache.remove(uuid)
+                    queries.updateBlockContent(content, now, ContentHasher.sha256ForContent(content), uuid.value)
+                    blockCache.remove(uuid.value)
                 }
                 // oldPageName: SET 0 — all its refs were just rewritten away, no scan needed.
                 // newPageName: recompute via LIKE scan — arithmetic read is unreliable because renamePage
@@ -355,12 +357,12 @@ class SqlDelightBlockRepository(
         }
     }
 
-    override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> =
+    override suspend fun updateBlockPropertiesOnly(blockUuid: BlockUuid, properties: Map<String, String>): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {
             try {
                 val serialized = properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null }
-                queries.updateBlockProperties(serialized, blockUuid)
-                blockCache.remove(blockUuid)
+                queries.updateBlockProperties(serialized, blockUuid.value)
+                blockCache.remove(blockUuid.value)
                 Unit.right()
             } catch (e: CancellationException) {
                 throw e
@@ -369,9 +371,9 @@ class SqlDelightBlockRepository(
             }
         }
 
-    override suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun deleteBlock(blockUuid: BlockUuid, deleteChildren: Boolean): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
+            val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
             if (block != null) {
                 val wikilinkPages = mutableSetOf<String>()
                 wikilinkPages.addAll(extractWikilinks(block.content))
@@ -414,12 +416,12 @@ class SqlDelightBlockRepository(
         }
     }
 
-    override suspend fun deleteBulk(blockUuids: List<String>, deleteChildren: Boolean): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun deleteBulk(blockUuids: List<BlockUuid>, deleteChildren: Boolean): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             val wikilinkPages = mutableSetOf<String>()
             queries.transaction {
                 blockUuids.forEach { uuid ->
-                    val block = queries.selectBlockByUuid(uuid).executeAsOneOrNull() ?: return@forEach
+                    val block = queries.selectBlockByUuid(uuid.value).executeAsOneOrNull() ?: return@forEach
                     wikilinkPages.addAll(extractWikilinks(block.content))
                     if (deleteChildren) {
                         // Collect the full subtree
@@ -460,13 +462,13 @@ class SqlDelightBlockRepository(
     }
 
     override suspend fun moveBlock(
-        blockUuid: String,
-        newParentUuid: String?,
+        blockUuid: BlockUuid,
+        newParentUuid: BlockUuid?,
         newPosition: Int
     ): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             queries.transaction {
-                val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull() ?: return@transaction
+                val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull() ?: return@transaction
                 
                 // 1. Repair OLD chain: the block that followed us now follows our old left sibling
                 val blockFollowingOld = queries.selectBlockByLeftUuid(block.uuid).executeAsOneOrNull()
@@ -475,7 +477,7 @@ class SqlDelightBlockRepository(
                 }
                 
                 // 2. Resolve NEW parent and level
-                val newParent = newParentUuid?.let { queries.selectBlockByUuid(it).executeAsOneOrNull() }
+                val newParent = newParentUuid?.let { queries.selectBlockByUuid(it.value).executeAsOneOrNull() }
                 val newParentUuidResolved = newParent?.uuid
                 val newLevel = (newParent?.level ?: -1L) + 1L
                 
@@ -514,7 +516,7 @@ class SqlDelightBlockRepository(
             }
             
             // Invalidate caches
-            blockCache.remove(blockUuid)
+            blockCache.remove(blockUuid.value)
             hierarchyCache.invalidateAll()
             ancestorsCache.invalidateAll()
             Unit.right()
@@ -525,10 +527,10 @@ class SqlDelightBlockRepository(
         }
     }
 
-    override suspend fun indentBlock(blockUuid: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun indentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             queries.transaction {
-                val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
+                val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
                     ?: return@transaction
                 
                 // 1. New parent is the previous sibling.
@@ -566,10 +568,10 @@ class SqlDelightBlockRepository(
         }
     }
 
-    override suspend fun outdentBlock(blockUuid: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun outdentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             queries.transaction {
-                val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
+                val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
                     ?: return@transaction
                 
                 val currentParentUuid = block.parent_uuid ?: return@transaction // Already at root
@@ -625,9 +627,9 @@ class SqlDelightBlockRepository(
         }
     }
 
-    override suspend fun moveBlockUp(blockUuid: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun moveBlockUp(blockUuid: BlockUuid): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
+            val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
                 ?: return@withContext Unit.right()
 
             val siblings = if (block.parent_uuid == null) {
@@ -667,9 +669,9 @@ class SqlDelightBlockRepository(
         }
     }
 
-    override suspend fun moveBlockDown(blockUuid: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun moveBlockDown(blockUuid: BlockUuid): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
+            val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
                 ?: return@withContext Unit.right()
 
             val siblings = if (block.parent_uuid == null) {
@@ -710,15 +712,15 @@ class SqlDelightBlockRepository(
     }
 
     override suspend fun mergeBlocks(
-        blockUuid: String,
-        nextBlockUuid: String,
+        blockUuid: BlockUuid,
+        nextBlockUuid: BlockUuid,
         separator: String
     ): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             queries.transaction {
-                val blockA = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
+                val blockA = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
                     ?: return@transaction
-                val blockB = queries.selectBlockByUuid(nextBlockUuid).executeAsOneOrNull()
+                val blockB = queries.selectBlockByUuid(nextBlockUuid.value).executeAsOneOrNull()
                     ?: return@transaction
                 
                 // 1. Update content of block A
@@ -752,7 +754,7 @@ class SqlDelightBlockRepository(
                 queries.deleteBlockByUuid(blockB.uuid)
             }
             
-            blockCache.remove(nextBlockUuid)
+            blockCache.remove(nextBlockUuid.value)
             hierarchyCache.invalidateAll()
             Unit.right()
         } catch (e: CancellationException) {
@@ -763,14 +765,14 @@ class SqlDelightBlockRepository(
     }
 
     override suspend fun splitBlock(
-        blockUuid: String,
+        blockUuid: BlockUuid,
         cursorPosition: Int,
-        newBlockUuid: String?,
+        newBlockUuid: BlockUuid?,
     ): Either<DomainError, Block> = withContext(PlatformDispatcher.DB) {
         try {
             var newBlock: Block? = null
             queries.transaction {
-                val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
+                val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
                     ?: return@transaction
 
                 val content = block.content
@@ -783,7 +785,7 @@ class SqlDelightBlockRepository(
                 // 2. Create new block — use caller-supplied UUID when provided so that the
                 //    optimistic in-memory block and the DB block share the same UUID, eliminating
                 //    the UUID-correction pass in BlockStateManager.
-                val newUuid = newBlockUuid ?: UuidGenerator.generateV7()
+                val newUuid = newBlockUuid?.value ?: UuidGenerator.generateV7()
                 val newPosition = block.position + 1L
                 
                 // Shift siblings' positions
@@ -884,7 +886,7 @@ class SqlDelightBlockRepository(
                 ).executeAsList().map { it.toBlockModel() }
 
                 val batch = (wikiPage + hashPage)
-                    .filter { seen.add(it.uuid) }
+                    .filter { seen.add(it.uuid.value) }
                     .filter { isLinkedReference(it.content, patterns) }
                 accumulated.addAll(batch)
 
@@ -1026,8 +1028,8 @@ class SqlDelightBlockRepository(
 
     private fun dev.stapler.stelekit.db.Blocks.toBlockModel(): Block {
         return Block(
-            uuid = this.uuid,
-            pageUuid = this.page_uuid,
+            uuid = BlockUuid(this.uuid),
+            pageUuid = PageUuid(this.page_uuid),
             parentUuid = this.parent_uuid,
             leftUuid = this.left_uuid,
             content = this.content,
@@ -1088,8 +1090,8 @@ class SqlDelightBlockRepository(
         rootUuids?.forEach { hierarchyCache.remove(it) }
     }
 
-    override suspend fun cacheEvictPage(pageUuid: String) {
-        evictHierarchyForPage(pageUuid)
+    override suspend fun cacheEvictPage(pageUuid: PageUuid) {
+        evictHierarchyForPage(pageUuid.value)
     }
 
     override suspend fun cacheEvictAll() {
@@ -1099,9 +1101,9 @@ class SqlDelightBlockRepository(
         hierarchyIndexMutex.withLock { hierarchyPageIndex.clear() }
     }
 
-    override suspend fun deleteBlocksForPage(pageUuid: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun deleteBlocksForPage(pageUuid: PageUuid): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            queries.deleteBlocksByPageUuid(pageUuid)
+            queries.deleteBlocksByPageUuid(pageUuid.value)
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -1110,10 +1112,10 @@ class SqlDelightBlockRepository(
         }
     }
 
-    override suspend fun deleteBlocksForPages(pageUuids: List<String>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun deleteBlocksForPages(pageUuids: List<PageUuid>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         if (pageUuids.isEmpty()) return@withContext Unit.right()
         try {
-            queries.deleteBlocksByPageUuids(pageUuids)
+            queries.deleteBlocksByPageUuids(pageUuids.map { it.value })
             Unit.right()
         } catch (e: CancellationException) {
             throw e

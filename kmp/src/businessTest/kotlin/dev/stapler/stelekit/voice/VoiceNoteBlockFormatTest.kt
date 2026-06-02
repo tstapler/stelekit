@@ -191,7 +191,7 @@ class VoiceNoteBlockFormatTest {
 
         assertIs<VoiceCaptureState.Done>(vm.state.value)
         val page = fakeJournal.ensureTodayJournal()
-        assertTrue(page.uuid.isNotBlank())
+        assertTrue(page.uuid.value.isNotBlank())
         // Verify the inserted block has the expected structure by reading from the shared repo
         val blocks = blockRepo.getBlocksForPage(page.uuid).first().getOrNull().orEmpty()
         assertTrue(blocks.isNotEmpty(), "Expected at least one block inserted")

@@ -7,6 +7,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.JournalService
 import dev.stapler.stelekit.ui.components.EditorCapabilities
 import dev.stapler.stelekit.ui.fixtures.FakeBlockRepository
@@ -106,8 +108,8 @@ class JournalsViewUITest {
         val pageRepo = PopulatedFakePageRepository()
         val now = Clock.System.now()
         val journalBlock = Block(
-            uuid = "journal-block-1",
-            pageUuid = "journal-1",
+            uuid = BlockUuid("journal-block-1"),
+            pageUuid = PageUuid("journal-1"),
             content = "Today's note",
             position = 0,
             createdAt = now,
@@ -155,8 +157,8 @@ class JournalsViewUITest {
         val pageRepo = PopulatedFakePageRepository()
         val now = Clock.System.now()
         val journalBlock = Block(
-            uuid = "journal-block-2",
-            pageUuid = "journal-1",
+            uuid = BlockUuid("journal-block-2"),
+            pageUuid = PageUuid("journal-1"),
             content = "Selectable note",
             position = 0,
             createdAt = now,

@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.export
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -17,7 +19,7 @@ class HtmlExporterUnitTest {
         uuid: String = "html-unit-page",
         isJournal: Boolean = false
     ) = Page(
-        uuid = uuid,
+        uuid = PageUuid(uuid),
         name = name,
         createdAt = now,
         updatedAt = now,
@@ -31,8 +33,8 @@ class HtmlExporterUnitTest {
         position: Int,
         parentUuid: String? = null
     ) = Block(
-        uuid = uuid,
-        pageUuid = "html-unit-page",
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid("html-unit-page"),
         parentUuid = parentUuid,
         content = content,
         level = level,

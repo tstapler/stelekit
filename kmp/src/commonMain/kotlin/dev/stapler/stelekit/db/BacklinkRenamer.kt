@@ -3,6 +3,7 @@ package dev.stapler.stelekit.db
 import arrow.core.flatMap
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
@@ -21,7 +22,7 @@ data class RenamePreview(
     val oldName: String,
     val newName: String,
     val affectedBlockCount: Int,
-    val affectedPageUuids: List<String>
+    val affectedPageUuids: List<PageUuid>
 )
 
 /**
@@ -155,7 +156,7 @@ class BacklinkRenamer(
      * For the page that was renamed, passes `filePath = null` so [GraphWriter] recalculates
      * the file path from the new name rather than using the now-stale stored path.
      */
-    private suspend fun rewritePageFile(pageUuid: String, renamedPageUuid: String, graphPath: String) {
+    private suspend fun rewritePageFile(pageUuid: PageUuid, renamedPageUuid: PageUuid, graphPath: String) {
         val page = pageRepository.getPageByUuid(pageUuid).first().getOrNull() ?: run {
             logger.error("Page not found for backlink file rewrite: $pageUuid")
             return

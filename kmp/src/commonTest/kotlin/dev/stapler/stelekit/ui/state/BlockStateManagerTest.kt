@@ -8,7 +8,9 @@ import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
@@ -78,7 +80,7 @@ private class CountingBlockRepository(
     var getBlocksForPageCallCount: Int = 0
         private set
 
-    override fun getBlocksForPage(pageUuid: String): Flow<Either<DomainError, List<Block>>> {
+    override fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>> {
         getBlocksForPageCallCount++
         return delegate.getBlocksForPage(pageUuid)
     }
@@ -96,8 +98,8 @@ class BlockStateManagerTest {
         version: Long = 0,
         position: Int = 0
     ) = Block(
-        uuid = uuid,
-        pageUuid = pageUuid,
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid(pageUuid),
         content = content,
         position = position,
         version = version,
@@ -106,7 +108,7 @@ class BlockStateManagerTest {
     )
 
     private fun createPage(uuid: String = pageUuid, filePath: String? = null) = Page(
-        uuid = uuid,
+        uuid = PageUuid(uuid),
         name = "Test Page",
         filePath = filePath,
         createdAt = now,
@@ -142,7 +144,7 @@ class BlockStateManagerTest {
 
         // Verify optimistic update is in local state
         val afterEdit = manager.blocks.value[pageUuid]!!
-        val editedBlock = afterEdit.find { it.uuid == "block-1" }
+        val editedBlock = afterEdit.find { it.uuid.value == "block-1" }
         assertNotNull(editedBlock)
         assertEquals("user typed this", editedBlock.content)
         assertEquals(5L, editedBlock.version)
@@ -152,7 +154,7 @@ class BlockStateManagerTest {
         // but the DB hasn't processed the save yet
         // The merge logic should keep the local version
         val staleBlocks = manager.blocks.value[pageUuid]!!
-        val staleBlock = staleBlocks.find { it.uuid == "block-1" }
+        val staleBlock = staleBlocks.find { it.uuid.value == "block-1" }
         assertNotNull(staleBlock)
         assertEquals("user typed this", staleBlock.content,
             "Dirty block should NOT be overwritten by stale DB emission")
@@ -384,7 +386,7 @@ class BlockStateManagerTest {
         manager.addBlockToPage(pageUuid)
 
         // Should have a block now
-        val blocks = blockRepo.getBlocksForPage(pageUuid).first().getOrNull() ?: emptyList()
+        val blocks = blockRepo.getBlocksForPage(PageUuid(pageUuid)).first().getOrNull() ?: emptyList()
         assertEquals(1, blocks.size)
         assertEquals("", blocks[0].content)
 
@@ -455,7 +457,7 @@ class BlockStateManagerTest {
     }
 
     private fun createPageWithFilePath(filePath: String) = Page(
-        uuid = pageUuid,
+        uuid = PageUuid(pageUuid),
         name = "Test Page",
         filePath = filePath,
         createdAt = now,
@@ -609,15 +611,15 @@ class BlockStateManagerTest {
         // Set up two pages
         pageRepo.savePage(createPageWithFilePath("/graph/pages/page-a.md"))
         pageRepo.savePage(Page(
-            uuid = otherPageUuid,
+            uuid = PageUuid(otherPageUuid),
             name = "Other Page",
             filePath = "/graph/pages/page-b.md",
             createdAt = now,
             updatedAt = now
         ))
         val blockB = Block(
-            uuid = "block-b",
-            pageUuid = otherPageUuid,
+            uuid = BlockUuid("block-b"),
+            pageUuid = PageUuid(otherPageUuid),
             content = "other page content",
             position = 0,
             createdAt = now,
@@ -670,7 +672,7 @@ class BlockStateManagerTest {
         manager.insertLinkAtCursor("b1", "MyPage", overrideCursorIndex = 5)
         advanceUntilIdle()
 
-        val updated = blockRepo.getBlockByUuid("b1").first().getOrNull()
+        val updated = blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull()
         assertNotNull(updated)
         assertEquals("Hello[[MyPage]] world", updated.content,
             "Link should be inserted at position 5 (override), not at content.length")
@@ -694,7 +696,7 @@ class BlockStateManagerTest {
         manager.insertLinkAtCursor("b1", "Page")
         advanceUntilIdle()
 
-        val updated = blockRepo.getBlockByUuid("b1").first().getOrNull()
+        val updated = blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull()
         assertNotNull(updated)
         assertEquals("Hi[[Page]]", updated.content, "With no cursor info, link appended at end")
     }
@@ -719,7 +721,7 @@ class BlockStateManagerTest {
         manager.replaceSelectionWithLink("b1", 6, 11, "World")
         advanceUntilIdle()
 
-        val updated = blockRepo.getBlockByUuid("b1").first().getOrNull()
+        val updated = blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull()
         assertNotNull(updated)
         assertEquals("Hello [[World]] today", updated.content,
             "Selected 'world' should be replaced with [[World]]")
@@ -743,7 +745,7 @@ class BlockStateManagerTest {
         manager.replaceSelectionWithLink("b1", 5, 5, "Page")
         advanceUntilIdle()
 
-        val updated = blockRepo.getBlockByUuid("b1").first().getOrNull()
+        val updated = blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull()
         assertNotNull(updated)
         assertEquals("Hello[[Page]] world", updated.content,
             "Degenerate selection should insert at cursor position, not replace")
@@ -767,7 +769,7 @@ class BlockStateManagerTest {
         manager.replaceSelectionWithLink("b1", 0, 999, "Page")
         advanceUntilIdle()
 
-        val updated = blockRepo.getBlockByUuid("b1").first().getOrNull()
+        val updated = blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull()
         assertNotNull(updated)
         assertEquals("[[Page]]", updated.content, "Out-of-bounds selection clamped to content length")
     }
@@ -1022,8 +1024,8 @@ class BlockStateManagerTest {
         advanceUntilIdle()
 
         val remaining = manager.blocks.value[pageUuid] ?: emptyList()
-        assertFalse(remaining.any { it.uuid == "b2" }, "Deleted block must not remain in state")
-        assertTrue(remaining.any { it.uuid == "b1" }, "Non-selected block must remain")
+        assertFalse(remaining.any { it.uuid.value == "b2" }, "Deleted block must not remain in state")
+        assertTrue(remaining.any { it.uuid.value == "b1" }, "Non-selected block must remain")
         assertTrue(manager.selectedBlockUuids.value.isEmpty(), "Selection must be cleared after delete")
         assertFalse(manager.isInSelectionMode.value)
     }
@@ -1082,9 +1084,9 @@ class BlockStateManagerTest {
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
-        val newBlock = blocks.find { it.uuid != "b1" }
+        val newBlock = blocks.find { it.uuid.value != "b1" }
         assertNotNull(newBlock, "A new block must be created by splitBlock")
-        assertEquals(newBlock.uuid, manager.editingBlockUuid.value,
+        assertEquals(newBlock.uuid.value, manager.editingBlockUuid.value,
             "Focus must move to the new block after split")
     }
 
@@ -1154,7 +1156,7 @@ class BlockStateManagerTest {
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
-        val b2 = blocks.find { it.uuid == "b2" }
+        val b2 = blocks.find { it.uuid.value == "b2" }
         assertNotNull(b2)
         assertEquals("b1", b2.parentUuid, "indentBlock must make b2 a child of b1")
     }
@@ -1191,7 +1193,7 @@ class BlockStateManagerTest {
         // b1 at root, b2 is child of b1
         blockRepo.saveBlock(createBlock("b1", content = "root", position = 0))
         val childBlock = Block(
-            uuid = "b2", pageUuid = pageUuid, parentUuid = "b1",
+            uuid = BlockUuid("b2"), pageUuid = PageUuid(pageUuid), parentUuid = "b1",
             content = "child", level = 1, position = 0,
             createdAt = now, updatedAt = now
         )
@@ -1203,7 +1205,7 @@ class BlockStateManagerTest {
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
-        val b2 = blocks.find { it.uuid == "b2" }
+        val b2 = blocks.find { it.uuid.value == "b2" }
         assertNotNull(b2)
         assertNull(b2.parentUuid, "outdentBlock must remove parentUuid when outdenting from root child")
     }
@@ -1226,8 +1228,8 @@ class BlockStateManagerTest {
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
-        val b1 = blocks.find { it.uuid == "b1" }!!
-        val b2 = blocks.find { it.uuid == "b2" }!!
+        val b1 = blocks.find { it.uuid.value == "b1" }!!
+        val b2 = blocks.find { it.uuid.value == "b2" }!!
         assertTrue(b2.position < b1.position, "b2 must move above b1 after moveBlockUp")
     }
 
@@ -1249,8 +1251,8 @@ class BlockStateManagerTest {
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
-        val b1 = blocks.find { it.uuid == "b1" }!!
-        val b2 = blocks.find { it.uuid == "b2" }!!
+        val b1 = blocks.find { it.uuid.value == "b1" }!!
+        val b2 = blocks.find { it.uuid.value == "b2" }!!
         assertTrue(b1.position > b2.position, "b1 must move below b2 after moveBlockDown")
     }
 
@@ -1272,14 +1274,14 @@ class BlockStateManagerTest {
         manager.updateBlockContent("b1", "modified", 1).join()
         advanceUntilIdle()
 
-        val afterEdit = manager.blocks.value[pageUuid]?.find { it.uuid == "b1" }
+        val afterEdit = manager.blocks.value[pageUuid]?.find { it.uuid.value == "b1" }
         assertEquals("modified", afterEdit?.content, "Content must update after edit")
         assertTrue(manager.canUndo.value)
 
         manager.undo().join()
         advanceUntilIdle()
 
-        val afterUndo = manager.blocks.value[pageUuid]?.find { it.uuid == "b1" }
+        val afterUndo = manager.blocks.value[pageUuid]?.find { it.uuid.value == "b1" }
         assertEquals("original", afterUndo?.content, "Undo must restore original content")
     }
 
@@ -1304,7 +1306,7 @@ class BlockStateManagerTest {
         manager.redo().join()
         advanceUntilIdle()
 
-        val afterRedo = manager.blocks.value[pageUuid]?.find { it.uuid == "b1" }
+        val afterRedo = manager.blocks.value[pageUuid]?.find { it.uuid.value == "b1" }
         assertEquals("modified", afterRedo?.content, "Redo must reapply the edit")
     }
 
@@ -1414,7 +1416,7 @@ class BlockStateManagerTest {
         manager.updateBlockProperties("b1", mapOf("status" to "done")).join()
         advanceUntilIdle()
 
-        val b1 = manager.blocks.value[pageUuid]?.find { it.uuid == "b1" }
+        val b1 = manager.blocks.value[pageUuid]?.find { it.uuid.value == "b1" }
         assertNotNull(b1)
         assertEquals("done", b1.properties["status"],
             "updateBlockProperties must update local state with new properties")
@@ -1440,10 +1442,10 @@ class BlockStateManagerTest {
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
-        val b1 = blocks.find { it.uuid == "b1" }
+        val b1 = blocks.find { it.uuid.value == "b1" }
         assertNotNull(b1, "b1 must remain after mergeBlock")
         assertEquals("Hello World", b1.content, "b1 must contain merged content")
-        assertFalse(blocks.any { it.uuid == "b2" }, "Merged block b2 must be removed")
+        assertFalse(blocks.any { it.uuid.value == "b2" }, "Merged block b2 must be removed")
     }
 
     @Test
@@ -1496,14 +1498,14 @@ class BlockStateManagerTest {
         // Assert _blocks already has 2 entries BEFORE the 500ms DB delay expires
         val blocks = manager.blocks.value[pageUuid]
         assertEquals(2, blocks?.size, "_blocks must have 2 entries immediately after splitBlock launch (optimistic)")
-        assertEquals("Hello", blocks?.find { it.uuid == "b1" }?.content,
+        assertEquals("Hello", blocks?.find { it.uuid.value == "b1" }?.content,
             "First block must have content before cursor (optimistic)")
-        val newBlock = blocks?.find { it.uuid != "b1" }
+        val newBlock = blocks?.find { it.uuid.value != "b1" }
         assertNotNull(newBlock, "New block must be present in _blocks optimistically")
         assertEquals("World", newBlock.content, "New block must have content after cursor (optimistic)")
 
         // Focus must be on the new block immediately (before DB returns)
-        assertEquals(newBlock.uuid, manager.editingBlockUuid.value,
+        assertEquals(newBlock.uuid.value, manager.editingBlockUuid.value,
             "Focus must move to new block UUID before DB write completes")
 
         // Now let the DB write complete
@@ -1535,11 +1537,11 @@ class BlockStateManagerTest {
 
         val blocks = manager.blocks.value[pageUuid]
         assertEquals(2, blocks?.size, "_blocks must have 2 entries immediately after addNewBlock launch (optimistic)")
-        val newBlock = blocks?.find { it.uuid != "b1" }
+        val newBlock = blocks?.find { it.uuid.value != "b1" }
         assertNotNull(newBlock, "New empty block must be present optimistically")
         assertEquals("", newBlock.content, "New block must have empty content (addNewBlock appends empty)")
 
-        assertEquals(newBlock.uuid, manager.editingBlockUuid.value,
+        assertEquals(newBlock.uuid.value, manager.editingBlockUuid.value,
             "Focus must move to new block UUID before DB write completes")
 
         job.join()
@@ -1616,9 +1618,9 @@ class BlockStateManagerTest {
         val blocks = manager.blocks.value[pageUuid]
         assertEquals(2, blocks?.size,
             "_blocks must remain unchanged (2 entries) after failed merge")
-        assertEquals("Hello", blocks?.find { it.uuid == "b1" }?.content,
+        assertEquals("Hello", blocks?.find { it.uuid.value == "b1" }?.content,
             "b1 content must be unchanged after failed merge")
-        assertEquals("World", blocks?.find { it.uuid == "b2" }?.content,
+        assertEquals("World", blocks?.find { it.uuid.value == "b2" }?.content,
             "b2 content must be unchanged after failed merge")
 
         // Focus must be restored to the exact pre-merge state (b2, position 0)
@@ -1665,7 +1667,7 @@ class BlockStateManagerTest {
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
         assertEquals(2, blocks.size, "splitBlock must produce 2 blocks after race resolves")
-        assertEquals("Hello", blocks.find { it.uuid == "b1" }?.content,
+        assertEquals("Hello", blocks.find { it.uuid.value == "b1" }?.content,
             "b1 must have 'Hello' (first part after split with latest content)")
         assertNotNull(blocks.find { it.content == "World" },
             "New block must have 'World' (second part of 'Hello World' split at 5)")
@@ -1723,13 +1725,13 @@ class BlockStateManagerTest {
         // The key assertion: 2 blocks exist (new block was created and persisted).
         assertEquals(2, blocks.size, "addNewBlock must produce 2 blocks after race resolves")
         // The new block exists (split used typed content from DB, not stale "original").
-        val newBlock = blocks.find { it.uuid != "b1" }
+        val newBlock = blocks.find { it.uuid.value != "b1" }
         assertNotNull(newBlock, "New block must exist after addNewBlock")
         // With the fix: content write drains first → DB has "Hello World"; split at cursor 8
         // (addNewBlock read _blocks "original".length = 8 before _blocks was updated).
         // Split of "Hello World" at 8: b1 = "Hello Wo", new = "rld" (with trim).
         // Key invariant: b1 does NOT contain "original" — the split was on the typed content.
-        assertFalse(blocks.find { it.uuid == "b1" }?.content?.contains("original") == true,
+        assertFalse(blocks.find { it.uuid.value == "b1" }?.content?.contains("original") == true,
             "b1 must not contain 'original' after content write drained before split")
 
         actor.close()
@@ -1770,9 +1772,9 @@ class BlockStateManagerTest {
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
         assertEquals(1, blocks.size, "mergeBlock must leave exactly 1 block after race resolves")
-        assertEquals("Hello World", blocks.find { it.uuid == "b1" }?.content,
+        assertEquals("Hello World", blocks.find { it.uuid.value == "b1" }?.content,
             "b1 must have merged content 'Hello World' (not 'Hellooriginal')")
-        assertNull(blocks.find { it.uuid == "b2" },
+        assertNull(blocks.find { it.uuid.value == "b2" },
             "b2 must be deleted after merge")
 
         actor.close()
@@ -1815,9 +1817,9 @@ class BlockStateManagerTest {
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
         assertEquals(1, blocks.size, "handleBackspace must leave exactly 1 block after race resolves")
-        assertEquals("Hello World", blocks.find { it.uuid == "b1" }?.content,
+        assertEquals("Hello World", blocks.find { it.uuid.value == "b1" }?.content,
             "b1 must have merged content 'Hello World' after handleBackspace (not 'Hellooriginal')")
-        assertNull(blocks.find { it.uuid == "b2" },
+        assertNull(blocks.find { it.uuid.value == "b2" },
             "b2 must be deleted after handleBackspace merge")
 
         actor.close()
@@ -1839,9 +1841,9 @@ private class DelayedBlockRepository(
 
     @DirectRepositoryWrite
     override suspend fun splitBlock(
-        blockUuid: String,
+        blockUuid: BlockUuid,
         cursorPosition: Int,
-        newBlockUuid: String?,
+        newBlockUuid: BlockUuid?,
     ): Either<DomainError, Block> {
         delay(splitDelayMs)
         return delegate.splitBlock(blockUuid, cursorPosition, newBlockUuid)
@@ -1859,14 +1861,14 @@ private class FailingBlockRepository(
 
     @DirectRepositoryWrite
     override suspend fun splitBlock(
-        blockUuid: String,
+        blockUuid: BlockUuid,
         cursorPosition: Int,
-        newBlockUuid: String?,
+        newBlockUuid: BlockUuid?,
     ): Either<DomainError, Block> =
         DomainError.DatabaseError.WriteFailed("injected splitBlock failure").left()
 
     @DirectRepositoryWrite
-    override suspend fun mergeBlocks(blockUuid: String, nextBlockUuid: String, separator: String): Either<DomainError, Unit> =
+    override suspend fun mergeBlocks(blockUuid: BlockUuid, nextBlockUuid: BlockUuid, separator: String): Either<DomainError, Unit> =
         DomainError.DatabaseError.WriteFailed("injected mergeBlocks failure").left()
 }
 
@@ -1886,7 +1888,7 @@ private class DelayedContentBlockRepository(
 ) : BlockRepository by delegate {
     @DirectRepositoryWrite
     override suspend fun updateBlockContentOnly(
-        blockUuid: String,
+        blockUuid: BlockUuid,
         content: String,
     ): Either<DomainError, Unit> {
         delay(contentDelayMs)

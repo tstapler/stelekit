@@ -121,7 +121,7 @@ fun ReferencesPanel(
 
     val unlinkedEntries = remember(unlinkedBlocks, dismissedUuids, suggestionMatcher) {
         unlinkedBlocks
-            .filter { it.uuid !in dismissedUuids }
+            .filter { it.uuid.value !in dismissedUuids }
             .map { blockToEntry(it, page.name, suggestionMatcher) }
     }
 
@@ -197,16 +197,16 @@ fun ReferencesPanel(
                                     val result = writeActor?.saveBlock(updated)
                                         ?: blockRepository.saveBlock(updated)
                                     if (result.isRight()) {
-                                        dismissedUuids = dismissedUuids + entry.block.uuid
+                                        dismissedUuids = dismissedUuids + entry.block.uuid.value
                                     }
                                 } else {
                                     // Block was edited since the suggestion was captured — dismiss silently
-                                    dismissedUuids = dismissedUuids + entry.block.uuid
+                                    dismissedUuids = dismissedUuids + entry.block.uuid.value
                                 }
                             }
                         },
                         onReject = { entry ->
-                            dismissedUuids = dismissedUuids + entry.block.uuid
+                            dismissedUuids = dismissedUuids + entry.block.uuid.value
                         },
                     )
                 } else if (!isLoadingUnlinked) {
@@ -399,7 +399,7 @@ private fun ReferenceSection(
                 val blocksByPage = blocks.groupBy { it.pageUuid }
                 blocksByPage.forEach { (pageUuid, pageBlocks) ->
                     ReferencePageGroup(
-                        pageUuid = pageUuid,
+                        pageUuid = pageUuid.value,
                         blocks = pageBlocks,
                         pageRepository = pageRepository,
                         onLinkClick = onLinkClick,
@@ -440,7 +440,7 @@ private fun ReferencePageGroup(
     var pageName by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(pageUuid) {
-        val pageResult = pageRepository.getPageByUuid(pageUuid).first()
+        val pageResult = pageRepository.getPageByUuid(dev.stapler.stelekit.model.PageUuid(pageUuid)).first()
         pageName = pageResult.getOrNull()?.name
     }
 

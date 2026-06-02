@@ -3,6 +3,7 @@
 package dev.stapler.stelekit.voice
 
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.JournalService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -143,7 +144,7 @@ class VoiceCaptureViewModel(
 
         val targetPageUuid = currentOpenPageUuid()
         val targetPageName: String? = try {
-            if (targetPageUuid != null) journalService.getPageNameByUuid(targetPageUuid) else null
+            if (targetPageUuid != null) journalService.getPageNameByUuid(PageUuid(targetPageUuid)) else null
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -174,7 +175,7 @@ class VoiceCaptureViewModel(
                 journalService.createTranscriptPage(pageTitle, transcriptPageContent)
             }
             if (targetPageUuid != null) {
-                journalService.appendToPage(targetPageUuid, inlineBlock)
+                journalService.appendToPage(PageUuid(targetPageUuid), inlineBlock)
             } else {
                 journalService.appendToToday(inlineBlock)
             }

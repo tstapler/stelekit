@@ -13,6 +13,7 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.isCtrlPressed
 import kotlinx.coroutines.CoroutineScope
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.CursorState
 import dev.stapler.stelekit.editor.commands.*
@@ -72,7 +73,7 @@ class Editor(
             
             // Initialize text states for all blocks with their content
             blocks.forEach { block: Block ->
-                textOperations.initializeBlock(block.uuid, block.content)
+                textOperations.initializeBlock(block.uuid.value, block.content)
             }
             
             dev.stapler.stelekit.performance.PerformanceMonitor.endTrace(traceId)
@@ -149,7 +150,7 @@ class Editor(
                 selectionEnd = selection?.range?.end ?: _cursorState.value.position,
                 currentBlockId = currentBlockUuid,
                 currentBlockContent = content,
-                currentPageId = _currentPage.value?.uuid,
+                currentPageId = _currentPage.value?.uuid?.value,
                 cursorPosition = _cursorState.value.position
             )
             
@@ -177,7 +178,7 @@ class Editor(
                 selectionEnd = selection?.range?.end ?: _cursorState.value.position,
                 currentBlockId = currentBlockUuid,
                 currentBlockContent = content,
-                currentPageId = _currentPage.value?.uuid,
+                currentPageId = _currentPage.value?.uuid?.value,
                 cursorPosition = _cursorState.value.position,
                 additionalData = args
             )
@@ -217,13 +218,13 @@ class Editor(
             var parentUuid: String? = null
             
             if (focusedBlockUuid != null) {
-                val focusedBlock = blockRepository.getBlockByUuid(focusedBlockUuid).first().getOrNull()
+                val focusedBlock = blockRepository.getBlockByUuid(BlockUuid(focusedBlockUuid)).first().getOrNull()
                 // If we have a focused block, we likely want to create a sibling (same parent)
                 parentUuid = focusedBlock?.parentUuid
             }
             
             blockOperations.createBlock(
-                pageId = currentPage.uuid,
+                pageId = currentPage.uuid.value,
                 content = content,
                 parentId = parentUuid
             ).also { result ->
@@ -238,7 +239,7 @@ class Editor(
                         }
                         // Focus new block
                         _cursorState.value = CursorState(
-                            blockId = newBlock.uuid,
+                            blockId = newBlock.uuid.value,
                             position = content.length
                         )
                     }
@@ -252,12 +253,12 @@ class Editor(
     suspend fun deleteCurrentBlock(): Either<DomainError, Unit> {
         val currentBlockUuid = _cursorState.value.blockId
         return if (currentBlockUuid != null) {
-            blockOperations.deleteBlock(currentBlockUuid, false).also { result ->
+            blockOperations.deleteBlock(BlockUuid(currentBlockUuid), false).also { result ->
                 if (result.isRight()) {
                     // Update editor state
                     _editorState.update { current ->
                         current.copy(
-                            blocks = current.blocks.filter { block -> block.uuid != currentBlockUuid }
+                            blocks = current.blocks.filter { block -> block.uuid.value != currentBlockUuid }
                         )
                     }
                     // Move focus to next sibling or parent
@@ -272,7 +273,7 @@ class Editor(
     suspend fun indentCurrentBlock(): Either<DomainError, Unit> {
         val currentBlockUuid = _cursorState.value.blockId
         return if (currentBlockUuid != null) {
-            blockOperations.indentBlock(currentBlockUuid).also { result ->
+            blockOperations.indentBlock(BlockUuid(currentBlockUuid)).also { result ->
                 if (result.isRight()) {
                     refreshBlocks()
                 }
@@ -285,7 +286,7 @@ class Editor(
     suspend fun outdentCurrentBlock(): Either<DomainError, Unit> {
         val currentBlockUuid = _cursorState.value.blockId
         return if (currentBlockUuid != null) {
-            blockOperations.outdentBlock(currentBlockUuid).also { result ->
+            blockOperations.outdentBlock(BlockUuid(currentBlockUuid)).also { result ->
                 if (result.isRight()) {
                     refreshBlocks()
                 }
@@ -298,7 +299,7 @@ class Editor(
     suspend fun moveBlockUp(): Either<DomainError, Unit> {
         val currentBlockUuid = _cursorState.value.blockId
         return if (currentBlockUuid != null) {
-            blockOperations.moveBlockUp(currentBlockUuid).also { result ->
+            blockOperations.moveBlockUp(BlockUuid(currentBlockUuid)).also { result ->
                 if (result.isRight()) {
                     refreshBlocks()
                 }
@@ -311,7 +312,7 @@ class Editor(
     suspend fun moveBlockDown(): Either<DomainError, Unit> {
         val currentBlockUuid = _cursorState.value.blockId
         return if (currentBlockUuid != null) {
-            blockOperations.moveBlockDown(currentBlockUuid).also { result ->
+            blockOperations.moveBlockDown(BlockUuid(currentBlockUuid)).also { result ->
                 if (result.isRight()) {
                     refreshBlocks()
                 }
@@ -326,14 +327,14 @@ class Editor(
         val position = _cursorState.value.position
         
         return if (currentBlockUuid != null) {
-            blockOperations.splitBlock(currentBlockUuid, position).also { result ->
+            blockOperations.splitBlock(BlockUuid(currentBlockUuid), position).also { result ->
                 if (result.isRight()) {
                     refreshBlocks()
                     // Focus the new block
                     val newBlock = result.getOrNull()
                     if (newBlock != null) {
                         _cursorState.value = CursorState(
-                            blockId = newBlock.uuid,
+                            blockId = newBlock.uuid.value,
                             position = 0
                         )
                     }
@@ -372,22 +373,22 @@ class Editor(
         val currentBlockUuid = _cursorState.value.blockId ?: return
         
         // Try to get next sibling
-        val nextSibling = blockOperations.getBlockSiblings(currentBlockUuid).first().getOrNull()
-            ?.filter { sibling -> sibling.uuid != currentBlockUuid }
+        val nextSibling = blockOperations.getBlockSiblings(BlockUuid(currentBlockUuid)).first().getOrNull()
+            ?.filter { sibling -> sibling.uuid.value != currentBlockUuid }
             ?.sortedBy { sibling -> sibling.position }
             ?.firstOrNull()
-        
+
         if (nextSibling != null) {
             _cursorState.value = CursorState(
-                blockId = nextSibling.uuid,
+                blockId = nextSibling.uuid.value,
                 position = 0
             )
         } else {
             // Move to parent
-            val parent = blockOperations.getBlockParent(currentBlockUuid).first().getOrNull()
+            val parent = blockOperations.getBlockParent(BlockUuid(currentBlockUuid)).first().getOrNull()
             if (parent != null) {
                 _cursorState.value = CursorState(
-                    blockId = parent.uuid,
+                    blockId = parent.uuid.value,
                     position = 0
                 )
             }

@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.export
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -15,7 +17,7 @@ class PlainTextExporterTest {
     private val exporter = PlainTextExporter()
 
     private fun page(name: String = "Test Page") = Page(
-        uuid = "page-1",
+        uuid = PageUuid("page-1"),
         name = name,
         createdAt = now,
         updatedAt = now,
@@ -29,8 +31,8 @@ class PlainTextExporterTest {
         parentUuid: String? = null,
         properties: Map<String, String> = emptyMap(),
     ) = Block(
-        uuid = uuid,
-        pageUuid = "page-1",
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid("page-1"),
         parentUuid = parentUuid,
         content = content,
         level = level,

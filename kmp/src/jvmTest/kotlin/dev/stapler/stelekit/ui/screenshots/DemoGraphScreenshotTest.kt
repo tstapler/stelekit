@@ -5,7 +5,9 @@ import androidx.compose.ui.test.onRoot
 import io.github.takahirom.roborazzi.captureRoboImage
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.JournalService
 import dev.stapler.stelekit.ui.fixtures.FakeBlockRepository
 import dev.stapler.stelekit.ui.fixtures.FakeFileSystem
@@ -31,20 +33,20 @@ class DemoGraphScreenshotTest {
         val now = Clock.System.now()
         val pageUuid = "demo-0000-0000-0000-000000000001"
         val page = Page(
-            uuid = pageUuid, name = "2026_01_15",
+            uuid = PageUuid(pageUuid), name = "2026_01_15",
             createdAt = now, updatedAt = now,
             isJournal = true, journalDate = LocalDate(2026, 1, 15)
         )
         val blocks = listOf(
-            Block(uuid = "demo-b001", pageUuid = pageUuid, content = "date:: 2026-01-15", level = 0, position = 0, createdAt = now, updatedAt = now),
-            Block(uuid = "demo-b002", pageUuid = pageUuid, content = "First day exploring SteleKit.", level = 0, position = 1, createdAt = now, updatedAt = now),
-            Block(uuid = "demo-b003", pageUuid = pageUuid, parentUuid = "demo-b002", content = "Opened the app and added my first graph", level = 1, position = 0, createdAt = now, updatedAt = now),
-            Block(uuid = "demo-b004", pageUuid = pageUuid, parentUuid = "demo-b002", content = "Created a few test pages", level = 1, position = 1, createdAt = now, updatedAt = now),
-            Block(uuid = "demo-b005", pageUuid = pageUuid, content = "Things I learned today", level = 0, position = 2, createdAt = now, updatedAt = now),
-            Block(uuid = "demo-b006", pageUuid = pageUuid, parentUuid = "demo-b005", content = "Blocks are the primary unit of content", level = 1, position = 0, createdAt = now, updatedAt = now),
-            Block(uuid = "demo-b007", pageUuid = pageUuid, parentUuid = "demo-b005", content = "Everything auto-saves after 500ms", level = 1, position = 1, createdAt = now, updatedAt = now),
-            Block(uuid = "demo-b008", pageUuid = pageUuid, parentUuid = "demo-b005", content = "[[Welcome]] is the best starting point", level = 1, position = 2, createdAt = now, updatedAt = now),
-            Block(uuid = "demo-b009", pageUuid = pageUuid, content = "Tomorrow: explore properties and linking.", level = 0, position = 3, createdAt = now, updatedAt = now),
+            Block(uuid = BlockUuid("demo-b001"), pageUuid = PageUuid(pageUuid), content = "date:: 2026-01-15", level = 0, position = 0, createdAt = now, updatedAt = now),
+            Block(uuid = BlockUuid("demo-b002"), pageUuid = PageUuid(pageUuid), content = "First day exploring SteleKit.", level = 0, position = 1, createdAt = now, updatedAt = now),
+            Block(uuid = BlockUuid("demo-b003"), pageUuid = PageUuid(pageUuid), parentUuid = "demo-b002", content = "Opened the app and added my first graph", level = 1, position = 0, createdAt = now, updatedAt = now),
+            Block(uuid = BlockUuid("demo-b004"), pageUuid = PageUuid(pageUuid), parentUuid = "demo-b002", content = "Created a few test pages", level = 1, position = 1, createdAt = now, updatedAt = now),
+            Block(uuid = BlockUuid("demo-b005"), pageUuid = PageUuid(pageUuid), content = "Things I learned today", level = 0, position = 2, createdAt = now, updatedAt = now),
+            Block(uuid = BlockUuid("demo-b006"), pageUuid = PageUuid(pageUuid), parentUuid = "demo-b005", content = "Blocks are the primary unit of content", level = 1, position = 0, createdAt = now, updatedAt = now),
+            Block(uuid = BlockUuid("demo-b007"), pageUuid = PageUuid(pageUuid), parentUuid = "demo-b005", content = "Everything auto-saves after 500ms", level = 1, position = 1, createdAt = now, updatedAt = now),
+            Block(uuid = BlockUuid("demo-b008"), pageUuid = PageUuid(pageUuid), parentUuid = "demo-b005", content = "[[Welcome]] is the best starting point", level = 1, position = 2, createdAt = now, updatedAt = now),
+            Block(uuid = BlockUuid("demo-b009"), pageUuid = PageUuid(pageUuid), content = "Tomorrow: explore properties and linking.", level = 0, position = 3, createdAt = now, updatedAt = now),
         )
         return Triple(page, blocks, pageUuid)
     }

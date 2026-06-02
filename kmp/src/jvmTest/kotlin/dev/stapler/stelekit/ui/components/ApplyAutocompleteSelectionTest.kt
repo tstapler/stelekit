@@ -4,6 +4,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.screens.SearchResultItem
 import kotlin.time.Clock
 import org.junit.Test
@@ -16,7 +17,7 @@ class ApplyAutocompleteSelectionTest {
     private val baseState = AutocompleteState("foo", cursorRect, AutocompleteTrigger.WIKI_LINK)
 
     private fun page(name: String) = Page(
-        uuid = "00000000-0000-0000-0000-000000000001",
+        uuid = PageUuid("00000000-0000-0000-0000-000000000001"),
         name = name,
         createdAt = now,
         updatedAt = now,

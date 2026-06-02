@@ -299,7 +299,7 @@ internal fun BlockItem(
                 isSelected = isSelected,
                 isInSelectionMode = isInSelectionMode,
                 onToggleSelect = onToggleSelect,
-                blockUuid = block.uuid,
+                blockUuid = block.uuid.value,
                 onDragStart = onDragStart,
                 onDrag = onDrag,
                 onDragEnd = onDragEnd,
@@ -321,7 +321,7 @@ internal fun BlockItem(
                     isEditing = isEditing,
                     hasFocused = hasFocused,
                     onHasFocusedChange = { hasFocused = it },
-                    blockUuid = block.uuid,
+                    blockUuid = block.uuid.value,
                     autocompleteState = autocompleteState,
                     onAutocompleteStateChange = { autocompleteState = it },
                     searchResults = filteredResults,
@@ -423,7 +423,7 @@ internal fun BlockItem(
                                 onSuggestionRightClick = { canonicalName, contentStart, contentEnd ->
                                     contextMenuState = SuggestionState(canonicalName, contentStart, contentEnd, block.content)
                                 },
-                                onUrlRightClick = onArchiveUrl?.let { archive -> { url -> archive(url, block.uuid) } },
+                                onUrlRightClick = onArchiveUrl?.let { archive -> { url -> archive(url, block.uuid.value) } },
                             )
                         }
                     }

@@ -7,7 +7,9 @@ import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.SqlDelightBlockRepository
 import dev.stapler.stelekit.repository.SqlDelightPageRepository
@@ -49,26 +51,26 @@ class JournalsViewScreenshotTest {
         val grandchildBlockUuid = "00000000-0000-0000-0000-000000000004"
 
         val page = Page(
-            uuid = pageUuid,
+            uuid = PageUuid(pageUuid),
             name = "2026_03_21",
             createdAt = now, updatedAt = now,
             isJournal = true, journalDate = LocalDate(2026, 3, 21)
         )
         val parentBlock = Block(
-            uuid = parentBlockUuid,
-            pageUuid = pageUuid,
+            uuid = BlockUuid(parentBlockUuid),
+            pageUuid = PageUuid(pageUuid),
             content = "**Bold text** with [[Wiki Link]] and plain text",
             level = 0, position = 0, createdAt = now, updatedAt = now
         )
         val childBlock = Block(
-            uuid = childBlockUuid,
-            pageUuid = pageUuid, parentUuid = parentBlockUuid, leftUuid = parentBlockUuid,
+            uuid = BlockUuid(childBlockUuid),
+            pageUuid = PageUuid(pageUuid), parentUuid = parentBlockUuid, leftUuid = parentBlockUuid,
             content = "Child block with #tag and ~~strikethrough~~ and `code`",
             level = 1, position = 0, createdAt = now, updatedAt = now
         )
         val grandchildBlock = Block(
-            uuid = grandchildBlockUuid,
-            pageUuid = pageUuid, parentUuid = childBlockUuid, leftUuid = childBlockUuid,
+            uuid = BlockUuid(grandchildBlockUuid),
+            pageUuid = PageUuid(pageUuid), parentUuid = childBlockUuid, leftUuid = childBlockUuid,
             content = "Grandchild with unresolved ref ((00000000-0000-0000-0000-000000000099))",
             level = 2, position = 0, createdAt = now, updatedAt = now
         )

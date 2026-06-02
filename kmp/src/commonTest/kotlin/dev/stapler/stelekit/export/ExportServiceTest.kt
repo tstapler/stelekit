@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.export
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -27,8 +29,8 @@ class ExportServiceTest {
         parentUuid: String? = null,
         pageUuid: String = "page-test"
     ) = Block(
-        uuid = uuid,
-        pageUuid = pageUuid,
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid(pageUuid),
         parentUuid = parentUuid,
         content = content,
         level = level,
@@ -38,7 +40,7 @@ class ExportServiceTest {
     )
 
     private fun page(uuid: String = "page-test", name: String = "Test Page") = Page(
-        uuid = uuid,
+        uuid = PageUuid(uuid),
         name = name,
         createdAt = now,
         updatedAt = now
@@ -99,7 +101,7 @@ class ExportServiceTest {
 
         val allBlocks = listOf(root, child, grandchild, sibling)
         val result = service.subtreeBlocks(allBlocks, setOf("root"))
-        val resultUuids = result.map { it.uuid }.toSet()
+        val resultUuids = result.map { it.uuid.value }.toSet()
 
         assertTrue("root" in resultUuids)
         assertTrue("child" in resultUuids)
@@ -119,7 +121,7 @@ class ExportServiceTest {
         val leaf = block("leaf", "Leaf", level = 1, position = 0, parentUuid = "root")
 
         val result = service.subtreeBlocks(listOf(root, leaf), setOf("leaf"))
-        val resultUuids = result.map { it.uuid }.toSet()
+        val resultUuids = result.map { it.uuid.value }.toSet()
 
         assertTrue("leaf" in resultUuids)
         assertFalse("root" in resultUuids)
@@ -143,7 +145,7 @@ class ExportServiceTest {
             listOf(rootA, childA, rootB, childB, unrelated),
             setOf("rootA", "rootB")
         )
-        val resultUuids = result.map { it.uuid }.toSet()
+        val resultUuids = result.map { it.uuid.value }.toSet()
 
         assertTrue("rootA" in resultUuids)
         assertTrue("childA" in resultUuids)

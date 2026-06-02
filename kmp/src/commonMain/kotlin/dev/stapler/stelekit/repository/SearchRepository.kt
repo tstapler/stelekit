@@ -3,13 +3,15 @@ package dev.stapler.stelekit.repository
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.Flow
 
 interface SearchRepository {
     fun searchBlocksByContent(query: String, limit: Int = 50, offset: Int = 0): Flow<Either<DomainError, List<Block>>>
     fun searchPagesByTitle(query: String, limit: Int = 20): Flow<Either<DomainError, List<Page>>>
-    fun findBlocksReferencing(blockUuid: String): Flow<Either<DomainError, List<Block>>>
+    fun findBlocksReferencing(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>>
     fun searchWithFilters(searchRequest: SearchRequest): Flow<Either<DomainError, SearchResult>>
 
     /**
@@ -18,7 +20,7 @@ interface SearchRepository {
      * Must execute on [PlatformDispatcher.DB].
      */
     @DirectRepositoryWrite
-    suspend fun recordPageVisit(pageUuid: String): Either<DomainError, Unit>
+    suspend fun recordPageVisit(pageUuid: PageUuid): Either<DomainError, Unit>
 
     @DirectRepositoryWrite
     suspend fun rebuildFts(): Either<DomainError, Unit>
@@ -45,7 +47,7 @@ enum class DataType {
 
 data class SearchRequest(
     val query: String? = null,
-    val pageUuid: String? = null,
+    val pageUuid: PageUuid? = null,
     val scope: SearchScope = SearchScope.ALL,
     val dataTypes: Set<DataType> = setOf(DataType.TITLES, DataType.CONTENT),
     val propertyFilters: Map<String, String> = emptyMap(),

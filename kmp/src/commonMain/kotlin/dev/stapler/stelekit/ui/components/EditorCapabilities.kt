@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.ui.components
 
+import dev.stapler.stelekit.model.BlockUuid
+
 /**
  * Bundles platform-provided attachment callbacks for the editor toolbar.
  *
@@ -13,7 +15,7 @@ data class EditorCapabilities(
      * `![alt](relativePath)` at the cursor of the supplied block UUID.
      * Null hides the attach-image toolbar button.
      */
-    val onAttachImage: ((editingBlockUuid: String?) -> Unit)? = null,
+    val onAttachImage: ((editingBlockUuid: BlockUuid?) -> Unit)? = null,
     /**
      * Handles files drag-and-dropped onto the page area. Each entry is a platform file handle
      * (opaque [Any] in commonMain; a [java.io.File] on JVM). Null disables drop handling.
@@ -23,5 +25,5 @@ data class EditorCapabilities(
      * Handles Ctrl/Cmd+V when the clipboard contains an image. Returns true if consumed.
      * Null disables clipboard-image paste.
      */
-    val onPasteImage: ((editingBlockUuid: String?) -> Boolean)? = null,
+    val onPasteImage: ((editingBlockUuid: BlockUuid?) -> Boolean)? = null,
 )

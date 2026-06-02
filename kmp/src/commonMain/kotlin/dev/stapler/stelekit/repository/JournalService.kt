@@ -7,7 +7,9 @@ import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.flow.Flow
@@ -102,7 +104,7 @@ class JournalService(
         }
 
         // No page exists — create one
-        val pageUuid = UuidGenerator.generateV7()
+        val pageUuid = PageUuid(UuidGenerator.generateV7())
         val newPage = Page(
             uuid = pageUuid,
             name = underscoreName,
@@ -119,7 +121,7 @@ class JournalService(
         }
 
         val initialBlock = Block(
-            uuid = UuidGenerator.generateV7(),
+            uuid = BlockUuid(UuidGenerator.generateV7()),
             pageUuid = pageUuid,
             content = "",
             position = 0,
@@ -148,7 +150,7 @@ class JournalService(
      * Appends a new block with [content] to the page identified by [pageUuid].
      * Falls back to today's journal if [pageUuid] resolves to no page.
      */
-    suspend fun appendToPage(pageUuid: String, content: String) {
+    suspend fun appendToPage(pageUuid: PageUuid, content: String) {
         val page = pageRepository.getPageByUuid(pageUuid).first().getOrNull()
         if (page == null) {
             appendToToday(content)
@@ -162,7 +164,7 @@ class JournalService(
         val blocks = blockRepository.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
         val nextPosition = (blocks.maxOfOrNull { it.position } ?: -1) + 1
         val newBlock = Block(
-            uuid = UuidGenerator.generateV7(),
+            uuid = BlockUuid(UuidGenerator.generateV7()),
             pageUuid = page.uuid,
             content = content,
             position = nextPosition,
@@ -189,7 +191,7 @@ class JournalService(
             appendToPage(existing.uuid, content)
             return existing
         }
-        val pageUuid = UuidGenerator.generateV7()
+        val pageUuid = PageUuid(UuidGenerator.generateV7())
         val newPage = Page(
             uuid = pageUuid,
             name = title,
@@ -203,7 +205,7 @@ class JournalService(
             pageRepository.savePage(newPage)
         }
         val newBlock = Block(
-            uuid = UuidGenerator.generateV7(),
+            uuid = BlockUuid(UuidGenerator.generateV7()),
             pageUuid = pageUuid,
             content = content,
             position = 0,
@@ -219,11 +221,11 @@ class JournalService(
     }
 
     /** Returns the name of the page with [uuid], or null if not found. */
-    suspend fun getPageNameByUuid(uuid: String): String? =
+    suspend fun getPageNameByUuid(uuid: PageUuid): String? =
         pageRepository.getPageByUuid(uuid).first().getOrNull()?.name
 
     private suspend fun healJournalDate(page: Page, date: LocalDate): Page {
-        logger.info("Healing missing journal_date for page ${page.uuid} (name=${page.name})")
+        logger.info("Healing missing journal_date for page ${page.uuid.value} (name=${page.name})")
         val healed = page.copy(journalDate = date, isJournal = true, updatedAt = clock.now())
         if (writeActor != null) {
             writeActor.savePage(healed)
@@ -269,7 +271,7 @@ class JournalService(
                         @OptIn(DirectRepositoryWrite::class)
                         blockRepository.saveBlock(block.copy(pageUuid = keeper.uuid))
                     }
-                    logger.info("Re-parented block ${block.uuid} to keeper page ${keeper.uuid}")
+                    logger.info("Re-parented block ${block.uuid.value} to keeper page ${keeper.uuid.value}")
                 } else {
                     if (writeActor != null) {
                         writeActor.deleteBlock(block.uuid)
@@ -285,7 +287,7 @@ class JournalService(
                 @OptIn(DirectRepositoryWrite::class)
                 pageRepository.deletePage(page.uuid)
             }
-            logger.info("Deleted duplicate page ${page.uuid} (name=${page.name})")
+            logger.info("Deleted duplicate page ${page.uuid.value} (name=${page.name})")
         }
 
         return keeper

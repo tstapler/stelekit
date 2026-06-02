@@ -3,10 +3,11 @@ package dev.stapler.stelekit.repository
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.Flow
 
 interface PageRepository {
-    fun getPageByUuid(uuid: String): Flow<Either<DomainError, Page?>>
+    fun getPageByUuid(uuid: PageUuid): Flow<Either<DomainError, Page?>>
     fun getPageByName(name: String): Flow<Either<DomainError, Page?>>
     fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>>
     fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>>
@@ -35,13 +36,13 @@ interface PageRepository {
     suspend fun savePages(pages: List<Page>): Either<DomainError, Unit>
 
     @DirectRepositoryWrite
-    suspend fun toggleFavorite(pageUuid: String): Either<DomainError, Unit>
+    suspend fun toggleFavorite(pageUuid: PageUuid): Either<DomainError, Unit>
 
     @DirectRepositoryWrite
-    suspend fun renamePage(pageUuid: String, newName: String): Either<DomainError, Unit>
+    suspend fun renamePage(pageUuid: PageUuid, newName: String): Either<DomainError, Unit>
 
     @DirectRepositoryWrite
-    suspend fun deletePage(pageUuid: String): Either<DomainError, Unit>
+    suspend fun deletePage(pageUuid: PageUuid): Either<DomainError, Unit>
 
     fun countPages(): Flow<Either<DomainError, Long>>
 

@@ -6,7 +6,9 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.fixtures.FakeBlockRepository
 import dev.stapler.stelekit.ui.fixtures.FakePageRepository
 import kotlinx.coroutines.async
@@ -39,11 +41,11 @@ class DatabaseWriteActorTest {
     private val now = Clock.System.now()
 
     private fun page(id: String, name: String = "Page $id") = Page(
-        uuid = id, name = name, createdAt = now, updatedAt = now, isJournal = false
+        uuid = PageUuid(id), name = name, createdAt = now, updatedAt = now, isJournal = false
     )
 
     private fun block(id: String, pageId: String = "page-1") = Block(
-        uuid = id, pageUuid = pageId, content = "content $id",
+        uuid = BlockUuid(id), pageUuid = PageUuid(pageId), content = "content $id",
         position = 0, createdAt = now, updatedAt = now
     )
 
@@ -57,7 +59,7 @@ class DatabaseWriteActorTest {
         val result = actor.savePage(page("p-1", "My Page"))
 
         assertTrue(result.isRight())
-        val stored = pageRepo.getPageByUuid("p-1").first().getOrNull()
+        val stored = pageRepo.getPageByUuid(PageUuid("p-1")).first().getOrNull()
         assertNotNull(stored, "page should be stored")
         assertEquals("My Page", stored.name)
         actor.close()
@@ -72,7 +74,7 @@ class DatabaseWriteActorTest {
 
         assertTrue(result.isRight())
         listOf("b1", "b2", "b3").forEach { id ->
-            assertNotNull(blockRepo.getBlockByUuid(id).first().getOrNull(), "$id should be stored")
+            assertNotNull(blockRepo.getBlockByUuid(BlockUuid(id)).first().getOrNull(), "$id should be stored")
         }
         actor.close()
     }
@@ -82,10 +84,10 @@ class DatabaseWriteActorTest {
         val blockRepo = FakeBlockRepository(mapOf("page-1" to listOf(block("b1"), block("b2"))))
         val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
-        val result = actor.deleteBlocksForPage("page-1")
+        val result = actor.deleteBlocksForPage(PageUuid("page-1"))
 
         assertTrue(result.isRight())
-        val remaining = blockRepo.getBlocksForPage("page-1").first().getOrNull()
+        val remaining = blockRepo.getBlocksForPage(PageUuid("page-1")).first().getOrNull()
         assertTrue(remaining.isNullOrEmpty(), "all blocks should be deleted")
         actor.close()
     }
@@ -127,12 +129,12 @@ class DatabaseWriteActorTest {
     fun `deleteBlocksForPage failure is returned to caller`() = runBlocking {
         val error = RuntimeException("locked")
         val blockRepo = object : FakeBlockRepository() {
-            override suspend fun deleteBlocksForPage(pageUuid: String): Either<DomainError, Unit> =
+            override suspend fun deleteBlocksForPage(pageUuid: PageUuid): Either<DomainError, Unit> =
                 DomainError.DatabaseError.WriteFailed(error.toString()).left()
         }
         val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
-        val result = actor.deleteBlocksForPage("page-1")
+        val result = actor.deleteBlocksForPage(PageUuid("page-1"))
 
         assertTrue(result.isLeft())
         assertTrue(result.leftOrNull()?.message?.contains(error.message!!) == true)
@@ -164,8 +166,8 @@ class DatabaseWriteActorTest {
 
         // Both blocks stored — either via individual retries after a coalesced batch failure,
         // or directly if the actor processed them separately.
-        assertNotNull(blockRepo.getBlockByUuid("b1").first().getOrNull(), "b1 stored after retry")
-        assertNotNull(blockRepo.getBlockByUuid("b2").first().getOrNull(), "b2 stored after retry")
+        assertNotNull(blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull(), "b1 stored after retry")
+        assertNotNull(blockRepo.getBlockByUuid(BlockUuid("b2")).first().getOrNull(), "b2 stored after retry")
         actor.close()
     }
 
@@ -176,7 +178,7 @@ class DatabaseWriteActorTest {
         val blockRepo = object : FakeBlockRepository() {
             override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> = when {
                 blocks.size > 1 -> DomainError.DatabaseError.WriteFailed("batch failed").left()
-                blocks.any { it.pageUuid == "page-fail" } ->
+                blocks.any { it.pageUuid == PageUuid("page-fail") } ->
                     DomainError.DatabaseError.WriteFailed("individual fail for page-fail").left()
                 else -> super.saveBlocks(blocks)
             }
@@ -210,7 +212,7 @@ class DatabaseWriteActorTest {
         assertEquals(n, results.size)
         assertTrue(results.all { it.isRight() }, "all callers should receive success")
         (1..n).forEach { i ->
-            assertNotNull(blockRepo.getBlockByUuid("b$i").first().getOrNull())
+            assertNotNull(blockRepo.getBlockByUuid(BlockUuid("b$i")).first().getOrNull())
         }
         actor.close()
     }
@@ -224,7 +226,7 @@ class DatabaseWriteActorTest {
         val results = listOf(
             async { actor.savePage(page("p-1")) },
             async { actor.saveBlocks(listOf(block("b1", "p-1"))) },
-            async { actor.deleteBlocksForPage("p-1") },
+            async { actor.deleteBlocksForPage(PageUuid("p-1")) },
             async { actor.savePage(page("p-2")) },
             async { actor.saveBlocks(listOf(block("b2", "p-2"))) },
         ).map { it.await() }
@@ -293,12 +295,12 @@ class DatabaseWriteActorTest {
         )
         val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
-        val result = actor.deleteBlocksForPages(listOf("page-1", "page-2"))
+        val result = actor.deleteBlocksForPages(listOf(PageUuid("page-1"), PageUuid("page-2")))
 
         assertTrue(result.isRight())
-        assertTrue(blockRepo.getBlocksForPage("page-1").first().getOrNull().isNullOrEmpty())
-        assertTrue(blockRepo.getBlocksForPage("page-2").first().getOrNull().isNullOrEmpty())
-        assertNotNull(blockRepo.getBlockByUuid("b4").first().getOrNull(), "page-3 untouched")
+        assertTrue(blockRepo.getBlocksForPage(PageUuid("page-1")).first().getOrNull().isNullOrEmpty())
+        assertTrue(blockRepo.getBlocksForPage(PageUuid("page-2")).first().getOrNull().isNullOrEmpty())
+        assertNotNull(blockRepo.getBlockByUuid(BlockUuid("b4")).first().getOrNull(), "page-3 untouched")
         actor.close()
     }
 
@@ -306,14 +308,14 @@ class DatabaseWriteActorTest {
     fun `deleteBlocksForPages with empty list returns success without touching repository`() = runBlocking {
         var called = false
         val blockRepo = object : FakeBlockRepository() {
-            override suspend fun deleteBlocksForPages(pageUuids: List<String>): Either<DomainError, Unit> {
+            override suspend fun deleteBlocksForPages(pageUuids: List<PageUuid>): Either<DomainError, Unit> {
                 called = true
                 return super.deleteBlocksForPages(pageUuids)
             }
         }
         val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
-        val result = actor.deleteBlocksForPages(emptyList())
+        val result = actor.deleteBlocksForPages(emptyList<PageUuid>())
 
         assertTrue(result.isRight())
         assertTrue(!called, "repository should not be called for empty list")
@@ -324,12 +326,12 @@ class DatabaseWriteActorTest {
     fun `deleteBlocksForPages failure is returned to caller`() = runBlocking {
         val error = RuntimeException("disk error")
         val blockRepo = object : FakeBlockRepository() {
-            override suspend fun deleteBlocksForPages(pageUuids: List<String>): Either<DomainError, Unit> =
+            override suspend fun deleteBlocksForPages(pageUuids: List<PageUuid>): Either<DomainError, Unit> =
                 DomainError.DatabaseError.WriteFailed(error.toString()).left()
         }
         val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
-        val result = actor.deleteBlocksForPages(listOf("page-1"))
+        val result = actor.deleteBlocksForPages(listOf(PageUuid("page-1")))
 
         assertTrue(result.isLeft())
         assertTrue(result.leftOrNull()?.message?.contains(error.message!!) == true)
@@ -349,9 +351,9 @@ class DatabaseWriteActorTest {
             saveBlocks(listOf(block("b1", "p-1"), block("b2", "p-1")))
         }
 
-        assertNotNull(pageRepo.getPageByUuid("p-1").first().getOrNull())
-        assertNotNull(blockRepo.getBlockByUuid("b1").first().getOrNull())
-        assertNotNull(blockRepo.getBlockByUuid("b2").first().getOrNull())
+        assertNotNull(pageRepo.getPageByUuid(PageUuid("p-1")).first().getOrNull())
+        assertNotNull(blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull())
+        assertNotNull(blockRepo.getBlockByUuid(BlockUuid("b2")).first().getOrNull())
         actor.close()
     }
 
@@ -385,9 +387,9 @@ class DatabaseWriteActorTest {
         var getByUuidCalls = 0
         var getByUuidsCalls = 0
         val blockRepo = object : FakeBlockRepository() {
-            override fun getBlockByUuid(uuid: String) =
+            override fun getBlockByUuid(uuid: BlockUuid) =
                 super.getBlockByUuid(uuid).also { getByUuidCalls++ }
-            override suspend fun getBlocksByUuids(uuids: List<String>) =
+            override suspend fun getBlocksByUuids(uuids: List<BlockUuid>) =
                 super.getBlocksByUuids(uuids).also { getByUuidsCalls++ }
         }
         val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
@@ -405,7 +407,7 @@ class DatabaseWriteActorTest {
         // silently disabled the batch fetch in any code path without an OperationLogger.
         var getByUuidsCalls = 0
         val blockRepo = object : FakeBlockRepository() {
-            override suspend fun getBlocksByUuids(uuids: List<String>) =
+            override suspend fun getBlocksByUuids(uuids: List<BlockUuid>) =
                 super.getBlocksByUuids(uuids).also { getByUuidsCalls++ }
         }
         val actor = DatabaseWriteActor(blockRepo, FakePageRepository(), opLogger = null)
@@ -425,13 +427,13 @@ class DatabaseWriteActorTest {
         )
         val actor = DatabaseWriteActor(blockRepo, FakePageRepository())
 
-        actor.deleteBlocksForPage("page-1")
+        actor.deleteBlocksForPage(PageUuid("page-1"))
         actor.saveBlocks(listOf(block("new-1"), block("new-2")))
 
-        val stored = blockRepo.getBlocksForPage("page-1").first().getOrNull() ?: emptyList()
+        val stored = blockRepo.getBlocksForPage(PageUuid("page-1")).first().getOrNull() ?: emptyList()
         assertEquals(2, stored.size, "exactly 2 new blocks")
-        assertNull(stored.find { it.uuid == "old-1" }, "old block removed")
-        assertNotNull(stored.find { it.uuid == "new-1" }, "new block present")
+        assertNull(stored.find { it.uuid == BlockUuid("old-1") }, "old block removed")
+        assertNotNull(stored.find { it.uuid == BlockUuid("new-1") }, "new block present")
         actor.close()
     }
 }

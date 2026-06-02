@@ -10,7 +10,9 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -57,8 +59,8 @@ class SearchRepositoryIntegrationTests {
         position: Int = 0
     ): Block {
         return Block(
-            uuid = uuid,
-            pageUuid = pageUuid,
+            uuid = BlockUuid(uuid),
+            pageUuid = PageUuid(pageUuid),
             parentUuid = null,
             leftUuid = null,
             content = content,
@@ -76,7 +78,7 @@ class SearchRepositoryIntegrationTests {
         properties: Map<String, String> = emptyMap()
     ): Page {
         return Page(
-            uuid = uuid,
+            uuid = PageUuid(uuid),
             name = name,
             namespace = null,
             filePath = null,
@@ -97,7 +99,7 @@ class SearchRepositoryIntegrationTests {
         val results = repository.searchBlocksByContent("hello").last()
         assertTrue(results.isRight())
         assertEquals(1, results.getOrNull()?.size)
-        assertEquals(generateUuid(1), results.getOrNull()?.first()?.uuid)
+        assertEquals(BlockUuid(generateUuid(1)), results.getOrNull()?.first()?.uuid)
     }
 
     @Test
@@ -136,10 +138,10 @@ class SearchRepositoryIntegrationTests {
         blockRepo.saveBlock(createTestBlock(refBlock1Uuid, pageUuid, "References target-block", position = 2))
         blockRepo.saveBlock(createTestBlock(refBlock2Uuid, pageUuid, "Also references target-block", position = 3))
 
-        refRepo.addReference(refBlock1Uuid, targetBlockUuid)
-        refRepo.addReference(refBlock2Uuid, targetBlockUuid)
+        refRepo.addReference(BlockUuid(refBlock1Uuid), BlockUuid(targetBlockUuid))
+        refRepo.addReference(BlockUuid(refBlock2Uuid), BlockUuid(targetBlockUuid))
 
-        val results = repository.findBlocksReferencing(targetBlockUuid).last()
+        val results = repository.findBlocksReferencing(BlockUuid(targetBlockUuid)).last()
         assertTrue(results.isRight())
         assertEquals(2, results.getOrNull()?.size)
     }
@@ -160,7 +162,7 @@ class SearchRepositoryIntegrationTests {
         val results = repository.searchWithFilters(request).last()
         assertTrue(results.isRight())
         // SQLDelight implementation currently only does basic content/title matching
-        assertTrue(results.getOrNull()?.blocks?.any { it.uuid == generateUuid(1) } == true)
+        assertTrue(results.getOrNull()?.blocks?.any { it.uuid == BlockUuid(generateUuid(1)) } == true)
     }
 
     @Test
@@ -176,7 +178,7 @@ class SearchRepositoryIntegrationTests {
 
         val results = repository.searchBlocksByContent("2025 tax").last()
         assertTrue(results.isRight())
-        val uuids = results.getOrNull()?.map { it.uuid }.orEmpty()
+        val uuids = results.getOrNull()?.map { it.uuid.value }.orEmpty()
         assertTrue(generateUuid(11) in uuids, "Block with both terms should match")
         assertFalse(generateUuid(12) in uuids, "Block with neither term should not match")
         // block 3 has "2025" but not "tax" — AND semantics may exclude it (depends on porter stemming)
@@ -216,7 +218,7 @@ class SearchRepositoryIntegrationTests {
         val results = repository.searchBlocksByContent("topics unrelated").last()
         assertTrue(results.isRight())
         // At least one result should come back via OR fallback
-        val uuids = results.getOrNull()?.map { it.uuid }.orEmpty()
+        val uuids = results.getOrNull()?.map { it.uuid.value }.orEmpty()
         assertTrue(uuids.isNotEmpty(), "OR fallback should return results when AND finds nothing")
     }
 
@@ -238,11 +240,11 @@ class SearchRepositoryIntegrationTests {
         blockRepo.saveBlock(createTestBlock(linkedBlockUuid, linkedPageUuid, "kotlin development guide", position = 1))
         blockRepo.saveBlock(createTestBlock(unlinkedBlockUuid, unlinkedPageUuid, "kotlin development guide", position = 1))
 
-        refRepo.addReference(sourceBlockUuid, linkedBlockUuid)
+        refRepo.addReference(BlockUuid(sourceBlockUuid), BlockUuid(linkedBlockUuid))
 
         val request = SearchRequest(
             query = "kotlin development",
-            pageUuid = currentPageUuid,
+            pageUuid = PageUuid(currentPageUuid),
             limit = 10,
             offset = 0
         )
@@ -250,8 +252,8 @@ class SearchRepositoryIntegrationTests {
         assertTrue(result.isRight())
 
         val ranked = result.getOrNull()?.ranked.orEmpty()
-        val linkedHit = ranked.filterIsInstance<RankedSearchHit.BlockHit>().firstOrNull { it.block.uuid == linkedBlockUuid }
-        val unlinkedHit = ranked.filterIsInstance<RankedSearchHit.BlockHit>().firstOrNull { it.block.uuid == unlinkedBlockUuid }
+        val linkedHit = ranked.filterIsInstance<RankedSearchHit.BlockHit>().firstOrNull { it.block.uuid == BlockUuid(linkedBlockUuid) }
+        val unlinkedHit = ranked.filterIsInstance<RankedSearchHit.BlockHit>().firstOrNull { it.block.uuid == BlockUuid(unlinkedBlockUuid) }
 
         assertNotNull(linkedHit, "Linked page block should appear in results")
         assertNotNull(unlinkedHit, "Unlinked page block should appear in results")
@@ -267,8 +269,8 @@ class SearchRepositoryIntegrationTests {
         pageRepo.savePage(createTestPage(stalePageUuid, "Stale Notes"))
 
         val recentBlock = Block(
-            uuid = generateUuid(610),
-            pageUuid = recentPageUuid,
+            uuid = BlockUuid(generateUuid(610)),
+            pageUuid = PageUuid(recentPageUuid),
             parentUuid = null,
             leftUuid = null,
             content = "kotlin guide reference",
@@ -279,8 +281,8 @@ class SearchRepositoryIntegrationTests {
             properties = emptyMap()
         )
         val staleBlock = Block(
-            uuid = generateUuid(611),
-            pageUuid = stalePageUuid,
+            uuid = BlockUuid(generateUuid(611)),
+            pageUuid = PageUuid(stalePageUuid),
             parentUuid = null,
             leftUuid = null,
             content = "kotlin guide reference",
@@ -299,8 +301,8 @@ class SearchRepositoryIntegrationTests {
         assertTrue(result.isRight())
 
         val ranked = result.getOrNull()?.ranked.orEmpty()
-        val recentHit = ranked.filterIsInstance<RankedSearchHit.BlockHit>().firstOrNull { it.block.uuid == generateUuid(610) }
-        val staleHit = ranked.filterIsInstance<RankedSearchHit.BlockHit>().firstOrNull { it.block.uuid == generateUuid(611) }
+        val recentHit = ranked.filterIsInstance<RankedSearchHit.BlockHit>().firstOrNull { it.block.uuid == BlockUuid(generateUuid(610)) }
+        val staleHit = ranked.filterIsInstance<RankedSearchHit.BlockHit>().firstOrNull { it.block.uuid == BlockUuid(generateUuid(611)) }
 
         assertNotNull(recentHit, "Recently updated block should appear in results")
         assertNotNull(staleHit, "Stale block should appear in results")
@@ -314,7 +316,7 @@ class SearchRepositoryIntegrationTests {
         val pageUuid = generateUuid(700)
         pageRepo.savePage(createTestPage(pageUuid, "Visit Test Page"))
 
-        val result = repository.recordPageVisit(pageUuid)
+        val result = repository.recordPageVisit(PageUuid(pageUuid))
         assertTrue(result.isRight(), "recordPageVisit should return Right(Unit)")
 
         val visitRows = database.steleDatabaseQueries
@@ -331,9 +333,9 @@ class SearchRepositoryIntegrationTests {
         val pageUuid = generateUuid(701)
         pageRepo.savePage(createTestPage(pageUuid, "Increment Test Page"))
 
-        repository.recordPageVisit(pageUuid)
-        repository.recordPageVisit(pageUuid)
-        repository.recordPageVisit(pageUuid)
+        repository.recordPageVisit(PageUuid(pageUuid))
+        repository.recordPageVisit(PageUuid(pageUuid))
+        repository.recordPageVisit(PageUuid(pageUuid))
 
         val visitRows = database.steleDatabaseQueries
             .selectPageVisitsByUuids(setOf(pageUuid)).executeAsList()
@@ -357,7 +359,7 @@ class SearchRepositoryIntegrationTests {
         blockRepo.saveBlock(createTestBlock(generateUuid(721), neverVisitedPageUuid, identicalContent, position = 1))
 
         // Record a very recent visit for visitedPageUuid
-        repository.recordPageVisit(visitedPageUuid)
+        repository.recordPageVisit(PageUuid(visitedPageUuid))
 
         val request = SearchRequest(query = "kotlin development", limit = 10)
         val result = repository.searchWithFilters(request).last()
@@ -365,9 +367,9 @@ class SearchRepositoryIntegrationTests {
 
         val ranked = result.getOrNull()?.ranked.orEmpty()
         val visitedHit = ranked.filterIsInstance<RankedSearchHit.BlockHit>()
-            .firstOrNull { it.block.pageUuid == visitedPageUuid }
+            .firstOrNull { it.block.pageUuid == PageUuid(visitedPageUuid) }
         val neverVisitedHit = ranked.filterIsInstance<RankedSearchHit.BlockHit>()
-            .firstOrNull { it.block.pageUuid == neverVisitedPageUuid }
+            .firstOrNull { it.block.pageUuid == PageUuid(neverVisitedPageUuid) }
 
         assertNotNull(visitedHit, "Visited page block should appear in results")
         assertNotNull(neverVisitedHit, "Never-visited page block should appear in results")
@@ -403,7 +405,7 @@ class SearchRepositoryIntegrationTests {
         assertTrue(ranked.isNotEmpty(), "Expected ranked results")
         val first = ranked.first()
         assertTrue(first is RankedSearchHit.PageHit, "First result should be a page hit")
-        assertEquals(taxesPageUuid, (first as RankedSearchHit.PageHit).page.uuid,
+        assertEquals(PageUuid(taxesPageUuid), (first as RankedSearchHit.PageHit).page.uuid,
             "Exact-match page 'Taxes' should be first regardless of BM25")
     }
 
@@ -431,7 +433,7 @@ class SearchRepositoryIntegrationTests {
         assertTrue(ranked.isNotEmpty(), "Expected ranked results")
         val first = ranked.first()
         assertTrue(first is RankedSearchHit.PageHit, "First result should be a page hit")
-        assertEquals(taxesPageUuid, (first as RankedSearchHit.PageHit).page.uuid,
+        assertEquals(PageUuid(taxesPageUuid), (first as RankedSearchHit.PageHit).page.uuid,
             "Case-insensitive exact-match should promote 'Taxes' to first position")
     }
 

@@ -10,6 +10,7 @@ import dev.stapler.stelekit.cache.RepoCacheConfig
 import dev.stapler.stelekit.cache.RequestCoalescer
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
@@ -50,17 +51,17 @@ class SqlDelightPageRepository(
     private val byUuidCoalescer = RequestCoalescer<String, Page?>()
     private val byNameCoalescer = RequestCoalescer<String, Page?>()
 
-    override fun getPageByUuid(uuid: String): Flow<Either<DomainError, Page?>> = flow {
-        val cached = pageByUuidCache.get(uuid)
+    override fun getPageByUuid(uuid: PageUuid): Flow<Either<DomainError, Page?>> = flow {
+        val cached = pageByUuidCache.get(uuid.value)
         if (cached != null) {
             emit(cached.right())
             return@flow
         }
-        val page = byUuidCoalescer.execute(uuid) {
-            queries.selectPageByUuid(uuid).executeAsOneOrNull()?.toModel()
+        val page = byUuidCoalescer.execute(uuid.value) {
+            queries.selectPageByUuid(uuid.value).executeAsOneOrNull()?.toModel()
         }
         if (page != null) {
-            pageByUuidCache.put(page.uuid, page)
+            pageByUuidCache.put(page.uuid.value, page)
             pageByNameCache.put(page.name.lowercase(), page)
         }
         emit(page.right())
@@ -77,7 +78,7 @@ class SqlDelightPageRepository(
         }
         if (page != null) {
             pageByNameCache.put(name.lowercase(), page)
-            pageByUuidCache.put(page.uuid, page)
+            pageByUuidCache.put(page.uuid.value, page)
         }
         emit(page.right())
     }.flowOn(PlatformDispatcher.DB)
@@ -135,7 +136,7 @@ class SqlDelightPageRepository(
         try {
             upsertPage(page)
             if (cacheWrites) {
-                pageByUuidCache.put(page.uuid, page)
+                pageByUuidCache.put(page.uuid.value, page)
                 pageByNameCache.put(page.name.lowercase(), page)
             }
             Unit.right()
@@ -165,7 +166,7 @@ class SqlDelightPageRepository(
 
     private suspend fun upsertPage(page: Page) {
         queries.insertPage(
-            uuid = page.uuid,
+            uuid = page.uuid.value,
             name = page.name,
             namespace = page.namespace,
             file_path = page.filePath,
@@ -188,16 +189,16 @@ class SqlDelightPageRepository(
             is_journal = if (page.isJournal) 1L else 0L,
             journal_date = page.journalDate?.toString(),
             is_content_loaded = if (page.isContentLoaded) 1L else 0L,
-            uuid = page.uuid
+            uuid = page.uuid.value
         )
     }
 
-    override suspend fun toggleFavorite(pageUuid: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun toggleFavorite(pageUuid: PageUuid): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            val page = queries.selectPageByUuid(pageUuid).executeAsOneOrNull()
+            val page = queries.selectPageByUuid(pageUuid.value).executeAsOneOrNull()
             if (page != null) {
                 val newFavorite = if (page.is_favorite == 1L) 0L else 1L
-                queries.updatePageFavorite(newFavorite, pageUuid)
+                queries.updatePageFavorite(newFavorite, pageUuid.value)
             }
             Unit.right()
         } catch (e: CancellationException) {
@@ -207,12 +208,12 @@ class SqlDelightPageRepository(
         }
     }
 
-    override suspend fun renamePage(pageUuid: String, newName: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun renamePage(pageUuid: PageUuid, newName: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            val old = pageByUuidCache.get(pageUuid)
+            val old = pageByUuidCache.get(pageUuid.value)
             if (old != null) pageByNameCache.remove(old.name.lowercase())
-            queries.updatePageName(newName, pageUuid)
-            pageByUuidCache.remove(pageUuid)
+            queries.updatePageName(newName, pageUuid.value)
+            pageByUuidCache.remove(pageUuid.value)
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -221,12 +222,12 @@ class SqlDelightPageRepository(
         }
     }
 
-    override suspend fun deletePage(pageUuid: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun deletePage(pageUuid: PageUuid): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            val old = pageByUuidCache.get(pageUuid)
+            val old = pageByUuidCache.get(pageUuid.value)
             if (old != null) pageByNameCache.remove(old.name.lowercase())
-            queries.deletePageByUuid(pageUuid)
-            pageByUuidCache.remove(pageUuid)
+            queries.deletePageByUuid(pageUuid.value)
+            pageByUuidCache.remove(pageUuid.value)
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -259,7 +260,7 @@ class SqlDelightPageRepository(
 
     private fun dev.stapler.stelekit.db.Pages.toModel(): Page {
         return Page(
-            uuid = this.uuid,
+            uuid = PageUuid(this.uuid),
             name = this.name,
             namespace = this.namespace,
             filePath = this.file_path,
@@ -280,7 +281,7 @@ class SqlDelightPageRepository(
     // generates SelectJournalPages with journal_date: String instead of String?.
     private fun dev.stapler.stelekit.db.SelectJournalPages.toModel(): Page {
         return Page(
-            uuid = this.uuid,
+            uuid = PageUuid(this.uuid),
             name = this.name,
             namespace = this.namespace,
             filePath = this.file_path,

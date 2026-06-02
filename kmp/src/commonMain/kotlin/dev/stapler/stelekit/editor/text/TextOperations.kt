@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.repository.BlockWriteRepository
 import dev.stapler.stelekit.editor.TextFormat
 import dev.stapler.stelekit.performance.PerformanceMonitor
@@ -61,7 +62,7 @@ class TextOperations(
             updateTextState(blockId, newState)
             
             // Update block content in repository
-            val r1 = blockRepository.updateBlockContentOnly(blockId, newText)
+            val r1 = blockRepository.updateBlockContentOnly(BlockUuid(blockId), newText)
             PerformanceMonitor.endTrace(traceId)
             r1
         } catch (e: CancellationException) {
@@ -97,7 +98,7 @@ class TextOperations(
             updateTextState(blockId, newState)
 
             // Update block content in repository
-            val r2 = blockRepository.updateBlockContentOnly(blockId, updatedText)
+            val r2 = blockRepository.updateBlockContentOnly(BlockUuid(blockId), updatedText)
             PerformanceMonitor.endTrace(traceId)
             r2
         } catch (e: CancellationException) {
@@ -132,7 +133,7 @@ class TextOperations(
             updateTextState(blockId, newState)
 
             // Update block content in repository
-            val r3 = blockRepository.updateBlockContentOnly(blockId, updatedText)
+            val r3 = blockRepository.updateBlockContentOnly(BlockUuid(blockId), updatedText)
             PerformanceMonitor.endTrace(traceId)
             r3
         } catch (e: CancellationException) {
@@ -390,7 +391,7 @@ class TextOperations(
             updateTextState(blockId, newState)
 
             // Update block content in repository
-            blockRepository.updateBlockContentOnly(blockId, newText)
+            blockRepository.updateBlockContentOnly(BlockUuid(blockId), newText)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -427,7 +428,7 @@ class TextOperations(
             updateTextState(blockId, newState)
 
             // Update block content in repository
-            blockRepository.updateBlockContentOnly(blockId, newText)
+            blockRepository.updateBlockContentOnly(BlockUuid(blockId), newText)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -469,7 +470,7 @@ class TextOperations(
             updateTextState(blockId, newState)
 
             // Update block content in repository
-            blockRepository.updateBlockContentOnly(blockId, updatedContent)
+            blockRepository.updateBlockContentOnly(BlockUuid(blockId), updatedContent)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

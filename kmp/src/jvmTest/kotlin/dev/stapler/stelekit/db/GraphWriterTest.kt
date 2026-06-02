@@ -3,7 +3,9 @@ package dev.stapler.stelekit.db
 import dev.stapler.stelekit.logging.LogLevel
 import dev.stapler.stelekit.logging.LogManager
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.ui.fixtures.FakeFileSystem
 import dev.stapler.stelekit.ui.fixtures.TestFixtures
@@ -36,7 +38,7 @@ class GraphWriterTest {
                 // Create a page
                 val pageUuid = "00000000-0000-0000-0000-000000000001"
                 val page = Page(
-                    uuid = pageUuid,
+                    uuid = PageUuid(pageUuid),
                     name = "TestPage",
                     createdAt = now,
                     updatedAt = now,
@@ -52,8 +54,8 @@ class GraphWriterTest {
                 
                 val blockAUuid = "00000000-0000-0000-0000-000000000010"
                 val blockA = Block(
-                    uuid = blockAUuid,
-                    pageUuid = pageUuid,
+                    uuid = BlockUuid(blockAUuid),
+                    pageUuid = PageUuid(pageUuid),
                     content = "Block A",
                     level = 0,
                     position = 0,
@@ -64,8 +66,8 @@ class GraphWriterTest {
                 )
                 
                 val blockA1 = Block(
-                    uuid = "00000000-0000-0000-0000-000000000011",
-                    pageUuid = pageUuid,
+                    uuid = BlockUuid("00000000-0000-0000-0000-000000000011"),
+                    pageUuid = PageUuid(pageUuid),
                     content = "Block A1",
                     level = 1,
                     position = 0,
@@ -77,8 +79,8 @@ class GraphWriterTest {
                 
                 val blockBUuid = "00000000-0000-0000-0000-000000000012"
                 val blockB = Block(
-                    uuid = blockBUuid,
-                    pageUuid = pageUuid,
+                    uuid = BlockUuid(blockBUuid),
+                    pageUuid = PageUuid(pageUuid),
                     content = "Block B",
                     level = 0,
                     position = 1,
@@ -89,8 +91,8 @@ class GraphWriterTest {
                 )
                 
                 val blockB1 = Block(
-                    uuid = "00000000-0000-0000-0000-000000000013",
-                    pageUuid = pageUuid,
+                    uuid = BlockUuid("00000000-0000-0000-0000-000000000013"),
+                    pageUuid = PageUuid(pageUuid),
                     content = "Block B1",
                     level = 1,
                     position = 0,
@@ -233,7 +235,7 @@ class GraphWriterTest {
 
             val now = Clock.System.now()
             val page = Page(
-                uuid = "tc15-uuid-1",
+                uuid = PageUuid("tc15-uuid-1"),
                 name = "TestPageTC15",
                 createdAt = now,
                 updatedAt = now,

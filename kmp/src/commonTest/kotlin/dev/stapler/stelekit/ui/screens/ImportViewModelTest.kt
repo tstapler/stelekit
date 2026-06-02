@@ -8,6 +8,7 @@ import dev.stapler.stelekit.domain.TopicSuggestion
 import dev.stapler.stelekit.domain.UrlFetcher
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -201,7 +202,7 @@ class ImportViewModelTest {
         val pageRepo = InMemoryPageRepository()
         pageRepo.savePage(
             Page(
-                uuid = "existing-uuid",
+                uuid = PageUuid("existing-uuid"),
                 name = "My Page",
                 createdAt = now(),
                 updatedAt = now(),

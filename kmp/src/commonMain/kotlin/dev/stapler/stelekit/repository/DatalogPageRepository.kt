@@ -7,6 +7,7 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -32,9 +33,9 @@ class DatalogPageRepository : PageRepository {
     private val byName = MutableStateFlow<Map<String, Page>>(emptyMap())
     private val byNamespace = MutableStateFlow<Map<String, List<Page>>>(emptyMap())
 
-    override fun getPageByUuid(uuid: String): Flow<Either<DomainError, Page?>> {
+    override fun getPageByUuid(uuid: PageUuid): Flow<Either<DomainError, Page?>> {
         return pages.map { map ->
-            map[uuid].right()
+            map[uuid.value].right()
         }
     }
 
@@ -106,7 +107,7 @@ class DatalogPageRepository : PageRepository {
     override suspend fun savePage(page: Page): Either<DomainError, Unit> {
         return try {
             val current = pages.value.toMutableMap()
-            current[page.uuid] = page
+            current[page.uuid.value] = page
             pages.value = current
             refreshIndexes(current)
             Unit.right()
@@ -120,7 +121,7 @@ class DatalogPageRepository : PageRepository {
     override suspend fun savePages(pageList: List<Page>): Either<DomainError, Unit> {
         return try {
             val current = pages.value.toMutableMap()
-            pageList.forEach { current[it.uuid] = it }
+            pageList.forEach { current[it.uuid.value] = it }
             pages.value = current
             refreshIndexes(current)
             Unit.right()
@@ -131,9 +132,9 @@ class DatalogPageRepository : PageRepository {
         }
     }
 
-    override suspend fun toggleFavorite(pageUuid: String): Either<DomainError, Unit> {
+    override suspend fun toggleFavorite(pageUuid: PageUuid): Either<DomainError, Unit> {
         return try {
-            val page = pages.value[pageUuid] ?: return DomainError.DatabaseError.NotFound("page", pageUuid).left()
+            val page = pages.value[pageUuid.value] ?: return DomainError.DatabaseError.NotFound("page", pageUuid.value).left()
             val newPage = page.copy(isFavorite = !page.isFavorite)
             savePage(newPage)
         } catch (e: CancellationException) {
@@ -143,9 +144,9 @@ class DatalogPageRepository : PageRepository {
         }
     }
 
-    override suspend fun renamePage(pageUuid: String, newName: String): Either<DomainError, Unit> {
+    override suspend fun renamePage(pageUuid: PageUuid, newName: String): Either<DomainError, Unit> {
         return try {
-            val page = pages.value[pageUuid] ?: return DomainError.DatabaseError.NotFound("page", pageUuid).left()
+            val page = pages.value[pageUuid.value] ?: return DomainError.DatabaseError.NotFound("page", pageUuid.value).left()
             val newPage = page.copy(name = newName, updatedAt = kotlin.time.Clock.System.now())
             savePage(newPage)
         } catch (e: CancellationException) {
@@ -155,10 +156,10 @@ class DatalogPageRepository : PageRepository {
         }
     }
 
-    override suspend fun deletePage(pageUuid: String): Either<DomainError, Unit> {
+    override suspend fun deletePage(pageUuid: PageUuid): Either<DomainError, Unit> {
         return try {
             val current = pages.value.toMutableMap()
-            current.remove(pageUuid)
+            current.remove(pageUuid.value)
             pages.value = current
             refreshIndexes(current)
             Unit.right()

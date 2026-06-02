@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
@@ -264,21 +266,21 @@ class ExternalChangeConflictTest {
 
         // Pre-populate: user has a page with real content in memory
         val page = Page(
-            uuid = "journal-today",
+            uuid = PageUuid("journal-today"),
             name = "2026_04_13",
             filePath = filePath,
             createdAt = now, updatedAt = now,
             isJournal = true
         )
         pageRepo.savePage(page)
-        blockRepo.saveBlock(Block(uuid = "b1", pageUuid = "journal-today", content = "Important meeting notes", position = 0, createdAt = now, updatedAt = now))
-        blockRepo.saveBlock(Block(uuid = "b2", pageUuid = "journal-today", content = "Action items", position = 1, createdAt = now, updatedAt = now))
+        blockRepo.saveBlock(Block(uuid = BlockUuid("b1"), pageUuid = PageUuid("journal-today"), content = "Important meeting notes", position = 0, createdAt = now, updatedAt = now))
+        blockRepo.saveBlock(Block(uuid = BlockUuid("b2"), pageUuid = PageUuid("journal-today"), content = "Action items", position = 1, createdAt = now, updatedAt = now))
 
         // Watcher calls parseAndSavePage with blank file content (no suppress happened)
         loader.parseAndSavePage(filePath, "", dev.stapler.stelekit.parsing.ParseMode.FULL)
         advanceUntilIdle()
 
-        val blocks = blockRepo.getBlocksForPage("journal-today").first().getOrNull() ?: emptyList()
+        val blocks = blockRepo.getBlocksForPage(PageUuid("journal-today")).first().getOrNull() ?: emptyList()
         // B2 fix: blocks should be preserved because the incoming content is blank
         assertTrue(
             blocks.any { it.content == "Important meeting notes" },

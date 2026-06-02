@@ -13,7 +13,9 @@ import dev.stapler.stelekit.export.ExportService
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.NotificationType
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.model.Block
@@ -285,7 +287,7 @@ class StelekitViewModel(
 
                 _uiState.update { state ->
                     val recent = recentPageUuids.mapNotNull { uuid ->
-                        allPages.find { it.uuid == uuid }
+                        allPages.find { it.uuid.value == uuid }
                     }.take(10)
                     state.copy(
                         favoritePages = allPages.filter { it.isFavorite },
@@ -340,8 +342,8 @@ class StelekitViewModel(
 
     private fun addToRecent(page: Page) {
         // Remove if exists to move to top
-        recentPageUuids.remove(page.uuid)
-        recentPageUuids.add(0, page.uuid)
+        recentPageUuids.remove(page.uuid.value)
+        recentPageUuids.add(0, page.uuid.value)
         
         // Keep max 20 items
         if (recentPageUuids.size > 20) {
@@ -354,7 +356,7 @@ class StelekitViewModel(
         // Update UI state
         _uiState.update { state ->
             val recent = recentPageUuids.mapNotNull { uuid ->
-                cachedAllPages.find { it.uuid == uuid }
+                cachedAllPages.find { it.uuid.value == uuid }
             }.take(10)
             state.copy(recentPages = recent)
         }
@@ -532,7 +534,7 @@ class StelekitViewModel(
         val currentScreen = _uiState.value.currentScreen
         if (currentScreen is Screen.PageView) {
             scope.launch {
-                graphLoader.loadFullPage(currentScreen.page.uuid, force = true)
+                graphLoader.loadFullPage(currentScreen.page.uuid.value, force = true)
                 refreshCurrentPage()
             }
         }
@@ -550,7 +552,7 @@ class StelekitViewModel(
     @OptIn(DirectRepositoryWrite::class)
     fun toggleFavorite(pageUuid: String) {
         scope.launch {
-            pageRepository.toggleFavorite(pageUuid)
+            pageRepository.toggleFavorite(PageUuid(pageUuid))
             refreshCurrentPage()
         }
     }
@@ -566,35 +568,35 @@ class StelekitViewModel(
     @OptIn(DirectRepositoryWrite::class)
     fun indentBlock(blockUuid: String) {
         scope.launch {
-            blockRepository.indentBlock(blockUuid)
+            blockRepository.indentBlock(BlockUuid(blockUuid))
         }
     }
 
     @OptIn(DirectRepositoryWrite::class)
     fun outdentBlock(blockUuid: String) {
         scope.launch {
-            blockRepository.outdentBlock(blockUuid)
+            blockRepository.outdentBlock(BlockUuid(blockUuid))
         }
     }
 
     @OptIn(DirectRepositoryWrite::class)
     fun moveBlockUp(blockUuid: String) {
         scope.launch {
-            blockRepository.moveBlockUp(blockUuid)
+            blockRepository.moveBlockUp(BlockUuid(blockUuid))
         }
     }
 
     @OptIn(DirectRepositoryWrite::class)
     fun moveBlockDown(blockUuid: String) {
         scope.launch {
-            blockRepository.moveBlockDown(blockUuid)
+            blockRepository.moveBlockDown(BlockUuid(blockUuid))
         }
     }
 
     @OptIn(DirectRepositoryWrite::class)
     fun moveBlock(blockUuid: String, newParentUuid: String?, newPosition: Int) {
         scope.launch {
-            blockRepository.moveBlock(blockUuid, newParentUuid, newPosition)
+            blockRepository.moveBlock(BlockUuid(blockUuid), newParentUuid?.let { BlockUuid(it) }, newPosition)
         }
     }
 
@@ -605,10 +607,10 @@ class StelekitViewModel(
     @OptIn(DirectRepositoryWrite::class)
     fun addNewBlock(currentBlockUuid: String) {
         scope.launch {
-            val currentBlockResult = blockRepository.getBlockByUuid(currentBlockUuid).first()
+            val currentBlockResult = blockRepository.getBlockByUuid(BlockUuid(currentBlockUuid)).first()
             val currentBlock = currentBlockResult.getOrNull() ?: return@launch
 
-            val siblingsResult = blockRepository.getBlockSiblings(currentBlockUuid).first()
+            val siblingsResult = blockRepository.getBlockSiblings(BlockUuid(currentBlockUuid)).first()
             val siblings = siblingsResult.getOrNull() ?: emptyList()
 
             val newPosition = currentBlock.position + 1
@@ -619,10 +621,10 @@ class StelekitViewModel(
 
             val now = kotlin.time.Clock.System.now()
             val newBlock = Block(
-                uuid = generateUuid(),
+                uuid = BlockUuid(generateUuid()),
                 pageUuid = currentBlock.pageUuid,
                 parentUuid = currentBlock.parentUuid,
-                leftUuid = currentBlock.uuid,
+                leftUuid = currentBlock.uuid.value,
                 content = "",
                 level = currentBlock.level,
                 position = newPosition,
@@ -634,8 +636,8 @@ class StelekitViewModel(
 
             val blocksToSave = updatedSiblings + newBlock
             blockRepository.saveBlocks(blocksToSave)
-            
-            requestEditBlock(newBlock.uuid)
+
+            requestEditBlock(newBlock.uuid.value)
         }
     }
 
@@ -645,7 +647,7 @@ class StelekitViewModel(
     @OptIn(DirectRepositoryWrite::class)
     fun addBlockToPage(pageUuid: String) {
         scope.launch {
-            val pageResult = pageRepository.getPageByUuid(pageUuid).first()
+            val pageResult = pageRepository.getPageByUuid(PageUuid(pageUuid)).first()
             val page = pageResult.getOrNull() ?: return@launch
 
             val blocksResult = blockRepository.getBlocksForPage(page.uuid).first()
@@ -659,10 +661,10 @@ class StelekitViewModel(
             val now = kotlin.time.Clock.System.now()
             
             val newBlock = Block(
-                uuid = generateUuid(),
+                uuid = BlockUuid(generateUuid()),
                 pageUuid = page.uuid,
                 parentUuid = null,
-                leftUuid = lastBlock?.uuid,
+                leftUuid = lastBlock?.uuid?.value,
                 content = "",
                 level = 0,
                 position = newPosition,
@@ -673,15 +675,15 @@ class StelekitViewModel(
             )
 
             blockRepository.saveBlock(newBlock)
-            requestEditBlock(newBlock.uuid)
+            requestEditBlock(newBlock.uuid.value)
         }
     }
 
     @OptIn(DirectRepositoryWrite::class)
     fun splitBlock(blockUuid: String, cursorPosition: Int) {
         scope.launch {
-            blockRepository.splitBlock(blockUuid, cursorPosition).onRight { newBlock ->
-                requestEditBlock(newBlock.uuid)
+            blockRepository.splitBlock(BlockUuid(blockUuid), cursorPosition).onRight { newBlock ->
+                requestEditBlock(newBlock.uuid.value)
             }
         }
     }
@@ -689,7 +691,7 @@ class StelekitViewModel(
     @OptIn(DirectRepositoryWrite::class)
     fun mergeBlock(blockUuid: String) {
         scope.launch {
-            val currentBlockResult = blockRepository.getBlockByUuid(blockUuid).first()
+            val currentBlockResult = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first()
             val currentBlock = currentBlockResult.getOrNull() ?: return@launch
 
             // Get ALL siblings including current block
@@ -703,8 +705,8 @@ class StelekitViewModel(
 
             if (currentIndex > 0) {
                 val prevBlock = siblings[currentIndex - 1]
-                blockRepository.mergeBlocks(prevBlock.uuid, blockUuid, "").onRight {
-                    requestEditBlock(prevBlock.uuid, prevBlock.content.length)
+                blockRepository.mergeBlocks(prevBlock.uuid, BlockUuid(blockUuid), "").onRight {
+                    requestEditBlock(prevBlock.uuid.value, prevBlock.content.length)
                 }
             }
         }
@@ -713,7 +715,8 @@ class StelekitViewModel(
     @OptIn(DirectRepositoryWrite::class)
     fun handleBackspace(blockUuid: String) {
         scope.launch {
-            val currentBlockResult = blockRepository.getBlockByUuid(blockUuid).first()
+            val blockUuidTyped = BlockUuid(blockUuid)
+            val currentBlockResult = blockRepository.getBlockByUuid(blockUuidTyped).first()
             val currentBlock = currentBlockResult.getOrNull() ?: return@launch
 
             val pageBlocksResult = blockRepository.getBlocksForPage(currentBlock.pageUuid).first()
@@ -726,54 +729,54 @@ class StelekitViewModel(
 
             if (currentIndex > 0) {
                 val previousBlock = siblings[currentIndex - 1]
-                blockRepository.deleteBlock(blockUuid)
-                requestEditBlock(previousBlock.uuid, previousBlock.content.length)
+                blockRepository.deleteBlock(blockUuidTyped)
+                requestEditBlock(previousBlock.uuid.value, previousBlock.content.length)
             } else if (currentBlock.parentUuid != null) {
-                val parent = allBlocks.find { it.uuid == currentBlock.parentUuid }
-                blockRepository.deleteBlock(blockUuid)
+                val parent = allBlocks.find { it.uuid.value == currentBlock.parentUuid }
+                blockRepository.deleteBlock(blockUuidTyped)
                 if (parent != null) {
-                    requestEditBlock(parent.uuid, parent.content.length)
+                    requestEditBlock(parent.uuid.value, parent.content.length)
                 }
             } else if (siblings.size > 1) {
                 val nextBlock = siblings[1]
-                blockRepository.deleteBlock(blockUuid)
-                requestEditBlock(nextBlock.uuid, 0)
+                blockRepository.deleteBlock(blockUuidTyped)
+                requestEditBlock(nextBlock.uuid.value, 0)
             }
         }
     }
 
     fun focusPreviousBlock(blockUuid: String) {
         scope.launch {
-            val currentBlockResult = blockRepository.getBlockByUuid(blockUuid).first()
+            val currentBlockResult = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first()
             val currentBlock = currentBlockResult.getOrNull() ?: return@launch
 
             val pageBlocksResult = blockRepository.getBlocksForPage(currentBlock.pageUuid).first()
             val allBlocks = pageBlocksResult.getOrNull() ?: return@launch
             val sortedBlocks = dev.stapler.stelekit.outliner.BlockSorter.sort(allBlocks)
 
-            val currentIndex = sortedBlocks.indexOfFirst { it.uuid == blockUuid }
+            val currentIndex = sortedBlocks.indexOfFirst { it.uuid.value == blockUuid }
 
             if (currentIndex > 0) {
                 val prevBlock = sortedBlocks[currentIndex - 1]
-                requestEditBlock(prevBlock.uuid, prevBlock.content.length)
+                requestEditBlock(prevBlock.uuid.value, prevBlock.content.length)
             }
         }
     }
 
     fun focusNextBlock(blockUuid: String) {
         scope.launch {
-            val currentBlockResult = blockRepository.getBlockByUuid(blockUuid).first()
+            val currentBlockResult = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first()
             val currentBlock = currentBlockResult.getOrNull() ?: return@launch
 
             val pageBlocksResult = blockRepository.getBlocksForPage(currentBlock.pageUuid).first()
             val allBlocks = pageBlocksResult.getOrNull() ?: return@launch
             val sortedBlocks = dev.stapler.stelekit.outliner.BlockSorter.sort(allBlocks)
 
-            val currentIndex = sortedBlocks.indexOfFirst { it.uuid == blockUuid }
+            val currentIndex = sortedBlocks.indexOfFirst { it.uuid.value == blockUuid }
 
             if (currentIndex != -1 && currentIndex < sortedBlocks.size - 1) {
                 val nextBlock = sortedBlocks[currentIndex + 1]
-                requestEditBlock(nextBlock.uuid, 0)
+                requestEditBlock(nextBlock.uuid.value, 0)
             }
         }
     }
@@ -833,7 +836,7 @@ class StelekitViewModel(
             scope.launch {
                 // Re-read from disk on every navigation so stale in-memory copies are evicted.
                 // Uses the mtime guard internally so this is cheap when nothing changed.
-                graphLoader.loadFullPage(screen.page.uuid)
+                graphLoader.loadFullPage(screen.page.uuid.value)
             }
             // Fire-and-forget visit tracking — does not block navigation
             scope.launch {
@@ -929,7 +932,7 @@ class StelekitViewModel(
     
     fun navigateToPageByUuid(pageUuid: String) {
         scope.launch {
-            val page = pageRepository.getPageByUuid(pageUuid).first().getOrNull()
+            val page = pageRepository.getPageByUuid(PageUuid(pageUuid)).first().getOrNull()
             if (page != null) {
                 navigateTo(Screen.PageView(page))
             } else {
@@ -955,7 +958,7 @@ class StelekitViewModel(
 
     fun navigateToBlock(blockUuid: String) {
         scope.launch {
-            val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+            val block = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull()
             if (block != null) {
                 val page = cachedAllPages.find { it.uuid == block.pageUuid }
                 if (page != null) {
@@ -976,8 +979,8 @@ class StelekitViewModel(
             uuids.forEach { uuid ->
                 try {
                     // Look up page to get file path before deleting
-                    val page = pageRepository.getPageByUuid(uuid).first().getOrNull()
-                    pageRepository.deletePage(uuid)
+                    val page = pageRepository.getPageByUuid(PageUuid(uuid)).first().getOrNull()
+                    pageRepository.deletePage(PageUuid(uuid))
                     // Remove from disk if file path is known
                     page?.filePath?.takeIf { it.isNotBlank() }?.let { path ->
                         fileSystem.deleteFile(path)
@@ -1005,7 +1008,7 @@ class StelekitViewModel(
             val isJournal = pageName.matches(Regex("^\\d{4}[-_]\\d{2}[-_]\\d{2}$"))
 
             val newPage = Page(
-                uuid = uuid,
+                uuid = PageUuid(uuid),
                 name = pageName,
                 namespace = null,
                 filePath = null, // Will be set when saving
@@ -1042,7 +1045,7 @@ class StelekitViewModel(
      * Get the content of a block by its UUID
      */
     suspend fun getBlockContent(blockUuid: String): String? {
-        val blockResult = blockRepository.getBlockByUuid(blockUuid).first()
+        val blockResult = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first()
         return blockResult.getOrNull()?.content
     }
 
@@ -1088,7 +1091,7 @@ class StelekitViewModel(
                 if (currentPage.filePath != event.filePath) return@collect
 
                 // Evict only this page's hierarchy cache so unrelated pages stay warm.
-                blockStateManager?.cacheEvictPage(currentPage.uuid)
+                blockStateManager?.cacheEvictPage(currentPage.uuid.value)
 
                 // Four-tier protection:
                 // 1. Actively editing a block right now.
@@ -1103,10 +1106,10 @@ class StelekitViewModel(
                 //    in the actor-queue window silently races with the structural op.
                 val dirtyUuids = blockStateManager?.dirtyBlockUuids ?: emptySet()
                 val pageHasDirtyBlocks = blockStateManager
-                    ?.blocks?.value?.get(currentPage.uuid)
-                    ?.any { it.uuid in dirtyUuids }
+                    ?.blocks?.value?.get(currentPage.uuid.value)
+                    ?.any { it.uuid.value in dirtyUuids }
                     ?: false
-                val hasPendingDiskWrite = blockStateManager?.hasPendingDiskWrite(currentPage.uuid) ?: false
+                val hasPendingDiskWrite = blockStateManager?.hasPendingDiskWrite(currentPage.uuid.value) ?: false
                 val hasActorPending = blockStateManager?.hasActorPendingWrites ?: false
                 val shouldProtect = editingBlockUuid != null || pageHasDirtyBlocks || hasPendingDiskWrite || hasActorPending
                 if (!shouldProtect) return@collect
@@ -1114,7 +1117,7 @@ class StelekitViewModel(
                 // Cancel the pending disk write so auto-save cannot overwrite the disk file
                 // while the conflict dialog is open. If the user picks "Keep Local", we
                 // re-queue the write explicitly in keepLocalChanges().
-                blockStateManager?.cancelPendingDiskSave(currentPage.uuid)
+                blockStateManager?.cancelPendingDiskSave(currentPage.uuid.value)
 
                 // Suppress GraphLoader's automatic re-import — we handle it via the dialog
                 event.suppress()
@@ -1123,21 +1126,21 @@ class StelekitViewModel(
                 // dirty block on the page if the user has clicked away.
                 val conflictBlockUuid = editingBlockUuid
                     ?: dirtyUuids.firstOrNull { uuid ->
-                        blockStateManager?.blocks?.value?.get(currentPage.uuid)
-                            ?.any { it.uuid == uuid } == true
+                        blockStateManager?.blocks?.value?.get(currentPage.uuid.value)
+                            ?.any { it.uuid.value == uuid } == true
                     }
                     ?: return@collect
 
                 // Read the latest local content from BlockStateManager's optimistic state
                 val localContent = blockStateManager
-                    ?.blocks?.value?.get(currentPage.uuid)
-                    ?.find { it.uuid == conflictBlockUuid }?.content
-                    ?: blockRepository.getBlockByUuid(conflictBlockUuid).first().getOrNull()?.content
+                    ?.blocks?.value?.get(currentPage.uuid.value)
+                    ?.find { it.uuid.value == conflictBlockUuid }?.content
+                    ?: blockRepository.getBlockByUuid(BlockUuid(conflictBlockUuid)).first().getOrNull()?.content
                     ?: ""
 
                 _uiState.update { it.copy(
                     diskConflict = DiskConflict(
-                        pageUuid = currentPage.uuid,
+                        pageUuid = currentPage.uuid.value,
                         pageName = currentPage.name,
                         filePath = event.filePath,
                         editingBlockUuid = conflictBlockUuid,
@@ -1196,7 +1199,7 @@ class StelekitViewModel(
         _uiState.update { it.copy(diskConflict = null) }
         // Re-queue a save for the current page so local content overwrites the disk file
         val currentPage = (uiState.value.currentScreen as? Screen.PageView)?.page ?: return
-        blockStateManager?.queuePageSave(currentPage.uuid)
+        blockStateManager?.queuePageSave(currentPage.uuid.value)
     }
 
     /**
@@ -1249,7 +1252,7 @@ class StelekitViewModel(
                 if (!conflict.diskContent.endsWith("\n")) appendLine()
                 append(">>>>>>> Disk")
             }
-            val blockResult = blockRepository.getBlockByUuid(conflict.editingBlockUuid).first()
+            val blockResult = blockRepository.getBlockByUuid(BlockUuid(conflict.editingBlockUuid ?: return@launch)).first()
             val block = blockResult.getOrNull() ?: return@launch
             val updatedBlock = block.copy(content = conflictContent, updatedAt = kotlin.time.Clock.System.now())
             writeActor?.execute { blockRepository.saveBlock(updatedBlock) }
@@ -1278,8 +1281,8 @@ class StelekitViewModel(
             // Then append the user's content as a new block
             val now = kotlin.time.Clock.System.now()
             val newBlock = dev.stapler.stelekit.model.Block(
-                uuid = dev.stapler.stelekit.util.UuidGenerator.generateV7(),
-                pageUuid = conflict.pageUuid,
+                uuid = BlockUuid(dev.stapler.stelekit.util.UuidGenerator.generateV7()),
+                pageUuid = PageUuid(conflict.pageUuid),
                 content = conflict.localContent,
                 position = Int.MAX_VALUE,
                 createdAt = now,
@@ -1412,8 +1415,8 @@ class StelekitViewModel(
      */
     suspend fun getAvailableCommands(): List<EditorCommand> {
         val context = CommandContext(
-            currentPageId = _uiState.value.currentPage?.uuid,
-            currentBlockId = _uiState.value.currentPage?.uuid // This would be updated by actual editor
+            currentPageId = _uiState.value.currentPage?.uuid?.value,
+            currentBlockId = _uiState.value.currentPage?.uuid?.value // This would be updated by actual editor
         )
         return commandManager.getAvailableCommands(context)
     }
@@ -1565,7 +1568,7 @@ class StelekitViewModel(
      */
     fun exportPage(formatId: String) {
         val page = _uiState.value.currentPage ?: return
-        val blocks = blockStateManager?.blocksForPage(page.uuid) ?: return
+        val blocks = blockStateManager?.blocksForPage(page.uuid.value) ?: return
         val sortedBlocks = BlockSorter.sort(blocks)
         if (exportService == null) {
             notificationManager?.show("Export unavailable", NotificationType.ERROR)
@@ -1602,7 +1605,7 @@ class StelekitViewModel(
             exportPage(formatId)
             return
         }
-        val allBlocks = blockStateManager?.blocksForPage(page.uuid) ?: return
+        val allBlocks = blockStateManager?.blocksForPage(page.uuid.value) ?: return
         if (exportService == null) {
             notificationManager?.show("Export unavailable", NotificationType.ERROR)
             return

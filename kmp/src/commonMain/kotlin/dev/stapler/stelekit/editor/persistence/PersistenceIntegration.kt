@@ -7,7 +7,9 @@ import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.BlockRepository
@@ -194,13 +196,13 @@ class IntegratedPersistenceSystem(
             // Handle save failure
             errorHandler.handleFailure(
                 operation = "saveBlock",
-                blockUuid = block.uuid,
+                blockUuid = block.uuid.value,
                 error = Exception(persistenceResult.message ?: "Save failed"),
                 context = PersistenceContext(
                     sessionId = generateSessionId(),
                     metadata = mapOf(
                         "retryCount" to persistenceResult.retryCount,
-                        "blockUuid" to block.uuid
+                        "blockUuid" to block.uuid.value
                     )
                 )
             )
@@ -215,7 +217,7 @@ class IntegratedPersistenceSystem(
         
         errorHandler.handleFailure(
             operation = "saveBlock",
-            blockUuid = block.uuid,
+            blockUuid = block.uuid.value,
             error = e,
             context = PersistenceContext(sessionId = generateSessionId())
         )
@@ -420,8 +422,8 @@ object PersistenceExample {
         
         // Example: Create and save a block
         val block = Block(
-            uuid = "test-block-uuid",
-            pageUuid = "test-page-uuid",
+            uuid = BlockUuid("test-block-uuid"),
+            pageUuid = PageUuid("test-page-uuid"),
             content = "This is a test block",
             level = 0,
             position = 0,
@@ -434,7 +436,7 @@ object PersistenceExample {
         
         // Example: Queue changes through debouncer
         val change = BlockChange(
-            blockUuid = block.uuid,
+            blockUuid = block.uuid.value,
             type = ChangeType.CONTENT,
             timestamp = kotlin.time.Clock.System.now(),
             oldContent = "This is a test block",

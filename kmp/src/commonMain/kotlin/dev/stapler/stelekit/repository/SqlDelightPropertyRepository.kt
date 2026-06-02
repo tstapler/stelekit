@@ -7,6 +7,8 @@ import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.Property
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.flow.Flow
@@ -27,9 +29,9 @@ class SqlDelightPropertyRepository(
 
     private val queries = database.steleDatabaseQueries
 
-    override fun getPropertiesForBlock(blockUuid: String): Flow<Either<DomainError, List<Property>>> = flow {
+    override fun getPropertiesForBlock(blockUuid: BlockUuid): Flow<Either<DomainError, List<Property>>> = flow {
         try {
-            val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
+            val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
             if (block == null) {
                 emit(emptyList<Property>().right())
             } else {
@@ -43,9 +45,9 @@ class SqlDelightPropertyRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getProperty(blockUuid: String, key: String): Flow<Either<DomainError, Property?>> = flow {
+    override fun getProperty(blockUuid: BlockUuid, key: String): Flow<Either<DomainError, Property?>> = flow {
         try {
-            val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
+            val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
             if (block == null) {
                 emit(null.right())
             } else {
@@ -61,7 +63,7 @@ class SqlDelightPropertyRepository(
 
     override suspend fun saveProperty(property: Property): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            val block = queries.selectBlockByUuid(property.blockUuid).executeAsOneOrNull()
+            val block = queries.selectBlockByUuid(property.blockUuid).executeAsOneOrNull()  // Property.blockUuid is still String
             if (block != null) {
                 val existing = parseProperties(block.uuid, block.properties).associate { it.key to it.value }.toMutableMap()
                 existing[property.key] = property.value
@@ -76,9 +78,9 @@ class SqlDelightPropertyRepository(
         }
     }
 
-    override suspend fun deleteProperty(blockUuid: String, key: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun deleteProperty(blockUuid: BlockUuid, key: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
+            val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
             if (block != null) {
                 val existing = parseProperties(block.uuid, block.properties).associate { it.key to it.value }.toMutableMap()
                 existing.remove(key)
@@ -136,8 +138,8 @@ class SqlDelightPropertyRepository(
 
     private fun dev.stapler.stelekit.db.Blocks.toBlockModel(): Block {
         return Block(
-            uuid = this.uuid,
-            pageUuid = this.page_uuid,
+            uuid = BlockUuid(this.uuid),
+            pageUuid = PageUuid(this.page_uuid),
             parentUuid = this.parent_uuid,
             leftUuid = this.left_uuid,
             content = this.content,

@@ -7,7 +7,9 @@ import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.JournalService
 import dev.stapler.stelekit.repository.SqlDelightBlockRepository
 import dev.stapler.stelekit.repository.SqlDelightPageRepository
@@ -51,7 +53,7 @@ class OutlinerRegressionTest {
         runBlocking {
             pageRepo.savePage(
                 Page(
-                    uuid = pageUuid,
+                    uuid = PageUuid(pageUuid),
                     name = "2026-03-28",
                     createdAt = now,
                     updatedAt = now,
@@ -62,8 +64,8 @@ class OutlinerRegressionTest {
             
             blockRepo.saveBlock(
                 Block(
-                    uuid = block1Uuid,
-                    pageUuid = pageUuid,
+                    uuid = BlockUuid(block1Uuid),
+                    pageUuid = PageUuid(pageUuid),
                     content = "Parent Block",
                     position = 0,
                     createdAt = now,
@@ -73,8 +75,8 @@ class OutlinerRegressionTest {
             
             blockRepo.saveBlock(
                 Block(
-                    uuid = block2Uuid,
-                    pageUuid = pageUuid,
+                    uuid = BlockUuid(block2Uuid),
+                    pageUuid = PageUuid(pageUuid),
                     content = "Child Block",
                     parentUuid = block1Uuid,
                     level = 1,

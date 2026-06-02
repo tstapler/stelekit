@@ -403,7 +403,7 @@ class VoiceCaptureViewModelTest {
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
             journalService,
-            currentOpenPageUuid = { targetPage.uuid },
+            currentOpenPageUuid = { targetPage.uuid.value },
             scope = this,
         )
         vm.onMicTapped()
@@ -627,7 +627,7 @@ class VoiceCaptureViewModelTest {
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = successRecorder(), sttProvider = fakeStt),
             journalService,
-            currentOpenPageUuid = { targetPage.uuid },
+            currentOpenPageUuid = { targetPage.uuid.value },
             scope = this,
         )
         vm.onMicTapped()

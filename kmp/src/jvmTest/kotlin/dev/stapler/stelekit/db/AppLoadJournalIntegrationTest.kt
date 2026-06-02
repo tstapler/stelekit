@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
@@ -183,18 +185,18 @@ class AppLoadJournalIntegrationTest {
         val h = harness()
 
         val existingPage = Page(
-            uuid = "existing-uuid",
+            uuid = PageUuid("existing-uuid"),
             name = today().toString().replace('-', '_'),
             createdAt = now, updatedAt = now,
             isJournal = true, journalDate = today()
         )
         h.pageRepo.savePage(existingPage)
-        h.blockRepo.saveBlock(Block(uuid = "b1", pageUuid = "existing-uuid", content = "Important note", position = 0, createdAt = now, updatedAt = now))
-        h.blockRepo.saveBlock(Block(uuid = "b2", pageUuid = "existing-uuid", content = "Follow-up item", position = 1, createdAt = now, updatedAt = now))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("b1"), pageUuid = PageUuid("existing-uuid"), content = "Important note", position = 0, createdAt = now, updatedAt = now))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("b2"), pageUuid = PageUuid("existing-uuid"), content = "Follow-up item", position = 1, createdAt = now, updatedAt = now))
 
         val result = h.journalService.ensureTodayJournal()
 
-        assertEquals("existing-uuid", result.uuid, "Should return the existing page")
+        assertEquals(PageUuid("existing-uuid"), result.uuid, "Should return the existing page")
     }
 
     @Test
@@ -202,13 +204,13 @@ class AppLoadJournalIntegrationTest {
         val now = Clock.System.now()
         val h = harness()
 
-        h.pageRepo.savePage(Page(uuid = "existing-uuid", name = today().toString().replace('-', '_'), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
-        h.blockRepo.saveBlock(Block(uuid = "b1", pageUuid = "existing-uuid", content = "Important note", position = 0, createdAt = now, updatedAt = now))
-        h.blockRepo.saveBlock(Block(uuid = "b2", pageUuid = "existing-uuid", content = "Follow-up item", position = 1, createdAt = now, updatedAt = now))
+        h.pageRepo.savePage(Page(uuid = PageUuid("existing-uuid"), name = today().toString().replace('-', '_'), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("b1"), pageUuid = PageUuid("existing-uuid"), content = "Important note", position = 0, createdAt = now, updatedAt = now))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("b2"), pageUuid = PageUuid("existing-uuid"), content = "Follow-up item", position = 1, createdAt = now, updatedAt = now))
 
         h.journalService.ensureTodayJournal()
 
-        val blocks = h.blockRepo.getBlocksForPage("existing-uuid").first().getOrNull() ?: emptyList()
+        val blocks = h.blockRepo.getBlocksForPage(PageUuid("existing-uuid")).first().getOrNull() ?: emptyList()
         assertEquals(2, blocks.size, "Both content blocks must survive")
         assertTrue(blocks.any { it.content == "Important note" })
         assertTrue(blocks.any { it.content == "Follow-up item" })
@@ -219,15 +221,15 @@ class AppLoadJournalIntegrationTest {
         val now = Clock.System.now()
         val h = harness()
 
-        h.pageRepo.savePage(Page(uuid = "nested-uuid", name = today().toString(), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
-        h.blockRepo.saveBlock(Block(uuid = "root", pageUuid = "nested-uuid", content = "Root block", position = 0, level = 0, createdAt = now, updatedAt = now))
-        h.blockRepo.saveBlock(Block(uuid = "child1", pageUuid = "nested-uuid", parentUuid = "root", content = "Child 1", position = 0, level = 1, createdAt = now, updatedAt = now))
-        h.blockRepo.saveBlock(Block(uuid = "child2", pageUuid = "nested-uuid", parentUuid = "root", content = "Child 2", position = 1, level = 1, createdAt = now, updatedAt = now))
-        h.blockRepo.saveBlock(Block(uuid = "grandchild", pageUuid = "nested-uuid", parentUuid = "child1", content = "Grandchild", position = 0, level = 2, createdAt = now, updatedAt = now))
+        h.pageRepo.savePage(Page(uuid = PageUuid("nested-uuid"), name = today().toString(), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("root"), pageUuid = PageUuid("nested-uuid"), content = "Root block", position = 0, level = 0, createdAt = now, updatedAt = now))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("child1"), pageUuid = PageUuid("nested-uuid"), parentUuid = "root", content = "Child 1", position = 0, level = 1, createdAt = now, updatedAt = now))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("child2"), pageUuid = PageUuid("nested-uuid"), parentUuid = "root", content = "Child 2", position = 1, level = 1, createdAt = now, updatedAt = now))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("grandchild"), pageUuid = PageUuid("nested-uuid"), parentUuid = "child1", content = "Grandchild", position = 0, level = 2, createdAt = now, updatedAt = now))
 
         h.journalService.ensureTodayJournal()
 
-        val blocks = h.blockRepo.getBlocksForPage("nested-uuid").first().getOrNull() ?: emptyList()
+        val blocks = h.blockRepo.getBlocksForPage(PageUuid("nested-uuid")).first().getOrNull() ?: emptyList()
         assertEquals(4, blocks.size, "All nested blocks must survive ensureTodayJournal")
     }
 
@@ -320,17 +322,17 @@ class AppLoadJournalIntegrationTest {
         val h = harness()
 
         // Simulate: ensureTodayJournal created an empty placeholder earlier
-        h.pageRepo.savePage(Page(uuid = "empty-page", name = today().toString(), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
-        h.blockRepo.saveBlock(Block(uuid = "empty-block", pageUuid = "empty-page", content = "", position = 0, createdAt = now, updatedAt = now))
+        h.pageRepo.savePage(Page(uuid = PageUuid("empty-page"), name = today().toString(), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("empty-block"), pageUuid = PageUuid("empty-page"), content = "", position = 0, createdAt = now, updatedAt = now))
 
         // Then GraphLoader loaded the disk file (second page for same date)
-        h.pageRepo.savePage(Page(uuid = "content-page", name = today().toString().replace('-', '_'), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
-        h.blockRepo.saveBlock(Block(uuid = "real-block", pageUuid = "content-page", content = "Real disk content", position = 0, createdAt = now, updatedAt = now))
+        h.pageRepo.savePage(Page(uuid = PageUuid("content-page"), name = today().toString().replace('-', '_'), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("real-block"), pageUuid = PageUuid("content-page"), content = "Real disk content", position = 0, createdAt = now, updatedAt = now))
 
         val result = h.journalService.ensureTodayJournal()
 
-        assertEquals("content-page", result.uuid, "Should keep the page with real content")
-        val deletedPage = h.pageRepo.getPageByUuid("empty-page").first().getOrNull()
+        assertEquals(PageUuid("content-page"), result.uuid, "Should keep the page with real content")
+        val deletedPage = h.pageRepo.getPageByUuid(PageUuid("empty-page")).first().getOrNull()
         assertEquals(null, deletedPage, "Empty duplicate page should be deleted")
     }
 
@@ -340,17 +342,17 @@ class AppLoadJournalIntegrationTest {
         val h = harness()
 
         // Both pages have content
-        h.pageRepo.savePage(Page(uuid = "page-a", name = today().toString(), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
-        h.blockRepo.saveBlock(Block(uuid = "block-a", pageUuid = "page-a", content = "Note from page A", position = 0, createdAt = now, updatedAt = now))
+        h.pageRepo.savePage(Page(uuid = PageUuid("page-a"), name = today().toString(), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("block-a"), pageUuid = PageUuid("page-a"), content = "Note from page A", position = 0, createdAt = now, updatedAt = now))
 
-        h.pageRepo.savePage(Page(uuid = "page-b", name = today().toString().replace('-', '_'), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
-        h.blockRepo.saveBlock(Block(uuid = "block-b", pageUuid = "page-b", content = "Note from page B", position = 0, createdAt = now, updatedAt = now))
+        h.pageRepo.savePage(Page(uuid = PageUuid("page-b"), name = today().toString().replace('-', '_'), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("block-b"), pageUuid = PageUuid("page-b"), content = "Note from page B", position = 0, createdAt = now, updatedAt = now))
 
         val keeper = h.journalService.ensureTodayJournal()
 
         // The losing page's non-empty block should be re-parented to keeper
         val keeperBlocks = h.blockRepo.getBlocksForPage(keeper.uuid).first().getOrNull() ?: emptyList()
-        val loserBlockUuid = if (keeper.uuid == "page-a") "block-b" else "block-a"
+        val loserBlockUuid = if (keeper.uuid == PageUuid("page-a")) BlockUuid("block-b") else BlockUuid("block-a")
         val reparented = keeperBlocks.find { it.uuid == loserBlockUuid }
         assertNotNull(reparented, "Non-empty block from losing page should be re-parented to keeper")
         assertEquals(keeper.uuid, reparented.pageUuid)
@@ -362,17 +364,17 @@ class AppLoadJournalIntegrationTest {
         val h = harness()
 
         // Page A: only empty block
-        h.pageRepo.savePage(Page(uuid = "page-a", name = today().toString(), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
-        h.blockRepo.saveBlock(Block(uuid = "empty-block", pageUuid = "page-a", content = "", position = 0, createdAt = now, updatedAt = now))
+        h.pageRepo.savePage(Page(uuid = PageUuid("page-a"), name = today().toString(), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("empty-block"), pageUuid = PageUuid("page-a"), content = "", position = 0, createdAt = now, updatedAt = now))
 
         // Page B: real content
-        h.pageRepo.savePage(Page(uuid = "page-b", name = today().toString().replace('-', '_'), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
-        h.blockRepo.saveBlock(Block(uuid = "real-block", pageUuid = "page-b", content = "Real note", position = 0, createdAt = now, updatedAt = now))
+        h.pageRepo.savePage(Page(uuid = PageUuid("page-b"), name = today().toString().replace('-', '_'), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("real-block"), pageUuid = PageUuid("page-b"), content = "Real note", position = 0, createdAt = now, updatedAt = now))
 
         h.journalService.ensureTodayJournal()
 
         // Empty block from losing page should be gone
-        val deletedBlock = h.blockRepo.getBlockByUuid("empty-block").first().getOrNull()
+        val deletedBlock = h.blockRepo.getBlockByUuid(BlockUuid("empty-block")).first().getOrNull()
         assertEquals(null, deletedBlock, "Empty block from losing page should be deleted")
     }
 
@@ -386,7 +388,7 @@ class AppLoadJournalIntegrationTest {
         val h = harness()
 
         val stub = Page(
-            uuid = "stub-uuid",
+            uuid = PageUuid("stub-uuid"),
             name = today().toString().replace('-', '_'),
             createdAt = now, updatedAt = now,
             isJournal = true, journalDate = today(),
@@ -396,7 +398,7 @@ class AppLoadJournalIntegrationTest {
 
         val result = h.journalService.ensureTodayJournal()
 
-        assertEquals("stub-uuid", result.uuid, "Should return the existing stub, not create a second page")
+        assertEquals(PageUuid("stub-uuid"), result.uuid, "Should return the existing stub, not create a second page")
 
         val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
         assertEquals(1, allPages.filter { it.journalDate == today() }.size, "No duplicate for stub page")
@@ -473,15 +475,15 @@ class AppLoadJournalIntegrationTest {
         val h = harness()
 
         val yesterday = LocalDate(2026, 4, 12) // Fixed past date
-        h.pageRepo.savePage(Page(uuid = "yesterday-uuid", name = "2026_04_12", createdAt = now, updatedAt = now, isJournal = true, journalDate = yesterday))
-        h.blockRepo.saveBlock(Block(uuid = "yesterday-block", pageUuid = "yesterday-uuid", content = "Yesterday's thought", position = 0, createdAt = now, updatedAt = now))
+        h.pageRepo.savePage(Page(uuid = PageUuid("yesterday-uuid"), name = "2026_04_12", createdAt = now, updatedAt = now, isJournal = true, journalDate = yesterday))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("yesterday-block"), pageUuid = PageUuid("yesterday-uuid"), content = "Yesterday's thought", position = 0, createdAt = now, updatedAt = now))
 
         h.journalService.ensureTodayJournal()
 
-        val block = h.blockRepo.getBlockByUuid("yesterday-block").first().getOrNull()
+        val block = h.blockRepo.getBlockByUuid(BlockUuid("yesterday-block")).first().getOrNull()
         assertNotNull(block, "Past journal block should not be deleted")
         assertEquals("Yesterday's thought", block.content, "Past journal block content must be unchanged")
-        assertEquals("yesterday-uuid", block.pageUuid, "Past journal block must remain on its original page")
+        assertEquals(PageUuid("yesterday-uuid"), block.pageUuid, "Past journal block must remain on its original page")
     }
 
     // ─────────────────────────────────────────────────────────────────────────

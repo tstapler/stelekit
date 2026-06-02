@@ -485,7 +485,7 @@ fun RightSidebar(
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onNavigateToPage(block.pageUuid) }
+                                    .clickable { onNavigateToPage(block.pageUuid.value) }
                                     .padding(vertical = 6.dp, horizontal = 4.dp)
                             ) {
                                 Text(
@@ -493,7 +493,7 @@ fun RightSidebar(
                                     style = MaterialTheme.typography.bodySmall
                                 )
                                 Text(
-                                    text = block.pageUuid.take(8),
+                                    text = block.pageUuid.value.take(8),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

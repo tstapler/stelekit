@@ -7,6 +7,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.error.DomainError.ExportError
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.parsing.InlineParser
@@ -115,7 +116,7 @@ class ExportService(
         withContext(Dispatchers.Default) {
             uuids.mapNotNull { uuid ->
                 val block = runCatching {
-                    blockRepository.getBlockByUuid(uuid).first().getOrNull()
+                    blockRepository.getBlockByUuid(BlockUuid(uuid)).first().getOrNull()
                 }.getOrNull()
                 if (block != null) uuid to block.content else null
             }.toMap()
@@ -145,7 +146,7 @@ class ExportService(
                 captureStack.removeLast()
             }
 
-            if (block.uuid in rootUuids) {
+            if (block.uuid.value in rootUuids) {
                 result.add(block)
                 captureStack.add(block.level)
             } else if (captureStack.isNotEmpty()) {

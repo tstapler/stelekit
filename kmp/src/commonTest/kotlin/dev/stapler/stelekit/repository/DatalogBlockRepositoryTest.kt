@@ -6,6 +6,8 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import kotlin.time.Clock
@@ -34,8 +36,8 @@ class DatalogBlockRepositoryTest {
         val parentUuid = parentUuidSuffix?.let { "00000000-0000-0000-0000-${it.toString().padStart(12, '0')}" }
         
         return Block(
-            uuid = uuid,
-            pageUuid = pageUuid,
+            uuid = BlockUuid(uuid),
+            pageUuid = PageUuid(pageUuid),
             content = content,
             parentUuid = parentUuid,
             position = position,
@@ -66,7 +68,7 @@ class DatalogBlockRepositoryTest {
         val res = repository.getBlockByUuid(uuid2).first()
         val block = res.getOrNull()
         assertNotNull(block)
-        assertEquals(uuid1, block.parentUuid) // Should now be child of B1
+        assertEquals(uuid1.value, block.parentUuid) // Should now be child of B1
     }
 
     @Test
@@ -85,7 +87,7 @@ class DatalogBlockRepositoryTest {
         assertTrue(result.isRight())
         
         // Verify positions
-        val pageUuid = "00000000-0000-0000-0000-000000000001"
+        val pageUuid = PageUuid("00000000-0000-0000-0000-000000000001")
         val res = repository.getBlocksForPage(pageUuid).first()
         val blocks = res.getOrNull() ?: emptyList()
         assertEquals(2, blocks.size)
@@ -109,7 +111,7 @@ class DatalogBlockRepositoryTest {
         assertTrue(result.isRight())
         
         // Verify positions
-        val pageUuid = "00000000-0000-0000-0000-000000000001"
+        val pageUuid = PageUuid("00000000-0000-0000-0000-000000000001")
         val res = repository.getBlocksForPage(pageUuid).first()
         val blocks = res.getOrNull() ?: emptyList()
         assertEquals(2, blocks.size)

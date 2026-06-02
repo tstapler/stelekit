@@ -9,7 +9,9 @@ import app.cash.sqldelight.db.SqlPreparedStatement
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.BeforeTest
@@ -160,7 +162,7 @@ class PaginationEnforcementTest {
 
     private suspend fun insertPage(name: String): Page {
         val page = Page(
-            uuid = java.util.UUID.randomUUID().toString(),
+            uuid = PageUuid(java.util.UUID.randomUUID().toString()),
             name = name,
             createdAt = now,
             updatedAt = now,
@@ -171,10 +173,10 @@ class PaginationEnforcementTest {
 
     private val blockCounter = java.util.concurrent.atomic.AtomicInteger(0)
 
-    private suspend fun insertBlock(pageUuid: String, content: String): Block {
+    private suspend fun insertBlock(pageUuid: PageUuid, content: String): Block {
         val idx = blockCounter.getAndIncrement()
         val block = Block(
-            uuid = java.util.UUID.randomUUID().toString(),
+            uuid = BlockUuid(java.util.UUID.randomUUID().toString()),
             pageUuid = pageUuid,
             parentUuid = null,
             leftUuid = null,

@@ -143,7 +143,7 @@ class GraphLoaderCacheTest {
         h.loader.addDirty(filePath)
 
         // Act: loadFullPage with force=false
-        h.loader.loadFullPage(page.uuid, force = false)
+        h.loader.loadFullPage(page.uuid.value, force = false)
 
         // Assert: DB now has V2
         val blocks = h.blockRepo.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
@@ -183,7 +183,7 @@ class GraphLoaderCacheTest {
 
         // Inject dirty flag and reload
         h.loader.addDirty(filePath)
-        h.loader.loadFullPage(page.uuid, force = false)
+        h.loader.loadFullPage(page.uuid.value, force = false)
 
         val blocks = h.blockRepo.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
         assertTrue(blocks.any { it.content == "Block V2" },
@@ -225,7 +225,7 @@ class GraphLoaderCacheTest {
         h.loader.addDirty(filePath)
 
         // Act: next navigation (loadFullPage)
-        h.loader.loadFullPage(page.uuid, force = false)
+        h.loader.loadFullPage(page.uuid.value, force = false)
 
         // Assert: dirty flag consumed and page reloaded
         val dirtyAfter = h.loader.checkAndClearDirty(filePath)
@@ -272,7 +272,7 @@ class GraphLoaderCacheTest {
         h.fs.files[filePath] = FakeFile(contentV2, 0L) // still mtime 0
 
         // Act: loadFullPage without force — should detect hash mismatch
-        h.loader.loadFullPage(page.uuid, force = false)
+        h.loader.loadFullPage(page.uuid.value, force = false)
 
         // Assert: DB updated to V2
         val blocks = h.blockRepo.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
@@ -308,7 +308,7 @@ class GraphLoaderCacheTest {
         h.fs.readFileCount = 0
 
         // Act: first content-hash navigation (readFile called once for hash comparison)
-        h.loader.loadFullPage(page.uuid, force = false)
+        h.loader.loadFullPage(page.uuid.value, force = false)
         val readsAfterFirst = h.fs.readFileCount
 
         // Reset again
@@ -316,7 +316,7 @@ class GraphLoaderCacheTest {
 
         // Act: second navigation — content unchanged, should skip reload
         val blocksBefore = h.blockRepo.getBlocksForPage(page.uuid).first().getOrNull()?.map { it.content } ?: emptyList()
-        h.loader.loadFullPage(page.uuid, force = false)
+        h.loader.loadFullPage(page.uuid.value, force = false)
 
         // Assert: content unchanged → skip reload.
         // The second call should read the file (for hash comparison) but NOT re-parse.
@@ -367,7 +367,7 @@ class GraphLoaderCacheTest {
         // Act: call parseAndSavePage with forceReload=true (via dirty-set path in loadFullPage)
         // We inject dirty flag and call loadFullPage to trigger the forceReload=true path.
         h.loader.addDirty(filePath)
-        h.loader.loadFullPage(page.uuid, force = false)
+        h.loader.loadFullPage(page.uuid.value, force = false)
 
         // Assert: inner guard bypassed → V2 loaded
         val blocksV2 = h.blockRepo.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
@@ -406,7 +406,7 @@ class GraphLoaderCacheTest {
         withContext(Dispatchers.Default) { delay(500L) }
 
         // Navigation: loadFullPage should find dirty flag and reload
-        h.loader.loadFullPage(page.uuid, force = false)
+        h.loader.loadFullPage(page.uuid.value, force = false)
 
         val blocks = h.blockRepo.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
         assertTrue(blocks.any { it.content == "Block V2" },

@@ -86,7 +86,7 @@ fun PerformanceOptimizedEditor(
                     textOperations = textOperations,
                     blockOperations = blockOperations,
                     onFocus = { 
-                        onBlockFocus(block.uuid)
+                        onBlockFocus(block.uuid.value)
                         // Performance: Track focus for optimization
                         scope.launch {
                             // Preload adjacent blocks for better performance
@@ -124,8 +124,8 @@ private fun PerformanceOptimizedBlockEditor(
     val scope = rememberCoroutineScope()
     
     // Performance: Memoize text state to avoid unnecessary recompositions
-    val textStateFlow = remember(block.uuid) {
-        textOperations.getTextState(block.uuid)
+    val textStateFlow = remember(block.uuid.value) {
+        textOperations.getTextState(block.uuid.value)
     }
     val textState by textStateFlow.collectAsState()
     
@@ -149,7 +149,7 @@ private fun PerformanceOptimizedBlockEditor(
                 scope.launch {
                     // Performance: Batch update to reduce repository calls
                     textOperations.replaceText(
-                        block.uuid,
+                        block.uuid.value,
                         TextRange(0, textState.content.length),
                         newContent
                     )
@@ -326,7 +326,7 @@ private suspend fun preloadAdjacentBlocks(
         val block = blocks.getOrNull(index)
         if (block != null) {
             // Preload text states for better scrolling performance
-            textOperations.getTextState(block.uuid)
+            textOperations.getTextState(block.uuid.value)
         }
     }
 }

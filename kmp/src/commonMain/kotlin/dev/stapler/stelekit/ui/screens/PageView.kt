@@ -95,13 +95,13 @@ fun PageView(
     var navigatorSuggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
     var navigatorIndex by remember { mutableStateOf(0) }
 
-    val blocks = allBlocks[page.uuid] ?: emptyList()
+    val blocks = allBlocks[page.uuid.value] ?: emptyList()
 
     // Start observing this page's blocks on enter, stop on leave
-    DisposableEffect(page.uuid) {
-        blockStateManager.observePage(page.uuid, page.isContentLoaded)
+    DisposableEffect(page.uuid.value) {
+        blockStateManager.observePage(page.uuid.value, page.isContentLoaded)
         onDispose {
-            blockStateManager.unobservePage(page.uuid)
+            blockStateManager.unobservePage(page.uuid.value)
         }
     }
 
@@ -117,13 +117,13 @@ fun PageView(
             event.type == KeyEventType.KeyDown &&
             (event.isCtrlPressed || event.isMetaPressed) &&
             event.key == Key.V &&
-            capabilities.onPasteImage.invoke(editingBlockUuid)
+            capabilities.onPasteImage.invoke(editingBlockUuid?.let { dev.stapler.stelekit.model.BlockUuid(it) })
         } else m }
         .onKeyEvent { event ->
         if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
         when {
             event.key == Key.A && event.isCtrlPressed && !isInSelectionMode -> {
-                blockStateManager.selectAll(page.uuid)
+                blockStateManager.selectAll(page.uuid.value)
                 true
             }
             (event.key == Key.Delete || event.key == Key.Backspace) && isInSelectionMode && editingBlockUuid == null -> {
@@ -248,7 +248,7 @@ fun PageView(
             // Blocks content
             item {
                 if (blocks.isEmpty()) {
-                    if (!page.isContentLoaded || page.uuid in loadingPageUuids) {
+                    if (!page.isContentLoaded || page.uuid.value in loadingPageUuids) {
                         Box(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
                             contentAlignment = Alignment.Center
@@ -259,7 +259,7 @@ fun PageView(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { blockStateManager.addBlockToPage(page.uuid) }
+                                .clickable { blockStateManager.addBlockToPage(page.uuid.value) }
                                 .padding(vertical = 8.dp)
                         ) {
                             Text(
@@ -322,7 +322,7 @@ fun PageView(
                             )
                         },
                         onOpenAnnotationEditor = { uuid ->
-                            viewModel.navigateToAnnotationEditor(uuid, page.uuid)
+                            viewModel.navigateToAnnotationEditor(uuid, page.uuid.value)
                         },
                     )
 
@@ -330,7 +330,7 @@ fun PageView(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp)
-                            .clickable { blockStateManager.addBlockToPage(page.uuid) }
+                            .clickable { blockStateManager.addBlockToPage(page.uuid.value) }
                     )
                 }
             }
@@ -358,7 +358,7 @@ fun PageView(
                 currentIndex = navigatorIndex,
                 onLink = {
                     val item = navigatorSuggestions[navigatorIndex]
-                    val block = blocks.find { it.uuid == item.blockUuid }
+                    val block = blocks.find { it.uuid.value == item.blockUuid }
                     if (block != null) {
                         val safeEnd = item.contentEnd.coerceAtMost(block.content.length)
                         val safeStart = item.contentStart.coerceIn(0, safeEnd)

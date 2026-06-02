@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.model.BlockType
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.ParsedBlock
 import dev.stapler.stelekit.model.ParsedPage
 import dev.stapler.stelekit.parsing.ParseMode
@@ -48,7 +50,7 @@ class MarkdownPageParserTest {
 
     private fun minimalExistingPage(uuid: String = "00000000-0000-0000-0000-000000000001"): Page =
         Page(
-            uuid = uuid,
+            uuid = PageUuid(uuid),
             name = "test-page",
             createdAt = fixedNow,
             updatedAt = fixedNow,
@@ -112,14 +114,14 @@ class MarkdownPageParserTest {
         val path = "/graph/pages/note.md"
         val blockUuid = MarkdownPageParser.generateUuid(block, path, 0)
 
-        val existingVersions = mapOf(blockUuid to 5L)
-        val existingContent = mapOf(blockUuid to "same content")
+        val existingVersions = mapOf(BlockUuid(blockUuid) to 5L)
+        val existingContent = mapOf(BlockUuid(blockUuid) to "same content")
 
         val destination = mutableListOf<dev.stapler.stelekit.model.Block>()
         MarkdownPageParser.processParsedBlocks(
             parsedBlocks = listOf(block),
             pagePath = path,
-            pageUuid = "00000000-0000-0000-0000-000000000001",
+            pageUuid = PageUuid("00000000-0000-0000-0000-000000000001"),
             parentUuid = null,
             baseLevel = 0,
             now = fixedNow,
@@ -139,14 +141,14 @@ class MarkdownPageParserTest {
         val path = "/graph/pages/note.md"
         val blockUuid = MarkdownPageParser.generateUuid(block, path, 0)
 
-        val existingVersions = mapOf(blockUuid to 3L)
-        val existingContent = mapOf(blockUuid to "original content")
+        val existingVersions = mapOf(BlockUuid(blockUuid) to 3L)
+        val existingContent = mapOf(BlockUuid(blockUuid) to "original content")
 
         val destination = mutableListOf<dev.stapler.stelekit.model.Block>()
         MarkdownPageParser.processParsedBlocks(
             parsedBlocks = listOf(block),
             pagePath = path,
-            pageUuid = "00000000-0000-0000-0000-000000000001",
+            pageUuid = PageUuid("00000000-0000-0000-0000-000000000001"),
             parentUuid = null,
             baseLevel = 0,
             now = fixedNow,
@@ -166,14 +168,14 @@ class MarkdownPageParserTest {
         val path = "/graph/pages/note.md"
         val blockUuid = MarkdownPageParser.generateUuid(block, path, 0)
 
-        val existingVersions = mapOf(blockUuid to 0L)
-        val existingContent = mapOf(blockUuid to "old content")
+        val existingVersions = mapOf(BlockUuid(blockUuid) to 0L)
+        val existingContent = mapOf(BlockUuid(blockUuid) to "old content")
 
         val destination = mutableListOf<dev.stapler.stelekit.model.Block>()
         MarkdownPageParser.processParsedBlocks(
             parsedBlocks = listOf(block),
             pagePath = path,
-            pageUuid = "00000000-0000-0000-0000-000000000001",
+            pageUuid = PageUuid("00000000-0000-0000-0000-000000000001"),
             parentUuid = null,
             baseLevel = 0,
             now = fixedNow,
@@ -319,7 +321,7 @@ class MarkdownPageParserTest {
         MarkdownPageParser.processParsedBlocks(
             parsedBlocks = listOf(block),
             pagePath = path,
-            pageUuid = "00000000-0000-0000-0000-000000000001",
+            pageUuid = PageUuid("00000000-0000-0000-0000-000000000001"),
             parentUuid = null,
             baseLevel = 0,
             now = fixedNow,
@@ -345,7 +347,7 @@ class MarkdownPageParserTest {
         MarkdownPageParser.processParsedBlocks(
             parsedBlocks = listOf(block),
             pagePath = path,
-            pageUuid = "00000000-0000-0000-0000-000000000001",
+            pageUuid = PageUuid("00000000-0000-0000-0000-000000000001"),
             parentUuid = null,
             baseLevel = 0,
             now = fixedNow,
@@ -366,7 +368,7 @@ class MarkdownPageParserTest {
         MarkdownPageParser.processParsedBlocks(
             parsedBlocks = listOf(block),
             pagePath = path,
-            pageUuid = "00000000-0000-0000-0000-000000000001",
+            pageUuid = PageUuid("00000000-0000-0000-0000-000000000001"),
             parentUuid = null,
             baseLevel = 0,
             now = fixedNow,
@@ -387,7 +389,7 @@ class MarkdownPageParserTest {
         MarkdownPageParser.processParsedBlocks(
             parsedBlocks = listOf(block),
             pagePath = path,
-            pageUuid = "00000000-0000-0000-0000-000000000001",
+            pageUuid = PageUuid("00000000-0000-0000-0000-000000000001"),
             parentUuid = null,
             baseLevel = 0,
             now = fixedNow,

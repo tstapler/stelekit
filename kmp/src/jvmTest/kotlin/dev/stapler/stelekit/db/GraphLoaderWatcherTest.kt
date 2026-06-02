@@ -4,7 +4,9 @@ package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
@@ -58,7 +60,7 @@ class GraphLoaderWatcherTest {
             loader.markFileWrittenByUs(pagePath)
 
             // No blocks should exist yet — markFileWrittenByUs doesn't parse
-            val blocksBeforeTick: List<Block> = blockRepo.getBlocksForPage("any").first().getOrNull() ?: emptyList()
+            val blocksBeforeTick: List<Block> = blockRepo.getBlocksForPage(PageUuid("any")).first().getOrNull() ?: emptyList()
             assertTrue(blocksBeforeTick.isEmpty(), "No blocks should exist before the watcher runs")
 
             // Capture baseline: page count right after loadGraph (empty graph = 0 pages)
@@ -102,14 +104,14 @@ class GraphLoaderWatcherTest {
 
             val now = Clock.System.now()
             val page = Page(
-                uuid = "test-page-uuid",
+                uuid = PageUuid("test-page-uuid"),
                 name = "WriterTestPage",
                 createdAt = now,
                 updatedAt = now
             )
             val blocks = listOf(
                 Block(
-                    uuid = "block-uuid-1",
+                    uuid = BlockUuid("block-uuid-1"),
                     pageUuid = page.uuid,
                     content = "Block written by GraphWriter",
                     level = 0,
@@ -169,9 +171,9 @@ class GraphLoaderWatcherTest {
 
             // Save a page via GraphWriter (onFileWritten fires → markFileWrittenByUs)
             val now = Clock.System.now()
-            val page = Page(uuid = "p1", name = "IntegPage", createdAt = now, updatedAt = now)
+            val page = Page(uuid = PageUuid("p1"), name = "IntegPage", createdAt = now, updatedAt = now)
             val blocks = listOf(
-                Block(uuid = "b1", pageUuid = "p1", content = "Hello", level = 0, position = 0, createdAt = now, updatedAt = now)
+                Block(uuid = BlockUuid("b1"), pageUuid = PageUuid("p1"), content = "Hello", level = 0, position = 0, createdAt = now, updatedAt = now)
             )
             writer.savePage(page, blocks, graphDir.absolutePath)
 

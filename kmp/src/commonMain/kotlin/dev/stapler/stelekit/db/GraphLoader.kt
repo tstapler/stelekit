@@ -7,7 +7,9 @@ import dev.stapler.stelekit.error.DomainError
 import kotlin.concurrent.Volatile
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.ParsedBlock
 import kotlin.time.Instant
 import dev.stapler.stelekit.outliner.JournalUtils
@@ -171,7 +173,7 @@ class GraphLoader(
             activePageFilePathsJob = parallelScope.launch {
                 uuids.collect { uuidSet ->
                     activePageFilePaths = uuidSet.mapNotNull { uuid ->
-                        pageRepository.getPageByUuid(uuid).first().getOrNull()?.filePath
+                        pageRepository.getPageByUuid(PageUuid(uuid)).first().getOrNull()?.filePath
                     }.toSet()
                 }
             }
@@ -593,12 +595,12 @@ class GraphLoader(
 
                 unloadedPages.chunked(10).forEach { chunk ->
                     val pagesToSave = mutableListOf<Page>()
-                    val blocksToSaveByPage = mutableMapOf<String, MutableList<Block>>()
-                    val pageUuidsToDelete = mutableSetOf<String>()
+                    val blocksToSaveByPage = mutableMapOf<PageUuid, MutableList<Block>>()
+                    val pageUuidsToDelete = mutableSetOf<PageUuid>()
 
                     chunk.map { page ->
                         async(backgroundIndexDispatcher) {
-                            if (page.uuid in (activePageUuids?.value ?: emptySet())) {
+                            if (page.uuid.value in (activePageUuids?.value ?: emptySet())) {
                                 logger.debug("Phase 3: skipping ${page.name} — active edit session")
                                 return@async null
                             }
@@ -653,10 +655,10 @@ class GraphLoader(
     @OptIn(DirectRepositoryWrite::class)
     private suspend fun flushChunkWritesPreemptible(
         pagesToSave: List<Page>,
-        pageUuidsToDelete: Set<String>,
-        blocksToSaveByPage: Map<String, List<Block>>,
+        pageUuidsToDelete: Set<PageUuid>,
+        blocksToSaveByPage: Map<PageUuid, List<Block>>,
     ) {
-        val failedPageUuids = mutableSetOf<String>()
+        val failedPageUuids = mutableSetOf<PageUuid>()
 
         if (pagesToSave.isNotEmpty()) {
             val bulkResult = writeActor.execute(DatabaseWriteActor.Priority.LOW) {
@@ -684,7 +686,7 @@ class GraphLoader(
                 }
                 blockRepository.saveBlocks(blocks).onLeft { e ->
                     logger.warn("saveBlocks failed for pageUuid=$pageUuid (${blocks.size} blocks): ${e.message}")
-                    _writeErrors.tryEmit(WriteError(pageUuid, blocks.size, e))
+                    _writeErrors.tryEmit(WriteError(pageUuid.value, blocks.size, e))
                 }
             }
         }
@@ -736,7 +738,7 @@ class GraphLoader(
         PerformanceMonitor.startTrace("loadFullPage")
         var filePath: String? = null
         try {
-            val pageResult = pageRepository.getPageByUuid(pageUuid).first()
+            val pageResult = pageRepository.getPageByUuid(PageUuid(pageUuid)).first()
             val page = pageResult.getOrNull()
 
             if (page == null) {
@@ -769,34 +771,8 @@ class GraphLoader(
                         // we fall through to the content-hash path below, which is correct.
                         logger.debug("Skipping loadFullPage, watcher reports no change: $filePath")
                         return
-                    } else {
-                        // No watcher (iOS/WASM): fall back to content-hash check at navigation time.
-                        val storedHash = fileRegistry.getContentHash(filePath)
-                        if (storedHash != null) {
-                            // Read the file once for the hash comparison.
-                            fileSystem.invalidateShadow(filePath)
-                            val diskContent = fileSystem.readFile(filePath)
-                            if (diskContent != null && diskContent.hashCode() == storedHash) {
-                                logger.debug("Skipping loadFullPage, content hash unchanged: $filePath")
-                                return
-                            }
-                            // Hash mismatch — pass the already-read content to parseAndSavePage
-                            // to avoid a second disk read (halves I/O on iOS/WASM reload path).
-                            if (diskContent != null) {
-                                if (!tryAddPriorityFile(filePath)) {
-                                    logger.debug("Coalescing load request for $filePath")
-                                    return
-                                }
-                                try {
-                                    parseAndSavePage(filePath, diskContent, ParseMode.FULL, forceReload = true)
-                                } finally {
-                                    removePriorityFile(filePath)
-                                }
-                                return
-                            }
-                            // diskContent == null (read failed) → fall through to reload via readFileDecrypted
-                        }
-                        // No stored hash (first load) → fall through to full reload
+                    } else if (checkContentHashAndLoad(filePath)) {
+                        return
                     }
                 }
                 // isDirty == true → set forceReload so both inner guards are also bypassed
@@ -826,6 +802,40 @@ class GraphLoader(
             filePath?.let { removePriorityFile(it) }
             PerformanceMonitor.endTrace("loadFullPage")
         }
+    }
+
+    /**
+     * Content-hash guard for platforms without a file watcher (iOS/WASM).
+     *
+     * Returns `true` when the page has been fully handled (the caller should return immediately),
+     * `false` when the caller should fall through to a full reload via [readFileDecrypted].
+     */
+    private suspend fun checkContentHashAndLoad(filePath: String): Boolean {
+        // No watcher (iOS/WASM): fall back to content-hash check at navigation time.
+        val storedHash = fileRegistry.getContentHash(filePath) ?: return false // No stored hash → fall through
+        // Read the file once for the hash comparison.
+        fileSystem.invalidateShadow(filePath)
+        val diskContent = fileSystem.readFile(filePath)
+        if (diskContent != null && diskContent.hashCode() == storedHash) {
+            logger.debug("Skipping loadFullPage, content hash unchanged: $filePath")
+            return true
+        }
+        // Hash mismatch — pass the already-read content to parseAndSavePage
+        // to avoid a second disk read (halves I/O on iOS/WASM reload path).
+        if (diskContent != null) {
+            if (!tryAddPriorityFile(filePath)) {
+                logger.debug("Coalescing load request for $filePath")
+                return true
+            }
+            try {
+                parseAndSavePage(filePath, diskContent, ParseMode.FULL, forceReload = true)
+            } finally {
+                removePriorityFile(filePath)
+            }
+            return true
+        }
+        // diskContent == null (read failed) → fall through to reload via readFileDecrypted
+        return false
     }
 
     private suspend fun loadJournalsImmediate(
@@ -990,8 +1000,8 @@ class GraphLoader(
                         PerformanceMonitor.startTrace("processChunk")
                         try {
                             val pagesToSave = mutableListOf<Page>()
-                            val blocksToSaveByPage = mutableMapOf<String, MutableList<Block>>()
-                            val pageUuidsToDelete = mutableSetOf<String>()
+                            val blocksToSaveByPage = mutableMapOf<PageUuid, MutableList<Block>>()
+                            val pageUuidsToDelete = mutableSetOf<PageUuid>()
 
                             val count = chunk.count { entry ->
                                 val fileName = entry.fileName
@@ -1128,7 +1138,7 @@ class GraphLoader(
             pageRepository.getPageByName(name).first().getOrNull()
         }
 
-        val pageUuid = existingPage?.uuid ?: UuidGenerator.generateV7()
+        val pageUuid: PageUuid = existingPage?.uuid ?: PageUuid(UuidGenerator.generateV7())
         val createdAt = existingPage?.createdAt ?: updatedAt
         val currentVersion = existingPage?.version ?: 0L
         
@@ -1257,10 +1267,9 @@ class GraphLoader(
             val blocks = blockRepository.getBlocksForPage(existingPage.uuid).first().getOrNull() ?: emptyList()
             getBlocksSpan.finish("OK", "block.count" to blocks.size.toString())
             val allBlocksLoaded = blocks.isNotEmpty() && blocks.all { it.isLoaded }
-            if (!forceReload &&
-                fileModTime != 0L &&
-                existingPage.updatedAt.toEpochMilliseconds() >= fileModTime &&
-                allBlocksLoaded) {
+            val pageIsUpToDate = !forceReload && fileModTime != 0L &&
+                existingPage.updatedAt.toEpochMilliseconds() >= fileModTime
+            if (pageIsUpToDate && allBlocksLoaded) {
                 return PageLookupResult(skip = true)
             }
             return PageLookupResult(skip = false, existingPage = existingPage, cachedBlocks = blocks)
@@ -1296,7 +1305,7 @@ class GraphLoader(
      */
     private suspend fun saveMetadataOnlyBlocks(
         filePath: String,
-        pageUuid: String,
+        pageUuid: PageUuid,
         updatedAt: kotlin.time.Instant,
         rootBlocks: List<ParsedBlock>,
         priority: DatabaseWriteActor.Priority,
@@ -1514,14 +1523,14 @@ class GraphLoader(
     private fun processParsedBlocks(
         parsedBlocks: List<ParsedBlock>,
         pagePath: String,
-        pageUuid: String,
+        pageUuid: PageUuid,
         parentUuid: String?,
         baseLevel: Int,
         now: kotlin.time.Instant,
         destinationList: MutableList<Block>,
         mode: ParseMode,
-        existingVersions: Map<String, Long> = emptyMap(),
-        existingContent: Map<String, String> = emptyMap(),
+        existingVersions: Map<BlockUuid, Long> = emptyMap(),
+        existingContent: Map<BlockUuid, String> = emptyMap(),
         sidecarMap: Map<String, SidecarManager.SidecarEntry>? = null,
     ) = MarkdownPageParser.processParsedBlocks(
         parsedBlocks = parsedBlocks,
@@ -1540,7 +1549,7 @@ class GraphLoader(
     private fun createStubBlocks(
         parsedBlocks: List<ParsedBlock>,
         pagePath: String,
-        pageUuid: String,
+        pageUuid: PageUuid,
         parentUuid: String?,
         baseLevel: Int,
         now: kotlin.time.Instant,

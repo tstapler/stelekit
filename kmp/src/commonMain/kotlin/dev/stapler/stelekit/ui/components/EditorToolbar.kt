@@ -70,7 +70,7 @@ fun EditorToolbar(
         onRedo = { blockStateManager.redo() },
         onFormat = { action -> blockStateManager.requestFormat(action) },
         onAttachImage = if (capabilities.onAttachImage != null) {
-            { capabilities.onAttachImage.invoke(editingBlockUuid) }
+            { capabilities.onAttachImage.invoke(editingBlockUuid?.let { dev.stapler.stelekit.model.BlockUuid(it) }) }
         } else null,
         onLinkPicker = if (searchViewModel != null) {
             {
@@ -80,7 +80,7 @@ fun EditorToolbar(
                 linkPickerCursorIndex = editingCursorIndex ?: sel?.first
                 linkPickerSelectionRange = sel
                 linkPickerInitialQuery = if (sel != null && sel.first < sel.last && curBlockUuid != null) {
-                    val block = allBlocks.values.flatten().find { it.uuid == curBlockUuid }
+                    val block = allBlocks.values.flatten().find { it.uuid.value == curBlockUuid }
                     block?.content?.substring(
                         sel.first.coerceAtMost(block.content.length),
                         sel.last.coerceAtMost(block.content.length)

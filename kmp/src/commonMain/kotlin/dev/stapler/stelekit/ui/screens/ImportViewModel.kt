@@ -13,7 +13,9 @@ import dev.stapler.stelekit.domain.TopicEnricher
 import dev.stapler.stelekit.domain.TopicSuggestion
 import dev.stapler.stelekit.domain.UrlFetcher
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.Validation
 import dev.stapler.stelekit.db.GraphWriterPort
 import dev.stapler.stelekit.repository.PageRepository
@@ -401,7 +403,7 @@ class ImportViewModel(
             val existingStub = pageRepository.getPageByName(suggestion.term).first().getOrNull()
             if (existingStub == null) {
                 val stubPage = Page(
-                    uuid = UuidGenerator.generateV7(),
+                    uuid = PageUuid(UuidGenerator.generateV7()),
                     name = suggestion.term,
                     createdAt = now,
                     updatedAt = now,
@@ -423,8 +425,8 @@ class ImportViewModel(
         val blocks = if (htmlBlocks != null) {
             htmlBlocks.mapIndexed { index, rawBlock ->
                 Block(
-                    uuid = UuidGenerator.generateV7(),
-                    pageUuid = pageUuid,
+                    uuid = BlockUuid(UuidGenerator.generateV7()),
+                    pageUuid = PageUuid(pageUuid),
                     content = rawBlock.content.trim(),
                     level = rawBlock.level,
                     position = index,
@@ -439,8 +441,8 @@ class ImportViewModel(
                 .filter { it.isNotBlank() }
                 .mapIndexed { index, paragraph ->
                     Block(
-                        uuid = UuidGenerator.generateV7(),
-                        pageUuid = pageUuid,
+                        uuid = BlockUuid(UuidGenerator.generateV7()),
+                        pageUuid = PageUuid(pageUuid),
                         content = paragraph.trim(),
                         level = 0,
                         position = index,
@@ -459,7 +461,7 @@ class ImportViewModel(
         }
 
         val page = Page(
-            uuid = pageUuid,
+            uuid = PageUuid(pageUuid),
             name = normalizedName,
             createdAt = now,
             updatedAt = now,

@@ -110,12 +110,12 @@ fun JournalsView(
                 key = { page -> page.uuid },
                 contentType = { "journal_entry" }
             ) { page ->
-                val blockList = allBlocks[page.uuid] ?: emptyList()
+                val blockList = allBlocks[page.uuid.value] ?: emptyList()
 
                 JournalEntry(
                     page = page,
                     blocks = blockList,
-                    isLoading = !page.isContentLoaded || page.uuid in loadingPageUuids,
+                    isLoading = !page.isContentLoaded || page.uuid.value in loadingPageUuids,
                     isDebugMode = isDebugMode,
                     editingBlockUuid = editingBlockUuid,
                     editingCursorIndex = editingCursorIndex,
@@ -196,7 +196,7 @@ fun JournalsView(
                 currentIndex = navigatorIndex,
                 onLink = {
                     val item = navigatorSuggestions[navigatorIndex]
-                    val block = allBlocks.values.flatten().find { it.uuid == item.blockUuid }
+                    val block = allBlocks.values.flatten().find { it.uuid.value == item.blockUuid }
                     if (block != null) {
                         val safeEnd = item.contentEnd.coerceAtMost(block.content.length)
                         val safeStart = item.contentStart.coerceIn(0, safeEnd)
@@ -300,7 +300,7 @@ private fun JournalEntry(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onAddBlockToPage(page.uuid) }
+                        .clickable { onAddBlockToPage(page.uuid.value) }
                         .padding(vertical = 8.dp)
                 ) {
                     Text(
@@ -359,7 +359,7 @@ private fun JournalEntry(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
-                    .clickable { onAddBlockToPage(page.uuid) }
+                    .clickable { onAddBlockToPage(page.uuid.value) }
             )
         }
     }

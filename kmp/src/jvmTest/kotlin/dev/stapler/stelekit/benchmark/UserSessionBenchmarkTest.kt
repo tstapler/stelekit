@@ -5,6 +5,7 @@ import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.RepositoryFactoryImpl
@@ -81,7 +82,7 @@ class UserSessionBenchmarkTest {
 
     private suspend fun navigateTo(vm: StelekitViewModel, page: Page): Long {
         val startMs = System.currentTimeMillis()
-        vm.navigateToPageByUuid(page.uuid)
+        vm.navigateToPageByUuid(page.uuid.value)
         withTimeoutOrNull(5_000) {
             vm.uiState.first { s ->
                 s.currentScreen is Screen.PageView &&
@@ -113,40 +114,40 @@ class UserSessionBenchmarkTest {
     }
 
     private suspend fun deleteBlock(vm: StelekitViewModel, block: Block): Long {
-        val elapsed = measureTime { vm.handleBackspace(block.uuid); delay(50) }
+        val elapsed = measureTime { vm.handleBackspace(block.uuid.value); delay(50) }
         return elapsed.inWholeMilliseconds.also { deleteSamples.add(it) }
     }
 
     private suspend fun mergeBlock(vm: StelekitViewModel, block: Block): Long {
-        val elapsed = measureTime { vm.mergeBlock(block.uuid); delay(50) }
+        val elapsed = measureTime { vm.mergeBlock(block.uuid.value); delay(50) }
         return elapsed.inWholeMilliseconds.also { mergeSamples.add(it) }
     }
 
     private suspend fun reorderBlock(vm: StelekitViewModel, block: Block, newPos: Int): Long {
         val elapsed = measureTime {
-            vm.moveBlock(block.uuid, block.parentUuid, newPos)
+            vm.moveBlock(block.uuid.value, block.parentUuid, newPos)
             delay(50)
         }
         return elapsed.inWholeMilliseconds.also { reorderSamples.add(it) }
     }
 
     private suspend fun indentBlock(vm: StelekitViewModel, block: Block): Long {
-        val elapsed = measureTime { vm.indentBlock(block.uuid); delay(50) }
+        val elapsed = measureTime { vm.indentBlock(block.uuid.value); delay(50) }
         return elapsed.inWholeMilliseconds.also { indentSamples.add(it) }
     }
 
     private suspend fun outdentBlock(vm: StelekitViewModel, block: Block): Long {
-        val elapsed = measureTime { vm.outdentBlock(block.uuid); delay(50) }
+        val elapsed = measureTime { vm.outdentBlock(block.uuid.value); delay(50) }
         return elapsed.inWholeMilliseconds.also { outdentSamples.add(it) }
     }
 
     private suspend fun moveUp(vm: StelekitViewModel, block: Block): Long {
-        val elapsed = measureTime { vm.moveBlockUp(block.uuid); delay(50) }
+        val elapsed = measureTime { vm.moveBlockUp(block.uuid.value); delay(50) }
         return elapsed.inWholeMilliseconds.also { moveSamples.add(it) }
     }
 
     private suspend fun moveDown(vm: StelekitViewModel, block: Block): Long {
-        val elapsed = measureTime { vm.moveBlockDown(block.uuid); delay(50) }
+        val elapsed = measureTime { vm.moveBlockDown(block.uuid.value); delay(50) }
         return elapsed.inWholeMilliseconds.also { moveSamples.add(it) }
     }
 
@@ -290,8 +291,8 @@ class UserSessionBenchmarkTest {
                 navigateTo(vm, page)
 
                 // ── type 2 blocks ─────────────────────────────────────────────
-                typeBlock(vm, page.uuid)
-                typeBlock(vm, page.uuid)
+                typeBlock(vm, page.uuid.value)
+                typeBlock(vm, page.uuid.value)
 
                 // ── search (every other navigation) ───────────────────────────
                 if (i % 2 == 0) search(vm, nextQuery())

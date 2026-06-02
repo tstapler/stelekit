@@ -6,6 +6,7 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -26,29 +27,29 @@ class DatalogReferenceRepository : ReferenceRepository {
         blocks.value = blocksMap
     }
 
-    override fun getOutgoingReferences(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
+    override fun getOutgoingReferences(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> {
         return outgoingIndex.map { index ->
-            val referencedUuids = index[blockUuid] ?: emptySet()
+            val referencedUuids = index[blockUuid.value] ?: emptySet()
             val allBlocks = blocks.value
             val referencedBlocks = referencedUuids.mapNotNull { allBlocks[it] }
             referencedBlocks.right()
         }
     }
 
-    override fun getIncomingReferences(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
+    override fun getIncomingReferences(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> {
         return incomingIndex.map { index ->
-            val referencingUuids = index[blockUuid] ?: emptySet()
+            val referencingUuids = index[blockUuid.value] ?: emptySet()
             val allBlocks = blocks.value
             val referencingBlocks = referencingUuids.mapNotNull { allBlocks[it] }
             referencingBlocks.right()
         }
     }
 
-    override fun getAllReferences(blockUuid: String): Flow<Either<DomainError, BlockReferences>> {
+    override fun getAllReferences(blockUuid: BlockUuid): Flow<Either<DomainError, BlockReferences>> {
         return references.map { refMap ->
-            val outgoingUuids = refMap[blockUuid] ?: emptySet()
+            val outgoingUuids = refMap[blockUuid.value] ?: emptySet()
             val incomingUuids = refMap.entries
-                .filter { it.value.contains(blockUuid) }
+                .filter { it.value.contains(blockUuid.value) }
                 .map { it.key }
                 .toSet()
             val allBlocks = blocks.value
@@ -96,15 +97,15 @@ class DatalogReferenceRepository : ReferenceRepository {
         incomingIndex.value = currentIncoming
     }
 
-    override suspend fun addReference(fromBlockUuid: String, toBlockUuid: String): Either<DomainError, Unit> {
+    override suspend fun addReference(fromBlockUuid: BlockUuid, toBlockUuid: BlockUuid): Either<DomainError, Unit> {
         return try {
             val current = references.value.toMutableMap()
-            val existing = current[fromBlockUuid]?.toMutableSet() ?: mutableSetOf()
-            existing.add(toBlockUuid)
-            current[fromBlockUuid] = existing
+            val existing = current[fromBlockUuid.value]?.toMutableSet() ?: mutableSetOf()
+            existing.add(toBlockUuid.value)
+            current[fromBlockUuid.value] = existing
             references.value = current
 
-            updateIndexes(fromBlockUuid, toBlockUuid, add = true)
+            updateIndexes(fromBlockUuid.value, toBlockUuid.value, add = true)
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -113,19 +114,19 @@ class DatalogReferenceRepository : ReferenceRepository {
         }
     }
 
-    override suspend fun removeReference(fromBlockUuid: String, toBlockUuid: String): Either<DomainError, Unit> {
+    override suspend fun removeReference(fromBlockUuid: BlockUuid, toBlockUuid: BlockUuid): Either<DomainError, Unit> {
         return try {
             val current = references.value.toMutableMap()
-            val existing = current[fromBlockUuid]?.toMutableSet() ?: return Unit.right()
-            existing.remove(toBlockUuid)
+            val existing = current[fromBlockUuid.value]?.toMutableSet() ?: return Unit.right()
+            existing.remove(toBlockUuid.value)
             if (existing.isEmpty()) {
-                current.remove(fromBlockUuid)
+                current.remove(fromBlockUuid.value)
             } else {
-                current[fromBlockUuid] = existing
+                current[fromBlockUuid.value] = existing
             }
             references.value = current
 
-            updateIndexes(fromBlockUuid, toBlockUuid, add = false)
+            updateIndexes(fromBlockUuid.value, toBlockUuid.value, add = false)
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -137,7 +138,7 @@ class DatalogReferenceRepository : ReferenceRepository {
     override fun getOrphanedBlocks(): Flow<Either<DomainError, List<Block>>> {
         return references.map { refMap ->
             val allReferenced = refMap.values.flatten().toSet()
-            val orphaned = blocks.value.values.filter { it.uuid !in allReferenced }
+            val orphaned = blocks.value.values.filter { it.uuid.value !in allReferenced }
             orphaned.right()
         }
     }

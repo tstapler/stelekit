@@ -6,6 +6,8 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -47,8 +49,8 @@ class BlockOperationsEdgeCaseTest {
         val parentUuid = parentUuidSuffix?.let { "00000000-0000-0000-0000-${it.toString().padStart(12, '0')}" }
 
         return Block(
-            uuid = uuid,
-            pageUuid = pageUuid,
+            uuid = BlockUuid(uuid),
+            pageUuid = PageUuid(pageUuid),
             content = content,
             parentUuid = parentUuid,
             position = position,
@@ -86,10 +88,10 @@ class BlockOperationsEdgeCaseTest {
         // Verify B is now child of A
         val blockB = repository.getBlockByUuid(page1BlockB.uuid).first().getOrNull()
         assertNotNull(blockB)
-        assertEquals(page1BlockA.uuid, blockB.parentUuid, "B should be child of A")
+        assertEquals(page1BlockA.uuid.value, blockB.parentUuid, "B should be child of A")
 
         // Verify page 2 blocks are unchanged
-        val page2Uuid = "00000000-0000-0000-0000-000000000002"
+        val page2Uuid = PageUuid("00000000-0000-0000-0000-000000000002")
         val page2Blocks = repository.getBlocksForPage(page2Uuid).first().getOrNull() ?: emptyList()
         assertEquals(2, page2Blocks.size)
         assertEquals(null, page2Blocks[0].parentUuid, "Page 2 blocks should be unchanged")
@@ -117,7 +119,7 @@ class BlockOperationsEdgeCaseTest {
         val outdentedChild = repository.getBlockByUuid(child.uuid).first().getOrNull()
         assertNotNull(outdentedChild)
         assertEquals(null, outdentedChild.parentUuid, "Child should be at root after outdent")
-        val page1Uuid = "00000000-0000-0000-0000-000000000001"
+        val page1Uuid = PageUuid("00000000-0000-0000-0000-000000000001")
         assertEquals(page1Uuid, outdentedChild.pageUuid, "Child should remain on page 1")
     }
 
@@ -160,7 +162,7 @@ class BlockOperationsEdgeCaseTest {
         repository.outdentBlock(child1.uuid)
 
         // Get all root blocks (should be: Parent, Child1)
-        val page1Uuid = "00000000-0000-0000-0000-000000000001"
+        val page1Uuid = PageUuid("00000000-0000-0000-0000-000000000001")
         val rootBlocks = repository.getBlocksForPage(page1Uuid).first().getOrNull()
             ?.filter { it.parentUuid == null }
             ?.sortedBy { it.position }
@@ -187,7 +189,7 @@ class BlockOperationsEdgeCaseTest {
         repository.indentBlock(blockB.uuid)
 
         // Get root blocks (should be: A, C)
-        val page1Uuid = "00000000-0000-0000-0000-000000000001"
+        val page1Uuid = PageUuid("00000000-0000-0000-0000-000000000001")
         val rootBlocks = repository.getBlocksForPage(page1Uuid).first().getOrNull()
             ?.filter { it.parentUuid == null }
             ?.sortedBy { it.position }
@@ -218,7 +220,7 @@ class BlockOperationsEdgeCaseTest {
         repository.deleteBlock(blockB.uuid)
 
         // Verify remaining blocks
-        val page1Uuid = "00000000-0000-0000-0000-000000000001"
+        val page1Uuid = PageUuid("00000000-0000-0000-0000-000000000001")
         val remaining = repository.getBlocksForPage(page1Uuid).first().getOrNull()
             ?.sortedBy { it.position }
             ?: emptyList()
@@ -241,7 +243,7 @@ class BlockOperationsEdgeCaseTest {
         repository.deleteBlock(blockA.uuid)
 
         // Verify B remains
-        val page1Uuid = "00000000-0000-0000-0000-000000000001"
+        val page1Uuid = PageUuid("00000000-0000-0000-0000-000000000001")
         val remaining = repository.getBlocksForPage(page1Uuid).first().getOrNull() ?: emptyList()
         assertEquals(1, remaining.size)
         assertEquals(blockB.uuid, remaining[0].uuid)
@@ -260,7 +262,7 @@ class BlockOperationsEdgeCaseTest {
         repository.deleteBlock(blockB.uuid)
 
         // Verify A remains
-        val page1Uuid = "00000000-0000-0000-0000-000000000001"
+        val page1Uuid = PageUuid("00000000-0000-0000-0000-000000000001")
         val remaining = repository.getBlocksForPage(page1Uuid).first().getOrNull() ?: emptyList()
         assertEquals(1, remaining.size)
         assertEquals(blockA.uuid, remaining[0].uuid)
@@ -283,7 +285,7 @@ class BlockOperationsEdgeCaseTest {
         assertTrue(result.isRight()) // Should succeed but do nothing
 
         // Verify order unchanged
-        val page1Uuid = "00000000-0000-0000-0000-000000000001"
+        val page1Uuid = PageUuid("00000000-0000-0000-0000-000000000001")
         val blocks = repository.getBlocksForPage(page1Uuid).first().getOrNull()
             ?.sortedBy { it.position }
             ?: emptyList()
@@ -305,7 +307,7 @@ class BlockOperationsEdgeCaseTest {
         assertTrue(result.isRight()) // Should succeed but do nothing
 
         // Verify order unchanged
-        val page1Uuid = "00000000-0000-0000-0000-000000000001"
+        val page1Uuid = PageUuid("00000000-0000-0000-0000-000000000001")
         val blocks = repository.getBlocksForPage(page1Uuid).first().getOrNull()
             ?.sortedBy { it.position }
             ?: emptyList()

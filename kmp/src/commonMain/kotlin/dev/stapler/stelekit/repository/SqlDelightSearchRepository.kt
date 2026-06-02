@@ -10,7 +10,9 @@ import dev.stapler.stelekit.db.DirectSqlWrite
 import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.performance.ActiveSpanContext
 import dev.stapler.stelekit.performance.AppSession
@@ -158,9 +160,9 @@ class SqlDelightSearchRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun findBlocksReferencing(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flow {
+    override fun findBlocksReferencing(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flow {
         try {
-            val results = queries.selectBlocksReferencing(blockUuid)
+            val results = queries.selectBlocksReferencing(blockUuid.value)
                 .executeAsList()
                 .map { it.toBlockModel() }
             emit(results.right())
@@ -280,7 +282,7 @@ class SqlDelightSearchRepository(
             // The column is populated by the pages_backlink_count migration and refreshed by rebuildFts.
             val backlinkMap: Map<String, Int> = if (searchedPages.isNotEmpty()) {
                 runCatching {
-                    queries.selectBacklinkCountsForPages(searchedPages.map { it.page.uuid }.toSet())
+                    queries.selectBacklinkCountsForPages(searchedPages.map { it.page.uuid.value }.toSet())
                         .executeAsList()
                         .associate { it.page_name to it.backlink_count.toInt() }
                 }.getOrDefault(emptyMap())
@@ -312,7 +314,7 @@ class SqlDelightSearchRepository(
                             if (pageUuid != null) {
                                 queries.searchBlocksByContentFtsInPage(
                                     query = ftsQuery,
-                                    pageUuid = pageUuid,
+                                    pageUuid = pageUuid.value,
                                     limit = searchRequest.limit.toLong(),
                                     offset = searchRequest.offset.toLong()
                                 ).executeAsList().map { row ->
@@ -389,13 +391,13 @@ class SqlDelightSearchRepository(
             } else emptyList()
 
             val neighbourPageUuids = searchRequest.pageUuid
-                ?.let { runCatching { queries.selectNeighbourPageUuids(it).executeAsList().toSet() }.getOrDefault(emptySet()) }
+                ?.let { runCatching { queries.selectNeighbourPageUuids(it.value).executeAsList().toSet() }.getOrDefault(emptySet()) }
                 ?: emptySet()
             val nowMs = HistogramWriter.epochMs()
 
             // Batch-fetch visit data for all result UUIDs — single IN query, not N+1
-            val allResultUuids = searchedPagesWithBacklinks.map { it.page.uuid } +
-                searchedBlocks.map { it.block.pageUuid }
+            val allResultUuids = searchedPagesWithBacklinks.map { it.page.uuid.value } +
+                searchedBlocks.map { it.block.pageUuid.value }
             val visitMap: Map<String, Long> = if (allResultUuids.isEmpty()) emptyMap()
             else runCatching {
                 queries.selectPageVisitsByUuids(allResultUuids.toSet())
@@ -432,19 +434,19 @@ class SqlDelightSearchRepository(
     ): List<RankedSearchHit> {
         val pageHits = pages.map { sp ->
             val bm25 = abs(sp.bm25Score)
-            val lastVisited = visitMap[sp.page.uuid] ?: 0L
+            val lastVisited = visitMap[sp.page.uuid.value] ?: 0L
             val score = bm25 * PAGE_BOOST *
                 recencyMultiplier(sp.page.updatedAt.toEpochMilliseconds(), nowMs) *
-                graphMultiplier(sp.page.uuid, neighbourPageUuids) *
+                graphMultiplier(sp.page.uuid.value, neighbourPageUuids) *
                 visitRecencyMultiplier(lastVisited, nowMs)
             RankedSearchHit.PageHit(sp.page, sp.snippet, score)
         }
         val blockHits = blocks.map { sb ->
             val bm25 = abs(sb.bm25Score)
-            val lastVisited = visitMap[sb.block.pageUuid] ?: 0L
+            val lastVisited = visitMap[sb.block.pageUuid.value] ?: 0L
             val score = bm25 *
                 recencyMultiplier(sb.block.updatedAt.toEpochMilliseconds(), nowMs) *
-                graphMultiplier(sb.block.pageUuid, neighbourPageUuids) *
+                graphMultiplier(sb.block.pageUuid.value, neighbourPageUuids) *
                 visitRecencyMultiplier(lastVisited, nowMs)
             RankedSearchHit.BlockHit(sb.block, sb.snippet, score)
         }
@@ -500,24 +502,24 @@ class SqlDelightSearchRepository(
      */
     @DirectRepositoryWrite
     @OptIn(DirectSqlWrite::class)
-    override suspend fun recordPageVisit(pageUuid: String): Either<DomainError, Unit> =
+    override suspend fun recordPageVisit(pageUuid: PageUuid): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {
             try {
                 val nowMs = HistogramWriter.epochMs()
                 if (writeActor != null) {
                     writeActor.execute(priority = DatabaseWriteActor.Priority.LOW) {
                         @OptIn(DirectSqlWrite::class)
-                        restricted.insertPageVisitIfAbsent(pageUuid, nowMs)
+                        restricted.insertPageVisitIfAbsent(pageUuid.value, nowMs)
                         @OptIn(DirectSqlWrite::class)
-                        restricted.updatePageVisit(nowMs, pageUuid)
+                        restricted.updatePageVisit(nowMs, pageUuid.value)
                         Unit.right()
                     }
                 } else {
                     // Fallback for in-memory test DBs without an actor
                     @OptIn(DirectSqlWrite::class)
-                    restricted.insertPageVisitIfAbsent(pageUuid, nowMs)
+                    restricted.insertPageVisitIfAbsent(pageUuid.value, nowMs)
                     @OptIn(DirectSqlWrite::class)
-                    restricted.updatePageVisit(nowMs, pageUuid)
+                    restricted.updatePageVisit(nowMs, pageUuid.value)
                     Unit.right()
                 }
             } catch (e: CancellationException) {
@@ -580,7 +582,7 @@ class SqlDelightSearchRepository(
 
     private fun List<SearchedPage>.applyPageScope(
         scope: SearchScope,
-        pageUuid: String?
+        pageUuid: PageUuid?
     ): List<SearchedPage> = when (scope) {
         SearchScope.JOURNAL -> filter { it.page.isJournal }
         SearchScope.FAVORITES -> filter { it.page.isFavorite }
@@ -597,8 +599,8 @@ class SqlDelightSearchRepository(
 
     private fun dev.stapler.stelekit.db.SearchBlocksByContentFts.toBlockModel(): Block =
         Block(
-            uuid = uuid,
-            pageUuid = page_uuid,
+            uuid = BlockUuid(uuid),
+            pageUuid = PageUuid(page_uuid),
             parentUuid = parent_uuid,
             leftUuid = left_uuid,
             content = content,
@@ -612,8 +614,8 @@ class SqlDelightSearchRepository(
 
     private fun dev.stapler.stelekit.db.SearchBlocksByContentFtsInPage.toBlockModel(): Block =
         Block(
-            uuid = uuid,
-            pageUuid = page_uuid,
+            uuid = BlockUuid(uuid),
+            pageUuid = PageUuid(page_uuid),
             parentUuid = parent_uuid,
             leftUuid = left_uuid,
             content = content,
@@ -627,8 +629,8 @@ class SqlDelightSearchRepository(
 
     private fun dev.stapler.stelekit.db.Blocks.toBlockModel(): Block =
         Block(
-            uuid = uuid,
-            pageUuid = page_uuid,
+            uuid = BlockUuid(uuid),
+            pageUuid = PageUuid(page_uuid),
             parentUuid = parent_uuid,
             leftUuid = left_uuid,
             content = content,
@@ -642,7 +644,7 @@ class SqlDelightSearchRepository(
 
     private fun dev.stapler.stelekit.db.SearchPagesByNameFts.toPageModel(): Page =
         Page(
-            uuid = uuid,
+            uuid = PageUuid(uuid),
             name = name,
             namespace = namespace,
             filePath = file_path,
@@ -657,7 +659,7 @@ class SqlDelightSearchRepository(
 
     private fun dev.stapler.stelekit.db.SearchPagesByNameFtsInDateRange.toPageModel(): Page =
         Page(
-            uuid = uuid,
+            uuid = PageUuid(uuid),
             name = name,
             namespace = namespace,
             filePath = file_path,
@@ -672,8 +674,8 @@ class SqlDelightSearchRepository(
 
     private fun dev.stapler.stelekit.db.SearchBlocksByContentFtsInDateRange.toBlockModel(): Block =
         Block(
-            uuid = uuid,
-            pageUuid = page_uuid,
+            uuid = BlockUuid(uuid),
+            pageUuid = PageUuid(page_uuid),
             parentUuid = parent_uuid,
             leftUuid = left_uuid,
             content = content,
@@ -687,7 +689,7 @@ class SqlDelightSearchRepository(
 
     private fun dev.stapler.stelekit.db.Pages.toPageModel(): Page =
         Page(
-            uuid = uuid,
+            uuid = PageUuid(uuid),
             name = name,
             namespace = namespace,
             filePath = file_path,

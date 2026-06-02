@@ -3,7 +3,9 @@ package dev.stapler.stelekit.repository
 import app.cash.sqldelight.db.SqlCursor
 import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.Property
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -18,8 +20,8 @@ import kotlinx.serialization.json.Json
  */
 fun SqlCursor.toBlock(): Block {
     return Block(
-        uuid = getString(1) ?: "", // uuid
-        pageUuid = getString(2) ?: "", // page_uuid
+        uuid = BlockUuid(getString(1) ?: ""), // uuid
+        pageUuid = PageUuid(getString(2) ?: ""), // page_uuid
         parentUuid = getString(3), // parent_uuid
         leftUuid = getString(4), // left_uuid
         content = getString(5) ?: "", // content
@@ -37,7 +39,7 @@ fun SqlCursor.toBlock(): Block {
  */
 fun SqlCursor.toPage(): Page {
     return Page(
-        uuid = getString(0) ?: "", // uuid
+        uuid = PageUuid(getString(0) ?: ""), // uuid
         name = getString(1) ?: "", // name
         namespace = getString(2), // namespace
         filePath = getString(3), // file_path

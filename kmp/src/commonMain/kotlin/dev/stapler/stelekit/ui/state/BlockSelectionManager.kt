@@ -49,14 +49,14 @@ class BlockSelectionManager(
             return
         }
         if (up) {
-            val topIdx = visibleBlocks.indexOfFirst { it.uuid in selected }
+            val topIdx = visibleBlocks.indexOfFirst { it.uuid.value in selected }
             if (topIdx > 0) {
-                _selectedBlockUuids.update { it + visibleBlocks[topIdx - 1].uuid }
+                _selectedBlockUuids.update { it + visibleBlocks[topIdx - 1].uuid.value }
             }
         } else {
-            val bottomIdx = visibleBlocks.indexOfLast { it.uuid in selected }
+            val bottomIdx = visibleBlocks.indexOfLast { it.uuid.value in selected }
             if (bottomIdx >= 0 && bottomIdx < visibleBlocks.size - 1) {
-                _selectedBlockUuids.update { it + visibleBlocks[bottomIdx + 1].uuid }
+                _selectedBlockUuids.update { it + visibleBlocks[bottomIdx + 1].uuid.value }
             }
         }
         _isInSelectionMode.value = _selectedBlockUuids.value.isNotEmpty()
@@ -70,21 +70,21 @@ class BlockSelectionManager(
         }
         val pageUuid = findPageUuidForBlock(anchor) ?: return
         val visibleBlocks = visibleBlocksForPage(pageUuid)
-        val anchorIdx = visibleBlocks.indexOfFirst { it.uuid == anchor }
-        val targetIdx = visibleBlocks.indexOfFirst { it.uuid == uuid }
+        val anchorIdx = visibleBlocks.indexOfFirst { it.uuid.value == anchor }
+        val targetIdx = visibleBlocks.indexOfFirst { it.uuid.value == uuid }
         if (anchorIdx < 0 || targetIdx < 0) return
         val range = if (anchorIdx <= targetIdx)
             visibleBlocks.subList(anchorIdx, targetIdx + 1)
         else
             visibleBlocks.subList(targetIdx, anchorIdx + 1)
-        _selectedBlockUuids.value = range.map { it.uuid }.toSet()
+        _selectedBlockUuids.value = range.map { it.uuid.value }.toSet()
         _isInSelectionMode.value = _selectedBlockUuids.value.isNotEmpty()
     }
 
     fun selectAll(pageUuid: String) {
         val visible = visibleBlocksForPage(pageUuid)
-        selectionAnchorUuid = visible.firstOrNull()?.uuid
-        _selectedBlockUuids.value = visible.map { it.uuid }.toSet()
+        selectionAnchorUuid = visible.firstOrNull()?.uuid?.value
+        _selectedBlockUuids.value = visible.map { it.uuid.value }.toSet()
         _isInSelectionMode.value = _selectedBlockUuids.value.isNotEmpty()
     }
 
@@ -100,7 +100,7 @@ class BlockSelectionManager(
      */
     fun subtreeDedup(uuids: Set<String>, pageUuid: String): List<String> {
         val allBlocks = blocksSnapshot()[pageUuid] ?: return uuids.toList()
-        val blockByUuid = allBlocks.associateBy { it.uuid }
+        val blockByUuid = allBlocks.associateBy { it.uuid.value }
         return uuids.filter { uuid ->
             var current = blockByUuid[uuid]?.parentUuid
             while (current != null) {
@@ -112,5 +112,5 @@ class BlockSelectionManager(
     }
 
     private fun findPageUuidForBlock(blockUuid: String): String? =
-        blocksSnapshot().entries.find { (_, blocks) -> blocks.any { it.uuid == blockUuid } }?.key
+        blocksSnapshot().entries.find { (_, blocks) -> blocks.any { it.uuid.value == blockUuid } }?.key
 }

@@ -6,7 +6,9 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SearchRepository
 import dev.stapler.stelekit.repository.SearchRequest
@@ -30,7 +32,7 @@ class InstrumentedSearchRepository(
     override fun searchPagesByTitle(query: String, limit: Int): Flow<Either<DomainError, List<Page>>> =
         delegate.searchPagesByTitle(query, limit)
 
-    override fun findBlocksReferencing(blockUuid: String): Flow<Either<DomainError, List<Block>>> =
+    override fun findBlocksReferencing(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> =
         delegate.findBlocksReferencing(blockUuid)
 
     override fun searchWithFilters(searchRequest: SearchRequest): Flow<Either<DomainError, SearchResult>> {
@@ -50,7 +52,7 @@ class InstrumentedSearchRepository(
     }
 
     @DirectRepositoryWrite
-    override suspend fun recordPageVisit(pageUuid: String): Either<DomainError, Unit> =
+    override suspend fun recordPageVisit(pageUuid: PageUuid): Either<DomainError, Unit> =
         delegate.recordPageVisit(pageUuid)
 
     @DirectRepositoryWrite

@@ -9,15 +9,15 @@ class OpticsSmokeTest {
     private fun now(): Instant = Instant.fromEpochMilliseconds(0)
 
     private fun makePage(name: String = "test") = Page(
-        uuid = "page-1",
+        uuid = PageUuid("page-1"),
         name = name,
         createdAt = now(),
         updatedAt = now(),
     )
 
     private fun makeBlock(uuid: String = "block-1", content: String = "hello") = Block(
-        uuid = uuid,
-        pageUuid = "page-1",
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid("page-1"),
         content = content,
         position = 0,
         createdAt = now(),

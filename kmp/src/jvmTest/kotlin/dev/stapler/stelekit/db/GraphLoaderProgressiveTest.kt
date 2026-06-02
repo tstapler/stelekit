@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
@@ -107,7 +109,7 @@ class GraphLoaderProgressiveTest {
         // Pre-populate: simulate journals already in DB from a prior session
         warmPageRepo.savePage(
             Page(
-                uuid = "journal-warm-1",
+                uuid = PageUuid("journal-warm-1"),
                 name = "2026-04-13",
                 filePath = "/graph/journals/2026_04_13.md",
                 createdAt = now, updatedAt = now,
@@ -236,7 +238,7 @@ class GraphLoaderProgressiveTest {
 
         cancelPageRepo.savePage(
             Page(
-                uuid = "journal-cancel-1",
+                uuid = PageUuid("journal-cancel-1"),
                 name = "2026-04-13",
                 filePath = "/graph/journals/2026-04-13.md",
                 createdAt = now, updatedAt = now,
@@ -317,7 +319,7 @@ class GraphLoaderProgressiveTest {
 
         warmPageRepo.savePage(
             Page(
-                uuid = "j-warm-1",
+                uuid = PageUuid("j-warm-1"),
                 name = "2026-04-13",
                 filePath = "/graph/journals/2026_04_13.md",
                 createdAt = now, updatedAt = now,
@@ -459,7 +461,7 @@ class GraphLoaderProgressiveTest {
         // Pre-populate: journal in DB from a prior session, updatedAt older than file mtime
         warmPageRepo.savePage(
             Page(
-                uuid = "j-shadow-1",
+                uuid = PageUuid("j-shadow-1"),
                 name = "2026-04-13",
                 filePath = "/graph/journals/2026_04_13.md",
                 createdAt = oldInstant, updatedAt = oldInstant,
@@ -593,7 +595,7 @@ class GraphLoaderProgressiveTest {
 
         navPageRepo.savePage(
             Page(
-                uuid = pageUuid,
+                uuid = PageUuid(pageUuid),
                 name = "my-page",
                 filePath = filePath,
                 createdAt = oldInstant, updatedAt = oldInstant,
@@ -604,8 +606,8 @@ class GraphLoaderProgressiveTest {
         // evaluated and finds fileModTime (9999ms) > page.updatedAt (1000ms) → re-reads file.
         navBlockRepo.saveBlocks(listOf(
             dev.stapler.stelekit.model.Block(
-                uuid = "block-nav-1",
-                pageUuid = pageUuid,
+                uuid = BlockUuid("block-nav-1"),
+                pageUuid = PageUuid(pageUuid),
                 content = "old content",
                 position = 0,
                 createdAt = oldInstant,
@@ -677,7 +679,7 @@ class GraphLoaderProgressiveTest {
         assertFalse(oldBlocks[0].isLoaded, "Phase 2 background blocks should be METADATA_ONLY")
         
         // Test lazy loading
-        graphLoader.loadFullPage(oldPage.uuid)
+        graphLoader.loadFullPage(oldPage.uuid.value)
         testScheduler.advanceUntilIdle()
         
         val reloadedBlocks = blockRepository.getBlocksForPage(oldPage.uuid).first().getOrNull()!!

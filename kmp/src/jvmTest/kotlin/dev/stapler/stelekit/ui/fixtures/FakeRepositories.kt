@@ -5,7 +5,9 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
@@ -57,10 +59,10 @@ open class FakeFileSystem : FileSystem {
 
 @OptIn(DirectRepositoryWrite::class)
 open class FakePageRepository(initialPages: List<Page> = emptyList()) : PageRepository {
-    protected val _pages = MutableStateFlow<Map<String, Page>>(initialPages.associateBy { it.uuid })
+    protected val _pages = MutableStateFlow<Map<String, Page>>(initialPages.associateBy { it.uuid.value })
 
-    override fun getPageByUuid(uuid: String): Flow<Either<DomainError, Page?>> =
-        _pages.map { it[uuid].right() }
+    override fun getPageByUuid(uuid: PageUuid): Flow<Either<DomainError, Page?>> =
+        _pages.map { it[uuid.value].right() }
 
     override fun getPageByName(name: String): Flow<Either<DomainError, Page?>> =
         _pages.map { pages -> pages.values.find { it.name == name }.right() }
@@ -99,29 +101,29 @@ open class FakePageRepository(initialPages: List<Page> = emptyList()) : PageRepo
         _pages.map { pages -> pages.values.filter { !it.isContentLoaded }.right() }
 
     override suspend fun savePage(page: Page): Either<DomainError, Unit> {
-        _pages.value = _pages.value + (page.uuid to page)
+        _pages.value = _pages.value + (page.uuid.value to page)
         return Unit.right()
     }
 
     override suspend fun savePages(pages: List<Page>): Either<DomainError, Unit> {
-        _pages.value = _pages.value + pages.associateBy { it.uuid }
+        _pages.value = _pages.value + pages.associateBy { it.uuid.value }
         return Unit.right()
     }
 
-    override suspend fun toggleFavorite(pageUuid: String): Either<DomainError, Unit> {
-        val page = _pages.value[pageUuid] ?: return Unit.right()
-        _pages.value = _pages.value + (pageUuid to page.copy(isFavorite = !page.isFavorite))
+    override suspend fun toggleFavorite(pageUuid: PageUuid): Either<DomainError, Unit> {
+        val page = _pages.value[pageUuid.value] ?: return Unit.right()
+        _pages.value = _pages.value + (pageUuid.value to page.copy(isFavorite = !page.isFavorite))
         return Unit.right()
     }
 
-    override suspend fun renamePage(pageUuid: String, newName: String): Either<DomainError, Unit> {
-        val page = _pages.value[pageUuid] ?: return Unit.right()
-        _pages.value = _pages.value + (pageUuid to page.copy(name = newName))
+    override suspend fun renamePage(pageUuid: PageUuid, newName: String): Either<DomainError, Unit> {
+        val page = _pages.value[pageUuid.value] ?: return Unit.right()
+        _pages.value = _pages.value + (pageUuid.value to page.copy(name = newName))
         return Unit.right()
     }
 
-    override suspend fun deletePage(pageUuid: String): Either<DomainError, Unit> {
-        _pages.value = _pages.value - pageUuid
+    override suspend fun deletePage(pageUuid: PageUuid): Either<DomainError, Unit> {
+        _pages.value = _pages.value - pageUuid.value
         return Unit.right()
     }
 
@@ -135,109 +137,109 @@ open class FakePageRepository(initialPages: List<Page> = emptyList()) : PageRepo
 
 @OptIn(DirectRepositoryWrite::class)
 open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap()) : BlockRepository {
-    protected val _blocks = MutableStateFlow<Map<String, Block>>(blocksByPage.values.flatten().associateBy { it.uuid })
+    protected val _blocks = MutableStateFlow<Map<String, Block>>(blocksByPage.values.flatten().associateBy { it.uuid.value })
 
-    override fun getBlockByUuid(uuid: String): Flow<Either<DomainError, Block?>> =
-        _blocks.map { it[uuid].right() }
+    override fun getBlockByUuid(uuid: BlockUuid): Flow<Either<DomainError, Block?>> =
+        _blocks.map { it[uuid.value].right() }
 
-    override fun getBlocksForPage(pageUuid: String): Flow<Either<DomainError, List<Block>>> =
+    override fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>> =
         _blocks.map { blocks ->
             blocks.values.filter { it.pageUuid == pageUuid }.sortedBy { it.position }.right()
         }
 
-    override suspend fun getBlocksByUuids(uuids: List<String>): Either<DomainError, List<Block>> {
-        val uuidSet = uuids.toHashSet()
-        return _blocks.value.values.filter { it.uuid in uuidSet }.right()
+    override suspend fun getBlocksByUuids(uuids: List<BlockUuid>): Either<DomainError, List<Block>> {
+        val uuidSet = uuids.map { it.value }.toHashSet()
+        return _blocks.value.values.filter { it.uuid.value in uuidSet }.right()
     }
 
-    override fun getBlockChildren(blockUuid: String): Flow<Either<DomainError, List<Block>>> =
+    override fun getBlockChildren(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> =
         _blocks.map { blocks ->
-            blocks.values.filter { it.parentUuid == blockUuid }.sortedBy { it.position }.right()
+            blocks.values.filter { it.parentUuid == blockUuid.value }.sortedBy { it.position }.right()
         }
 
-    override fun getBlockSiblings(blockUuid: String): Flow<Either<DomainError, List<Block>>> =
+    override fun getBlockSiblings(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> =
         _blocks.map { blocks ->
-            val block = blocks[blockUuid] ?: return@map emptyList<Block>().right()
-            blocks.values.filter { it.parentUuid == block.parentUuid && it.uuid != blockUuid }.sortedBy { it.position }.right()
+            val block = blocks[blockUuid.value] ?: return@map emptyList<Block>().right()
+            blocks.values.filter { it.parentUuid == block.parentUuid && it.uuid.value != blockUuid.value }.sortedBy { it.position }.right()
         }
 
     override suspend fun saveBlock(block: Block): Either<DomainError, Unit> {
-        _blocks.value = _blocks.value + (block.uuid to block)
+        _blocks.value = _blocks.value + (block.uuid.value to block)
         return Unit.right()
     }
 
     override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> {
-        _blocks.value = _blocks.value + blocks.associateBy { it.uuid }
+        _blocks.value = _blocks.value + blocks.associateBy { it.uuid.value }
         return Unit.right()
     }
 
-    override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> {
-        val existing = _blocks.value[blockUuid] ?: return Unit.right()
-        _blocks.value = _blocks.value + (blockUuid to existing.copy(content = content, version = existing.version + 1, updatedAt = Clock.System.now()))
+    override suspend fun updateBlockContentOnly(blockUuid: BlockUuid, content: String): Either<DomainError, Unit> {
+        val existing = _blocks.value[blockUuid.value] ?: return Unit.right()
+        _blocks.value = _blocks.value + (blockUuid.value to existing.copy(content = content, version = existing.version + 1, updatedAt = Clock.System.now()))
         return Unit.right()
     }
 
-    override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> {
-        val existing = _blocks.value[blockUuid] ?: return Unit.right()
-        _blocks.value = _blocks.value + (blockUuid to existing.copy(properties = properties))
+    override suspend fun updateBlockPropertiesOnly(blockUuid: BlockUuid, properties: Map<String, String>): Either<DomainError, Unit> {
+        val existing = _blocks.value[blockUuid.value] ?: return Unit.right()
+        _blocks.value = _blocks.value + (blockUuid.value to existing.copy(properties = properties))
         return Unit.right()
     }
 
-    override suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean): Either<DomainError, Unit> {
+    override suspend fun deleteBlock(blockUuid: BlockUuid, deleteChildren: Boolean): Either<DomainError, Unit> {
         val current = _blocks.value.toMutableMap()
         if (deleteChildren) {
-            val toDelete = mutableSetOf(blockUuid)
+            val toDelete = mutableSetOf(blockUuid.value)
             fun collectChildren(uuid: String) {
                 current.values.filter { it.parentUuid == uuid }.forEach {
-                    toDelete.add(it.uuid)
-                    collectChildren(it.uuid)
+                    toDelete.add(it.uuid.value)
+                    collectChildren(it.uuid.value)
                 }
             }
-            collectChildren(blockUuid)
+            collectChildren(blockUuid.value)
             _blocks.value = current - toDelete
         } else {
-            val children = current.values.filter { it.parentUuid == blockUuid }
+            val children = current.values.filter { it.parentUuid == blockUuid.value }
             for (child in children) {
                 val levelDelta = 0 - child.level
                 val updatedChild = child.copy(parentUuid = null, level = 0)
-                current[child.uuid] = updatedChild
+                current[child.uuid.value] = updatedChild
                 val updates = mutableMapOf<String, Block>()
-                adjustDescendantLevels(child.uuid, levelDelta, current, updates)
+                adjustDescendantLevels(child.uuid.value, levelDelta, current, updates)
                 updates.forEach { (u, b) -> current[u] = b }
             }
-            _blocks.value = current - blockUuid
+            _blocks.value = current - blockUuid.value
         }
         return Unit.right()
     }
 
-    override suspend fun deleteBulk(blockUuids: List<String>, deleteChildren: Boolean): Either<DomainError, Unit> {
+    override suspend fun deleteBulk(blockUuids: List<BlockUuid>, deleteChildren: Boolean): Either<DomainError, Unit> {
         blockUuids.forEach { uuid -> deleteBlock(uuid, deleteChildren) }
         return Unit.right()
     }
 
-    override suspend fun deleteBlocksForPage(pageUuid: String): Either<DomainError, Unit> {
+    override suspend fun deleteBlocksForPage(pageUuid: PageUuid): Either<DomainError, Unit> {
         _blocks.value = _blocks.value.filterValues { it.pageUuid != pageUuid }
         return Unit.right()
     }
 
-    override suspend fun deleteBlocksForPages(pageUuids: List<String>): Either<DomainError, Unit> {
+    override suspend fun deleteBlocksForPages(pageUuids: List<PageUuid>): Either<DomainError, Unit> {
         val uuidSet = pageUuids.toSet()
         _blocks.value = _blocks.value.filterValues { it.pageUuid !in uuidSet }
         return Unit.right()
     }
 
-    override suspend fun moveBlock(blockUuid: String, newParentUuid: String?, newPosition: Int): Either<DomainError, Unit> {
+    override suspend fun moveBlock(blockUuid: BlockUuid, newParentUuid: BlockUuid?, newPosition: Int): Either<DomainError, Unit> {
         val current = _blocks.value.toMutableMap()
-        val block = current[blockUuid] ?: return Unit.right()
+        val block = current[blockUuid.value] ?: return Unit.right()
 
-        val newLevel = if (newParentUuid == null) 0 else (current[newParentUuid]?.level ?: -1) + 1
+        val newLevel = if (newParentUuid == null) 0 else (current[newParentUuid.value]?.level ?: -1) + 1
         val levelDelta = newLevel - block.level
 
-        current[blockUuid] = block.copy(parentUuid = newParentUuid, position = newPosition, level = newLevel)
+        current[blockUuid.value] = block.copy(parentUuid = newParentUuid?.value, position = newPosition, level = newLevel)
 
         if (levelDelta != 0) {
             val updates = mutableMapOf<String, Block>()
-            adjustDescendantLevels(blockUuid, levelDelta, current, updates)
+            adjustDescendantLevels(blockUuid.value, levelDelta, current, updates)
             updates.forEach { (u, b) -> current[u] = b }
         }
 
@@ -245,34 +247,34 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         return Unit.right()
     }
 
-    override suspend fun indentBlock(blockUuid: String): Either<DomainError, Unit> {
+    override suspend fun indentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> {
         val current = _blocks.value.toMutableMap()
-        val block = current[blockUuid] ?: return Unit.right()
+        val block = current[blockUuid.value] ?: return Unit.right()
 
         val siblings = current.values
             .filter { it.pageUuid == block.pageUuid && it.parentUuid == block.parentUuid }
             .sortedBy { it.position }
 
-        val blockIndex = siblings.indexOfFirst { it.uuid == blockUuid }
+        val blockIndex = siblings.indexOfFirst { it.uuid.value == blockUuid.value }
         if (blockIndex <= 0) return Unit.right()
 
         val prevSibling = siblings[blockIndex - 1]
-        val prevSiblingChildren = current.values.filter { it.parentUuid == prevSibling.uuid }
+        val prevSiblingChildren = current.values.filter { it.parentUuid == prevSibling.uuid.value }
         val newPosition = if (prevSiblingChildren.isEmpty()) 0 else prevSiblingChildren.maxOf { it.position } + 1
 
-        current[block.uuid] = block.copy(parentUuid = prevSibling.uuid, level = block.level + 1, position = newPosition)
+        current[block.uuid.value] = block.copy(parentUuid = prevSibling.uuid.value, level = block.level + 1, position = newPosition)
 
         val updates = mutableMapOf<String, Block>()
-        adjustDescendantLevels(block.uuid, +1, current, updates)
+        adjustDescendantLevels(block.uuid.value, +1, current, updates)
         updates.forEach { (u, b) -> current[u] = b }
 
         _blocks.value = current
         return Unit.right()
     }
 
-    override suspend fun outdentBlock(blockUuid: String): Either<DomainError, Unit> {
+    override suspend fun outdentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> {
         val current = _blocks.value.toMutableMap()
-        val block = current[blockUuid] ?: return Unit.right()
+        val block = current[blockUuid.value] ?: return Unit.right()
         val parentUuid = block.parentUuid ?: return Unit.right()
 
         val parent = current[parentUuid] ?: return Unit.right()
@@ -282,21 +284,21 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
             .filter { it.pageUuid == block.pageUuid && it.parentUuid == grandParentUuid }
             .sortedBy { it.position }
 
-        val parentInGrandchildren = grandparentChildren.find { it.uuid == parentUuid }
+        val parentInGrandchildren = grandparentChildren.find { it.uuid.value == parentUuid }
         val newPosition = (parentInGrandchildren?.position ?: -1) + 1
 
         for (sibling in grandparentChildren) {
             if (sibling.position >= newPosition) {
-                current[sibling.uuid] = sibling.copy(position = sibling.position + 1)
+                current[sibling.uuid.value] = sibling.copy(position = sibling.position + 1)
             }
         }
 
-        current[block.uuid] = block.copy(parentUuid = grandParentUuid, level = parent.level, position = newPosition)
+        current[block.uuid.value] = block.copy(parentUuid = grandParentUuid, level = parent.level, position = newPosition)
 
         val levelDelta = parent.level - block.level
         if (levelDelta != 0) {
             val updates = mutableMapOf<String, Block>()
-            adjustDescendantLevels(block.uuid, levelDelta, current, updates)
+            adjustDescendantLevels(block.uuid.value, levelDelta, current, updates)
             updates.forEach { (u, b) -> current[u] = b }
         }
 
@@ -304,85 +306,85 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         return Unit.right()
     }
 
-    override suspend fun moveBlockUp(blockUuid: String): Either<DomainError, Unit> {
+    override suspend fun moveBlockUp(blockUuid: BlockUuid): Either<DomainError, Unit> {
         val current = _blocks.value.toMutableMap()
-        val block = current[blockUuid] ?: return Unit.right()
+        val block = current[blockUuid.value] ?: return Unit.right()
         val siblings = current.values.filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid }.sortedBy { it.position }
-        val idx = siblings.indexOfFirst { it.uuid == blockUuid }
+        val idx = siblings.indexOfFirst { it.uuid.value == blockUuid.value }
         if (idx <= 0) return Unit.right()
 
         val prev = siblings[idx - 1]
-        current[block.uuid] = block.copy(position = prev.position)
-        current[prev.uuid] = prev.copy(position = block.position)
+        current[block.uuid.value] = block.copy(position = prev.position)
+        current[prev.uuid.value] = prev.copy(position = block.position)
 
         _blocks.value = current
         return Unit.right()
     }
 
-    override suspend fun moveBlockDown(blockUuid: String): Either<DomainError, Unit> {
+    override suspend fun moveBlockDown(blockUuid: BlockUuid): Either<DomainError, Unit> {
         val current = _blocks.value.toMutableMap()
-        val block = current[blockUuid] ?: return Unit.right()
+        val block = current[blockUuid.value] ?: return Unit.right()
         val siblings = current.values.filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid }.sortedBy { it.position }
-        val idx = siblings.indexOfFirst { it.uuid == blockUuid }
+        val idx = siblings.indexOfFirst { it.uuid.value == blockUuid.value }
         if (idx < 0 || idx >= siblings.size - 1) return Unit.right()
 
         val next = siblings[idx + 1]
-        current[block.uuid] = block.copy(position = next.position)
-        current[next.uuid] = next.copy(position = block.position)
+        current[block.uuid.value] = block.copy(position = next.position)
+        current[next.uuid.value] = next.copy(position = block.position)
 
         _blocks.value = current
         return Unit.right()
     }
 
-    override suspend fun mergeBlocks(blockUuid: String, nextBlockUuid: String, separator: String): Either<DomainError, Unit> {
+    override suspend fun mergeBlocks(blockUuid: BlockUuid, nextBlockUuid: BlockUuid, separator: String): Either<DomainError, Unit> {
         val current = _blocks.value.toMutableMap()
-        val blockA = current[blockUuid] ?: return Unit.right()
-        val blockB = current[nextBlockUuid] ?: return Unit.right()
+        val blockA = current[blockUuid.value] ?: return Unit.right()
+        val blockB = current[nextBlockUuid.value] ?: return Unit.right()
 
-        current[blockUuid] = blockA.copy(content = blockA.content + separator + blockB.content)
+        current[blockUuid.value] = blockA.copy(content = blockA.content + separator + blockB.content)
 
-        val childrenOfB = current.values.filter { it.parentUuid == blockB.uuid }.sortedBy { it.position }
-        val lastChildOfA = current.values.filter { it.parentUuid == blockA.uuid }.maxByOrNull { it.position }
+        val childrenOfB = current.values.filter { it.parentUuid == blockB.uuid.value }.sortedBy { it.position }
+        val lastChildOfA = current.values.filter { it.parentUuid == blockA.uuid.value }.maxByOrNull { it.position }
         var nextPos = (lastChildOfA?.position ?: -1) + 1
         val levelDelta = blockA.level + 1 - blockB.level
 
         for (child in childrenOfB) {
-            val updated = child.copy(parentUuid = blockA.uuid, position = nextPos++, level = child.level + levelDelta)
-            current[child.uuid] = updated
+            val updated = child.copy(parentUuid = blockA.uuid.value, position = nextPos++, level = child.level + levelDelta)
+            current[child.uuid.value] = updated
             val updates = mutableMapOf<String, Block>()
-            adjustDescendantLevels(child.uuid, levelDelta, current, updates)
+            adjustDescendantLevels(child.uuid.value, levelDelta, current, updates)
             updates.forEach { (u, b) -> current[u] = b }
         }
 
-        _blocks.value = current - nextBlockUuid
+        _blocks.value = current - nextBlockUuid.value
         return Unit.right()
     }
 
-    override suspend fun splitBlock(blockUuid: String, cursorPosition: Int, newBlockUuid: String?): Either<DomainError, Block> {
+    override suspend fun splitBlock(blockUuid: BlockUuid, cursorPosition: Int, newBlockUuid: BlockUuid?): Either<DomainError, Block> {
         val current = _blocks.value.toMutableMap()
-        val block = current[blockUuid] ?: return DomainError.DatabaseError.NotFound("block", blockUuid).left()
+        val block = current[blockUuid.value] ?: return DomainError.DatabaseError.NotFound("block", blockUuid.value).left()
         val firstPart = block.content.substring(0, cursorPosition).trim()
         val secondPart = block.content.substring(cursorPosition).trim()
 
         val newPos = block.position + 1
         current.values.filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid && it.position >= newPos }.forEach {
-            current[it.uuid] = it.copy(position = it.position + 1)
+            current[it.uuid.value] = it.copy(position = it.position + 1)
         }
 
-        current[blockUuid] = block.copy(content = firstPart)
+        current[blockUuid.value] = block.copy(content = firstPart)
         val newBlock = block.copy(
-            uuid = newBlockUuid ?: dev.stapler.stelekit.util.UuidGenerator.generateV7(),
+            uuid = newBlockUuid ?: BlockUuid(dev.stapler.stelekit.util.UuidGenerator.generateV7()),
             content = secondPart,
             position = newPos,
         )
-        current[newBlock.uuid] = newBlock
+        current[newBlock.uuid.value] = newBlock
         _blocks.value = current
         return newBlock.right()
     }
 
-    override fun getBlockHierarchy(rootUuid: String): Flow<Either<DomainError, List<BlockWithDepth>>> = flowOf(emptyList<BlockWithDepth>().right())
-    override fun getBlockAncestors(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
-    override fun getBlockParent(blockUuid: String): Flow<Either<DomainError, Block?>> = flowOf(null.right())
+    override fun getBlockHierarchy(rootUuid: BlockUuid): Flow<Either<DomainError, List<BlockWithDepth>>> = flowOf(emptyList<BlockWithDepth>().right())
+    override fun getBlockAncestors(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
+    override fun getBlockParent(blockUuid: BlockUuid): Flow<Either<DomainError, Block?>> = flowOf(null.right())
     override fun getLinkedReferences(pageName: String): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
     override fun getLinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
     override fun countLinkedReferences(pageName: String): Flow<Either<DomainError, Long>> = flowOf(0L.right())
@@ -408,8 +410,8 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         for (child in children) {
             val newLevel = child.level + delta
             if (newLevel >= 0) {
-                updates[child.uuid] = child.copy(level = newLevel)
-                adjustDescendantLevels(child.uuid, delta, snapshot, updates, visited)
+                updates[child.uuid.value] = child.copy(level = newLevel)
+                adjustDescendantLevels(child.uuid.value, delta, snapshot, updates, visited)
             }
         }
     }
@@ -423,14 +425,14 @@ class PopulatedFakePageRepository : FakePageRepository() {
         val now = Clock.System.now()
         _pages.value = mapOf(
             "page-1" to Page(
-                uuid = "page-1",
+                uuid = PageUuid("page-1"),
                 name = "Test Page",
                 createdAt = now,
                 updatedAt = now,
                 isJournal = false
             ),
             "journal-1" to Page(
-                uuid = "journal-1",
+                uuid = PageUuid("journal-1"),
                 name = "2026-03-28",
                 createdAt = now,
                 updatedAt = now,
@@ -449,16 +451,16 @@ class PopulatedFakeBlockRepository : FakeBlockRepository() {
         val now = Clock.System.now()
         _blocks.value = mapOf(
             "block-1" to Block(
-                uuid = "block-1",
-                pageUuid = "page-1",
+                uuid = BlockUuid("block-1"),
+                pageUuid = PageUuid("page-1"),
                 content = "Block 1",
                 position = 0,
                 createdAt = now,
                 updatedAt = now
             ),
             "block-2" to Block(
-                uuid = "block-2",
-                pageUuid = "page-1",
+                uuid = BlockUuid("block-2"),
+                pageUuid = PageUuid("page-1"),
                 content = "Block 2",
                 position = 1,
                 createdAt = now,

@@ -3,7 +3,9 @@ package dev.stapler.stelekit.testing
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.ui.state.BlockStateManager
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
@@ -71,7 +73,7 @@ class OutlinerMonkeyTest {
         }
         val pageUuid = "test-page-uuid"
         pageRepo.savePage(Page(
-            uuid = pageUuid,
+            uuid = PageUuid(pageUuid),
             name = today.toString(),
             createdAt = Clock.System.now(),
             updatedAt = Clock.System.now(),
@@ -82,8 +84,8 @@ class OutlinerMonkeyTest {
         // Start with one block
         val initialBlockUuid = "block-0"
         blockRepo.saveBlock(Block(
-            uuid = initialBlockUuid,
-            pageUuid = pageUuid,
+            uuid = BlockUuid(initialBlockUuid),
+            pageUuid = PageUuid(pageUuid),
             content = "Root block",
             position = 0,
             createdAt = Clock.System.now(),
@@ -114,36 +116,36 @@ class OutlinerMonkeyTest {
             val job = when (opType) {
                 0 -> { 
                     println("Operation $i: addNewBlock after ${randomBlock.uuid} (level ${randomBlock.level})")
-                    viewModel.addNewBlock(randomBlock.uuid)
+                    viewModel.addNewBlock(randomBlock.uuid.value)
                 }
                 1 -> { 
                     println("Operation $i: indentBlock ${randomBlock.uuid}")
-                    viewModel.indentBlock(randomBlock.uuid)
+                    viewModel.indentBlock(randomBlock.uuid.value)
                 }
                 2 -> { 
                     println("Operation $i: outdentBlock ${randomBlock.uuid}")
-                    viewModel.outdentBlock(randomBlock.uuid)
+                    viewModel.outdentBlock(randomBlock.uuid.value)
                 }
                 3 -> { 
                     println("Operation $i: moveBlockUp ${randomBlock.uuid}")
-                    viewModel.moveBlockUp(randomBlock.uuid)
+                    viewModel.moveBlockUp(randomBlock.uuid.value)
                 }
                 4 -> { 
                     println("Operation $i: moveBlockDown ${randomBlock.uuid}")
-                    viewModel.moveBlockDown(randomBlock.uuid)
+                    viewModel.moveBlockDown(randomBlock.uuid.value)
                 }
                 5 -> { 
                     if (randomBlock.content.length > 2) {
                         println("Operation $i: splitBlock ${randomBlock.uuid}")
-                        viewModel.splitBlock(randomBlock.uuid, randomBlock.content.length / 2)
+                        viewModel.splitBlock(randomBlock.uuid.value, randomBlock.content.length / 2)
                     } else {
                         println("Operation $i: updateBlockContent ${randomBlock.uuid}")
-                        viewModel.updateBlockContent(randomBlock.uuid, "Some text to split", 1)
+                        viewModel.updateBlockContent(randomBlock.uuid.value, "Some text to split", 1)
                     }
                 }
                 6 -> { 
                     println("Operation $i: handleBackspace ${randomBlock.uuid} (parent=${randomBlock.parentUuid}, level=${randomBlock.level})")
-                    viewModel.handleBackspace(randomBlock.uuid)
+                    viewModel.handleBackspace(randomBlock.uuid.value)
                 }
                 else -> null
             }
@@ -165,7 +167,7 @@ class OutlinerMonkeyTest {
     }
 
     private suspend fun verifyInvariants(pageUuid: String, blockRepo: InMemoryBlockRepository) {
-        val blocks = blockRepo.getBlocksForPage(pageUuid).first().getOrNull() ?: emptyList()
+        val blocks = blockRepo.getBlocksForPage(PageUuid(pageUuid)).first().getOrNull() ?: emptyList()
         if (blocks.isEmpty()) return
         
         try {
@@ -174,7 +176,7 @@ class OutlinerMonkeyTest {
             assertEquals(uuids.size, uuids.toSet().size, "Found duplicate UUIDs in repository")
             
             // 2. Hierarchy Consistency
-            val blocksByUuid = blocks.associateBy { it.uuid }
+            val blocksByUuid = blocks.associateBy { it.uuid.value }
             blocks.forEach { block ->
                 if (block.parentUuid != null) {
                     val parent = blocksByUuid[block.parentUuid]

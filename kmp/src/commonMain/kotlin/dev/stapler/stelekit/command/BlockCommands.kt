@@ -8,6 +8,7 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import kotlinx.coroutines.flow.first
@@ -42,24 +43,25 @@ class DeleteBlockCommand(
     private val siblingsToShiftUp: List<Block>
 ) : Command<Unit> {
     override val description = "Delete Block"
-    
+
     private var deletedBlock: Block? = null
     private var deletedChildren: List<Block> = emptyList()
 
     override suspend fun execute(): Either<DomainError, Unit> {
         // Capture state before deletion
         // We need to fetch the block and its hierarchy to restore it later
-        val hierarchyResult = repository.getBlockHierarchy(blockUuid).first()
+        val blockUuidTyped = BlockUuid(blockUuid)
+        val hierarchyResult = repository.getBlockHierarchy(blockUuidTyped).first()
         val hierarchy = hierarchyResult.getOrNull() ?: return DomainError.DatabaseError.NotFound("block", blockUuid).left()
-        
+
         val blocks = hierarchy.map { it.block }
-        deletedBlock = blocks.find { it.uuid == blockUuid }
-        deletedChildren = blocks.filter { it.uuid != blockUuid }
-        
+        deletedBlock = blocks.find { it.uuid == blockUuidTyped }
+        deletedChildren = blocks.filter { it.uuid != blockUuidTyped }
+
         if (deletedBlock == null) return DomainError.DatabaseError.NotFound("block", blockUuid).left()
 
         // Delete the block (and children)
-        val deleteResult = repository.deleteBlock(blockUuid, deleteChildren = true)
+        val deleteResult = repository.deleteBlock(blockUuidTyped, deleteChildren = true)
         if (deleteResult.isLeft()) return deleteResult
         
         // Shift siblings up (position - 1)
@@ -103,7 +105,7 @@ class UpdateBlockContentCommand(
     }
     
     private suspend fun updateContent(content: String): Either<DomainError, Unit> =
-        repository.updateBlockContentOnly(blockUuid, content)
+        repository.updateBlockContentOnly(BlockUuid(blockUuid), content)
 }
 
 class SplitBlockCommand(
@@ -118,7 +120,7 @@ class SplitBlockCommand(
 
     override suspend fun execute(): Either<DomainError, Unit> {
         // 1. Update original block content
-        val updateResult = repository.updateBlockContentOnly(originalBlockUuid, newContentForOriginal)
+        val updateResult = repository.updateBlockContentOnly(BlockUuid(originalBlockUuid), newContentForOriginal)
         if (updateResult.isLeft()) return updateResult
 
         // 2. Shift siblings and add new block
@@ -137,7 +139,7 @@ class SplitBlockCommand(
         if (restoreSiblingsResult.isLeft()) return restoreSiblingsResult
 
         // 3. Restore original block content
-        return repository.updateBlockContentOnly(originalBlockUuid, originalContent)
+        return repository.updateBlockContentOnly(BlockUuid(originalBlockUuid), originalContent)
     }
 }
 
@@ -156,18 +158,19 @@ class MergeBlockCommand(
 
     override suspend fun execute(): Either<DomainError, Unit> {
         // 1. Update target block content
-        val updateResult = repository.updateBlockContentOnly(targetBlockUuid, targetNewContent)
+        val updateResult = repository.updateBlockContentOnly(BlockUuid(targetBlockUuid), targetNewContent)
         if (updateResult.isLeft()) return updateResult
 
         // 2. Delete merged block (capture state first)
-        val hierarchyResult = repository.getBlockHierarchy(mergedBlockUuid).first()
+        val mergedBlockUuidTyped = BlockUuid(mergedBlockUuid)
+        val hierarchyResult = repository.getBlockHierarchy(mergedBlockUuidTyped).first()
         val hierarchy = hierarchyResult.getOrNull() ?: return DomainError.DatabaseError.NotFound("block", mergedBlockUuid).left()
 
         val blocks = hierarchy.map { it.block }
-        deletedBlock = blocks.find { it.uuid == mergedBlockUuid }
-        deletedChildren = blocks.filter { it.uuid != mergedBlockUuid }
+        deletedBlock = blocks.find { it.uuid == mergedBlockUuidTyped }
+        deletedChildren = blocks.filter { it.uuid != mergedBlockUuidTyped }
 
-        val deleteResult = repository.deleteBlock(mergedBlockUuid, deleteChildren = true)
+        val deleteResult = repository.deleteBlock(mergedBlockUuidTyped, deleteChildren = true)
         if (deleteResult.isLeft()) return deleteResult
 
         // 3. Shift siblings up
@@ -193,7 +196,7 @@ class MergeBlockCommand(
         if (restoreBlockResult.isLeft()) return restoreBlockResult
 
         // 3. Restore target block content
-        return repository.updateBlockContentOnly(targetBlockUuid, targetOldContent)
+        return repository.updateBlockContentOnly(BlockUuid(targetBlockUuid), targetOldContent)
     }
 }
 
@@ -204,11 +207,11 @@ class IndentBlockCommand(
     override val description = "Indent Block"
 
     override suspend fun execute(): Either<DomainError, Unit> {
-        return repository.indentBlock(blockUuid)
+        return repository.indentBlock(BlockUuid(blockUuid))
     }
 
     override suspend fun undo(): Either<DomainError, Unit> {
-        return repository.outdentBlock(blockUuid)
+        return repository.outdentBlock(BlockUuid(blockUuid))
     }
 }
 
@@ -219,11 +222,11 @@ class OutdentBlockCommand(
     override val description = "Outdent Block"
 
     override suspend fun execute(): Either<DomainError, Unit> {
-        return repository.outdentBlock(blockUuid)
+        return repository.outdentBlock(BlockUuid(blockUuid))
     }
 
     override suspend fun undo(): Either<DomainError, Unit> {
-        return repository.indentBlock(blockUuid)
+        return repository.indentBlock(BlockUuid(blockUuid))
     }
 }
 
@@ -234,11 +237,11 @@ class MoveBlockUpCommand(
     override val description = "Move Block Up"
 
     override suspend fun execute(): Either<DomainError, Unit> {
-        return repository.moveBlockUp(blockUuid)
+        return repository.moveBlockUp(BlockUuid(blockUuid))
     }
 
     override suspend fun undo(): Either<DomainError, Unit> {
-        return repository.moveBlockDown(blockUuid)
+        return repository.moveBlockDown(BlockUuid(blockUuid))
     }
 }
 
@@ -249,10 +252,10 @@ class MoveBlockDownCommand(
     override val description = "Move Block Down"
 
     override suspend fun execute(): Either<DomainError, Unit> {
-        return repository.moveBlockDown(blockUuid)
+        return repository.moveBlockDown(BlockUuid(blockUuid))
     }
 
     override suspend fun undo(): Either<DomainError, Unit> {
-        return repository.moveBlockUp(blockUuid)
+        return repository.moveBlockUp(BlockUuid(blockUuid))
     }
 }

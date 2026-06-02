@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.flashcard
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import kotlinx.datetime.LocalDate
 import kotlin.time.Clock
 import kotlin.test.Test
@@ -43,8 +45,8 @@ class FlashcardReviewTest {
             if (interval != null) put("card-interval", interval)
         }
         return Block(
-            uuid = "test-block-1",
-            pageUuid = "test-page-1",
+            uuid = BlockUuid("test-block-1"),
+            pageUuid = PageUuid("test-page-1"),
             content = "What is the capital of France?",
             level = 0,
             position = 0,

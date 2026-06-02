@@ -4,6 +4,7 @@ import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.RepositoryFactoryImpl
@@ -53,7 +54,7 @@ class BlockInsertBenchmarkTest {
     private fun makePage(tempDir: File): Page {
         val now = Clock.System.now()
         return Page(
-            uuid = "bench-page-insert",
+            uuid = PageUuid("bench-page-insert"),
             name = "Bench Insert Page",
             createdAt = now,
             updatedAt = now,
@@ -172,14 +173,14 @@ class BlockInsertBenchmarkTest {
                 graphPathProvider = { tempDir.absolutePath },
                 writeActor = actor,
             )
-            bsm.observePage(page.uuid)
+            bsm.observePage(page.uuid.value)
             // Wait for _blocks to be populated before starting timed inserts
-            bsm.blocks.first { it.containsKey(page.uuid) }
+            bsm.blocks.first { it.containsKey(page.uuid.value) }
 
             // Warm-up: 5 inserts not counted
-            repeat(5) { bsm.addBlockToPage(page.uuid).join() }
+            repeat(5) { bsm.addBlockToPage(page.uuid.value).join() }
 
-            val latencies = runInserts(bsm, page.uuid, 100)
+            val latencies = runInserts(bsm, page.uuid.value, 100)
             val p50 = latencies.percentile(0.50)
             val p95 = latencies.percentile(0.95)
             val p99 = latencies.percentile(0.99)
@@ -245,14 +246,14 @@ class BlockInsertBenchmarkTest {
                 scope = scope,
                 writeActor = actor,
             )
-            bsm.observePage(page.uuid)
+            bsm.observePage(page.uuid.value)
             // Wait for _blocks to be populated before starting timed inserts
-            bsm.blocks.first { it.containsKey(page.uuid) }
+            bsm.blocks.first { it.containsKey(page.uuid.value) }
 
             // Warm-up
-            repeat(5) { bsm.addBlockToPage(page.uuid).join() }
+            repeat(5) { bsm.addBlockToPage(page.uuid.value).join() }
 
-            val latencies = runInserts(bsm, page.uuid, 100)
+            val latencies = runInserts(bsm, page.uuid.value, 100)
             val p50 = latencies.percentile(0.50)
             val p95 = latencies.percentile(0.95)
             val p99 = latencies.percentile(0.99)

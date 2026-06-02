@@ -12,7 +12,9 @@ import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.ui.state.BlockStateManager
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.JournalService
 import dev.stapler.stelekit.repository.PageRepository
@@ -51,36 +53,36 @@ class JournalsViewModelTest {
     }
 
     class FakeBlockRepository : BlockRepository {
-        override fun getBlocksForPage(pageUuid: String): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
-        override fun getBlockByUuid(uuid: String): Flow<Either<DomainError, Block?>> = flowOf(null.right())
-        override fun getBlockChildren(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
-        override fun getBlockHierarchy(rootUuid: String): Flow<Either<DomainError, List<BlockWithDepth>>> = flowOf(emptyList<BlockWithDepth>().right())
-        override fun getBlockAncestors(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
-        override fun getBlockParent(blockUuid: String): Flow<Either<DomainError, Block?>> = flowOf(null.right())
-        override fun getBlockSiblings(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
+        override fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
+        override fun getBlockByUuid(uuid: BlockUuid): Flow<Either<DomainError, Block?>> = flowOf(null.right())
+        override fun getBlockChildren(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
+        override fun getBlockHierarchy(rootUuid: BlockUuid): Flow<Either<DomainError, List<BlockWithDepth>>> = flowOf(emptyList<BlockWithDepth>().right())
+        override fun getBlockAncestors(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
+        override fun getBlockParent(blockUuid: BlockUuid): Flow<Either<DomainError, Block?>> = flowOf(null.right())
+        override fun getBlockSiblings(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
         override fun getLinkedReferences(pageName: String): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
         override fun getLinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
         override fun countLinkedReferences(pageName: String): Flow<Either<DomainError, Long>> = flowOf(0L.right())
         override fun getUnlinkedReferences(pageName: String): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
         override fun getUnlinkedReferences(pageName: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
         override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
-        
+
         override suspend fun saveBlock(block: Block): Either<DomainError, Unit> = Unit.right()
         override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> = Unit.right()
-        override suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean): Either<DomainError, Unit> = Unit.right()
-        override suspend fun deleteBulk(blockUuids: List<String>, deleteChildren: Boolean): Either<DomainError, Unit> = Unit.right()
-        override suspend fun deleteBlocksForPage(pageUuid: String): Either<DomainError, Unit> = Unit.right()
-        override suspend fun deleteBlocksForPages(pageUuids: List<String>): Either<DomainError, Unit> = Unit.right()
-        override suspend fun moveBlock(blockUuid: String, newParentUuid: String?, newPosition: Int): Either<DomainError, Unit> = Unit.right()
-        override suspend fun indentBlock(blockUuid: String): Either<DomainError, Unit> = Unit.right()
-        override suspend fun outdentBlock(blockUuid: String): Either<DomainError, Unit> = Unit.right()
-        override suspend fun moveBlockUp(blockUuid: String): Either<DomainError, Unit> = Unit.right()
-        override suspend fun moveBlockDown(blockUuid: String): Either<DomainError, Unit> = Unit.right()
-        override suspend fun mergeBlocks(blockUuid: String, nextBlockUuid: String, separator: String): Either<DomainError, Unit> = Unit.right()
-        override suspend fun splitBlock(blockUuid: String, cursorPosition: Int, newBlockUuid: String?): Either<DomainError, Block> = DomainError.DatabaseError.WriteFailed("not implemented").left()
+        override suspend fun deleteBlock(blockUuid: BlockUuid, deleteChildren: Boolean): Either<DomainError, Unit> = Unit.right()
+        override suspend fun deleteBulk(blockUuids: List<BlockUuid>, deleteChildren: Boolean): Either<DomainError, Unit> = Unit.right()
+        override suspend fun deleteBlocksForPage(pageUuid: PageUuid): Either<DomainError, Unit> = Unit.right()
+        override suspend fun deleteBlocksForPages(pageUuids: List<PageUuid>): Either<DomainError, Unit> = Unit.right()
+        override suspend fun moveBlock(blockUuid: BlockUuid, newParentUuid: BlockUuid?, newPosition: Int): Either<DomainError, Unit> = Unit.right()
+        override suspend fun indentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()
+        override suspend fun outdentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()
+        override suspend fun moveBlockUp(blockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()
+        override suspend fun moveBlockDown(blockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()
+        override suspend fun mergeBlocks(blockUuid: BlockUuid, nextBlockUuid: BlockUuid, separator: String): Either<DomainError, Unit> = Unit.right()
+        override suspend fun splitBlock(blockUuid: BlockUuid, cursorPosition: Int, newBlockUuid: BlockUuid?): Either<DomainError, Block> = DomainError.DatabaseError.WriteFailed("not implemented").left()
         override fun findDuplicateBlocks(limit: Int): Flow<Either<DomainError, List<DuplicateGroup>>> = flowOf(emptyList<DuplicateGroup>().right())
-        override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> = Unit.right()
-        override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> = Unit.right()
+        override suspend fun updateBlockContentOnly(blockUuid: BlockUuid, content: String): Either<DomainError, Unit> = Unit.right()
+        override suspend fun updateBlockPropertiesOnly(blockUuid: BlockUuid, properties: Map<String, String>): Either<DomainError, Unit> = Unit.right()
         override suspend fun clear(): Either<DomainError, Unit> = Unit.right()
     }
 
@@ -99,7 +101,7 @@ class JournalsViewModelTest {
         }
 
         override fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>> = flowOf(emptyList<Page>().right())
-        
+
         override fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
             val result = pages.sortedBy { it.name }.drop(offset).take(limit)
             return flowOf(result.right())
@@ -114,7 +116,7 @@ class JournalsViewModelTest {
             return flowOf(result.right())
         }
 
-        override fun getPageByUuid(uuid: String): Flow<Either<DomainError, Page?>> = flowOf(pages.find { it.uuid == uuid }.right())
+        override fun getPageByUuid(uuid: PageUuid): Flow<Either<DomainError, Page?>> = flowOf(pages.find { it.uuid == uuid }.right())
         override fun getPageByName(name: String): Flow<Either<DomainError, Page?>> = flowOf(pages.find { it.name == name }.right())
         override fun getRecentPages(limit: Int): Flow<Either<DomainError, List<Page>>> = flowOf(pages.sortedByDescending { it.updatedAt }.take(limit).right())
         override fun getJournalPageByDate(date: LocalDate): Flow<Either<DomainError, Page?>> = flowOf(pages.find { it.journalDate == date }.right())
@@ -131,9 +133,9 @@ class JournalsViewModelTest {
             }
             return Unit.right()
         }
-        override suspend fun deletePage(pageUuid: String): Either<DomainError, Unit> = Unit.right()
-        override suspend fun renamePage(pageUuid: String, newName: String): Either<DomainError, Unit> = Unit.right()
-        override suspend fun toggleFavorite(pageUuid: String): Either<DomainError, Unit> = Unit.right()
+        override suspend fun deletePage(pageUuid: PageUuid): Either<DomainError, Unit> = Unit.right()
+        override suspend fun renamePage(pageUuid: PageUuid, newName: String): Either<DomainError, Unit> = Unit.right()
+        override suspend fun toggleFavorite(pageUuid: PageUuid): Either<DomainError, Unit> = Unit.right()
         override fun countPages(): Flow<Either<DomainError, Long>> = flowOf(pages.size.toLong().right())
         override suspend fun clear() { pages.clear() }
     }
@@ -151,7 +153,7 @@ class JournalsViewModelTest {
         val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
         repo.savePage(
             Page(
-                uuid = "today-uuid",
+                uuid = PageUuid("today-uuid"),
                 name = today.toString(),
                 createdAt = Clock.System.now(),
                 updatedAt = Clock.System.now(),
@@ -165,7 +167,7 @@ class JournalsViewModelTest {
             val date = LocalDate(2025, 1, i) // Use last year to avoid collision with today
             repo.savePage(
                 Page(
-                    uuid = generateFakeUuid(i),
+                    uuid = PageUuid(generateFakeUuid(i)),
                     name = "2025-01-${i.toString().padStart(2, '0')}",
                     createdAt = Clock.System.now(),
                     updatedAt = Clock.System.now(),

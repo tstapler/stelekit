@@ -6,6 +6,7 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Property
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,16 +28,16 @@ class DatalogPropertyRepository : PropertyRepository {
         blocks.value = blocksMap
     }
 
-    override fun getPropertiesForBlock(blockUuid: String): Flow<Either<DomainError, List<Property>>> {
+    override fun getPropertiesForBlock(blockUuid: BlockUuid): Flow<Either<DomainError, List<Property>>> {
         return properties.map { map ->
-            val props = map[blockUuid]?.values?.toList() ?: emptyList()
+            val props = map[blockUuid.value]?.values?.toList() ?: emptyList()
             props.right()
         }
     }
 
-    override fun getProperty(blockUuid: String, key: String): Flow<Either<DomainError, Property?>> {
+    override fun getProperty(blockUuid: BlockUuid, key: String): Flow<Either<DomainError, Property?>> {
         return properties.map { map ->
-            val prop = map[blockUuid]?.get(key)
+            val prop = map[blockUuid.value]?.get(key)
             prop.right()
         }
     }
@@ -56,12 +57,12 @@ class DatalogPropertyRepository : PropertyRepository {
         }
     }
 
-    override suspend fun deleteProperty(blockUuid: String, key: String): Either<DomainError, Unit> {
+    override suspend fun deleteProperty(blockUuid: BlockUuid, key: String): Either<DomainError, Unit> {
         return try {
             val current = properties.value.toMutableMap()
-            val blockProps = current[blockUuid]?.toMutableMap() ?: return Unit.right()
+            val blockProps = current[blockUuid.value]?.toMutableMap() ?: return Unit.right()
             blockProps.remove(key)
-            current[blockUuid] = blockProps
+            current[blockUuid.value] = blockProps
             properties.value = current
             Unit.right()
         } catch (e: CancellationException) {

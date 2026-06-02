@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.export
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -23,7 +25,7 @@ class JsonExporterTest {
         journalDate: LocalDate? = null,
         properties: Map<String, String> = emptyMap()
     ) = Page(
-        uuid = uuid,
+        uuid = PageUuid(uuid),
         name = name,
         createdAt = now,
         updatedAt = now,
@@ -40,8 +42,8 @@ class JsonExporterTest {
         parentUuid: String? = null,
         properties: Map<String, String> = emptyMap()
     ) = Block(
-        uuid = uuid,
-        pageUuid = "page-uuid",
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid("page-uuid"),
         parentUuid = parentUuid,
         content = content,
         level = level,

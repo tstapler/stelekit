@@ -4,6 +4,8 @@ import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 
@@ -16,38 +18,38 @@ interface BlockReadRepository {
     /**
      * Retrieve a single block by its UUID
      */
-    fun getBlockByUuid(uuid: String): Flow<Either<DomainError, Block?>>
+    fun getBlockByUuid(uuid: BlockUuid): Flow<Either<DomainError, Block?>>
 
     /**
      * Get all immediate children of a block (one level deep)
      */
-    fun getBlockChildren(blockUuid: String): Flow<Either<DomainError, List<Block>>>
+    fun getBlockChildren(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Get complete hierarchy starting from a root block (recursive)
      * Returns all descendants with their depth in hierarchy
      */
-    fun getBlockHierarchy(rootUuid: String): Flow<Either<DomainError, List<BlockWithDepth>>>
+    fun getBlockHierarchy(rootUuid: BlockUuid): Flow<Either<DomainError, List<BlockWithDepth>>>
 
     /**
      * Get all ancestors of a block (from immediate parent up to root)
      */
-    fun getBlockAncestors(blockUuid: String): Flow<Either<DomainError, List<Block>>>
+    fun getBlockAncestors(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Get the immediate parent of a block
      */
-    fun getBlockParent(blockUuid: String): Flow<Either<DomainError, Block?>>
+    fun getBlockParent(blockUuid: BlockUuid): Flow<Either<DomainError, Block?>>
 
     /**
      * Get sibling blocks (blocks with same parent)
      */
-    fun getBlockSiblings(blockUuid: String): Flow<Either<DomainError, List<Block>>>
+    fun getBlockSiblings(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Get all blocks for a specific page
      */
-    fun getBlocksForPage(pageUuid: String): Flow<Either<DomainError, List<Block>>>
+    fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>>
 
     /**
      * Batch-fetch blocks by UUID set in a single round-trip.
@@ -60,7 +62,7 @@ interface BlockReadRepository {
      * The default implementation falls back to per-UUID lookups and is suitable for test
      * fakes. Production implementations should override with a `WHERE uuid IN ?` query.
      */
-    suspend fun getBlocksByUuids(uuids: List<String>): Either<DomainError, List<Block>> {
+    suspend fun getBlocksByUuids(uuids: List<BlockUuid>): Either<DomainError, List<Block>> {
         if (uuids.isEmpty()) return emptyList<Block>().right()
         val results = mutableListOf<Block>()
         for (uuid in uuids) {
@@ -77,7 +79,7 @@ interface BlockReadRepository {
      * Called after external file changes so unrelated pages stay warm.
      * No-op by default.
      */
-    suspend fun cacheEvictPage(pageUuid: String) {}
+    suspend fun cacheEvictPage(pageUuid: PageUuid) {}
 }
 
 data class BlockWithDepth(

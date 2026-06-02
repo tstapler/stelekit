@@ -3,7 +3,9 @@ package dev.stapler.stelekit.benchmarks
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SearchRequest
 import dev.stapler.stelekit.repository.SearchedBlock
@@ -59,7 +61,7 @@ open class SearchBenchmark {
         benchPages = (0 until 50).map { i ->
             SearchedPage(
                 page = Page(
-                    uuid = "page-$i",
+                    uuid = PageUuid("page-$i"),
                     name = "Page $i",
                     createdAt = now,
                     updatedAt = now,
@@ -71,8 +73,8 @@ open class SearchBenchmark {
         benchBlocks = (0 until 50).map { i ->
             SearchedBlock(
                 block = Block(
-                    uuid = "block-$i",
-                    pageUuid = "page-${i % 50}",
+                    uuid = BlockUuid("block-$i"),
+                    pageUuid = PageUuid("page-${i % 50}"),
                     content = "block content $i",
                     position = i,
                     createdAt = now,
@@ -146,7 +148,7 @@ open class SearchBenchmark {
             val word1 = wordList[i % wordList.size]
             val word2 = wordList[(i + 7) % wordList.size]
             Page(
-                uuid = generateUuid(i),
+                uuid = PageUuid(generateUuid(i)),
                 name = "$word1 $word2 page $i",
                 namespace = null,
                 filePath = null,
@@ -166,7 +168,7 @@ open class SearchBenchmark {
                 val word2 = wordList[(blockIdx + 3) % wordList.size]
                 val word3 = wordList[(blockIdx + 11) % wordList.size]
                 Block(
-                    uuid = generateUuid(pageCount + blockIdx),
+                    uuid = BlockUuid(generateUuid(pageCount + blockIdx)),
                     pageUuid = page.uuid,
                     parentUuid = null,
                     leftUuid = null,

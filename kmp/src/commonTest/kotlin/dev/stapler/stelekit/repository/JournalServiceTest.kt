@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.repository
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalDate
@@ -65,7 +67,7 @@ class JournalServiceTest {
         val service = JournalService(pageRepo, blockRepo)
 
         val existing = Page(
-            uuid = "existing-uuid",
+            uuid = PageUuid("existing-uuid"),
             name = today().toString(),
             createdAt = Clock.System.now(),
             updatedAt = Clock.System.now(),
@@ -75,7 +77,7 @@ class JournalServiceTest {
         pageRepo.savePage(existing)
 
         val result = service.ensureTodayJournal()
-        assertEquals("existing-uuid", result.uuid)
+        assertEquals(PageUuid("existing-uuid"), result.uuid)
 
         // Should NOT create additional pages
         val allPages = pageRepo.getAllPages().first().getOrNull() ?: emptyList()
@@ -91,7 +93,7 @@ class JournalServiceTest {
         // Simulate a page loaded from disk with underscore format
         val underscoreName = today().toString().replace('-', '_')
         val existing = Page(
-            uuid = "disk-page-uuid",
+            uuid = PageUuid("disk-page-uuid"),
             name = underscoreName,
             createdAt = Clock.System.now(),
             updatedAt = Clock.System.now(),
@@ -101,7 +103,7 @@ class JournalServiceTest {
         pageRepo.savePage(existing)
 
         val result = service.ensureTodayJournal()
-        assertEquals("disk-page-uuid", result.uuid)
+        assertEquals(PageUuid("disk-page-uuid"), result.uuid)
     }
 
     // ---- ensureTodayJournal: dedup/merge ----
@@ -115,15 +117,15 @@ class JournalServiceTest {
 
         // Page A: empty (created by earlier ensureTodayJournal)
         val pageA = Page(
-            uuid = "page-a",
+            uuid = PageUuid("page-a"),
             name = today().toString(),
             createdAt = now, updatedAt = now,
             isJournal = true, journalDate = today()
         )
         pageRepo.savePage(pageA)
         blockRepo.saveBlock(Block(
-            uuid = "block-a",
-            pageUuid = "page-a",
+            uuid = BlockUuid("block-a"),
+            pageUuid = PageUuid("page-a"),
             content = "",
             position = 0,
             createdAt = now, updatedAt = now
@@ -132,15 +134,15 @@ class JournalServiceTest {
         // Page B: has real content (loaded from disk)
         val underscoreName = today().toString().replace('-', '_')
         val pageB = Page(
-            uuid = "page-b",
+            uuid = PageUuid("page-b"),
             name = underscoreName,
             createdAt = now, updatedAt = now,
             isJournal = true, journalDate = today()
         )
         pageRepo.savePage(pageB)
         blockRepo.saveBlock(Block(
-            uuid = "block-b",
-            pageUuid = "page-b",
+            uuid = BlockUuid("block-b"),
+            pageUuid = PageUuid("page-b"),
             content = "Real journal content from disk",
             position = 0,
             createdAt = now, updatedAt = now
@@ -149,10 +151,10 @@ class JournalServiceTest {
         val result = service.ensureTodayJournal()
 
         // Should keep page B (has content)
-        assertEquals("page-b", result.uuid)
+        assertEquals(PageUuid("page-b"), result.uuid)
 
         // Page A should be deleted
-        val pageAStill = pageRepo.getPageByUuid("page-a").first().getOrNull()
+        val pageAStill = pageRepo.getPageByUuid(PageUuid("page-a")).first().getOrNull()
         assertEquals(null, pageAStill)
 
         // Only one page should remain
@@ -170,13 +172,13 @@ class JournalServiceTest {
 
         // Page A has a non-empty block
         val pageA = Page(
-            uuid = "page-a", name = today().toString(),
+            uuid = PageUuid("page-a"), name = today().toString(),
             createdAt = now, updatedAt = now,
             isJournal = true, journalDate = today()
         )
         pageRepo.savePage(pageA)
         blockRepo.saveBlock(Block(
-            uuid = "block-a-content", pageUuid = "page-a",
+            uuid = BlockUuid("block-a-content"), pageUuid = PageUuid("page-a"),
             content = "Important note", position = 0,
             createdAt = now, updatedAt = now
         ))
@@ -184,13 +186,13 @@ class JournalServiceTest {
         // Page B also has content (loaded from disk) — will be the keeper
         val underscoreName = today().toString().replace('-', '_')
         val pageB = Page(
-            uuid = "page-b", name = underscoreName,
+            uuid = PageUuid("page-b"), name = underscoreName,
             createdAt = now, updatedAt = now,
             isJournal = true, journalDate = today()
         )
         pageRepo.savePage(pageB)
         blockRepo.saveBlock(Block(
-            uuid = "block-b-content", pageUuid = "page-b",
+            uuid = BlockUuid("block-b-content"), pageUuid = PageUuid("page-b"),
             content = "Disk content", position = 0,
             createdAt = now, updatedAt = now
         ))
@@ -199,7 +201,7 @@ class JournalServiceTest {
 
         // Block from page A should be re-parented to keeper
         val keeperBlocks = blockRepo.getBlocksForPage(result.uuid).first().getOrNull() ?: emptyList()
-        val reparented = keeperBlocks.find { it.uuid == "block-a-content" }
+        val reparented = keeperBlocks.find { it.uuid == BlockUuid("block-a-content") }
         assertNotNull(reparented, "Non-empty block from loser page should be re-parented")
         assertEquals(result.uuid, reparented.pageUuid)
     }
@@ -214,7 +216,7 @@ class JournalServiceTest {
 
         val date = LocalDate(2026, 3, 15)
         val page = Page(
-            uuid = "test-uuid", name = "2026_03_15",
+            uuid = PageUuid("test-uuid"), name = "2026_03_15",
             createdAt = Clock.System.now(), updatedAt = Clock.System.now(),
             isJournal = true, journalDate = date
         )
@@ -222,7 +224,7 @@ class JournalServiceTest {
 
         val result = service.getPageByJournalDate(date)
         assertNotNull(result)
-        assertEquals("test-uuid", result.uuid)
+        assertEquals(PageUuid("test-uuid"), result.uuid)
     }
 
     @Test
@@ -233,7 +235,7 @@ class JournalServiceTest {
 
         // Page exists by name only (no journalDate set — edge case)
         val page = Page(
-            uuid = "name-only", name = "2026-03-15",
+            uuid = PageUuid("name-only"), name = "2026-03-15",
             createdAt = Clock.System.now(), updatedAt = Clock.System.now(),
             isJournal = false, journalDate = null
         )
@@ -241,7 +243,7 @@ class JournalServiceTest {
 
         val result = service.getPageByJournalDate(LocalDate(2026, 3, 15))
         assertNotNull(result)
-        assertEquals("name-only", result.uuid)
+        assertEquals(PageUuid("name-only"), result.uuid)
     }
 
     // ---- Clock injection ----

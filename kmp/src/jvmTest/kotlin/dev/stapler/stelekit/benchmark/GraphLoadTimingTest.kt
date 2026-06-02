@@ -3,7 +3,9 @@ package dev.stapler.stelekit.benchmark
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
@@ -82,15 +84,15 @@ class GraphLoadTimingTest {
         Files.createTempDirectory(prefix).toFile().also { it.deleteOnExit() }
 
     private fun syntheticPage() = Page(
-        uuid      = "jank-journal-page",
+        uuid      = PageUuid("jank-journal-page"),
         name      = "jank journal",
         createdAt = Clock.System.now(),
         updatedAt = Clock.System.now(),
         isJournal = true,
     )
 
-    private fun syntheticBlock(pageUuid: String, index: Int) = Block(
-        uuid      = "jank-block-${index.toString().padStart(6, '0')}",
+    private fun syntheticBlock(pageUuid: PageUuid, index: Int) = Block(
+        uuid      = BlockUuid("jank-block-${index.toString().padStart(6, '0')}"),
         pageUuid  = pageUuid,
         content   = "Simulated journal entry $index — typing while graph loads",
         level     = 0,

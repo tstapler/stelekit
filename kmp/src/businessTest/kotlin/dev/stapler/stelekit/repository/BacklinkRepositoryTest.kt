@@ -6,7 +6,9 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlin.time.Clock
@@ -20,7 +22,7 @@ class BacklinkRepositoryTest {
     private val now = Clock.System.now()
 
     private fun makePage(uuid: String, name: String): Page = Page(
-        uuid = uuid,
+        uuid = PageUuid(uuid),
         name = name,
         createdAt = now,
         updatedAt = now
@@ -32,8 +34,8 @@ class BacklinkRepositoryTest {
         content: String,
         position: Int = 0
     ): Block = Block(
-        uuid = uuid,
-        pageUuid = pageUuid,
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid(pageUuid),
         content = content,
         level = 0,
         position = position,
@@ -59,7 +61,7 @@ class BacklinkRepositoryTest {
         assertTrue(result.isRight())
         val linked = result.getOrNull()!!
         assertEquals(1, linked.size)
-        assertEquals("block-b1", linked.first().uuid)
+        assertEquals(BlockUuid("block-b1"), linked.first().uuid)
     }
 
     @Test
@@ -86,7 +88,7 @@ class BacklinkRepositoryTest {
         val linked = result.getOrNull()!!
         // Self-reference IS included — the in-memory impl returns all matching blocks
         // regardless of which page they belong to.
-        assertTrue(linked.any { it.uuid == "block-a1" })
+        assertTrue(linked.any { it.uuid.value == "block-a1" })
     }
 
     @Test
@@ -102,9 +104,9 @@ class BacklinkRepositoryTest {
         assertTrue(result.isRight())
         val linked = result.getOrNull()!!
         assertEquals(2, linked.size)
-        assertTrue(linked.any { it.uuid == "block-1" })
-        assertTrue(linked.any { it.uuid == "block-2" })
-        assertFalse(linked.any { it.uuid == "block-3" })
+        assertTrue(linked.any { it.uuid.value == "block-1" })
+        assertTrue(linked.any { it.uuid.value == "block-2" })
+        assertFalse(linked.any { it.uuid.value == "block-3" })
     }
 
     @Test
@@ -119,8 +121,8 @@ class BacklinkRepositoryTest {
         assertTrue(result.isRight())
         val linked = result.getOrNull()!!
         assertEquals(2, linked.size)
-        assertTrue(linked.any { it.uuid == "block-1" })
-        assertTrue(linked.any { it.uuid == "block-2" })
+        assertTrue(linked.any { it.uuid.value == "block-1" })
+        assertTrue(linked.any { it.uuid.value == "block-2" })
     }
 
     @Test
@@ -133,6 +135,6 @@ class BacklinkRepositoryTest {
 
         assertTrue(result.isRight())
         assertEquals(1, result.getOrNull()!!.size)
-        assertEquals("block-1", result.getOrNull()!!.first().uuid)
+        assertEquals(BlockUuid("block-1"), result.getOrNull()!!.first().uuid)
     }
 }

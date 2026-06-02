@@ -13,6 +13,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
@@ -83,7 +84,7 @@ class GraphWriter(
     )
 
     // Per-page debounce: pageUuid → pending Job + latest request
-    private val pendingByPage = mutableMapOf<String, Pair<Job, SaveRequest>>()
+    private val pendingByPage = mutableMapOf<PageUuid, Pair<Job, SaveRequest>>()
     private val pendingMutex = Mutex()
     // Owned internal scope — callers must not inject a rememberCoroutineScope().
     private val ownedScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -527,7 +528,7 @@ class GraphWriter(
                     }
                 }
 
-                writeBlocks(block.uuid)
+                writeBlocks(block.uuid.value)
             }
         }
 

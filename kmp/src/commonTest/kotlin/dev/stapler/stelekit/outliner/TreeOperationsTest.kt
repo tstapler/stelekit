@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.outliner
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import kotlin.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -12,9 +14,9 @@ class TreeOperationsTest {
     private fun createBlock(uuidSuffix: String, parentUuid: String? = null, leftUuid: String? = null, position: Int = 0, level: Int = 0): Block {
         val idStr = uuidSuffix.padStart(12, '0')
         return Block(
-            uuid = "00000000-0000-0000-0000-$idStr",
+            uuid = BlockUuid("00000000-0000-0000-0000-$idStr"),
             content = "Block $uuidSuffix",
-            pageUuid = "page-1",
+            pageUuid = PageUuid("page-1"),
             parentUuid = parentUuid,
             leftUuid = leftUuid,
             position = position,
@@ -59,8 +61,8 @@ class TreeOperationsTest {
         assertNotNull(result)
         assertEquals(2, result.size) // B2 updated, B3 updated
         
-        val indentedB2 = result.find { it.uuid == uuid("2") }!!
-        val updatedB3 = result.find { it.uuid == uuid("3") }!!
+        val indentedB2 = result.find { it.uuid.value == uuid("2") }!!
+        val updatedB3 = result.find { it.uuid.value == uuid("3") }!!
 
         // Check B2
         assertEquals(uuid("1"), indentedB2.parentUuid)
@@ -111,9 +113,9 @@ class TreeOperationsTest {
         assertNotNull(result)
         assertEquals(3, result.size) // B2, B3 (gap close), Uncle (gap open)
         
-        val outdentedB2 = result.find { it.uuid == uuid("2") }!!
-        val updatedB3 = result.find { it.uuid == uuid("3") }!!
-        val updatedUncle = result.find { it.uuid == uuid("99") }!!
+        val outdentedB2 = result.find { it.uuid.value == uuid("2") }!!
+        val updatedB3 = result.find { it.uuid.value == uuid("3") }!!
+        val updatedUncle = result.find { it.uuid.value == uuid("99") }!!
 
         // Check B2
         assertNull(outdentedB2.parentUuid) // Top level now
@@ -137,8 +139,8 @@ class TreeOperationsTest {
         assertNotNull(result)
         assertEquals(2, result.size)
         
-        val updatedB2 = result.find { it.uuid == uuid("2") }!!
-        val updatedB1 = result.find { it.uuid == uuid("1") }!!
+        val updatedB2 = result.find { it.uuid.value == uuid("2") }!!
+        val updatedB1 = result.find { it.uuid.value == uuid("1") }!!
 
         assertNull(updatedB2.leftUuid)
         assertEquals(uuid("2"), updatedB1.leftUuid)
@@ -154,8 +156,8 @@ class TreeOperationsTest {
         assertNotNull(result)
         assertEquals(2, result.size)
 
-        val updatedB1 = result.find { it.uuid == uuid("1") }!!
-        val updatedB2 = result.find { it.uuid == uuid("2") }!!
+        val updatedB1 = result.find { it.uuid.value == uuid("1") }!!
+        val updatedB2 = result.find { it.uuid.value == uuid("2") }!!
 
         assertEquals(uuid("2"), updatedB1.leftUuid)
         assertNull(updatedB2.leftUuid)
