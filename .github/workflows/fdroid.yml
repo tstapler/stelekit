@@ -69,7 +69,10 @@ jobs:
               --dir fdroid/repo/ 2>/dev/null; then
               DOWNLOADED=$((DOWNLOADED + 1))
             fi
-          done < <(gh release list --limit 100 --json tagName --jq '.[].tagName')
+          # Exclude v0.1.0: its resource table cannot be parsed by androguard
+          # (ResParserError: res1 must be zero!) — too old to be in the repo.
+          done < <(gh release list --limit 100 --json tagName \
+            --jq '[.[] | select(.tagName != "v0.1.0")] | .[].tagName')
           echo "Downloaded $DOWNLOADED APK(s)"
           [ "$DOWNLOADED" -gt 0 ] || { echo "No APKs downloaded — refusing to publish empty F-Droid repo"; exit 1; }
 
