@@ -282,6 +282,100 @@ object MigrationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_query_stats_version_ms ON query_stats(app_version, total_ms DESC)"
             )
         ),
+        Migration(
+            name = "perf_histogram_and_debug_flags",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS perf_histogram_buckets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    operation_name TEXT NOT NULL,
+                    bucket_ms INTEGER NOT NULL,
+                    count INTEGER NOT NULL DEFAULT 0,
+                    recorded_at INTEGER NOT NULL
+                )
+                """,
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_perf_hist_op_bucket ON perf_histogram_buckets(operation_name, bucket_ms)",
+                """
+                CREATE TABLE IF NOT EXISTS debug_flags (
+                    key TEXT NOT NULL PRIMARY KEY,
+                    value INTEGER NOT NULL DEFAULT 0,
+                    updated_at INTEGER NOT NULL
+                )
+                """
+            )
+        ),
+        Migration(
+            name = "git_config_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS git_config (
+                    graph_id                TEXT NOT NULL PRIMARY KEY,
+                    repo_root               TEXT NOT NULL,
+                    wiki_subdir             TEXT NOT NULL DEFAULT '',
+                    remote_name             TEXT NOT NULL DEFAULT 'origin',
+                    remote_branch           TEXT NOT NULL DEFAULT 'main',
+                    auth_type               TEXT NOT NULL DEFAULT 'NONE',
+                    ssh_key_path            TEXT,
+                    ssh_key_passphrase_key  TEXT,
+                    https_token_key         TEXT,
+                    poll_interval_minutes   INTEGER NOT NULL DEFAULT 5,
+                    auto_commit             INTEGER NOT NULL DEFAULT 1,
+                    commit_message_template TEXT NOT NULL DEFAULT 'SteleKit: {date}'
+                )
+                """
+            )
+        ),
+        Migration(
+            name = "image_and_measurement_annotations",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS image_annotations (
+                    uuid                       TEXT NOT NULL PRIMARY KEY,
+                    block_uuid                 TEXT NOT NULL,
+                    page_uuid                  TEXT NOT NULL,
+                    graph_path                 TEXT NOT NULL,
+                    file_path                  TEXT NOT NULL,
+                    thumbnail_path             TEXT,
+                    source                     TEXT NOT NULL DEFAULT 'FILE',
+                    source_uri                 TEXT,
+                    captured_at_ms             INTEGER,
+                    imported_at_ms             INTEGER NOT NULL DEFAULT 0,
+                    calibration_method         TEXT NOT NULL DEFAULT 'NONE',
+                    pixels_per_meter           REAL NOT NULL DEFAULT 0.0,
+                    calibration_confidence_pct INTEGER NOT NULL DEFAULT 0,
+                    unit                       TEXT NOT NULL DEFAULT 'METERS',
+                    tags                       TEXT NOT NULL DEFAULT '[]',
+                    lat_lng                    TEXT,
+                    altitude_m                 REAL,
+                    bearing_deg                REAL,
+                    pitch_deg                  REAL,
+                    roll_deg                   REAL,
+                    focal_length_mm            REAL,
+                    focal_length_35mm_eq       REAL,
+                    camera_make                TEXT,
+                    camera_model               TEXT
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_image_annotations_block_uuid ON image_annotations(block_uuid)",
+                "CREATE INDEX IF NOT EXISTS idx_image_annotations_page_uuid ON image_annotations(page_uuid)",
+                "CREATE INDEX IF NOT EXISTS idx_image_annotations_graph_path ON image_annotations(graph_path)",
+                """
+                CREATE TABLE IF NOT EXISTS measurement_annotations (
+                    uuid              TEXT NOT NULL PRIMARY KEY,
+                    image_uuid        TEXT NOT NULL,
+                    annotation_type   TEXT NOT NULL,
+                    normalized_points TEXT NOT NULL DEFAULT '[]',
+                    value_meters      REAL,
+                    value_display     TEXT,
+                    label             TEXT,
+                    color_hex         TEXT NOT NULL DEFAULT '#FF0000',
+                    ble_device_id     TEXT,
+                    FOREIGN KEY (image_uuid) REFERENCES image_annotations(uuid) ON DELETE CASCADE
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_measurement_annotations_image_uuid ON measurement_annotations(image_uuid)"
+            )
+        ),
     )
 
     /**

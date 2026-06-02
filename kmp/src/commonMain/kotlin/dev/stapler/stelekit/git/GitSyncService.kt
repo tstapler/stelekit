@@ -10,6 +10,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.model.wikiRoot
@@ -164,7 +165,7 @@ class GitSyncService(
                 // 8. Reload merged files with watcher suppression
                 graphLoader.beginGitMerge(mergeResult.changedFiles)
                 try {
-                    graphLoader.reloadFiles(mergeResult.changedFiles)
+                    graphLoader.reloadFiles(mergeResult.changedFiles.map { FilePath(it) })
                 } finally {
                     graphLoader.endGitMerge()
                 }
@@ -309,7 +310,7 @@ class GitSyncService(
         val resolvedPaths = resolution.fileResolutions.keys.toList()
         graphLoader.beginGitMerge(resolvedPaths)
         try {
-            graphLoader.reloadFiles(resolvedPaths)
+            graphLoader.reloadFiles(resolvedPaths.map { FilePath(it) })
         } finally {
             graphLoader.endGitMerge()
         }
@@ -344,7 +345,7 @@ class GitSyncService(
         val resolvedPaths = fileResolutions.keys.toList()
         graphLoader.beginGitMerge(resolvedPaths)
         try {
-            graphLoader.reloadFiles(resolvedPaths)
+            graphLoader.reloadFiles(resolvedPaths.map { FilePath(it) })
         } finally {
             graphLoader.endGitMerge()
         }

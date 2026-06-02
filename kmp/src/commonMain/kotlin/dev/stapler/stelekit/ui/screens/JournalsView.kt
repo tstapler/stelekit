@@ -18,7 +18,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.components.BlockList
 import dev.stapler.stelekit.ui.components.EditorCapabilities
 import dev.stapler.stelekit.ui.components.EditorToolbar
@@ -117,43 +119,43 @@ fun JournalsView(
                     blocks = blockList,
                     isLoading = !page.isContentLoaded || page.uuid.value in loadingPageUuids,
                     isDebugMode = isDebugMode,
-                    editingBlockUuid = editingBlockUuid,
+                    editingBlockUuid = editingBlockUuid?.value,
                     editingCursorIndex = editingCursorIndex,
                     collapsedBlocks = collapsedBlockUuids,
                     selectedBlockUuids = selectedBlockUuids,
                     isInSelectionMode = isInSelectionMode,
-                    onToggleSelect = { blockUuid -> viewModel.toggleBlockSelection(blockUuid) },
-                    onEnterSelectionMode = { blockUuid -> viewModel.enterSelectionMode(blockUuid) },
-                    onShiftClick = { blockUuid -> viewModel.extendSelectionTo(blockUuid) },
+                    onToggleSelect = { blockUuid -> viewModel.toggleBlockSelection(BlockUuid(blockUuid)) },
+                    onEnterSelectionMode = { blockUuid -> viewModel.enterSelectionMode(BlockUuid(blockUuid)) },
+                    onShiftClick = { blockUuid -> viewModel.extendSelectionTo(BlockUuid(blockUuid)) },
                     onShiftArrowUp = { viewModel.extendSelectionByOne(up = true) },
                     onShiftArrowDown = { viewModel.extendSelectionByOne(up = false) },
-                    onStartEditing = { blockUuid -> viewModel.requestEditBlock(blockUuid) },
-                    onStopEditing = { blockUuid -> viewModel.stopEditingBlock(blockUuid) },
+                    onStartEditing = { blockUuid -> viewModel.requestEditBlock(BlockUuid(blockUuid)) },
+                    onStopEditing = { blockUuid -> viewModel.stopEditingBlock(BlockUuid(blockUuid)) },
                     onContentChange = { blockUuid, newContent, version ->
-                        viewModel.updateBlockContent(blockUuid, newContent, version)
+                        viewModel.updateBlockContent(BlockUuid(blockUuid), newContent, version)
                     },
                     onLinkClick = onLinkClick,
-                    onNewBlock = { uuid -> viewModel.addNewBlock(uuid) },
-                    onSplitBlock = { uuid, pos -> viewModel.splitBlock(uuid, pos) },
-                    onMergeBlock = { uuid -> viewModel.mergeBlock(uuid) },
+                    onNewBlock = { uuid -> viewModel.addNewBlock(BlockUuid(uuid)) },
+                    onSplitBlock = { uuid, pos -> viewModel.splitBlock(BlockUuid(uuid), pos) },
+                    onMergeBlock = { uuid -> viewModel.mergeBlock(BlockUuid(uuid)) },
                     onIndent = { blockUuid ->
-                        viewModel.indentBlock(blockUuid)
+                        viewModel.indentBlock(BlockUuid(blockUuid))
                     },
                     onOutdent = { blockUuid ->
-                        viewModel.outdentBlock(blockUuid)
+                        viewModel.outdentBlock(BlockUuid(blockUuid))
                     },
                     onMoveUp = { blockUuid ->
-                        viewModel.moveBlockUp(blockUuid)
+                        viewModel.moveBlockUp(BlockUuid(blockUuid))
                     },
                     onMoveDown = { blockUuid ->
-                        viewModel.moveBlockDown(blockUuid)
+                        viewModel.moveBlockDown(BlockUuid(blockUuid))
                     },
-                    onLoadContent = { pageUuid -> viewModel.loadPageContent(pageUuid) },
-                    onBackspace = { blockUuid -> viewModel.handleBackspace(blockUuid) },
-                    onAddBlockToPage = { pageUuid -> viewModel.addBlockToPage(pageUuid) },
-                    onToggleCollapse = { blockUuid -> viewModel.toggleBlockCollapse(blockUuid) },
-                    onFocusUp = { blockUuid -> viewModel.focusPreviousBlock(blockUuid) },
-                    onFocusDown = { blockUuid -> viewModel.focusNextBlock(blockUuid) },
+                    onLoadContent = { pageUuid -> viewModel.loadPageContent(PageUuid(pageUuid)) },
+                    onBackspace = { blockUuid -> viewModel.handleBackspace(BlockUuid(blockUuid)) },
+                    onAddBlockToPage = { pageUuid -> viewModel.addBlockToPage(PageUuid(pageUuid)) },
+                    onToggleCollapse = { blockUuid -> viewModel.toggleBlockCollapse(BlockUuid(blockUuid)) },
+                    onFocusUp = { blockUuid -> viewModel.focusPreviousBlock(BlockUuid(blockUuid)) },
+                    onFocusDown = { blockUuid -> viewModel.focusNextBlock(BlockUuid(blockUuid)) },
                     onSearchPages = onSearchPages,
                     formatEvents = viewModel.formatEvents,
                     suggestionMatcher = suggestionMatcher,
@@ -163,7 +165,7 @@ fun JournalsView(
                     },
                     onBlockSelectionChange = { blockUuid, range ->
                         viewModel.updateEditingSelection(
-                            if (blockUuid == editingBlockUuid) range else null
+                            if (blockUuid == editingBlockUuid?.value) range else null
                         )
                     },
                     onOpenAnnotationEditor = onOpenAnnotationEditor,
@@ -203,7 +205,7 @@ fun JournalsView(
                         val newContent = block.content.substring(0, safeStart) +
                             "[[${item.canonicalName}]]" +
                             block.content.substring(safeEnd)
-                        viewModel.updateBlockContent(item.blockUuid, newContent, block.version)
+                        viewModel.updateBlockContent(BlockUuid(item.blockUuid), newContent, block.version)
                     }
                     val updated = navigatorSuggestions.toMutableList().also { it.removeAt(navigatorIndex) }
                     navigatorSuggestions = updated

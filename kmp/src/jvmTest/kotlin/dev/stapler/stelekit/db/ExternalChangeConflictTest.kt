@@ -2,6 +2,7 @@ package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.FileSystem
@@ -238,7 +239,7 @@ class ExternalChangeConflictTest {
 
             // External process blanks the file — parseAndSavePage is called with blank content
             if (journalPage.filePath != null && hasContent) {
-                loader2.parseAndSavePage(journalPage.filePath!!, "", dev.stapler.stelekit.parsing.ParseMode.FULL)
+                loader2.parseAndSavePage(FilePath(journalPage.filePath!!), "", dev.stapler.stelekit.parsing.ParseMode.FULL)
                 advanceUntilIdle()
 
                 val blocksAfterBlankParse = blockRepo2.getBlocksForPage(journalPage.uuid).first().getOrNull() ?: emptyList()
@@ -277,7 +278,7 @@ class ExternalChangeConflictTest {
         blockRepo.saveBlock(Block(uuid = BlockUuid("b2"), pageUuid = PageUuid("journal-today"), content = "Action items", position = 1, createdAt = now, updatedAt = now))
 
         // Watcher calls parseAndSavePage with blank file content (no suppress happened)
-        loader.parseAndSavePage(filePath, "", dev.stapler.stelekit.parsing.ParseMode.FULL)
+        loader.parseAndSavePage(FilePath(filePath), "", dev.stapler.stelekit.parsing.ParseMode.FULL)
         advanceUntilIdle()
 
         val blocks = blockRepo.getBlocksForPage(PageUuid("journal-today")).first().getOrNull() ?: emptyList()

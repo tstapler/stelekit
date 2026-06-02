@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.ui.screens
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.JournalService
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.ui.state.BlockStateManager
@@ -54,7 +56,7 @@ class JournalsViewModel(
     // ---- Delegated state from BlockStateManager ----
 
     val blocks: StateFlow<Map<String, List<Block>>> = blockStateManager.blocks
-    val editingBlockUuid: StateFlow<String?> = blockStateManager.editingBlockUuid
+    val editingBlockUuid: StateFlow<BlockUuid?> = blockStateManager.editingBlockUuid
     val editingCursorIndex: StateFlow<Int?> = blockStateManager.editingCursorIndex
     val editingSelectionRange: StateFlow<IntRange?> = blockStateManager.editingSelectionRange
     val collapsedBlockUuids: StateFlow<Set<String>> = blockStateManager.collapsedBlockUuids
@@ -109,13 +111,13 @@ class JournalsViewModel(
         val observed = blocks.value.keys
         for (uuid in observed) {
             if (uuid !in currentUuids) {
-                blockStateManager.unobservePage(uuid)
+                blockStateManager.unobservePage(PageUuid(uuid))
             }
         }
 
         // Observe new pages
         for (page in pages) {
-            blockStateManager.observePage(page.uuid.value, page.isContentLoaded)
+            blockStateManager.observePage(page.uuid, page.isContentLoaded)
         }
     }
 
@@ -133,42 +135,42 @@ class JournalsViewModel(
 
     // ---- Delegated operations to BlockStateManager ----
 
-    fun updateBlockContent(blockUuid: String, newContent: String, newVersion: Long): Job =
+    fun updateBlockContent(blockUuid: BlockUuid, newContent: String, newVersion: Long): Job =
         blockStateManager.updateBlockContent(blockUuid, newContent, newVersion)
 
-    fun indentBlock(blockUuid: String): Job = blockStateManager.indentBlock(blockUuid)
-    fun outdentBlock(blockUuid: String): Job = blockStateManager.outdentBlock(blockUuid)
-    fun moveBlockUp(blockUuid: String): Job = blockStateManager.moveBlockUp(blockUuid)
-    fun moveBlockDown(blockUuid: String): Job = blockStateManager.moveBlockDown(blockUuid)
-    fun addNewBlock(currentBlockUuid: String): Job = blockStateManager.addNewBlock(currentBlockUuid)
-    fun splitBlock(blockUuid: String, cursorPosition: Int): Job = blockStateManager.splitBlock(blockUuid, cursorPosition)
-    fun addBlockToPage(pageUuid: String): Job = blockStateManager.addBlockToPage(pageUuid)
-    fun mergeBlock(blockUuid: String): Job = blockStateManager.mergeBlock(blockUuid)
-    fun handleBackspace(blockUuid: String): Job = blockStateManager.handleBackspace(blockUuid)
-    fun focusPreviousBlock(blockUuid: String): Job = blockStateManager.focusPreviousBlock(blockUuid)
-    fun focusNextBlock(blockUuid: String): Job = blockStateManager.focusNextBlock(blockUuid)
-    fun requestEditBlock(blockUuid: String?, cursorIndex: Int? = null) = blockStateManager.requestEditBlock(blockUuid, cursorIndex)
-    fun stopEditingBlock(blockUuid: String) = blockStateManager.stopEditingBlock(blockUuid)
-    fun toggleBlockCollapse(blockUuid: String) = blockStateManager.toggleBlockCollapse(blockUuid)
+    fun indentBlock(blockUuid: BlockUuid): Job = blockStateManager.indentBlock(blockUuid)
+    fun outdentBlock(blockUuid: BlockUuid): Job = blockStateManager.outdentBlock(blockUuid)
+    fun moveBlockUp(blockUuid: BlockUuid): Job = blockStateManager.moveBlockUp(blockUuid)
+    fun moveBlockDown(blockUuid: BlockUuid): Job = blockStateManager.moveBlockDown(blockUuid)
+    fun addNewBlock(currentBlockUuid: BlockUuid): Job = blockStateManager.addNewBlock(currentBlockUuid)
+    fun splitBlock(blockUuid: BlockUuid, cursorPosition: Int): Job = blockStateManager.splitBlock(blockUuid, cursorPosition)
+    fun addBlockToPage(pageUuid: PageUuid): Job = blockStateManager.addBlockToPage(pageUuid)
+    fun mergeBlock(blockUuid: BlockUuid): Job = blockStateManager.mergeBlock(blockUuid)
+    fun handleBackspace(blockUuid: BlockUuid): Job = blockStateManager.handleBackspace(blockUuid)
+    fun focusPreviousBlock(blockUuid: BlockUuid): Job = blockStateManager.focusPreviousBlock(blockUuid)
+    fun focusNextBlock(blockUuid: BlockUuid): Job = blockStateManager.focusNextBlock(blockUuid)
+    fun requestEditBlock(blockUuid: BlockUuid?, cursorIndex: Int? = null) = blockStateManager.requestEditBlock(blockUuid, cursorIndex)
+    fun stopEditingBlock(blockUuid: BlockUuid) = blockStateManager.stopEditingBlock(blockUuid)
+    fun toggleBlockCollapse(blockUuid: BlockUuid) = blockStateManager.toggleBlockCollapse(blockUuid)
     fun requestFormat(action: FormatAction) = blockStateManager.requestFormat(action)
     fun undo(): Job = blockStateManager.undo()
     fun redo(): Job = blockStateManager.redo()
 
-    fun loadPageContent(pageUuid: String): Job = blockStateManager.loadPageContent(pageUuid)
-    fun enterSelectionMode(uuid: String) = blockStateManager.enterSelectionMode(uuid)
-    fun toggleBlockSelection(uuid: String) = blockStateManager.toggleBlockSelection(uuid)
-    fun extendSelectionTo(uuid: String) = blockStateManager.extendSelectionTo(uuid)
+    fun loadPageContent(pageUuid: PageUuid): Job = blockStateManager.loadPageContent(pageUuid)
+    fun enterSelectionMode(uuid: BlockUuid) = blockStateManager.enterSelectionMode(uuid)
+    fun toggleBlockSelection(uuid: BlockUuid) = blockStateManager.toggleBlockSelection(uuid)
+    fun extendSelectionTo(uuid: BlockUuid) = blockStateManager.extendSelectionTo(uuid)
     fun extendSelectionByOne(up: Boolean) = blockStateManager.extendSelectionByOne(up)
-    fun selectAll(pageUuid: String) = blockStateManager.selectAll(pageUuid)
+    fun selectAll(pageUuid: PageUuid) = blockStateManager.selectAll(pageUuid)
     fun clearSelection() = blockStateManager.clearSelection()
     fun deleteSelectedBlocks(): Job = blockStateManager.deleteSelectedBlocks()
-    fun insertLinkAtCursor(blockUuid: String, pageName: String, overrideCursorIndex: Int? = null) =
+    fun insertLinkAtCursor(blockUuid: BlockUuid, pageName: String, overrideCursorIndex: Int? = null) =
         blockStateManager.insertLinkAtCursor(blockUuid, pageName, overrideCursorIndex)
 
-    fun replaceSelectionWithLink(blockUuid: String, selectionStart: Int, selectionEnd: Int, pageName: String) =
+    fun replaceSelectionWithLink(blockUuid: BlockUuid, selectionStart: Int, selectionEnd: Int, pageName: String) =
         blockStateManager.replaceSelectionWithLink(blockUuid, selectionStart, selectionEnd, pageName)
 
-    fun acceptLinkPickerResult(blockUuid: String, pageName: String, selectionRange: IntRange?, overrideCursorIndex: Int?) =
+    fun acceptLinkPickerResult(blockUuid: BlockUuid, pageName: String, selectionRange: IntRange?, overrideCursorIndex: Int?) =
         blockStateManager.acceptLinkPickerResult(blockUuid, pageName, selectionRange, overrideCursorIndex)
 
     fun updateEditingSelection(range: IntRange?) = blockStateManager.updateEditingSelection(range)

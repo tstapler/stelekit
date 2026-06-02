@@ -120,7 +120,7 @@ class FileSystemCallCountTest {
 
         // Insert a block. DB write completes (InMemoryBlockRepository instant).
         // The debounce timer is STARTED but has NOT fired — it waits 300ms then 500ms.
-        harness.bsm.addBlockToPage(pageUuid).join()
+        harness.bsm.addBlockToPage(PageUuid(pageUuid)).join()
 
         // Assert: no file write has occurred yet (debounce is still pending)
         harness.countingFs.assertInsertBudget("addBlockToPage")
@@ -147,7 +147,7 @@ class FileSystemCallCountTest {
         harness.countingFs.reset()
 
         // 5 rapid inserts — each one resets the debounce timer for the same page
-        repeat(5) { harness.bsm.addBlockToPage(pageUuid).join() }
+        repeat(5) { harness.bsm.addBlockToPage(PageUuid(pageUuid)).join() }
 
         // No file writes yet
         harness.countingFs.assertInsertBudget("5 rapid inserts — before flush")
@@ -190,7 +190,7 @@ class FileSystemCallCountTest {
         )
 
         countingFs.reset()
-        bsm.addBlockToPage(pageUuid).join()
+        bsm.addBlockToPage(PageUuid(pageUuid)).join()
         bsm.flush()
 
         assertEquals(0, countingFs.writeFileCount.get(), "No writeFile should fire without graphWriter")

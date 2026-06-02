@@ -14,7 +14,9 @@ import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.NotificationType
+import dev.stapler.stelekit.model.PageName
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
@@ -914,7 +916,7 @@ class StelekitViewModel(
             }
 
             // Page not in DB — check if it exists on disk and priority-load it
-            val loadedPage = graphLoader.loadPageByName(pageName)
+            val loadedPage = graphLoader.loadPageByName(PageName(pageName))
             if (loadedPage != null) {
                 navigateTo(Screen.PageView(loadedPage))
                 return@launch
@@ -1091,7 +1093,7 @@ class StelekitViewModel(
                 if (currentPage.filePath != event.filePath) return@collect
 
                 // Evict only this page's hierarchy cache so unrelated pages stay warm.
-                blockStateManager?.cacheEvictPage(currentPage.uuid.value)
+                blockStateManager?.cacheEvictPage(currentPage.uuid)
 
                 // Four-tier protection:
                 // 1. Actively editing a block right now.
@@ -1210,7 +1212,7 @@ class StelekitViewModel(
         val conflict = _uiState.value.diskConflict ?: return
         _uiState.update { it.copy(diskConflict = null) }
         scope.launch {
-            graphLoader.parseAndSavePage(conflict.filePath, conflict.diskContent, dev.stapler.stelekit.parsing.ParseMode.FULL)
+            graphLoader.parseAndSavePage(FilePath(conflict.filePath), conflict.diskContent, dev.stapler.stelekit.parsing.ParseMode.FULL)
             // Flush the accepted disk content back to disk immediately. Without this,
             // any auto-save that ran during the dialog would have written local content
             // to disk, leaving disk/DB out of sync after we update the DB here.
@@ -1277,7 +1279,7 @@ class StelekitViewModel(
         _uiState.update { it.copy(diskConflict = null) }
         scope.launch {
             // First reload from disk so the page structure is up-to-date
-            graphLoader.parseAndSavePage(conflict.filePath, conflict.diskContent, dev.stapler.stelekit.parsing.ParseMode.FULL)
+            graphLoader.parseAndSavePage(FilePath(conflict.filePath), conflict.diskContent, dev.stapler.stelekit.parsing.ParseMode.FULL)
             // Then append the user's content as a new block
             val now = kotlin.time.Clock.System.now()
             val newBlock = dev.stapler.stelekit.model.Block(

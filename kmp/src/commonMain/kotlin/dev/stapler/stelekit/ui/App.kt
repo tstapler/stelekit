@@ -459,8 +459,8 @@ private fun GraphContent(
             repos.writeActor,
             onFileWritten = graphLoader::markFileWrittenByUs,
             sidecarManager = sidecarManager,
-            onPreWrite = { filePath -> graphLoader.fileRegistry.preMarkPendingWrite(filePath) },
-            onClearPendingWrite = { filePath -> graphLoader.fileRegistry.clearPendingWrite(filePath) },
+            onPreWrite = { filePath -> graphLoader.fileRegistry.preMarkPendingWrite(dev.stapler.stelekit.model.FilePath(filePath)) },
+            onClearPendingWrite = { filePath -> graphLoader.fileRegistry.clearPendingWrite(dev.stapler.stelekit.model.FilePath(filePath)) },
         )
     }
 
@@ -1130,7 +1130,7 @@ private fun GraphContent(
                                                         val safePath = attachment.relativePath.replace(")", "\\)")
                                                         val markdown = "![${safeAlt}](${safePath})"
                                                         if (editingBlockUuid != null) {
-                                                            blockStateManager.insertTextAtCursor(editingBlockUuid.value, markdown)
+                                                            blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
                                                         }
                                                     }
                                                 )
@@ -1140,7 +1140,7 @@ private fun GraphContent(
                                     onFileDrop = if (attachmentService != null) {
                                         { files ->
                                             val graphRoot = appState.currentGraphPath
-                                            val pageUuid = (appState.currentScreen as? Screen.PageView)?.page?.uuid?.value
+                                            val pageUuid = (appState.currentScreen as? Screen.PageView)?.page?.uuid
                                             if (pageUuid != null) {
                                                 scope.launch {
                                                     files.forEach { file ->
@@ -1182,7 +1182,7 @@ private fun GraphContent(
                                                             val safePath = attachment.relativePath.replace(")", "\\)")
                                                             val markdown = "![${safeAlt}](${safePath})"
                                                             if (editingBlockUuid != null) {
-                                                                blockStateManager.insertTextAtCursor(editingBlockUuid.value, markdown)
+                                                                blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
                                                             }
                                                         }
                                                     )

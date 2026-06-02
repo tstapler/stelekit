@@ -1,0 +1,6 @@
+rules:
+  unpinned-uses:
+    config:
+      # Accept @v4-style tag pins for now. Migrate to SHA pins via `pinact run`
+      # tracked in: https://github.com/tstapler/stelekit/issues (create tracking issue)
+      policy: ref-pin

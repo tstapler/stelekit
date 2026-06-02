@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.platform.FileSystem
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -604,7 +605,7 @@ class FileRegistryTest {
         registry.detectChanges("/graph/pages") // register baseline (modTime = 1000)
 
         // Act: pre-mark before the write (simulates GraphWriter.savePageInternal Step 0)
-        registry.preMarkPendingWrite("/graph/pages/page.md")
+        registry.preMarkPendingWrite(FilePath("/graph/pages/page.md"))
         // Now simulate what the external OS would show after GraphWriter writes:
         // bump real modTime as if the write happened
         val file = fs.files["/graph/pages/page.md"]!!
@@ -628,8 +629,8 @@ class FileRegistryTest {
         registry.detectChanges("/graph/pages") // register baseline
 
         // Simulate saga: pre-mark, then compensation (write failed)
-        registry.preMarkPendingWrite("/graph/pages/page.md")
-        registry.clearPendingWrite("/graph/pages/page.md") // sentinel removed
+        registry.preMarkPendingWrite(dev.stapler.stelekit.model.FilePath("/graph/pages/page.md"))
+        registry.clearPendingWrite(dev.stapler.stelekit.model.FilePath("/graph/pages/page.md")) // sentinel removed
 
         // Now a real external edit arrives
         fs.externalWrite("/graph/pages/page.md", "- V2 from external")

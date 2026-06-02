@@ -2,6 +2,7 @@ package dev.stapler.stelekit.ui.components
 
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.ui.state.BlockStateManager
 
@@ -27,7 +28,7 @@ fun EditorToolbar(
     val allBlocks by blockStateManager.blocks.collectAsState()
 
     var showLinkPicker by remember { mutableStateOf(false) }
-    var linkPickerBlockUuid by remember { mutableStateOf<String?>(null) }
+    var linkPickerBlockUuid by remember { mutableStateOf<BlockUuid?>(null) }
     var linkPickerCursorIndex by remember { mutableStateOf<Int?>(null) }
     var linkPickerSelectionRange by remember { mutableStateOf<IntRange?>(null) }
     var linkPickerInitialQuery by remember { mutableStateOf<String?>(null) }
@@ -60,17 +61,17 @@ fun EditorToolbar(
     }
 
     MobileBlockToolbar(
-        editingBlockId = editingBlockUuid,
-        onIndent = { blockUuid -> blockStateManager.indentBlock(blockUuid) },
-        onOutdent = { blockUuid -> blockStateManager.outdentBlock(blockUuid) },
-        onMoveUp = { blockUuid -> blockStateManager.moveBlockUp(blockUuid) },
-        onMoveDown = { blockUuid -> blockStateManager.moveBlockDown(blockUuid) },
-        onAddBlock = { blockUuid -> blockStateManager.addNewBlock(blockUuid) },
+        editingBlockId = editingBlockUuid?.value,
+        onIndent = { blockUuid -> blockStateManager.indentBlock(BlockUuid(blockUuid)) },
+        onOutdent = { blockUuid -> blockStateManager.outdentBlock(BlockUuid(blockUuid)) },
+        onMoveUp = { blockUuid -> blockStateManager.moveBlockUp(BlockUuid(blockUuid)) },
+        onMoveDown = { blockUuid -> blockStateManager.moveBlockDown(BlockUuid(blockUuid)) },
+        onAddBlock = { blockUuid -> blockStateManager.addNewBlock(BlockUuid(blockUuid)) },
         onUndo = { blockStateManager.undo() },
         onRedo = { blockStateManager.redo() },
         onFormat = { action -> blockStateManager.requestFormat(action) },
         onAttachImage = if (capabilities.onAttachImage != null) {
-            { capabilities.onAttachImage.invoke(editingBlockUuid?.let { dev.stapler.stelekit.model.BlockUuid(it) }) }
+            { capabilities.onAttachImage.invoke(editingBlockUuid) }
         } else null,
         onLinkPicker = if (searchViewModel != null) {
             {
@@ -80,7 +81,7 @@ fun EditorToolbar(
                 linkPickerCursorIndex = editingCursorIndex ?: sel?.first
                 linkPickerSelectionRange = sel
                 linkPickerInitialQuery = if (sel != null && sel.first < sel.last && curBlockUuid != null) {
-                    val block = allBlocks.values.flatten().find { it.uuid.value == curBlockUuid }
+                    val block = allBlocks.values.flatten().find { it.uuid == curBlockUuid }
                     block?.content?.substring(
                         sel.first.coerceAtMost(block.content.length),
                         sel.last.coerceAtMost(block.content.length)

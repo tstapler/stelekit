@@ -216,6 +216,31 @@ jobs:
           fail_on_failure: true
           check_name: Android Smoke Test Results
 
+  # ── Workflow lint (actionlint + zizmor) ──────────────────────────────────
+  workflow-lint:
+    name: Workflow Lint
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install actionlint
+        run: |
+          ACTIONLINT_VERSION="1.7.12"
+          curl -sSfL \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin actionlint
+
+      - name: Run actionlint
+        run: actionlint -color
+
+      - name: Run zizmor
+        # uvx runs the pinned zizmor version from PyPI without a persistent install.
+        # GH_TOKEN allows zizmor to resolve action metadata for permission auditing.
+        run: uvx 'zizmor==1.25.2' .
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   # ── Wasm/JS compile check ─────────────────────────────────────────────────
   wasmjs-compile:
     name: Wasm/JS Compile

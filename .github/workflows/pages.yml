@@ -7,8 +7,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
   actions: read
 
 concurrency:
@@ -86,7 +84,7 @@ jobs:
         with:
           name: demo-dist
           path: kmp/build/dist/wasmJs/productionExecutable/
-          retention-days: 7
+          retention-days: 90
 
   build-site:
     runs-on: ubuntu-latest
@@ -108,11 +106,20 @@ jobs:
         if: steps.download-demo.outcome == 'failure'
         continue-on-error: true
         run: |
-          LAST_RUN=$(gh run list --workflow pages.yml --status success --limit 1 \
-            --json databaseId --jq '.[0].databaseId // empty')
-          if [ -n "$LAST_RUN" ]; then
-            gh run download "$LAST_RUN" --name demo-dist --dir site/public/demo/
-          else
+          # Iterate recent successful runs until we find one that has demo-dist.
+          # build-demo is skipped on site-only pushes, so the very latest run may
+          # not have the artifact — search up to 20 runs to find one that does.
+          FOUND=false
+          for RUN_ID in $(gh run list --workflow pages.yml --status success --limit 20 \
+            --json databaseId --jq '.[].databaseId'); do
+            if gh run download "$RUN_ID" --name demo-dist --dir site/public/demo/ 2>/dev/null; then
+              echo "Downloaded demo-dist from run $RUN_ID"
+              FOUND=true
+              break
+            fi
+          done
+          if [ "$FOUND" != "true" ]; then
+            echo "No recent successful run with demo-dist found"
             exit 1
           fi
         env:
@@ -139,11 +146,11 @@ jobs:
             --json databaseId --jq '.[0].databaseId // empty')
           if [ -n "$LAST_RUN" ]; then
             gh run download "$LAST_RUN" --name fdroid-content --dir fdroid-content/ || true
-            if [ -d fdroid-content/repo ]; then
+            if [ -d fdroid-content/fdroid/repo ]; then
               mkdir -p site/dist/fdroid
-              cp -r fdroid-content/repo site/dist/fdroid/
-              if [ -d fdroid-content/archive ]; then
-                cp -r fdroid-content/archive site/dist/fdroid/
+              cp -r fdroid-content/fdroid/repo site/dist/fdroid/
+              if [ -d fdroid-content/fdroid/archive ]; then
+                cp -r fdroid-content/fdroid/archive site/dist/fdroid/
               fi
               echo "Restored fdroid content from run $LAST_RUN"
             fi
@@ -160,6 +167,9 @@ jobs:
     # GitHub Actions skips jobs with default success() when any transitive dependency was
     # skipped (even via if:always() chains). Override explicitly to only gate on build-site.
     if: always() && needs.build-site.result == 'success'
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

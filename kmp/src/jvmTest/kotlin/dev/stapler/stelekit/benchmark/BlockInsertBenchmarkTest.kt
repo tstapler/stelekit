@@ -75,7 +75,7 @@ class BlockInsertBenchmarkTest {
         val latencies = mutableListOf<Long>()
         repeat(n) {
             val start = System.currentTimeMillis()
-            bsm.addBlockToPage(pageUuid).join()
+            bsm.addBlockToPage(PageUuid(pageUuid)).join()
             latencies.add(System.currentTimeMillis() - start)
         }
         return latencies
@@ -173,12 +173,12 @@ class BlockInsertBenchmarkTest {
                 graphPathProvider = { tempDir.absolutePath },
                 writeActor = actor,
             )
-            bsm.observePage(page.uuid.value)
+            bsm.observePage(PageUuid(page.uuid.value))
             // Wait for _blocks to be populated before starting timed inserts
             bsm.blocks.first { it.containsKey(page.uuid.value) }
 
             // Warm-up: 5 inserts not counted
-            repeat(5) { bsm.addBlockToPage(page.uuid.value).join() }
+            repeat(5) { bsm.addBlockToPage(PageUuid(page.uuid.value)).join() }
 
             val latencies = runInserts(bsm, page.uuid.value, 100)
             val p50 = latencies.percentile(0.50)
@@ -246,12 +246,12 @@ class BlockInsertBenchmarkTest {
                 scope = scope,
                 writeActor = actor,
             )
-            bsm.observePage(page.uuid.value)
+            bsm.observePage(PageUuid(page.uuid.value))
             // Wait for _blocks to be populated before starting timed inserts
             bsm.blocks.first { it.containsKey(page.uuid.value) }
 
             // Warm-up
-            repeat(5) { bsm.addBlockToPage(page.uuid.value).join() }
+            repeat(5) { bsm.addBlockToPage(PageUuid(page.uuid.value)).join() }
 
             val latencies = runInserts(bsm, page.uuid.value, 100)
             val p50 = latencies.percentile(0.50)

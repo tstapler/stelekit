@@ -132,7 +132,7 @@ class BlockStateManagerTest {
         blockRepo.saveBlock(block)
 
         // Start observing
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
 
         // Wait for initial emission
         val initialBlocks = manager.blocks.first { it.containsKey(pageUuid) }[pageUuid]!!
@@ -140,7 +140,7 @@ class BlockStateManagerTest {
         assertEquals("original", initialBlocks[0].content)
 
         // User edits → optimistic update + mark dirty
-        manager.updateBlockContent("block-1", "user typed this", 5)
+        manager.updateBlockContent(BlockUuid("block-1"), "user typed this", 5)
 
         // Verify optimistic update is in local state
         val afterEdit = manager.blocks.value[pageUuid]!!
@@ -159,7 +159,7 @@ class BlockStateManagerTest {
         assertEquals("user typed this", staleBlock.content,
             "Dirty block should NOT be overwritten by stale DB emission")
 
-        manager.unobservePage(pageUuid)
+        manager.unobservePage(PageUuid(pageUuid))
     }
 
     // ---- Editing focus ----
@@ -175,8 +175,8 @@ class BlockStateManagerTest {
         assertNull(manager.editingBlockUuid.value)
         assertNull(manager.editingCursorIndex.value)
 
-        manager.requestEditBlock("block-1", 5)
-        assertEquals("block-1", manager.editingBlockUuid.value)
+        manager.requestEditBlock(BlockUuid("block-1"), 5)
+        assertEquals(BlockUuid("block-1"), manager.editingBlockUuid.value)
         assertEquals(5, manager.editingCursorIndex.value)
 
         manager.requestEditBlock(null)
@@ -200,11 +200,11 @@ class BlockStateManagerTest {
         val block = createBlock("block-1", content = "original", version = 0)
         blockRepo.saveBlock(block)
         pageRepo.savePage(createPage())
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
         // Edit
-        manager.updateBlockContent("block-1", "edited", 1)
+        manager.updateBlockContent(BlockUuid("block-1"), "edited", 1)
         assertEquals(true, manager.canUndo.value)
         assertEquals(false, manager.canRedo.value)
 
@@ -218,7 +218,7 @@ class BlockStateManagerTest {
         assertEquals(true, manager.canUndo.value)
         assertEquals(false, manager.canRedo.value)
 
-        manager.unobservePage(pageUuid)
+        manager.unobservePage(PageUuid(pageUuid))
     }
 
     // ---- Collapse/expand ----
@@ -233,10 +233,10 @@ class BlockStateManagerTest {
 
         assertEquals(emptySet(), manager.collapsedBlockUuids.value)
 
-        manager.toggleBlockCollapse("block-1")
+        manager.toggleBlockCollapse(BlockUuid("block-1"))
         assertEquals(setOf("block-1"), manager.collapsedBlockUuids.value)
 
-        manager.toggleBlockCollapse("block-1")
+        manager.toggleBlockCollapse(BlockUuid("block-1"))
         assertEquals(emptySet(), manager.collapsedBlockUuids.value)
     }
 
@@ -252,13 +252,13 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("block-1", content = "test"))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
         assertEquals(1, manager.blocks.value[pageUuid]?.size)
 
         // unobservePage cancels the observation job but keeps blocks cached for fast re-navigation
-        manager.unobservePage(pageUuid)
+        manager.unobservePage(PageUuid(pageUuid))
         assertEquals(1, manager.blocks.value[pageUuid]?.size)
     }
 
@@ -284,25 +284,25 @@ class BlockStateManagerTest {
         blockRepo.saveBlock(createBlock("block-1", content = "hello"))
 
         // First navigation: default isContentLoaded=true, no disk load attempted
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
         assertEquals(1, manager.blocks.value[pageUuid]?.size)
 
         // Unobserve: job cancelled but blocks stay in _blocks as cache
-        manager.unobservePage(pageUuid)
+        manager.unobservePage(PageUuid(pageUuid))
         assertEquals(1, manager.blocks.value[pageUuid]?.size, "blocks must remain cached after unobservePage")
 
         val readCallsBefore = fileSystem.readFileCallCount
 
         // Re-navigation with isContentLoaded=false (as happens when PageView navigates to a non-journal)
-        manager.observePage(pageUuid, isContentLoaded = false)
+        manager.observePage(PageUuid(pageUuid), isContentLoaded = false)
 
         // alreadyCached=true → loadFullPage skipped → readFile never called
         assertEquals(readCallsBefore, fileSystem.readFileCallCount,
             "readFile must not be called when blocks are already cached in _blocks")
         assertNotNull(manager.blocks.value[pageUuid], "cached blocks must still be accessible after re-navigation")
 
-        manager.unobservePage(pageUuid)
+        manager.unobservePage(PageUuid(pageUuid))
     }
 
     /**
@@ -324,14 +324,14 @@ class BlockStateManagerTest {
         assertEquals(0, fileSystem.readFileCallCount)
 
         // Navigate for the first time with isContentLoaded=false
-        manager.observePage(pageUuid, isContentLoaded = false)
+        manager.observePage(PageUuid(pageUuid), isContentLoaded = false)
 
         // loadFullPage must have been called: it finds the filePath, sees no loaded blocks,
         // and calls readFile (which returns null from CountingFakeFileSystem but the call is recorded)
         assertEquals(1, fileSystem.readFileCallCount,
             "readFile must be called on first navigation with isContentLoaded=false and no cached blocks")
 
-        manager.unobservePage(pageUuid)
+        manager.unobservePage(PageUuid(pageUuid))
     }
 
     /**
@@ -350,11 +350,11 @@ class BlockStateManagerTest {
         blockRepo.saveBlock(createBlock("b1"))
         blockRepo.saveBlock(createBlock("b2", position = 1))
 
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
         assertEquals(2, manager.blocks.value[pageUuid]?.size)
 
-        manager.unobservePage(pageUuid)
+        manager.unobservePage(PageUuid(pageUuid))
 
         // Blocks must remain in cache during keepalive window
         assertEquals(2, manager.blocks.value[pageUuid]?.size,
@@ -380,10 +380,10 @@ class BlockStateManagerTest {
         val manager = BlockStateManager(blockRepo, graphLoader, scope)
 
         pageRepo.savePage(createPage())
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.addBlockToPage(pageUuid)
+        manager.addBlockToPage(PageUuid(pageUuid))
 
         // Should have a block now
         val blocks = blockRepo.getBlocksForPage(PageUuid(pageUuid)).first().getOrNull() ?: emptyList()
@@ -416,12 +416,12 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPage())
         counting.delegate.saveBlock(createBlock("b1"))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
         val countAfterObserve = counting.getBlocksForPageCallCount
 
-        manager.addBlockToPage(pageUuid)
+        manager.addBlockToPage(PageUuid(pageUuid))
         advanceUntilIdle()
 
         assertEquals(
@@ -503,11 +503,11 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPageWithFilePath("/graph/pages/test-page.md"))
         blockRepo.saveBlock(createBlock("b1", content = "original"))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
         // Edit triggers queueDiskSave which schedules a debounced write
-        manager.updateBlockContent("b1", "edited", 1)
+        manager.updateBlockContent(BlockUuid("b1"), "edited", 1)
         // Advance just enough for the outer scope.launch to register the job, not past the delay
         advanceTimeBy(10)
 
@@ -534,10 +534,10 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPageWithFilePath("/graph/pages/test-page.md"))
         blockRepo.saveBlock(createBlock("b1", content = "original"))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.updateBlockContent("b1", "edited", 1)
+        manager.updateBlockContent(BlockUuid("b1"), "edited", 1)
         advanceTimeBy(10)
         assertTrue(manager.hasPendingDiskWrite(pageUuid), "Should be pending before delay")
 
@@ -569,10 +569,10 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPageWithFilePath("/graph/pages/test-page.md"))
         blockRepo.saveBlock(createBlock("b1", content = "original"))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.updateBlockContent("b1", "edited", 1)
+        manager.updateBlockContent(BlockUuid("b1"), "edited", 1)
         advanceTimeBy(10)
         assertTrue(manager.hasPendingDiskWrite(pageUuid), "Should be pending before cancel")
 
@@ -627,14 +627,14 @@ class BlockStateManagerTest {
         )
         blockRepo.saveBlock(createBlock("block-a", content = "page a content"))
         blockRepo.saveBlock(blockB)
-        manager.observePage(pageUuid)
-        manager.observePage(otherPageUuid)
+        manager.observePage(PageUuid(pageUuid))
+        manager.observePage(PageUuid(otherPageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
         manager.blocks.first { it.containsKey(otherPageUuid) }
 
         // Queue writes for both pages
-        manager.updateBlockContent("block-a", "edited a", 1)
-        manager.updateBlockContent("block-b", "edited b", 1)
+        manager.updateBlockContent(BlockUuid("block-a"), "edited a", 1)
+        manager.updateBlockContent(BlockUuid("block-b"), "edited b", 1)
         advanceTimeBy(10)
 
         assertTrue(manager.hasPendingDiskWrite(pageUuid))
@@ -661,7 +661,7 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         val block = createBlock("b1", content = "Hello world", version = 0)
         blockRepo.saveBlock(block)
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
         // Simulate: dialog opened, focus lost, cursor nulled
@@ -669,7 +669,7 @@ class BlockStateManagerTest {
         assertNull(manager.editingCursorIndex.value)
 
         // Insert at position 5 using override
-        manager.insertLinkAtCursor("b1", "MyPage", overrideCursorIndex = 5)
+        manager.insertLinkAtCursor(BlockUuid("b1"), "MyPage", overrideCursorIndex = 5)
         advanceUntilIdle()
 
         val updated = blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull()
@@ -689,11 +689,11 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         val block = createBlock("b1", content = "Hi", version = 0)
         blockRepo.saveBlock(block)
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
         manager.requestEditBlock(null)  // cursor = null, no override
-        manager.insertLinkAtCursor("b1", "Page")
+        manager.insertLinkAtCursor(BlockUuid("b1"), "Page")
         advanceUntilIdle()
 
         val updated = blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull()
@@ -714,11 +714,11 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         val block = createBlock("b1", content = "Hello world today", version = 0)
         blockRepo.saveBlock(block)
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
         // Select "world" (positions 6..11)
-        manager.replaceSelectionWithLink("b1", 6, 11, "World")
+        manager.replaceSelectionWithLink(BlockUuid("b1"), 6, 11, "World")
         advanceUntilIdle()
 
         val updated = blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull()
@@ -738,11 +738,11 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         val block = createBlock("b1", content = "Hello world", version = 0)
         blockRepo.saveBlock(block)
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
         // selectionStart == selectionEnd → degenerate selection, falls back to insert
-        manager.replaceSelectionWithLink("b1", 5, 5, "Page")
+        manager.replaceSelectionWithLink(BlockUuid("b1"), 5, 5, "Page")
         advanceUntilIdle()
 
         val updated = blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull()
@@ -762,11 +762,11 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         val block = createBlock("b1", content = "Hi", version = 0)
         blockRepo.saveBlock(block)
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
         // Out-of-bounds end clamped to content length
-        manager.replaceSelectionWithLink("b1", 0, 999, "Page")
+        manager.replaceSelectionWithLink(BlockUuid("b1"), 0, 999, "Page")
         advanceUntilIdle()
 
         val updated = blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull()
@@ -787,7 +787,7 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         assertTrue(manager.activePageUuids.value.isEmpty())
 
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         assertTrue(manager.activePageUuids.value.contains(pageUuid),
             "activePageUuids should contain the page UUID once observePage is called")
     }
@@ -801,10 +801,10 @@ class BlockStateManagerTest {
         val manager = BlockStateManager(blockRepo, graphLoader, scope)
 
         pageRepo.savePage(createPage())
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         assertTrue(manager.activePageUuids.value.contains(pageUuid))
 
-        manager.unobservePage(pageUuid)
+        manager.unobservePage(PageUuid(pageUuid))
         assertFalse(manager.activePageUuids.value.contains(pageUuid),
             "activePageUuids should not contain the page UUID after unobservePage")
     }
@@ -822,11 +822,11 @@ class BlockStateManagerTest {
         pageRepo.savePage(pageA)
         pageRepo.savePage(pageB)
 
-        manager.observePage("page-a")
-        manager.observePage("page-b")
+        manager.observePage(PageUuid("page-a"))
+        manager.observePage(PageUuid("page-b"))
         assertEquals(setOf("page-a", "page-b"), manager.activePageUuids.value)
 
-        manager.unobservePage("page-a")
+        manager.unobservePage(PageUuid("page-a"))
         assertEquals(setOf("page-b"), manager.activePageUuids.value,
             "Only page-b should remain after unobserving page-a")
     }
@@ -864,7 +864,7 @@ class BlockStateManagerTest {
         assertFalse(manager.isInSelectionMode.value)
         assertTrue(manager.selectedBlockUuids.value.isEmpty())
 
-        manager.enterSelectionMode("b1")
+        manager.enterSelectionMode(BlockUuid("b1"))
 
         assertEquals(setOf("b1"), manager.selectedBlockUuids.value)
         assertTrue(manager.isInSelectionMode.value)
@@ -878,11 +878,11 @@ class BlockStateManagerTest {
         val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
         val manager = BlockStateManager(blockRepo, graphLoader, scope)
 
-        manager.toggleBlockSelection("b1")
+        manager.toggleBlockSelection(BlockUuid("b1"))
         assertTrue(manager.selectedBlockUuids.value.contains("b1"))
         assertTrue(manager.isInSelectionMode.value)
 
-        manager.toggleBlockSelection("b1")
+        manager.toggleBlockSelection(BlockUuid("b1"))
         assertFalse(manager.selectedBlockUuids.value.contains("b1"))
         assertFalse(manager.isInSelectionMode.value)
     }
@@ -895,8 +895,8 @@ class BlockStateManagerTest {
         val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
         val manager = BlockStateManager(blockRepo, graphLoader, scope)
 
-        manager.toggleBlockSelection("b1")
-        manager.toggleBlockSelection("b2")
+        manager.toggleBlockSelection(BlockUuid("b1"))
+        manager.toggleBlockSelection(BlockUuid("b2"))
 
         assertEquals(setOf("b1", "b2"), manager.selectedBlockUuids.value)
         assertTrue(manager.isInSelectionMode.value)
@@ -910,7 +910,7 @@ class BlockStateManagerTest {
         val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
         val manager = BlockStateManager(blockRepo, graphLoader, scope)
 
-        manager.enterSelectionMode("b1")
+        manager.enterSelectionMode(BlockUuid("b1"))
         assertTrue(manager.isInSelectionMode.value)
 
         manager.clearSelection()
@@ -931,10 +931,10 @@ class BlockStateManagerTest {
         blockRepo.saveBlock(createBlock("b1", position = 0))
         blockRepo.saveBlock(createBlock("b2", position = 1))
         blockRepo.saveBlock(createBlock("b3", position = 2))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.selectAll(pageUuid)
+        manager.selectAll(PageUuid(pageUuid))
 
         assertEquals(3, manager.selectedBlockUuids.value.size)
         assertTrue(manager.selectedBlockUuids.value.containsAll(setOf("b1", "b2", "b3")))
@@ -952,10 +952,10 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", position = 0))
         blockRepo.saveBlock(createBlock("b2", position = 1))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.enterSelectionMode("b1")
+        manager.enterSelectionMode(BlockUuid("b1"))
         manager.extendSelectionByOne(up = false)
 
         assertTrue(manager.selectedBlockUuids.value.contains("b1"))
@@ -973,10 +973,10 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", position = 0))
         blockRepo.saveBlock(createBlock("b2", position = 1))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.enterSelectionMode("b2")
+        manager.enterSelectionMode(BlockUuid("b2"))
         manager.extendSelectionByOne(up = true)
 
         assertTrue(manager.selectedBlockUuids.value.contains("b1"))
@@ -995,11 +995,11 @@ class BlockStateManagerTest {
         blockRepo.saveBlock(createBlock("b1", position = 0))
         blockRepo.saveBlock(createBlock("b2", position = 1))
         blockRepo.saveBlock(createBlock("b3", position = 2))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.enterSelectionMode("b1")
-        manager.extendSelectionTo("b3")
+        manager.enterSelectionMode(BlockUuid("b1"))
+        manager.extendSelectionTo(BlockUuid("b3"))
 
         assertEquals(setOf("b1", "b2", "b3"), manager.selectedBlockUuids.value)
         assertTrue(manager.isInSelectionMode.value)
@@ -1016,10 +1016,10 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "keep", position = 0))
         blockRepo.saveBlock(createBlock("b2", content = "delete me", position = 1))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.enterSelectionMode("b2")
+        manager.enterSelectionMode(BlockUuid("b2"))
         manager.deleteSelectedBlocks().join()
         advanceUntilIdle()
 
@@ -1055,10 +1055,10 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "HelloWorld", position = 0))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.splitBlock("b1", 5).join()
+        manager.splitBlock(BlockUuid("b1"), 5).join()
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
@@ -1077,16 +1077,16 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "AB", position = 0))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.splitBlock("b1", 1).join()
+        manager.splitBlock(BlockUuid("b1"), 1).join()
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
         val newBlock = blocks.find { it.uuid.value != "b1" }
         assertNotNull(newBlock, "A new block must be created by splitBlock")
-        assertEquals(newBlock.uuid.value, manager.editingBlockUuid.value,
+        assertEquals(newBlock.uuid, manager.editingBlockUuid.value,
             "Focus must move to the new block after split")
     }
 
@@ -1100,10 +1100,10 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "HelloWorld", position = 0))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.splitBlock("b1", 5).join()
+        manager.splitBlock(BlockUuid("b1"), 5).join()
         advanceUntilIdle()
         assertTrue(manager.canUndo.value, "splitBlock must record an undo entry")
 
@@ -1125,10 +1125,10 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "Hello", position = 0))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.splitBlock("b1", 0).join()
+        manager.splitBlock(BlockUuid("b1"), 0).join()
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
@@ -1149,10 +1149,10 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "parent", position = 0))
         blockRepo.saveBlock(createBlock("b2", content = "child", position = 1))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.indentBlock("b2").join()
+        manager.indentBlock(BlockUuid("b2")).join()
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
@@ -1172,10 +1172,10 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", position = 0))
         blockRepo.saveBlock(createBlock("b2", position = 1))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.indentBlock("b2").join()
+        manager.indentBlock(BlockUuid("b2")).join()
         advanceUntilIdle()
 
         assertTrue(manager.canUndo.value, "indentBlock must record an undo entry")
@@ -1198,10 +1198,10 @@ class BlockStateManagerTest {
             createdAt = now, updatedAt = now
         )
         blockRepo.saveBlock(childBlock)
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.outdentBlock("b2").join()
+        manager.outdentBlock(BlockUuid("b2")).join()
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
@@ -1221,10 +1221,10 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "first", position = 0))
         blockRepo.saveBlock(createBlock("b2", content = "second", position = 1))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.moveBlockUp("b2").join()
+        manager.moveBlockUp(BlockUuid("b2")).join()
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
@@ -1244,10 +1244,10 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "first", position = 0))
         blockRepo.saveBlock(createBlock("b2", content = "second", position = 1))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.moveBlockDown("b1").join()
+        manager.moveBlockDown(BlockUuid("b1")).join()
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
@@ -1268,10 +1268,10 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "original", version = 0, position = 0))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.updateBlockContent("b1", "modified", 1).join()
+        manager.updateBlockContent(BlockUuid("b1"), "modified", 1).join()
         advanceUntilIdle()
 
         val afterEdit = manager.blocks.value[pageUuid]?.find { it.uuid.value == "b1" }
@@ -1295,10 +1295,10 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "original", version = 0, position = 0))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.updateBlockContent("b1", "modified", 1).join()
+        manager.updateBlockContent(BlockUuid("b1"), "modified", 1).join()
         manager.undo().join()
         advanceUntilIdle()
         assertTrue(manager.canRedo.value)
@@ -1323,13 +1323,13 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "first", position = 0))
         blockRepo.saveBlock(createBlock("b2", content = "second", position = 1))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.focusNextBlock("b1").join()
+        manager.focusNextBlock(BlockUuid("b1")).join()
         advanceUntilIdle()
 
-        assertEquals("b2", manager.editingBlockUuid.value,
+        assertEquals(BlockUuid("b2"), manager.editingBlockUuid.value,
             "focusNextBlock must move focus to the next block")
         assertEquals(0, manager.editingCursorIndex.value,
             "focusNextBlock must place cursor at position 0 in the next block")
@@ -1346,13 +1346,13 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "first", position = 0))
         blockRepo.saveBlock(createBlock("b2", content = "second", position = 1))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.focusPreviousBlock("b2").join()
+        manager.focusPreviousBlock(BlockUuid("b2")).join()
         advanceUntilIdle()
 
-        assertEquals("b1", manager.editingBlockUuid.value,
+        assertEquals(BlockUuid("b1"), manager.editingBlockUuid.value,
             "focusPreviousBlock must move focus to the previous block")
         assertEquals("first".length, manager.editingCursorIndex.value,
             "focusPreviousBlock must place cursor at the end of the previous block")
@@ -1368,10 +1368,10 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "only", position = 0))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.focusNextBlock("b1").join()
+        manager.focusNextBlock(BlockUuid("b1")).join()
         advanceUntilIdle()
 
         assertNull(manager.editingBlockUuid.value,
@@ -1388,10 +1388,10 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "only", position = 0))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.focusPreviousBlock("b1").join()
+        manager.focusPreviousBlock(BlockUuid("b1")).join()
         advanceUntilIdle()
 
         assertNull(manager.editingBlockUuid.value,
@@ -1410,10 +1410,10 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", position = 0))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.updateBlockProperties("b1", mapOf("status" to "done")).join()
+        manager.updateBlockProperties(BlockUuid("b1"), mapOf("status" to "done")).join()
         advanceUntilIdle()
 
         val b1 = manager.blocks.value[pageUuid]?.find { it.uuid.value == "b1" }
@@ -1435,10 +1435,10 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "Hello", position = 0))
         blockRepo.saveBlock(createBlock("b2", content = " World", position = 1))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.mergeBlock("b2").join()
+        manager.mergeBlock(BlockUuid("b2")).join()
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
@@ -1459,13 +1459,13 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         blockRepo.saveBlock(createBlock("b1", content = "Hello", position = 0))
         blockRepo.saveBlock(createBlock("b2", content = "World", position = 1))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.mergeBlock("b2").join()
+        manager.mergeBlock(BlockUuid("b2")).join()
         advanceUntilIdle()
 
-        assertEquals("b1", manager.editingBlockUuid.value,
+        assertEquals(BlockUuid("b1"), manager.editingBlockUuid.value,
             "mergeBlock must move focus to the previous block")
         assertEquals("Hello".length, manager.editingCursorIndex.value,
             "mergeBlock must place cursor at the original end of the previous block")
@@ -1487,11 +1487,11 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPage())
         delayedRepo.delegate.saveBlock(createBlock("b1", content = "HelloWorld", position = 0))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
         // Launch splitBlock but don't join — check state before DB returns
-        val job = manager.splitBlock("b1", 5)
+        val job = manager.splitBlock(BlockUuid("b1"), 5)
         // Advance just enough to let the optimistic _blocks update and requestEditBlock run
         advanceTimeBy(1L)
 
@@ -1505,7 +1505,7 @@ class BlockStateManagerTest {
         assertEquals("World", newBlock.content, "New block must have content after cursor (optimistic)")
 
         // Focus must be on the new block immediately (before DB returns)
-        assertEquals(newBlock.uuid.value, manager.editingBlockUuid.value,
+        assertEquals(newBlock.uuid, manager.editingBlockUuid.value,
             "Focus must move to new block UUID before DB write completes")
 
         // Now let the DB write complete
@@ -1529,10 +1529,10 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPage())
         delayedRepo.delegate.saveBlock(createBlock("b1", content = "Hello", position = 0))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        val job = manager.addNewBlock("b1")
+        val job = manager.addNewBlock(BlockUuid("b1"))
         advanceTimeBy(1L)
 
         val blocks = manager.blocks.value[pageUuid]
@@ -1541,7 +1541,7 @@ class BlockStateManagerTest {
         assertNotNull(newBlock, "New empty block must be present optimistically")
         assertEquals("", newBlock.content, "New block must have empty content (addNewBlock appends empty)")
 
-        assertEquals(newBlock.uuid.value, manager.editingBlockUuid.value,
+        assertEquals(newBlock.uuid, manager.editingBlockUuid.value,
             "Focus must move to new block UUID before DB write completes")
 
         job.join()
@@ -1564,10 +1564,10 @@ class BlockStateManagerTest {
 
         pageRepo.savePage(createPage())
         failingRepo.delegate.saveBlock(createBlock("b1", content = "HelloWorld", position = 0))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
-        manager.splitBlock("b1", 5).join()
+        manager.splitBlock(BlockUuid("b1"), 5).join()
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid]
@@ -1575,7 +1575,7 @@ class BlockStateManagerTest {
         assertEquals("HelloWorld", blocks?.get(0)?.content, "Original content must be restored on rollback")
 
         // Focus must return to original block at the original cursor position
-        assertEquals("b1", manager.editingBlockUuid.value,
+        assertEquals(BlockUuid("b1"), manager.editingBlockUuid.value,
             "Focus must return to original block on DB failure")
         assertEquals(5, manager.editingCursorIndex.value,
             "Cursor must return to original position on DB failure")
@@ -1603,14 +1603,14 @@ class BlockStateManagerTest {
         pageRepo.savePage(createPage())
         failingRepo.delegate.saveBlock(createBlock("b1", content = "Hello", position = 0))
         failingRepo.delegate.saveBlock(createBlock("b2", content = "World", position = 1))
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
         // Simulate user editing b2 at position 0 (cursor at the start of the block,
         // which is where Backspace triggers mergeBlock in real usage).
-        manager.requestEditBlock("b2", 0)
+        manager.requestEditBlock(BlockUuid("b2"), 0)
 
-        manager.mergeBlock("b2").join()
+        manager.mergeBlock(BlockUuid("b2")).join()
         advanceUntilIdle()
 
         // _blocks must still have 2 entries (merge did not succeed, but note that the merge
@@ -1624,7 +1624,7 @@ class BlockStateManagerTest {
             "b2 content must be unchanged after failed merge")
 
         // Focus must be restored to the exact pre-merge state (b2, position 0)
-        assertEquals("b2", manager.editingBlockUuid.value,
+        assertEquals(BlockUuid("b2"), manager.editingBlockUuid.value,
             "Focus must return to original block (b2) on merge DB failure")
         assertEquals(0, manager.editingCursorIndex.value,
             "Cursor must return to pre-merge position 0 on merge DB failure")
@@ -1655,14 +1655,14 @@ class BlockStateManagerTest {
             scope = scope,
             writeActor = actor,
         )
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
         // Queue delayed content write ("Hello World"), then immediately split at position 5.
         // Without the fix, split reads "original" from DB (10 chars, split at 5 → "origi"/"nal").
         // With the fix, content write drains first → split reads "Hello World" → "Hello"/" World".
-        manager.updateBlockContent("b1", "Hello World", 1)
-        manager.splitBlock("b1", 5)
+        manager.updateBlockContent(BlockUuid("b1"), "Hello World", 1)
+        manager.splitBlock(BlockUuid("b1"), 5)
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
@@ -1709,7 +1709,7 @@ class BlockStateManagerTest {
             scope = scope,
             writeActor = actor,
         )
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
         // Queue content write then immediately press Enter (addNewBlock).
@@ -1717,8 +1717,8 @@ class BlockStateManagerTest {
         // (8 chars, not yet updated because applyContentChange updates _blocks after writeContentOnly).
         // With the fix: content write drains first → b1 DB = "Hello World"; then split at cursor 8
         // on "Hello World" → b1 = "Hello Wo", new block = "rld".
-        manager.updateBlockContent("b1", "Hello World", 1)
-        manager.addNewBlock("b1")
+        manager.updateBlockContent(BlockUuid("b1"), "Hello World", 1)
+        manager.addNewBlock(BlockUuid("b1"))
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
@@ -1761,13 +1761,13 @@ class BlockStateManagerTest {
             scope = scope,
             writeActor = actor,
         )
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
         // Queue content write for b2 (" World"), then immediately merge b2 into b1.
         // With the fix: content write drains first → b2 = " World" → merge → b1 = "Hello World".
-        manager.updateBlockContent("b2", " World", 1)
-        manager.mergeBlock("b2")
+        manager.updateBlockContent(BlockUuid("b2"), " World", 1)
+        manager.mergeBlock(BlockUuid("b2"))
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
@@ -1803,16 +1803,16 @@ class BlockStateManagerTest {
             scope = scope,
             writeActor = actor,
         )
-        manager.observePage(pageUuid)
+        manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
 
         // b2 live content in _blocks will be " World" after updateBlockContent.
         // Queue content write for b2 (" World"), then backspace at position 0 of b2.
         // handleBackspace reads currentBlock from DB (sees "original" non-empty → merge branch).
         // With the fix: content write drains first → b2 DB = " World" → merge → b1 = "Hello World".
-        manager.updateBlockContent("b2", " World", 1)
-        manager.requestEditBlock("b2", 0)
-        manager.handleBackspace("b2")
+        manager.updateBlockContent(BlockUuid("b2"), " World", 1)
+        manager.requestEditBlock(BlockUuid("b2"), 0)
+        manager.handleBackspace(BlockUuid("b2"))
         advanceUntilIdle()
 
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()

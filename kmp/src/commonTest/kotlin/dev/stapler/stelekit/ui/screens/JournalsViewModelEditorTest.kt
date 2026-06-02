@@ -413,10 +413,10 @@ class JournalsViewModelEditorTest {
         val viewModel = createViewModel(pageRepo, blockRepo)
 
         // Load the page blocks into the ViewModel state
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Merge block2 into block1
-        viewModel.mergeBlock(block2.uuid.value)
+        viewModel.mergeBlock(BlockUuid(block2.uuid.value))
 
         // Wait for coroutine to complete
         testScheduler.advanceUntilIdle()
@@ -443,10 +443,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block1)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Try to merge the first block (should do nothing - no previous block)
-        viewModel.mergeBlock(block1.uuid.value)
+        viewModel.mergeBlock(BlockUuid(block1.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
@@ -472,10 +472,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block3)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Merge block2 into block1
-        viewModel.mergeBlock(block2.uuid.value)
+        viewModel.mergeBlock(BlockUuid(block2.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
@@ -507,10 +507,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block2)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Handle backspace on empty block2
-        viewModel.handleBackspace(block2.uuid.value)
+        viewModel.handleBackspace(BlockUuid(block2.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
@@ -537,10 +537,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block2)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Handle backspace on first empty root block
-        viewModel.handleBackspace(block1.uuid.value)
+        viewModel.handleBackspace(BlockUuid(block1.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
@@ -565,10 +565,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block1)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Handle backspace on the only root block
-        viewModel.handleBackspace(block1.uuid.value)
+        viewModel.handleBackspace(BlockUuid(block1.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
@@ -591,10 +591,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(child)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Handle backspace on empty child
-        viewModel.handleBackspace(child.uuid.value)
+        viewModel.handleBackspace(BlockUuid(child.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
@@ -623,10 +623,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Split at position 5 (after "Hello")
-        viewModel.splitBlock(block.uuid.value,5)
+        viewModel.splitBlock(BlockUuid(block.uuid.value),5)
 
         testScheduler.advanceUntilIdle()
 
@@ -652,10 +652,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Split at position 0 (start)
-        viewModel.splitBlock(block.uuid.value,0)
+        viewModel.splitBlock(BlockUuid(block.uuid.value),0)
 
         testScheduler.advanceUntilIdle()
 
@@ -680,10 +680,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Split at end (position = content length)
-        viewModel.splitBlock(block.uuid.value,12)  // "Full content".length = 12
+        viewModel.splitBlock(BlockUuid(block.uuid.value),12)  // "Full content".length = 12
 
         testScheduler.advanceUntilIdle()
 
@@ -712,10 +712,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block3)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Split block2 at position 5
-        viewModel.splitBlock(block2.uuid.value, 5)
+        viewModel.splitBlock(BlockUuid(block2.uuid.value), 5)
 
         testScheduler.advanceUntilIdle()
 
@@ -751,10 +751,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block1)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Add new block after block1
-        viewModel.addNewBlock(block1.uuid.value)
+        viewModel.addNewBlock(BlockUuid(block1.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
@@ -783,10 +783,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block3)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Add new block after block1
-        viewModel.addNewBlock(block1.uuid.value)
+        viewModel.addNewBlock(BlockUuid(block1.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
@@ -828,11 +828,11 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(p2Block2)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
-        viewModel.loadPageContent("page-2")
+        viewModel.loadPageContent(PageUuid("page-1"))
+        viewModel.loadPageContent(PageUuid("page-2"))
 
         // Merge blocks on page 1
-        viewModel.mergeBlock(p1Block2.uuid.value)
+        viewModel.mergeBlock(BlockUuid(p1Block2.uuid.value))
 
         testScheduler.advanceUntilIdle()
 

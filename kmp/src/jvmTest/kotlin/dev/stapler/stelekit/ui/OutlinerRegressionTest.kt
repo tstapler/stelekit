@@ -118,7 +118,7 @@ class OutlinerRegressionTest {
         
         // 3. Perform an operation (e.g., outdent the child)
         runBlocking {
-            viewModel.outdentBlock(block2Uuid)
+            viewModel.outdentBlock(BlockUuid(block2Uuid))
         }
         
         // 4. Verify state update (in real app, reactive flows would update this)

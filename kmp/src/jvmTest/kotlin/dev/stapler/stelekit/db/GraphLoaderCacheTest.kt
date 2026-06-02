@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
@@ -127,7 +128,7 @@ class GraphLoaderCacheTest {
 
         // Prime: load V1 into DB
         h.loader.setGraphPath("/graph")
-        h.loader.parseAndSavePage(filePath, "- Block V1", ParseMode.FULL)
+        h.loader.parseAndSavePage(FilePath(filePath), "- Block V1", ParseMode.FULL)
 
         // Verify V1 in DB
         val pages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
@@ -140,7 +141,7 @@ class GraphLoaderCacheTest {
         h.fs.files[filePath] = FakeFile("- Block V2", modTime = 900L) // older mtime than DB
 
         // Inject dirty flag directly (as the watcher would)
-        h.loader.addDirty(filePath)
+        h.loader.addDirty(FilePath(filePath))
 
         // Act: loadFullPage with force=false
         h.loader.loadFullPage(page.uuid.value, force = false)
@@ -170,7 +171,7 @@ class GraphLoaderCacheTest {
 
         // Prime: load V1
         h.loader.setGraphPath("/graph")
-        h.loader.parseAndSavePage(filePath, "- Block V1", ParseMode.FULL)
+        h.loader.parseAndSavePage(FilePath(filePath), "- Block V1", ParseMode.FULL)
 
         val page = h.pageRepo.getAllPages().first().getOrNull()?.firstOrNull()
         assertNotNull(page, "Page should be in DB after loading V1")
@@ -182,7 +183,7 @@ class GraphLoaderCacheTest {
         // (We document this regression rather than calling old code)
 
         // Inject dirty flag and reload
-        h.loader.addDirty(filePath)
+        h.loader.addDirty(FilePath(filePath))
         h.loader.loadFullPage(page.uuid.value, force = false)
 
         val blocks = h.blockRepo.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
@@ -206,7 +207,7 @@ class GraphLoaderCacheTest {
         h.fs.dirs.add("/graph/pages")
 
         h.loader.setGraphPath("/graph")
-        h.loader.parseAndSavePage(filePath, "- Block V1", ParseMode.FULL)
+        h.loader.parseAndSavePage(FilePath(filePath), "- Block V1", ParseMode.FULL)
 
         val page = h.pageRepo.getAllPages().first().getOrNull()?.firstOrNull()
         assertNotNull(page, "Page should be in DB")
@@ -214,21 +215,21 @@ class GraphLoaderCacheTest {
         // Simulate: watcher detected external edit and marked dirty (skipped onReloadFile
         // because page was in activePageUuids)
         h.fs.files[filePath] = FakeFile("- Block V2", modTime = 2000L)
-        h.loader.addDirty(filePath)
+        h.loader.addDirty(FilePath(filePath))
 
         // Verify dirty flag is set before navigation
         // (we can confirm by checking that checkAndClearDirty returns true)
-        val wasSet = h.loader.checkAndClearDirty(filePath)
+        val wasSet = h.loader.checkAndClearDirty(FilePath(filePath))
         assertTrue(wasSet, "Dirty flag should be set")
 
         // Re-add to test the full loadFullPage path
-        h.loader.addDirty(filePath)
+        h.loader.addDirty(FilePath(filePath))
 
         // Act: next navigation (loadFullPage)
         h.loader.loadFullPage(page.uuid.value, force = false)
 
         // Assert: dirty flag consumed and page reloaded
-        val dirtyAfter = h.loader.checkAndClearDirty(filePath)
+        val dirtyAfter = h.loader.checkAndClearDirty(FilePath(filePath))
         assertFalse(dirtyAfter, "Dirty flag should have been consumed by loadFullPage")
 
         val blocks = h.blockRepo.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
@@ -263,7 +264,7 @@ class GraphLoaderCacheTest {
         assertNotNull(page, "Page should be in DB")
 
         // Verify content hash was stored
-        val storedHash = h.loader.fileRegistry.getContentHash(filePath)
+        val storedHash = h.loader.fileRegistry.getContentHash(FilePath(filePath))
         assertNotNull(storedHash, "Content hash should be stored after initial load")
         assertEquals(contentV1.hashCode(), storedHash, "Stored hash should match V1 content hash")
 
@@ -351,7 +352,7 @@ class GraphLoaderCacheTest {
         h.loader.setGraphPath("/graph")
 
         // Load V1 so page.updatedAt is set
-        h.loader.parseAndSavePage(filePath, contentV1, ParseMode.FULL)
+        h.loader.parseAndSavePage(FilePath(filePath), contentV1, ParseMode.FULL)
 
         val page = h.pageRepo.getAllPages().first().getOrNull()?.firstOrNull()
         assertNotNull(page, "Page should be in DB")
@@ -366,7 +367,7 @@ class GraphLoaderCacheTest {
 
         // Act: call parseAndSavePage with forceReload=true (via dirty-set path in loadFullPage)
         // We inject dirty flag and call loadFullPage to trigger the forceReload=true path.
-        h.loader.addDirty(filePath)
+        h.loader.addDirty(FilePath(filePath))
         h.loader.loadFullPage(page.uuid.value, force = false)
 
         // Assert: inner guard bypassed → V2 loaded
@@ -392,7 +393,7 @@ class GraphLoaderCacheTest {
         h.fs.dirs.add("/graph/pages")
 
         h.loader.setGraphPath("/graph")
-        h.loader.parseAndSavePage(filePath, "- Block V1", ParseMode.FULL)
+        h.loader.parseAndSavePage(FilePath(filePath), "- Block V1", ParseMode.FULL)
         h.loader.startWatching("/graph")
         h.loader.fileRegistry.scanDirectory("/graph/pages")
 
@@ -422,7 +423,7 @@ class GraphLoaderCacheTest {
      * loadFullPage cache guard (which might short-circuit on first load).
      */
     private suspend fun GraphLoader.loadFullPage_forceLoad(filePath: String, content: String) {
-        parseAndSavePage(filePath, content, ParseMode.FULL)
+        parseAndSavePage(FilePath(filePath), content, ParseMode.FULL)
         // Explicitly store content hash as the iOS/WASM path would do after parseAndSavePage
         fileRegistry.updateContentHash(filePath, content.hashCode())
     }

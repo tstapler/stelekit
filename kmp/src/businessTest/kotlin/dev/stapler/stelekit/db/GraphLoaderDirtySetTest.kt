@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
@@ -58,33 +59,33 @@ class GraphLoaderDirtySetTest {
         )
 
         // Not in set initially
-        assertFalse(loader.checkAndClearDirty("/a.md"),
+        assertFalse(loader.checkAndClearDirty(FilePath("/a.md")),
             "checkAndClearDirty on absent path must return false")
 
         // Add and consume
-        loader.addDirty("/a.md")
-        assertTrue(loader.checkAndClearDirty("/a.md"),
+        loader.addDirty(FilePath("/a.md"))
+        assertTrue(loader.checkAndClearDirty(FilePath("/a.md")),
             "checkAndClearDirty must return true after addDirty")
 
         // Consumed — second call returns false
-        assertFalse(loader.checkAndClearDirty("/a.md"),
+        assertFalse(loader.checkAndClearDirty(FilePath("/a.md")),
             "checkAndClearDirty must return false after the flag is consumed")
 
         // Idempotent add: adding the same path twice is fine
-        loader.addDirty("/b.md")
-        loader.addDirty("/b.md")
-        assertTrue(loader.checkAndClearDirty("/b.md"),
+        loader.addDirty(FilePath("/b.md"))
+        loader.addDirty(FilePath("/b.md"))
+        assertTrue(loader.checkAndClearDirty(FilePath("/b.md")),
             "Duplicate addDirty must still be consumed once")
-        assertFalse(loader.checkAndClearDirty("/b.md"),
+        assertFalse(loader.checkAndClearDirty(FilePath("/b.md")),
             "Flag must be gone after single consumption even with duplicate adds")
 
         // Independent paths
-        loader.addDirty("/c.md")
-        loader.addDirty("/d.md")
-        assertTrue(loader.checkAndClearDirty("/c.md"), "c.md must be in set")
-        assertFalse(loader.checkAndClearDirty("/c.md"), "c.md consumed")
-        assertTrue(loader.checkAndClearDirty("/d.md"), "d.md must still be in set")
-        assertFalse(loader.checkAndClearDirty("/d.md"), "d.md consumed")
+        loader.addDirty(FilePath("/c.md"))
+        loader.addDirty(FilePath("/d.md"))
+        assertTrue(loader.checkAndClearDirty(FilePath("/c.md")), "c.md must be in set")
+        assertFalse(loader.checkAndClearDirty(FilePath("/c.md")), "c.md consumed")
+        assertTrue(loader.checkAndClearDirty(FilePath("/d.md")), "d.md must still be in set")
+        assertFalse(loader.checkAndClearDirty(FilePath("/d.md")), "d.md consumed")
     }
 
     // ── TC-13: Collector job cancelled on setActivePageUuids(null) ────────────
@@ -124,7 +125,7 @@ class GraphLoaderDirtySetTest {
         advanceUntilIdle()
 
         // Loader must still be functional after setActivePageUuids(null)
-        assertFalse(loader.checkAndClearDirty("/any.md"),
+        assertFalse(loader.checkAndClearDirty(FilePath("/any.md")),
             "Loader must remain functional after setActivePageUuids(null)")
     }
 }

@@ -421,6 +421,13 @@ fun Test.configureDisplayEnv() {
 
 // Configure JVM test task for Compose Desktop UI tests
 tasks.named<Test>("jvmTest") {
+    // Make the canonical SteleDatabase.sq path available so MigrationRunnerSchemaSyncTest
+    // can auto-derive the set of expected tables without a manually-maintained list.
+    systemProperty(
+        "stelekit.sq.file",
+        file("src/commonMain/sqldelight/dev/stapler/stelekit/db/SteleDatabase.sq").absolutePath
+    )
+
     // BlockHound is installed programmatically via BlockHoundTestBase.installBlockHound().
     // The -javaagent approach (reactor.blockhound:blockhound) crashes on Java 21+ due to
     // ByteBuddy 1.12 JVMTI incompatibility. ByteBuddy's self-attach is used instead.

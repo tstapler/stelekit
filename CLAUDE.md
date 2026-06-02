@@ -39,6 +39,13 @@ SteleKit is a Kotlin Multiplatform (KMP) migration of Logseq — a Markdown-base
 # README sync is not covered by ciCheck — run separately:
 # bash scripts/generate-readme.sh && git diff --exit-code README.md
 
+# Lint all GitHub Actions workflow files (mirrors the workflow-lint CI job)
+# Install once: curl -sSfL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz | tar -xz -C ~/.local/bin actionlint
+actionlint -color
+
+# Security audit all workflow files (uses uvx — no persistent install required)
+uvx 'zizmor==1.25.2' .
+
 # Run benchmark locally — mirrors CI, generates flamegraph PNGs (requires async-profiler + librsvg)
 ./scripts/benchmark-local.sh                        # synthetic graph only
 ./scripts/benchmark-local.sh /path/to/your/graph   # include real-graph test

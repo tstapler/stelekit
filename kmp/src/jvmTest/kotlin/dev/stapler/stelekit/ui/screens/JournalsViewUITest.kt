@@ -140,7 +140,7 @@ class JournalsViewUITest {
                 androidx.compose.ui.test.hasText("March 28, 2026", substring = true)
             ).fetchSemanticsNodes().isNotEmpty()
         }
-        viewModel.requestEditBlock("journal-block-1")
+        viewModel.requestEditBlock(BlockUuid("journal-block-1"))
 
         composeTestRule.waitUntil(timeoutMillis = 3000) {
             composeTestRule.onAllNodes(
@@ -187,7 +187,7 @@ class JournalsViewUITest {
                 androidx.compose.ui.test.hasText("March 28, 2026", substring = true)
             ).fetchSemanticsNodes().isNotEmpty()
         }
-        viewModel.enterSelectionMode("journal-block-2")
+        viewModel.enterSelectionMode(BlockUuid("journal-block-2"))
 
         composeTestRule.waitUntil(timeoutMillis = 3000) {
             composeTestRule.onAllNodes(

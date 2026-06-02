@@ -104,7 +104,7 @@ class OutlinerMonkeyTest {
 
             if (allBlocks.isEmpty()) {
                 println("Operation $i: Add block to empty page")
-                viewModel.addBlockToPage(pageUuid).join()
+                viewModel.addBlockToPage(dev.stapler.stelekit.model.PageUuid(pageUuid)).join()
                 verifyInvariants(pageUuid, blockRepo)
                 return@repeat
             }
@@ -116,36 +116,36 @@ class OutlinerMonkeyTest {
             val job = when (opType) {
                 0 -> { 
                     println("Operation $i: addNewBlock after ${randomBlock.uuid} (level ${randomBlock.level})")
-                    viewModel.addNewBlock(randomBlock.uuid.value)
+                    viewModel.addNewBlock(BlockUuid(randomBlock.uuid.value))
                 }
                 1 -> { 
                     println("Operation $i: indentBlock ${randomBlock.uuid}")
-                    viewModel.indentBlock(randomBlock.uuid.value)
+                    viewModel.indentBlock(BlockUuid(randomBlock.uuid.value))
                 }
                 2 -> { 
                     println("Operation $i: outdentBlock ${randomBlock.uuid}")
-                    viewModel.outdentBlock(randomBlock.uuid.value)
+                    viewModel.outdentBlock(BlockUuid(randomBlock.uuid.value))
                 }
                 3 -> { 
                     println("Operation $i: moveBlockUp ${randomBlock.uuid}")
-                    viewModel.moveBlockUp(randomBlock.uuid.value)
+                    viewModel.moveBlockUp(BlockUuid(randomBlock.uuid.value))
                 }
                 4 -> { 
                     println("Operation $i: moveBlockDown ${randomBlock.uuid}")
-                    viewModel.moveBlockDown(randomBlock.uuid.value)
+                    viewModel.moveBlockDown(BlockUuid(randomBlock.uuid.value))
                 }
                 5 -> { 
                     if (randomBlock.content.length > 2) {
                         println("Operation $i: splitBlock ${randomBlock.uuid}")
-                        viewModel.splitBlock(randomBlock.uuid.value, randomBlock.content.length / 2)
+                        viewModel.splitBlock(BlockUuid(randomBlock.uuid.value), randomBlock.content.length / 2)
                     } else {
                         println("Operation $i: updateBlockContent ${randomBlock.uuid}")
-                        viewModel.updateBlockContent(randomBlock.uuid.value, "Some text to split", 1)
+                        viewModel.updateBlockContent(BlockUuid(randomBlock.uuid.value), "Some text to split", 1)
                     }
                 }
                 6 -> { 
                     println("Operation $i: handleBackspace ${randomBlock.uuid} (parent=${randomBlock.parentUuid}, level=${randomBlock.level})")
-                    viewModel.handleBackspace(randomBlock.uuid.value)
+                    viewModel.handleBackspace(BlockUuid(randomBlock.uuid.value))
                 }
                 else -> null
             }

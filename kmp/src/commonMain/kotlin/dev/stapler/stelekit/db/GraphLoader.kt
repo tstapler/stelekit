@@ -8,7 +8,9 @@ import kotlin.concurrent.Volatile
 
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageName
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.ParsedBlock
 import kotlin.time.Instant
@@ -157,7 +159,7 @@ class GraphLoader(
      * UUID→path resolution happens here (inside GraphLoader which has PageRepository access);
      * GraphFileWatcher never imports PageRepository.
      */
-    @Volatile private var activePageFilePaths: Set<String> = emptySet()
+    @Volatile private var activePageFilePaths: Set<FilePath> = emptySet()
 
     /** Job for the activePageFilePaths collector. Cancelled and replaced by each [setActivePageUuids] call. */
     private var activePageFilePathsJob: Job? = null
@@ -173,7 +175,7 @@ class GraphLoader(
             activePageFilePathsJob = parallelScope.launch {
                 uuids.collect { uuidSet ->
                     activePageFilePaths = uuidSet.mapNotNull { uuid ->
-                        pageRepository.getPageByUuid(PageUuid(uuid)).first().getOrNull()?.filePath
+                        pageRepository.getPageByUuid(PageUuid(uuid)).first().getOrNull()?.filePath?.let { FilePath(it) }
                     }.toSet()
                 }
             }
@@ -191,17 +193,17 @@ class GraphLoader(
      * Guarded by [dirtyMutex] — both the watcher coroutine (via [addDirty]) and the
      * loadFullPage coroutine (via [checkAndClearDirty]) access this set concurrently.
      */
-    private val dirtyPaths = mutableSetOf<String>()
+    private val dirtyPaths = mutableSetOf<FilePath>()
     private val dirtyMutex = kotlinx.coroutines.sync.Mutex()
 
     /** Adds [path] to the dirty set (called from the watcher when an external change is detected). */
-    internal suspend fun addDirty(path: String) = dirtyMutex.withLock { dirtyPaths.add(path) }
+    internal suspend fun addDirty(path: FilePath) = dirtyMutex.withLock { dirtyPaths.add(path) }
 
     /**
      * Checks whether [path] is in the dirty set and removes it atomically.
      * Returns true if the path was present (and has now been consumed).
      */
-    internal suspend fun checkAndClearDirty(path: String): Boolean = dirtyMutex.withLock {
+    internal suspend fun checkAndClearDirty(path: FilePath): Boolean = dirtyMutex.withLock {
         dirtyPaths.remove(path)
     }
 
@@ -276,14 +278,14 @@ class GraphLoader(
         fileSystem = fileSystem,
         fileRegistry = fileRegistry,
         readFile = ::readFileDecrypted,
-        onReloadFile = { filePath, content -> parseAndSavePage(filePath, content, dev.stapler.stelekit.parsing.ParseMode.FULL) },
+        onReloadFile = { filePath, content -> parseAndSavePage(FilePath(filePath), content, dev.stapler.stelekit.parsing.ParseMode.FULL) },
         pollIntervalMs = watcherPollIntervalMs,
         // Suspend lambda: called directly from checkDirectoryForChanges (already suspend) to
         // guarantee dirty flag is set before onReloadFile is called — no ordering race possible.
-        onDirtyFile = { filePath -> addDirty(filePath) },
+        onDirtyFile = { filePath -> addDirty(FilePath(filePath)) },
         // Lambda returning the current set of file paths for actively-edited pages.
         // Resolved by GraphLoader (which has PageRepository access); watcher never imports it.
-        activePageFilePaths = { activePageFilePaths },
+        activePageFilePaths = { activePageFilePaths.map { it.value }.toSet() },
     )
 
     // Tracks the in-flight background indexing job so it can be cancelled under memory pressure.
@@ -357,23 +359,24 @@ class GraphLoader(
     /**
      * Priority-loads a page by name directly from disk.
      */
-    override suspend fun loadPageByName(pageName: String): Page? {
-        val filePath = resolvePageFilePath(pageName) ?: return null
-        if (!tryAddPriorityFile(filePath)) {
+    override suspend fun loadPageByName(pageName: PageName): Page? {
+        val filePathStr = resolvePageFilePath(pageName.value) ?: return null
+        val filePath = FilePath(filePathStr)
+        if (!tryAddPriorityFile(filePathStr)) {
             // Already loading — wait for it by polling the DB
             repeat(10) {
-                val page = pageRepository.getPageByName(pageName).first().getOrNull()
+                val page = pageRepository.getPageByName(pageName.value).first().getOrNull()
                 if (page?.isContentLoaded == true) return page
                 kotlinx.coroutines.delay(200)
             }
-            return pageRepository.getPageByName(pageName).first().getOrNull()
+            return pageRepository.getPageByName(pageName.value).first().getOrNull()
         }
         try {
-            val content = readFileDecrypted(filePath) ?: return null
+            val content = readFileDecrypted(filePathStr) ?: return null
             parseAndSavePage(filePath, content, ParseMode.FULL)
-            return pageRepository.getPageByName(pageName).first().getOrNull()
+            return pageRepository.getPageByName(pageName.value).first().getOrNull()
         } finally {
-            removePriorityFile(filePath)
+            removePriorityFile(filePathStr)
         }
     }
 
@@ -727,9 +730,9 @@ class GraphLoader(
      * Files with conflict markers are skipped by the existing [ConflictMarkerDetector]
      * guard inside [parseAndSavePage].
      */
-    suspend fun reloadFiles(filePaths: List<String>) {
+    suspend fun reloadFiles(filePaths: List<FilePath>) {
         for (path in filePaths) {
-            val content = readFileDecrypted(path) ?: continue
+            val content = readFileDecrypted(path.value) ?: continue
             parseAndSavePage(path, content, ParseMode.FULL, DatabaseWriteActor.Priority.HIGH, forceReload = true)
         }
     }
@@ -761,7 +764,7 @@ class GraphLoader(
 
             var forceReload = force
             if (!forceReload && allBlocksLoaded) {
-                val isDirty = checkAndClearDirty(filePath)
+                val isDirty = checkAndClearDirty(FilePath(filePath))
                 if (!isDirty) {
                     if (fileWatcher.isRunning) {
                         // Watcher is running (JVM/Android): trust the dirty set.
@@ -797,7 +800,7 @@ class GraphLoader(
                 return
             }
 
-            parseAndSavePage(filePath, content, ParseMode.FULL, forceReload = forceReload)
+            parseAndSavePage(FilePath(filePath), content, ParseMode.FULL, forceReload = forceReload)
         } finally {
             filePath?.let { removePriorityFile(it) }
             PerformanceMonitor.endTrace("loadFullPage")
@@ -812,7 +815,7 @@ class GraphLoader(
      */
     private suspend fun checkContentHashAndLoad(filePath: String): Boolean {
         // No watcher (iOS/WASM): fall back to content-hash check at navigation time.
-        val storedHash = fileRegistry.getContentHash(filePath) ?: return false // No stored hash → fall through
+        val storedHash = fileRegistry.getContentHash(FilePath(filePath)) ?: return false // No stored hash → fall through
         // Read the file once for the hash comparison.
         fileSystem.invalidateShadow(filePath)
         val diskContent = fileSystem.readFile(filePath)
@@ -828,7 +831,7 @@ class GraphLoader(
                 return true
             }
             try {
-                parseAndSavePage(filePath, diskContent, ParseMode.FULL, forceReload = true)
+                parseAndSavePage(FilePath(filePath), diskContent, ParseMode.FULL, forceReload = true)
             } finally {
                 removePriorityFile(filePath)
             }
@@ -856,7 +859,7 @@ class GraphLoader(
                 fileSystem.invalidateShadow(entry.filePath)
                 val content = readFileDecrypted(entry.filePath) ?: continue
                 try {
-                    parseAndSavePage(entry.filePath, content, ParseMode.FULL)
+                    parseAndSavePage(FilePath(entry.filePath), content, ParseMode.FULL)
                     loadedCount++
                 } catch (e: CancellationException) {
                     throw e
@@ -891,7 +894,7 @@ class GraphLoader(
                             fileSystem.invalidateShadow(entry.filePath)
                             val content = readFileDecrypted(entry.filePath) ?: return@count false
                             try {
-                                parseAndSavePage(entry.filePath, content, ParseMode.METADATA_ONLY)
+                                parseAndSavePage(FilePath(entry.filePath), content, ParseMode.METADATA_ONLY)
                                 true
                             } catch (e: CancellationException) {
                                 throw e
@@ -1396,53 +1399,54 @@ class GraphLoader(
      * it is an internal implementation detail of the cache-invalidation pipeline.
      */
     override suspend fun parseAndSavePage(
-        filePath: String,
+        filePath: FilePath,
         content: String,
         mode: ParseMode,
         priority: DatabaseWriteActor.Priority,
     ) = parseAndSavePage(filePath, content, mode, priority, forceReload = false)
 
     private suspend fun parseAndSavePage(
-        filePath: String,
+        filePath: FilePath,
         content: String,
         mode: ParseMode,
         priority: DatabaseWriteActor.Priority = DatabaseWriteActor.Priority.HIGH,
         forceReload: Boolean,
     ) {
-        if (mode == ParseMode.METADATA_ONLY && isPriorityFile(filePath)) return
+        val filePathStr = filePath.value
+        if (mode == ParseMode.METADATA_ONLY && isPriorityFile(filePathStr)) return
 
-        val lock = getFileLock(filePath)
+        val lock = getFileLock(filePathStr)
         lock.withLock {
-            if (mode == ParseMode.METADATA_ONLY && isPriorityFile(filePath)) return
+            if (mode == ParseMode.METADATA_ONLY && isPriorityFile(filePathStr)) return
 
             PerformanceMonitor.startTrace("parseAndSavePage")
             val traceId = genId()
             val rootSpan = Span("parseAndSavePage", traceId)
             CurrentSpanContext.set(ActiveSpanContext(traceId = traceId, parentSpanId = rootSpan.spanId))
             try {
-                val fileName = filePath.replace("\\", "/").substringAfterLast("/")
+                val fileName = filePathStr.replace("\\", "/").substringAfterLast("/")
                 val title = FileUtils.decodeFileName(fileName.stripPageExtension())
                 // Skip Logseq-internal file: protocol artifacts silently
                 if (title.startsWith("file:")) return
                 // Reject files with git conflict markers — importing them would corrupt the graph.
                 if (ConflictMarkerDetector.hasConflictMarkers(content)) {
-                    logger.warn("Git conflict markers detected in '$filePath' — import suppressed")
+                    logger.warn("Git conflict markers detected in '$filePathStr' — import suppressed")
                     _writeErrors.tryEmit(WriteError(
-                        filePath, 0,
+                        filePathStr, 0,
                         dev.stapler.stelekit.error.DomainError.ParseError.InvalidSyntax(
-                            "Git conflict markers detected in '$filePath' — resolve conflicts before importing"
+                            "Git conflict markers detected in '$filePathStr' — resolve conflicts before importing"
                         )
                     ))
                     return@withLock
                 }
 
                 val name = title
-                val journalDate = if (filePath.contains("/journals/")) JournalUtils.parseJournalDate(title) else null
+                val journalDate = if (filePathStr.contains("/journals/")) JournalUtils.parseJournalDate(title) else null
                 val isJournal = journalDate != null
                 val now = Clock.System.now()
 
                 val lookup = lookupExistingPageAndCheckFreshness(
-                    filePath, name, isJournal, journalDate, mode, traceId, rootSpan.spanId, forceReload
+                    filePathStr, name, isJournal, journalDate, mode, traceId, rootSpan.spanId, forceReload
                 )
                 if (lookup.skip) return@withLock
 
@@ -1453,7 +1457,7 @@ class GraphLoader(
                 parseSpan.finish("OK", "content.bytes" to content.length.toString())
 
                 val (page, firstBlockSkipped) = buildPageModel(
-                    filePath, name, isJournal, journalDate, existingPage, now, mode, parsedPage
+                    filePathStr, name, isJournal, journalDate, existingPage, now, mode, parsedPage
                 )
                 val pageUuid = page.uuid
                 val updatedAt = page.updatedAt
@@ -1463,8 +1467,8 @@ class GraphLoader(
                 savePageSpan.finish()
                 if (savePageResult.isLeft()) {
                     val e = savePageResult.leftOrNull()!!
-                    logger.warn("savePage failed for $filePath — skipping block writes to prevent FK violation: ${e.message}")
-                    _writeErrors.tryEmit(WriteError(filePath, 0, e))
+                    logger.warn("savePage failed for $filePathStr — skipping block writes to prevent FK violation: ${e.message}")
+                    _writeErrors.tryEmit(WriteError(filePathStr, 0, e))
                     return@withLock
                 }
 
@@ -1472,7 +1476,7 @@ class GraphLoader(
 
                 // For METADATA_ONLY, save lightweight stub blocks and return.
                 if (mode == ParseMode.METADATA_ONLY) {
-                    saveMetadataOnlyBlocks(filePath, pageUuid, updatedAt, rootBlocks, priority)
+                    saveMetadataOnlyBlocks(filePathStr, pageUuid, updatedAt, rootBlocks, priority)
                     return@withLock
                 }
 
@@ -1490,7 +1494,7 @@ class GraphLoader(
                 val processBlocksSpan = Span("parse.processBlocks", traceId, rootSpan.spanId)
                 processParsedBlocks(
                     parsedBlocks = rootBlocks,
-                    pagePath = filePath,
+                    pagePath = filePathStr,
                     pageUuid = pageUuid,
                     parentUuid = null,
                     baseLevel = 0,
@@ -1504,17 +1508,17 @@ class GraphLoader(
                 processBlocksSpan.finish("OK", "block.count" to blocksToSave.size.toString())
 
                 dispatchFullBlockWrites(
-                    filePath, content, existingBlocks, blocksToSave, priority, traceId, rootSpan.spanId
+                    filePathStr, content, existingBlocks, blocksToSave, priority, traceId, rootSpan.spanId
                 )
 
                 // Update mod time in watcher cache so we don't re-trigger from our own write
-                val updatedModTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
+                val updatedModTime = fileSystem.getLastModifiedTime(filePathStr) ?: 0L
                 if (updatedModTime != 0L) {
-                    fileRegistry.updateModTime(filePath, updatedModTime)
+                    fileRegistry.updateModTime(filePathStr, updatedModTime)
                 }
             } finally {
                 CurrentSpanContext.set(null)
-                rootSpan.finish("OK", "file.path" to filePath.redactPath())
+                rootSpan.finish("OK", "file.path" to filePathStr.redactPath())
                 PerformanceMonitor.endTrace("parseAndSavePage")
             }
         }

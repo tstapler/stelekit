@@ -76,35 +76,35 @@ class BlockStateManager(
         writeActor?.saveBlock(block) ?: blockRepository.saveBlock(block)
 
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun writeContentOnly(blockUuid: String, content: String) =
-        writeActor?.updateBlockContentOnly(BlockUuid(blockUuid), content)
-            ?: blockRepository.updateBlockContentOnly(BlockUuid(blockUuid), content)
+    private suspend fun writeContentOnly(blockUuid: BlockUuid, content: String) =
+        writeActor?.updateBlockContentOnly(blockUuid, content)
+            ?: blockRepository.updateBlockContentOnly(blockUuid, content)
 
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun writePropertiesOnly(blockUuid: String, properties: Map<String, String>) =
-        writeActor?.updateBlockPropertiesOnly(BlockUuid(blockUuid), properties)
-            ?: blockRepository.updateBlockPropertiesOnly(BlockUuid(blockUuid), properties)
+    private suspend fun writePropertiesOnly(blockUuid: BlockUuid, properties: Map<String, String>) =
+        writeActor?.updateBlockPropertiesOnly(blockUuid, properties)
+            ?: blockRepository.updateBlockPropertiesOnly(blockUuid, properties)
 
     @OptIn(DirectRepositoryWrite::class)
     private suspend fun writeSplitBlock(
-        blockUuid: String,
+        blockUuid: BlockUuid,
         cursorPosition: Int,
-        newBlockUuid: String?,
-    ) = writeActor?.splitBlock(BlockUuid(blockUuid), cursorPosition, newBlockUuid?.let { BlockUuid(it) })
-        ?: blockRepository.splitBlock(BlockUuid(blockUuid), cursorPosition, newBlockUuid?.let { BlockUuid(it) })
+        newBlockUuid: BlockUuid?,
+    ) = writeActor?.splitBlock(blockUuid, cursorPosition, newBlockUuid)
+        ?: blockRepository.splitBlock(blockUuid, cursorPosition, newBlockUuid)
 
     @OptIn(DirectRepositoryWrite::class)
     private suspend fun writeMergeBlocks(
-        blockUuid: String,
-        nextBlockUuid: String,
+        blockUuid: BlockUuid,
+        nextBlockUuid: BlockUuid,
         separator: String,
-    ) = writeActor?.mergeBlocks(BlockUuid(blockUuid), BlockUuid(nextBlockUuid), separator)
-        ?: blockRepository.mergeBlocks(BlockUuid(blockUuid), BlockUuid(nextBlockUuid), separator)
+    ) = writeActor?.mergeBlocks(blockUuid, nextBlockUuid, separator)
+        ?: blockRepository.mergeBlocks(blockUuid, nextBlockUuid, separator)
 
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun writeDeleteBlockStructural(blockUuid: String) =
-        writeActor?.deleteBlockStructural(BlockUuid(blockUuid))
-            ?: blockRepository.deleteBlock(BlockUuid(blockUuid))
+    private suspend fun writeDeleteBlockStructural(blockUuid: BlockUuid) =
+        writeActor?.deleteBlockStructural(blockUuid)
+            ?: blockRepository.deleteBlock(blockUuid)
 
     @OptIn(DirectRepositoryWrite::class)
     private suspend fun writeDeleteBulk(uuids: List<String>, deleteChildren: Boolean) =
@@ -112,29 +112,29 @@ class BlockStateManager(
             ?: blockRepository.deleteBulk(uuids.map { BlockUuid(it) }, deleteChildren)
 
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun writeMoveBlock(uuid: String, newParentUuid: String?, position: Int) =
-        writeActor?.execute { blockRepository.moveBlock(BlockUuid(uuid), newParentUuid?.let { BlockUuid(it) }, position) }
-            ?: blockRepository.moveBlock(BlockUuid(uuid), newParentUuid?.let { BlockUuid(it) }, position)
+    private suspend fun writeMoveBlock(uuid: BlockUuid, newParentUuid: BlockUuid?, position: Int) =
+        writeActor?.execute { blockRepository.moveBlock(uuid, newParentUuid, position) }
+            ?: blockRepository.moveBlock(uuid, newParentUuid, position)
 
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun writeIndentBlock(uuid: String) =
-        writeActor?.execute { blockRepository.indentBlock(BlockUuid(uuid)) }
-            ?: blockRepository.indentBlock(BlockUuid(uuid))
+    private suspend fun writeIndentBlock(uuid: BlockUuid) =
+        writeActor?.execute { blockRepository.indentBlock(uuid) }
+            ?: blockRepository.indentBlock(uuid)
 
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun writeOutdentBlock(uuid: String) =
-        writeActor?.execute { blockRepository.outdentBlock(BlockUuid(uuid)) }
-            ?: blockRepository.outdentBlock(BlockUuid(uuid))
+    private suspend fun writeOutdentBlock(uuid: BlockUuid) =
+        writeActor?.execute { blockRepository.outdentBlock(uuid) }
+            ?: blockRepository.outdentBlock(uuid)
 
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun writeMoveBlockUp(uuid: String) =
-        writeActor?.execute { blockRepository.moveBlockUp(BlockUuid(uuid)) }
-            ?: blockRepository.moveBlockUp(BlockUuid(uuid))
+    private suspend fun writeMoveBlockUp(uuid: BlockUuid) =
+        writeActor?.execute { blockRepository.moveBlockUp(uuid) }
+            ?: blockRepository.moveBlockUp(uuid)
 
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun writeMoveBlockDown(uuid: String) =
-        writeActor?.execute { blockRepository.moveBlockDown(BlockUuid(uuid)) }
-            ?: blockRepository.moveBlockDown(BlockUuid(uuid))
+    private suspend fun writeMoveBlockDown(uuid: BlockUuid) =
+        writeActor?.execute { blockRepository.moveBlockDown(uuid) }
+            ?: blockRepository.moveBlockDown(uuid)
 
     // ---- Active page sessions ----
 
@@ -181,8 +181,8 @@ class BlockStateManager(
 
     // ---- Editing focus ----
 
-    private val _editingBlockUuid = MutableStateFlow<String?>(null)
-    val editingBlockUuid: StateFlow<String?> = _editingBlockUuid.asStateFlow()
+    private val _editingBlockUuid = MutableStateFlow<BlockUuid?>(null)
+    val editingBlockUuid: StateFlow<BlockUuid?> = _editingBlockUuid.asStateFlow()
 
     private val _editingCursorIndex = MutableStateFlow<Int?>(null)
     val editingCursorIndex: StateFlow<Int?> = _editingCursorIndex.asStateFlow()
@@ -202,11 +202,11 @@ class BlockStateManager(
     val selectedBlockUuids: StateFlow<Set<String>> get() = selection.selectedBlockUuids
     val isInSelectionMode: StateFlow<Boolean> get() = selection.isInSelectionMode
 
-    fun enterSelectionMode(uuid: String) = selection.enterSelectionMode(uuid)
-    fun toggleBlockSelection(uuid: String) = selection.toggleBlockSelection(uuid)
+    fun enterSelectionMode(uuid: BlockUuid) = selection.enterSelectionMode(uuid.value)
+    fun toggleBlockSelection(uuid: BlockUuid) = selection.toggleBlockSelection(uuid.value)
     fun extendSelectionByOne(up: Boolean) = selection.extendSelectionByOne(up)
-    fun extendSelectionTo(uuid: String) = selection.extendSelectionTo(uuid)
-    fun selectAll(pageUuid: String) = selection.selectAll(pageUuid)
+    fun extendSelectionTo(uuid: BlockUuid) = selection.extendSelectionTo(uuid.value)
+    fun selectAll(pageUuid: PageUuid) = selection.selectAll(pageUuid.value)
     fun clearSelection() = selection.clearSelection()
     private fun subtreeDedup(uuids: Set<String>, pageUuid: String) = selection.subtreeDedup(uuids, pageUuid)
 
@@ -245,7 +245,7 @@ class BlockStateManager(
      *
      * Wraps the entire operation in a single undo entry.
      */
-    fun moveSelectedBlocks(newParentUuid: String?, insertAfterUuid: String?): Job = scope.launch {
+    fun moveSelectedBlocks(newParentUuid: BlockUuid?, insertAfterUuid: BlockUuid?): Job = scope.launch {
         val selected = selection.selectedBlockUuids.value
         if (selected.isEmpty()) return@launch
 
@@ -272,17 +272,17 @@ class BlockStateManager(
         // Compute start position: how many children the target parent already has
         // at the point after insertAfterUuid
         val allBlocks = _blocks.value[pageUuid] ?: emptyList()
-        val siblingCount = allBlocks.count { it.parentUuid == newParentUuid }
+        val siblingCount = allBlocks.count { it.parentUuid == newParentUuid?.value }
         val startPosition = if (insertAfterUuid == null) {
             0
         } else {
-            val insertAfterBlock = allBlocks.find { it.uuid.value == insertAfterUuid }
+            val insertAfterBlock = allBlocks.find { it.uuid == insertAfterUuid }
             if (insertAfterBlock != null) (insertAfterBlock.position + 1) else siblingCount
         }
 
         // Move each block in sorted order, incrementing position for each
         toMove.forEachIndexed { index, uuid ->
-            writeMoveBlock(uuid, newParentUuid, startPosition + index)
+            writeMoveBlock(BlockUuid(uuid), newParentUuid, startPosition + index)
         }
 
         // Refresh state
@@ -328,31 +328,32 @@ class BlockStateManager(
      * Uses dirty-set merge: incoming blocks only overwrite local state if
      * the block is NOT dirty (i.e., has no unconfirmed local edit).
      */
-    fun observePage(pageUuid: String, isContentLoaded: Boolean = true) {
-        _activePageUuids.update { it + pageUuid }
+    fun observePage(pageUuid: PageUuid, isContentLoaded: Boolean = true) {
+        val pageUuidStr = pageUuid.value
+        _activePageUuids.update { it + pageUuidStr }
         // Cancel pending unobserve on re-navigation within the keepalive window
-        pendingUnobserve.remove(pageUuid)?.cancel()
-        if (pageUuid in observationJobs) return
+        pendingUnobserve.remove(pageUuidStr)?.cancel()
+        if (pageUuidStr in observationJobs) return
 
-        observationJobs[pageUuid] = scope.launch {
+        observationJobs[pageUuidStr] = scope.launch {
             // Skip disk load if blocks are already in the state cache (e.g. re-navigation after unobservePage).
             // unobservePage keeps blocks in _blocks so back-navigation is instant without a disk round-trip.
-            val alreadyCached = _blocks.value[pageUuid]?.isNotEmpty() == true
+            val alreadyCached = _blocks.value[pageUuidStr]?.isNotEmpty() == true
             if (!isContentLoaded && !alreadyCached) {
-                _loadingPageUuids.update { it + pageUuid }
+                _loadingPageUuids.update { it + pageUuidStr }
                 try {
-                    graphLoader.loadFullPage(pageUuid)
+                    graphLoader.loadFullPage(pageUuidStr)
                 } finally {
-                    _loadingPageUuids.update { it - pageUuid }
+                    _loadingPageUuids.update { it - pageUuidStr }
                 }
             }
 
-            blockRepository.getBlocksForPage(PageUuid(pageUuid)).collect { result ->
+            blockRepository.getBlocksForPage(pageUuid).collect { result ->
                 val incomingBlocks = result.getOrNull() ?: emptyList()
                 _blocks.update { current ->
-                    val localBlocks = current[pageUuid] ?: emptyList()
+                    val localBlocks = current[pageUuidStr] ?: emptyList()
                     val merged = mergeBlocks(localBlocks, incomingBlocks)
-                    current + (pageUuid to merged)
+                    current + (pageUuidStr to merged)
                 }
             }
         }
@@ -366,22 +367,23 @@ class BlockStateManager(
      * After the window expires the observation job is cancelled and dirty entries are cleared;
      * blocks remain in [_blocks] as a stale cache for instant first-paint on slower re-navigation.
      */
-    fun unobservePage(pageUuid: String) {
-        _activePageUuids.update { it - pageUuid }
-        pendingUnobserve.remove(pageUuid)?.cancel()
-        pendingUnobserve[pageUuid] = scope.launch {
+    fun unobservePage(pageUuid: PageUuid) {
+        val pageUuidStr = pageUuid.value
+        _activePageUuids.update { it - pageUuidStr }
+        pendingUnobserve.remove(pageUuidStr)?.cancel()
+        pendingUnobserve[pageUuidStr] = scope.launch {
             delay(5_000)
-            pendingUnobserve.remove(pageUuid)
-            observationJobs.remove(pageUuid)?.cancel()
-            val blockUuids = _blocks.value[pageUuid]?.map { it.uuid.value } ?: emptyList()
+            pendingUnobserve.remove(pageUuidStr)
+            observationJobs.remove(pageUuidStr)?.cancel()
+            val blockUuids = _blocks.value[pageUuidStr]?.map { it.uuid.value } ?: emptyList()
             _dirtyBlocks.update { m -> m - blockUuids.toSet() }
         }
     }
 
     /** Evict in-memory caches for [pageUuid] when an external file change fires. */
-    fun cacheEvictPage(pageUuid: String) {
+    fun cacheEvictPage(pageUuid: PageUuid) {
         scope.launch {
-            blockRepository.cacheEvictPage(PageUuid(pageUuid))
+            blockRepository.cacheEvictPage(pageUuid)
         }
     }
 
@@ -417,7 +419,7 @@ class BlockStateManager(
 
     // ---- Editing focus management ----
 
-    fun requestEditBlock(blockUuid: String?, cursorIndex: Int? = null) {
+    fun requestEditBlock(blockUuid: BlockUuid?, cursorIndex: Int? = null) {
         if (blockUuid == null || blockUuid != _editingBlockUuid.value) _editingSelectionRange.value = null
         _editingBlockUuid.value = blockUuid
         _editingCursorIndex.value = cursorIndex
@@ -432,16 +434,17 @@ class BlockStateManager(
      * Safe to call from focus-loss handlers: if focus was already transferred
      * programmatically to a different block, this is a no-op.
      */
-    fun stopEditingBlock(blockUuid: String) {
+    fun stopEditingBlock(blockUuid: BlockUuid) {
         if (_editingBlockUuid.value == blockUuid) {
             _editingBlockUuid.value = null
             _editingCursorIndex.value = null
         }
     }
 
-    fun toggleBlockCollapse(blockUuid: String) {
+    fun toggleBlockCollapse(blockUuid: BlockUuid) {
+        val uuidStr = blockUuid.value
         _collapsedBlockUuids.update { collapsed ->
-            if (blockUuid in collapsed) collapsed - blockUuid else collapsed + blockUuid
+            if (uuidStr in collapsed) collapsed - uuidStr else collapsed + uuidStr
         }
     }
 
@@ -454,9 +457,9 @@ class BlockStateManager(
      * [overrideCursorIndex] should be captured by the caller *before* any dialog opens.
      * When non-null it takes precedence over the stored cursor index.
      */
-    fun insertTextAtCursor(blockUuid: String, text: String, overrideCursorIndex: Int? = null) {
+    fun insertTextAtCursor(blockUuid: BlockUuid, text: String, overrideCursorIndex: Int? = null) {
         scope.launch {
-            val block = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull() ?: return@launch
+            val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
             val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
             val safePos = cursor.coerceIn(0, block.content.length)
             val newContent = block.content.substring(0, safePos) + text + block.content.substring(safePos)
@@ -473,9 +476,9 @@ class BlockStateManager(
      * (opening a dialog nulls [_editingCursorIndex] via focus-loss → [stopEditingBlock]).
      * When non-null it takes precedence over the stored cursor index.
      */
-    fun insertLinkAtCursor(blockUuid: String, pageName: String, overrideCursorIndex: Int? = null) {
+    fun insertLinkAtCursor(blockUuid: BlockUuid, pageName: String, overrideCursorIndex: Int? = null) {
         scope.launch {
-            val block = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull() ?: return@launch
+            val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
             val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
             val linkText = "[[$pageName]]"
             val safePos = cursor.coerceIn(0, block.content.length)
@@ -491,7 +494,7 @@ class BlockStateManager(
      * Falls back to [insertLinkAtCursor] when start >= end (no real selection).
      */
     fun replaceSelectionWithLink(
-        blockUuid: String,
+        blockUuid: BlockUuid,
         selectionStart: Int,
         selectionEnd: Int,
         pageName: String,
@@ -501,7 +504,7 @@ class BlockStateManager(
             return
         }
         scope.launch {
-            val block = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull() ?: return@launch
+            val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
             val safeStart = selectionStart.coerceIn(0, block.content.length)
             val safeEnd = selectionEnd.coerceIn(safeStart, block.content.length)
             val linkText = "[[$pageName]]"
@@ -518,7 +521,7 @@ class BlockStateManager(
      * [overrideCursorIndex] **before** the picker dialog opens.
      */
     fun acceptLinkPickerResult(
-        blockUuid: String,
+        blockUuid: BlockUuid,
         pageName: String,
         selectionRange: IntRange?,
         overrideCursorIndex: Int?,
@@ -535,18 +538,19 @@ class BlockStateManager(
      * Saves to DB, updates local in-memory state, and queues a disk write so
      * the markdown file reflects the new `key:: value` property lines.
      */
-    fun updateBlockProperties(blockUuid: String, newProperties: Map<String, String>): Job = scope.launch {
-        val pageUuid = _blocks.value.entries.find { (_, blocks) -> blocks.any { it.uuid.value == blockUuid } }?.key
-            ?: blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull()?.pageUuid?.value
+    fun updateBlockProperties(blockUuid: BlockUuid, newProperties: Map<String, String>): Job = scope.launch {
+        val uuidStr = blockUuid.value
+        val pageUuid = _blocks.value.entries.find { (_, blocks) -> blocks.any { it.uuid == blockUuid } }?.key
+            ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()?.pageUuid?.value
             ?: return@launch
         val propsResult = writePropertiesOnly(blockUuid, newProperties)
         if (propsResult.isLeft()) {
-            logger.warn("updateBlockProperties: DB write failed for $blockUuid — properties live in-memory only")
+            logger.warn("updateBlockProperties: DB write failed for $uuidStr — properties live in-memory only")
         }
         _blocks.update { current ->
             val newBlocks = current.toMutableMap()
             val pageBlocks = newBlocks[pageUuid]?.toMutableList() ?: return@update current
-            val idx = pageBlocks.indexOfFirst { it.uuid.value == blockUuid }
+            val idx = pageBlocks.indexOfFirst { it.uuid == blockUuid }
             if (idx >= 0) pageBlocks[idx] = pageBlocks[idx].copy(properties = newProperties)
             newBlocks[pageUuid] = pageBlocks
             newBlocks
@@ -558,9 +562,9 @@ class BlockStateManager(
      * Optimistically update block content. Updates local state immediately,
      * marks the block as dirty, and persists to DB asynchronously.
      */
-    fun updateBlockContent(blockUuid: String, newContent: String, newVersion: Long): Job = scope.launch {
-        val block = _blocks.value.values.flatten().find { it.uuid.value == blockUuid }
-            ?: blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull()
+    fun updateBlockContent(blockUuid: BlockUuid, newContent: String, newVersion: Long): Job = scope.launch {
+        val block = _blocks.value.values.flatten().find { it.uuid == blockUuid }
+            ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
             ?: return@launch
         val oldContent = block.content
         val oldVersion = block.version
@@ -584,29 +588,30 @@ class BlockStateManager(
      * Core optimistic update: update local state, mark dirty, persist to DB,
      * and queue a debounced disk write.
      */
-    private suspend fun applyContentChange(blockUuid: String, content: String, version: Long) {
-        val block = _blocks.value.values.flatten().find { it.uuid.value == blockUuid }
-            ?: blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull()
+    private suspend fun applyContentChange(blockUuid: BlockUuid, content: String, version: Long) {
+        val uuidStr = blockUuid.value
+        val block = _blocks.value.values.flatten().find { it.uuid == blockUuid }
+            ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
             ?: run {
-                logger.warn("applyContentChange: block $blockUuid not found — content update dropped")
+                logger.warn("applyContentChange: block $uuidStr not found — content update dropped")
                 return
             }
 
         // Mark dirty BEFORE saving so the observer merge keeps our version
-        _dirtyBlocks.update { it + (blockUuid to version) }
+        _dirtyBlocks.update { it + (uuidStr to version) }
 
         val t0 = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
         val writeResult = writeContentOnly(blockUuid, content)
         histogramWriter?.record("editor_input", dev.stapler.stelekit.performance.HistogramWriter.epochMs() - t0)
         if (writeResult.isLeft()) {
-            logger.warn("applyContentChange: DB write failed for $blockUuid — content lives in-memory only")
+            logger.warn("applyContentChange: DB write failed for $uuidStr — content lives in-memory only")
         }
 
         val updated = block.copy(content = content, version = version)
         _blocks.update { current ->
             val newBlocks = current.toMutableMap()
             val pageBlocks = newBlocks[block.pageUuid.value]?.toMutableList() ?: return@update current
-            val idx = pageBlocks.indexOfFirst { it.uuid.value == blockUuid }
+            val idx = pageBlocks.indexOfFirst { it.uuid == blockUuid }
             if (idx >= 0) pageBlocks[idx] = updated
             newBlocks[block.pageUuid.value] = pageBlocks
             newBlocks
@@ -702,11 +707,11 @@ class BlockStateManager(
 
     // ---- Structural block operations ----
 
-    private suspend fun getPageUuidForBlock(blockUuid: String): String? {
+    private suspend fun getPageUuidForBlock(blockUuid: BlockUuid): String? {
         return _blocks.value.entries
-            .find { (_, blocks) -> blocks.any { it.uuid.value == blockUuid } }
+            .find { (_, blocks) -> blocks.any { it.uuid == blockUuid } }
             ?.key
-            ?: blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull()?.pageUuid?.value
+            ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()?.pageUuid?.value
     }
 
     private suspend fun takePageSnapshot(pageUuid: String): List<Block> =
@@ -749,9 +754,9 @@ class BlockStateManager(
         queueDiskSave(pageUuid)
     }
 
-    private suspend fun refreshBlocksForPage(blockUuid: String) {
+    private suspend fun refreshBlocksForPage(blockUuid: BlockUuid) {
         val pageUuid = _blocks.value.entries
-            .find { (_, blocks) -> blocks.any { it.uuid.value == blockUuid } }
+            .find { (_, blocks) -> blocks.any { it.uuid == blockUuid } }
             ?.key ?: return
 
         val pageBlocks = blockRepository.getBlocksForPage(PageUuid(pageUuid)).first().getOrNull() ?: return
@@ -764,7 +769,7 @@ class BlockStateManager(
         queueDiskSave(pageUuid)
     }
 
-    fun indentBlock(blockUuid: String): Job = scope.launch {
+    fun indentBlock(blockUuid: BlockUuid): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
         writeIndentBlock(blockUuid)
@@ -776,7 +781,7 @@ class BlockStateManager(
         )
     }
 
-    fun outdentBlock(blockUuid: String): Job = scope.launch {
+    fun outdentBlock(blockUuid: BlockUuid): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
         writeOutdentBlock(blockUuid)
@@ -788,7 +793,7 @@ class BlockStateManager(
         )
     }
 
-    fun moveBlockUp(blockUuid: String): Job = scope.launch {
+    fun moveBlockUp(blockUuid: BlockUuid): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
         writeMoveBlockUp(blockUuid)
@@ -800,7 +805,7 @@ class BlockStateManager(
         )
     }
 
-    fun moveBlockDown(blockUuid: String): Job = scope.launch {
+    fun moveBlockDown(blockUuid: BlockUuid): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
         writeMoveBlockDown(blockUuid)
@@ -812,9 +817,9 @@ class BlockStateManager(
         )
     }
 
-    fun addNewBlock(currentBlockUuid: String): Job = scope.launch {
-        val sourceBlock = _blocks.value.values.flatten().find { it.uuid.value == currentBlockUuid }
-            ?: blockRepository.getBlockByUuid(BlockUuid(currentBlockUuid)).first().getOrNull()
+    fun addNewBlock(currentBlockUuid: BlockUuid): Job = scope.launch {
+        val sourceBlock = _blocks.value.values.flatten().find { it.uuid == currentBlockUuid }
+            ?: blockRepository.getBlockByUuid(currentBlockUuid).first().getOrNull()
             ?: return@launch
         val pageUuidStr = sourceBlock.pageUuid.value
         val before = takePageSnapshot(pageUuidStr)
@@ -822,32 +827,33 @@ class BlockStateManager(
 
         // Optimistic: insert empty new block in-memory and move focus immediately
         val expectedNewUuid = UuidGenerator.generateV7()
+        val expectedNewBlockUuid = BlockUuid(expectedNewUuid)
         val now = kotlin.time.Clock.System.now()
         val optimisticNew = sourceBlock.copy(
-            uuid = BlockUuid(expectedNewUuid),
+            uuid = expectedNewBlockUuid,
             content = "",
             position = sourceBlock.position + 1,
-            leftUuid = currentBlockUuid,
+            leftUuid = currentBlockUuid.value,
             createdAt = now,
             updatedAt = now,
         )
         _blocks.update { state ->
             val pageBlocks = state[pageUuidStr]?.toMutableList() ?: return@update state
-            val idx = pageBlocks.indexOfFirst { it.uuid.value == currentBlockUuid }
+            val idx = pageBlocks.indexOfFirst { it.uuid == currentBlockUuid }
             if (idx >= 0) pageBlocks.add(idx + 1, optimisticNew)
             state + (pageUuidStr to pageBlocks)
         }
         pendingNewBlockUuids.update { it + expectedNewUuid }
-        requestEditBlock(expectedNewUuid)   // focus moves here, before DB
+        requestEditBlock(expectedNewBlockUuid)   // focus moves here, before DB
 
-        writeSplitBlock(currentBlockUuid, cursorPosition, expectedNewUuid).onRight { newBlock ->
+        writeSplitBlock(currentBlockUuid, cursorPosition, expectedNewBlockUuid).onRight { newBlock ->
             pendingNewBlockUuids.update { it - expectedNewUuid }
             // Repository was given expectedNewUuid — UUIDs always match; no correction needed.
             queueDiskSave(pageUuidStr)
             val after = takePageSnapshot(pageUuidStr)
             record(
                 undo = { restorePageToSnapshot(pageUuidStr, before); requestEditBlock(currentBlockUuid) },
-                redo = { restorePageToSnapshot(pageUuidStr, after); requestEditBlock(newBlock.uuid.value) }
+                redo = { restorePageToSnapshot(pageUuidStr, after); requestEditBlock(newBlock.uuid) }
             )
         }.onLeft { err ->
             logger.error("addNewBlock: DB write failed for $currentBlockUuid: $err")
@@ -855,35 +861,36 @@ class BlockStateManager(
             // Roll back optimistic update
             _blocks.update { state ->
                 val pageBlocks = state[pageUuidStr]?.toMutableList() ?: return@update state
-                pageBlocks.removeAll { it.uuid.value == expectedNewUuid }
+                pageBlocks.removeAll { it.uuid == expectedNewBlockUuid }
                 state + (pageUuidStr to pageBlocks)
             }
             requestEditBlock(currentBlockUuid, cursorPosition)
         }
     }
 
-    fun splitBlock(blockUuid: String, cursorPosition: Int): Job = scope.launch {
+    fun splitBlock(blockUuid: BlockUuid, cursorPosition: Int): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
 
         // Optimistic: split _blocks in-memory and move focus immediately
-        val sourceBlock = _blocks.value[pageUuid]?.find { it.uuid.value == blockUuid } ?: return@launch
+        val sourceBlock = _blocks.value[pageUuid]?.find { it.uuid == blockUuid } ?: return@launch
         val clampedCursor = cursorPosition.coerceIn(0, sourceBlock.content.length)
         val firstPart = sourceBlock.content.substring(0, clampedCursor).trim()
         val secondPart = sourceBlock.content.substring(clampedCursor).trim()
         val expectedNewUuid = UuidGenerator.generateV7()
+        val expectedNewBlockUuid = BlockUuid(expectedNewUuid)
         val now = kotlin.time.Clock.System.now()
         val optimisticNew = sourceBlock.copy(
-            uuid = BlockUuid(expectedNewUuid),
+            uuid = expectedNewBlockUuid,
             content = secondPart,
             position = sourceBlock.position + 1,
-            leftUuid = blockUuid,
+            leftUuid = blockUuid.value,
             createdAt = now,
             updatedAt = now,
         )
         _blocks.update { state ->
             val pageBlocks = state[pageUuid]?.toMutableList() ?: return@update state
-            val idx = pageBlocks.indexOfFirst { it.uuid.value == blockUuid }
+            val idx = pageBlocks.indexOfFirst { it.uuid == blockUuid }
             if (idx >= 0) {
                 pageBlocks[idx] = pageBlocks[idx].copy(content = firstPart)
                 pageBlocks.add(idx + 1, optimisticNew)
@@ -891,16 +898,16 @@ class BlockStateManager(
             state + (pageUuid to pageBlocks)
         }
         pendingNewBlockUuids.update { it + expectedNewUuid }
-        requestEditBlock(expectedNewUuid)   // focus moves here, before DB
+        requestEditBlock(expectedNewBlockUuid)   // focus moves here, before DB
 
-        writeSplitBlock(blockUuid, clampedCursor, expectedNewUuid).onRight { newBlock ->
+        writeSplitBlock(blockUuid, clampedCursor, expectedNewBlockUuid).onRight { newBlock ->
             pendingNewBlockUuids.update { it - expectedNewUuid }
             // Repository was given expectedNewUuid — UUIDs always match; no correction needed.
             queueDiskSave(pageUuid)
             val after = takePageSnapshot(pageUuid)
             record(
                 undo = { restorePageToSnapshot(pageUuid, before); requestEditBlock(blockUuid, clampedCursor) },
-                redo = { restorePageToSnapshot(pageUuid, after); requestEditBlock(newBlock.uuid.value) }
+                redo = { restorePageToSnapshot(pageUuid, after); requestEditBlock(newBlock.uuid) }
             )
         }.onLeft { err ->
             logger.error("splitBlock: DB write failed for $blockUuid: $err")
@@ -908,8 +915,8 @@ class BlockStateManager(
             // Roll back optimistic update
             _blocks.update { state ->
                 val pageBlocks = state[pageUuid]?.toMutableList() ?: return@update state
-                pageBlocks.removeAll { it.uuid.value == expectedNewUuid }
-                val idx = pageBlocks.indexOfFirst { it.uuid.value == blockUuid }
+                pageBlocks.removeAll { it.uuid == expectedNewBlockUuid }
+                val idx = pageBlocks.indexOfFirst { it.uuid == blockUuid }
                 if (idx >= 0) pageBlocks[idx] = pageBlocks[idx].copy(content = sourceBlock.content)
                 state + (pageUuid to pageBlocks)
             }
@@ -917,9 +924,10 @@ class BlockStateManager(
         }
     }
 
-    fun addBlockToPage(pageUuid: String): Job = scope.launch {
+    fun addBlockToPage(pageUuid: PageUuid): Job = scope.launch {
+        val pageUuidStr = pageUuid.value
         // Use in-memory state — avoids a DB round-trip since the page is already observed.
-        val blocks = blocksForPage(pageUuid)
+        val blocks = blocksForPage(pageUuidStr)
 
         val topLevelBlocks = blocks.filter { it.parentUuid == null }.sortedBy { it.position }
         val lastBlock = topLevelBlocks.lastOrNull()
@@ -928,7 +936,7 @@ class BlockStateManager(
         val now = kotlin.time.Clock.System.now()
         val newBlock = Block(
             uuid = BlockUuid(UuidGenerator.generateV7()),
-            pageUuid = PageUuid(pageUuid),
+            pageUuid = pageUuid,
             parentUuid = null,
             leftUuid = lastBlock?.uuid?.value,
             content = "",
@@ -943,13 +951,13 @@ class BlockStateManager(
         // completes (the write may be queued behind a Phase-3 batch transaction).
         _blocks.update { current ->
             val updated = current.toMutableMap()
-            val pageBlocks = updated[pageUuid]?.toMutableList() ?: mutableListOf()
+            val pageBlocks = updated[pageUuidStr]?.toMutableList() ?: mutableListOf()
             pageBlocks.add(newBlock)
-            updated[pageUuid] = pageBlocks
+            updated[pageUuidStr] = pageBlocks
             updated
         }
         pendingNewBlockUuids.update { it + newBlock.uuid.value }
-        requestEditBlock(newBlock.uuid.value)
+        requestEditBlock(newBlock.uuid)
         writeBlock(newBlock).onLeft { err ->
             logger.error("addBlockToPage: DB write failed for ${newBlock.uuid}: $err")
             // Roll back the optimistic update only if the block content is unchanged. Comparing
@@ -957,10 +965,10 @@ class BlockStateManager(
             // the dirtyBlocks.containsKey check and the _blocks.update: if the content has already
             // changed, the user's edits are preserved and the next debounce will retry the write.
             _blocks.update { current ->
-                val liveContent = current[pageUuid]?.find { it.uuid == newBlock.uuid }?.content
+                val liveContent = current[pageUuidStr]?.find { it.uuid == newBlock.uuid }?.content
                 if (liveContent == newBlock.content) {
                     val updated = current.toMutableMap()
-                    updated[pageUuid] = (updated[pageUuid] ?: emptyList()).filter { it.uuid != newBlock.uuid }
+                    updated[pageUuidStr] = (updated[pageUuidStr] ?: emptyList()).filter { it.uuid != newBlock.uuid }
                     updated
                 } else {
                     current
@@ -968,7 +976,7 @@ class BlockStateManager(
             }
         }
         pendingNewBlockUuids.update { it - newBlock.uuid.value }
-        queueDiskSave(pageUuid)
+        queueDiskSave(pageUuidStr)
     }
 
     /**
@@ -978,8 +986,9 @@ class BlockStateManager(
      * this variant writes the content immediately without requesting edit focus.
      * Intended for programmatic insertion such as drag-and-drop image attachment.
      */
-    fun addBlockWithContent(pageUuid: String, content: String): Job = scope.launch {
-        val blocks = blocksForPage(pageUuid)
+    fun addBlockWithContent(pageUuid: PageUuid, content: String): Job = scope.launch {
+        val pageUuidStr = pageUuid.value
+        val blocks = blocksForPage(pageUuidStr)
         val topLevelBlocks = blocks.filter { it.parentUuid == null }.sortedBy { it.position }
         val lastBlock = topLevelBlocks.lastOrNull()
         val newPosition = if (lastBlock != null) (lastBlock.position) + 1 else 0
@@ -987,7 +996,7 @@ class BlockStateManager(
         val now = kotlin.time.Clock.System.now()
         val newBlock = Block(
             uuid = BlockUuid(UuidGenerator.generateV7()),
-            pageUuid = PageUuid(pageUuid),
+            pageUuid = pageUuid,
             parentUuid = null,
             leftUuid = lastBlock?.uuid?.value,
             content = content,
@@ -1000,38 +1009,38 @@ class BlockStateManager(
         )
         _blocks.update { current ->
             val updated = current.toMutableMap()
-            val pageBlocks = updated[pageUuid]?.toMutableList() ?: mutableListOf()
+            val pageBlocks = updated[pageUuidStr]?.toMutableList() ?: mutableListOf()
             pageBlocks.add(newBlock)
-            updated[pageUuid] = pageBlocks
+            updated[pageUuidStr] = pageBlocks
             updated
         }
         writeBlock(newBlock).onLeft { err ->
             logger.error("addBlockWithContent: DB write failed for ${newBlock.uuid}: $err")
             _blocks.update { current ->
-                val liveContent = current[pageUuid]?.find { it.uuid == newBlock.uuid }?.content
+                val liveContent = current[pageUuidStr]?.find { it.uuid == newBlock.uuid }?.content
                 if (liveContent == newBlock.content) {
                     val updated = current.toMutableMap()
-                    updated[pageUuid] = (updated[pageUuid] ?: emptyList()).filter { it.uuid != newBlock.uuid }
+                    updated[pageUuidStr] = (updated[pageUuidStr] ?: emptyList()).filter { it.uuid != newBlock.uuid }
                     updated
                 } else {
                     current
                 }
             }
         }
-        queueDiskSave(pageUuid)
+        queueDiskSave(pageUuidStr)
     }
 
-    fun mergeBlock(blockUuid: String): Job = scope.launch {
-        val currentBlock = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull() ?: return@launch
+    fun mergeBlock(blockUuid: BlockUuid): Job = scope.launch {
+        val currentBlock = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
         val pageUuidStr = currentBlock.pageUuid.value
         val before = takePageSnapshot(pageUuidStr)
 
-        val pageBlocks = blockRepository.getBlocksForPage(PageUuid(pageUuidStr)).first().getOrNull() ?: return@launch
+        val pageBlocks = blockRepository.getBlocksForPage(currentBlock.pageUuid).first().getOrNull() ?: return@launch
         val siblings = pageBlocks
             .filter { it.parentUuid == currentBlock.parentUuid }
             .sortedBy { it.position }
 
-        val currentIndex = siblings.indexOfFirst { it.uuid.value == blockUuid }
+        val currentIndex = siblings.indexOfFirst { it.uuid == blockUuid }
 
         if (currentIndex > 0) {
             val prevBlock = siblings[currentIndex - 1]
@@ -1039,13 +1048,13 @@ class BlockStateManager(
             val preMergeEditUuid = _editingBlockUuid.value
             val preMergeEditCursor = _editingCursorIndex.value
             // Move focus before the DB round-trip so keyboard lands immediately
-            requestEditBlock(prevBlock.uuid.value, prevBlock.content.length)
-            writeMergeBlocks(prevBlock.uuid.value, blockUuid, "").onRight {
+            requestEditBlock(prevBlock.uuid, prevBlock.content.length)
+            writeMergeBlocks(prevBlock.uuid, blockUuid, "").onRight {
                 queueDiskSave(pageUuidStr)
                 val after = takePageSnapshot(pageUuidStr)
                 record(
                     undo = { restorePageToSnapshot(pageUuidStr, before); requestEditBlock(blockUuid, 0) },
-                    redo = { restorePageToSnapshot(pageUuidStr, after); requestEditBlock(prevBlock.uuid.value, prevBlock.content.length) }
+                    redo = { restorePageToSnapshot(pageUuidStr, after); requestEditBlock(prevBlock.uuid, prevBlock.content.length) }
                 )
             }.onLeft { err ->
                 logger.error("mergeBlock: DB write failed for $blockUuid: $err")
@@ -1055,19 +1064,19 @@ class BlockStateManager(
         }
     }
 
-    fun handleBackspace(blockUuid: String): Job = scope.launch {
-        val currentBlock = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull() ?: return@launch
+    fun handleBackspace(blockUuid: BlockUuid): Job = scope.launch {
+        val currentBlock = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
         val pageUuidStr = currentBlock.pageUuid.value
         val before = takePageSnapshot(pageUuidStr)
 
-        val pageBlocks = blockRepository.getBlocksForPage(PageUuid(pageUuidStr)).first().getOrNull() ?: return@launch
+        val pageBlocks = blockRepository.getBlocksForPage(currentBlock.pageUuid).first().getOrNull() ?: return@launch
         val siblings = pageBlocks
             .filter { it.parentUuid == currentBlock.parentUuid }
             .sortedBy { it.position }
 
-        val currentIndex = siblings.indexOfFirst { it.uuid.value == blockUuid }
+        val currentIndex = siblings.indexOfFirst { it.uuid == blockUuid }
 
-        suspend fun afterOp(focusUuid: String, focusPos: Int) {
+        suspend fun afterOp(focusUuid: BlockUuid, focusPos: Int) {
             queueDiskSave(pageUuidStr)
             val after = takePageSnapshot(pageUuidStr)
             record(
@@ -1079,9 +1088,9 @@ class BlockStateManager(
         if (currentIndex > 0) {
             val prevBlock = siblings[currentIndex - 1]
             // Move focus before the DB round-trip so keyboard lands immediately
-            requestEditBlock(prevBlock.uuid.value, prevBlock.content.length)
-            writeMergeBlocks(prevBlock.uuid.value, blockUuid, "").onRight {
-                afterOp(prevBlock.uuid.value, prevBlock.content.length)
+            requestEditBlock(prevBlock.uuid, prevBlock.content.length)
+            writeMergeBlocks(prevBlock.uuid, blockUuid, "").onRight {
+                afterOp(prevBlock.uuid, prevBlock.content.length)
             }.onLeft { err ->
                 logger.error("handleBackspace: DB merge failed for $blockUuid: $err")
                 requestEditBlock(blockUuid, 0)
@@ -1091,19 +1100,19 @@ class BlockStateManager(
             if (parent != null) {
                 if (currentBlock.content.isEmpty()) {
                     // Move focus before the DB round-trip
-                    requestEditBlock(parent.uuid.value, parent.content.length)
+                    requestEditBlock(parent.uuid, parent.content.length)
                     val result = writeDeleteBlockStructural(blockUuid)
                     result.onRight {
-                        afterOp(parent.uuid.value, parent.content.length)
+                        afterOp(parent.uuid, parent.content.length)
                     }.onLeft { err ->
                         logger.error("handleBackspace: DB delete failed for $blockUuid: $err")
                         requestEditBlock(blockUuid, 0)
                     }
                 } else {
                     // Move focus before the DB round-trip
-                    requestEditBlock(parent.uuid.value, parent.content.length)
-                    writeMergeBlocks(parent.uuid.value, blockUuid, "").onRight {
-                        afterOp(parent.uuid.value, parent.content.length)
+                    requestEditBlock(parent.uuid, parent.content.length)
+                    writeMergeBlocks(parent.uuid, blockUuid, "").onRight {
+                        afterOp(parent.uuid, parent.content.length)
                     }.onLeft { err ->
                         logger.error("handleBackspace: DB merge failed for $blockUuid: $err")
                         requestEditBlock(blockUuid, 0)
@@ -1114,10 +1123,10 @@ class BlockStateManager(
             if (currentBlock.content.isEmpty() && siblings.size > 1) {
                 val nextBlock = siblings[1]
                 // Move focus before the DB round-trip
-                requestEditBlock(nextBlock.uuid.value, 0)
+                requestEditBlock(nextBlock.uuid, 0)
                 val result = writeDeleteBlockStructural(blockUuid)
                 result.onRight {
-                    afterOp(nextBlock.uuid.value, 0)
+                    afterOp(nextBlock.uuid, 0)
                 }.onLeft { err ->
                     logger.error("handleBackspace: DB delete failed for $blockUuid: $err")
                     requestEditBlock(blockUuid, 0)
@@ -1128,23 +1137,23 @@ class BlockStateManager(
 
     // ---- Focus navigation ----
 
-    fun focusPreviousBlock(blockUuid: String): Job = scope.launch {
-        val currentBlock = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull() ?: return@launch
+    fun focusPreviousBlock(blockUuid: BlockUuid): Job = scope.launch {
+        val currentBlock = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
         val visibleBlocks = getVisibleBlocksForPage(currentBlock.pageUuid.value)
-        val currentIndex = visibleBlocks.indexOfFirst { it.uuid.value == blockUuid }
+        val currentIndex = visibleBlocks.indexOfFirst { it.uuid == blockUuid }
         if (currentIndex > 0) {
             val prevBlock = visibleBlocks[currentIndex - 1]
-            requestEditBlock(prevBlock.uuid.value, prevBlock.content.length)
+            requestEditBlock(prevBlock.uuid, prevBlock.content.length)
         }
     }
 
-    fun focusNextBlock(blockUuid: String): Job = scope.launch {
-        val currentBlock = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull() ?: return@launch
+    fun focusNextBlock(blockUuid: BlockUuid): Job = scope.launch {
+        val currentBlock = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
         val visibleBlocks = getVisibleBlocksForPage(currentBlock.pageUuid.value)
-        val currentIndex = visibleBlocks.indexOfFirst { it.uuid.value == blockUuid }
+        val currentIndex = visibleBlocks.indexOfFirst { it.uuid == blockUuid }
         if (currentIndex >= 0 && currentIndex < visibleBlocks.size - 1) {
             val nextBlock = visibleBlocks[currentIndex + 1]
-            requestEditBlock(nextBlock.uuid.value, 0)
+            requestEditBlock(nextBlock.uuid, 0)
         }
     }
 
@@ -1179,31 +1188,32 @@ class BlockStateManager(
     private val _loadingPageUuids = MutableStateFlow<Set<String>>(emptySet())
     val loadingPageUuids: StateFlow<Set<String>> = _loadingPageUuids.asStateFlow()
 
-    fun loadPageContent(pageUuid: String): Job = scope.launch {
-        if (_loadingPageUuids.value.contains(pageUuid)) return@launch
+    fun loadPageContent(pageUuid: PageUuid): Job = scope.launch {
+        val pageUuidStr = pageUuid.value
+        if (_loadingPageUuids.value.contains(pageUuidStr)) return@launch
 
-        _loadingPageUuids.update { it + pageUuid }
+        _loadingPageUuids.update { it + pageUuidStr }
         try {
-            val blocksResult = blockRepository.getBlocksForPage(PageUuid(pageUuid)).first()
+            val blocksResult = blockRepository.getBlocksForPage(pageUuid).first()
             val currentBlocks = blocksResult.getOrNull() ?: emptyList()
             val hasUnloadedBlocks = currentBlocks.isNotEmpty() && currentBlocks.any { !it.isLoaded }
 
             if (hasUnloadedBlocks) {
-                graphLoader.loadFullPage(pageUuid)
+                graphLoader.loadFullPage(pageUuidStr)
             }
 
             // Re-fetch and update after potential reload
-            val result = blockRepository.getBlocksForPage(PageUuid(pageUuid)).first()
+            val result = blockRepository.getBlocksForPage(pageUuid).first()
             val blocks = result.getOrNull() ?: emptyList()
             _blocks.update { current ->
-                current + (pageUuid to blocks)
+                current + (pageUuidStr to blocks)
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            logger.error("Failed to load page content: $pageUuid", e)
+            logger.error("Failed to load page content: $pageUuidStr", e)
         } finally {
-            _loadingPageUuids.update { it - pageUuid }
+            _loadingPageUuids.update { it - pageUuidStr }
         }
     }
 

@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageName
 import dev.stapler.stelekit.parsing.ParseMode
 import dev.stapler.stelekit.vault.CryptoLayer
 import kotlinx.coroutines.flow.SharedFlow
@@ -62,7 +64,7 @@ interface GraphLoaderPort {
     /**
      * Priority-loads a page by name directly from disk.
      */
-    suspend fun loadPageByName(pageName: String): Page?
+    suspend fun loadPageByName(pageName: PageName): Page?
 
     /**
      * Loads or re-reads a page by UUID from disk into the database.
@@ -80,7 +82,7 @@ interface GraphLoaderPort {
      * Parses [content] and saves the resulting page and blocks to the database.
      */
     suspend fun parseAndSavePage(
-        filePath: String,
+        filePath: FilePath,
         content: String,
         mode: ParseMode = ParseMode.FULL,
         priority: DatabaseWriteActor.Priority = DatabaseWriteActor.Priority.HIGH,

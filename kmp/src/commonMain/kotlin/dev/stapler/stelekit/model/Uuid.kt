@@ -14,3 +14,19 @@ package dev.stapler.stelekit.model
 @JvmInline value class BlockUuid(val value: String) {
     override fun toString(): String = value
 }
+
+/**
+ * Type-safe wrapper for filesystem paths. Prevents mixing file paths with page names
+ * or UUIDs in the database and file-watcher layers.
+ */
+@JvmInline value class FilePath(val value: String) {
+    override fun toString(): String = value
+}
+
+/**
+ * Type-safe wrapper for Logseq page names (the human-readable title, not the UUID).
+ * Prevents mixing page names with file paths or UUIDs at key API boundaries.
+ */
+@JvmInline value class PageName(val value: String) {
+    override fun toString(): String = value
+}

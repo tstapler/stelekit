@@ -5,6 +5,7 @@ import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageName
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.GraphBackend
@@ -547,7 +548,7 @@ class GraphLoadTimingTest {
 
             // Measure navigation — this is the hot path that was broken in v0.33.0
             val loadMs = measureTime {
-                loader.loadPageByName("Dense Page")
+                loader.loadPageByName(PageName("Dense Page"))
             }.inWholeMilliseconds
 
             println("\n[large-page] Navigation to 150-block page: ${loadMs}ms")
