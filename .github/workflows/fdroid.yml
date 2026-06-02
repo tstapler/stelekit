@@ -30,7 +30,9 @@ jobs:
       - name: Install fdroidserver
         run: |
           sudo apt-get install -y python3-pip aapt zipalign
-          pip3 install --user fdroidserver
+          # Pin androguard to avoid a regression in newer versions where
+          # 'NoOverwriteDict' has no 'append', breaking APK v3 signature parsing.
+          pip3 install --user fdroidserver 'androguard==3.3.5'
 
       - name: Restore fdroid repo signing keystore
         env:
