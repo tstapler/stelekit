@@ -1,0 +1,15 @@
+[project]
+name = "stelekit-fdroid"
+version = "0.1.0"
+description = "F-Droid repo tooling for SteleKit"
+requires-python = ">=3.11"
+dependencies = [
+    "fdroidserver",
+    # androguard 3.3.5 is the last version without a regression in APK v3
+    # signature parsing ('NoOverwriteDict' object has no attribute 'append').
+    "androguard==3.3.5",
+]
+
+[tool.uv]
+# Prevent uv from using system packages; all deps come from the lockfile.
+package = false

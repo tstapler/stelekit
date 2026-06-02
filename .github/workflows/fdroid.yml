@@ -11,7 +11,10 @@ on:
   workflow_call:
 
 concurrency:
-  group: pages
+  # fdroid-update is separate from the pages group because this workflow no
+  # longer deploys to Pages — it only builds the index and uploads an artifact.
+  # Keeping it in the pages group caused it to be cancelled by pages.yml pushes.
+  group: fdroid-update
   cancel-in-progress: false
 
 permissions:
@@ -29,10 +32,11 @@ jobs:
 
       - name: Install fdroidserver
         run: |
-          sudo apt-get install -y python3-pip aapt zipalign
-          # Pin androguard to avoid a regression in newer versions where
-          # 'NoOverwriteDict' has no 'append', breaking APK v3 signature parsing.
-          pip3 install --user fdroidserver 'androguard==3.3.5'
+          sudo apt-get install -y aapt zipalign
+          # uv is pre-installed on ubuntu-latest. Sync the fdroid uv project from
+          # the lockfile so CI and local dev use identical dependency versions.
+          # Locally: uv run --directory fdroid fdroid update --create-metadata
+          uv sync --directory fdroid --frozen
 
       - name: Restore fdroid repo signing keystore
         env:
@@ -72,8 +76,7 @@ jobs:
           cp fdroid/icons/icon.png fdroid/repo/icons/icon.png
 
       - name: Generate fdroid index
-        working-directory: fdroid
-        run: fdroid update --create-metadata --verbose
+        run: uv run --directory fdroid fdroid update --create-metadata --verbose
 
       - name: Upload fdroid content
         uses: actions/upload-artifact@v4
