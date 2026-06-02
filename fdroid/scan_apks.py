@@ -15,9 +15,12 @@ def can_parse(apk_path: str) -> bool:
         # androguard 4.x moved APK from core.bytecodes.apk to core.apk
         from androguard.core.apk import APK  # type: ignore[import]
         apk = APK(apk_path)
-        # fdroid update calls get_android_resources() which does deep ARSC parsing.
-        # Test the same code path here so we catch parsing errors early.
+        # fdroid exercises two distinct heavy-parsing code paths; test both:
+        # 1. get_android_resources() — ARSC resource table parser
         apk.get_android_resources()
+        # 2. get_certificates_der_v3() — APK v2/v3 signing block parser
+        #    (NoOverwriteDict.append regression in certain old APKs)
+        apk.get_certificates_der_v3()
         return True
     except Exception as exc:
         print(f"  cannot parse: {exc}", file=sys.stderr)
