@@ -161,9 +161,11 @@ jobs:
             --json databaseId --jq '.[0].databaseId // empty')
           if [ -n "$LAST_RUN" ]; then
             gh run download "$LAST_RUN" --name fdroid-content --dir fdroid-content/ || true
-            [ -d fdroid-content/fdroid/repo ] && \
+            # upload-artifact@v4 strips the common path prefix (fdroid/) when
+            # multiple paths share it, so the artifact lands at repo/ not fdroid/repo/.
+            [ -d fdroid-content/repo ] && \
               echo "Restored fdroid-content from run $LAST_RUN" || \
-              echo "Artifact present but fdroid/repo missing in run $LAST_RUN"
+              echo "Download succeeded but repo/ missing in run $LAST_RUN"
           else
             echo "No previous successful fdroid run found; fdroid content will be absent"
           fi
@@ -186,11 +188,13 @@ jobs:
 
       - name: Merge fdroid content into site output
         run: |
-          if [ -d fdroid-content/fdroid/repo ]; then
+          # upload-artifact@v4 strips the common fdroid/ prefix, so the artifact
+          # structure is repo/ and archive/ directly (not fdroid/repo/).
+          if [ -d fdroid-content/repo ]; then
             mkdir -p site/dist/fdroid
-            cp -r fdroid-content/fdroid/repo site/dist/fdroid/
-            if [ -d fdroid-content/fdroid/archive ]; then
-              cp -r fdroid-content/fdroid/archive site/dist/fdroid/
+            cp -r fdroid-content/repo site/dist/fdroid/
+            if [ -d fdroid-content/archive ]; then
+              cp -r fdroid-content/archive site/dist/fdroid/
             fi
             echo "F-Droid content merged into site output"
           else
