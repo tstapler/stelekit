@@ -62,7 +62,7 @@ class BlockStateManager(
     private val graphPathProvider: () -> String = { "" },
     private val writeActor: DatabaseWriteActor? = null,
     private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
-) {
+) : BlockEditingPort, BlockStructurePort, BlockSelectionPort, BlockNavigationPort {
     private val logger = Logger("BlockStateManager")
     private val diskWriteDebounce = DebounceManager(scope, 300L)
 
@@ -182,16 +182,16 @@ class BlockStateManager(
     // ---- Editing focus ----
 
     private val _editingBlockUuid = MutableStateFlow<BlockUuid?>(null)
-    val editingBlockUuid: StateFlow<BlockUuid?> = _editingBlockUuid.asStateFlow()
+    override val editingBlockUuid: StateFlow<BlockUuid?> = _editingBlockUuid.asStateFlow()
 
     private val _editingCursorIndex = MutableStateFlow<Int?>(null)
-    val editingCursorIndex: StateFlow<Int?> = _editingCursorIndex.asStateFlow()
+    override val editingCursorIndex: StateFlow<Int?> = _editingCursorIndex.asStateFlow()
 
     private val _editingSelectionRange = MutableStateFlow<IntRange?>(null)
-    val editingSelectionRange: StateFlow<IntRange?> = _editingSelectionRange.asStateFlow()
+    override val editingSelectionRange: StateFlow<IntRange?> = _editingSelectionRange.asStateFlow()
 
     private val _collapsedBlockUuids = MutableStateFlow<Set<String>>(emptySet())
-    val collapsedBlockUuids: StateFlow<Set<String>> = _collapsedBlockUuids.asStateFlow()
+    override val collapsedBlockUuids: StateFlow<Set<String>> = _collapsedBlockUuids.asStateFlow()
 
     // ---- Selection state (delegated to BlockSelectionManager) ----
 
@@ -199,22 +199,22 @@ class BlockStateManager(
         blocksSnapshot = { _blocks.value },
         visibleBlocksForPage = ::getVisibleBlocksForPage
     )
-    val selectedBlockUuids: StateFlow<Set<String>> get() = selection.selectedBlockUuids
-    val isInSelectionMode: StateFlow<Boolean> get() = selection.isInSelectionMode
+    override val selectedBlockUuids: StateFlow<Set<String>> get() = selection.selectedBlockUuids
+    override val isInSelectionMode: StateFlow<Boolean> get() = selection.isInSelectionMode
 
-    fun enterSelectionMode(uuid: BlockUuid) = selection.enterSelectionMode(uuid.value)
-    fun toggleBlockSelection(uuid: BlockUuid) = selection.toggleBlockSelection(uuid.value)
-    fun extendSelectionByOne(up: Boolean) = selection.extendSelectionByOne(up)
-    fun extendSelectionTo(uuid: BlockUuid) = selection.extendSelectionTo(uuid.value)
-    fun selectAll(pageUuid: PageUuid) = selection.selectAll(pageUuid.value)
-    fun clearSelection() = selection.clearSelection()
+    override fun enterSelectionMode(uuid: BlockUuid) = selection.enterSelectionMode(uuid.value)
+    override fun toggleBlockSelection(uuid: BlockUuid) = selection.toggleBlockSelection(uuid.value)
+    override fun extendSelectionByOne(up: Boolean) = selection.extendSelectionByOne(up)
+    override fun extendSelectionTo(uuid: BlockUuid) = selection.extendSelectionTo(uuid.value)
+    override fun selectAll(pageUuid: PageUuid) = selection.selectAll(pageUuid.value)
+    override fun clearSelection() = selection.clearSelection()
     private fun subtreeDedup(uuids: Set<String>, pageUuid: String) = selection.subtreeDedup(uuids, pageUuid)
 
     /**
      * Delete all currently selected blocks (and their subtrees) in a single
      * undo-able operation. Clears the selection when done.
      */
-    fun deleteSelectedBlocks(): Job = scope.launch {
+    override fun deleteSelectedBlocks(): Job = scope.launch {
         val selected = selection.selectedBlockUuids.value
         if (selected.isEmpty()) return@launch
         // Determine page UUID from the first selected block
@@ -245,7 +245,7 @@ class BlockStateManager(
      *
      * Wraps the entire operation in a single undo entry.
      */
-    fun moveSelectedBlocks(newParentUuid: BlockUuid?, insertAfterUuid: BlockUuid?): Job = scope.launch {
+    override fun moveSelectedBlocks(newParentUuid: BlockUuid?, insertAfterUuid: BlockUuid?): Job = scope.launch {
         val selected = selection.selectedBlockUuids.value
         if (selected.isEmpty()) return@launch
 
@@ -303,9 +303,9 @@ class BlockStateManager(
     // ---- Formatting events (toolbar → active BlockItem) ----
 
     private val _formatEvents = MutableSharedFlow<FormatAction>(extraBufferCapacity = 1)
-    val formatEvents: SharedFlow<FormatAction> = _formatEvents.asSharedFlow()
+    override val formatEvents: SharedFlow<FormatAction> = _formatEvents.asSharedFlow()
 
-    fun requestFormat(action: FormatAction) {
+    override fun requestFormat(action: FormatAction) {
         _formatEvents.tryEmit(action)
     }
 
@@ -318,8 +318,8 @@ class BlockStateManager(
     fun record(undo: suspend () -> Unit, redo: (suspend () -> Unit)? = null) =
         undoManager.record(undo, redo)
 
-    fun undo(): Job = undoManager.undo()
-    fun redo(): Job = undoManager.redo()
+    override fun undo(): Job = undoManager.undo()
+    override fun redo(): Job = undoManager.redo()
 
     // ---- Page observation ----
 
@@ -419,13 +419,13 @@ class BlockStateManager(
 
     // ---- Editing focus management ----
 
-    fun requestEditBlock(blockUuid: BlockUuid?, cursorIndex: Int? = null) {
+    override fun requestEditBlock(blockUuid: BlockUuid?, cursorIndex: Int?) {
         if (blockUuid == null || blockUuid != _editingBlockUuid.value) _editingSelectionRange.value = null
         _editingBlockUuid.value = blockUuid
         _editingCursorIndex.value = cursorIndex
     }
 
-    fun updateEditingSelection(range: IntRange?) {
+    override fun updateEditingSelection(range: IntRange?) {
         _editingSelectionRange.value = range
     }
 
@@ -434,14 +434,14 @@ class BlockStateManager(
      * Safe to call from focus-loss handlers: if focus was already transferred
      * programmatically to a different block, this is a no-op.
      */
-    fun stopEditingBlock(blockUuid: BlockUuid) {
+    override fun stopEditingBlock(blockUuid: BlockUuid) {
         if (_editingBlockUuid.value == blockUuid) {
             _editingBlockUuid.value = null
             _editingCursorIndex.value = null
         }
     }
 
-    fun toggleBlockCollapse(blockUuid: BlockUuid) {
+    override fun toggleBlockCollapse(blockUuid: BlockUuid) {
         val uuidStr = blockUuid.value
         _collapsedBlockUuids.update { collapsed ->
             if (uuidStr in collapsed) collapsed - uuidStr else collapsed + uuidStr
@@ -457,7 +457,7 @@ class BlockStateManager(
      * [overrideCursorIndex] should be captured by the caller *before* any dialog opens.
      * When non-null it takes precedence over the stored cursor index.
      */
-    fun insertTextAtCursor(blockUuid: BlockUuid, text: String, overrideCursorIndex: Int? = null) {
+    override fun insertTextAtCursor(blockUuid: BlockUuid, text: String, overrideCursorIndex: Int?) {
         scope.launch {
             val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
             val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
@@ -476,7 +476,7 @@ class BlockStateManager(
      * (opening a dialog nulls [_editingCursorIndex] via focus-loss → [stopEditingBlock]).
      * When non-null it takes precedence over the stored cursor index.
      */
-    fun insertLinkAtCursor(blockUuid: BlockUuid, pageName: String, overrideCursorIndex: Int? = null) {
+    override fun insertLinkAtCursor(blockUuid: BlockUuid, pageName: String, overrideCursorIndex: Int?) {
         scope.launch {
             val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
             val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
@@ -493,7 +493,7 @@ class BlockStateManager(
      * Replaces the text in [selectionStart]..[selectionEnd] with [[pageName]].
      * Falls back to [insertLinkAtCursor] when start >= end (no real selection).
      */
-    fun replaceSelectionWithLink(
+    override fun replaceSelectionWithLink(
         blockUuid: BlockUuid,
         selectionStart: Int,
         selectionEnd: Int,
@@ -520,7 +520,7 @@ class BlockStateManager(
      * falls back to cursor insertion. Callers should capture [selectionRange] and
      * [overrideCursorIndex] **before** the picker dialog opens.
      */
-    fun acceptLinkPickerResult(
+    override fun acceptLinkPickerResult(
         blockUuid: BlockUuid,
         pageName: String,
         selectionRange: IntRange?,
@@ -562,7 +562,7 @@ class BlockStateManager(
      * Optimistically update block content. Updates local state immediately,
      * marks the block as dirty, and persists to DB asynchronously.
      */
-    fun updateBlockContent(blockUuid: BlockUuid, newContent: String, newVersion: Long): Job = scope.launch {
+    override fun updateBlockContent(blockUuid: BlockUuid, newContent: String, newVersion: Long): Job = scope.launch {
         val block = _blocks.value.values.flatten().find { it.uuid == blockUuid }
             ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
             ?: return@launch
@@ -769,7 +769,7 @@ class BlockStateManager(
         queueDiskSave(pageUuid)
     }
 
-    fun indentBlock(blockUuid: BlockUuid): Job = scope.launch {
+    override fun indentBlock(blockUuid: BlockUuid): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
         writeIndentBlock(blockUuid)
@@ -781,7 +781,7 @@ class BlockStateManager(
         )
     }
 
-    fun outdentBlock(blockUuid: BlockUuid): Job = scope.launch {
+    override fun outdentBlock(blockUuid: BlockUuid): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
         writeOutdentBlock(blockUuid)
@@ -793,7 +793,7 @@ class BlockStateManager(
         )
     }
 
-    fun moveBlockUp(blockUuid: BlockUuid): Job = scope.launch {
+    override fun moveBlockUp(blockUuid: BlockUuid): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
         writeMoveBlockUp(blockUuid)
@@ -805,7 +805,7 @@ class BlockStateManager(
         )
     }
 
-    fun moveBlockDown(blockUuid: BlockUuid): Job = scope.launch {
+    override fun moveBlockDown(blockUuid: BlockUuid): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
         writeMoveBlockDown(blockUuid)
@@ -817,7 +817,7 @@ class BlockStateManager(
         )
     }
 
-    fun addNewBlock(currentBlockUuid: BlockUuid): Job = scope.launch {
+    override fun addNewBlock(currentBlockUuid: BlockUuid): Job = scope.launch {
         val sourceBlock = _blocks.value.values.flatten().find { it.uuid == currentBlockUuid }
             ?: blockRepository.getBlockByUuid(currentBlockUuid).first().getOrNull()
             ?: return@launch
@@ -868,7 +868,7 @@ class BlockStateManager(
         }
     }
 
-    fun splitBlock(blockUuid: BlockUuid, cursorPosition: Int): Job = scope.launch {
+    override fun splitBlock(blockUuid: BlockUuid, cursorPosition: Int): Job = scope.launch {
         val pageUuid = getPageUuidForBlock(blockUuid) ?: return@launch
         val before = takePageSnapshot(pageUuid)
 
@@ -924,7 +924,7 @@ class BlockStateManager(
         }
     }
 
-    fun addBlockToPage(pageUuid: PageUuid): Job = scope.launch {
+    override fun addBlockToPage(pageUuid: PageUuid): Job = scope.launch {
         val pageUuidStr = pageUuid.value
         // Use in-memory state — avoids a DB round-trip since the page is already observed.
         val blocks = blocksForPage(pageUuidStr)
@@ -1030,7 +1030,7 @@ class BlockStateManager(
         queueDiskSave(pageUuidStr)
     }
 
-    fun mergeBlock(blockUuid: BlockUuid): Job = scope.launch {
+    override fun mergeBlock(blockUuid: BlockUuid): Job = scope.launch {
         val currentBlock = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
         val pageUuidStr = currentBlock.pageUuid.value
         val before = takePageSnapshot(pageUuidStr)
@@ -1064,7 +1064,7 @@ class BlockStateManager(
         }
     }
 
-    fun handleBackspace(blockUuid: BlockUuid): Job = scope.launch {
+    override fun handleBackspace(blockUuid: BlockUuid): Job = scope.launch {
         val currentBlock = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
         val pageUuidStr = currentBlock.pageUuid.value
         val before = takePageSnapshot(pageUuidStr)
@@ -1137,7 +1137,7 @@ class BlockStateManager(
 
     // ---- Focus navigation ----
 
-    fun focusPreviousBlock(blockUuid: BlockUuid): Job = scope.launch {
+    override fun focusPreviousBlock(blockUuid: BlockUuid): Job = scope.launch {
         val currentBlock = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
         val visibleBlocks = getVisibleBlocksForPage(currentBlock.pageUuid.value)
         val currentIndex = visibleBlocks.indexOfFirst { it.uuid == blockUuid }
@@ -1147,7 +1147,7 @@ class BlockStateManager(
         }
     }
 
-    fun focusNextBlock(blockUuid: BlockUuid): Job = scope.launch {
+    override fun focusNextBlock(blockUuid: BlockUuid): Job = scope.launch {
         val currentBlock = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
         val visibleBlocks = getVisibleBlocksForPage(currentBlock.pageUuid.value)
         val currentIndex = visibleBlocks.indexOfFirst { it.uuid == blockUuid }
