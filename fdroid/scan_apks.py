@@ -12,15 +12,11 @@ from pathlib import Path
 
 def can_parse(apk_path: str) -> bool:
     try:
-        # androguard 4.x moved APK from core.bytecodes.apk to core.apk
-        from androguard.core.apk import APK  # type: ignore[import]
-        apk = APK(apk_path)
-        # fdroid exercises two distinct heavy-parsing code paths; test both:
-        # 1. get_android_resources() — ARSC resource table parser
-        apk.get_android_resources()
-        # 2. get_certificates_der_v3() — APK v2/v3 signing block parser
-        #    (NoOverwriteDict.append regression in certain old APKs)
-        apk.get_certificates_der_v3()
+        # Use fdroidserver's own get_first_signer_certificate — the exact function
+        # that fdroid update calls internally. After applying the androguard 4.x
+        # compatibility patch (see fdroid.yml), this should pass for all valid APKs.
+        import fdroidserver.common as common  # type: ignore[import]
+        common.get_first_signer_certificate(apk_path)
         return True
     except Exception as exc:
         print(f"  cannot parse: {exc}", file=sys.stderr)

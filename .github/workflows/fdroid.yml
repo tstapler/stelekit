@@ -36,10 +36,35 @@ jobs:
           # Ensure uv is available (pre-installed on ubuntu-latest; install via
           # pip3 as fallback if the runner image is older).
           command -v uv >/dev/null 2>&1 || pip3 install --user uv
-          # Sync the fdroid uv project from the lockfile so CI and local dev use
-          # identical dependency versions.
-          # Local equivalent: uv run --directory fdroid fdroid update --create-metadata
           uv sync --directory fdroid
+
+      - name: Patch fdroidserver for androguard 4.x compatibility
+        # fdroidserver sets apkobject._v2_blocks = NoOverwriteDict() as a workaround
+        # for androguard issue #1030. But androguard 4.x now calls _v2_blocks.append(),
+        # which NoOverwriteDict (a dict subclass) doesn't support. Add append() so it
+        # works as both a dict (fdroidserver's intent) and a list (androguard 4.x).
+        # Tracked: https://gitlab.com/fdroid/fdroidserver/-/issues/1128
+        run: |
+          uv run --directory fdroid python3 - <<'PYEOF'
+          import fdroidserver.common as m, os, sys
+          path = os.path.abspath(m.__file__)
+          src = open(path).read()
+          OLD = '        def __setitem__(self, k, v):\n            if k not in self:\n                super().__setitem__(k, v)'
+          # append() stores items at integer indices; __iter__ must yield values
+          # (block objects) not keys (integers) so androguard 4.x can access .id
+          NEW = OLD + (
+              '\n        def append(self, item):\n            super().__setitem__(len(self), item)'
+              '\n        def __iter__(self):\n            return iter(self.values())'
+          )
+          if NEW in src:
+              print("Patch already applied")
+          elif OLD in src:
+              open(path, 'w').write(src.replace(OLD, NEW))
+              print(f"Patched {path}")
+          else:
+              print("ERROR: patch target not found — fdroidserver may have changed", file=sys.stderr)
+              sys.exit(1)
+          PYEOF
 
       - name: Restore fdroid repo signing keystore
         env:
