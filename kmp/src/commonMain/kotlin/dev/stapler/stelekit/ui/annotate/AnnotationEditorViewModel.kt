@@ -779,15 +779,14 @@ class AnnotationEditorViewModel(
     // ── External measurement device (Story 5.7) ──────────────────────────────
 
     /** Currently active external measurement device (BLE laser, keyboard, USB). */
-    @Volatile
-    private var activeDevice: ExternalMeasurementDevice? = null
+    private val _activeDevice = Atomic<ExternalMeasurementDevice?>(null)
 
     /**
      * Connection state of the active device, or DISCONNECTED when no device is set.
      * Sourced directly from the device's [ExternalMeasurementDevice.connectionState].
      */
     val deviceConnectionState: StateFlow<DeviceConnectionState>
-        get() = activeDevice?.connectionState ?: _noDeviceConnectionState
+        get() = _activeDevice.value?.connectionState ?: _noDeviceConnectionState
 
     private val _noDeviceConnectionState =
         MutableStateFlow(DeviceConnectionState.DISCONNECTED)
@@ -803,7 +802,7 @@ class AnnotationEditorViewModel(
      * (disconnection is the caller's responsibility).
      */
     fun setActiveDevice(device: ExternalMeasurementDevice) {
-        activeDevice = device
+        _activeDevice.value = device
     }
 
     /**
@@ -822,7 +821,7 @@ class AnnotationEditorViewModel(
      * - The device emits no readings within the collection window (caller cancels the scope).
      */
     fun injectMeasurementFromDevice() {
-        val device = activeDevice ?: return
+        val device = _activeDevice.value ?: return
         val st = _state.value
 
         // Find the most recently committed DISTANCE annotation.
