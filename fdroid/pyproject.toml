@@ -5,9 +5,11 @@ description = "F-Droid repo tooling for SteleKit"
 requires-python = ">=3.11"
 dependencies = [
     "fdroidserver",
-    # androguard 3.3.5 is the last version without a regression in APK v3
-    # signature parsing ('NoOverwriteDict' object has no attribute 'append').
-    "androguard==3.3.5",
+    # androguard 4.x required: 3.3.5 fails with 'res1 must be zero!' on every
+    # modern AGP-built APK resource table. 4.1.4 is confirmed to parse v0.35.1+.
+    # The NoOverwriteDict regression seen earlier was specific to v0.1.0's old APK
+    # format; the scan_apks.py pre-scan removes those before fdroid update runs.
+    "androguard>=4.0.0",
 ]
 
 [tool.uv]
