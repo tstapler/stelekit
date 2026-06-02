@@ -13,7 +13,10 @@ from pathlib import Path
 def can_parse(apk_path: str) -> bool:
     try:
         from androguard.core.bytecodes.apk import APK  # type: ignore[import]
-        APK(apk_path)
+        apk = APK(apk_path)
+        # fdroid update calls get_android_resources() which does deep ARSC parsing.
+        # Test the same code path here so we catch ResParserError / KeyError early.
+        apk.get_android_resources()
         return True
     except Exception as exc:
         print(f"  cannot parse: {exc}", file=sys.stderr)
