@@ -139,6 +139,14 @@ Rules:
 
 SQLDelight 2.3.2 generates type-safe Kotlin from `.sq` files in `kmp/src/commonMain/sqldelight/`. Schema in `SteleDatabase.sq`.
 
+#### Adding a new table — mandatory migration rule
+
+**Every `CREATE TABLE IF NOT EXISTS <name>` added to `SteleDatabase.sq` must also appear in `MigrationRunner.all` (`db/MigrationRunner.kt`).**
+
+Why: `DriverFactory.createDriver()` calls `SteleDatabase.Schema.create(driver)` first, but on any existing database that call fails immediately (its first `CREATE TABLE pages` has no `IF NOT EXISTS`), the exception is swallowed, and all subsequent DDL is silently skipped. `MigrationRunner.applyAll()` is the only mechanism that creates new tables on existing user databases.
+
+`MigrationRunnerSchemaSyncTest` (businessTest) enforces this automatically — it reads `SteleDatabase.sq`, extracts all `IF NOT EXISTS` table names, and asserts each appears in `MigrationRunner.all`. It will fail at CI time if you forget.
+
 #### Write enforcement — `@DirectSqlWrite`
 
 **Never call mutating methods (`insert*`, `update*`, `delete*`, `upsert*`, `transaction`) directly on `SteleDatabaseQueries`.** All writes are gated behind `@DirectSqlWrite` on `RestrictedDatabaseQueries` (`db/RestrictedDatabaseQueries.kt`).

@@ -1,0 +1,28 @@
+self-hosted-runner:
+  # Labels of self-hosted runner in array of strings.
+  labels: []
+
+# Configuration variables in array of strings defined in your repository or
+# organization. `null` means disabling configuration variables check.
+# Empty array means no configuration variable is allowed.
+config-variables: null
+
+# Configuration for file paths. The keys are glob patterns to match to file
+# paths relative to the repository root. The values are the configurations for
+# the file paths. Note that the path separator is always '/'.
+# The following configurations are available.
+#
+# "ignore" is an array of regular expression patterns. Matched error messages
+# are ignored. This is similar to the "-ignore" command line option.
+# Suppress pre-existing shellcheck findings in benchmark/release workflows.
+# These are info/warning-level style issues tracked separately from functional CI.
+# Remove entries here as they get fixed.
+paths:
+  .github/workflows/benchmark.yml:
+    ignore:
+      - 'SC2086'  # unquoted variables — low risk in CI-controlled context
+  .github/workflows/release.yml:
+    ignore:
+      - 'SC2086'  # unquoted variables
+      - 'SC2016'  # single-quoted strings in heredoc are intentional (GitHub markdown)
+      - 'SC2038'  # find|xargs — filenames are build-system-controlled

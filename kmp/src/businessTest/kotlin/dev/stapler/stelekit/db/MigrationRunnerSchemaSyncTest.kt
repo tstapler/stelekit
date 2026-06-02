@@ -1,47 +1,43 @@
 package dev.stapler.stelekit.db
 
 import kotlinx.coroutines.runBlocking
-import org.junit.After
-import org.junit.Before
-import org.junit.Test
 import java.io.File
 import java.util.Properties
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import kotlin.test.Test
 import kotlin.test.assertTrue
 
 /**
- * Two-layer enforcement that prevents the "no such table X" class of startup crashes.
+ * Two-layer enforcement preventing the "no such table X" class of startup crashes.
  *
  * ## Why this class of bug exists
  *
  * [DriverFactory] calls [SteleDatabase.Schema.create] then [MigrationRunner.applyAll] on
  * every startup. `Schema.create` generates `CREATE TABLE pages` **without** `IF NOT EXISTS`
- * as its first statement. On any existing database that already has a `pages` table, SQLite
- * throws immediately, the exception is swallowed by `DriverFactory`, and **every subsequent
- * DDL statement in Schema.create — including tables added in later schema revisions — is
- * silently skipped**. `MigrationRunner.applyAll` is therefore the only mechanism that can
- * create new tables on existing databases. Both systems must be kept in sync.
+ * as its first statement. On any existing database, SQLite throws and the exception is
+ * swallowed — **every subsequent DDL in Schema.create is silently skipped**, including tables
+ * added in later schema revisions. `MigrationRunner.applyAll` is therefore the only mechanism
+ * that creates new tables on existing databases, and both systems must be kept in sync.
  *
  * ## Test 1 — static schema sync (auto-derived, zero maintenance)
  *
- * Reads `SteleDatabase.sq` at test time (path injected via the `stelekit.sq.file` Gradle
- * system property) and extracts every `CREATE TABLE IF NOT EXISTS <name>`. Asserts that
- * each name appears in at least one SQL statement inside [MigrationRunner.all].
+ * Reads `SteleDatabase.sq` (path injected via the `stelekit.sq.file` Gradle system property
+ * set in the `jvmTest` task) and extracts every `CREATE TABLE IF NOT EXISTS <name>`. Asserts
+ * each name appears in a SQL statement inside [MigrationRunner.all].
  *
- * **Would have caught the original bug**: `image_annotations` was in the `.sq` file with
- * `IF NOT EXISTS` but absent from [MigrationRunner.all] → this test would have FAILED.
+ * **Would have caught the original bug**: `image_annotations` was in `.sq` with `IF NOT EXISTS`
+ * but absent from `MigrationRunner.all` — this test would have FAILED.
  *
- * **No manual maintenance**: adding a new `CREATE TABLE IF NOT EXISTS` to the `.sq` file
+ * **Self-maintaining**: adding any new `CREATE TABLE IF NOT EXISTS` to the `.sq` file
  * automatically causes this test to fail until a corresponding migration is added.
  *
- * ## Test 2 — integration (verifies SQL correctness of each migration)
+ * ## Test 2 — integration (verifies SQL correctness)
  *
- * Creates a minimal SQLite database that mirrors the original base schema (pages, blocks,
- * blocks_fts — no later-added tables), then runs [MigrationRunner.applyAll] and asserts
- * that every table declared in any migration's SQL actually exists in the database.
- *
- * **Catches a different failure mode** from Test 1: a migration whose SQL is syntactically
- * wrong or creates the table under a different name would slip through the static check but
- * fail here.
+ * Creates a minimal SQLite database mirroring the original base schema (pages, blocks,
+ * blocks_fts — no later-added tables), runs [MigrationRunner.applyAll], then asserts every
+ * table declared in any migration's SQL actually exists. Catches wrong table names or broken
+ * SQL that would slip past the static check.
  */
 class MigrationRunnerSchemaSyncTest {
 
@@ -50,19 +46,21 @@ class MigrationRunnerSchemaSyncTest {
     private lateinit var tempFile: File
     private lateinit var driver: PooledJdbcSqliteDriver
 
-    private val props = Properties().apply {
-        setProperty("journal_mode", "WAL")
-        setProperty("busy_timeout", "5000")
-        setProperty("foreign_keys", "false")
-    }
-
-    @Before
+    @BeforeTest
     fun setUp() {
         tempFile = File.createTempFile("migration-schema-sync-", ".db")
-        driver = PooledJdbcSqliteDriver("jdbc:sqlite:${tempFile.absolutePath}", props, poolSize = 1)
+        driver = PooledJdbcSqliteDriver(
+            "jdbc:sqlite:${tempFile.absolutePath}",
+            Properties().apply {
+                setProperty("journal_mode", "WAL")
+                setProperty("busy_timeout", "5000")
+                setProperty("foreign_keys", "false")
+            },
+            poolSize = 1
+        )
     }
 
-    @After
+    @AfterTest
     fun tearDown() {
         runCatching { driver.close() }
         tempFile.delete()
@@ -95,21 +93,20 @@ class MigrationRunnerSchemaSyncTest {
         assertTrue(uncovered.isEmpty(),
             "Tables in SteleDatabase.sq with 'CREATE TABLE IF NOT EXISTS' but missing from " +
                 "MigrationRunner.all:\n  ${uncovered.sorted().joinToString(", ")}\n\n" +
-                "Schema.create() silently exits after failing on 'CREATE TABLE pages' (no IF " +
-                "NOT EXISTS) on existing databases, so every table added after the original " +
-                "base schema must be created by a migration in MigrationRunner.all.\n" +
+                "Schema.create() silently exits on existing databases (fails on 'CREATE TABLE pages' " +
+                "which has no IF NOT EXISTS), so every table added after the original base schema " +
+                "must be created by a migration.\n" +
                 "Fix: add a Migration(...) entry to MigrationRunner.all in " +
                 "kmp/src/commonMain/kotlin/dev/stapler/stelekit/db/MigrationRunner.kt"
         )
     }
 
-    // ── Test 2: integration — SQL correctness of each migration ───────────────────
+    // ── Test 2: integration — SQL correctness ─────────────────────────────────────
 
     @Test
-    fun `MigrationRunner applyAll actually creates all migration-declared tables on a base schema database`() =
+    fun `MigrationRunner applyAll creates all migration-declared tables on a base-schema database`() =
         runBlocking {
             createMinimalBaseSchema(driver)
-
             MigrationRunner.applyAll(driver)
 
             val existingTables = queryTableNames(driver)
@@ -125,20 +122,20 @@ class MigrationRunnerSchemaSyncTest {
 
             val missing = expectedFromMigrations - existingTables
             assertTrue(missing.isEmpty(),
-                "Tables declared in MigrationRunner.all SQL but NOT present in the database " +
-                    "after applyAll:\n  ${missing.sorted().joinToString(", ")}\n\n" +
-                    "The migration's CREATE TABLE statement may be using the wrong table name, " +
-                    "have a syntax error, or be wrapped in a condition that prevented it from running."
+                "Tables declared in MigrationRunner.all SQL but NOT in the database after applyAll:\n" +
+                    "  ${missing.sorted().joinToString(", ")}\n\n" +
+                    "The migration's CREATE TABLE statement may use the wrong table name, have a " +
+                    "syntax error, or be gated behind a condition that prevented it from running."
             )
         }
 
     // ── Helpers ───────────────────────────────────────────────────────────────────
 
     /**
-     * Creates just the base tables that existed before any custom migrations were added.
-     * This simulates the on-disk state of an existing user database that predates later
-     * schema additions. Notably absent: image_annotations, perf_histogram_buckets, git_config,
-     * debug_flags, and any other tables added via MigrationRunner after the initial release.
+     * Creates the base tables that existed before any custom migrations were added — the
+     * on-disk state of a user database created at the app's initial release. Notably absent:
+     * image_annotations, perf_histogram_buckets, git_config, debug_flags, and any other table
+     * added via MigrationRunner after the initial schema.
      */
     private fun createMinimalBaseSchema(driver: PooledJdbcSqliteDriver) {
         val conn = driver.getConnection()
@@ -148,8 +145,7 @@ class MigrationRunnerSchemaSyncTest {
                 CREATE TABLE pages (
                     uuid TEXT NOT NULL PRIMARY KEY,
                     name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                    namespace TEXT,
-                    file_path TEXT,
+                    namespace TEXT, file_path TEXT,
                     created_at INTEGER NOT NULL DEFAULT 0,
                     updated_at INTEGER NOT NULL DEFAULT 0,
                     properties TEXT,
@@ -165,8 +161,7 @@ class MigrationRunnerSchemaSyncTest {
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     uuid TEXT NOT NULL UNIQUE,
                     page_uuid TEXT NOT NULL,
-                    parent_uuid TEXT,
-                    left_uuid TEXT,
+                    parent_uuid TEXT, left_uuid TEXT,
                     content TEXT NOT NULL DEFAULT '',
                     level INTEGER NOT NULL DEFAULT 0,
                     position INTEGER NOT NULL DEFAULT 0,
@@ -192,8 +187,10 @@ class MigrationRunnerSchemaSyncTest {
         val conn = driver.getConnection()
         try {
             val rs = conn.prepareStatement(
-                "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') " +
-                    "AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '%_fts_%'"
+                "SELECT name FROM sqlite_master " +
+                    "WHERE type IN ('table','view') " +
+                    "AND name NOT LIKE 'sqlite_%' " +
+                    "AND name NOT LIKE '%_fts_%'"
             ).executeQuery()
             while (rs.next()) names += rs.getString(1).lowercase()
         } finally {
