@@ -9,7 +9,9 @@ import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.RepositoryFactoryImpl
@@ -106,7 +108,7 @@ class AndroidGraphBenchmark {
         )
 
         val page = Page(
-            uuid = "bench-page",
+            uuid = PageUuid("bench-page"),
             name = "Benchmark Page",
             createdAt = Clock.System.now(),
             updatedAt = Clock.System.now(),
@@ -309,8 +311,8 @@ class AndroidGraphBenchmark {
 
     // ── helpers ────────────────────────────────────────────────────────────────
 
-    private fun block(pageUuid: String, index: Int, position: Int = index) = Block(
-        uuid = "bench-block-$index",
+    private fun block(pageUuid: PageUuid, index: Int, position: Int = index) = Block(
+        uuid = BlockUuid("bench-block-$index"),
         pageUuid = pageUuid,
         content = "Bench $index",
         level = 0,
