@@ -84,6 +84,17 @@ class VoiceCaptureWidgetViewModel(app: Application) : AndroidViewModel(app) {
 
                 inner = vm
                 vm.onMicTapped()   // start recording immediately on widget launch
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Unexpected exception (e.g. buildVoicePipeline throws): surface an error state
+                // so the UI is not silently stuck in Idle, and reset the guard so a future call
+                // to initialize() can try again instead of spinning up a duplicate pipeline.
+                _state.value = dev.stapler.stelekit.voice.VoiceCaptureState.Error(
+                    dev.stapler.stelekit.voice.PipelineStage.RECORDING,
+                    e.message ?: "Initialization failed",
+                    dev.stapler.stelekit.voice.VoiceErrorKind.GENERIC,
+                )
             } finally {
                 initializing.set(false)
             }

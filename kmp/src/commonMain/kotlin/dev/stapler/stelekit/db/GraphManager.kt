@@ -65,8 +65,9 @@ class GraphManager(
     val activeRepositorySet: StateFlow<RepositorySet?> = _activeRepositorySet.asStateFlow()
     
     // Track current factory for lifecycle management.
-    // Written from a background coroutine (switchGraph's IO launch).
-    // MutableStateFlow used as the thread-safe state carrier; currentFactory is a convenience alias.
+    // Written from a background coroutine (switchGraph's IO launch) and read on the Compose
+    // main thread in createGitConfigRepository(); @Volatile is required for JVM visibility.
+    @Volatile
     private var currentFactory: dev.stapler.stelekit.repository.RepositoryFactory? = null
 
     // Deferred that resolves when the one-shot UUID migration for the active graph completes.
@@ -89,7 +90,15 @@ class GraphManager(
 
     init {
         loadRegistry()
-        _graphRegistry.value.activeGraphId?.let { switchGraph(it) }
+        val activeId = _graphRegistry.value.activeGraphId
+        if (activeId != null) {
+            val graphInfo = _graphRegistry.value.graphs.firstOrNull { it.id == activeId }
+            // Paranoid-mode (encrypted vault) graphs must NOT be auto-restored on startup.
+            // The user must unlock the vault through the main app UI before the DB is exposed.
+            if (graphInfo?.isParanoidMode != true) {
+                switchGraph(activeId)
+            }
+        }
     }
     
     private fun loadRegistry() {
