@@ -15,7 +15,7 @@ expect value class FilePath(val value: String) {
     override fun toString(): String
 }
 
-/** Type-safe wrapper for Logseq page names (human-readable title, not UUID). */
+/** Type-safe wrapper for Logseq page names (the human-readable title, not the UUID). */
 expect value class PageName(val value: String) {
     override fun toString(): String
 }
