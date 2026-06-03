@@ -85,7 +85,11 @@ function main() {
     process.exit(1);
   }
 
-  const thresholdPct = args.threshold ?? Number(process.env.BENCH_THRESHOLD ?? '30');
+  let thresholdPct = args.threshold ?? Number(process.env.BENCH_THRESHOLD ?? '30');
+  if (isNaN(thresholdPct) || thresholdPct < 0) {
+    console.warn(`[WARN] Invalid threshold value: ${thresholdPct}. Must be a non-negative number. Defaulting to 30%.`);
+    thresholdPct = 30;
+  }
 
   // Missing baseline is non-blocking (first run)
   if (!fs.existsSync(path.resolve(args.baseline))) {
@@ -110,20 +114,24 @@ function main() {
   for (const baseEntry of baselineList) {
     const curEntry = currentList.find(
       (c) => c.scenario === baseEntry.scenario && c.graphConfig === baseEntry.graphConfig,
-    ) || currentList[0];
-
+    );
     if (!curEntry) {
-      console.warn(`No current result found matching scenario=${baseEntry.scenario} graphConfig=${baseEntry.graphConfig}`);
+      console.warn(`[SKIP] No current result for scenario=${baseEntry.scenario} graphConfig=${baseEntry.graphConfig} — skipping comparison`);
       continue;
     }
 
-    const regressions = compareMetrics(baseEntry, curEntry, thresholdPct);
+    // Use per-preset threshold unless overridden explicitly via --threshold or BENCH_THRESHOLD.
+    const effectiveThreshold = args.threshold !== undefined || process.env.BENCH_THRESHOLD !== undefined
+      ? thresholdPct
+      : (curEntry.graphConfig === 'SMALL' ? 20 : 30);
+
+    const regressions = compareMetrics(baseEntry, curEntry, effectiveThreshold);
     if (regressions.length > 0) {
       console.error(`\nREGRESSION DETECTED: ${curEntry.scenario}/${curEntry.graphConfig} on platform=${curEntry.platform}`);
       printTable(regressions);
       totalRegressions += regressions.length;
     } else {
-      console.log(`OK: ${curEntry.scenario ?? 'unknown'}/${curEntry.graphConfig ?? 'unknown'} — all metrics within ${thresholdPct}% of baseline`);
+      console.log(`OK: ${curEntry.scenario ?? 'unknown'}/${curEntry.graphConfig ?? 'unknown'} — all metrics within ${effectiveThreshold}% of baseline`);
     }
   }
 
@@ -132,7 +140,7 @@ function main() {
     process.exit(1);
   }
 
-  console.log(`All metrics within ${thresholdPct}% threshold. No regressions.`);
+  console.log('All metrics within threshold. No regressions.');
   process.exit(0);
 }
 

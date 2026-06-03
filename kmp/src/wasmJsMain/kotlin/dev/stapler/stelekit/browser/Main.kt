@@ -16,6 +16,7 @@ import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.ui.StelekitApp
 import kotlinx.browser.localStorage
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 
@@ -24,7 +25,10 @@ private fun markSteleKitReady(): Unit = js("window.__stelekit_ready = true")
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
     val scope = MainScope()
-    scope.launch {
+    scope.launch(CoroutineExceptionHandler { _, throwable ->
+        println("[SteleKit] Fatal startup error: ${throwable.message}")
+        // ComposeViewport will not be mounted — the loading overlay remains visible
+    }) {
         val graphId = "default"
         val opfsGraphPath = "/stelekit/$graphId"
 

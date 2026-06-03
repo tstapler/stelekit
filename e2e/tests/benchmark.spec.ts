@@ -101,7 +101,7 @@ test('pageNavigationLatency: Getting Started page loads under 5s', async ({ page
     const canvas = page.locator('canvas').first();
     await canvas.click();
 
-    // Allow some time for navigation response
+    // Compose renders to a canvas — no DOM signal available for navigation. waitForTimeout is the ceiling check, not a precise measurement.
     await page.waitForTimeout(2000);
   });
 
@@ -132,7 +132,7 @@ test('blockEditRoundTrip: block edit reflects under 2s', async ({ page }) => {
     const canvas = page.locator('canvas').first();
     await canvas.click();
     await page.keyboard.type('hello');
-    // Give Compose time to re-render the typed text
+    // Canvas opacity: cannot observe Compose re-render from Playwright. This sleep covers the Compose frame + debounce cycle.
     await page.waitForTimeout(500);
   });
 

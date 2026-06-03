@@ -59,6 +59,8 @@ class DemoFileSystem : FileSystem {
         return demoFiles[relative]
     }
 
+    // Demo mode: writes are intentionally discarded. Block edits appear in-memory
+    // via BlockStateManager but do not persist across page reloads.
     override fun writeFile(path: String, content: String): Boolean = true
 
     override fun listFiles(path: String): List<String> {

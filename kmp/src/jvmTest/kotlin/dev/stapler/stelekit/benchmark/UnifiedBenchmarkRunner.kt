@@ -97,7 +97,7 @@ class UnifiedBenchmarkRunner {
             val stats = SyntheticGraphGenerator(cfg).generate(dir)
             println("[UnifiedBenchmarkRunner] GraphLoad/${preset.name}: ${stats.pageCount} pages, ${stats.journalCount} journals")
 
-            val start = kotlin.time.Clock.System.now()
+            val start = Clock.System.now()
             var phase1Ms = -1L
 
             val fileSystem = dev.stapler.stelekit.platform.PlatformFileSystem()
@@ -105,7 +105,7 @@ class UnifiedBenchmarkRunner {
             val blockRepo = dev.stapler.stelekit.repository.InMemoryBlockRepository()
             val loader = dev.stapler.stelekit.db.GraphLoader(fileSystem, pageRepo, blockRepo)
 
-            kotlinx.coroutines.runBlocking {
+            return kotlinx.coroutines.runBlocking {
                 val totalMs = kotlin.time.measureTime {
                     loader.loadGraphProgressive(
                         graphPath = dir.absolutePath,
@@ -122,7 +122,7 @@ class UnifiedBenchmarkRunner {
                     loader.indexRemainingPages {}
                 }.inWholeMilliseconds
 
-                return@runBlocking mapOf(
+                mapOf(
                     "phase1TtiMs" to phase1Ms.toDouble(),
                     "totalMs" to (totalMs + phase3Ms).toDouble(),
                     "phase3Ms" to phase3Ms.toDouble(),

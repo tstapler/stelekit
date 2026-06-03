@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.benchmark
 
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -18,9 +19,17 @@ class WasmBenchmarkTest {
 
     @Test
     fun benchmarkRegistry_containsExpectedScenarios() {
-        val names = BenchmarkRegistry.all.map { it.name }.toSet()
-        assertEquals(setOf("GraphLoad", "WriteConcurrency", "NavigationLatency", "UserSession"), names)
         assertEquals(5, BenchmarkRegistry.all.size)
+        assertEquals(
+            listOf(
+                "GraphLoad" to "TINY",
+                "GraphLoad" to "SMALL",
+                "WriteConcurrency" to "TINY",
+                "NavigationLatency" to "SMALL",
+                "UserSession" to "SMALL",
+            ),
+            BenchmarkRegistry.all.map { it.name to it.preset.name },
+        )
     }
 
     @Test
@@ -52,9 +61,10 @@ class WasmBenchmarkTest {
             metrics = mapOf("totalMs" to 1234.0, "phase1TtiMs" to 500.0),
         )
         val json = Json.encodeToString(result)
-        assertTrue(json.contains("\"platform\""), "JSON must contain 'platform' key")
-        assertTrue(json.contains("\"scenario\""), "JSON must contain 'scenario' key")
-        assertTrue(json.contains("wasmjs"), "JSON must contain platform value")
-        assertTrue(json.contains("GraphLoad"), "JSON must contain scenario value")
+        val decoded = Json.decodeFromString<BenchmarkResult>(json)
+        assertEquals("wasmjs", decoded.platform)
+        assertEquals("GraphLoad", decoded.scenario)
+        assertEquals(1234.0, decoded.metrics["totalMs"])
+        assertEquals(500.0, decoded.metrics["phase1TtiMs"])
     }
 }
