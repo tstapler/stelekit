@@ -67,12 +67,12 @@ class GraphManager(
     // Track current factory for lifecycle management.
     // Written from a background coroutine (switchGraph's IO launch) and read on the Compose
     // main thread in createGitConfigRepository(); @Volatile is required for JVM visibility.
-    @Volatile
+    @kotlin.concurrent.Volatile
     private var currentFactory: dev.stapler.stelekit.repository.RepositoryFactory? = null
 
     // Deferred that resolves when the one-shot UUID migration for the active graph completes.
     // Callers can await this before loading graph content to ensure UUIDs are stable.
-    @Volatile
+    @kotlin.concurrent.Volatile
     private var _pendingMigration: Deferred<Unit> = CompletableDeferred<Unit>().also { it.complete(Unit) }
 
     // Track active coroutines for cleanup during graph switches
