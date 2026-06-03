@@ -71,6 +71,7 @@ class GraphManager(
 
     // Deferred that resolves when the one-shot UUID migration for the active graph completes.
     // Callers can await this before loading graph content to ensure UUIDs are stable.
+    @Volatile
     private var _pendingMigration: Deferred<Unit> = CompletableDeferred<Unit>().also { it.complete(Unit) }
 
     // Track active coroutines for cleanup during graph switches
@@ -88,6 +89,7 @@ class GraphManager(
 
     init {
         loadRegistry()
+        _graphRegistry.value.activeGraphId?.let { switchGraph(it) }
     }
     
     private fun loadRegistry() {

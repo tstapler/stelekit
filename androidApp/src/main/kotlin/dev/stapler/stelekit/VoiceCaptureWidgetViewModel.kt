@@ -24,49 +24,70 @@ class VoiceCaptureWidgetViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<VoiceCaptureState> = _state.asStateFlow()
 
     private var inner: VoiceCaptureViewModel? = null
+    private val initializing = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /**
      * Initializes the voice pipeline and starts recording immediately.
      * Must be called once from the Activity after the permission launcher is registered.
      * Safe to call on re-creation: if already initialized, recording is not restarted.
+     * Awaits pending graph migration before reading the repository set.
      */
     fun initialize(requestMicPermission: suspend () -> Boolean) {
         if (inner != null) return
-
-        val steleApp = getApplication<SteleKitApplication>()
-        val repoSet = steleApp.graphManager?.getActiveRepositorySet()
-        if (repoSet == null) {
-            _state.value = VoiceCaptureState.Error(
-                dev.stapler.stelekit.voice.PipelineStage.RECORDING,
-                "No graph configured — open SteleKit first",
-                dev.stapler.stelekit.voice.VoiceErrorKind.NO_GRAPH,
-            )
-            return
-        }
-
-        val ctx = steleApp.applicationContext
-        val recorder = AndroidAudioRecorder(ctx, requestMicPermission)
-        val settings = VoiceSettings(PlatformSettings())
-        val deviceStt = if (AndroidSpeechRecognizerProvider.isAvailable(ctx))
-            AndroidSpeechRecognizerProvider(ctx, requestMicPermission) else null
-        val pipeline = buildVoicePipeline(
-            audioRecorder = recorder,
-            settings = settings,
-            directSpeechProvider = if (settings.getUseDeviceStt()) deviceStt else null,
-        )
-
-        val vm = VoiceCaptureViewModel(
-            pipeline = pipeline,
-            journalService = repoSet.journalService,
-            scope = viewModelScope,
-        )
+        if (!initializing.compareAndSet(false, true)) return
 
         viewModelScope.launch {
-            vm.state.collect { _state.value = it }
-        }
+            try {
+                val steleApp = getApplication<SteleKitApplication>()
+                val gm = steleApp.graphManager
+                if (gm?.getActiveGraphId() == null) {
+                    _state.value = VoiceCaptureState.Error(
+                        dev.stapler.stelekit.voice.PipelineStage.RECORDING,
+                        "No graph configured — open SteleKit first",
+                        dev.stapler.stelekit.voice.VoiceErrorKind.NO_GRAPH,
+                    )
+                    return@launch
+                }
 
-        inner = vm
-        vm.onMicTapped()   // start recording immediately on widget launch
+                gm.awaitPendingMigration()
+
+                val repoSet = gm.getActiveRepositorySet()
+                if (repoSet == null) {
+                    _state.value = VoiceCaptureState.Error(
+                        dev.stapler.stelekit.voice.PipelineStage.RECORDING,
+                        "Could not load graph — open SteleKit first",
+                        dev.stapler.stelekit.voice.VoiceErrorKind.NO_GRAPH,
+                    )
+                    return@launch
+                }
+
+                val ctx = steleApp.applicationContext
+                val recorder = AndroidAudioRecorder(ctx, requestMicPermission)
+                val settings = VoiceSettings(PlatformSettings())
+                val deviceStt = if (AndroidSpeechRecognizerProvider.isAvailable(ctx))
+                    AndroidSpeechRecognizerProvider(ctx, requestMicPermission) else null
+                val pipeline = buildVoicePipeline(
+                    audioRecorder = recorder,
+                    settings = settings,
+                    directSpeechProvider = if (settings.getUseDeviceStt()) deviceStt else null,
+                )
+
+                val vm = VoiceCaptureViewModel(
+                    pipeline = pipeline,
+                    journalService = repoSet.journalService,
+                    scope = viewModelScope,
+                )
+
+                viewModelScope.launch {
+                    vm.state.collect { _state.value = it }
+                }
+
+                inner = vm
+                vm.onMicTapped()   // start recording immediately on widget launch
+            } finally {
+                initializing.set(false)
+            }
+        }
     }
 
     fun onMicTapped() { inner?.onMicTapped() }

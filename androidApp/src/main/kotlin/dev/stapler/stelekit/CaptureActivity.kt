@@ -58,6 +58,7 @@ import dev.stapler.stelekit.tile.CaptureTileService
 import dev.stapler.stelekit.ui.NoGraphPlaceholderContent
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Lightweight translucent overlay for quick note capture.
@@ -86,7 +87,10 @@ class CaptureActivity : ComponentActivity() {
 
         setContent {
             StelekitTheme(themeMode = StelekitThemeMode.SYSTEM) {
-                if (app.graphManager?.getActiveRepositorySet() == null) {
+                val repoSet by (app.graphManager?.activeRepositorySet
+                    ?: remember { MutableStateFlow(null) })
+                    .collectAsState()
+                if (repoSet == null) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         NoGraphPlaceholderContent()
                     }

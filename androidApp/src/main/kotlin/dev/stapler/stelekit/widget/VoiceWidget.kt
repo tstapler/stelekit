@@ -39,6 +39,7 @@ class VoiceWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Responsive(setOf(SMALL_SIZE, MEDIUM_SIZE))
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
+        (context.applicationContext as? SteleKitApplication)?.graphManager?.awaitPendingMigration()
         provideContent {
             val ctx = LocalContext.current
             val hasGraph = (ctx.applicationContext as? SteleKitApplication)
