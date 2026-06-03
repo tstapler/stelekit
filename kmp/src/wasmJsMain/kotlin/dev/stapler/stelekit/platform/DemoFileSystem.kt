@@ -18,6 +18,8 @@ class DemoFileSystem : FileSystem {
     private val journalFileName =
         "${today.year}_${today.monthNumber.toString().padStart(2, '0')}_${today.dayOfMonth.toString().padStart(2, '0')}.md"
 
+    private val overrides = mutableMapOf<String, String>()
+
     private val demoFiles = mapOf(
         "journals/$journalFileName" to """
             - Welcome to SteleKit!
@@ -27,7 +29,7 @@ class DemoFileSystem : FileSystem {
             - Your notes stay in plain Markdown files. No proprietary format.
             - Navigate to [[Getting Started]] to see how the outliner works.
         """.trimIndent(),
-        "pages/getting-started.md" to """
+        "pages/Getting Started.md" to """
             - SteleKit is a local-first outliner
               - Everything is a block
               - Blocks nest to any depth
@@ -42,7 +44,7 @@ class DemoFileSystem : FileSystem {
               - Type `[[page name]]` to link to any page
               - Backlinks are tracked automatically — see [[Backlinks Demo]]
         """.trimIndent(),
-        "pages/backlinks-demo.md" to """
+        "pages/Backlinks Demo.md" to """
             - This page demonstrates bidirectional linking
             - [[Getting Started]] links here, so it appears in the backlinks panel
               - Open [[Getting Started]] and look for the Backlinks section on the right
@@ -55,28 +57,42 @@ class DemoFileSystem : FileSystem {
     override fun expandTilde(path: String): String = path
 
     override fun readFile(path: String): String? {
-        val relative = path.removePrefix("/demo/")
-        return demoFiles[relative]
+        return overrides[path] ?: demoFiles[path.removePrefix("/demo/")]
     }
 
-    override fun writeFile(path: String, content: String): Boolean = true
+    // Demo mode: writes are persisted in-memory for the session duration.
+    // Content does not survive a page reload, but reads within the same session
+    // reflect edits made via writeFile.
+    override fun writeFile(path: String, content: String): Boolean {
+        overrides[path] = content
+        return true
+    }
 
     override fun listFiles(path: String): List<String> {
+        // Return file NAMES only (not full paths) — callers reconstruct "$path/$name" themselves.
         val prefix = path.removePrefix("/demo/").let { if (it.isEmpty()) "" else "$it/" }
-        return demoFiles.keys
-            .filter { if (prefix.isEmpty()) true else it.startsWith(prefix) }
-            .map { "/demo/$it" }
+        return (demoFiles.keys + overrides.keys.map { it.removePrefix("/demo/") })
+            .filter {
+                if (prefix.isEmpty()) {
+                    // root: return only direct children (no nested paths)
+                    !it.contains('/')
+                } else {
+                    it.startsWith(prefix)
+                }
+            }
+            .map { it.removePrefix(prefix) }
+            .distinct()
     }
 
     override fun listDirectories(path: String): List<String> {
+        // Return directory NAMES only — callers construct full paths themselves.
         return if (path == "/demo" || path == "/demo/") {
-            listOf("/demo/journals", "/demo/pages")
+            listOf("journals", "pages")
         } else emptyList()
     }
 
     override fun fileExists(path: String): Boolean {
-        val relative = path.removePrefix("/demo/")
-        return demoFiles.containsKey(relative)
+        return overrides.containsKey(path) || demoFiles.containsKey(path.removePrefix("/demo/"))
     }
 
     override fun directoryExists(path: String): Boolean = path.startsWith("/demo")

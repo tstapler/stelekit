@@ -16,8 +16,9 @@
         }
         #loading.hidden { display: none; }
     </style>
-    <!-- Required: patches COOP/COEP headers for SharedArrayBuffer on GitHub Pages -->
-    <script src="coi-serviceworker.min.js"></script>
+    <!-- Patches COOP/COEP headers for SharedArrayBuffer on hosts that don't set them (e.g. GitHub Pages).
+         Skip when the server already provides cross-origin isolation to avoid service-worker cache churn. -->
+    <script>if (!crossOriginIsolated) document.write('<scr' + 'ipt src="coi-serviceworker.min.js"><\/scr' + 'ipt>');</script>
 </head>
 <body>
     <div id="loading">
