@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.36.1](https://github.com/tstapler/stelekit/compare/v0.36.0...v0.36.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **ci:** correct fdroid artifact path — upload-artifact strips common prefix ([2f46110](https://github.com/tstapler/stelekit/commit/2f461105079499018b0730e9b8496d0e479c44b4))
+* **ci:** correct scan_apks.py path — uv --directory changes cwd ([3ffc909](https://github.com/tstapler/stelekit/commit/3ffc9099bed81d1695ea3debff2a62b9a18f945a))
+* **ci:** ensure uv is available before syncing fdroid project ([50a84d5](https://github.com/tstapler/stelekit/commit/50a84d503b125dd801015fbbfc900ce434923755))
+* **ci:** exclude v0.1.0 APK from fdroid repo — androguard can't parse it ([7df3c91](https://github.com/tstapler/stelekit/commit/7df3c9131ec6df90b96cee1f4c29d9babc8f6ea3))
+* **ci:** make zizmor non-blocking until unpinned actions are SHA-pinned ([67fdaed](https://github.com/tstapler/stelekit/commit/67fdaed4bfa9f068ff9dad7504970ffbf8338c9e))
+* **ci:** pin androguard==3.3.5 to fix APK v3 signature parsing crash ([a7a17b5](https://github.com/tstapler/stelekit/commit/a7a17b58f58acc869a3063d56a7e7f94e1370c88))
+* **ci:** pre-scan APKs with androguard before fdroid update ([c5ccab1](https://github.com/tstapler/stelekit/commit/c5ccab112f2b661b6fb444c704935a95130b9121))
+* **ci:** resolve shellcheck SC2015 in fdroid.yml and pages.yml ([094cf0b](https://github.com/tstapler/stelekit/commit/094cf0b7388d284e369c6da276e2de279b9f141b))
+* **ci:** unblock jvmTestFast and Android benchmark compile errors ([cdc6165](https://github.com/tstapler/stelekit/commit/cdc616513c6c76366b893b58560a51a8a7137871))
+* **ci:** uv project for fdroid — reproducible deps + own concurrency group ([c2d6c2b](https://github.com/tstapler/stelekit/commit/c2d6c2b4c4855f9974464ebbc0a4e69ca12412e1))
+* **fdroid:** also test v3 signature parsing in pre-scan ([96690ee](https://github.com/tstapler/stelekit/commit/96690ee7e7d3b5c4ce05de6d8f0a6c114eb098bb))
+* **fdroid:** patch NoOverwriteDict to support append+__iter__ for androguard 4.x ([913128f](https://github.com/tstapler/stelekit/commit/913128fed06f88d395567636347106015656cd77))
+* **fdroid:** scan deeper — test get_android_resources not just APK init ([7bd47d2](https://github.com/tstapler/stelekit/commit/7bd47d2db7ad93009defcde649e5e718e9f046b4))
+* **fdroid:** switch to androguard 4.x — 3.3.5 fails on all modern APK resource tables ([ed431ee](https://github.com/tstapler/stelekit/commit/ed431ee3ef5bec7ff48e41462f5ec7ae5f106e83))
+* **model:** use expect/actual for value classes to fix JVM + Wasm compilation ([c61b64c](https://github.com/tstapler/stelekit/commit/c61b64cb8ebae499fd6a6dbd745a4040b4c20dd2))
+* **wasm:** remove @JvmInline from commonMain value classes ([4bafe78](https://github.com/tstapler/stelekit/commit/4bafe781518f23cd3133993631b18cec366e0875))
+* **web:** fix SQLite WASM bind bug + wire demo graph fallback ([#125](https://github.com/tstapler/stelekit/issues/125)) ([6cefca5](https://github.com/tstapler/stelekit/commit/6cefca52a54220e3cc92d4f08c2f6ee40c604a78))
+
+
+### Performance Improvements
+
+* **db:** eliminate FTS5 trigger storm on warm-path block saves ([3965f94](https://github.com/tstapler/stelekit/commit/3965f946f7c5c7b2d19e08166968c88bb7b11cba))
+
 ## [0.36.0](https://github.com/tstapler/stelekit/compare/v0.35.1...v0.36.0) (2026-06-02)
 
 
