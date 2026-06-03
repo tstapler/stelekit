@@ -18,6 +18,8 @@ class DemoFileSystem : FileSystem {
     private val journalFileName =
         "${today.year}_${today.monthNumber.toString().padStart(2, '0')}_${today.dayOfMonth.toString().padStart(2, '0')}.md"
 
+    private val overrides = mutableMapOf<String, String>()
+
     private val demoFiles = mapOf(
         "journals/$journalFileName" to """
             - Welcome to SteleKit!
@@ -55,20 +57,31 @@ class DemoFileSystem : FileSystem {
     override fun expandTilde(path: String): String = path
 
     override fun readFile(path: String): String? {
-        val relative = path.removePrefix("/demo/")
-        return demoFiles[relative]
+        return overrides[path] ?: demoFiles[path.removePrefix("/demo/")]
     }
 
-    // Demo mode: writes are intentionally discarded. Block edits appear in-memory
-    // via BlockStateManager but do not persist across page reloads.
-    override fun writeFile(path: String, content: String): Boolean = true
+    // Demo mode: writes are persisted in-memory for the session duration.
+    // Content does not survive a page reload, but reads within the same session
+    // reflect edits made via writeFile.
+    override fun writeFile(path: String, content: String): Boolean {
+        overrides[path] = content
+        return true
+    }
 
     override fun listFiles(path: String): List<String> {
         // Return file NAMES only (not full paths) — callers reconstruct "$path/$name" themselves.
         val prefix = path.removePrefix("/demo/").let { if (it.isEmpty()) "" else "$it/" }
-        return demoFiles.keys
-            .filter { if (prefix.isEmpty()) true else it.startsWith(prefix) }
+        return (demoFiles.keys + overrides.keys.map { it.removePrefix("/demo/") })
+            .filter {
+                if (prefix.isEmpty()) {
+                    // root: return only direct children (no nested paths)
+                    !it.contains('/')
+                } else {
+                    it.startsWith(prefix)
+                }
+            }
             .map { it.removePrefix(prefix) }
+            .distinct()
     }
 
     override fun listDirectories(path: String): List<String> {
@@ -79,8 +92,7 @@ class DemoFileSystem : FileSystem {
     }
 
     override fun fileExists(path: String): Boolean {
-        val relative = path.removePrefix("/demo/")
-        return demoFiles.containsKey(relative)
+        return overrides.containsKey(path) || demoFiles.containsKey(path.removePrefix("/demo/"))
     }
 
     override fun directoryExists(path: String): Boolean = path.startsWith("/demo")

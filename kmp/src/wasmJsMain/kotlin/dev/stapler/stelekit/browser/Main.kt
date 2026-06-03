@@ -68,6 +68,8 @@ fun main() {
         } else {
             fileSystem = opfsFileSystem
             graphPath = opfsGraphPath
+            // Ensure OPFS path overwrites any stale demo fallback stored from a previous session
+            PlatformSettings().putString("lastGraphPath", graphPath)
         }
 
         val graphManager = GraphManager(
