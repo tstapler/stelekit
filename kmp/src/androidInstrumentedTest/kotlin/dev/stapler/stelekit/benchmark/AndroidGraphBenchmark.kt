@@ -9,7 +9,9 @@ import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.RepositoryFactoryImpl
@@ -106,7 +108,7 @@ class AndroidGraphBenchmark {
         )
 
         val page = Page(
-            uuid = "bench-page",
+            uuid = PageUuid("bench-page"),
             name = "Benchmark Page",
             createdAt = Clock.System.now(),
             updatedAt = Clock.System.now(),
@@ -126,7 +128,7 @@ class AndroidGraphBenchmark {
         val baselineLatencies = mutableListOf<Long>()
         repeat(10) { i ->
             val lat = measureTime {
-                actor.saveBlocks(listOf(block(page.uuid, writeIndex++)))
+                actor.saveBlocks(listOf(block(page.uuid.value, writeIndex++)))
             }.inWholeMilliseconds
             baselineLatencies.add(lat)
             if (i < 9) kotlinx.coroutines.delay(200)
@@ -143,7 +145,7 @@ class AndroidGraphBenchmark {
         val writeJob = CoroutineScope(Dispatchers.Default).launch {
             while (indexDone.get() == 0) {
                 val lat = measureTime {
-                    actor.saveBlocks(listOf(block(page.uuid, writeIndex++)))
+                    actor.saveBlocks(listOf(block(page.uuid.value, writeIndex++)))
                 }.inWholeMilliseconds
                 phase3Latencies.add(lat)
                 kotlinx.coroutines.delay(200)
@@ -219,7 +221,7 @@ class AndroidGraphBenchmark {
         repeat(20) { i ->
             val position = (lastTopLevel?.position ?: -1) + 1 + i
             val lat = measureTime {
-                actor.saveBlock(block(pageUuid, blockIndex++, position))
+                actor.saveBlock(block(pageUuid.value, blockIndex++, position))
             }.inWholeMilliseconds
             addLatencies.add(lat)
             if (i < 19) kotlinx.coroutines.delay(50)
@@ -227,7 +229,7 @@ class AndroidGraphBenchmark {
 
         // --- splitBlock latency: fetch a block and call splitBlock ---
         val blocksAfterAdd = repoSet.blockRepository.getBlocksForPage(pageUuid).first().getOrNull() ?: emptyList()
-        val blockToSplit = blocksAfterAdd.maxByOrNull { it.position } ?: block(pageUuid, blockIndex++, 0)
+        val blockToSplit = blocksAfterAdd.maxByOrNull { it.position } ?: block(pageUuid.value, blockIndex++, 0)
         repeat(10) { i ->
             val target = repoSet.blockRepository.getBlockByUuid(blockToSplit.uuid).first().getOrNull()
                 ?: return@repeat
@@ -310,8 +312,8 @@ class AndroidGraphBenchmark {
     // ── helpers ────────────────────────────────────────────────────────────────
 
     private fun block(pageUuid: String, index: Int, position: Int = index) = Block(
-        uuid = "bench-block-$index",
-        pageUuid = pageUuid,
+        uuid = BlockUuid("bench-block-$index"),
+        pageUuid = PageUuid(pageUuid),
         content = "Bench $index",
         level = 0,
         position = position,
