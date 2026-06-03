@@ -27,6 +27,13 @@ interface BlockWriteRepository {
     suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit>
 
     /**
+     * Save multiple existing blocks using targeted UPDATE statements (not INSERT OR REPLACE).
+     * Use for the warm-path diff.toUpdate list — avoids DELETE+INSERT FTS5 trigger storms.
+     */
+    @DirectRepositoryWrite
+    suspend fun saveBlocksUpdate(blocks: List<Block>): Either<DomainError, Unit>
+
+    /**
      * Update only the content of a block. Does NOT touch structural fields
      * (parentUuid, position, level, leftUuid), eliminating the race condition
      * where a full saveBlock() with stale structural fields clobbers concurrent

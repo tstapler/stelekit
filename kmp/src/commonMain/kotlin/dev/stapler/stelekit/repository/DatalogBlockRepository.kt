@@ -196,6 +196,9 @@ class DatalogBlockRepository : BlockRepository {
         }
     }
 
+    override suspend fun saveBlocksUpdate(blocks: List<Block>): Either<DomainError, Unit> =
+        saveBlocks(blocks)
+
     override suspend fun saveBlock(block: Block): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {

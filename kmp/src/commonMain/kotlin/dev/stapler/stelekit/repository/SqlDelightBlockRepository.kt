@@ -288,6 +288,35 @@ class SqlDelightBlockRepository(
         }
     }
 
+    override suspend fun saveBlocksUpdate(blocks: List<Block>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+        try {
+            blocks.chunked(WRITE_CHUNK_SIZE).forEach { chunk ->
+                queries.transaction {
+                    chunk.forEach { block ->
+                        queries.updateBlockFull(
+                            block.pageUuid.value,
+                            block.parentUuid,
+                            block.leftUuid,
+                            block.content,
+                            block.level.toLong(),
+                            block.position.toLong(),
+                            block.updatedAt.toEpochMilliseconds(),
+                            block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
+                            block.contentHash ?: ContentHasher.sha256ForContent(block.content),
+                            block.blockType,
+                            block.uuid.value,
+                        )
+                    }
+                }
+            }
+            Unit.right()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+        }
+    }
+
     override suspend fun saveBlock(block: Block): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             queries.insertBlock(

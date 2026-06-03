@@ -1328,16 +1328,23 @@ class GraphLoader(
      * Handles the FULL-mode block write path: applies the diff-merge strategy and
      * dispatches deletes + inserts/updates to the write actor.  Includes safety guards
      * for empty-parse and blank-file scenarios.
+     *
+     * savePage + saveBlocks + saveBlocksUpdate are executed inside a single composite
+     * actor.execute { } lambda to eliminate two CompletableDeferred.await() suspension
+     * points (Fix B from android-trace-db-fixes).
      */
+    @OptIn(DirectRepositoryWrite::class)
     private suspend fun dispatchFullBlockWrites(
         filePath: String,
         content: String,
         existingBlocks: List<Block>,
         blocksToSave: List<Block>,
+        page: Page,
         priority: DatabaseWriteActor.Priority,
         traceId: String,
         parentSpanId: String,
     ) {
+        val pageUuid = page.uuid
         val fileHasContent = content.trim().isNotEmpty()
         val existingBlockCount = existingBlocks.size
         when {
@@ -1372,19 +1379,43 @@ class GraphLoader(
                     "to.insert" to diff.toInsert.size.toString(),
                     "to.delete" to diff.toDelete.size.toString()
                 )
+                // Deletions run before the composite write to avoid UNIQUE constraint violations
+                // (a block being re-inserted at a new position must be deleted first).
                 diff.toDelete.forEach { uuid ->
                     writeActor.deleteBlock(uuid).onLeft { e ->
                         logger.warn("deleteBlock failed for $uuid in $filePath: ${e.message}")
                     }
                 }
-                val blocksToWrite = diff.toInsert + diff.toUpdate
-                if (blocksToWrite.isNotEmpty()) {
+                val blocksToInsert = diff.toInsert
+                val blocksToUpdate = diff.toUpdate
+                if (blocksToInsert.isNotEmpty() || blocksToUpdate.isNotEmpty()) {
                     val saveBlocksSpan = Span("db.saveBlocks", traceId, parentSpanId)
-                    writeActor.saveBlocks(blocksToWrite, priority).onLeft { e ->
-                        logger.warn("saveBlocks failed for $filePath (${blocksToWrite.size} blocks): ${e.message}")
-                        _writeErrors.tryEmit(WriteError(filePath, blocksToWrite.size, e))
+                    // Single actor.execute { } for savePage + saveBlocks — eliminates 2 await() suspensions
+                    val compositeResult = writeActor.execute(priority) {
+                        val pageResult = pageRepository.savePage(page)
+                        if (pageResult.isLeft()) return@execute pageResult
+                        if (blocksToInsert.isNotEmpty()) {
+                            val r = blockRepository.saveBlocks(blocksToInsert)
+                            if (r.isLeft()) return@execute r
+                        }
+                        if (blocksToUpdate.isNotEmpty()) {
+                            val r = blockRepository.saveBlocksUpdate(blocksToUpdate)
+                            if (r.isLeft()) return@execute r
+                        }
+                        Unit.right()
                     }
-                    saveBlocksSpan.finish("OK", "block.count" to blocksToWrite.size.toString())
+                    compositeResult.onLeft { e ->
+                        logger.warn("composite savePage+saveBlocks failed for $filePath: ${e.message}")
+                        _writeErrors.tryEmit(WriteError(filePath, blocksToInsert.size + blocksToUpdate.size, e))
+                    }
+                    saveBlocksSpan.finish("OK", "block.count" to (blocksToInsert.size + blocksToUpdate.size).toString())
+                    (blockRepository as? dev.stapler.stelekit.repository.SqlDelightBlockRepository)?.evictHierarchyForPage(pageUuid.value)
+                } else {
+                    // No block changes — still need to save the page (e.g. metadata update)
+                    writeActor.savePage(page, priority).onLeft { e ->
+                        logger.warn("savePage (no blocks) failed for $filePath: ${e.message}")
+                        _writeErrors.tryEmit(WriteError(filePath, 0, e))
+                    }
                 }
             }
         }
@@ -1462,20 +1493,19 @@ class GraphLoader(
                 val pageUuid = page.uuid
                 val updatedAt = page.updatedAt
 
-                val savePageSpan = Span("db.savePage", traceId, rootSpan.spanId)
-                val savePageResult = writeActor.savePage(page, priority)
-                savePageSpan.finish()
-                if (savePageResult.isLeft()) {
-                    val e = savePageResult.leftOrNull()!!
-                    logger.warn("savePage failed for $filePathStr — skipping block writes to prevent FK violation: ${e.message}")
-                    _writeErrors.tryEmit(WriteError(filePathStr, 0, e))
-                    return@withLock
-                }
-
                 val rootBlocks = if (firstBlockSkipped) parsedPage.blocks.drop(1) else parsedPage.blocks
 
-                // For METADATA_ONLY, save lightweight stub blocks and return.
+                // For METADATA_ONLY, save page + lightweight stub blocks and return.
                 if (mode == ParseMode.METADATA_ONLY) {
+                    val savePageSpan = Span("db.savePage", traceId, rootSpan.spanId)
+                    val savePageResult = writeActor.savePage(page, priority)
+                    savePageSpan.finish()
+                    if (savePageResult.isLeft()) {
+                        val e = savePageResult.leftOrNull()!!
+                        logger.warn("savePage failed for $filePathStr — skipping block writes to prevent FK violation: ${e.message}")
+                        _writeErrors.tryEmit(WriteError(filePathStr, 0, e))
+                        return@withLock
+                    }
                     saveMetadataOnlyBlocks(filePathStr, pageUuid, updatedAt, rootBlocks, priority)
                     return@withLock
                 }
@@ -1508,7 +1538,7 @@ class GraphLoader(
                 processBlocksSpan.finish("OK", "block.count" to blocksToSave.size.toString())
 
                 dispatchFullBlockWrites(
-                    filePathStr, content, existingBlocks, blocksToSave, priority, traceId, rootSpan.spanId
+                    filePathStr, content, existingBlocks, blocksToSave, page, priority, traceId, rootSpan.spanId
                 )
 
                 // Update mod time in watcher cache so we don't re-trigger from our own write

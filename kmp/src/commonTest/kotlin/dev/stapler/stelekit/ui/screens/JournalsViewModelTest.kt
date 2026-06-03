@@ -69,6 +69,7 @@ class JournalsViewModelTest {
 
         override suspend fun saveBlock(block: Block): Either<DomainError, Unit> = Unit.right()
         override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> = Unit.right()
+        override suspend fun saveBlocksUpdate(blocks: List<Block>): Either<DomainError, Unit> = Unit.right()
         override suspend fun deleteBlock(blockUuid: BlockUuid, deleteChildren: Boolean): Either<DomainError, Unit> = Unit.right()
         override suspend fun deleteBulk(blockUuids: List<BlockUuid>, deleteChildren: Boolean): Either<DomainError, Unit> = Unit.right()
         override suspend fun deleteBlocksForPage(pageUuid: PageUuid): Either<DomainError, Unit> = Unit.right()
