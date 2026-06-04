@@ -41,10 +41,15 @@ self.onmessage = async (e) => {
     }
     if (type === 'exec' || type === 'query') {
       const rows = [];
-      db.exec({ sql, bind: bind ?? [], rowMode: 'object', callback: r => rows.push({ ...r }) });
+      // Only include bind when it has values — passing bind:[] is truthy in JS and forces
+      // sqlite3_prepare_v3 path which fails for DDL like CREATE TABLE IF NOT EXISTS.
+      const qOpts = { sql, rowMode: 'object', callback: r => rows.push({ ...r }) };
+      if (bind && bind.length > 0) qOpts.bind = bind;
+      db.exec(qOpts);
       self.postMessage({ type: 'result', id, rows });
     } else if (type === 'execute-long') {
-      db.exec({ sql, bind: bind ?? [] });
+      if (bind && bind.length > 0) db.exec({ sql, bind });
+      else db.exec(sql);
       self.postMessage({ type: 'long-result', id, value: db.changes() });
     } else if (type === 'transaction-begin') {
       db.exec('BEGIN');

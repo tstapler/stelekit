@@ -143,6 +143,9 @@ class InMemoryBlockRepository : BlockRepository {
         return Unit.right()
     }
 
+    override suspend fun saveBlocksUpdate(blocks: List<Block>): Either<DomainError, Unit> =
+        saveBlocks(blocks)
+
     override suspend fun saveBlock(block: Block): Either<DomainError, Unit> {
         val current = blocks.value.toMutableMap()
         current[block.uuid.value] = block

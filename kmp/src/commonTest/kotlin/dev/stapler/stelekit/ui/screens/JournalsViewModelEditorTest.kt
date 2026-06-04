@@ -163,6 +163,9 @@ class JournalsViewModelEditorTest {
             return Unit.right()
         }
 
+        override suspend fun saveBlocksUpdate(blocks: List<Block>): Either<DomainError, Unit> =
+            saveBlocks(blocks)
+
         override suspend fun deleteBlock(blockUuid: BlockUuid, deleteChildren: Boolean): Either<DomainError, Unit> {
             val newMap = blocks.value.toMutableMap()
 

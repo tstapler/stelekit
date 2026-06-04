@@ -472,6 +472,11 @@ tasks.register<Test>("jvmTestFast") {
     classpath = tasks.named<Test>("jvmTest").get().classpath
     testClassesDirs = tasks.named<Test>("jvmTest").get().testClassesDirs
 
+    systemProperty(
+        "stelekit.sq.file",
+        file("src/commonMain/sqldelight/dev/stapler/stelekit/db/SteleDatabase.sq").absolutePath
+    )
+
     jvmArgs(
         "-Djdk.attach.allowAttachSelf=true",
         "--add-opens=java.base/java.lang=ALL-UNNAMED",

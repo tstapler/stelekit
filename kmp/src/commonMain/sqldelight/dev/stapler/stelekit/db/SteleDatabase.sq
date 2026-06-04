@@ -235,6 +235,13 @@ UPDATE blocks SET position = ? WHERE uuid = ?;
 updateBlockContent:
 UPDATE blocks SET content = ?, updated_at = ?, version = version + 1, content_hash = ? WHERE uuid = ?;
 
+updateBlockFull:
+UPDATE blocks SET
+    page_uuid = ?, parent_uuid = ?, left_uuid = ?, content = ?,
+    level = ?, position = ?, updated_at = ?, properties = ?,
+    version = version + 1, content_hash = ?, block_type = ?
+WHERE uuid = ?;
+
 updateBlockLevelOnly:
 UPDATE blocks SET level = ? WHERE uuid = ?;
 
