@@ -39,10 +39,18 @@ class VoiceWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Responsive(setOf(SMALL_SIZE, MEDIUM_SIZE))
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
+        (context.applicationContext as? SteleKitApplication)?.graphManager?.awaitPendingMigration()
         provideContent {
             val ctx = LocalContext.current
-            val hasGraph = (ctx.applicationContext as? SteleKitApplication)
-                ?.graphManager?.getActiveRepositorySet() != null
+            val hasGraph = run {
+                val gm = (ctx.applicationContext as? SteleKitApplication)?.graphManager
+                val repoSet = gm?.getActiveRepositorySet()
+                val activeId = gm?.getActiveGraphId()
+                val graphInfo = activeId?.let { gm.getGraphInfo(it) }
+                // Paranoid-mode vaults must be unlocked through the main UI before the widget
+                // routes to VoiceCaptureActivity — treat them the same as "no graph" here.
+                repoSet != null && graphInfo?.isParanoidMode != true
+            }
             val size = LocalSize.current
 
             if (!hasGraph) {
