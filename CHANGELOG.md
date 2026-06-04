@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.37.0](https://github.com/tstapler/stelekit/compare/v0.36.1...v0.37.0) (2026-06-04)
+
+
+### Features
+
+* **image-meter:** activate image meter — BLE panel, calibration UX, imperial units, full accessibility ([#126](https://github.com/tstapler/stelekit/issues/126)) ([8c9b314](https://github.com/tstapler/stelekit/commit/8c9b314fe7cadbfcfec3bdf310902e6edc6feb3a))
+
+
+### Bug Fixes
+
+* **android:** restore graph on process wake after hibernation ([#127](https://github.com/tstapler/stelekit/issues/127)) ([7d5cbdf](https://github.com/tstapler/stelekit/commit/7d5cbdfb583f3d0c5c906740b5cc10063be3ae1b))
+
 ## [0.36.1](https://github.com/tstapler/stelekit/compare/v0.36.0...v0.36.1) (2026-06-03)
 
 
