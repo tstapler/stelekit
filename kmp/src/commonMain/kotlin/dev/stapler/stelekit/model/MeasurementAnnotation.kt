@@ -165,6 +165,9 @@ fun metersToDisplayString(meters: Double, unit: MeasurementUnit): String {
  * (e.g. `4/16` → `1/4`). Zero fractions are omitted. When remaining inches are exactly zero
  * the `"` suffix is still emitted for consistent units: `"6' 0\""`.
  *
+ * Rounding is applied to the total inches BEFORE splitting into feet and remaining inches,
+ * so that a value like 5'11 15/16" + 1/16" correctly carries to 6'0" instead of 5'12".
+ *
  * Examples:
  * - 1.63195 m → `"5' 4 1/4\""`  (5 ft + 4.25 in)
  * - 1.8288 m  → `"6' 0\""`       (exactly 6 feet)
@@ -172,9 +175,21 @@ fun metersToDisplayString(meters: Double, unit: MeasurementUnit): String {
  */
 internal fun formatFeetInches(meters: Double): String {
     val totalInches = meters * METERS_TO_INCHES
-    val wholeFeet = totalInches.toLong() / 12L
-    val remainingInches = totalInches - wholeFeet * 12.0
-    return "${wholeFeet}' ${formatFractionalInches(remainingInches)}"
+    // Round to nearest 1/16" FIRST, then split into feet and remaining inches
+    val totalSixteenths = kotlin.math.round(totalInches * 16.0).toLong()
+    val wholeFeet = totalSixteenths / (12L * 16L)
+    val remainingSixteenths = totalSixteenths % (12L * 16L)
+    val wholeInches = remainingSixteenths / 16L
+    val fracSixteenths = remainingSixteenths % 16L
+    return if (fracSixteenths == 0L) {
+        "${wholeFeet}' ${wholeInches}\""
+    } else {
+        fun gcd(a: Long, b: Long): Long = if (b == 0L) a else gcd(b, a % b)
+        val g = gcd(fracSixteenths, 16L)
+        val num = fracSixteenths / g
+        val den = 16L / g
+        if (wholeInches == 0L) "${wholeFeet}' $num/$den\"" else "${wholeFeet}' $wholeInches $num/$den\""
+    }
 }
 
 /**

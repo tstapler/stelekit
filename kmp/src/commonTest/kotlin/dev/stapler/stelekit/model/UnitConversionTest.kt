@@ -63,6 +63,15 @@ class UnitConversionTest {
     }
 
     @Test
+    fun formatFeetInches_should_carry_when_rounding_pushes_to_12_inches() {
+        // 5 ft + 11.96875 in = 71.96875 total inches
+        // 11.96875 in = 11 + 31/32" — sits exactly at the 1/16" rounding boundary (15.5/16)
+        // round(71.96875 * 16) = round(1151.5) = 1152 = exactly 6 feet (no 5'12" artifact)
+        val meters = (5.0 * 12.0 + 11.96875) / 39.3700787402  // 71.96875 inches in meters
+        assertEquals("6' 0\"", formatFeetInches(meters))
+    }
+
+    @Test
     fun formatFeetInches_should_reduce_fraction_to_lowest_terms() {
         // 4/16 → 1/4, 8/16 → 1/2, 12/16 → 3/4
         val oneQuarterInch = 0.00635 // 1/4 inch in meters

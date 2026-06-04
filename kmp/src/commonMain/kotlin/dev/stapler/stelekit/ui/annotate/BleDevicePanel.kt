@@ -33,6 +33,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -114,21 +115,23 @@ fun BleDevicePanel(
     onReadingAccept: (Double) -> Unit,
 ) {
     var panelState by remember { mutableStateOf<BleDevicePanelState>(BleDevicePanelState.Scanning) }
+    var retryCount by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        delay(300)
+    LaunchedEffect(retryCount) {
         panelState = BleDevicePanelState.Scanning
+        delay(300)
 
         val collectedDevices = mutableListOf<ExternalMeasurementDevice>()
-        val result = withTimeoutOrNull(10_000L) {
+        withTimeoutOrNull(10_000L) {
             MeasurementDeviceRegistry.getAllDevices().collect { device ->
                 collectedDevices.add(device)
                 panelState = BleDevicePanelState.DevicesFound(collectedDevices.toList())
             }
         }
 
-        if (result == null && collectedDevices.isEmpty()) {
+        // Transition to NoDevicesFound if we have nothing — covers both timeout and empty-flow cases
+        if (collectedDevices.isEmpty()) {
             panelState = BleDevicePanelState.NoDevicesFound
         }
     }
@@ -180,7 +183,7 @@ fun BleDevicePanel(
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { panelState = BleDevicePanelState.Scanning }) {
+                        OutlinedButton(onClick = { retryCount++ }) {
                             Text("Try Again")
                         }
                         TextButton(onClick = onUseDrawMethod) {
