@@ -84,6 +84,10 @@ class SqlDelightBlockRepository(
                 if (block != null) blockCache.put(block.uuid.value, block)
                 block.right()
             }
+            .catch { e ->
+                if (e is CancellationException) throw e
+                emit(DomainError.DatabaseError.ReadFailed(e.message ?: "db closed").left())
+            }
 
     override fun getBlockChildren(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> =
         queries.selectBlockChildren(blockUuid.value, Long.MAX_VALUE, 0L)
@@ -93,6 +97,10 @@ class SqlDelightBlockRepository(
                 val blocks = list.map { it.toBlockModel() }
                 blocks.forEach { blockCache.put(it.uuid.value, it) }
                 blocks.right()
+            }
+            .catch { e ->
+                if (e is CancellationException) throw e
+                emit(DomainError.DatabaseError.ReadFailed(e.message ?: "db closed").left())
             }
 
     override fun getBlockHierarchy(rootUuid: BlockUuid): Flow<Either<DomainError, List<BlockWithDepth>>> = flow {
@@ -229,6 +237,10 @@ class SqlDelightBlockRepository(
             .mapToList(PlatformDispatcher.DB)
             .conflate()
             .map { list -> list.map { it.toBlockModel() }.right() }
+            .catch { e ->
+                if (e is CancellationException) throw e
+                emit(DomainError.DatabaseError.ReadFailed(e.message ?: "db closed").left())
+            }
 
     override suspend fun getBlocksByUuids(uuids: List<BlockUuid>): Either<DomainError, List<Block>> =
         withContext(PlatformDispatcher.DB) {

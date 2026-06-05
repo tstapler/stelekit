@@ -338,10 +338,12 @@ class GraphManager(
         _activeGitSyncService.value = null
         _activeVaultCredentialStore.value = null
 
-        // Close current factory and its database connection
+        // Null the repo set BEFORE closing the driver so Compose flow collectors see null
+        // and stop querying before the database connection is torn down. Closing first
+        // caused a race where in-flight LaunchedEffect queries hit an already-closed DB.
+        _activeRepositorySet.value = null
         currentFactory?.close()
         currentFactory = null
-        _activeRepositorySet.value = null
         
         // Create a new scope for this graph's operations first so the actor can use it
         val graphScope = CoroutineScope(coroutineScope.coroutineContext)
@@ -518,11 +520,9 @@ class GraphManager(
         _activeGitSyncService.value = null
         _activeVaultCredentialStore.value = null
 
-        // Close database connection
-        currentFactory?.close()
-
-        // Clear repository set
+        // Null repo set before closing so in-flight Compose flow collectors stop querying first.
         _activeRepositorySet.value = null
+        currentFactory?.close()
         currentFactory = null
     }
 }
