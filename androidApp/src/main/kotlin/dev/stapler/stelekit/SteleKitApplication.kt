@@ -83,7 +83,7 @@ class SteleKitApplication : Application() {
                 fileSystem = fileSystem,
                 preFlightJob = startupFlushJob,
             )
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Application init failed — widget/tile/share will show placeholder", e)
             if (!::fileSystem.isInitialized) {
                 fileSystem = PlatformFileSystem()
