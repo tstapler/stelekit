@@ -162,6 +162,14 @@ fun StelekitApp(
      * Pass null (default) to hide the button entirely.
      */
     attachmentService: dev.stapler.stelekit.service.MediaAttachmentService? = null,
+    /**
+     * Platform-specific Google OAuth manager. When non-null the Google Account settings
+     * panel becomes interactive (Connect / Disconnect buttons are wired up).
+     *
+     * Pass [AndroidGoogleAuthManager] on Android, [JvmGoogleAuthManager] on Desktop.
+     * When null (default), the panel is rendered but the buttons are no-ops.
+     */
+    googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -323,6 +331,7 @@ fun StelekitApp(
             gitRepository = gitRepository,
             cryptoEngine = cryptoEngine,
             attachmentService = attachmentService,
+            googleAuthManager = googleAuthManager,
         )
     }
 }
@@ -355,6 +364,7 @@ private fun GraphContent(
     gitRepository: dev.stapler.stelekit.git.GitRepository? = null,
     cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine? = null,
     attachmentService: dev.stapler.stelekit.service.MediaAttachmentService? = null,
+    googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
 ) {
     CompositionLocalProvider(LocalSpanRecorder provides spanRecorder) {
     val scope = rememberCoroutineScope()
@@ -739,6 +749,53 @@ private fun GraphContent(
         if (isParanoidMode && capturedVaultManager != null) {
             { capturedVaultManager.listActiveKeyslotIndices(activeGraphPath) }
         } else null
+
+    // Google Account auth state — threaded into SettingsDialog via GraphDialogLayer.
+    var isGoogleAuthenticated by remember { mutableStateOf(false) }
+    var googleConnectedEmail by remember { mutableStateOf<String?>(null) }
+    var isGoogleConnecting by remember { mutableStateOf(false) }
+    var googleAuthError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(googleAuthManager) {
+        if (googleAuthManager != null) {
+            isGoogleAuthenticated = googleAuthManager.isAuthenticated()
+            googleConnectedEmail = googleAuthManager.getConnectedEmail()
+        }
+    }
+
+    val onConnectGoogle: (() -> Unit)? = if (googleAuthManager != null) {
+        {
+            scope.launch {
+                isGoogleConnecting = true
+                googleAuthError = null
+                val result = googleAuthManager.authenticate()
+                when {
+                    result is arrow.core.Either.Right -> {
+                        isGoogleAuthenticated = true
+                        googleConnectedEmail = result.value
+                    }
+                    result is arrow.core.Either.Left &&
+                        result.value is dev.stapler.stelekit.error.DomainError.NetworkError.HttpError &&
+                        (result.value as dev.stapler.stelekit.error.DomainError.NetworkError.HttpError).statusCode == 202 -> {
+                        // Browser launched — auth completes via deep-link callback; nothing to show.
+                    }
+                    else -> googleAuthError = (result as arrow.core.Either.Left).value.message
+                }
+                isGoogleConnecting = false
+            }
+        }
+    } else null
+
+    val onDisconnectGoogle: (() -> Unit)? = if (googleAuthManager != null) {
+        {
+            scope.launch {
+                googleAuthManager.signOut()
+                isGoogleAuthenticated = false
+                googleConnectedEmail = null
+                googleAuthError = null
+            }
+        }
+    } else null
 
     val frameMetricState = remember { kotlinx.coroutines.flow.MutableStateFlow(dev.stapler.stelekit.performance.FrameMetric()) }
 
@@ -1299,6 +1356,12 @@ private fun GraphContent(
                         onRemoveKeyslot = onRemoveKeyslot,
                         onLockVault = onLockVault,
                         onListActiveSlots = onListActiveSlots,
+                        isGoogleAuthenticated = isGoogleAuthenticated,
+                        googleConnectedEmail = googleConnectedEmail,
+                        isGoogleConnecting = isGoogleConnecting,
+                        googleAuthError = googleAuthError,
+                        onConnectGoogle = onConnectGoogle,
+                        onDisconnectGoogle = onDisconnectGoogle,
                         gitSyncService = gitSyncService,
                         gitRepository = gitRepository,
                         gitConfigRepository = gitConfigRepository,

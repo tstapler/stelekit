@@ -76,6 +76,7 @@ class AndroidGoogleTokenStore : GoogleTokenStore {
             .remove(KEY_ACCESS_TOKEN)
             .remove(KEY_REFRESH_TOKEN)
             .remove(KEY_EXPIRES_AT)
+            .remove(KEY_EMAIL)
             .apply()
     }
 
@@ -83,10 +84,19 @@ class AndroidGoogleTokenStore : GoogleTokenStore {
         prefs.contains(KEY_ACCESS_TOKEN) && prefs.getString(KEY_ACCESS_TOKEN, null) != null
     }
 
+    override suspend fun saveEmail(email: String) = withContext(Dispatchers.IO) {
+        prefs.edit().putString(KEY_EMAIL, email).apply()
+    }
+
+    override suspend fun getEmail(): String? = withContext(Dispatchers.IO) {
+        prefs.getString(KEY_EMAIL, null)
+    }
+
     private companion object {
         private const val TAG = "AndroidGoogleTokenStore"
         private const val KEY_ACCESS_TOKEN = "google_access_token"
         private const val KEY_REFRESH_TOKEN = "google_refresh_token"
         private const val KEY_EXPIRES_AT = "google_expires_at"
+        private const val KEY_EMAIL = "google_email"
     }
 }

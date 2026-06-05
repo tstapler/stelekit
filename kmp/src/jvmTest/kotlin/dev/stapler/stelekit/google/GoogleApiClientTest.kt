@@ -44,6 +44,8 @@ class GoogleApiClientTest {
         override suspend fun getExpiresAt(): Long = expiresAt
         override suspend fun clearTokens() {}
         override suspend fun isAuthenticated(): Boolean = true
+        override suspend fun saveEmail(email: String) {}
+        override suspend fun getEmail(): String? = "test@example.com"
     }
 
     private fun buildClient(mockEngine: MockEngine): GoogleApiClient {
@@ -348,6 +350,8 @@ class GoogleApiClientTest {
             override suspend fun getExpiresAt(): Long? = null
             override suspend fun clearTokens() {}
             override suspend fun isAuthenticated(): Boolean = false
+            override suspend fun saveEmail(email: String) {}
+            override suspend fun getEmail(): String? = null
         }
         val httpClient = HttpClient(MockEngine { _ ->
             respond(content = "", status = HttpStatusCode.OK)

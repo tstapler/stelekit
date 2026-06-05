@@ -100,6 +100,11 @@ class JvmGoogleAuthManager(
         tokenStore.clearTokens()
     }
 
+    override suspend fun isAuthenticated(): Boolean = tokenStore.isAuthenticated()
+
+    override suspend fun getConnectedEmail(): String? = tokenStore.getEmail()
+
+
     /**
      * Start a local HTTP server on [REDIRECT_PORT] and wait for the OAuth callback.
      *

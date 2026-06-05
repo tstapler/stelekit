@@ -53,6 +53,7 @@ class JvmGoogleTokenStore : GoogleTokenStore {
         prefs.remove(KEY_ACCESS_TOKEN)
         prefs.remove(KEY_REFRESH_TOKEN)
         prefs.remove(KEY_EXPIRES_AT)
+        prefs.remove(KEY_EMAIL)
         prefs.flush()
     }
 
@@ -60,10 +61,20 @@ class JvmGoogleTokenStore : GoogleTokenStore {
         prefs.get(KEY_ACCESS_TOKEN, null) != null
     }
 
+    override suspend fun saveEmail(email: String) = withContext(Dispatchers.IO) {
+        prefs.put(KEY_EMAIL, email)
+        prefs.flush()
+    }
+
+    override suspend fun getEmail(): String? = withContext(Dispatchers.IO) {
+        prefs.get(KEY_EMAIL, null)
+    }
+
     private companion object {
         private const val PREFS_NODE = "/dev/stapler/stelekit/google"
         private const val KEY_ACCESS_TOKEN = "access_token"
         private const val KEY_REFRESH_TOKEN = "refresh_token"
         private const val KEY_EXPIRES_AT = "expires_at"
+        private const val KEY_EMAIL = "email"
     }
 }

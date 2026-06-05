@@ -51,7 +51,7 @@ interface GoogleTokenStore {
     suspend fun getExpiresAt(): Long?
 
     /**
-     * Remove all stored tokens. Called on sign-out.
+     * Remove all stored tokens and email. Called on sign-out.
      */
     suspend fun clearTokens()
 
@@ -61,6 +61,12 @@ interface GoogleTokenStore {
      * Does NOT validate token expiry — use [isTokenExpired] for that.
      */
     suspend fun isAuthenticated(): Boolean
+
+    /** Persist the email address associated with the authenticated Google account. */
+    suspend fun saveEmail(email: String)
+
+    /** Return the stored email address, or null if not authenticated or never saved. */
+    suspend fun getEmail(): String?
 }
 
 /**

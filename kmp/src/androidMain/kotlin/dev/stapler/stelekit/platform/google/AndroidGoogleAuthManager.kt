@@ -82,4 +82,8 @@ class AndroidGoogleAuthManager(
     override suspend fun signOut() {
         tokenStore.clearTokens()
     }
+
+    override suspend fun isAuthenticated(): Boolean = tokenStore.isAuthenticated()
+
+    override suspend fun getConnectedEmail(): String? = tokenStore.getEmail()
 }

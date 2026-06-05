@@ -86,7 +86,12 @@ fun SettingsDialog(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        SettingsCategory.entries.forEach { category ->
+                        val visibleCategories = remember(onConnectGoogle) {
+                            SettingsCategory.entries.filter { category ->
+                                category != SettingsCategory.GOOGLE_ACCOUNT || onConnectGoogle != null
+                            }
+                        }
+                        visibleCategories.forEach { category ->
                             CategoryItem(
                                 category = category,
                                 isSelected = selectedCategory == category,

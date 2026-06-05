@@ -66,6 +66,12 @@ internal fun GraphDialogLayer(
     onRemoveKeyslot: (suspend (Int) -> Either<VaultError, Unit>)? = null,
     onLockVault: (() -> Unit)? = null,
     onListActiveSlots: (suspend () -> List<Int>)? = null,
+    isGoogleAuthenticated: Boolean = false,
+    googleConnectedEmail: String? = null,
+    isGoogleConnecting: Boolean = false,
+    googleAuthError: String? = null,
+    onConnectGoogle: (() -> Unit)? = null,
+    onDisconnectGoogle: (() -> Unit)? = null,
     gitSyncService: GitSyncService? = null,
     gitRepository: GitRepository? = null,
     gitConfigRepository: GitConfigRepository? = null,
@@ -120,6 +126,12 @@ internal fun GraphDialogLayer(
         onRemoveKeyslot = onRemoveKeyslot,
         onLockVault = onLockVault,
         onListActiveSlots = onListActiveSlots,
+        isGoogleAuthenticated = isGoogleAuthenticated,
+        googleConnectedEmail = googleConnectedEmail,
+        isGoogleConnecting = isGoogleConnecting,
+        googleAuthError = googleAuthError,
+        onConnectGoogle = onConnectGoogle,
+        onDisconnectGoogle = onDisconnectGoogle,
     )
 
     val canShowGitSetup = appState.gitSetupVisible &&

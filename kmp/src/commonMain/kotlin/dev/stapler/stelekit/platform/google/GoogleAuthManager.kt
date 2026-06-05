@@ -31,7 +31,13 @@ interface GoogleAuthManager {
     /**
      * Clear stored tokens and revoke the OAuth session.
      *
-     * After this call, [GoogleTokenStore.isAuthenticated] returns false.
+     * After this call, [isAuthenticated] returns false.
      */
     suspend fun signOut()
+
+    /** Returns true if the user has completed the OAuth flow and tokens are stored. */
+    suspend fun isAuthenticated(): Boolean
+
+    /** Returns the stored account email, or null if not authenticated. */
+    suspend fun getConnectedEmail(): String?
 }
