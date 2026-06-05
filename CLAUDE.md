@@ -264,6 +264,18 @@ class SomeManager(...) {
 val manager = remember { SomeManager() }
 ```
 
+### Android Application.onCreate — catch Throwable, not Exception
+
+`Application.onCreate()` must use `catch (e: Throwable)`, not `catch (e: Exception)`. Native library loading failures (`UnsatisfiedLinkError`, `NoClassDefFoundError`) are `Error` subclasses, not `Exception`. Catching only `Exception` lets them propagate uncaught and crash the app at startup before the UI is shown. See `SteleKitApplication.kt`.
+
+### Repository Flow resilience — always use `.catchDbError()` on SQLDelight flows
+
+Any `Flow` chain that calls `.asFlow().mapToList()` or `.asFlow().mapToOneOrNull()` on a SQLDelight query **must** end with `.catchDbError()` (defined at the bottom of each `SqlDelight*Repository` file). When `GraphManager.shutdown()` or `switchGraph()` closes the database, in-flight Compose `LaunchedEffect` collectors can hit the closed driver and throw `IllegalStateException`. `.catchDbError()` converts this to `Either.Left(DomainError.ReadFailed)` instead of crashing the main thread. Regression tests: `RepositoryFlowResilienceTest`, `GraphManagerDatabaseLifecycleTest`.
+
+### GitHub Actions — `workflow_call` propagates caller's `event_name`
+
+When a workflow is called via `workflow_call`, `github.event_name` inside the called workflow reflects the **caller's** triggering event (e.g. `push`), not `workflow_call`. A job `if:` condition checking `github.event_name == 'workflow_call'` will always be false when called from a push-triggered parent. Remove the job-level `if:` entirely and rely on the workflow-level `on:` triggers instead.
+
 ## Testing Infrastructure
 
 See `kmp/TESTING_README.md` for the full testing guide. Test source sets:
