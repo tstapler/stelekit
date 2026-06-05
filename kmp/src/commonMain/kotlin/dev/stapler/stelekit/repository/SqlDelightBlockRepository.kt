@@ -80,28 +80,22 @@ class SqlDelightBlockRepository(
             .asFlow()
             .mapToOneOrNull(PlatformDispatcher.DB)
             .map { row ->
-                val block = row?.toBlockModel()
-                if (block != null) blockCache.put(block.uuid.value, block)
-                block.right()
+                val block: Block? = row?.toBlockModel()?.also { blockCache.put(it.uuid.value, it) }
+                val result: Either<DomainError, Block?> = block.right()
+                result
             }
-            .catch { e ->
-                if (e is CancellationException) throw e
-                emit(DomainError.DatabaseError.ReadFailed(e.message ?: "db closed").left())
-            }
+            .catchDbError()
 
     override fun getBlockChildren(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> =
         queries.selectBlockChildren(blockUuid.value, Long.MAX_VALUE, 0L)
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
             .map { list ->
-                val blocks = list.map { it.toBlockModel() }
-                blocks.forEach { blockCache.put(it.uuid.value, it) }
-                blocks.right()
+                val blocks: List<Block> = list.map { it.toBlockModel() }.also { bs -> bs.forEach { blockCache.put(it.uuid.value, it) } }
+                val result: Either<DomainError, List<Block>> = blocks.right()
+                result
             }
-            .catch { e ->
-                if (e is CancellationException) throw e
-                emit(DomainError.DatabaseError.ReadFailed(e.message ?: "db closed").left())
-            }
+            .catchDbError()
 
     override fun getBlockHierarchy(rootUuid: BlockUuid): Flow<Either<DomainError, List<BlockWithDepth>>> = flow {
         try {
@@ -236,11 +230,11 @@ class SqlDelightBlockRepository(
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
             .conflate()
-            .map { list -> list.map { it.toBlockModel() }.right() }
-            .catch { e ->
-                if (e is CancellationException) throw e
-                emit(DomainError.DatabaseError.ReadFailed(e.message ?: "db closed").left())
+            .map { list ->
+                val result: Either<DomainError, List<Block>> = list.map { it.toBlockModel() }.right()
+                result
             }
+            .catchDbError()
 
     override suspend fun getBlocksByUuids(uuids: List<BlockUuid>): Either<DomainError, List<Block>> =
         withContext(PlatformDispatcher.DB) {
@@ -1206,3 +1200,13 @@ class SqlDelightBlockRepository(
         private const val MAX_LINKED_REF_ITERATIONS = 50
     }
 }
+
+// Converts any non-cancellation exception from a DB flow (e.g. "attempt to re-open a closed
+// SQLiteDatabase") into Either.Left so callers receive a domain error instead of a crash.
+// The uncaught-on-main-thread crash this prevents: GraphManager closes the driver before
+// Compose LaunchedEffect collectors finish, causing IllegalStateException in mapToList().
+private fun <T> Flow<Either<DomainError, T>>.catchDbError(): Flow<Either<DomainError, T>> =
+    catch { e ->
+        if (e is CancellationException) throw e
+        emit(DomainError.DatabaseError.ReadFailed(e.message ?: "database closed").left())
+    }

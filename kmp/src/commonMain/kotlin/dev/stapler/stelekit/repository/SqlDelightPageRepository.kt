@@ -106,11 +106,11 @@ class SqlDelightPageRepository(
             .asFlow()
             .conflate()  // drop intermediate invalidations during bulk import to avoid O(N²) full-table scans
             .mapToList(PlatformDispatcher.DB)
-            .map { list -> list.map { it.toModel() }.right() }
-            .catch { e ->
-                if (e is CancellationException) throw e
-                emit(DomainError.DatabaseError.ReadFailed(e.message ?: "db closed").left())
+            .map { list ->
+                val result: Either<DomainError, List<Page>> = list.map { it.toModel() }.right()
+                result
             }
+            .catchDbError()
 
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectJournalPages(limit.toLong(), offset.toLong())
@@ -302,3 +302,9 @@ class SqlDelightPageRepository(
         )
     }
 }
+
+private fun <T> Flow<Either<DomainError, T>>.catchDbError(): Flow<Either<DomainError, T>> =
+    catch { e ->
+        if (e is CancellationException) throw e
+        emit(DomainError.DatabaseError.ReadFailed(e.message ?: "database closed").left())
+    }
