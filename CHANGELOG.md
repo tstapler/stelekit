@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.38.0](https://github.com/tstapler/stelekit/compare/v0.37.0...v0.38.0) (2026-06-05)
+
+
+### Features
+
+* **google:** add isAuthenticated/getConnectedEmail/saveEmail/getEmail to auth interfaces ([9629373](https://github.com/tstapler/stelekit/commit/9629373002d90ff0a172ddba9e4486c2f6f2bb55))
+
+
+### Bug Fixes
+
+* **android:** catch Throwable in Application.onCreate to prevent Error crashes ([d943a77](https://github.com/tstapler/stelekit/commit/d943a7706a90811dca49b0a7b8ce96b19bd9fce2))
+* **android:** fix startup crash — closed DB race in graph lifecycle ([1e8f66f](https://github.com/tstapler/stelekit/commit/1e8f66fba9b01a4d45a607e28c9a28393b7afad2))
+* **ci:** remove pages concurrency group to prevent deploy cancellations ([ec25fd1](https://github.com/tstapler/stelekit/commit/ec25fd130505618a381e9e080b1ba95df7431e14))
+* **fdroid:** always run update-fdroid job when workflow is triggered ([6dc1439](https://github.com/tstapler/stelekit/commit/6dc14392cac7e998fbf67472ffeca62bad5d26bd))
+
 ## [0.37.0](https://github.com/tstapler/stelekit/compare/v0.36.1...v0.37.0) (2026-06-04)
 
 
