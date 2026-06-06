@@ -13,9 +13,6 @@ permissions:
   contents: write
   pull-requests: write
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-v2
-  cancel-in-progress: false
 
 jobs:
   # ── Release Please ─────────────────────────────────────────────────────────
