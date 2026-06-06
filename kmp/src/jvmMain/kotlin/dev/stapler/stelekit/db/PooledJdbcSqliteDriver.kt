@@ -81,7 +81,7 @@ internal class PooledJdbcSqliteDriver(
         // take() blocks forever once the pool is drained, causing a 58-minute test hang.
         val t0 = System.nanoTime()
         while (true) {
-            if (closed.get()) throw IllegalStateException("PooledJdbcSqliteDriver is closed")
+            if (closed.get()) error("PooledJdbcSqliteDriver is closed")
             val conn = pool.poll(50, TimeUnit.MILLISECONDS) ?: continue
             val waitMs = (System.nanoTime() - t0) / 1_000_000L
             if (waitMs >= 1L) {

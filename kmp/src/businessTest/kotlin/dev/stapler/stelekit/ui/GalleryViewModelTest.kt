@@ -89,7 +89,7 @@ class GalleryViewModelTest {
         vm.selectTag("kitchen")
         vm.selectTag(null)
 
-        val state = vm.state.first { !it.isLoading }
+        val state = vm.state.first { !it.isLoading && it.selectedTag == null }
         assertEquals(2, state.images.size, "Expected all images after clearing filter")
         assertNull(state.selectedTag)
         vm.close()
