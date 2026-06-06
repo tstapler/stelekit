@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.1](https://github.com/tstapler/stelekit/compare/v0.38.0...v0.38.1) (2026-06-06)
+
+
+### Bug Fixes
+
+* **ci:** stop cancel-in-progress from tearing benchmark runs, fix 33-min test hang ([e12c9cb](https://github.com/tstapler/stelekit/commit/e12c9cb8e198596f519661c91a5d3f9ef12015c0))
+
 ## [0.38.0](https://github.com/tstapler/stelekit/compare/v0.37.0...v0.38.0) (2026-06-05)
 
 
