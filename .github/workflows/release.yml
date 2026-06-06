@@ -445,9 +445,18 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/stelekit.rb Casks/stelekit.rb
           git diff --cached --quiet || git commit -m "chore: update Homebrew formula for ${{ needs.resolve-version.outputs.version }}"
-          git fetch origin main
-          git rebase origin/main
-          git push origin HEAD:main
+          # Retry push up to 3 times to handle concurrent release builds updating
+          # the same formula file simultaneously (rebase conflict then re-try).
+          for i in 1 2 3; do
+            git fetch origin main
+            if git rebase origin/main; then
+              git push origin HEAD:main && break
+            else
+              git rebase --abort
+            fi
+            echo "Homebrew formula push attempt $i failed, retrying..."
+            sleep $((i * 5))
+          done || echo "Homebrew formula update skipped after retries (non-fatal)"
 
       - name: Upload artifacts and prepend download table (Release Please release)
         if: github.event_name == 'push'
