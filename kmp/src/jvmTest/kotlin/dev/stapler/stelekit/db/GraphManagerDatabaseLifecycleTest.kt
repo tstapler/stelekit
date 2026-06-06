@@ -7,10 +7,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
@@ -70,11 +66,7 @@ class GraphManagerDatabaseLifecycleTest {
             defaultBackend = GraphBackend.SQLDELIGHT,
         )
 
-        // Add a graph — creates real SQLite database
-        graphManager.addGraph("/test")
-
-        // Wait for the real repo set to be available
-        val repoSet = graphManager.activeRepositorySet.filterNotNull().first()
+        val repoSet = graphManager.openGraph("/test")
 
         var collectionCrashed = false
         val collectedValues = mutableListOf<Any>()
@@ -128,16 +120,8 @@ class GraphManagerDatabaseLifecycleTest {
             defaultBackend = GraphBackend.SQLDELIGHT,
         )
 
-        val graph1Id = graphManager.addGraph("/test/graph1")
-        val graph2Id = graphManager.graphIdFromPath("/test/graph2").also {
-            graphManager.addGraph("/test/graph2")
-        }
-
-        // Return to graph1 so we can switch away from it
-        graphManager.switchGraph(graph1Id)
-        graphManager.awaitPendingMigration()
-
-        val repoSet = graphManager.activeRepositorySet.filterNotNull().first()
+        val graph2Id = graphManager.addGraph("/test/graph2")
+        val repoSet = graphManager.openGraph("/test/graph1")
 
         var collectionCrashed = false
         val collectJob = launch(Dispatchers.Default) {

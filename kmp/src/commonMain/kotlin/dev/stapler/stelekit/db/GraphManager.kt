@@ -421,10 +421,27 @@ class GraphManager(
 
     /**
      * Suspends until the one-shot UUID migration for the currently active graph has completed.
-     * Call this before loading graph content to ensure block UUIDs are stable.
+     * Returns the [RepositorySet] that is ready to use, or null if initialization failed.
      */
-    suspend fun awaitPendingMigration() {
+    suspend fun awaitPendingMigration(): RepositorySet? {
         _pendingMigration.await()
+        return _activeRepositorySet.value
+    }
+
+    /**
+     * Registers [path] as a graph, switches to it, and waits until the database and migrations
+     * are ready. Returns the live [RepositorySet] for the opened graph.
+     *
+     * Use this instead of calling [addGraph] + [switchGraph] + [awaitPendingMigration] manually —
+     * the type system enforces the ordering and you cannot access the repository before it is ready.
+     *
+     * @throws IllegalStateException if the database failed to open after registration.
+     */
+    suspend fun openGraph(path: String): RepositorySet {
+        val id = addGraph(path)
+        switchGraph(id)
+        return awaitPendingMigration()
+            ?: error("Failed to open graph at '$path' — database did not initialise")
     }
     
     fun getGraphInfo(id: String): GraphInfo? {
