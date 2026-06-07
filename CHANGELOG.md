@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.38.2](https://github.com/tstapler/stelekit/compare/v0.38.1...v0.38.2) (2026-06-07)
+
+
+### Bug Fixes
+
+* **android:** add catchDbError to annotation and span repository flows ([e709864](https://github.com/tstapler/stelekit/commit/e709864108705a186c20f1f748f56ac56d1f1eb8))
+* **ci:** bump release concurrency group to unblock queued runs ([4d0c112](https://github.com/tstapler/stelekit/commit/4d0c1121b18c9153ce66a485b19e251332f4a359))
+* **ci:** cache Playwright browsers to prevent download hang in build-demo ([dc53ee2](https://github.com/tstapler/stelekit/commit/dc53ee2a00d7d56e0b3ee68f201b787a5280d57e))
+* **ci:** prevent Playwright install from hanging indefinitely ([01e420b](https://github.com/tstapler/stelekit/commit/01e420ba74503a39948dee1fbc48e8e106cf0a46))
+* **ci:** remove release workflow concurrency gate ([dfc0350](https://github.com/tstapler/stelekit/commit/dfc03504b0d87216452ccaf65f0872b94bd61082))
+* **ci:** retry Homebrew formula push to handle concurrent release builds ([9cf9692](https://github.com/tstapler/stelekit/commit/9cf96928dba83539a20998d0d4b4b81e2d933809))
+* **db:** replace pool.take() with polling loop to fix 58-min test hang ([fac90b2](https://github.com/tstapler/stelekit/commit/fac90b2636c9634ff8927ecf728437ed3f978c9a))
+* **test:** resolve detekt violation and flaky GalleryViewModelTest ([78a6174](https://github.com/tstapler/stelekit/commit/78a61745e76f1153ba63c5411930b768743131f5))
+
 ## [0.38.1](https://github.com/tstapler/stelekit/compare/v0.38.0...v0.38.1) (2026-06-06)
 
 
