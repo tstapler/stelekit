@@ -76,10 +76,24 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: e2e/package-lock.json
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('e2e/package-lock.json') }}
       - name: Install Playwright Chromium
         env:
           DEBIAN_FRONTEND: noninteractive
-        run: cd e2e && npm ci && npx playwright install --with-deps chromium
+        run: |
+          cd e2e && npm ci
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = 'true' ]; then
+            # Browser binary cached — only install OS-level deps (fast, no download).
+            npx playwright install-deps chromium
+          else
+            # Cold cache — download Chromium and OS deps together.
+            npx playwright install --with-deps chromium
+          fi
       - name: Smoke-test WASM demo in headless Chromium
         run: cd e2e && npx playwright test
         env:
