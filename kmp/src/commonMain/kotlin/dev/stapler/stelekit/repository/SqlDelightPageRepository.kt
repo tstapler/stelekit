@@ -83,23 +83,26 @@ class SqlDelightPageRepository(
         emit(page.right())
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>> = 
+    override fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>> =
         queries.selectPagesByNamespaceUnpaginated(namespace)
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
             .map { list -> list.map { it.toModel() }.right() }
+            .catchDbError()
 
-    override fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> = 
+    override fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectAllPagesPaginated(limit.toLong(), offset.toLong())
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
             .map { list -> list.map { it.toModel() }.right() }
+            .catchDbError()
 
-    override fun searchPages(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> = 
+    override fun searchPages(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectPagesByNameLikePaginated("%$query%", limit.toLong(), offset.toLong())
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
             .map { list -> list.map { it.toModel() }.right() }
+            .catchDbError()
 
     override fun getAllPages(): Flow<Either<DomainError, List<Page>>> =
         queries.selectAllPages()
@@ -117,24 +120,28 @@ class SqlDelightPageRepository(
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
             .map { list -> list.map { it.toModel() }.right() }
+            .catchDbError()
 
     override fun getJournalPageByDate(date: kotlinx.datetime.LocalDate): Flow<Either<DomainError, Page?>> =
         queries.selectJournalPageByDate(date.toString())
             .asFlow()
             .mapToOneOrNull(PlatformDispatcher.DB)
             .map { it?.toModel().right() }
+            .catchDbError()
 
-    override fun getRecentPages(limit: Int): Flow<Either<DomainError, List<Page>>> = 
+    override fun getRecentPages(limit: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectRecentlyUpdatedPages(limit.toLong())
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
             .map { list -> list.map { it.toModel() }.right() }
+            .catchDbError()
 
-    override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> = 
+    override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> =
         queries.selectUnloadedPages()
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
             .map { list -> list.map { it.toModel() }.right() }
+            .catchDbError()
 
     override suspend fun savePage(page: Page): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {

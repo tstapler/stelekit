@@ -1032,6 +1032,7 @@ class SqlDelightBlockRepository(
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
             .map { list -> list.map { it.toBlockModel() }.right() }
+            .catchDbError()
 
     override fun findDuplicateBlocks(limit: Int): Flow<Either<DomainError, List<DuplicateGroup>>> = flow {
         try {
