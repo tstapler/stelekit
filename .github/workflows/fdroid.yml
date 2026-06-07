@@ -117,9 +117,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fdroid-content
-          path: |
-            fdroid/repo
-            fdroid/archive
+          # Only upload repo/ (latest 5 APKs per archive_older:5). archive/ is excluded
+          # because pages.yml does not deploy it — including it would push the artifact
+          # and the GitHub Pages deployment past the 1 GB size limit.
+          path: fdroid/repo
           if-no-files-found: error
           retention-days: 90
       # Pages deployment is handled by pages.yml, which downloads this artifact
