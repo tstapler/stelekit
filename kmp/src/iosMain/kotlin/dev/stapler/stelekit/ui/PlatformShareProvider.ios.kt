@@ -61,12 +61,17 @@ class IosShareProvider : ShareProvider {
 
             // Write content to temp file
             val nsString = content as NSString
-            nsString.writeToURL(
+            val written = nsString.writeToURL(
                 url = fileUrl,
                 atomically = true,
                 encoding = 4u, // NSUTF8StringEncoding
                 error = null
             )
+            if (!written) {
+                return@withContext DomainError.ExportError.ShareFailed(
+                    "Failed to write temp file for sharing"
+                ).left()
+            }
 
             // MUST run on Main: UIKit requires main thread
             withContext(Dispatchers.Main) {

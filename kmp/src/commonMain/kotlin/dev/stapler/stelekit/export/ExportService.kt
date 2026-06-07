@@ -212,10 +212,11 @@ class ExportService(
                 if (linkedBlocks.isEmpty()) continue
 
                 val linkedRefs = resolveBlockRefs(collectBlockRefUuids(linkedBlocks))
-                parts.add("\n\n---\n\n## ${linkedPage.name}\n\n${exporter.export(linkedPage, linkedBlocks, linkedRefs)}")
+                // Use a format-appropriate separator; the exporter already adds the page title.
+                parts.add("${pageSeparator(formatId)}${exporter.export(linkedPage, linkedBlocks, linkedRefs)}")
             }
 
-            parts.joinToString("").right()
+            joinWithFormat(parts, formatId).right()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -267,8 +268,8 @@ class ExportService(
                 if (pageBlocks.isEmpty()) continue
 
                 val resolvedRefs = resolveBlockRefs(collectBlockRefUuids(pageBlocks))
-                val dateLabel = journalPage.journalDate?.toString() ?: journalPage.name
-                parts.add("## $dateLabel\n\n${exporter.export(journalPage, pageBlocks, resolvedRefs)}")
+                // The exporter already includes the page title — add no extra heading here.
+                parts.add(exporter.export(journalPage, pageBlocks, resolvedRefs))
             }
 
             if (parts.isEmpty()) {
@@ -277,7 +278,7 @@ class ExportService(
                 ).left()
             }
 
-            parts.joinToString("\n\n---\n\n").right()
+            joinWithFormat(parts, formatId).right()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -288,4 +289,18 @@ class ExportService(
     /** Display name for the given [formatId], or the ID itself if unknown. */
     fun displayNameFor(formatId: String): String =
         exporterMap[formatId]?.displayName ?: formatId
+
+    // Format-appropriate separator placed BETWEEN multi-page export sections.
+    // The exporter already renders the page title, so we only add a visual divider.
+    private fun pageSeparator(formatId: String): String = when (formatId) {
+        "html" -> "\n<hr>\n"
+        "json" -> ",\n"
+        else -> "\n\n---\n\n"   // markdown + plain-text
+    }
+
+    // Joins exported page strings with format-appropriate glue.
+    // For JSON, wraps in an array; for all other formats, separates with pageSeparator.
+    private fun joinWithFormat(parts: List<String>, formatId: String): String =
+        if (formatId == "json") "[${parts.joinToString(",\n")}]"
+        else parts.joinToString(pageSeparator(formatId))
 }

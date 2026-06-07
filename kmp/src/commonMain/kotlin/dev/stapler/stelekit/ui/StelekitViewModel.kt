@@ -1387,7 +1387,7 @@ class StelekitViewModel(
             ShareScope.CurrentPage -> svc.exportToString(page, allBlocks, formatId)
             ShareScope.SelectedBlocks -> svc.exportToString(
                 page,
-                allBlocks.filter { it.uuid.value in selectedUuids },
+                svc.subtreeBlocks(allBlocks, selectedUuids),
                 formatId,
             )
             ShareScope.PageAndLinks -> svc.exportPageWithLinks(
@@ -1423,7 +1423,7 @@ class StelekitViewModel(
                     ShareScope.SelectedBlocks ->
                         svc.exportToClipboard(
                             page,
-                            allBlocks.filter { it.uuid.value in selectedUuids },
+                            svc.subtreeBlocks(allBlocks, selectedUuids),
                             formatId,
                         )
                     else -> {
