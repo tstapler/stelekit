@@ -93,12 +93,17 @@ class DriveApiClient(
             } else ""
             val metadataPart = """{"name":"$fileName","mimeType":"$mimeType"$parentsPart}"""
 
+            // When uploading HTML for Google Docs conversion, the content part must declare
+            // text/html as Content-Type (the source format). The metadata mimeType field
+            // tells Drive the conversion target (application/vnd.google-apps.document).
+            // Using the target mimeType in the content part causes Drive to reject the upload.
+            val contentMimeType = if (mimeType == "application/vnd.google-apps.document") "text/html" else mimeType
             val headerBytes = buildString {
                 append("--$boundary\r\n")
                 append("Content-Type: application/json; charset=UTF-8\r\n\r\n")
                 append(metadataPart)
                 append("\r\n--$boundary\r\n")
-                append("Content-Type: $mimeType\r\n\r\n")
+                append("Content-Type: $contentMimeType\r\n\r\n")
             }.encodeToByteArray()
             val footerBytes = "\r\n--$boundary--".encodeToByteArray()
             val multipartBody = ByteArray(headerBytes.size + bytes.size + footerBytes.size).also { buf ->

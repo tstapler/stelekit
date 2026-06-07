@@ -31,6 +31,12 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <intent-filter android:label="OAuth Callback">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.stelekit.app" android:path="/oauth2redirect" />
+            </intent-filter>
         </activity>
 
         <!-- Task 1.1 + 1.3: Translucent capture overlay; share target intent-filters added below -->

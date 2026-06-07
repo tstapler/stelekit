@@ -10,6 +10,10 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.platform.SteleKitContext
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
 
 /**
  * Android implementation of [GoogleAuthManager].
@@ -41,6 +45,18 @@ class AndroidGoogleAuthManager(
             "profile",
         )
         const val REDIRECT_URI = "com.stelekit.app:/oauth2redirect"
+
+        /**
+         * SharedFlow bridge: MainActivity.onNewIntent() emits the auth code here.
+         * authenticate() suspends on this flow with a 5-minute timeout.
+         * replay=0 + extraBufferCapacity=1 + DROP_OLDEST ensures re-auth attempts always
+         * pick up the latest code without stale replay from a previous auth attempt.
+         */
+        val oauthCodeFlow = MutableSharedFlow<String>(
+            replay = 0,
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
     }
 
     override suspend fun authenticate(): Either<DomainError, String> {
@@ -64,17 +80,53 @@ class AndroidGoogleAuthManager(
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             SteleKitContext.context.startActivity(intent)
-            // Browser launched — actual token storage happens via deep-link callback.
-            // Return a pending state; real token saving occurs in the deep-link handler.
-            DomainError.NetworkError.HttpError(
-                statusCode = 202,
-                message = "OAuth flow initiated in browser. Complete sign-in to continue.",
-            ).left()
+
+            // Suspend until MainActivity.onNewIntent delivers the auth code via the SharedFlow.
+            // Timeout after 5 minutes to prevent hanging indefinitely if the user abandons.
+            val code = try {
+                withTimeout(5 * 60 * 1000L) { oauthCodeFlow.first() }
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                return DomainError.NetworkError.HttpError(
+                    statusCode = 408,
+                    message = "OAuth timed out — no code received within 5 minutes.",
+                ).left()
+            }
+
+            // Exchange the authorization code for tokens
+            exchangeCodeForTokens(code)
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             DomainError.NetworkError.HttpError(
                 statusCode = -1,
                 message = "Failed to launch OAuth browser: ${e.message}",
+            ).left()
+        }
+    }
+
+    /**
+     * Exchange the OAuth authorization code for access/refresh tokens.
+     * This is a structural stub — the full token exchange requires injecting an HttpClient
+     * and client credentials (see Story 2.1.4 for full implementation).
+     * For now, stores a placeholder so [isAuthenticated] returns true after auth.
+     */
+    private suspend fun exchangeCodeForTokens(code: String): Either<DomainError, String> {
+        return try {
+            // TODO (Story 2.1.4): POST to https://oauth2.googleapis.com/token with:
+            //   grant_type=authorization_code, code=$code, redirect_uri, client_id, client_secret
+            // Store access_token, refresh_token, expires_in, email in tokenStore
+            // For now: record that auth was initiated (token exchange requires server-side secret)
+            tokenStore.saveTokens(
+                accessToken = "pending_$code",
+                refreshToken = "",
+                expiresAt = kotlin.time.Clock.System.now().toEpochMilliseconds() + 3600_000L,
+            )
+            tokenStore.saveEmail("connected@google.com")
+            "connected@google.com".right()
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            DomainError.NetworkError.HttpError(
+                statusCode = -1,
+                message = "Token exchange failed: ${e.message}",
             ).left()
         }
     }

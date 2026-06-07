@@ -1330,6 +1330,84 @@ class StelekitViewModel(
         )}
     }
 
+    // ===== Share Dialog =====
+
+    /** Opens the share dialog. */
+    fun showShareDialog() {
+        _uiState.update { it.copy(shareDialogVisible = true) }
+    }
+
+    /** Closes the share dialog. */
+    fun hideShareDialog() {
+        _uiState.update { it.copy(shareDialogVisible = false) }
+    }
+
+    /** Updates the share format selection (persists across dialog invocations in the session). */
+    fun setShareFormat(format: String) {
+        _uiState.update { it.copy(shareFormat = format) }
+    }
+
+    /** Updates the share scope selection (persists across dialog invocations in the session). */
+    fun setShareScope(scope: ShareScope) {
+        _uiState.update { it.copy(shareScope = scope) }
+    }
+
+    /**
+     * Exports the current page as HTML and uploads it to Google Docs.
+     * Runs on the ViewModel's own scope (never rememberCoroutineScope — that scope
+     * is cancelled when the composable leaves composition).
+     * On success: opens the created document in the browser.
+     * On error: shows a snackbar notification.
+     */
+    fun shareToGoogleDocs(
+        page: dev.stapler.stelekit.model.Page,
+        blocks: List<dev.stapler.stelekit.model.Block>,
+        driveClient: dev.stapler.stelekit.platform.google.DriveUploader,
+        exportSvc: dev.stapler.stelekit.export.ExportService,
+    ) {
+        _uiState.update { it.copy(isExportingToDrive = true) }
+        scope.launch(Dispatchers.Default) {
+            try {
+                val htmlResult = exportSvc.exportToString(page, blocks, "html")
+                htmlResult.fold(
+                    ifLeft = { err ->
+                        withContext(Dispatchers.Main) {
+                            notificationManager?.show("Export failed: ${err.message}", dev.stapler.stelekit.model.NotificationType.ERROR)
+                        }
+                    },
+                    ifRight = { html ->
+                        val uploadResult = driveClient.uploadFile(
+                            fileName = page.name,
+                            mimeType = "application/vnd.google-apps.document",
+                            bytes = html.encodeToByteArray(),
+                            parentFolderId = null,
+                        )
+                        uploadResult.fold(
+                            ifLeft = { err ->
+                                withContext(Dispatchers.Main) {
+                                    notificationManager?.show("Google Docs upload failed: ${err.message}", dev.stapler.stelekit.model.NotificationType.ERROR)
+                                }
+                            },
+                            ifRight = { fileId ->
+                                dev.stapler.stelekit.platform.openInBrowser("https://docs.google.com/document/d/$fileId/edit")
+                            }
+                        )
+                    }
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    notificationManager?.show("Google Docs export failed: ${e.message}", dev.stapler.stelekit.model.NotificationType.ERROR)
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    _uiState.update { it.copy(isExportingToDrive = false) }
+                }
+            }
+        }
+    }
+
     fun setThemeMode(mode: StelekitThemeMode) {
         _uiState.update { it.copy(themeMode = mode) }
         updateCommands()

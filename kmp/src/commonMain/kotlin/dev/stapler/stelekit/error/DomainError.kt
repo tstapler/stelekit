@@ -104,6 +104,7 @@ sealed interface DomainError {
     sealed interface ExportError : DomainError {
         data class SerializationFailed(override val message: String) : ExportError
         data class ClipboardFailed(override val message: String) : ExportError
+        data class ShareFailed(override val message: String) : ExportError
     }
 }
 
@@ -153,6 +154,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory: $message"
     is DomainError.ExportError.SerializationFailed -> "Export failed: $message"
     is DomainError.ExportError.ClipboardFailed -> "Clipboard write failed: $message"
+    is DomainError.ExportError.ShareFailed -> "Share failed: $message"
 }
 
 fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {

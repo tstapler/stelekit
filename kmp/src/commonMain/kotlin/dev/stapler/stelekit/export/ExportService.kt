@@ -12,11 +12,14 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.parsing.InlineParser
 import dev.stapler.stelekit.parsing.ast.BlockRefNode
+import dev.stapler.stelekit.parsing.ast.WikiLinkNode
 import dev.stapler.stelekit.repository.BlockReadRepository
+import dev.stapler.stelekit.repository.PageRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.datetime.LocalDate
 
 /**
  * Orchestrates the export pipeline:
@@ -155,6 +158,131 @@ class ExportService(
             }
         }
         return result
+    }
+
+    /**
+     * Exports [page] + [blocks] along with all pages linked via `[[PageName]]` tokens.
+     *
+     * Only resolves one level of links (non-recursive). Cycles are prevented by a visited set.
+     * Empty linked pages (no blocks) are silently skipped.
+     *
+     * @param pageRepo Used to look up linked pages by name.
+     * @param blockRepo Used to fetch blocks for each linked page.
+     * @return Combined export string with a Markdown heading separator for each page.
+     */
+    suspend fun exportPageWithLinks(
+        page: Page,
+        blocks: List<Block>,
+        formatId: String,
+        pageRepo: PageRepository,
+        blockRepo: BlockReadRepository,
+    ): Either<DomainError, String> = withContext(Dispatchers.Default) {
+        try {
+            val exporter = exporterMap[formatId]
+                ?: return@withContext ExportError.SerializationFailed("Unknown export format: $formatId").left()
+
+            val visited = mutableSetOf(page.name)
+            val parts = mutableListOf<String>()
+
+            // Export the root page
+            val rootRefs = resolveBlockRefs(collectBlockRefUuids(blocks))
+            parts.add(exporter.export(page, blocks, rootRefs))
+
+            // Collect wiki-link targets from root blocks
+            val linkedPageNames = mutableSetOf<String>()
+            for (block in blocks) {
+                InlineParser(block.content).parse().forEach { node ->
+                    if (node is WikiLinkNode) linkedPageNames.add(node.target)
+                }
+            }
+
+            // Export each linked page (one level only, cycle-safe)
+            for (linkedName in linkedPageNames) {
+                if (linkedName in visited) continue
+                visited.add(linkedName)
+
+                val linkedPage = runCatching {
+                    pageRepo.getPageByName(linkedName).first().getOrNull()
+                }.getOrNull() ?: continue
+
+                val linkedBlocks = runCatching {
+                    blockRepo.getBlocksForPage(linkedPage.uuid).first().getOrNull() ?: emptyList()
+                }.getOrNull() ?: emptyList()
+
+                if (linkedBlocks.isEmpty()) continue
+
+                val linkedRefs = resolveBlockRefs(collectBlockRefUuids(linkedBlocks))
+                parts.add("\n\n---\n\n## ${linkedPage.name}\n\n${exporter.export(linkedPage, linkedBlocks, linkedRefs)}")
+            }
+
+            parts.joinToString("").right()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ExportError.SerializationFailed(e.message ?: "unknown").left()
+        }
+    }
+
+    /**
+     * Exports all journal pages in the date range [[from], [to]] (inclusive) as a single string.
+     *
+     * Uses [pageRepo.getAllPages()] and filters in memory (ADR-4). Empty days are skipped.
+     * Pages within the range are sorted by date ascending and separated by a `## date` heading.
+     *
+     * @return [Left] with [ExportError.SerializationFailed] if no journal pages are in range.
+     */
+    suspend fun exportJournalRange(
+        from: LocalDate,
+        to: LocalDate,
+        formatId: String,
+        pageRepo: PageRepository,
+        blockRepo: BlockReadRepository,
+    ): Either<DomainError, String> = withContext(Dispatchers.Default) {
+        try {
+            val exporter = exporterMap[formatId]
+                ?: return@withContext ExportError.SerializationFailed("Unknown export format: $formatId").left()
+
+            val allPages = pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+
+            // Filter to journal pages whose date falls in [from, to]
+            val journalPages = allPages
+                .filter { page ->
+                    val date = page.journalDate ?: return@filter false
+                    date in from..to
+                }
+                .sortedBy { it.journalDate }
+
+            if (journalPages.isEmpty()) {
+                return@withContext ExportError.SerializationFailed(
+                    "No journal pages found in the selected date range"
+                ).left()
+            }
+
+            val parts = mutableListOf<String>()
+            for (journalPage in journalPages) {
+                val pageBlocks = runCatching {
+                    blockRepo.getBlocksForPage(journalPage.uuid).first().getOrNull() ?: emptyList()
+                }.getOrNull() ?: emptyList()
+
+                if (pageBlocks.isEmpty()) continue
+
+                val resolvedRefs = resolveBlockRefs(collectBlockRefUuids(pageBlocks))
+                val dateLabel = journalPage.journalDate?.toString() ?: journalPage.name
+                parts.add("## $dateLabel\n\n${exporter.export(journalPage, pageBlocks, resolvedRefs)}")
+            }
+
+            if (parts.isEmpty()) {
+                return@withContext ExportError.SerializationFailed(
+                    "No journal pages with content found in the selected date range"
+                ).left()
+            }
+
+            parts.joinToString("\n\n---\n\n").right()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ExportError.SerializationFailed(e.message ?: "unknown").left()
+        }
     }
 
     /** Display name for the given [formatId], or the ID itself if unknown. */

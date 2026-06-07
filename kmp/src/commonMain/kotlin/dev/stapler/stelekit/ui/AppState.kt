@@ -117,6 +117,11 @@ data class AppState(
     val conflictResolutionVisible: Boolean = false,
     // Export in-flight: true while an exportPage/exportSelectedBlocks coroutine is running
     val isExporting: Boolean = false,
+    // Share dialog state
+    val shareDialogVisible: Boolean = false,
+    val shareFormat: String = "markdown",
+    val shareScope: ShareScope = ShareScope.CurrentPage,
+    val isExportingToDrive: Boolean = false,
 ) {
     val canGoBack: Boolean get() = historyIndex > 0
     val canGoForward: Boolean get() = historyIndex < navigationHistory.size - 1
