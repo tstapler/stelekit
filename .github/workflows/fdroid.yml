@@ -113,14 +113,26 @@ jobs:
       - name: Generate fdroid index
         run: uv run --directory fdroid fdroid update --create-metadata --verbose
 
+      - name: Stage fdroid index files for upload
+        run: |
+          # GitHub Pages has a 100 MB per-file limit. APKs are ~100-110 MB and will be
+          # silently dropped or cause 404s. Only the index files (entry.jar, index-v2.json,
+          # icons/, etc.) need to be served from Pages — F-Droid clients fetch these to
+          # discover available versions. APK downloads are handled by GitHub Releases.
+          #
+          # Using a staging directory preserves the repo/ directory structure in the
+          # artifact. Without it, upload-artifact@v4 strips the fdroid/repo/ prefix and
+          # the artifact lands flat (no repo/ subdirectory), breaking the pages.yml check.
+          mkdir -p fdroid-staging/repo
+          rsync -a --exclude='*.apk' fdroid/repo/ fdroid-staging/repo/
+
       - name: Upload fdroid content
         uses: actions/upload-artifact@v4
         with:
           name: fdroid-content
-          # Only upload repo/ (latest 5 APKs per archive_older:5). archive/ is excluded
-          # because pages.yml does not deploy it — including it would push the artifact
-          # and the GitHub Pages deployment past the 1 GB size limit.
-          path: fdroid/repo
+          # Uploads fdroid-staging/ → artifact has repo/ as a subdirectory.
+          # pages.yml checks for fdroid-content/repo/ after download, which works correctly.
+          path: fdroid-staging
           if-no-files-found: error
           retention-days: 90
       # Pages deployment is handled by pages.yml, which downloads this artifact

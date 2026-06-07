@@ -201,16 +201,16 @@ jobs:
 
       - name: Merge fdroid content into site output
         run: |
-          # upload-artifact@v4 strips the common fdroid/ prefix, so the artifact
-          # structure is repo/ and archive/ directly (not fdroid/repo/).
+          # fdroid-staging/ is uploaded by fdroid.yml with repo/ as a subdirectory.
+          # After download to fdroid-content/, the structure is fdroid-content/repo/.
           #
-          # Only deploy repo/ (latest 5 APKs per archive_older:5 in fdroid/config.yml).
-          # archive/ is intentionally excluded — it contains all older APKs and would
-          # push the Pages artifact past GitHub's 1 GB limit.
+          # APKs are excluded from the artifact because GitHub Pages has a 100 MB per-file
+          # limit and APKs are ~100-110 MB. The index files (entry.jar, index-v2.json,
+          # icons/, etc.) are small and serve F-Droid client discovery correctly.
           if [ -d fdroid-content/repo ]; then
             mkdir -p site/dist/fdroid
             cp -r fdroid-content/repo site/dist/fdroid/
-            echo "F-Droid content merged into site output (repo/ only, archive/ excluded)"
+            echo "F-Droid content merged into site output"
           else
             echo "No fdroid content available; /fdroid/repo will be absent from the deploy"
           fi
