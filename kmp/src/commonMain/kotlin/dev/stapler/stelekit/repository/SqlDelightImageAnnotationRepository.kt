@@ -17,6 +17,7 @@ import dev.stapler.stelekit.model.ImageSource
 import dev.stapler.stelekit.model.MeasurementUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -44,24 +45,28 @@ class SqlDelightImageAnnotationRepository(
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
             .map { rows -> rows.map { it.toModel() }.right() }
+            .catchDbError()
 
     override fun getImageAnnotationByUuid(uuid: String): Flow<Either<DomainError, ImageAnnotation?>> =
         queries.selectImageAnnotationByUuid(uuid)
             .asFlow()
             .mapToOneOrNull(PlatformDispatcher.DB)
             .map { row -> row?.toModel().right() }
+            .catchDbError()
 
     override fun getImageAnnotationsByPage(pageUuid: String): Flow<Either<DomainError, List<ImageAnnotation>>> =
         queries.selectImageAnnotationsByPage(pageUuid)
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
             .map { rows -> rows.map { it.toModel() }.right() }
+            .catchDbError()
 
     override fun getImageAnnotationsByTag(tag: String): Flow<Either<DomainError, List<ImageAnnotation>>> =
         queries.selectImageAnnotationsByTag(tag)
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
             .map { rows -> rows.map { it.toModel() }.right() }
+            .catchDbError()
 
     @DirectRepositoryWrite
     override suspend fun saveImageAnnotation(annotation: ImageAnnotation): Either<DomainError, Unit> =
@@ -116,6 +121,12 @@ class SqlDelightImageAnnotationRepository(
             }
         }
 }
+
+private fun <T> Flow<Either<DomainError, T>>.catchDbError(): Flow<Either<DomainError, T>> =
+    catch { e ->
+        if (e is CancellationException) throw e
+        emit(DomainError.DatabaseError.ReadFailed(e.message ?: "database closed").left())
+    }
 
 // ── Row → domain model mapper ─────────────────────────────────────────────────
 

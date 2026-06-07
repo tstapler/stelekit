@@ -13,6 +13,7 @@ import dev.stapler.stelekit.model.MeasurementAnnotation
 import dev.stapler.stelekit.model.NormalizedPoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -40,6 +41,7 @@ class SqlDelightMeasurementAnnotationRepository(
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
             .map { rows -> rows.map { it.toModel() }.right() }
+            .catchDbError()
 
     @DirectRepositoryWrite
     override suspend fun saveMeasurementAnnotation(measurement: MeasurementAnnotation): Either<DomainError, Unit> =
@@ -118,6 +120,12 @@ class SqlDelightMeasurementAnnotationRepository(
             }
         }
 }
+
+private fun <T> Flow<Either<DomainError, T>>.catchDbError(): Flow<Either<DomainError, T>> =
+    catch { e ->
+        if (e is CancellationException) throw e
+        emit(DomainError.DatabaseError.ReadFailed(e.message ?: "database closed").left())
+    }
 
 // ── Serialization helpers ─────────────────────────────────────────────────────
 

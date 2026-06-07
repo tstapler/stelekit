@@ -10,6 +10,7 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.performance.SpanRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
@@ -30,6 +31,7 @@ class SqlDelightSpanRepository(
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
             .map { rows -> rows.map { row -> row.toSerializedSpan() } }
+            .catch { e -> if (e is CancellationException) throw e; emit(emptyList()) }
 
     override suspend fun insertSpan(span: SerializedSpan) {
         val attributesJson = json.encodeToString(
