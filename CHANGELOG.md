@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.4](https://github.com/tstapler/stelekit/compare/v0.38.3...v0.38.4) (2026-06-07)
+
+
+### Bug Fixes
+
+* **ci:** prevent Pages deploy failures from artifact size and deployment conflicts ([3c23053](https://github.com/tstapler/stelekit/commit/3c23053cd620a12c9e02b43bd172755cc214a8c1))
+
 ## [0.38.3](https://github.com/tstapler/stelekit/compare/v0.38.2...v0.38.3) (2026-06-07)
 
 
