@@ -5,6 +5,7 @@ package dev.stapler.stelekit.auto
 import androidx.car.app.CarContext
 import androidx.car.app.Screen
 import androidx.car.app.model.Action
+import androidx.car.app.model.CarIcon
 import androidx.car.app.model.GridItem
 import androidx.car.app.model.GridTemplate
 import androidx.car.app.model.Header
@@ -33,8 +34,8 @@ import kotlinx.coroutines.launch
 
 class AudiobookNoteScreen(
     carContext: CarContext,
-    private val observer: MediaSessionObserver = MediaSessionObserver(carContext),
-    private val noteWriter: AudiobookNoteWriter? = null,
+    private val observer: ObservedSession = MediaSessionObserver(carContext),
+    private val noteWriter: NoteWriter? = null,
     private val voiceViewModel: VoiceCaptureViewModel? = null,
 ) : Screen(carContext) {
 
@@ -47,7 +48,7 @@ class AudiobookNoteScreen(
     private val steleApp: SteleKitApplication?
         get() = carContext.applicationContext as? SteleKitApplication
 
-    private val writer: AudiobookNoteWriter by lazy {
+    private val writer: NoteWriter by lazy {
         noteWriter ?: run {
             val gm = steleApp?.graphManager
             val repoSet = gm?.getActiveRepositorySet()
@@ -173,6 +174,7 @@ class AudiobookNoteScreen(
             addItem(
                 GridItem.Builder()
                     .setTitle(if (hasMicPermission) "Voice note" else "Voice note (needs mic)")
+                    .setImage(CarIcon.COMPOSE_MESSAGE)
                     .setOnClickListener { onVoiceNoteClicked(hasMicPermission) }
                     .build()
             )
@@ -181,6 +183,7 @@ class AudiobookNoteScreen(
             addItem(
                 GridItem.Builder()
                     .setTitle("Bookmark")
+                    .setImage(CarIcon.APP_ICON)
                     .setOnClickListener { onBookmarkClicked() }
                     .build()
             )
@@ -189,6 +192,7 @@ class AudiobookNoteScreen(
             addItem(
                 GridItem.Builder()
                     .setTitle("Quick tag")
+                    .setImage(CarIcon.ALERT)
                     .setOnClickListener { onQuickTagClicked() }
                     .build()
             )
@@ -197,6 +201,7 @@ class AudiobookNoteScreen(
             addItem(
                 GridItem.Builder()
                     .setTitle("Bookmark position")
+                    .setImage(CarIcon.APP_ICON)
                     .setOnClickListener { onAudioSnippetClicked() }
                     .build()
             )

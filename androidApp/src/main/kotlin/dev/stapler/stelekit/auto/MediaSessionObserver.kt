@@ -19,11 +19,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class MediaSessionObserver(private val context: Context) {
+class MediaSessionObserver(private val context: Context) : ObservedSession {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _bookInfo = MutableStateFlow(BookInfo.Unknown)
-    val bookInfo: StateFlow<BookInfo> = _bookInfo.asStateFlow()
+    override val bookInfo: StateFlow<BookInfo> = _bookInfo.asStateFlow()
 
     private val sessionManager: MediaSessionManager? by lazy {
         context.getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager
@@ -33,7 +33,7 @@ class MediaSessionObserver(private val context: Context) {
         updateBookInfo(controllers)
     }
 
-    fun start() {
+    override fun start() {
         if (!isNotificationListenerEnabled()) {
             _bookInfo.value = BookInfo.Unknown
             return
@@ -50,14 +50,14 @@ class MediaSessionObserver(private val context: Context) {
         }
     }
 
-    fun close() {
+    override fun close() {
         try {
             sessionManager?.removeOnActiveSessionsChangedListener(sessionsChangedListener)
         } catch (_: Exception) {}
         scope.cancel()
     }
 
-    fun refreshBookInfo() {
+    override fun refreshBookInfo() {
         scope.launch {
             if (!isNotificationListenerEnabled()) {
                 _bookInfo.value = BookInfo.Unknown
@@ -85,7 +85,7 @@ class MediaSessionObserver(private val context: Context) {
         _bookInfo.value = extractBookInfo(metadata, playbackState)
     }
 
-    fun isNotificationListenerEnabled(): Boolean {
+    override fun isNotificationListenerEnabled(): Boolean {
         val flat = Settings.Secure.getString(
             context.contentResolver,
             "enabled_notification_listeners",

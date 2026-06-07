@@ -20,8 +20,8 @@ import kotlinx.coroutines.launch
 
 class QuickTagScreen(
     carContext: CarContext,
-    private val writer: AudiobookNoteWriter,
-    private val observer: MediaSessionObserver,
+    private val writer: NoteWriter,
+    private val observer: ObservedSession,
     private val settings: AudiobookAutoSettings,
 ) : Screen(carContext) {
 

@@ -14,11 +14,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 class AudiobookNoteWriter(
     private val journalService: JournalService,
     private val settings: AudiobookAutoSettings,
-) {
+) : NoteWriter {
     /** Tracks whether the first note of this session has been written (for heading insertion). */
     private val firstNoteWritten = AtomicBoolean(false)
 
-    suspend fun writeNote(note: AudiobookNote): Either<DomainError, Unit> {
+    override suspend fun writeNote(note: AudiobookNote): Either<DomainError, Unit> {
         val bookInfo = note.bookInfo()
         val destination = settings.getNoteDestination()
         val today = LocalDate.now().toString() // ISO-8601: "2026-06-07"
