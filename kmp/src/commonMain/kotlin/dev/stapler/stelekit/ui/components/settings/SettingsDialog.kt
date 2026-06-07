@@ -52,6 +52,8 @@ fun SettingsDialog(
     onRemoveKeyslot: (suspend (Int) -> Either<VaultError, Unit>)? = null,
     onLockVault: (() -> Unit)? = null,
     onListActiveSlots: (suspend () -> List<Int>)? = null,
+    // Audiobook Notes settings (Android Auto feature; null hides the category on non-Android platforms)
+    audiobookNotesSettingsContent: (@Composable () -> Unit)? = null,
 ) {
     if (visible) {
         Dialog(
@@ -86,9 +88,13 @@ fun SettingsDialog(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        val visibleCategories = remember(onConnectGoogle) {
+                        val visibleCategories = remember(onConnectGoogle, audiobookNotesSettingsContent) {
                             SettingsCategory.entries.filter { category ->
-                                category != SettingsCategory.GOOGLE_ACCOUNT || onConnectGoogle != null
+                                when (category) {
+                                    SettingsCategory.GOOGLE_ACCOUNT -> onConnectGoogle != null
+                                    SettingsCategory.AUDIOBOOK_NOTES -> audiobookNotesSettingsContent != null
+                                    else -> true
+                                }
                             }
                         }
                         visibleCategories.forEach { category ->
@@ -158,6 +164,7 @@ fun SettingsDialog(
                                         deviceLlmAvailable = deviceLlmAvailable,
                                     )
                                 }
+                                SettingsCategory.AUDIOBOOK_NOTES -> audiobookNotesSettingsContent?.invoke()
                                 SettingsCategory.GOOGLE_ACCOUNT -> GoogleAccountSettings(
                                     isAuthenticated = isGoogleAuthenticated,
                                     connectedEmail = googleConnectedEmail,
@@ -222,6 +229,7 @@ enum class SettingsCategory(val label: String, val icon: ImageVector) {
     PLUGINS("Plugins", Icons.Default.Extension),
     ADVANCED("Advanced", Icons.Default.Build),
     VOICE("Voice Capture", Icons.Default.Mic),
+    AUDIOBOOK_NOTES("Audiobook Notes", Icons.Default.Book),
     GOOGLE_ACCOUNT("Google Account", Icons.Default.Cloud),
     VAULT("Vault", Icons.Default.Lock),
 }

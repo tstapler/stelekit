@@ -57,6 +57,10 @@ import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.voice.VoiceCaptureState
 import dev.stapler.stelekit.voice.VoiceErrorKind
+import dev.stapler.stelekit.widget.EXTRA_BOOK_AUTHOR
+import dev.stapler.stelekit.widget.EXTRA_BOOK_CHAPTER
+import dev.stapler.stelekit.widget.EXTRA_BOOK_POSITION_MS
+import dev.stapler.stelekit.widget.EXTRA_BOOK_TITLE
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 
@@ -90,7 +94,13 @@ class VoiceCaptureActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         if (savedInstanceState == null) {
-            viewModel.initialize(::requestMicPermission)
+            val bookTitle   = intent.getStringExtra(EXTRA_BOOK_TITLE)
+            val bookAuthor  = intent.getStringExtra(EXTRA_BOOK_AUTHOR)
+            val bookChapter = intent.getStringExtra(EXTRA_BOOK_CHAPTER)
+            val bookPos     = if (intent.hasExtra(EXTRA_BOOK_POSITION_MS))
+                intent.getLongExtra(EXTRA_BOOK_POSITION_MS, -1L).takeIf { it >= 0 }
+            else null
+            viewModel.initialize(::requestMicPermission, bookTitle, bookAuthor, bookChapter, bookPos)
         }
 
         setContent {
