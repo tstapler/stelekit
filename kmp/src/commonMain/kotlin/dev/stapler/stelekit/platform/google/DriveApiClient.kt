@@ -160,6 +160,15 @@ class DriveApiClient(
                 message = "Not authenticated",
             ).left()
 
+        // Drive resource IDs are server-issued alphanumeric strings. Validate before interpolating
+        // into the Drive Files.list query string to prevent Drive query injection.
+        if (folderId != null && !DRIVE_ID_REGEX.matches(folderId)) {
+            return DomainError.NetworkError.HttpError(
+                statusCode = 400,
+                message = "Invalid folderId — expected alphanumeric Drive resource ID",
+            ).left()
+        }
+
         return try {
             val parent = if (folderId != null) "'$folderId' in parents" else "'root' in parents"
             val query = "$parent and trashed=false"
@@ -291,5 +300,10 @@ class DriveApiClient(
                 message = "Drive download error: ${e.message}",
             ).left()
         }
+    }
+
+    companion object {
+        // Drive resource IDs are server-issued: alphanumeric plus underscore and hyphen.
+        private val DRIVE_ID_REGEX = Regex("[A-Za-z0-9_-]+")
     }
 }

@@ -16,7 +16,6 @@ import dev.stapler.stelekit.parsing.ast.WikiLinkNode
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.repository.BlockReadRepository
 import dev.stapler.stelekit.repository.PageRepository
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
@@ -40,13 +39,13 @@ class ExportService(
 
     /**
      * Exports [page] + [blocks] to the given [formatId] and writes to [clipboard].
-     * Runs on [Dispatchers.Default]; callers should switch to Main for UI updates.
+     * Runs on [PlatformDispatcher.DB] because [resolveBlockRefs] performs DB reads.
      */
     suspend fun exportToClipboard(
         page: Page,
         blocks: List<Block>,
         formatId: String
-    ): Either<DomainError, Unit> = withContext(Dispatchers.Default) {
+    ): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             val exporter = exporterMap[formatId]
                 ?: return@withContext ExportError.SerializationFailed("Unknown export format: $formatId").left()
@@ -85,7 +84,7 @@ class ExportService(
         page: Page,
         blocks: List<Block>,
         formatId: String
-    ): Either<DomainError, String> = withContext(Dispatchers.Default) {
+    ): Either<DomainError, String> = withContext(PlatformDispatcher.DB) {
         try {
             val exporter = exporterMap[formatId]
                 ?: return@withContext ExportError.SerializationFailed("Unknown export format: $formatId").left()
@@ -117,7 +116,7 @@ class ExportService(
      * Missing/dangling refs are silently omitted (exporters fall back to "[block ref]").
      */
     suspend fun resolveBlockRefs(uuids: Set<String>): Map<String, String> =
-        withContext(Dispatchers.Default) {
+        withContext(PlatformDispatcher.DB) {
             uuids.mapNotNull { uuid ->
                 val block = runCatching {
                     blockRepository.getBlockByUuid(BlockUuid(uuid)).first().getOrNull()

@@ -243,8 +243,9 @@ class MainActivity : ComponentActivity() {
             // An empty or mismatched state rejects the callback silently.
             if (state.isNullOrBlank() || state != AndroidGoogleAuthManager.pendingOAuthState) return
             AndroidGoogleAuthManager.pendingOAuthState = null
-            // tryEmit is safe to call from the main thread (SharedFlow with DROP_OLDEST)
-            AndroidGoogleAuthManager.oauthCodeFlow.tryEmit(code)
+            // Emit (state, code) pair so authenticate() can filter by its own nonce,
+            // discarding any stale codes from a prior auth session still in the buffer.
+            AndroidGoogleAuthManager.oauthCodeFlow.tryEmit(state to code)
         }
     }
 

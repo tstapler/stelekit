@@ -48,12 +48,14 @@ class AndroidGoogleAuthManager(
         const val REDIRECT_URI = "com.stelekit.app:/oauth2redirect"
 
         /**
-         * SharedFlow bridge: MainActivity.onNewIntent() emits the auth code here.
-         * authenticate() suspends on this flow with a 5-minute timeout.
-         * replay=0 + extraBufferCapacity=1 + DROP_OLDEST ensures re-auth attempts always
-         * pick up the latest code without stale replay from a previous auth attempt.
+         * SharedFlow bridge: MainActivity.onNewIntent() emits (state, code) pairs here.
+         * authenticate() suspends on this flow filtering for its own state nonce, so stale
+         * codes from a prior abandoned auth attempt in the buffer are discarded automatically.
+         *
+         * replay=0 + extraBufferCapacity=1 + DROP_OLDEST: the buffer holds at most one pair;
+         * a new emission displaces any stale buffered pair before the next first{} call sees it.
          */
-        val oauthCodeFlow = MutableSharedFlow<String>(
+        val oauthCodeFlow = MutableSharedFlow<Pair<String, String>>(
             replay = 0,
             extraBufferCapacity = 1,
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
@@ -92,11 +94,15 @@ class AndroidGoogleAuthManager(
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             SteleKitContext.context.startActivity(intent)
 
-            // Suspend until MainActivity.onNewIntent delivers the auth code via the SharedFlow.
+            // Suspend until MainActivity.onNewIntent delivers the matching (state, code) pair.
+            // Filtering by state ensures stale codes from abandoned auth sessions are discarded.
             // Timeout after 5 minutes to prevent hanging indefinitely if the user abandons.
             val code = try {
-                withTimeout(5 * 60 * 1000L) { oauthCodeFlow.first() }
+                withTimeout(5 * 60 * 1000L) {
+                    oauthCodeFlow.first { (emittedState, _) -> emittedState == state }.second
+                }
             } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                pendingOAuthState = null
                 return DomainError.NetworkError.HttpError(
                     statusCode = 408,
                     message = "OAuth timed out — no code received within 5 minutes.",
