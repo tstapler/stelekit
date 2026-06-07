@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.3](https://github.com/tstapler/stelekit/compare/v0.38.2...v0.38.3) (2026-06-07)
+
+
+### Bug Fixes
+
+* **android:** complete catchDbError coverage across all repository flows + add regression test ([9e09932](https://github.com/tstapler/stelekit/commit/9e09932b8c191cdb5f7dc05c3c4a14314968cafc))
+
 ## [0.38.2](https://github.com/tstapler/stelekit/compare/v0.38.1...v0.38.2) (2026-06-07)
 
 
