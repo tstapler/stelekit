@@ -831,7 +831,7 @@ private fun GraphContent(
     // Span data: reactive SQLDelight flow — fires whenever new spans are written to SQLite.
     // Starts immediately (spans are cheap to subscribe to; the reactive query only fires on writes).
     androidx.compose.runtime.LaunchedEffect(repos.spanRepository) {
-        repos.spanRepository?.getRecentSpans(500)?.collect { spans -> perfSpans.value = spans }
+        repos.spanRepository?.getRecentSpans(500)?.collect { result -> result.getOrNull()?.let { perfSpans.value = it } }
     }
 
     // Histogram summaries: poll every 2s, but only after Performance screen first opened.

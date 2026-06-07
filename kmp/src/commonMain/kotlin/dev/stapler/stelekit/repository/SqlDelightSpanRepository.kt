@@ -3,9 +3,13 @@ package dev.stapler.stelekit.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
 import dev.stapler.stelekit.db.DirectSqlWrite
 import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.performance.SpanRepository
@@ -26,12 +30,12 @@ class SqlDelightSpanRepository(
     private val restricted = RestrictedDatabaseQueries(queries)
     private val json = Json { ignoreUnknownKeys = true }
 
-    override fun getRecentSpans(limit: Int): Flow<List<SerializedSpan>> =
+    override fun getRecentSpans(limit: Int): Flow<Either<DomainError, List<SerializedSpan>>> =
         queries.selectRecentSpans(limit.toLong())
             .asFlow()
             .mapToList(PlatformDispatcher.DB)
-            .map { rows -> rows.map { row -> row.toSerializedSpan() } }
-            .catch { e -> if (e is CancellationException) throw e; emit(emptyList()) }
+            .map { rows -> rows.map { row -> row.toSerializedSpan() }.right() }
+            .catchDbError()
 
     override suspend fun insertSpan(span: SerializedSpan) {
         val attributesJson = json.encodeToString(
@@ -99,3 +103,9 @@ class SqlDelightSpanRepository(
         )
     }
 }
+
+private fun <T> Flow<Either<DomainError, T>>.catchDbError(): Flow<Either<DomainError, T>> =
+    catch { e ->
+        if (e is CancellationException) throw e
+        emit(DomainError.DatabaseError.ReadFailed(e.message ?: "database closed").left())
+    }

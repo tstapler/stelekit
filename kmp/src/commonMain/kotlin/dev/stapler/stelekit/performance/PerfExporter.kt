@@ -61,7 +61,7 @@ class PerfExporter(
     }
 
     private suspend fun buildReportContent(): String {
-        val spans = spanRepository.getRecentSpans(limit = MAX_EXPORT_SPANS).first()
+        val spans = spanRepository.getRecentSpans(limit = MAX_EXPORT_SPANS).first().getOrNull() ?: emptyList()
         val histograms = HistogramWriter.KNOWN_OPERATIONS
             .mapNotNull { op -> histogramWriter.queryPercentiles(op)?.let { op to it } }
             .toMap()

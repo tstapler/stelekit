@@ -3,6 +3,9 @@ package dev.stapler.stelekit.performance
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.platform.FileSystem
+import arrow.core.Either
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,7 +31,7 @@ class PerfExporterPickerTest {
             )
         )
 
-        override fun getRecentSpans(limit: Int): Flow<List<SerializedSpan>> = flowOf(spans)
+        override fun getRecentSpans(limit: Int): Flow<Either<DomainError, List<SerializedSpan>>> = flowOf(spans.right())
         @DirectRepositoryWrite override suspend fun insertSpan(span: SerializedSpan) = Unit
         @DirectRepositoryWrite override suspend fun deleteSpansOlderThan(cutoffEpochMs: Long) = Unit
         @DirectRepositoryWrite override suspend fun deleteExcessSpans(maxCount: Int) = Unit
