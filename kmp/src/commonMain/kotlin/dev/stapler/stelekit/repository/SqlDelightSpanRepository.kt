@@ -32,10 +32,7 @@ class SqlDelightSpanRepository(
 
     override fun getRecentSpans(limit: Int): Flow<Either<DomainError, List<SerializedSpan>>> =
         queries.selectRecentSpans(limit.toLong())
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { rows -> rows.map { row -> row.toSerializedSpan() }.right() }
-            .catchDbError()
+            .asDbFlowList(PlatformDispatcher.DB) { it.toSerializedSpan() }
 
     override suspend fun insertSpan(span: SerializedSpan) {
         val attributesJson = json.encodeToString(
@@ -104,8 +101,3 @@ class SqlDelightSpanRepository(
     }
 }
 
-private fun <T> Flow<Either<DomainError, T>>.catchDbError(): Flow<Either<DomainError, T>> =
-    catch { e ->
-        if (e is CancellationException) throw e
-        emit(DomainError.DatabaseError.ReadFailed(e.message ?: "database closed").left())
-    }

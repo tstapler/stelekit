@@ -42,31 +42,19 @@ class SqlDelightImageAnnotationRepository(
 
     override fun getAllImageAnnotations(): Flow<Either<DomainError, List<ImageAnnotation>>> =
         queries.selectAllImageAnnotations()
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { rows -> rows.map { it.toModel() }.right() }
-            .catchDbError()
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun getImageAnnotationByUuid(uuid: String): Flow<Either<DomainError, ImageAnnotation?>> =
         queries.selectImageAnnotationByUuid(uuid)
-            .asFlow()
-            .mapToOneOrNull(PlatformDispatcher.DB)
-            .map { row -> row?.toModel().right() }
-            .catchDbError()
+            .asDbFlowOrNull(PlatformDispatcher.DB) { it.toModel() }
 
     override fun getImageAnnotationsByPage(pageUuid: String): Flow<Either<DomainError, List<ImageAnnotation>>> =
         queries.selectImageAnnotationsByPage(pageUuid)
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { rows -> rows.map { it.toModel() }.right() }
-            .catchDbError()
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun getImageAnnotationsByTag(tag: String): Flow<Either<DomainError, List<ImageAnnotation>>> =
         queries.selectImageAnnotationsByTag(tag)
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { rows -> rows.map { it.toModel() }.right() }
-            .catchDbError()
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     @DirectRepositoryWrite
     override suspend fun saveImageAnnotation(annotation: ImageAnnotation): Either<DomainError, Unit> =
@@ -121,12 +109,6 @@ class SqlDelightImageAnnotationRepository(
             }
         }
 }
-
-private fun <T> Flow<Either<DomainError, T>>.catchDbError(): Flow<Either<DomainError, T>> =
-    catch { e ->
-        if (e is CancellationException) throw e
-        emit(DomainError.DatabaseError.ReadFailed(e.message ?: "database closed").left())
-    }
 
 // ── Row → domain model mapper ─────────────────────────────────────────────────
 

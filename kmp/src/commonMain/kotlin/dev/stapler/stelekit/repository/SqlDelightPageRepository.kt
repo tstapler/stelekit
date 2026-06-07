@@ -85,63 +85,39 @@ class SqlDelightPageRepository(
 
     override fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>> =
         queries.selectPagesByNamespaceUnpaginated(namespace)
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { list -> list.map { it.toModel() }.right() }
-            .catchDbError()
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectAllPagesPaginated(limit.toLong(), offset.toLong())
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { list -> list.map { it.toModel() }.right() }
-            .catchDbError()
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun searchPages(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectPagesByNameLikePaginated("%$query%", limit.toLong(), offset.toLong())
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { list -> list.map { it.toModel() }.right() }
-            .catchDbError()
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun getAllPages(): Flow<Either<DomainError, List<Page>>> =
         queries.selectAllPages()
             .asFlow()
             .conflate()  // drop intermediate invalidations during bulk import to avoid O(N²) full-table scans
             .mapToList(PlatformDispatcher.DB)
-            .map { list ->
-                val result: Either<DomainError, List<Page>> = list.map { it.toModel() }.right()
-                result
-            }
+            .map { list -> list.map { it.toModel() }.right() }
             .catchDbError()
 
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectJournalPages(limit.toLong(), offset.toLong())
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { list -> list.map { it.toModel() }.right() }
-            .catchDbError()
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun getJournalPageByDate(date: kotlinx.datetime.LocalDate): Flow<Either<DomainError, Page?>> =
         queries.selectJournalPageByDate(date.toString())
-            .asFlow()
-            .mapToOneOrNull(PlatformDispatcher.DB)
-            .map { it?.toModel().right() }
-            .catchDbError()
+            .asDbFlowOrNull(PlatformDispatcher.DB) { it.toModel() }
 
     override fun getRecentPages(limit: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectRecentlyUpdatedPages(limit.toLong())
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { list -> list.map { it.toModel() }.right() }
-            .catchDbError()
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> =
         queries.selectUnloadedPages()
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { list -> list.map { it.toModel() }.right() }
-            .catchDbError()
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override suspend fun savePage(page: Page): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
@@ -310,8 +286,3 @@ class SqlDelightPageRepository(
     }
 }
 
-private fun <T> Flow<Either<DomainError, T>>.catchDbError(): Flow<Either<DomainError, T>> =
-    catch { e ->
-        if (e is CancellationException) throw e
-        emit(DomainError.DatabaseError.ReadFailed(e.message ?: "database closed").left())
-    }
