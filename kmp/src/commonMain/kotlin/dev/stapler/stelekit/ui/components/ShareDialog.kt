@@ -11,8 +11,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import dev.stapler.stelekit.export.ExportService
 import dev.stapler.stelekit.export.ShareProvider
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
@@ -24,12 +22,21 @@ import dev.stapler.stelekit.ui.ShareScope
 import dev.stapler.stelekit.ui.StelekitViewModel
 import dev.stapler.stelekit.ui.isMobile
 import kotlinx.coroutines.launch
+import kotlinx.datetime.LocalDate
+
+// ── Format ID constants ──────────────────────────────────────────────────────
+
+private const val FORMAT_MARKDOWN = "markdown"
+private const val FORMAT_PLAIN_TEXT = "plain-text"
+private const val FORMAT_HTML = "html"
+private const val FORMAT_JSON = "json"
 
 /**
  * Inner content of the share dialog — scope selector, format picker, and destination tiles.
  *
  * All selections update AppState via ViewModel callbacks.
- * Destination actions are dispatched through [shareProvider] or [viewModel.shareToGoogleDocs].
+ * Auth state is owned by AppState ([AppState.shareIsGoogleAuthenticated]) and refreshed
+ * when the dialog opens via [StelekitViewModel.refreshShareGoogleAuthState].
  */
 @Composable
 fun ShareContent(
@@ -39,21 +46,44 @@ fun ShareContent(
     blocks: List<Block>,
     selectedBlockUuids: Set<String>,
     shareProvider: ShareProvider,
-    exportService: ExportService,
-    driveClient: DriveUploader?,
     googleAuthManager: GoogleAuthManager?,
+    driveClient: DriveUploader?,
     isMobile: Boolean,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
 
-    var isGoogleAuthenticated by remember { mutableStateOf(false) }
-    var googleEmail by remember { mutableStateOf<String?>(null) }
+    // Journal date range text inputs (shown only for JournalRange scope)
+    var journalFromText by remember { mutableStateOf("") }
+    var journalToText by remember { mutableStateOf("") }
+    var dateError by remember { mutableStateOf<String?>(null) }
+    var exportError by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(googleAuthManager) {
-        isGoogleAuthenticated = googleAuthManager?.isAuthenticated() == true
-        googleEmail = googleAuthManager?.getConnectedEmail()
+    val isSelectionEmpty = appState.shareScope == ShareScope.SelectedBlocks && selectedBlockUuids.isEmpty()
+    val isGoogleAuthenticated = appState.shareIsGoogleAuthenticated
+    val googleEmail = appState.shareGoogleEmail
+
+    // Parse journal date range; sets dateError and returns null on invalid input.
+    fun parseDateRange(): Pair<LocalDate, LocalDate>? {
+        val from = runCatching { LocalDate.parse(journalFromText) }.getOrNull()
+        val to = runCatching { LocalDate.parse(journalToText) }.getOrNull()
+        if (from == null || to == null) {
+            dateError = "Enter dates as YYYY-MM-DD"
+            return null
+        }
+        if (from > to) {
+            dateError = "Start date must be on or before end date"
+            return null
+        }
+        dateError = null
+        return from to to
+    }
+
+    // Returns parsed dates for JournalRange (or null+sets error), and (null,null) for other scopes.
+    fun datesForScope(): Pair<LocalDate?, LocalDate?>? {
+        if (appState.shareScope != ShareScope.JournalRange) return null to null
+        return parseDateRange() ?: return null
     }
 
     Column(
@@ -76,7 +106,6 @@ fun ShareContent(
         )
         Column {
             ShareScope.entries.forEach { scopeOption ->
-                // Hide SelectedBlocks when no blocks are selected
                 val isDisabled = scopeOption == ShareScope.SelectedBlocks && selectedBlockUuids.isEmpty()
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -109,6 +138,32 @@ fun ShareContent(
             )
         }
 
+        // ── Journal date range inputs ────────────────────────────────────────
+        if (appState.shareScope == ShareScope.JournalRange) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = journalFromText,
+                    onValueChange = { journalFromText = it; dateError = null },
+                    label = { Text("From (YYYY-MM-DD)") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = journalToText,
+                    onValueChange = { journalToText = it; dateError = null },
+                    label = { Text("To (YYYY-MM-DD)") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            dateError?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+        }
+
         // ── Format picker ────────────────────────────────────────────────────
         Text(
             text = "Format",
@@ -116,10 +171,10 @@ fun ShareContent(
             color = MaterialTheme.colorScheme.primary,
         )
         val formats = listOf(
-            "markdown" to "Markdown",
-            "plain-text" to "Plain Text",
-            "html" to "HTML",
-            "json" to "JSON",
+            FORMAT_MARKDOWN to "Markdown",
+            FORMAT_PLAIN_TEXT to "Plain Text",
+            FORMAT_HTML to "HTML",
+            FORMAT_JSON to "JSON",
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -144,17 +199,25 @@ fun ShareContent(
             color = MaterialTheme.colorScheme.primary,
         )
 
-        val isSelectionEmpty = appState.shareScope == ShareScope.SelectedBlocks && selectedBlockUuids.isEmpty()
+        exportError?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
 
         // Clipboard
         OutlinedButton(
             onClick = {
                 val p = page ?: return@OutlinedButton
-                val targetBlocks = resolveBlocks(appState.shareScope, blocks, selectedBlockUuids)
-                scope.launch {
-                    exportService.exportToClipboard(p, targetBlocks, appState.shareFormat)
-                    onDismiss()
-                }
+                val dates = datesForScope() ?: return@OutlinedButton
+                viewModel.exportScopeToClipboard(
+                    shareScope = appState.shareScope,
+                    page = p,
+                    allBlocks = blocks,
+                    selectedUuids = selectedBlockUuids,
+                    formatId = appState.shareFormat,
+                    journalFrom = dates.first,
+                    journalTo = dates.second,
+                    onDone = { onDismiss() },
+                )
             },
             enabled = page != null && !isSelectionEmpty,
             modifier = Modifier.fillMaxWidth(),
@@ -167,19 +230,38 @@ fun ShareContent(
             OutlinedButton(
                 onClick = {
                     val p = page ?: return@OutlinedButton
-                    val targetBlocks = resolveBlocks(appState.shareScope, blocks, selectedBlockUuids)
+                    val dates = datesForScope() ?: return@OutlinedButton
                     scope.launch {
-                        val result = exportService.exportToString(p, targetBlocks, appState.shareFormat)
-                        result.getOrNull()?.let { content ->
-                            if (appState.shareFormat == "html") {
-                                val plain = exportService.exportToString(p, targetBlocks, "plain-text")
-                                    .getOrNull() ?: content
-                                shareProvider.shareHtml(content, plain)
-                            } else {
-                                shareProvider.shareText(content)
-                            }
-                        }
-                        onDismiss()
+                        val result = viewModel.resolveExportContent(
+                            shareScope = appState.shareScope,
+                            page = p,
+                            allBlocks = blocks,
+                            selectedUuids = selectedBlockUuids,
+                            formatId = appState.shareFormat,
+                            journalFrom = dates.first,
+                            journalTo = dates.second,
+                        )
+                        result.fold(
+                            ifLeft = { err -> exportError = err.message },
+                            ifRight = { content ->
+                                exportError = null
+                                if (appState.shareFormat == FORMAT_HTML) {
+                                    val plainResult = viewModel.resolveExportContent(
+                                        shareScope = appState.shareScope,
+                                        page = p,
+                                        allBlocks = blocks,
+                                        selectedUuids = selectedBlockUuids,
+                                        formatId = FORMAT_PLAIN_TEXT,
+                                        journalFrom = dates.first,
+                                        journalTo = dates.second,
+                                    )
+                                    shareProvider.shareHtml(content, plainResult.getOrNull() ?: content)
+                                } else {
+                                    shareProvider.shareText(content)
+                                }
+                                onDismiss()
+                            },
+                        )
                     }
                 },
                 enabled = page != null && !isSelectionEmpty,
@@ -195,15 +277,29 @@ fun ShareContent(
         OutlinedButton(
             onClick = {
                 val p = page ?: return@OutlinedButton
-                val targetBlocks = resolveBlocks(appState.shareScope, blocks, selectedBlockUuids)
+                val dates = datesForScope() ?: return@OutlinedButton
                 val extension = formatExtension(appState.shareFormat)
                 scope.launch {
-                    val result = exportService.exportToString(p, targetBlocks, appState.shareFormat)
-                    result.getOrNull()?.let { content ->
-                        val saved = shareProvider.saveToFile(content, p.name, extension)
-                        saved.getOrNull() // success = true (user saved), false (cancelled)
-                    }
-                    onDismiss()
+                    val result = viewModel.resolveExportContent(
+                        shareScope = appState.shareScope,
+                        page = p,
+                        allBlocks = blocks,
+                        selectedUuids = selectedBlockUuids,
+                        formatId = appState.shareFormat,
+                        journalFrom = dates.first,
+                        journalTo = dates.second,
+                    )
+                    result.fold(
+                        ifLeft = { err -> exportError = err.message },
+                        ifRight = { content ->
+                            exportError = null
+                            val saved = shareProvider.saveToFile(content, p.name, extension)
+                            saved.fold(
+                                ifLeft = { err -> exportError = err.message },
+                                ifRight = { didSave -> if (didSave) onDismiss() },
+                            )
+                        },
+                    )
                 }
             },
             enabled = page != null && !isSelectionEmpty,
@@ -218,13 +314,8 @@ fun ShareContent(
                 if (!isGoogleAuthenticated) {
                     OutlinedButton(
                         onClick = {
-                            scope.launch {
-                                val result = googleAuthManager?.authenticate()
-                                if (result?.getOrNull() != null) {
-                                    isGoogleAuthenticated = true
-                                    googleEmail = result.getOrNull()
-                                }
-                            }
+                            val manager = googleAuthManager ?: return@OutlinedButton
+                            viewModel.launchGoogleAuth(manager)
                         },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -234,8 +325,16 @@ fun ShareContent(
                     OutlinedButton(
                         onClick = {
                             val p = page ?: return@OutlinedButton
-                            val targetBlocks = resolveBlocks(appState.shareScope, blocks, selectedBlockUuids)
-                            viewModel.shareToGoogleDocs(p, targetBlocks, driveClient, exportService)
+                            val dates = datesForScope() ?: return@OutlinedButton
+                            viewModel.shareToGoogleDocs(
+                                shareScope = appState.shareScope,
+                                page = p,
+                                allBlocks = blocks,
+                                selectedUuids = selectedBlockUuids,
+                                driveClient = driveClient,
+                                journalFrom = dates.first,
+                                journalTo = dates.second,
+                            )
                             onDismiss()
                         },
                         enabled = page != null && !isSelectionEmpty && !appState.isExportingToDrive,
@@ -271,6 +370,9 @@ fun ShareContent(
 
 /**
  * Adaptive wrapper that renders as [ModalBottomSheet] on mobile and [AlertDialog] on desktop.
+ *
+ * Refreshes Google auth state from [googleAuthManager] each time the dialog opens (A3 fix:
+ * single source of truth in [AppState] rather than local composable state).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -281,12 +383,16 @@ fun ShareDialog(
     blocks: List<Block>,
     selectedBlockUuids: Set<String>,
     shareProvider: ShareProvider,
-    exportService: ExportService,
     driveClient: DriveUploader?,
     googleAuthManager: GoogleAuthManager?,
     onDismiss: () -> Unit,
 ) {
     if (!appState.shareDialogVisible) return
+
+    // Refresh auth state once per dialog open so the UI reflects the current token store.
+    LaunchedEffect(googleAuthManager) {
+        googleAuthManager?.let { viewModel.refreshShareGoogleAuthState(it) }
+    }
 
     val isMobile = LocalWindowSizeClass.current.isMobile
 
@@ -299,9 +405,8 @@ fun ShareDialog(
                 blocks = blocks,
                 selectedBlockUuids = selectedBlockUuids,
                 shareProvider = shareProvider,
-                exportService = exportService,
-                driveClient = driveClient,
                 googleAuthManager = googleAuthManager,
+                driveClient = driveClient,
                 isMobile = true,
                 onDismiss = onDismiss,
             )
@@ -320,9 +425,8 @@ fun ShareDialog(
                     blocks = blocks,
                     selectedBlockUuids = selectedBlockUuids,
                     shareProvider = shareProvider,
-                    exportService = exportService,
-                    driveClient = driveClient,
                     googleAuthManager = googleAuthManager,
+                    driveClient = driveClient,
                     isMobile = false,
                     onDismiss = onDismiss,
                 )
@@ -333,20 +437,11 @@ fun ShareDialog(
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-private fun resolveBlocks(
-    scope: ShareScope,
-    allBlocks: List<Block>,
-    selectedUuids: Set<String>,
-): List<Block> = when (scope) {
-    ShareScope.SelectedBlocks -> allBlocks.filter { it.uuid.value in selectedUuids }
-    else -> allBlocks  // CurrentPage, PageAndLinks, JournalRange handled upstream
-}
-
 private fun formatExtension(formatId: String): String = when (formatId) {
-    "markdown" -> "md"
-    "plain-text" -> "txt"
-    "html" -> "html"
-    "json" -> "json"
+    FORMAT_MARKDOWN -> "md"
+    FORMAT_PLAIN_TEXT -> "txt"
+    FORMAT_HTML -> "html"
+    FORMAT_JSON -> "json"
     else -> "txt"
 }
 

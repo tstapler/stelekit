@@ -111,5 +111,17 @@
                 android:resource="@xml/voice_widget_info" />
         </receiver>
 
+        <!-- FileProvider for sharing exported note files via Intent.ACTION_SEND.
+             Authority must match the string used in AndroidShareProvider.saveToFile(). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_provider_paths" />
+        </provider>
+
     </application>
 </manifest>

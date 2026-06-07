@@ -8,8 +8,13 @@ import dev.stapler.stelekit.db.GraphWriterPort
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.db.RenameResult
 import dev.stapler.stelekit.db.UndoManager
+import arrow.core.Either
+import arrow.core.left
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.error.DomainError.ExportError
 import dev.stapler.stelekit.export.ClipboardProvider
 import dev.stapler.stelekit.export.ExportService
+import dev.stapler.stelekit.platform.google.GoogleAuthManager
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.logging.Logger
@@ -57,12 +62,14 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.isActive
 import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.plus
@@ -1359,20 +1366,163 @@ class StelekitViewModel(
      * On success: opens the created document in the browser.
      * On error: shows a snackbar notification.
      */
+    /**
+     * Resolve export content for any [ShareScope].
+     *
+     * Routes to the appropriate ExportService method based on scope.
+     * Requires [journalFrom]/[journalTo] (non-null) when scope is [ShareScope.JournalRange].
+     */
+    suspend fun resolveExportContent(
+        shareScope: ShareScope,
+        page: Page,
+        allBlocks: List<Block>,
+        selectedUuids: Set<String>,
+        formatId: String,
+        journalFrom: LocalDate? = null,
+        journalTo: LocalDate? = null,
+    ): Either<DomainError, String> {
+        val svc = exportService
+            ?: return ExportError.SerializationFailed("Export service unavailable").left()
+        return when (shareScope) {
+            ShareScope.CurrentPage -> svc.exportToString(page, allBlocks, formatId)
+            ShareScope.SelectedBlocks -> svc.exportToString(
+                page,
+                allBlocks.filter { it.uuid.value in selectedUuids },
+                formatId,
+            )
+            ShareScope.PageAndLinks -> svc.exportPageWithLinks(
+                page, allBlocks, formatId, pageRepository, blockRepository,
+            )
+            ShareScope.JournalRange -> {
+                val from = journalFrom
+                    ?: return ExportError.SerializationFailed("Start date not set for journal export").left()
+                val to = journalTo
+                    ?: return ExportError.SerializationFailed("End date not set for journal export").left()
+                svc.exportJournalRange(from, to, formatId, pageRepository, blockRepository)
+            }
+        }
+    }
+
+    /** Exports the resolved scope content to the clipboard. Errors surface via [notificationManager]. */
+    fun exportScopeToClipboard(
+        shareScope: ShareScope,
+        page: Page,
+        allBlocks: List<Block>,
+        selectedUuids: Set<String>,
+        formatId: String,
+        journalFrom: LocalDate? = null,
+        journalTo: LocalDate? = null,
+        onDone: () -> Unit = {},
+    ) {
+        val svc = exportService ?: return
+        scope.launch {
+            try {
+                when (shareScope) {
+                    ShareScope.CurrentPage ->
+                        svc.exportToClipboard(page, allBlocks, formatId)
+                    ShareScope.SelectedBlocks ->
+                        svc.exportToClipboard(
+                            page,
+                            allBlocks.filter { it.uuid.value in selectedUuids },
+                            formatId,
+                        )
+                    else -> {
+                        val result = resolveExportContent(
+                            shareScope, page, allBlocks, selectedUuids, formatId,
+                            journalFrom, journalTo,
+                        )
+                        result.fold(
+                            ifLeft = { err ->
+                                withContext(Dispatchers.Main) {
+                                    notificationManager?.show(
+                                        "Export failed: ${err.message}",
+                                        NotificationType.ERROR,
+                                    )
+                                }
+                            },
+                            ifRight = { content ->
+                                if (formatId == "html") {
+                                    val plainResult = resolveExportContent(
+                                        shareScope, page, allBlocks, selectedUuids,
+                                        "plain-text", journalFrom, journalTo,
+                                    )
+                                    svc.clipboard.writeHtml(content, plainResult.getOrNull() ?: content)
+                                } else {
+                                    svc.clipboard.writeText(content)
+                                }
+                            },
+                        )
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    notificationManager?.show("Clipboard export failed: ${e.message}", NotificationType.ERROR)
+                }
+            } finally {
+                withContext(Dispatchers.Main) { onDone() }
+            }
+        }
+    }
+
+    /** Launches Google OAuth in the ViewModel scope, updates [AppState.shareIsGoogleAuthenticated] on completion. */
+    fun launchGoogleAuth(manager: GoogleAuthManager) {
+        scope.launch {
+            val result = manager.authenticate()
+            val authenticated = result.isRight()
+            val email = if (authenticated) manager.getConnectedEmail() else null
+            _uiState.update { it.copy(
+                shareIsGoogleAuthenticated = authenticated,
+                shareGoogleEmail = email,
+            ) }
+            if (!authenticated) {
+                withContext(Dispatchers.Main) {
+                    notificationManager?.show(
+                        "Google sign-in failed: ${result.fold({ it.message }, { "" })}",
+                        NotificationType.ERROR,
+                    )
+                }
+            }
+        }
+    }
+
+    /** Re-queries auth state from [manager] and syncs to [AppState]. Call when the dialog opens. */
+    fun refreshShareGoogleAuthState(manager: GoogleAuthManager) {
+        scope.launch {
+            val authenticated = manager.isAuthenticated()
+            val email = if (authenticated) manager.getConnectedEmail() else null
+            _uiState.update { it.copy(
+                shareIsGoogleAuthenticated = authenticated,
+                shareGoogleEmail = email,
+            ) }
+        }
+    }
+
+    /** Updates the journal date range used by the [ShareScope.JournalRange] export path. */
+    fun setShareJournalDateRange(from: LocalDate?, to: LocalDate?) {
+        _uiState.update { it.copy(shareJournalFromDate = from, shareJournalToDate = to) }
+    }
+
     fun shareToGoogleDocs(
-        page: dev.stapler.stelekit.model.Page,
-        blocks: List<dev.stapler.stelekit.model.Block>,
+        shareScope: ShareScope,
+        page: Page,
+        allBlocks: List<Block>,
+        selectedUuids: Set<String>,
         driveClient: dev.stapler.stelekit.platform.google.DriveUploader,
-        exportSvc: dev.stapler.stelekit.export.ExportService,
+        journalFrom: LocalDate? = null,
+        journalTo: LocalDate? = null,
     ) {
         _uiState.update { it.copy(isExportingToDrive = true) }
         scope.launch(Dispatchers.Default) {
             try {
-                val htmlResult = exportSvc.exportToString(page, blocks, "html")
+                val htmlResult = resolveExportContent(
+                    shareScope, page, allBlocks, selectedUuids, "html", journalFrom, journalTo,
+                )
                 htmlResult.fold(
                     ifLeft = { err ->
                         withContext(Dispatchers.Main) {
-                            notificationManager?.show("Export failed: ${err.message}", dev.stapler.stelekit.model.NotificationType.ERROR)
+                            notificationManager?.show("Export failed: ${err.message}", NotificationType.ERROR)
                         }
                     },
                     ifRight = { html ->
@@ -1385,11 +1535,16 @@ class StelekitViewModel(
                         uploadResult.fold(
                             ifLeft = { err ->
                                 withContext(Dispatchers.Main) {
-                                    notificationManager?.show("Google Docs upload failed: ${err.message}", dev.stapler.stelekit.model.NotificationType.ERROR)
+                                    notificationManager?.show(
+                                        "Google Docs upload failed: ${err.message}",
+                                        NotificationType.ERROR,
+                                    )
                                 }
                             },
                             ifRight = { fileId ->
-                                dev.stapler.stelekit.platform.openInBrowser("https://docs.google.com/document/d/$fileId/edit")
+                                dev.stapler.stelekit.platform.openInBrowser(
+                                    "https://docs.google.com/document/d/$fileId/edit",
+                                )
                             }
                         )
                     }
@@ -1398,10 +1553,10 @@ class StelekitViewModel(
                 throw e
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    notificationManager?.show("Google Docs export failed: ${e.message}", dev.stapler.stelekit.model.NotificationType.ERROR)
+                    notificationManager?.show("Google Docs export failed: ${e.message}", NotificationType.ERROR)
                 }
             } finally {
-                withContext(Dispatchers.Main) {
+                withContext(Dispatchers.Main + NonCancellable) {
                     _uiState.update { it.copy(isExportingToDrive = false) }
                 }
             }

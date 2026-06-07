@@ -9,6 +9,7 @@ import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Clock
@@ -126,6 +127,9 @@ class ExportServiceLinkedPagesTest {
         assertContains(output, "B content")
         // B is visited once (not recursed back to A), so output is finite
         assertTrue(output.length < 10_000, "Output should be finite (< 10KB), got ${output.length} chars")
+        // B must appear exactly once — a second visit would indicate the cycle guard is broken
+        val bOccurrences = output.split("B content").size - 1
+        assertEquals(1, bOccurrences, "B content should appear exactly once; got $bOccurrences occurrences")
     }
 
     // ── U-EPL-03: empty linked pages are silently skipped ────────────────────

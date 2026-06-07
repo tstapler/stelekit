@@ -238,6 +238,11 @@ class MainActivity : ComponentActivity() {
         val data = intent.data
         if (data?.scheme == "com.stelekit.app" && data.path == "/oauth2redirect") {
             val code = data.getQueryParameter("code") ?: return
+            val state = data.getQueryParameter("state")
+            // Validate CSRF state nonce before accepting the code.
+            // An empty or mismatched state rejects the callback silently.
+            if (state.isNullOrBlank() || state != AndroidGoogleAuthManager.pendingOAuthState) return
+            AndroidGoogleAuthManager.pendingOAuthState = null
             // tryEmit is safe to call from the main thread (SharedFlow with DROP_OLDEST)
             AndroidGoogleAuthManager.oauthCodeFlow.tryEmit(code)
         }

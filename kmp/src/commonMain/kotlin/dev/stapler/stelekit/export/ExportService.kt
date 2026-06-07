@@ -13,6 +13,7 @@ import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.parsing.InlineParser
 import dev.stapler.stelekit.parsing.ast.BlockRefNode
 import dev.stapler.stelekit.parsing.ast.WikiLinkNode
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.repository.BlockReadRepository
 import dev.stapler.stelekit.repository.PageRepository
 import kotlinx.coroutines.Dispatchers
@@ -87,7 +88,7 @@ class ExportService(
     ): Either<DomainError, String> = withContext(Dispatchers.Default) {
         try {
             val exporter = exporterMap[formatId]
-                ?: error("Unknown export format: $formatId")
+                ?: return@withContext ExportError.SerializationFailed("Unknown export format: $formatId").left()
             val resolvedRefs = resolveBlockRefs(collectBlockRefUuids(blocks))
             exporter.export(page, blocks, resolvedRefs).right()
         } catch (e: CancellationException) {
@@ -176,7 +177,7 @@ class ExportService(
         formatId: String,
         pageRepo: PageRepository,
         blockRepo: BlockReadRepository,
-    ): Either<DomainError, String> = withContext(Dispatchers.Default) {
+    ): Either<DomainError, String> = withContext(PlatformDispatcher.DB) {
         try {
             val exporter = exporterMap[formatId]
                 ?: return@withContext ExportError.SerializationFailed("Unknown export format: $formatId").left()
@@ -237,7 +238,7 @@ class ExportService(
         formatId: String,
         pageRepo: PageRepository,
         blockRepo: BlockReadRepository,
-    ): Either<DomainError, String> = withContext(Dispatchers.Default) {
+    ): Either<DomainError, String> = withContext(PlatformDispatcher.DB) {
         try {
             val exporter = exporterMap[formatId]
                 ?: return@withContext ExportError.SerializationFailed("Unknown export format: $formatId").left()

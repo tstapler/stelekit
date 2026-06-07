@@ -78,13 +78,12 @@ class DriveApiClientContentTypeTest {
             bodyText.contains("Content-Type: text/html"),
             "Expected 'Content-Type: text/html' in multipart body but got:\n$bodyText",
         )
+        // The metadata JSON contains "mimeType":"application/vnd.google-apps.document" as a value,
+        // but it must NOT appear as a Content-Type header in any part — that would cause Drive to reject the upload.
         assertFalse(
-            // The metadata part declares the target mimeType; the content part must NOT
-            bodyText.count { it == '\n' }.let {
-                // Check that text/html appears at least once in the body (content part)
-                !bodyText.contains("Content-Type: text/html")
-            },
-            "Content-Type: text/html must appear in the multipart body",
+            bodyText.contains("Content-Type: application/vnd.google-apps.document"),
+            "Content-Type: application/vnd.google-apps.document must NOT appear as a part header; " +
+                "use text/html for the content part Content-Type",
         )
     }
 

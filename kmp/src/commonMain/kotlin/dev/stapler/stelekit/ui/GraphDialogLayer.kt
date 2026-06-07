@@ -215,7 +215,7 @@ internal fun GraphDialogLayer(
     }
 
     // ShareDialog — shown when appState.shareDialogVisible and a ShareProvider is available.
-    if (shareProvider != null && exportService != null) {
+    if (shareProvider != null) {
         ShareDialog(
             appState = appState,
             viewModel = viewModel,
@@ -223,7 +223,6 @@ internal fun GraphDialogLayer(
             blocks = currentBlocks,
             selectedBlockUuids = selectedBlockUuids,
             shareProvider = shareProvider,
-            exportService = exportService,
             driveClient = driveClient,
             googleAuthManager = shareGoogleAuthManager,
             onDismiss = { viewModel.hideShareDialog() },

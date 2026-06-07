@@ -14,6 +14,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
+import java.util.UUID
 
 /**
  * Android implementation of [GoogleAuthManager].
@@ -57,6 +58,13 @@ class AndroidGoogleAuthManager(
             extraBufferCapacity = 1,
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )
+
+        /**
+         * CSRF protection: the state nonce generated in [authenticate] and validated by
+         * [MainActivity.onNewIntent] before emitting to [oauthCodeFlow].
+         * Volatile ensures cross-thread visibility between the auth coroutine and the main thread.
+         */
+        @Volatile var pendingOAuthState: String? = null
     }
 
     override suspend fun authenticate(): Either<DomainError, String> {
@@ -68,13 +76,16 @@ class AndroidGoogleAuthManager(
         }
 
         val scopeString = SCOPES.joinToString(" ")
+        val state = UUID.randomUUID().toString()
+        pendingOAuthState = state
         val authUrl = "https://accounts.google.com/o/oauth2/auth" +
             "?client_id=$clientId" +
             "&redirect_uri=${Uri.encode(REDIRECT_URI)}" +
             "&response_type=code" +
             "&scope=${Uri.encode(scopeString)}" +
             "&access_type=offline" +
-            "&prompt=consent"
+            "&prompt=consent" +
+            "&state=${Uri.encode(state)}"
 
         return try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
@@ -105,30 +116,18 @@ class AndroidGoogleAuthManager(
 
     /**
      * Exchange the OAuth authorization code for access/refresh tokens.
-     * This is a structural stub — the full token exchange requires injecting an HttpClient
-     * and client credentials (see Story 2.1.4 for full implementation).
-     * For now, stores a placeholder so [isAuthenticated] returns true after auth.
+     * TODO (Story 2.1.4): POST to https://oauth2.googleapis.com/token with:
+     *   grant_type=authorization_code, code=$code, redirect_uri, client_id, client_secret
+     * Store access_token, refresh_token, expires_in, email in tokenStore.
+     * Until Story 2.1.4 lands, returns Left — the auth code alone is not an access token
+     * and must not be stored as one.
      */
-    private suspend fun exchangeCodeForTokens(code: String): Either<DomainError, String> {
-        return try {
-            // TODO (Story 2.1.4): POST to https://oauth2.googleapis.com/token with:
-            //   grant_type=authorization_code, code=$code, redirect_uri, client_id, client_secret
-            // Store access_token, refresh_token, expires_in, email in tokenStore
-            // For now: record that auth was initiated (token exchange requires server-side secret)
-            tokenStore.saveTokens(
-                accessToken = "pending_$code",
-                refreshToken = "",
-                expiresAt = kotlin.time.Clock.System.now().toEpochMilliseconds() + 3600_000L,
-            )
-            tokenStore.saveEmail("connected@google.com")
-            "connected@google.com".right()
-        } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            DomainError.NetworkError.HttpError(
-                statusCode = -1,
-                message = "Token exchange failed: ${e.message}",
-            ).left()
-        }
+    private fun exchangeCodeForTokens(code: String): Either<DomainError, String> {
+        return DomainError.NetworkError.HttpError(
+            statusCode = 501,
+            message = "Google token exchange is not yet implemented (Story 2.1.4). " +
+                "Received auth code length=${code.length}.",
+        ).left()
     }
 
     override suspend fun signOut() {

@@ -10,6 +10,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 
@@ -85,7 +86,7 @@ class ExportServiceJournalRangeTest {
         val output = result.getOrNull()!!
         assertContains(output, "Jan 1 entry")
         assertContains(output, "Jan 2 entry")
-        assertTrue(!output.contains("Jan 3 entry"), "Jan 3 should be excluded from the output")
+        assertFalse(output.contains("Jan 3 entry"), "Jan 3 should be excluded from the output")
     }
 
     // ── U-EJR-02: empty range returns Left ───────────────────────────────────
@@ -107,5 +108,29 @@ class ExportServiceJournalRangeTest {
         )
 
         assertTrue(result.isLeft(), "Expected Left for empty range but got Right")
+    }
+
+    // ── U-EJR-03: pages in range with no blocks → second Left path ───────────
+
+    @Test
+    fun uEJR03_pagesInRangeWithNoContent_returnsLeft() = runTest {
+        val pageRepo = InMemoryPageRepository()
+        val blockRepo = InMemoryBlockRepository()
+
+        // Journal page exists in range but has zero blocks saved
+        val jan5 = journalPage("p-jan5", LocalDate(2026, 1, 5))
+        pageRepo.savePage(jan5)
+        // no blocks saved for jan5
+
+        val service = makeService()
+        val result = service.exportJournalRange(
+            from = LocalDate(2026, 1, 1),
+            to = LocalDate(2026, 1, 7),
+            formatId = "markdown",
+            pageRepo = pageRepo,
+            blockRepo = blockRepo,
+        )
+
+        assertTrue(result.isLeft(), "Expected Left when all in-range pages have no blocks but got Right")
     }
 }

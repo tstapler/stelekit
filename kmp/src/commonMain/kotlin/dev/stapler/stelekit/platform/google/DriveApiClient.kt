@@ -17,15 +17,20 @@ import io.ktor.client.statement.bodyAsBytes
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.appendPathSegments
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlin.time.Clock
 
 private val driveClientJson = Json { ignoreUnknownKeys = true }
@@ -88,10 +93,12 @@ class DriveApiClient(
 
         return try {
             val boundary = "boundary_stelekit_${Clock.System.now().toEpochMilliseconds()}"
-            val parentsPart = if (parentFolderId != null) {
-                ""","parents":["$parentFolderId"]"""
-            } else ""
-            val metadataPart = """{"name":"$fileName","mimeType":"$mimeType"$parentsPart}"""
+            val metadataJson = buildJsonObject {
+                put("name", fileName)
+                put("mimeType", mimeType)
+                if (parentFolderId != null) putJsonArray("parents") { add(parentFolderId) }
+            }
+            val metadataPart = metadataJson.toString()
 
             // When uploading HTML for Google Docs conversion, the content part must declare
             // text/html as Content-Type (the source format). The metadata mimeType field
@@ -212,8 +219,12 @@ class DriveApiClient(
             ).left()
 
         return try {
-            val parentsPart = if (parentId != null) ""","parents":["$parentId"]""" else ""
-            val body = """{"name":"$name","mimeType":"application/vnd.google-apps.folder"$parentsPart}"""
+            val bodyJson = buildJsonObject {
+                put("name", name)
+                put("mimeType", "application/vnd.google-apps.folder")
+                if (parentId != null) putJsonArray("parents") { add(parentId) }
+            }
+            val body = bodyJson.toString()
 
             val response = httpClient.post(
                 "https://www.googleapis.com/drive/v3/files",
@@ -256,10 +267,13 @@ class DriveApiClient(
 
         return try {
             val response = httpClient.get(
-                "https://www.googleapis.com/drive/v3/files/$fileId",
+                "https://www.googleapis.com/drive/v3/files",
             ) {
                 bearerAuth(token)
-                url { parameters.append("alt", "media") }
+                url {
+                    appendPathSegments(fileId)
+                    parameters.append("alt", "media")
+                }
             }
 
             if (!response.status.isSuccess()) {
