@@ -8,6 +8,14 @@ on:
   # Pages deploy picks up the fresh F-Droid index without a separate site build.
   workflow_call:
 
+# Queue pages.yml runs rather than cancelling them. A fast CI-only push completing
+# and deploying would otherwise cancel a concurrent workflow_dispatch run mid-way
+# through the 15-minute build-demo job, meaning the demo never gets rebuilt.
+# cancel-in-progress: false ensures the slower demo build always runs to completion.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 permissions:
   contents: read
   actions: read
