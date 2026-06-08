@@ -216,10 +216,7 @@ jobs:
         run: |
           # fdroid-staging/ is uploaded by fdroid.yml with repo/ as a subdirectory.
           # After download to fdroid-content/, the structure is fdroid-content/repo/.
-          #
-          # APKs are excluded from the artifact because GitHub Pages has a 100 MB per-file
-          # limit and APKs are ~100-110 MB. The index files (entry.jar, index-v2.json,
-          # icons/, etc.) are small and serve F-Droid client discovery correctly.
+          # APKs are included — the 100 MB Git limit doesn't apply to Actions artifacts.
           if [ -d fdroid-content/repo ]; then
             mkdir -p site/dist/fdroid
             cp -r fdroid-content/repo site/dist/fdroid/
