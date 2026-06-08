@@ -55,7 +55,7 @@ jobs:
   build-demo:
     runs-on: ubuntu-latest
     needs: check-changes
-    timeout-minutes: 30
+    timeout-minutes: 60
     # Only rebuild Wasm when app code or build files change; site-only edits skip this job
     if: |
       github.event_name == 'workflow_dispatch' ||
@@ -69,6 +69,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+      - name: Cache Kotlin/Native compiler
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml') }}
       - name: Build wasmJs demo
         run: ./gradlew :kmp:wasmJsBrowserDistribution --no-daemon --build-cache -PenableJs=true
       - name: Assert expected output exists
