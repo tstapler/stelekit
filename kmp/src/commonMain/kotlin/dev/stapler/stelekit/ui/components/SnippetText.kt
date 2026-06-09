@@ -76,7 +76,7 @@ fun SnippetText(
 
     val highlightColor = MaterialTheme.colorScheme.primary
     val annotated = remember(snippet, highlightColor) {
-        val (strippedText, highlightRanges) = parseEmTags(snippet!!)
+        val (strippedText, highlightRanges) = parseEmTags(snippet)
         val base = parseMarkdownWithStyling(strippedText, linkColor = Color.Unspecified, textColor = Color.Unspecified)
         val remapped = remapRanges(strippedText, base.text, highlightRanges)
         buildAnnotatedString {

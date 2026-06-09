@@ -496,7 +496,8 @@ internal fun BlockItem(
         }
 
         // Render Autocomplete Menu
-        if (autocompleteState != null && searchResults.isNotEmpty()) {
+        val capturedAutocompleteState = autocompleteState
+        if (capturedAutocompleteState != null && searchResults.isNotEmpty()) {
             AutocompleteMenu(
                 items = filteredResults,
                 selectedIndex = selectedIndex,
@@ -506,7 +507,7 @@ internal fun BlockItem(
                         selectedIndex = filteredResults.indexOf(item).coerceAtLeast(0),
                         textFieldValue = textFieldValue,
                         onTextFieldValueChange = { textFieldValue = it; onSelectionChange?.invoke(IntRange(it.selection.min, it.selection.max)) },
-                        autocompleteState = autocompleteState!!,
+                        autocompleteState = capturedAutocompleteState,
                         onAutocompleteStateChange = { autocompleteState = it },
                         onLocalVersionIncrement = { ++localVersion },
                         onContentChange = onContentChange,
