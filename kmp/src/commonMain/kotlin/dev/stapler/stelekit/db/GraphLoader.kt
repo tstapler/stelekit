@@ -28,6 +28,7 @@ import dev.stapler.stelekit.performance.CurrentSpanContext
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.performance.SpanRepository
+import dev.stapler.stelekit.performance.heapSummary
 import dev.stapler.stelekit.util.FileUtils
 import dev.stapler.stelekit.util.UuidGenerator
 import dev.stapler.stelekit.vault.CryptoLayer
@@ -266,8 +267,17 @@ class GraphLoader(
     // doesn't meaningfully slow total indexing time.
     private val backgroundIndexDispatcher = Dispatchers.Default.limitedParallelism(ioThreads)
 
-    // Platform-agnostic coroutine scope for parallel processing
-    private val parallelScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // Platform-agnostic coroutine scope for parallel processing.
+    // CoroutineExceptionHandler logs unhandled exceptions (OOM, Error subclasses) instead of
+    // crashing the app via the default uncaught exception handler.
+    private val parallelScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default +
+        CoroutineExceptionHandler { _, e ->
+            if (e !is CancellationException) {
+                logger.error("parallelScope: unhandled exception — ${e::class.simpleName}: ${e.message}", e)
+            }
+        }
+    )
 
     // Serializes all DB writes to avoid SQLITE_BUSY under concurrent graph loading.
     // If an external actor is provided (from RepositorySet), reuse it; otherwise create one locally.
@@ -478,6 +488,8 @@ class GraphLoader(
                 // cancels this job before it can write to a closed DB or exhaust memory.
                 backgroundIndexJob = parallelScope.launch {
                     try {
+                        val heapAtStart = heapSummary()
+                        logger.info("Warm reconcile starting ($heapAtStart)")
                         // Sanitize must run before re-scanning so any renamed files are visible
                         // to loadJournalsImmediate and loadDirectory below.
                         sanitizeDirectory(pagesDir)
@@ -502,8 +514,13 @@ class GraphLoader(
                         startWatching(graphPath)
                     } catch (e: CancellationException) {
                         throw e
-                    } catch (e: Exception) {
+                    } catch (e: Throwable) {
+                        // Catch Throwable (not just Exception) so OutOfMemoryError and other
+                        // JVM Error subclasses don't propagate to the default uncaught handler
+                        // and crash the app. The CoroutineExceptionHandler on parallelScope is
+                        // a backstop, but explicit catch here keeps the warmSpan finished.
                         warmSpan.finish("ERROR", "error.message" to (e.message ?: "unknown"))
+                        logger.error("Warm reconcile failed — ${e::class.simpleName}: ${e.message}", e)
                     } finally {
                         backgroundIndexJob = null
                     }
@@ -590,7 +607,7 @@ class GraphLoader(
             val unloadedPages = pageRepository.getUnloadedPages().first().getOrNull() ?: emptyList()
             if (unloadedPages.isEmpty()) return
 
-            logger.info("Background indexing ${unloadedPages.size} pages...")
+            logger.info("Background indexing ${unloadedPages.size} pages... (${heapSummary()})")
 
             coroutineScope {
                 var processed = 0

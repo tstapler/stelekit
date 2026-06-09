@@ -479,8 +479,11 @@ class StelekitViewModel(
                                     } catch (e: kotlinx.coroutines.CancellationException) {
                                         _indexingProgress.value = IndexingState.Idle
                                         throw e
-                                    } catch (e: Exception) {
-                                        logger.error("Background indexing failed: ${e.message}")
+                                    } catch (e: Throwable) {
+                                        // Catch Throwable (not just Exception) so OutOfMemoryError
+                                        // during 8000+ page indexing doesn't crash via the default
+                                        // uncaught exception handler.
+                                        logger.error("Background indexing failed: ${e::class.simpleName}: ${e.message}")
                                         _indexingProgress.value = IndexingState.Idle
                                     }
                                 }

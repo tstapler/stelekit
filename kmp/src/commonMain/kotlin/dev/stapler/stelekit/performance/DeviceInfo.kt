@@ -17,3 +17,6 @@ expect class DeviceInfo(
 }
 
 expect fun getDeviceInfo(): DeviceInfo
+
+/** Returns a compact heap-usage string (e.g. "heap:42/256MB") for diagnostic logging. No-op on non-JVM platforms. */
+expect fun heapSummary(): String
