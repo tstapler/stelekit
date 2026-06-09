@@ -446,8 +446,8 @@ class SqlDelightBlockRepository(
         try {
             val wikilinkPages = mutableSetOf<String>()
             queries.transaction {
-                val blocks = blockUuids.chunked(900).flatMap { chunk ->
-                    queries.selectBlocksByUuids(chunk.map { it.value }).executeAsList()
+                val blocks = blockUuids.map { it.value }.chunked(BATCH_UUID_CHUNK_SIZE).flatMap { chunk ->
+                    queries.selectBlocksByUuids(chunk).executeAsList()
                 }
                 val blocksByUuid = blocks.associateBy { it.uuid }
                 blockUuids.forEach { uuid ->
@@ -466,17 +466,24 @@ class SqlDelightBlockRepository(
                             }
                             index++
                         }
-                        // Chain repair for the top-level block being deleted
+                        // Chain repair for the top-level block being deleted.
+                        // Re-read left_uuid live: prior iterations in this batch may have updated a
+                        // sibling's left_uuid, making the pre-fetched blocksByUuid entry stale.
+                        val liveLeftUuid = queries.selectBlockByUuid(block.uuid).executeAsOneOrNull()?.left_uuid
+                            ?: block.left_uuid
                         val nextSibling = queries.selectBlockByLeftUuid(block.uuid).executeAsOneOrNull()
                         if (nextSibling != null) {
-                            queries.updateBlockLeftUuid(block.left_uuid, nextSibling.uuid)
+                            queries.updateBlockLeftUuid(liveLeftUuid, nextSibling.uuid)
                         }
                         uuidsToDelete.forEach { queries.deleteBlockByUuid(it) }
                     } else {
-                        // Chain repair before deletion
+                        // Chain repair before deletion. Re-read left_uuid live: prior iterations
+                        // may have updated a sibling's left_uuid, making the pre-fetched map stale.
+                        val liveLeftUuid = queries.selectBlockByUuid(block.uuid).executeAsOneOrNull()?.left_uuid
+                            ?: block.left_uuid
                         val nextSibling = queries.selectBlockByLeftUuid(block.uuid).executeAsOneOrNull()
                         if (nextSibling != null) {
-                            queries.updateBlockLeftUuid(block.left_uuid, nextSibling.uuid)
+                            queries.updateBlockLeftUuid(liveLeftUuid, nextSibling.uuid)
                         }
                         queries.deleteBlockByUuid(block.uuid)
                     }
