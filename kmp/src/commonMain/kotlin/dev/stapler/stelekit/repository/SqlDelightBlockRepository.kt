@@ -442,38 +442,50 @@ class SqlDelightBlockRepository(
     }
 
     override suspend fun deleteBulk(blockUuids: List<BlockUuid>, deleteChildren: Boolean): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+        if (blockUuids.isEmpty()) return@withContext Unit.right()
         try {
             val wikilinkPages = mutableSetOf<String>()
             queries.transaction {
-                blockUuids.forEach { uuid ->
-                    val block = queries.selectBlockByUuid(uuid.value).executeAsOneOrNull() ?: return@forEach
-                    wikilinkPages.addAll(extractWikilinks(block.content))
-                    if (deleteChildren) {
-                        // Collect the full subtree
-                        val uuidsToDelete = mutableListOf(block.uuid)
-                        var index = 0
-                        while (index < uuidsToDelete.size) {
-                            val currentUuid = uuidsToDelete[index]
-                            val children = queries.selectBlockChildren(currentUuid, Long.MAX_VALUE, 0L).executeAsList()
-                            children.forEach { child ->
-                                uuidsToDelete.add(child.uuid)
-                                wikilinkPages.addAll(extractWikilinks(child.content))
+                // Process in chunks to avoid materializing all blocks at once (peak memory = one chunk).
+                blockUuids.map { it.value }.chunked(BATCH_UUID_CHUNK_SIZE).forEach { chunkValues ->
+                    val blocksByUuid = queries.selectBlocksByUuids(chunkValues).executeAsList().associateBy { it.uuid }
+                    chunkValues.forEach { uuidValue ->
+                        val block = blocksByUuid[uuidValue] ?: return@forEach
+                        wikilinkPages.addAll(extractWikilinks(block.content))
+                        if (deleteChildren) {
+                            // Collect the full subtree
+                            val uuidsToDelete = mutableListOf(block.uuid)
+                            var index = 0
+                            while (index < uuidsToDelete.size) {
+                                val currentUuid = uuidsToDelete[index]
+                                val children = queries.selectBlockChildren(currentUuid, Long.MAX_VALUE, 0L).executeAsList()
+                                children.forEach { child ->
+                                    uuidsToDelete.add(child.uuid)
+                                    wikilinkPages.addAll(extractWikilinks(child.content))
+                                }
+                                index++
                             }
-                            index++
+                            // Chain repair for the top-level block being deleted.
+                            // Re-read left_uuid live: prior iterations in this batch may have updated a
+                            // sibling's left_uuid, making the pre-fetched blocksByUuid entry stale.
+                            val liveLeftUuid = queries.selectBlockByUuid(block.uuid).executeAsOneOrNull()?.left_uuid
+                                ?: block.left_uuid
+                            val nextSibling = queries.selectBlockByLeftUuid(block.uuid).executeAsOneOrNull()
+                            if (nextSibling != null) {
+                                queries.updateBlockLeftUuid(liveLeftUuid, nextSibling.uuid)
+                            }
+                            uuidsToDelete.forEach { queries.deleteBlockByUuid(it) }
+                        } else {
+                            // Chain repair before deletion. Re-read left_uuid live: prior iterations
+                            // may have updated a sibling's left_uuid, making the pre-fetched map stale.
+                            val liveLeftUuid = queries.selectBlockByUuid(block.uuid).executeAsOneOrNull()?.left_uuid
+                                ?: block.left_uuid
+                            val nextSibling = queries.selectBlockByLeftUuid(block.uuid).executeAsOneOrNull()
+                            if (nextSibling != null) {
+                                queries.updateBlockLeftUuid(liveLeftUuid, nextSibling.uuid)
+                            }
+                            queries.deleteBlockByUuid(block.uuid)
                         }
-                        // Chain repair for the top-level block being deleted
-                        val nextSibling = queries.selectBlockByLeftUuid(block.uuid).executeAsOneOrNull()
-                        if (nextSibling != null) {
-                            queries.updateBlockLeftUuid(block.left_uuid, nextSibling.uuid)
-                        }
-                        uuidsToDelete.forEach { queries.deleteBlockByUuid(it) }
-                    } else {
-                        // Chain repair before deletion
-                        val nextSibling = queries.selectBlockByLeftUuid(block.uuid).executeAsOneOrNull()
-                        if (nextSibling != null) {
-                            queries.updateBlockLeftUuid(block.left_uuid, nextSibling.uuid)
-                        }
-                        queries.deleteBlockByUuid(block.uuid)
                     }
                 }
                 wikilinkPages.forEach { queries.recomputeBacklinkCountForPage(it) }
