@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.2](https://github.com/tstapler/stelekit/compare/v0.40.1...v0.40.2) (2026-06-09)
+
+
+### Bug Fixes
+
+* **android:** prevent OOM crash during large-graph warm reconciliation ([3d674c6](https://github.com/tstapler/stelekit/commit/3d674c6963dda80800499d20a1361ade6af6e853))
+
 ## [0.40.1](https://github.com/tstapler/stelekit/compare/v0.40.0...v0.40.1) (2026-06-09)
 
 
