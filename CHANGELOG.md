@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.1](https://github.com/tstapler/stelekit/compare/v0.40.0...v0.40.1) (2026-06-09)
+
+
+### Bug Fixes
+
+* **stability:** crash-prevention refactors + fatalError recovery screen ([#138](https://github.com/tstapler/stelekit/issues/138)) ([3c0efac](https://github.com/tstapler/stelekit/commit/3c0efacdd2820664ff1fc6856ef3b1083a0109ad))
+
 ## [0.40.0](https://github.com/tstapler/stelekit/compare/v0.39.0...v0.40.0) (2026-06-09)
 
 
