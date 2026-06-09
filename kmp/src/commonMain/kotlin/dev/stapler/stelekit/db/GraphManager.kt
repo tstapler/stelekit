@@ -328,9 +328,13 @@ class GraphManager(
         val registry = _graphRegistry.value
         val graphInfo = registry.graphs.firstOrNull { it.id == id }
         if (graphInfo == null) return
-        
-        // Cancel any existing coroutines for the previous graph
+
+        // Idempotency guard: if this graph is already active and its repositories are ready,
+        // skip re-initialization. Without this guard, StelekitApp's LaunchedEffect fires a
+        // second switchGraph() right after GraphManager.init {} already called it, cancelling
+        // the first DB creation scope and tearing down GraphContent mid-load.
         val currentGraphId = registry.activeGraphId
+        if (currentGraphId == id && _activeRepositorySet.value != null) return
         currentGraphId?.let { activeGraphJobs.remove(it)?.cancel() }
 
         // Shutdown any git sync service from the previous graph

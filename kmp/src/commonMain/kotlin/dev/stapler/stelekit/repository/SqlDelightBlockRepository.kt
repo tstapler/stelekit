@@ -77,25 +77,15 @@ class SqlDelightBlockRepository(
 
     override fun getBlockByUuid(uuid: BlockUuid): Flow<Either<DomainError, Block?>> =
         queries.selectBlockByUuid(uuid.value)
-            .asFlow()
-            .mapToOneOrNull(PlatformDispatcher.DB)
-            .map { row ->
-                val block: Block? = row?.toBlockModel()?.also { blockCache.put(it.uuid.value, it) }
-                val result: Either<DomainError, Block?> = block.right()
-                result
+            .asDbFlowOrNull(PlatformDispatcher.DB) { row ->
+                row.toBlockModel().also { blockCache.put(it.uuid.value, it) }
             }
-            .catchDbError()
 
     override fun getBlockChildren(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> =
         queries.selectBlockChildren(blockUuid.value, Long.MAX_VALUE, 0L)
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { list ->
-                val blocks: List<Block> = list.map { it.toBlockModel() }.also { bs -> bs.forEach { blockCache.put(it.uuid.value, it) } }
-                val result: Either<DomainError, List<Block>> = blocks.right()
-                result
+            .asDbFlowList(PlatformDispatcher.DB) { row ->
+                row.toBlockModel().also { blockCache.put(it.uuid.value, it) }
             }
-            .catchDbError()
 
     override fun getBlockHierarchy(rootUuid: BlockUuid): Flow<Either<DomainError, List<BlockWithDepth>>> = flow {
         try {
@@ -1029,10 +1019,7 @@ class SqlDelightBlockRepository(
     // search UX expectations (recent blocks surface before older ones).
     override fun searchBlocksByContent(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Block>>> =
         queries.selectBlocksWithContentLikePaginated("%$query%", limit.toLong(), offset.toLong())
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { list -> list.map { it.toBlockModel() }.right() }
-            .catchDbError()
+            .asDbFlowList(PlatformDispatcher.DB) { it.toBlockModel() }
 
     override fun findDuplicateBlocks(limit: Int): Flow<Either<DomainError, List<DuplicateGroup>>> = flow {
         try {
@@ -1203,11 +1190,4 @@ class SqlDelightBlockRepository(
 }
 
 // Converts any non-cancellation exception from a DB flow (e.g. "attempt to re-open a closed
-// SQLiteDatabase") into Either.Left so callers receive a domain error instead of a crash.
-// The uncaught-on-main-thread crash this prevents: GraphManager closes the driver before
-// Compose LaunchedEffect collectors finish, causing IllegalStateException in mapToList().
-private fun <T> Flow<Either<DomainError, T>>.catchDbError(): Flow<Either<DomainError, T>> =
-    catch { e ->
-        if (e is CancellationException) throw e
-        emit(DomainError.DatabaseError.ReadFailed(e.message ?: "database closed").left())
-    }
+// catchDbError() is defined in DbFlowExtensions.kt (shared across all SqlDelight repositories).

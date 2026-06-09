@@ -517,6 +517,12 @@ class StelekitViewModel(
                 e.printStackTrace()
                 logger.error("Error loading graph", e)
                 _uiState.update { it.copy(isLoading = false, isFullyLoaded = true, statusMessage = "Error: ${e.message}") }
+            } catch (e: Throwable) {
+                // OutOfMemoryError, NoClassDefFoundError, and other JVM errors must not crash
+                // the app silently. Surface as a recoverable error state so the user sees
+                // a message instead of a black screen.
+                logger.error("Fatal error loading graph (Throwable): ${e::class.simpleName}: ${e.message}")
+                _uiState.update { it.copy(isLoading = false, isFullyLoaded = true, statusMessage = "Error: ${e.message}") }
             }
         }
         // Guarantee isLoading resets if the job is cancelled before reaching its first

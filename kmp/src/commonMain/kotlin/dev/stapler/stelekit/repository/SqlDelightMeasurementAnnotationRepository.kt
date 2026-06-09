@@ -38,10 +38,7 @@ class SqlDelightMeasurementAnnotationRepository(
 
     override fun getMeasurementsForImage(imageUuid: String): Flow<Either<DomainError, List<MeasurementAnnotation>>> =
         queries.selectMeasurementsForImage(imageUuid)
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { rows -> rows.map { it.toModel() }.right() }
-            .catchDbError()
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     @DirectRepositoryWrite
     override suspend fun saveMeasurementAnnotation(measurement: MeasurementAnnotation): Either<DomainError, Unit> =
@@ -121,11 +118,6 @@ class SqlDelightMeasurementAnnotationRepository(
         }
 }
 
-private fun <T> Flow<Either<DomainError, T>>.catchDbError(): Flow<Either<DomainError, T>> =
-    catch { e ->
-        if (e is CancellationException) throw e
-        emit(DomainError.DatabaseError.ReadFailed(e.message ?: "database closed").left())
-    }
 
 // ── Serialization helpers ─────────────────────────────────────────────────────
 

@@ -6,6 +6,11 @@ package dev.stapler.stelekit
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.stapler.stelekit.auto.AudiobookAutoSettings
+import dev.stapler.stelekit.auto.AudiobookNote
+import dev.stapler.stelekit.auto.AudiobookNoteWriter
+import dev.stapler.stelekit.auto.BookInfo
+import dev.stapler.stelekit.auto.NoOpJournalService
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.voice.AndroidAudioRecorder
 import dev.stapler.stelekit.voice.AndroidSpeechRecognizerProvider
@@ -28,13 +33,21 @@ class VoiceCaptureWidgetViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * Initializes the voice pipeline and starts recording immediately.
-     * Must be called once from the Activity after the permission launcher is registered.
+     * When book context extras are present (bookTitle != null), the note is saved in audiobook
+     * format — both today's journal and the book's dedicated Logseq page.
      * Safe to call on re-creation: if already initialized, recording is not restarted.
-     * Awaits pending graph migration before reading the repository set.
      */
-    fun initialize(requestMicPermission: suspend () -> Boolean) {
+    fun initialize(
+        requestMicPermission: suspend () -> Boolean,
+        bookTitle: String? = null,
+        bookAuthor: String? = null,
+        bookChapter: String? = null,
+        bookPositionMs: Long? = null,
+    ) {
         if (inner != null) return
         if (!initializing.compareAndSet(false, true)) return
+
+        val hasBookContext = bookTitle != null
 
         viewModelScope.launch {
             try {
@@ -72,14 +85,41 @@ class VoiceCaptureWidgetViewModel(app: Application) : AndroidViewModel(app) {
                     directSpeechProvider = if (settings.getUseDeviceStt()) deviceStt else null,
                 )
 
+                // When book context is present: inject NoOpJournalService so VoiceCaptureViewModel
+                // does NOT write to the journal itself. AudiobookNoteWriter handles the write after
+                // the transcript is done, using the audiobook note format with book attribution.
+                val journalServiceForVm = if (hasBookContext) NoOpJournalService() else repoSet.journalService
+
                 val vm = VoiceCaptureViewModel(
                     pipeline = pipeline,
-                    journalService = repoSet.journalService,
+                    journalService = journalServiceForVm,
                     scope = viewModelScope,
                 )
 
                 viewModelScope.launch {
-                    vm.state.collect { _state.value = it }
+                    vm.state.collect { vmState ->
+                        _state.value = vmState
+
+                        // On transcription complete with book context: write as audiobook note
+                        if (hasBookContext && vmState is VoiceCaptureState.Done) {
+                            val bookInfo = BookInfo(
+                                title = bookTitle,
+                                author = bookAuthor,
+                                chapter = bookChapter,
+                                positionMs = bookPositionMs,
+                                isActive = true,
+                            )
+                            val noteWriter = AudiobookNoteWriter(
+                                journalService = repoSet.journalService,
+                                settings = AudiobookAutoSettings(ctx),
+                            )
+                            noteWriter.writeNote(AudiobookNote.VoiceNote(
+                                transcribedText = vmState.insertedText,
+                                bookInfo = bookInfo,
+                            ))
+                            // State already Done — no further action needed
+                        }
+                    }
                 }
 
                 inner = vm
@@ -87,9 +127,6 @@ class VoiceCaptureWidgetViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // Unexpected exception (e.g. buildVoicePipeline throws): surface an error state
-                // so the UI is not silently stuck in Idle, and reset the guard so a future call
-                // to initialize() can try again instead of spinning up a duplicate pipeline.
                 _state.value = dev.stapler.stelekit.voice.VoiceCaptureState.Error(
                     dev.stapler.stelekit.voice.PipelineStage.RECORDING,
                     e.message ?: "Initialization failed",

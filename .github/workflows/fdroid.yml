@@ -113,13 +113,25 @@ jobs:
       - name: Generate fdroid index
         run: uv run --directory fdroid fdroid update --create-metadata --verbose
 
+      - name: Stage fdroid content for upload
+        run: |
+          # Using a staging directory preserves the repo/ directory structure in the
+          # artifact. Without it, upload-artifact@v4 strips the fdroid/repo/ prefix and
+          # the artifact lands flat (no repo/ subdirectory), breaking the pages.yml check.
+          #
+          # APKs are included: the 100 MB Git file limit does not apply to Actions-deployed
+          # Pages artifacts. With archive_older:5, repo/ has at most 5 APKs (~500 MB total)
+          # which fits under the 900 MB site safety limit.
+          mkdir -p fdroid-staging/repo
+          rsync -a fdroid/repo/ fdroid-staging/repo/
+
       - name: Upload fdroid content
         uses: actions/upload-artifact@v4
         with:
           name: fdroid-content
-          path: |
-            fdroid/repo
-            fdroid/archive
+          # Uploads fdroid-staging/ → artifact has repo/ as a subdirectory.
+          # pages.yml checks for fdroid-content/repo/ after download, which works correctly.
+          path: fdroid-staging
           if-no-files-found: error
           retention-days: 90
       # Pages deployment is handled by pages.yml, which downloads this artifact

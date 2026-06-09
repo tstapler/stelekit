@@ -1,0 +1,68 @@
+package dev.stapler.stelekit.repository
+
+import app.cash.sqldelight.Query
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
+import app.cash.sqldelight.coroutines.mapToOneOrNull
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.map
+
+/**
+ * Single shared definition of the closed-DB guard for all SqlDelight repository flows.
+ *
+ * Previously copy-pasted into each repository file as a private extension — that pattern
+ * meant new files could omit it and new methods could bypass it silently. Centralised here
+ * so there is exactly one place to update and no per-file obligation to remember.
+ *
+ * All SqlDelight `asFlow()` chains MUST end with this operator. The preferred way to
+ * enforce that is to use [asDbFlowList] or [asDbFlowOrNull] below, which apply it
+ * automatically and make forgetting structurally harder than remembering.
+ */
+internal fun <T> Flow<Either<DomainError, T>>.catchDbError(): Flow<Either<DomainError, T>> =
+    catch { e ->
+        if (e is CancellationException) throw e
+        emit(DomainError.DatabaseError.ReadFailed(e.message ?: "database closed").left())
+    }
+
+/**
+ * Replaces the three-step boilerplate:
+ * ```
+ * query.asFlow().mapToList(dispatcher).map { rows -> rows.map(mapper).right() }.catchDbError()
+ * ```
+ *
+ * Use this instead of calling [Query.asFlow] directly on any query that returns a list.
+ * The closed-DB guard ([catchDbError]) is built in and cannot be accidentally omitted.
+ */
+internal fun <SqlRow : Any, Domain> Query<SqlRow>.asDbFlowList(
+    dispatcher: CoroutineDispatcher,
+    mapper: (SqlRow) -> Domain,
+): Flow<Either<DomainError, List<Domain>>> =
+    asFlow()
+        .mapToList(dispatcher)
+        .map { rows -> rows.map(mapper).right() }
+        .catchDbError()
+
+/**
+ * Replaces the three-step boilerplate:
+ * ```
+ * query.asFlow().mapToOneOrNull(dispatcher).map { row -> row?.let(mapper).right() }.catchDbError()
+ * ```
+ *
+ * Use this instead of calling [Query.asFlow] directly on any query that returns one-or-null.
+ * The closed-DB guard ([catchDbError]) is built in and cannot be accidentally omitted.
+ */
+internal fun <SqlRow : Any, Domain> Query<SqlRow>.asDbFlowOrNull(
+    dispatcher: CoroutineDispatcher,
+    mapper: (SqlRow) -> Domain,
+): Flow<Either<DomainError, Domain?>> =
+    asFlow()
+        .mapToOneOrNull(dispatcher)
+        .map { row -> row?.let(mapper).right() }
+        .catchDbError()

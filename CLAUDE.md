@@ -177,30 +177,49 @@ The database layer uses `PlatformDispatcher.DB` for all SQL work and `DatabaseWr
 
 #### Read pattern — use in every `SqlDelight*Repository`
 
-```kotlin
-// Generated query → reactive Flow
-override fun getPageByUuid(uuid: String): Flow<Result<Page?>> =
-    queries.selectPageByUuid(uuid)
-        .asFlow()
-        .mapToOneOrNull(PlatformDispatcher.DB)      // ← always DB, never IO
-        .map { success(it?.toModel()) }
+**Prefer `asDbFlowList` / `asDbFlowOrNull` (defined in `repository/DbFlowExtensions.kt`).** These combine `asFlow() + mapToList/mapToOneOrNull + map + catchDbError()` into one call, so the closed-DB guard is structurally impossible to forget:
 
-// Custom flow with raw SQL calls
-override fun getBlockHierarchy(rootUuid: String): Flow<Result<List<BlockWithDepth>>> = flow {
-    // Synchronous SQL here — flowOn switches the whole upstream to DB dispatcher
-    emit(success(queries.selectBlockByUuid(rootUuid)?.let { ... } ?: emptyList()))
+```kotlin
+// ✓ Preferred — list query, guard built in
+override fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+    queries.selectAllPagesPaginated(limit.toLong(), offset.toLong())
+        .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+
+// ✓ Preferred — single-or-null query, guard built in
+override fun getPageByUuid(uuid: PageUuid): Flow<Either<DomainError, Page?>> =
+    queries.selectPageByUuid(uuid.value)
+        .asDbFlowOrNull(PlatformDispatcher.DB) { it.toModel() }
+
+// ✓ Manual chain required when mid-chain operators (e.g. conflate) are needed
+override fun getAllPages(): Flow<Either<DomainError, List<Page>>> =
+    queries.selectAllPages()
+        .asFlow()
+        .conflate()                                 // ← prevents O(N²) scans on bulk import
+        .mapToList(PlatformDispatcher.DB)
+        .map { list -> list.map { it.toModel() }.right() }
+        .catchDbError()                             // ← must always terminate manual chains
+
+// ✓ Custom flow with raw SQL calls (property parsing, hierarchy traversal, etc.)
+override fun getBlockHierarchy(rootUuid: BlockUuid): Flow<Either<DomainError, List<BlockWithDepth>>> = flow {
+    try {
+        // Synchronous SQL here — flowOn switches the whole upstream to DB dispatcher
+        emit(queries.selectBlockByUuid(rootUuid.value).executeAsOneOrNull()
+            ?.let { buildHierarchy(it) }.right())
+    } catch (e: CancellationException) { throw e }
+    catch (e: Exception) { emit(DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()) }
 }.flowOn(PlatformDispatcher.DB)                     // ← always at the end of the chain
 ```
 
 #### Write pattern — use in every `SqlDelight*Repository`
 
 ```kotlin
-override suspend fun savePage(page: Page): Result<Unit> = withContext(PlatformDispatcher.DB) {
+override suspend fun savePage(page: Page): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
     try {
         queries.transaction { queries.insertPage(...); queries.updatePage(...) }
-        success(Unit)
-    } catch (e: Exception) {
-        Result.failure(e)
+        Unit.right()
+    } catch (e: CancellationException) { throw e }
+    catch (e: Exception) {
+        DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
     }
 }
 ```
@@ -268,9 +287,28 @@ val manager = remember { SomeManager() }
 
 `Application.onCreate()` must use `catch (e: Throwable)`, not `catch (e: Exception)`. Native library loading failures (`UnsatisfiedLinkError`, `NoClassDefFoundError`) are `Error` subclasses, not `Exception`. Catching only `Exception` lets them propagate uncaught and crash the app at startup before the UI is shown. See `SteleKitApplication.kt`.
 
-### Repository Flow resilience — always use `.catchDbError()` on SQLDelight flows
+### Repository Flow resilience — use `asDbFlowList` / `asDbFlowOrNull`, never raw `asFlow()`
 
-Any `Flow` chain that calls `.asFlow().mapToList()` or `.asFlow().mapToOneOrNull()` on a SQLDelight query **must** end with `.catchDbError()` (defined at the bottom of each `SqlDelight*Repository` file). When `GraphManager.shutdown()` or `switchGraph()` closes the database, in-flight Compose `LaunchedEffect` collectors can hit the closed driver and throw `IllegalStateException`. `.catchDbError()` converts this to `Either.Left(DomainError.ReadFailed)` instead of crashing the main thread. Regression tests: `RepositoryFlowResilienceTest`, `GraphManagerDatabaseLifecycleTest`.
+When `GraphManager.shutdown()` or `switchGraph()` closes the database, any Compose `LaunchedEffect` still collecting a repository `Flow` will hit `IllegalStateException` on the closed driver and crash the main thread.
+
+**The guard:** `catchDbError()` converts this to `Either.Left(DomainError.ReadFailed)` so the UI degrades gracefully instead of crashing.
+
+**The enforcement:** `catchDbError()` is defined once in `repository/DbFlowExtensions.kt` (not copy-pasted per file). The preferred way to apply it is through the typed helpers that build it in automatically:
+
+```kotlin
+// ✓ Guard is structural — you cannot get asDbFlowList without catchDbError
+queries.selectAllPages().asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+
+// ✓ For manual chains that need mid-chain operators — guard must be explicit
+queries.selectAllPages().asFlow().conflate().mapToList(DB).map { ... }.catchDbError()
+
+// ✗ Raw asFlow() chain without catchDbError — will crash on DB close
+queries.selectAllPages().asFlow().mapToList(DB).map { ... }
+```
+
+`flow { try/catch }` blocks that call `executeAsList()` / `executeAsOneOrNull()` directly already handle the exception inline — they do not need `catchDbError()`.
+
+Regression tests: `UpgradeResilienceTest` (TC-UPGRADE-001 exercises every `Flow`-backed read across all repositories against a closed DB — any future method missing the guard will fail here), `RepositoryFlowResilienceTest`, `GraphManagerDatabaseLifecycleTest`.
 
 ### GitHub Actions — `workflow_call` propagates caller's `event_name`
 
@@ -296,5 +334,6 @@ See `kmp/TESTING_README.md` for the full testing guide. Test source sets:
 | `kmp/src/commonMain/.../db/GraphWriter.kt` | File export and conflict detection |
 | `kmp/src/commonMain/.../model/Models.kt` | Page, Block, Property data classes with built-in validation |
 | `kmp/src/commonMain/.../repository/RepositoryFactory.kt` | Backend abstraction |
+| `kmp/src/commonMain/.../repository/DbFlowExtensions.kt` | `catchDbError`, `asDbFlowList`, `asDbFlowOrNull` — shared closed-DB guard helpers |
 | `kmp/src/jvmMain/.../desktop/Main.kt` | Desktop entry point |
 | `kmp/src/commonMain/sqldelight/.../SteleDatabase.sq` | SQLDelight schema |
