@@ -73,7 +73,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.konan
-          key: konan-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml') }}
+          key: konan-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml', 'settings.gradle.kts', 'gradle.properties') }}
       - name: Build wasmJs demo
         run: ./gradlew :kmp:wasmJsBrowserDistribution --no-daemon --build-cache -PenableJs=true
       - name: Assert expected output exists

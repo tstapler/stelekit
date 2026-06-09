@@ -29,6 +29,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache uv packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-fdroid-${{ runner.os }}-${{ hashFiles('fdroid/uv.lock') }}
+          restore-keys: uv-fdroid-${{ runner.os }}-
+
       - name: Install fdroidserver
         run: |
           sudo apt-get install -y aapt zipalign
