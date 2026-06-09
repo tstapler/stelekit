@@ -36,6 +36,7 @@ import dev.stapler.stelekit.voice.AndroidSpeechRecognizerProvider
 import dev.stapler.stelekit.voice.MlKitLlmFormatterProvider
 import dev.stapler.stelekit.voice.VoiceSettings
 import dev.stapler.stelekit.voice.buildVoicePipeline
+import dev.stapler.stelekit.platform.google.AndroidGoogleAuthManager
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 
@@ -228,6 +229,23 @@ class MainActivity : ComponentActivity() {
                 onMemoryPressure = { handler -> onMemoryPressureHandler = handler },
                 attachmentService = attachmentService,
             )
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Handle OAuth 2.0 deep-link callback: com.stelekit.app:/oauth2redirect?code=...
+        val data = intent.data
+        if (data?.scheme == "com.stelekit.app" && data.path == "/oauth2redirect") {
+            val code = data.getQueryParameter("code") ?: return
+            val state = data.getQueryParameter("state")
+            // Validate CSRF state nonce before accepting the code.
+            // An empty or mismatched state rejects the callback silently.
+            if (state.isNullOrBlank() || state != AndroidGoogleAuthManager.pendingOAuthState) return
+            AndroidGoogleAuthManager.pendingOAuthState = null
+            // Emit (state, code) pair so authenticate() can filter by its own nonce,
+            // discarding any stale codes from a prior auth session still in the buffer.
+            AndroidGoogleAuthManager.oauthCodeFlow.tryEmit(state to code)
         }
     }
 

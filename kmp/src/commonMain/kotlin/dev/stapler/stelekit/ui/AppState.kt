@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.ui
 
 import androidx.compose.runtime.staticCompositionLocalOf
+import kotlinx.datetime.LocalDate
 import dev.stapler.stelekit.docs.AllPagesDocs
 import dev.stapler.stelekit.docs.FlashcardsDocs
 import dev.stapler.stelekit.docs.HelpPage
@@ -117,6 +118,15 @@ data class AppState(
     val conflictResolutionVisible: Boolean = false,
     // Export in-flight: true while an exportPage/exportSelectedBlocks coroutine is running
     val isExporting: Boolean = false,
+    // Share dialog state
+    val shareDialogVisible: Boolean = false,
+    val shareFormat: String = "markdown",
+    val shareScope: ShareScope = ShareScope.CurrentPage,
+    val shareJournalFromDate: LocalDate? = null,
+    val shareJournalToDate: LocalDate? = null,
+    val shareIsGoogleAuthenticated: Boolean = false,
+    val shareGoogleEmail: String? = null,
+    val isExportingToDrive: Boolean = false,
 ) {
     val canGoBack: Boolean get() = historyIndex > 0
     val canGoForward: Boolean get() = historyIndex < navigationHistory.size - 1

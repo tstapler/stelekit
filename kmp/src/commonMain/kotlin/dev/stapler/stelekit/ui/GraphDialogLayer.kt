@@ -17,11 +17,16 @@ import dev.stapler.stelekit.git.GitConfigRepository
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.export.ExportService
+import dev.stapler.stelekit.export.ShareProvider
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.FrameMetric
 import dev.stapler.stelekit.performance.DebugMenuState
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.google.DriveUploader
+import dev.stapler.stelekit.platform.google.GoogleAuthManager
 import dev.stapler.stelekit.ui.screens.git.ConflictResolutionScreen
 import dev.stapler.stelekit.ui.screens.git.GitSetupScreen
 import dev.stapler.stelekit.vault.VaultError
@@ -35,6 +40,7 @@ import dev.stapler.stelekit.ui.components.NotificationOverlay
 import dev.stapler.stelekit.ui.components.PlatformFrameTimeOverlay
 import dev.stapler.stelekit.ui.components.RenamePageDialog
 import dev.stapler.stelekit.ui.components.SearchDialog
+import dev.stapler.stelekit.ui.components.ShareDialog
 import dev.stapler.stelekit.ui.components.settings.SettingsDialog
 import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.voice.VoiceSettings
@@ -80,6 +86,13 @@ internal fun GraphDialogLayer(
     graphPath: String = "",
     onCloneComplete: ((String) -> Unit)? = null,
     onAuthError: (() -> Unit)? = null,
+    shareProvider: ShareProvider? = null,
+    exportService: ExportService? = null,
+    driveClient: DriveUploader? = null,
+    shareGoogleAuthManager: GoogleAuthManager? = null,
+    currentPage: Page? = null,
+    currentBlocks: List<Block> = emptyList(),
+    selectedBlockUuids: Set<String> = emptySet(),
 ) {
     val scope = rememberCoroutineScope()
 
@@ -198,6 +211,21 @@ internal fun GraphDialogLayer(
             error = appState.renameDialogError,
             onConfirm = { newName -> viewModel.renamePage(page, newName) },
             onDismiss = { viewModel.dismissRenameDialog() }
+        )
+    }
+
+    // ShareDialog — shown when appState.shareDialogVisible and a ShareProvider is available.
+    if (shareProvider != null) {
+        ShareDialog(
+            appState = appState,
+            viewModel = viewModel,
+            page = currentPage,
+            blocks = currentBlocks,
+            selectedBlockUuids = selectedBlockUuids,
+            shareProvider = shareProvider,
+            driveClient = driveClient,
+            googleAuthManager = shareGoogleAuthManager,
+            onDismiss = { viewModel.hideShareDialog() },
         )
     }
 

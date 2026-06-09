@@ -65,6 +65,7 @@ import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.repository.*
 import dev.stapler.stelekit.ui.components.*
 import dev.stapler.stelekit.ui.components.settings.SettingsDialog
+import dev.stapler.stelekit.ui.rememberShareProvider
 import dev.stapler.stelekit.ui.i18n.I18n
 import dev.stapler.stelekit.ui.i18n.LocalI18n
 import dev.stapler.stelekit.ui.i18n.t
@@ -529,6 +530,9 @@ private fun GraphContent(
             blockRepository = repos.blockRepository,
         )
     }
+
+    // Platform-specific share provider (share sheet, file save, etc.)
+    val shareProvider = rememberShareProvider()
 
     // ViewModel scope must NOT be rememberCoroutineScope() — that scope is cancelled when the
     // composable leaves the composition, which would cancel all ViewModel coroutines on pause.
@@ -1090,8 +1094,7 @@ private fun GraphContent(
                                 onGoBack = { viewModel.goBack() },
                                 onGoForward = { viewModel.goForward() },
                                 onMenuToggle = { viewModel.toggleSidebar() },
-                                onExportPage = { formatId -> viewModel.exportPage(formatId) },
-                                isExporting = appState.isExporting,
+                                onShareClick = { viewModel.showShareDialog() },
                                 onShowDebugMenu = if (DebugBuildConfig.isDebugBuild) {{ viewModel.showDebugMenu() }} else null,
                             )
                         },
@@ -1376,6 +1379,15 @@ private fun GraphContent(
                             scope.launch { graphManager.switchGraph(newGraphId) }
                         },
                         onAuthError = { viewModel.openGitSetupForCredentials() },
+                        shareProvider = shareProvider,
+                        exportService = exportService,
+                        driveClient = null, // DriveApiClient injected from platform entry point in a future phase
+                        shareGoogleAuthManager = googleAuthManager,
+                        currentPage = appState.currentPage,
+                        currentBlocks = appState.currentPage?.let {
+                            blockStateManager.blocksForPage(it.uuid.value)
+                        } ?: emptyList(),
+                        selectedBlockUuids = blockStateManager.selectedBlockUuids.collectAsState().value,
                     )
 
                     } // CompositionLocalProvider(LocalWindowSizeClass)

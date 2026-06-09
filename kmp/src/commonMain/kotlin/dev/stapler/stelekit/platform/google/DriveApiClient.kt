@@ -17,15 +17,20 @@ import io.ktor.client.statement.bodyAsBytes
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.appendPathSegments
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlin.time.Clock
 
 private val driveClientJson = Json { ignoreUnknownKeys = true }
@@ -88,17 +93,24 @@ class DriveApiClient(
 
         return try {
             val boundary = "boundary_stelekit_${Clock.System.now().toEpochMilliseconds()}"
-            val parentsPart = if (parentFolderId != null) {
-                ""","parents":["$parentFolderId"]"""
-            } else ""
-            val metadataPart = """{"name":"$fileName","mimeType":"$mimeType"$parentsPart}"""
+            val metadataJson = buildJsonObject {
+                put("name", fileName)
+                put("mimeType", mimeType)
+                if (parentFolderId != null) putJsonArray("parents") { add(parentFolderId) }
+            }
+            val metadataPart = metadataJson.toString()
 
+            // When uploading HTML for Google Docs conversion, the content part must declare
+            // text/html as Content-Type (the source format). The metadata mimeType field
+            // tells Drive the conversion target (application/vnd.google-apps.document).
+            // Using the target mimeType in the content part causes Drive to reject the upload.
+            val contentMimeType = if (mimeType == "application/vnd.google-apps.document") "text/html" else mimeType
             val headerBytes = buildString {
                 append("--$boundary\r\n")
                 append("Content-Type: application/json; charset=UTF-8\r\n\r\n")
                 append(metadataPart)
                 append("\r\n--$boundary\r\n")
-                append("Content-Type: $mimeType\r\n\r\n")
+                append("Content-Type: $contentMimeType\r\n\r\n")
             }.encodeToByteArray()
             val footerBytes = "\r\n--$boundary--".encodeToByteArray()
             val multipartBody = ByteArray(headerBytes.size + bytes.size + footerBytes.size).also { buf ->
@@ -147,6 +159,15 @@ class DriveApiClient(
                 statusCode = 401,
                 message = "Not authenticated",
             ).left()
+
+        // Drive resource IDs are server-issued alphanumeric strings. Validate before interpolating
+        // into the Drive Files.list query string to prevent Drive query injection.
+        if (folderId != null && !DRIVE_ID_REGEX.matches(folderId)) {
+            return DomainError.NetworkError.HttpError(
+                statusCode = 400,
+                message = "Invalid folderId — expected alphanumeric Drive resource ID",
+            ).left()
+        }
 
         return try {
             val parent = if (folderId != null) "'$folderId' in parents" else "'root' in parents"
@@ -207,8 +228,12 @@ class DriveApiClient(
             ).left()
 
         return try {
-            val parentsPart = if (parentId != null) ""","parents":["$parentId"]""" else ""
-            val body = """{"name":"$name","mimeType":"application/vnd.google-apps.folder"$parentsPart}"""
+            val bodyJson = buildJsonObject {
+                put("name", name)
+                put("mimeType", "application/vnd.google-apps.folder")
+                if (parentId != null) putJsonArray("parents") { add(parentId) }
+            }
+            val body = bodyJson.toString()
 
             val response = httpClient.post(
                 "https://www.googleapis.com/drive/v3/files",
@@ -251,10 +276,13 @@ class DriveApiClient(
 
         return try {
             val response = httpClient.get(
-                "https://www.googleapis.com/drive/v3/files/$fileId",
+                "https://www.googleapis.com/drive/v3/files",
             ) {
                 bearerAuth(token)
-                url { parameters.append("alt", "media") }
+                url {
+                    appendPathSegments(fileId)
+                    parameters.append("alt", "media")
+                }
             }
 
             if (!response.status.isSuccess()) {
@@ -272,5 +300,10 @@ class DriveApiClient(
                 message = "Drive download error: ${e.message}",
             ).left()
         }
+    }
+
+    companion object {
+        // Drive resource IDs are server-issued: alphanumeric plus underscore and hyphen.
+        private val DRIVE_ID_REGEX = Regex("[A-Za-z0-9_-]+")
     }
 }

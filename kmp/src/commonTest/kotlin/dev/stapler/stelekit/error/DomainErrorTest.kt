@@ -47,6 +47,7 @@ class DomainErrorTest {
             DomainError.SensorError.CaptureFailed("capture failed"),
             DomainError.ExportError.SerializationFailed("serialization failed"),
             DomainError.ExportError.ClipboardFailed("clipboard failed"),
+            DomainError.ExportError.ShareFailed("share failed"),
         )
         for (err in errors) {
             // exhaustive when — compile error if any branch is missing
@@ -93,6 +94,7 @@ class DomainErrorTest {
                 is DomainError.BleError.Gatt133 -> err.message
                 is DomainError.ExportError.ClipboardFailed -> err.message
                 is DomainError.ExportError.SerializationFailed -> err.message
+                is DomainError.ExportError.ShareFailed -> err.message
             }
             assert(msg.isNotEmpty()) { "Expected non-empty message for $err" }
         }
@@ -154,6 +156,9 @@ class DomainErrorTest {
             DomainError.SensorError.CaptureFailed("capture"),
             DomainError.BleError.ConnectionFailed("ble connect"),
             DomainError.BleError.Gatt133(3, "gatt error"),
+            DomainError.ExportError.ClipboardFailed("clipboard failed"),
+            DomainError.ExportError.SerializationFailed("serialization failed"),
+            DomainError.ExportError.ShareFailed("share failed"),
         )
         for (err in errors) {
             assert(err.toUiMessage().isNotEmpty()) { "Expected non-empty UI message for $err" }
