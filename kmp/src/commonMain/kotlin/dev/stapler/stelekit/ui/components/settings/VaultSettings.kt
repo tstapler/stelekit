@@ -224,9 +224,10 @@ private fun KeyslotManagementSection(
                 }
             }
 
-            if (removeError != null) {
+            val capturedRemoveError = removeError
+            if (capturedRemoveError != null) {
                 Text(
-                    removeError!!,
+                    capturedRemoveError,
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 4.dp),
@@ -246,13 +247,15 @@ private fun KeyslotManagementSection(
                 }
             }
 
-            AnimatedVisibility(showAddForm && onAddKeyslot != null) {
+            val capturedOnAddKeyslot = onAddKeyslot
+            AnimatedVisibility(showAddForm && capturedOnAddKeyslot != null) {
                 PassphraseFormCard(
                     title = "Add passphrase",
                     submitLabel = "Add",
                     requireConfirm = true,
                     onSubmit = { passphrase ->
-                        when (val r = onAddKeyslot!!(passphrase)) {
+                        if (capturedOnAddKeyslot == null) null
+                        else when (val r = capturedOnAddKeyslot(passphrase)) {
                             is Either.Right -> {
                                 // Refresh slot list after add
                                 if (onListActiveSlots != null) {
@@ -347,9 +350,10 @@ private fun PassphraseFormCard(
                 )
             }
 
-            if (error != null) {
+            val capturedError = error
+            if (capturedError != null) {
                 Text(
-                    error!!,
+                    capturedError,
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
                 )

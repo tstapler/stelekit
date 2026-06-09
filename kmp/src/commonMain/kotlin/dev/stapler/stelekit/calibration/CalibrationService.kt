@@ -194,9 +194,12 @@ object ExifCalibrationService {
         val fovHalfRadians: Double = if (focal35mm != null && focal35mm > 0.0) {
             atan(36.0 / (2.0 * focal35mm))
         } else {
-            // Fall back: use actual focal length assuming a 6.4mm sensor (typical mobile)
+            // Fall back: use actual focal length assuming a 6.4mm sensor (typical mobile).
+            // focal35mm was null or ≤0, so focalLengthMm must be present (the null+null check
+            // above already returned null). Return null if focalLengthMm is somehow absent.
+            val focalMm = focalLengthMm ?: return null
             val sensorWidthMm = 6.4
-            atan(sensorWidthMm / (2.0 * focalLengthMm!!))
+            atan(sensorWidthMm / (2.0 * focalMm))
         }
 
         val depthM = depthHintMeters ?: 2.0

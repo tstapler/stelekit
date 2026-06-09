@@ -513,9 +513,14 @@ class StelekitViewModel(
             } catch (e: Throwable) {
                 // OutOfMemoryError, NoClassDefFoundError, and other JVM errors must not crash
                 // the app silently. Surface as a recoverable error state so the user sees
-                // a message instead of a black screen.
-                logger.error("Fatal error loading graph (Throwable): ${e::class.simpleName}: ${e.message}")
-                _uiState.update { it.copy(isLoading = false, isFullyLoaded = true, statusMessage = "Error: ${e.message}") }
+                // a message instead of a black screen. fatalError is shown on the error
+                // report screen where the user can copy the full message for filing a bug.
+                val errorText = buildString {
+                    append(e::class.simpleName)
+                    e.message?.let { append(": ", it) }
+                }
+                logger.error("Fatal error loading graph (Throwable): $errorText")
+                _uiState.update { it.copy(isLoading = false, isFullyLoaded = true, statusMessage = "Error: $errorText", fatalError = errorText) }
             }
         }
         // Guarantee isLoading resets if the job is cancelled before reaching its first
@@ -1180,6 +1185,10 @@ class StelekitViewModel(
 
     fun dismissIndexingError() {
         _uiState.update { it.copy(indexingError = null) }
+    }
+
+    fun clearFatalError() {
+        _uiState.update { it.copy(fatalError = null) }
     }
 
     fun retryIndexing() {
