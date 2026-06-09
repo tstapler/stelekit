@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.40.0](https://github.com/tstapler/stelekit/compare/v0.39.0...v0.40.0) (2026-06-09)
+
+
+### Features
+
+* **export:** unified Share/Export dialog with native share sheet and Google Docs ([#133](https://github.com/tstapler/stelekit/issues/133)) ([b5a755a](https://github.com/tstapler/stelekit/commit/b5a755ab9c4e9d9a307ad3cf2ae3fbe11fd558e8))
+
+
+### Bug Fixes
+
+* **android:** guard switchGraph against cancelling an in-progress init ([275291b](https://github.com/tstapler/stelekit/commit/275291b3047443384b831c70fc8f7d0cc465ba25))
+
 ## [0.39.0](https://github.com/tstapler/stelekit/compare/v0.38.4...v0.39.0) (2026-06-09)
 
 
