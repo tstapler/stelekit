@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.39.0](https://github.com/tstapler/stelekit/compare/v0.38.4...v0.39.0) (2026-06-09)
+
+
+### Features
+
+* **android:** add Android Auto audiobook notes screen ([#134](https://github.com/tstapler/stelekit/issues/134)) ([fd08824](https://github.com/tstapler/stelekit/commit/fd088247e2e5770fd12ffa11415a4dcae7225076))
+
+
+### Bug Fixes
+
+* **android:** stop double-switchGraph race that crashes v0.38.4 on startup ([fd9e073](https://github.com/tstapler/stelekit/commit/fd9e07324e0bc1cd7fc7bff0a599495a8528bab2))
+* **ci:** fix fdroid artifact structure and restore F-Droid Pages content ([4a1f1de](https://github.com/tstapler/stelekit/commit/4a1f1ded7063afdd35d00ce79912681f64386c92))
+* **ci:** queue pages.yml runs instead of cancelling to protect build-demo ([554e22b](https://github.com/tstapler/stelekit/commit/554e22b8c2c6bd46874ed71093b126de97b66744))
+* **ci:** raise build-demo timeout to 60 min and cache Kotlin/Native compiler ([84916cf](https://github.com/tstapler/stelekit/commit/84916cf0e92dc0183f6b2f4fb6e4cae0c986b037))
+* **ci:** remove Playwright from build-demo — E2E tests already run in ci.yml ([82d8ffc](https://github.com/tstapler/stelekit/commit/82d8ffc533b9741e205ab9c1a29bc172741fc74a))
+* **fdroid:** include APKs in Pages deployment so F-Droid downloads work ([9786555](https://github.com/tstapler/stelekit/commit/9786555ee08e25b8904198623ddcaa8fab38ba83))
+
 ## [0.38.4](https://github.com/tstapler/stelekit/compare/v0.38.3...v0.38.4) (2026-06-07)
 
 
