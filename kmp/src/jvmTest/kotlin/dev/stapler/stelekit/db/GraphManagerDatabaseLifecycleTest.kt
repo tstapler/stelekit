@@ -12,7 +12,9 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import kotlin.test.Test
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 
 /**
  * Integration regression tests for the Android startup crash:
@@ -142,6 +144,82 @@ class GraphManagerDatabaseLifecycleTest {
             collectionCrashed,
             "Switching graphs must not crash active collectors from the previous graph. " +
                 "Pre-fix: IllegalStateException from closed DB. Post-fix: Either.Left emitted."
+        )
+
+        graphManager.shutdown()
+    }
+
+    // TC-GM-LIFECYCLE-003
+    @Test
+    fun `switchGraph with same active id is idempotent once initialization completes`() = runBlocking {
+        // Regression for the v0.38.4 crash on returning-user devices.
+        // init{} calls switchGraph(activeId); then StelekitApp's LaunchedEffect calls it again.
+        // On fast devices/emulators DB init finishes before the LaunchedEffect fires, so
+        // _activeRepositorySet is non-null and the (a) branch of the guard fires.
+        val graphManager = GraphManager(
+            platformSettings = StubSettings(),
+            driverFactory = DriverFactory(),
+            fileSystem = StubFileSystem(),
+            defaultBackend = GraphBackend.SQLDELIGHT,
+        )
+
+        val repoSet = graphManager.openGraph("/test")
+        val graphId = graphManager.getActiveGraphId()!!
+
+        assertNotNull(graphManager.activeRepositorySet.value)
+
+        graphManager.switchGraph(graphId)
+        yield()
+
+        assertNotNull(
+            graphManager.activeRepositorySet.value,
+            "switchGraph(sameId) after init must not null out activeRepositorySet."
+        )
+        assertSame(
+            repoSet,
+            graphManager.activeRepositorySet.value,
+            "The same RepositorySet must be reused; no new DB connection should be opened."
+        )
+
+        graphManager.shutdown()
+    }
+
+    // TC-GM-LIFECYCLE-004
+    @Test
+    fun `switchGraph with same active id is idempotent while initialization is still in progress`() = runBlocking {
+        // Regression for the crash on real devices with large graphs (e.g. 8030 pages).
+        // DB init is slow enough that the LaunchedEffect fires before _activeRepositorySet
+        // becomes non-null. The v0.39.0 guard only checked _activeRepositorySet != null (branch a),
+        // so the second call would cancel the running init scope → crash.
+        // The fix adds branch (b): also return early if activeGraphJobs already contains the id.
+        val blockingJob = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val graphManager = GraphManager(
+            platformSettings = StubSettings(),
+            driverFactory = DriverFactory(),
+            fileSystem = StubFileSystem(),
+            defaultBackend = GraphBackend.SQLDELIGHT,
+            preFlightJob = blockingJob, // holds DB init open so second call arrives first
+        )
+
+        val graphId = graphManager.addGraph("/test")
+        graphManager.switchGraph(graphId) // first call — init blocked by preFlightJob
+
+        // _activeRepositorySet is still null; init is in progress
+        assertNull(graphManager.activeRepositorySet.value)
+
+        // Simulate the LaunchedEffect calling switchGraph again before init completes.
+        // Pre-fix (b): this cancelled the first init scope and the DB never opened.
+        graphManager.switchGraph(graphId)
+        yield()
+
+        // Unblock init — the original scope must still be running and complete normally.
+        blockingJob.complete(Unit)
+        graphManager.awaitPendingMigration()
+
+        assertNotNull(
+            graphManager.activeRepositorySet.value,
+            "switchGraph(sameId) while init is in progress must not cancel the running init scope. " +
+                "Pre-fix: second call cancelled the scope; DB never opened; app crashed."
         )
 
         graphManager.shutdown()
