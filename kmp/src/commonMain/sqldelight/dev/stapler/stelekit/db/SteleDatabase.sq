@@ -944,9 +944,6 @@ INSERT OR REPLACE INTO git_config(
 deleteGitConfig:
 DELETE FROM git_config WHERE graph_id = ?;
 
-selectBlocksByUuids:
-SELECT * FROM blocks WHERE uuid IN ?;
-
 -- Image annotations table: stores one row per imported image with calibration & sensor data.
 -- The authoritative source is the sidecar JSON; this table is a query-optimised cache.
 CREATE TABLE IF NOT EXISTS image_annotations (
