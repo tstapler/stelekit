@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.db.GraphWriterPort
 import dev.stapler.stelekit.domain.NoOpUrlFetcher
@@ -88,6 +89,7 @@ internal fun ScreenRouter(
         FatalErrorScreen(
             message = appState.fatalError,
             onDismiss = { viewModel.clearFatalError() },
+            onRetry = { viewModel.loadGraph(appState.currentGraphPath) },
         )
         return
     }
@@ -300,6 +302,7 @@ internal fun ScreenRouter(
 private fun FatalErrorScreen(
     message: String,
     onDismiss: () -> Unit,
+    onRetry: () -> Unit,
 ) {
     val clipboardManager = LocalClipboardManager.current
     Column(
@@ -328,13 +331,17 @@ private fun FatalErrorScreen(
                 .fillMaxWidth()
                 .padding(vertical = 8.dp),
             style = MaterialTheme.typography.bodySmall.copy(
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                fontFamily = FontFamily.Monospace,
             ),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(16.dp))
         Button(onClick = { clipboardManager.setText(AnnotatedString(message)) }) {
             Text("Copy error")
+        }
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = onRetry) {
+            Text("Retry")
         }
         Spacer(Modifier.height(8.dp))
         OutlinedButton(onClick = onDismiss) {

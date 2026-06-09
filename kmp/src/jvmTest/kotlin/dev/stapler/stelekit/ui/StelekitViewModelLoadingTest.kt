@@ -1,22 +1,36 @@
 package dev.stapler.stelekit.ui
 
+import dev.stapler.stelekit.db.DatabaseWriteActor
+import dev.stapler.stelekit.db.ExternalFileChange
 import dev.stapler.stelekit.db.GraphLoader
+import dev.stapler.stelekit.db.GraphLoaderPort
 import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.db.WriteError
+import dev.stapler.stelekit.model.FilePath
+import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageName
+import dev.stapler.stelekit.parsing.ParseMode
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.InMemorySearchRepository
 import dev.stapler.stelekit.ui.fixtures.FakeBlockRepository
 import dev.stapler.stelekit.ui.fixtures.FakeFileSystem
 import dev.stapler.stelekit.ui.fixtures.FakePageRepository
 import dev.stapler.stelekit.ui.fixtures.InMemorySettings
+import dev.stapler.stelekit.vault.CryptoLayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -38,11 +52,12 @@ class StelekitViewModelLoadingTest {
     private fun makeViewModel(
         fileSystem: FakeFileSystem = FakeFileSystem(),
         settings: InMemorySettings = InMemorySettings(),
+        graphLoader: GraphLoaderPort? = null,
     ): StelekitViewModel {
         val pageRepo = FakePageRepository()
         val blockRepo = FakeBlockRepository()
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        val graphLoader = GraphLoader(fileSystem, pageRepo, blockRepo)
+        val resolvedLoader = graphLoader ?: GraphLoader(fileSystem, pageRepo, blockRepo)
         val graphWriter = GraphWriter(PlatformFileSystem())
         val searchRepo = InMemorySearchRepository()
         return StelekitViewModel(
@@ -51,7 +66,7 @@ class StelekitViewModelLoadingTest {
                 pageRepository = pageRepo,
                 blockRepository = blockRepo,
                 searchRepository = searchRepo,
-                graphLoader = graphLoader,
+                graphLoader = resolvedLoader,
                 graphWriter = graphWriter,
                 platformSettings = settings,
                 scope = scope,
@@ -141,6 +156,46 @@ class StelekitViewModelLoadingTest {
         assertFalse(vm.uiState.value.isLoading, "isLoading must be false after second graph switch")
     }
 
+    // ─── Throwable error path ────────────────────────────────────────────────
+
+    @Test
+    fun fatalError_is_set_when_loadGraph_throws_OutOfMemoryError() = runBlocking {
+        val vm = makeViewModel(graphLoader = ThrowingGraphLoader(OutOfMemoryError("simulated OOM")))
+
+        vm.setGraphPath("/tmp/test-graph")
+
+        withTimeout(5_000) {
+            vm.uiState.first { it.fatalError != null }
+        }
+
+        val state = vm.uiState.value
+        assertFalse(state.isLoading, "isLoading must be false after Throwable")
+        assertNotNull(state.fatalError, "fatalError must be non-null after Throwable")
+        assertTrue(
+            state.fatalError.orEmpty().contains("OutOfMemoryError"),
+            "fatalError should contain the class name; was: ${state.fatalError}"
+        )
+    }
+
+    @Test
+    fun clearFatalError_sets_fatalError_to_null() = runBlocking {
+        val vm = makeViewModel(graphLoader = ThrowingGraphLoader(OutOfMemoryError("simulated OOM")))
+
+        vm.setGraphPath("/tmp/test-graph")
+
+        withTimeout(5_000) {
+            vm.uiState.first { it.fatalError != null }
+        }
+
+        vm.clearFatalError()
+
+        withTimeout(2_000) {
+            vm.uiState.first { it.fatalError == null }
+        }
+
+        assertNull(vm.uiState.value.fatalError, "fatalError must be null after clearFatalError()")
+    }
+
     // ─── Cancellation resilience ─────────────────────────────────────────────
 
     @Test
@@ -178,5 +233,34 @@ class StelekitViewModelLoadingTest {
         }
 
         assertFalse(vm.uiState.value.isLoading, "isLoading must be false after scope cancellation")
+    }
+
+    /**
+     * A [GraphLoaderPort] that throws [throwable] from [loadGraphProgressive], simulating
+     * fatal errors such as [OutOfMemoryError] during graph loading.
+     */
+    private class ThrowingGraphLoader(private val throwable: Throwable) : GraphLoaderPort {
+        override fun setActivePageUuids(uuids: StateFlow<Set<String>>?) = Unit
+        override val externalFileChanges: SharedFlow<ExternalFileChange> = MutableSharedFlow()
+        override val writeErrors: SharedFlow<WriteError> = MutableSharedFlow()
+        override fun setCryptoLayer(layer: CryptoLayer?) = Unit
+        override fun closeAndClearCryptoLayer() = Unit
+        override suspend fun loadGraphProgressive(
+            graphPath: String,
+            immediateJournalCount: Int,
+            onProgress: (String) -> Unit,
+            onPhase1Complete: () -> Unit,
+            onFullyLoaded: () -> Unit,
+        ) { throw throwable }
+        override suspend fun indexRemainingPages(onProgress: (String) -> Unit) = Unit
+        override suspend fun loadPageByName(pageName: PageName): Page? = null
+        override suspend fun loadFullPage(pageUuid: String, force: Boolean) = Unit
+        override fun cancelBackgroundWork() = Unit
+        override suspend fun parseAndSavePage(
+            filePath: FilePath,
+            content: String,
+            mode: ParseMode,
+            priority: DatabaseWriteActor.Priority,
+        ) = Unit
     }
 }
