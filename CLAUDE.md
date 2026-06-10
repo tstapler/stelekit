@@ -292,14 +292,19 @@ Rules:
 - Standing `collect { }` bodies and `stateIn` upstream chains on such scopes are the unguarded vectors — a repository flow's `catchDbError()` does not protect them.
 - Regression tests: `StelekitViewModelCrashReproductionTest`, `PageNameIndexResilienceTest`, `LargeGraphWarmStartCrashTest` (8 030-page warm start with a recording default uncaught-exception handler).
 
-### Never collect `getAllPages()` from a standing observer
+### Graph-scale reads must be paginated, projected, or chunked — never O(graph)
 
-Every DB write invalidates `selectAllPages`, so a standing collector re-materializes the **entire pages table per write burst**. During graph import/reconcile on an 8 000+ page graph this causes GC thrash (UI hang) and `OutOfMemoryError` (crash) on Android.
+Every DB write invalidates SQLDelight queries on the written table, so a standing collector of an unbounded query re-materializes its **entire result set per write burst**. During graph import/reconcile on an 8 000+ page graph this causes GC thrash (UI hang) and `OutOfMemoryError` (crash) on Android. No production code path may subscribe to `getAllPages()` or unbounded `getUnloadedPages()`.
 
-- Sidebar/UI observers must use bounded queries: `getFavoritePages()` (dedicated `WHERE is_favorite = 1` query), `getPages(limit, offset)`, `getPageByUuid` point lookups.
-- The single sanctioned standing `getAllPages()` consumer is `PageNameIndex` (conflated + `distinctUntilChanged` + 500 ms debounce + `Throwable`-guarded).
-- One-shot `getAllPages().first()` during a load phase (e.g. `GraphLoader.loadDirectory`) is acceptable — transient, bounded, released after the phase.
+Patterns, by consumer type:
+- **Standing UI observers** (sidebar, etc.): bounded queries only — `getFavoritePages()` (`WHERE is_favorite = 1`), `getPages(limit, offset)`, `getPageByUuid` point lookups.
+- **Standing whole-graph observers** (e.g. `PageNameIndex`): use a **projection** (`getPageNameEntries()` — name + is_journal only), plus `conflate()` + `distinctUntilChanged()` + debounce as backpressure, plus `Throwable` guards.
+- **Bulk reconcile** (`GraphLoader.loadDirectory`): per-chunk `IN`-clause lookups — `getPagesByNames(chunk)` / `getJournalPagesByDates(chunk)` — never a full-table preload. `IN` lists chunked ≤500 (`SQLITE_MAX_VARIABLE_NUMBER` = 999 on Android API < 30).
+- **Background indexing** (`GraphLoader.indexRemainingPages`): drain loop over `getUnloadedPages(limit, offset)` (`INDEX_BATCH_SIZE` = 100); offset advances past permanently-failing rows via an attempted-UUID set so the loop is guaranteed to terminate; `countUnloadedPages()` provides the O(1) progress denominator.
 - Do not pin full-table snapshots in fields (the former `cachedAllPages` pattern is forbidden).
+- `getAllPages()` remains only for tests/benchmarks and migration tooling.
+
+Regression tests: `LargeGraphWarmStartCrashTest` (asserts zero `getAllPages()`/unbounded-`getUnloadedPages()` subscriptions and ≤100-row batches across a full 8 030-page warm start), `GraphLoaderIndexBatchingTest` (bounded drain + termination with permanently-failing pages), `StelekitViewModelCrashReproductionTest.viewmodel_holds_no_getAllPages_subscription`.
 
 ### Android Application.onCreate — catch Throwable, not Exception
 

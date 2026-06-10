@@ -18,8 +18,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import arrow.core.Either
+import dev.stapler.stelekit.error.DomainError
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.datetime.LocalDate
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.max
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlin.time.Clock
@@ -55,6 +62,48 @@ class LargeGraphWarmStartCrashTest {
 
         override fun close() {
             Thread.setDefaultUncaughtExceptionHandler(previous)
+        }
+    }
+
+    /**
+     * Records query-boundedness during the run: the whole pipeline must never subscribe to
+     * the unbounded getAllPages()/getUnloadedPages() reads, and every batch lookup must be
+     * chunk-sized — that is what keeps peak memory O(chunk) instead of O(graph).
+     */
+    private class BoundedQueryRecordingRepository(
+        initial: List<Page>,
+    ) : FakePageRepository(initial) {
+        val getAllPagesSubscriptions = AtomicInteger(0)
+        val unboundedUnloadedSubscriptions = AtomicInteger(0)
+        val maxNamesPerLookup = AtomicInteger(0)
+        val maxUnloadedBatchLimit = AtomicInteger(0)
+        val boundedUnloadedFetches = AtomicInteger(0)
+
+        override fun getAllPages(): Flow<Either<DomainError, List<Page>>> {
+            val base = super.getAllPages()
+            return flow {
+                getAllPagesSubscriptions.incrementAndGet()
+                emitAll(base)
+            }
+        }
+
+        override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> {
+            val base = super.getUnloadedPages()
+            return flow {
+                unboundedUnloadedSubscriptions.incrementAndGet()
+                emitAll(base)
+            }
+        }
+
+        override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
+            boundedUnloadedFetches.incrementAndGet()
+            maxUnloadedBatchLimit.updateAndGet { max(it, limit) }
+            return super.getUnloadedPages(limit, offset)
+        }
+
+        override suspend fun getPagesByNames(names: Collection<String>): Either<DomainError, List<Page>> {
+            maxNamesPerLookup.updateAndGet { max(it, names.size) }
+            return super.getPagesByNames(names)
         }
     }
 
@@ -114,7 +163,7 @@ class LargeGraphWarmStartCrashTest {
                 }
             }
 
-            val pageRepo = FakePageRepository(initialPages)
+            val pageRepo = BoundedQueryRecordingRepository(initialPages)
             val blockRepo = FakeBlockRepository()
             val fileSystem = LargeGraphFileSystem()
             val settings = InMemorySettings().apply {
@@ -171,6 +220,33 @@ class LargeGraphWarmStartCrashTest {
             assertTrue(
                 pageCount >= PAGE_COUNT,
                 "All $PAGE_COUNT pages must survive the warm reconcile; found $pageCount"
+            )
+
+            // ── Query boundedness: peak memory must stay O(chunk), not O(graph) ─────
+            assertTrue(
+                pageRepo.getAllPagesSubscriptions.get() == 0,
+                "getAllPages() must never be subscribed during load — found " +
+                    "${pageRepo.getAllPagesSubscriptions.get()} subscription(s); full-table " +
+                    "reads re-materialize all $PAGE_COUNT pages and OOM Android"
+            )
+            assertTrue(
+                pageRepo.unboundedUnloadedSubscriptions.get() == 0,
+                "Unbounded getUnloadedPages() must not be used — Phase 3 must drain in batches"
+            )
+            assertTrue(
+                pageRepo.maxNamesPerLookup.get() in 1..100,
+                "Reconcile name lookups must be chunk-sized (≤100); max was " +
+                    "${pageRepo.maxNamesPerLookup.get()}"
+            )
+            assertTrue(
+                pageRepo.maxUnloadedBatchLimit.get() in 1..100,
+                "Phase 3 must fetch unloaded pages in bounded batches (≤100); max limit was " +
+                    "${pageRepo.maxUnloadedBatchLimit.get()}"
+            )
+            assertTrue(
+                pageRepo.boundedUnloadedFetches.get() > 1,
+                "Phase 3 over $PAGE_COUNT pages must take multiple bounded fetches; " +
+                    "got ${pageRepo.boundedUnloadedFetches.get()}"
             )
         }
     }

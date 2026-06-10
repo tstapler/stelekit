@@ -103,6 +103,30 @@ open class FakePageRepository(initialPages: List<Page> = emptyList()) : PageRepo
     override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> =
         _pages.map { pages -> pages.values.filter { !it.isContentLoaded }.right() }
 
+    override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        _pages.map { pages ->
+            pages.values.filter { !it.isContentLoaded }
+                .sortedBy { it.uuid.value }.drop(offset).take(limit).right()
+        }
+
+    override fun countUnloadedPages(): Flow<Either<DomainError, Long>> =
+        _pages.map { pages -> pages.values.count { !it.isContentLoaded }.toLong().right() }
+
+    override fun getPageNameEntries(): Flow<Either<DomainError, List<dev.stapler.stelekit.repository.PageNameEntry>>> =
+        _pages.map { pages ->
+            pages.values.map { dev.stapler.stelekit.repository.PageNameEntry(it.name, it.isJournal) }.right()
+        }
+
+    override suspend fun getPagesByNames(names: Collection<String>): Either<DomainError, List<Page>> {
+        val lower = names.mapTo(HashSet()) { it.lowercase() }
+        return _pages.value.values.filter { it.name.lowercase() in lower }.right()
+    }
+
+    override suspend fun getJournalPagesByDates(dates: Collection<LocalDate>): Either<DomainError, List<Page>> {
+        val dateSet = dates.toHashSet()
+        return _pages.value.values.filter { it.journalDate != null && it.journalDate in dateSet }.right()
+    }
+
     override suspend fun savePage(page: Page): Either<DomainError, Unit> {
         _pages.value = _pages.value + (page.uuid.value to page)
         return Unit.right()

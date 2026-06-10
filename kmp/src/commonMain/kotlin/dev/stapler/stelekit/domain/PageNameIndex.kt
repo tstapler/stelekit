@@ -18,8 +18,9 @@ import kotlinx.coroutines.launch
 
 /**
  * Maintains a reactive index of page names for the page-term suggestion feature.
- * Listens to [PageRepository.getAllPages] and rebuilds the [AhoCorasickMatcher]
- * on a background thread whenever the page set changes.
+ * Listens to [PageRepository.getPageNameEntries] (a names-only projection — never
+ * full Page objects) and rebuilds the [AhoCorasickMatcher] on a background thread
+ * whenever the page set changes.
  *
  * Journal pages (date-named entries) are excluded by default to reduce noise from
  * date strings in block content inadvertently matching journal page names.
@@ -70,7 +71,11 @@ class PageNameIndex(
 
     init {
         scope.launch {
-            pageRepository.getAllPages()
+            // Names-only projection: a standing observer must never materialize full Page
+            // objects for the whole graph (properties maps, file paths, timestamps) — on
+            // 8 000+ page graphs that re-allocation per write burst drove GC thrash and OOM
+            // on Android. (name, isJournal) pairs are all the matcher needs.
+            pageRepository.getPageNameEntries()
                 .distinctUntilChanged()
                 // Coalesce rapid bursts (e.g. graph load saving pages one by one) into a
                 // single rebuild. 500 ms matches the block-editor save debounce so a rename

@@ -604,54 +604,76 @@ class GraphLoader(
         backgroundIndexJob = currentCoroutineContext()[Job]
         PerformanceMonitor.startTrace("indexRemainingPages")
         try {
-            val unloadedPages = pageRepository.getUnloadedPages().first().getOrNull() ?: emptyList()
-            if (unloadedPages.isEmpty()) return
+            val total = pageRepository.countUnloadedPages().first().getOrNull() ?: 0L
+            if (total == 0L) return
 
-            logger.info("Background indexing ${unloadedPages.size} pages... (${heapSummary()})")
+            logger.info("Background indexing $total pages... (${heapSummary()})")
 
             coroutineScope {
-                var processed = 0
-                val total = unloadedPages.size
+                var processed = 0L
+                // Drain in bounded batches instead of materializing every unloaded Page up
+                // front (8 000+ objects on a first warm start — an Android OOM contributor).
+                // Successfully indexed pages leave the unloaded set, so each fetch re-reads
+                // at a fixed limit. Pages that stay unloaded after an attempt (missing file,
+                // parse error, active edit session, zero-block parse) are remembered in
+                // `attempted` — UUID strings only, a few hundred KB worst case — and the
+                // offset advances past them when they are re-fetched. Termination is
+                // guaranteed: every iteration either indexes a fresh page or grows the
+                // offset by the full batch of stuck rows.
+                val attempted = HashSet<String>()
+                var offset = 0
+                while (true) {
+                    val batch = pageRepository
+                        .getUnloadedPages(INDEX_BATCH_SIZE, offset)
+                        .first().getOrNull().orEmpty()
+                    if (batch.isEmpty()) break
 
-                unloadedPages.chunked(10).forEach { chunk ->
-                    val pagesToSave = mutableListOf<Page>()
-                    val blocksToSaveByPage = mutableMapOf<PageUuid, MutableList<Block>>()
-                    val pageUuidsToDelete = mutableSetOf<PageUuid>()
+                    val fresh = batch.filter { attempted.add(it.uuid.value) }
+                    // Re-fetched rows we already attempted are stuck for this run — move the
+                    // drain window past them so a fetch can never return only stuck rows.
+                    offset += batch.size - fresh.size
+                    if (fresh.isEmpty()) continue
 
-                    chunk.map { page ->
-                        async(backgroundIndexDispatcher) {
-                            if (page.uuid.value in (activePageUuids?.value ?: emptySet())) {
-                                logger.debug("Phase 3: skipping ${page.name} — active edit session")
-                                return@async null
+                    fresh.chunked(10).forEach { chunk ->
+                        val pagesToSave = mutableListOf<Page>()
+                        val blocksToSaveByPage = mutableMapOf<PageUuid, MutableList<Block>>()
+                        val pageUuidsToDelete = mutableSetOf<PageUuid>()
+
+                        chunk.map { page ->
+                            async(backgroundIndexDispatcher) {
+                                if (page.uuid.value in (activePageUuids?.value ?: emptySet())) {
+                                    logger.debug("Phase 3: skipping ${page.name} — active edit session")
+                                    return@async null
+                                }
+                                val path = page.filePath ?: resolvePageFilePath(page.name)
+                                if (path == null) return@async null
+                                val content = readFileDecrypted(path) ?: return@async null
+                                try {
+                                    parsePageWithoutSaving(path, content, ParseMode.FULL)
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    logger.warn("Failed to parse file: $path: ${e.message}")
+                                    null
+                                }
                             }
-                            val path = page.filePath ?: resolvePageFilePath(page.name)
-                            if (path == null) return@async null
-                            val content = readFileDecrypted(path) ?: return@async null
-                            try {
-                                parsePageWithoutSaving(path, content, ParseMode.FULL)
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                logger.warn("Failed to parse file: $path: ${e.message}")
-                                null
+                        }.awaitAll().forEach { result ->
+                            if (result != null) {
+                                pagesToSave.add(result.page)
+                                if (result.blocks.isNotEmpty()) {
+                                    blocksToSaveByPage[result.page.uuid] = result.blocks.toMutableList()
+                                }
+                                pageUuidsToDelete.add(result.page.uuid)
                             }
                         }
-                    }.awaitAll().forEach { result ->
-                        if (result != null) {
-                            pagesToSave.add(result.page)
-                            if (result.blocks.isNotEmpty()) {
-                                blocksToSaveByPage[result.page.uuid] = result.blocks.toMutableList()
-                            }
-                            pageUuidsToDelete.add(result.page.uuid)
+
+                        if (pagesToSave.isNotEmpty() || pageUuidsToDelete.isNotEmpty()) {
+                            flushChunkWritesPreemptible(pagesToSave, pageUuidsToDelete, blocksToSaveByPage)
                         }
-                    }
 
-                    if (pagesToSave.isNotEmpty() || pageUuidsToDelete.isNotEmpty()) {
-                        flushChunkWritesPreemptible(pagesToSave, pageUuidsToDelete, blocksToSaveByPage)
+                        processed += chunk.size
+                        onProgress("Indexing pages... (${processed.coerceAtMost(total)}/$total)")
                     }
-
-                    processed += chunk.size
-                    onProgress("Indexing pages... ($processed/$total)")
                 }
             }
             logger.info("Background indexing complete.")
@@ -1002,13 +1024,7 @@ class GraphLoader(
                 }
             }
 
-            // Pre-load all existing pages in one query. Replaces one getPageByName DB call per
-            // file (up to 4 000 round-trips on a warm restart) with a single bulk read whose
-            // result is shared across all parallel chunks read-only.
-            val allPages = pageRepository.getAllPages().first().getOrNull() ?: emptyList()
-            val pagesByName = allPages.associateBy { it.name.lowercase() }
-            val pagesByJournalDate = allPages.filter { it.journalDate != null }
-                .associateBy { it.journalDate!! }
+            val isJournalDir = path.endsWith("/journals")
 
             val loadedCount = coroutineScope {
                 var processedCount = 0
@@ -1019,6 +1035,29 @@ class GraphLoader(
                     async(parallelScope.coroutineContext) {
                         PerformanceMonitor.startTrace("processChunk")
                         try {
+                            // Per-chunk bounded existence lookups (one IN query per ≤100 files)
+                            // instead of preloading the entire pages table. The former
+                            // getAllPages() preload materialized every Page object plus two
+                            // full-size maps for the duration of the load — on 8 000+ page
+                            // graphs that contributed to the Android OOM. Peak memory here is
+                            // now O(chunk), independent of graph size.
+                            val chunkTitles = chunk.map {
+                                FileUtils.decodeFileName(it.fileName.stripPageExtension())
+                            }
+                            val pagesByName = pageRepository
+                                .getPagesByNames(chunkTitles)
+                                .getOrNull().orEmpty()
+                                .associateBy { it.name.lowercase() }
+                            val pagesByJournalDate = if (isJournalDir) {
+                                val dates = chunkTitles.mapNotNull { JournalUtils.parseJournalDate(it) }
+                                pageRepository.getJournalPagesByDates(dates)
+                                    .getOrNull().orEmpty()
+                                    .filter { it.journalDate != null }
+                                    .associateBy { it.journalDate!! }
+                            } else {
+                                emptyMap()
+                            }
+
                             val pagesToSave = mutableListOf<Page>()
                             val blocksToSaveByPage = mutableMapOf<PageUuid, MutableList<Block>>()
                             val pageUuidsToDelete = mutableSetOf<PageUuid>()
@@ -1032,7 +1071,7 @@ class GraphLoader(
                                 // Skip Logseq-internal file: protocol artifacts (e.g. file%3A..%2F%2F...)
                                 if (title.startsWith("file:")) return@count false
                                 val name = title
-                                val isJournalFile = path.endsWith("/journals")
+                                val isJournalFile = isJournalDir
                                 val existingPage = if (isJournalFile) {
                                     val journalDate = JournalUtils.parseJournalDate(title)
                                     if (journalDate != null) pagesByJournalDate[journalDate]
@@ -1134,6 +1173,10 @@ class GraphLoader(
         // Timeout for the batch mtime cursor on startup. Two SAF cursor queries should
         // complete well under 500ms; 2s is a conservative ceiling for slow providers.
         private const val SHADOW_STARTUP_TIMEOUT_MS = 2_000L
+
+        // Phase 3 drain-batch size: bounds how many unloaded Page rows are materialized at
+        // once during background indexing, independent of graph size.
+        private const val INDEX_BATCH_SIZE = 100
     }
 
     private data class ParseResult(

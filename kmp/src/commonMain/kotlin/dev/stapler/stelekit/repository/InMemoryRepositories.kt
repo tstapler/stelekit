@@ -580,6 +580,35 @@ class InMemoryPageRepository : PageRepository {
         }
     }
 
+    override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
+        return pages.map { map ->
+            map.values.filter { !it.isContentLoaded }
+                .sortedBy { it.uuid.value }.drop(offset).take(limit).right()
+        }
+    }
+
+    override fun countUnloadedPages(): Flow<Either<DomainError, Long>> {
+        return pages.map { map -> map.values.count { !it.isContentLoaded }.toLong().right() }
+    }
+
+    override fun getPageNameEntries(): Flow<Either<DomainError, List<PageNameEntry>>> {
+        return pages.map { map ->
+            map.values.map { PageNameEntry(it.name, it.isJournal) }.right()
+        }
+    }
+
+    override suspend fun getPagesByNames(names: Collection<String>): Either<DomainError, List<Page>> {
+        val lower = names.mapTo(HashSet()) { it.lowercase() }
+        return pages.value.values.filter { it.name.lowercase() in lower }.right()
+    }
+
+    override suspend fun getJournalPagesByDates(
+        dates: Collection<kotlinx.datetime.LocalDate>,
+    ): Either<DomainError, List<Page>> {
+        val dateSet = dates.toHashSet()
+        return pages.value.values.filter { it.journalDate != null && it.journalDate in dateSet }.right()
+    }
+
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
             val journals = map.values

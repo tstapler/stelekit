@@ -5,6 +5,7 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
+import dev.stapler.stelekit.repository.PageNameEntry
 import dev.stapler.stelekit.ui.fixtures.FakePageRepository
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -56,12 +57,12 @@ class PageNameIndexResilienceTest {
         private val pages: List<Page>,
     ) : FakePageRepository() {
         val oomThrown = CompletableDeferred<Unit>()
-        override fun getAllPages(): Flow<Either<DomainError, List<Page>>> = flow {
-            emit(pages.right())
+        override fun getPageNameEntries(): Flow<Either<DomainError, List<PageNameEntry>>> = flow {
+            emit(pages.map { PageNameEntry(it.name, it.isJournal) }.right())
             // Leave time for the debounced rebuild to consume the first emission.
             delay(400)
             oomThrown.complete(Unit)
-            throw OutOfMemoryError("simulated OOM re-materializing the page list")
+            throw OutOfMemoryError("simulated OOM re-materializing the page-name list")
         }
     }
 

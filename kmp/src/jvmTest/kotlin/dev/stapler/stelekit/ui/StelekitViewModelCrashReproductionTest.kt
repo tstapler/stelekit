@@ -84,15 +84,15 @@ class StelekitViewModelCrashReproductionTest {
     // ─── TC-CRASH-001: OOM surfacing through the page-list flow ─────────────────
 
     /**
-     * Simulates an OutOfMemoryError surfacing while the full page list is materialized
+     * Simulates an OutOfMemoryError surfacing while the page-name list is materialized
      * for a standing observer (the allocation that fails first on 8 000-page graphs).
      */
     private class OomPageFlowRepository : FakePageRepository() {
         val oomThrown = CompletableDeferred<Unit>()
-        override fun getAllPages(): Flow<Either<DomainError, List<Page>>> = flow {
-            emit(emptyList<Page>().right())
+        override fun getPageNameEntries(): Flow<Either<DomainError, List<dev.stapler.stelekit.repository.PageNameEntry>>> = flow {
+            emit(emptyList<dev.stapler.stelekit.repository.PageNameEntry>().right())
             oomThrown.complete(Unit)
-            throw OutOfMemoryError("simulated allocation failure materializing 8030 pages")
+            throw OutOfMemoryError("simulated allocation failure materializing 8030 page names")
         }
     }
 
@@ -177,12 +177,13 @@ class StelekitViewModelCrashReproductionTest {
     /**
      * The hang half of "hangs and crashes": every DB write invalidates getAllPages(), so
      * each standing collector re-materializes the entire table per write burst during
-     * import/reconcile — O(N) Page allocations × thousands of writes = GC thrash and OOM.
-     * Exactly one standing subscription is allowed: PageNameIndex (debounced + conflated).
-     * The sidebar (favorites/recents) must use bounded queries instead.
+     * import/reconcile — O(N) full Page allocations × thousands of writes = GC thrash and
+     * OOM. No production observer may subscribe to getAllPages() at all: the sidebar uses
+     * bounded queries (favorites, point lookups) and PageNameIndex uses the names-only
+     * getPageNameEntries() projection.
      */
     @Test
-    fun viewmodel_keeps_at_most_one_standing_getAllPages_subscription() = runBlocking {
+    fun viewmodel_holds_no_getAllPages_subscription() = runBlocking {
         val repo = CountingPageRepository()
         makeViewModel(repo)
 
@@ -191,10 +192,10 @@ class StelekitViewModelCrashReproductionTest {
 
         val subscriptions = repo.getAllPagesSubscriptions.get()
         assertTrue(
-            subscriptions <= 1,
-            "Expected at most 1 standing getAllPages() subscription (PageNameIndex), " +
-                "found $subscriptions — extra full-table observers re-materialize all pages " +
-                "on every write and OOM Android on 8 000+ page graphs"
+            subscriptions == 0,
+            "Expected no getAllPages() subscription from the ViewModel, found $subscriptions — " +
+                "full-table observers re-materialize all pages on every write and OOM Android " +
+                "on 8 000+ page graphs"
         )
     }
 }

@@ -31,6 +31,11 @@ class SqlDelightPageRepository(
     private val cacheWrites: Boolean = true,
 ) : PageRepository {
 
+    private companion object {
+        // Safe IN-clause size: SQLITE_MAX_VARIABLE_NUMBER is 999 on Android API < 30.
+        const val IN_CLAUSE_CHUNK_SIZE = 500
+    }
+
     private val queries = database.steleDatabaseQueries
 
     private val cacheConfig = RepoCacheConfig.fromPlatform()
@@ -126,6 +131,57 @@ class SqlDelightPageRepository(
     override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> =
         queries.selectUnloadedPages()
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+
+    override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        queries.selectUnloadedPagesPaginated(limit.toLong(), offset.toLong())
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+
+    override fun countUnloadedPages(): Flow<Either<DomainError, Long>> = flow {
+        try {
+            emit(queries.countUnloadedPages().executeAsOne().right())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emit(DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left())
+        }
+    }.flowOn(PlatformDispatcher.DB)
+
+    override fun getPageNameEntries(): Flow<Either<DomainError, List<PageNameEntry>>> =
+        queries.selectPageNameEntries()
+            .asFlow()
+            .conflate()  // drop intermediate invalidations during bulk import — standing observer (PageNameIndex)
+            .mapToList(PlatformDispatcher.DB)
+            .map { rows -> rows.map { PageNameEntry(it.name, it.is_journal == 1L) }.right() }
+            .catchDbError()
+
+    override suspend fun getPagesByNames(names: Collection<String>): Either<DomainError, List<Page>> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                // Chunk the IN list: SQLITE_MAX_VARIABLE_NUMBER is 999 on Android API < 30.
+                names.chunked(IN_CLAUSE_CHUNK_SIZE).flatMap { chunk ->
+                    queries.selectPagesByNames(chunk).executeAsList().map { it.toModel() }
+                }.right()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    override suspend fun getJournalPagesByDates(
+        dates: Collection<kotlinx.datetime.LocalDate>,
+    ): Either<DomainError, List<Page>> = withContext(PlatformDispatcher.DB) {
+        try {
+            dates.chunked(IN_CLAUSE_CHUNK_SIZE).flatMap { chunk ->
+                queries.selectJournalPagesByDates(chunk.map { it.toString() })
+                    .executeAsList().map { it.toModel() }
+            }.right()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+        }
+    }
 
     override suspend fun savePage(page: Page): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
