@@ -5,6 +5,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 interface PageRepository {
     fun getPageByUuid(uuid: PageUuid): Flow<Either<DomainError, Page?>>
@@ -23,6 +24,18 @@ interface PageRepository {
     fun getJournalPageByDate(date: kotlinx.datetime.LocalDate): Flow<Either<DomainError, Page?>>
 
     fun getRecentPages(limit: Int = 50): Flow<Either<DomainError, List<Page>>>
+
+    /**
+     * Favorite pages only — the bounded query standing UI observers (sidebar) must use.
+     *
+     * The default implementation derives from [getAllPages] for in-memory/test backends.
+     * SQL-backed repositories MUST override it with a dedicated `WHERE is_favorite = 1`
+     * query: a standing collector on [getAllPages] re-materializes the entire pages table
+     * on every write, which on 8 000+ page graphs causes GC thrash and OutOfMemoryError
+     * on Android during graph import/reconcile.
+     */
+    fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> =
+        getAllPages().map { either -> either.map { pages -> pages.filter { it.isFavorite } } }
     fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>>
 
     @DirectRepositoryWrite

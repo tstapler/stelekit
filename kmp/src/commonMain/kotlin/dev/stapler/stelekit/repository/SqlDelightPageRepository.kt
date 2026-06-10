@@ -103,6 +103,14 @@ class SqlDelightPageRepository(
             .map { list -> list.map { it.toModel() }.right() }
             .catchDbError()
 
+    override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> =
+        queries.selectFavoritePages()
+            .asFlow()
+            .conflate()  // drop intermediate invalidations during bulk import — this flow has a standing UI collector
+            .mapToList(PlatformDispatcher.DB)
+            .map { list -> list.map { it.toModel() }.right() }
+            .catchDbError()
+
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectJournalPages(limit.toLong(), offset.toLong())
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }

@@ -574,6 +574,12 @@ class InMemoryPageRepository : PageRepository {
         }
     }
 
+    override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> {
+        return pages.map { map ->
+            map.values.filter { it.isFavorite }.sortedBy { it.name }.right()
+        }
+    }
+
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
             val journals = map.values

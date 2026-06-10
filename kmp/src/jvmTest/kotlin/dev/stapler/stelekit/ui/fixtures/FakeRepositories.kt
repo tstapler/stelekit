@@ -97,6 +97,9 @@ open class FakePageRepository(initialPages: List<Page> = emptyList()) : PageRepo
     override fun getRecentPages(limit: Int): Flow<Either<DomainError, List<Page>>> =
         _pages.map { pages -> pages.values.sortedByDescending { it.updatedAt }.take(limit).right() }
 
+    override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> =
+        _pages.map { pages -> pages.values.filter { it.isFavorite }.sortedBy { it.name }.right() }
+
     override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> =
         _pages.map { pages -> pages.values.filter { !it.isContentLoaded }.right() }
 

@@ -322,6 +322,9 @@ SELECT * FROM pages ORDER BY name LIMIT ? OFFSET ?;
 selectUnloadedPages:
 SELECT * FROM pages WHERE is_content_loaded = 0;
 
+selectFavoritePages:
+SELECT * FROM pages WHERE is_favorite = 1 ORDER BY name;
+
 selectPagesByNamespace:
 SELECT * FROM pages WHERE namespace = ? ORDER BY name LIMIT ? OFFSET ?;
 

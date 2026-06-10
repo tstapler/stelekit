@@ -283,6 +283,24 @@ class SomeManager(...) {
 val manager = remember { SomeManager() }
 ```
 
+### Uncaught coroutine Throwables kill the process on Android — guard long-lived scopes
+
+An uncaught `Throwable` (notably `OutOfMemoryError`) escaping any coroutine reaches the platform default uncaught-exception handler. **On Android that handler kills the process ("app keeps stopping"); on desktop JVM it only prints** — so this class of crash never reproduces on desktop. Under heap pressure the OOM is thrown in whichever coroutine allocates next, not necessarily the one doing the heavy work, so per-call-site `catch(Throwable)` is not sufficient.
+
+Rules:
+- Every long-lived `CoroutineScope` that hosts user-path collectors or fire-and-forget launches must attach a `CoroutineExceptionHandler` (see `StelekitViewModel.scope`, `GraphLoader.parallelScope`). Surface errors as `fatalError` UI state where possible.
+- Standing `collect { }` bodies and `stateIn` upstream chains on such scopes are the unguarded vectors — a repository flow's `catchDbError()` does not protect them.
+- Regression tests: `StelekitViewModelCrashReproductionTest`, `PageNameIndexResilienceTest`, `LargeGraphWarmStartCrashTest` (8 030-page warm start with a recording default uncaught-exception handler).
+
+### Never collect `getAllPages()` from a standing observer
+
+Every DB write invalidates `selectAllPages`, so a standing collector re-materializes the **entire pages table per write burst**. During graph import/reconcile on an 8 000+ page graph this causes GC thrash (UI hang) and `OutOfMemoryError` (crash) on Android.
+
+- Sidebar/UI observers must use bounded queries: `getFavoritePages()` (dedicated `WHERE is_favorite = 1` query), `getPages(limit, offset)`, `getPageByUuid` point lookups.
+- The single sanctioned standing `getAllPages()` consumer is `PageNameIndex` (conflated + `distinctUntilChanged` + 500 ms debounce + `Throwable`-guarded).
+- One-shot `getAllPages().first()` during a load phase (e.g. `GraphLoader.loadDirectory`) is acceptable — transient, bounded, released after the phase.
+- Do not pin full-table snapshots in fields (the former `cachedAllPages` pattern is forbidden).
+
 ### Android Application.onCreate — catch Throwable, not Exception
 
 `Application.onCreate()` must use `catch (e: Throwable)`, not `catch (e: Exception)`. Native library loading failures (`UnsatisfiedLinkError`, `NoClassDefFoundError`) are `Error` subclasses, not `Exception`. Catching only `Exception` lets them propagate uncaught and crash the app at startup before the UI is shown. See `SteleKitApplication.kt`.
