@@ -19,6 +19,8 @@ import dev.stapler.stelekit.editor.text.ITextOperations
 import dev.stapler.stelekit.editor.text.TextRange
 import dev.stapler.stelekit.editor.components.RichTextEditor
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.ui.components.asLazyKey
+import dev.stapler.stelekit.ui.components.typedItemsIndexed
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
@@ -75,9 +77,9 @@ fun PerformanceOptimizedEditor(
         contentPadding = PaddingValues(vertical = 8.dp)
     ) {
         // Performance: Use itemsIndexed for efficient key-based recomposition
-        itemsIndexed(
+        typedItemsIndexed(
             items = editorStateValue.blocks,
-            key = { _, block: Block -> block.uuid }
+            key = { _, block -> block.uuid.asLazyKey() }
         ) { index, block ->
             // Performance: Only render visible blocks
             if (index >= firstVisibleIndex - 5 && index <= firstVisibleIndex + 20) {

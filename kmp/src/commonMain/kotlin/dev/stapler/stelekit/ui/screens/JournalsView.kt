@@ -24,7 +24,9 @@ import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.components.BlockList
 import dev.stapler.stelekit.ui.components.EditorCapabilities
 import dev.stapler.stelekit.ui.components.EditorToolbar
+import dev.stapler.stelekit.ui.components.asLazyKey
 import dev.stapler.stelekit.ui.components.SuggestionItem
+import dev.stapler.stelekit.ui.components.typedItems
 import dev.stapler.stelekit.ui.components.SuggestionNavigatorPanel
 import dev.stapler.stelekit.performance.NavigationTracingEffect
 import kotlinx.coroutines.CancellationException
@@ -107,9 +109,9 @@ fun JournalsView(
                 },
             contentPadding = PaddingValues(top = 16.dp, bottom = toolbarHeightDp + 8.dp)
         ) {
-            items(
+            typedItems(
                 items = uiState.pages,
-                key = { page -> page.uuid },
+                key = { page -> page.uuid.asLazyKey() },
                 contentType = { "journal_entry" }
             ) { page ->
                 val blockList = allBlocks[page.uuid.value] ?: emptyList()

@@ -20,6 +20,7 @@ class SteleKitRuleSetProvider : RuleSetProvider {
             RememberKeyForConstructorArgsRule(config),
             NoRunBlockingInLifecycleRule(config),
             UnthemedTextInBackgroundContainerRule(config),
+            MustUseTypedLazyItemsRule(config),
         ),
     )
 }
