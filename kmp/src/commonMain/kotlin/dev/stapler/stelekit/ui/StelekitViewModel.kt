@@ -450,7 +450,9 @@ class StelekitViewModel(
                     .split(",").filter { it.isNotEmpty() }.toMutableList()
                 recentPagesByUuid.clear()
             }
-            refreshRecentPages()
+            // refreshRecentPages() is deferred to onPhase1Complete inside loadGraph so that
+            // getPageByUuid lookups run after the new graph's DB is populated, not while
+            // loadGraph is mid-clear.
         }
         loadGraph(path)
     }
@@ -507,6 +509,10 @@ class StelekitViewModel(
                             onPhase1Complete = {
                                 logger.info("Phase 1 complete - UI is now interactive")
                                 _uiState.update { it.copy(isLoading = false, statusMessage = "Ready") }
+
+                                // Resolve saved recents now that Phase 1 has populated the DB.
+                                // Running before loadGraph is finished would race with clear().
+                                scope.launch { refreshRecentPages() }
 
                                 // Ensure today's journal exists so it appears at the top of the
                                 // journals list. No navigation — the list updates reactively.
