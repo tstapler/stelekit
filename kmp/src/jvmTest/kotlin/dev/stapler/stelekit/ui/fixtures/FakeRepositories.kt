@@ -103,8 +103,8 @@ open class FakePageRepository(initialPages: List<Page> = emptyList()) : PageRepo
                 .sortedBy { it.uuid.value }.drop(offset).take(limit).right()
         }
 
-    override fun countUnloadedPages(): Flow<Either<DomainError, Long>> =
-        _pages.map { pages -> pages.values.count { !it.isContentLoaded }.toLong().right() }
+    override suspend fun countUnloadedPages(): Either<DomainError, Long> =
+        _pages.value.values.count { !it.isContentLoaded }.toLong().right()
 
     override fun getPageNameEntries(): Flow<Either<DomainError, List<dev.stapler.stelekit.repository.PageNameEntry>>> =
         _pages.map { pages ->

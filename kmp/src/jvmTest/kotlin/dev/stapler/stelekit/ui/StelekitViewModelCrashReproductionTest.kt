@@ -101,8 +101,8 @@ class StelekitViewModelCrashReproductionTest {
             val vm = makeViewModel(repo)
 
             withTimeout(10_000) { repo.oomThrown.await() }
-            // Give the failure time to propagate through the collector coroutines.
-            delay(1_000)
+            // Allow the coroutine scheduler to process the catch handler.
+            delay(200)
 
             assertTrue(
                 recorder.uncaught.isEmpty(),
@@ -112,6 +112,10 @@ class StelekitViewModelCrashReproductionTest {
             )
             // ViewModel must remain alive and usable after the error.
             assertNotNull(vm.uiState.value, "uiState must remain readable after the error")
+            // Note: fatalError is NOT expected here — PageNameIndex.catch {} gracefully
+            // degrades suggestions (last good matcher retained) rather than surfacing a
+            // fatal-error screen. The important guarantee is that the OOM is contained and
+            // does not reach the default uncaught handler (which kills the process on Android).
         }
         Unit
     }

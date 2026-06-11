@@ -8,7 +8,6 @@ import dev.stapler.stelekit.ui.fixtures.FakeBlockRepository
 import dev.stapler.stelekit.ui.fixtures.FakeFileSystem
 import dev.stapler.stelekit.ui.fixtures.FakePageRepository
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.atomic.AtomicInteger
@@ -73,7 +72,7 @@ class GraphLoaderIndexBatchingTest {
 
         withTimeout(120_000) { loader.indexRemainingPages { } }
 
-        val remaining = pageRepo.countUnloadedPages().first().getOrNull() ?: -1L
+        val remaining = pageRepo.countUnloadedPages().getOrNull() ?: -1L
         assertEquals(0L, remaining, "all 250 pages must be indexed")
         assertTrue(
             pageRepo.maxBatchLimit.get() in 1..100,
@@ -98,7 +97,7 @@ class GraphLoaderIndexBatchingTest {
         // the drain offset has to advance past them instead of refetching them forever.
         withTimeout(60_000) { loader.indexRemainingPages { } }
 
-        val remaining = pageRepo.countUnloadedPages().first().getOrNull() ?: -1L
+        val remaining = pageRepo.countUnloadedPages().getOrNull() ?: -1L
         assertEquals(30L, remaining, "exactly the 30 unreadable pages must remain unloaded")
     }
 }

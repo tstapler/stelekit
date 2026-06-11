@@ -604,7 +604,7 @@ class GraphLoader(
         backgroundIndexJob = currentCoroutineContext()[Job]
         PerformanceMonitor.startTrace("indexRemainingPages")
         try {
-            val total = pageRepository.countUnloadedPages().first().getOrNull() ?: 0L
+            val total = pageRepository.countUnloadedPages().getOrNull() ?: 0L
             if (total == 0L) return
 
             logger.info("Background indexing $total pages... (${heapSummary()})")

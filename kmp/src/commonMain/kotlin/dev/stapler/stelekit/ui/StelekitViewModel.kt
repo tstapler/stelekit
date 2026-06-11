@@ -69,6 +69,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -130,13 +132,20 @@ class StelekitViewModel(
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        fatalError = "${e::class.simpleName ?: "UnknownError"}: ${e.message ?: "unknown"}"
+                        fatalError = "${e::class.simpleName ?: "UnknownError"}: ${sanitizeErrorMessage(e.message)}"
                     )
                 }
             }
         }
     )
+    private val recentMutex = Mutex()
     private val logger = Logger("StelekitViewModel")
+
+    private fun sanitizeErrorMessage(message: String?): String =
+        message
+            ?.replace(Regex("/[^\\s,;:]+"), "<path>")
+            ?.replace(Regex("[A-Za-z]:\\\\[^\\s,;:]*"), "<path>")
+            ?.take(200) ?: "unknown"
 
     /**
      * Platform-provided callback that opens the image picker and attaches the selected image
@@ -308,10 +317,12 @@ class StelekitViewModel(
     private fun observeSpecialPages() {
         scope.launch {
             // Load recents for the current graph before starting collection
-            recentPageUuids = platformSettings.getString(recentPagesKey, "")
-                .split(",")
-                .filter { it.isNotEmpty() }
-                .toMutableList()
+            recentMutex.withLock {
+                recentPageUuids = platformSettings.getString(recentPagesKey, "")
+                    .split(",")
+                    .filter { it.isNotEmpty() }
+                    .toMutableList()
+            }
             refreshRecentPages()
 
             // Favorites for the sidebar via the dedicated bounded query. Never collect
@@ -334,15 +345,23 @@ class StelekitViewModel(
      * Re-resolves [recentPageUuids] into Page objects via point lookups (≤10 indexed
      * queries) and publishes them to the UI state. Cheap by construction — never scans
      * the pages table.
+     *
+     * Snapshots the UUID list under [recentMutex], releases the lock, performs DB work
+     * outside the lock to avoid starving [addToRecent], then re-acquires to write results.
      */
     private suspend fun refreshRecentPages() {
-        val recent = recentPageUuids.take(10).mapNotNull { uuid ->
-            recentPagesByUuid[uuid]
-                ?: pageRepository.getPageByUuid(PageUuid(uuid)).first().getOrNull()
-                    ?.also { recentPagesByUuid[uuid] = it }
+        val uuidsToResolve = recentMutex.withLock { recentPageUuids.take(10).toList() }
+
+        val resolved = uuidsToResolve.mapNotNull { uuid ->
+            val cached = recentMutex.withLock { recentPagesByUuid[uuid] }
+            cached ?: pageRepository.getPageByUuid(PageUuid(uuid)).first().getOrNull()
+                ?.also { page -> recentMutex.withLock { recentPagesByUuid[uuid] = page } }
         }
-        trimRecentPagesCache()
-        _uiState.update { it.copy(recentPages = recent) }
+
+        recentMutex.withLock {
+            trimRecentPagesCache()
+        }
+        _uiState.update { it.copy(recentPages = resolved) }
     }
 
     private fun trimRecentPagesCache() {
@@ -383,30 +402,20 @@ class StelekitViewModel(
         }
     }
 
-    private fun updateUiStateWithPages(pages: List<Page>) {
-        // This is now handled by observers and loadMore functions
-    }
-
     private fun addToRecent(page: Page) {
-        // Remove if exists to move to top
-        recentPageUuids.remove(page.uuid.value)
-        recentPageUuids.add(0, page.uuid.value)
-
-        // Keep max 20 items
-        if (recentPageUuids.size > 20) {
-            recentPageUuids.removeAt(recentPageUuids.lastIndex)
-        }
-
-        // Save to settings
-        platformSettings.putString(recentPagesKey, recentPageUuids.joinToString(","))
-
-        // Update UI state — the navigated-to page is already in hand; older entries come
-        // from the bounded recents cache (point lookups happen in refreshRecentPages).
-        recentPagesByUuid[page.uuid.value] = page
-        trimRecentPagesCache()
-        _uiState.update { state ->
-            val recent = recentPageUuids.mapNotNull { recentPagesByUuid[it] }.take(10)
-            state.copy(recentPages = recent)
+        scope.launch {
+            recentMutex.withLock {
+                recentPageUuids.remove(page.uuid.value)
+                recentPageUuids.add(0, page.uuid.value)
+                if (recentPageUuids.size > 20) {
+                    recentPageUuids.removeAt(recentPageUuids.lastIndex)
+                }
+                platformSettings.putString(recentPagesKey, recentPageUuids.joinToString(","))
+                recentPagesByUuid[page.uuid.value] = page
+                trimRecentPagesCache()
+                val recent = recentPageUuids.mapNotNull { recentPagesByUuid[it] }.take(10)
+                _uiState.update { it.copy(recentPages = recent) }
+            }
         }
     }
 
@@ -435,10 +444,14 @@ class StelekitViewModel(
         logger.info("setGraphPath: '$path'")
         platformSettings.putString("lastGraphPath", path)
         _uiState.update { it.copy(currentGraphPath = path) }
-        recentPageUuids = platformSettings.getString(recentPagesKey, "")
-            .split(",").filter { it.isNotEmpty() }.toMutableList()
-        recentPagesByUuid.clear()
-        scope.launch { refreshRecentPages() }
+        scope.launch {
+            recentMutex.withLock {
+                recentPageUuids = platformSettings.getString(recentPagesKey, "")
+                    .split(",").filter { it.isNotEmpty() }.toMutableList()
+                recentPagesByUuid.clear()
+            }
+            refreshRecentPages()
+        }
         loadGraph(path)
     }
 
@@ -561,7 +574,7 @@ class StelekitViewModel(
             } catch (e: Exception) {
                 val errorText = buildString {
                     append(e::class.simpleName ?: e::class.qualifiedName ?: "UnknownError")
-                    e.message?.let { append(": ", it) }
+                    e.message?.let { append(": ", sanitizeErrorMessage(it)) }
                 }
                 e.printStackTrace()
                 logger.error("Error loading graph: $errorText")
@@ -573,7 +586,7 @@ class StelekitViewModel(
                 // report screen where the user can copy the full message for filing a bug.
                 val errorText = buildString {
                     append(e::class.simpleName ?: e::class.qualifiedName ?: "UnknownError")
-                    e.message?.let { append(": ", it) }
+                    e.message?.let { append(": ", sanitizeErrorMessage(it)) }
                 }
                 logger.error("Fatal error loading graph (Throwable): $errorText")
                 _uiState.update { it.copy(isLoading = false, isFullyLoaded = true, statusMessage = "Error: $errorText", fatalError = errorText) }
@@ -853,6 +866,10 @@ class StelekitViewModel(
     @OptIn(DirectRepositoryWrite::class)
     fun navigateTo(screen: Screen, addToHistory: Boolean = true) {
         val navStart = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        // addToRecent must run outside the update lambda — it has side effects (launches a
+        // coroutine, calls platformSettings) and calls _uiState.update itself, which would
+        // create a nested update.
+        if (screen is Screen.PageView) addToRecent(screen.page)
         _uiState.update { state ->
             val newHistory = if (addToHistory) {
                 // Trim any forward history and add new screen
@@ -869,10 +886,7 @@ class StelekitViewModel(
                 navigationHistory = newHistory,
                 historyIndex = newIndex,
                 statusMessage = when(screen) {
-                    is Screen.PageView -> {
-                        addToRecent(screen.page)
-                        "Opened page: ${screen.page.name}"
-                    }
+                    is Screen.PageView -> "Opened page: ${screen.page.name}"
                     is Screen.Journals -> "Opened Journals"
                     is Screen.Flashcards -> "Opened Flashcards"
                     is Screen.AllPages -> "Opened All Pages"

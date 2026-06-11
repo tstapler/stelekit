@@ -111,6 +111,18 @@ class DatalogPageRepository : PageRepository {
         }
     }
 
+    override suspend fun getPagesByNames(names: Collection<String>): Either<DomainError, List<Page>> {
+        val lower = names.mapTo(HashSet()) { it.lowercase() }
+        return pages.value.values.filter { it.name.lowercase() in lower }.right()
+    }
+
+    override suspend fun getJournalPagesByDates(
+        dates: Collection<kotlinx.datetime.LocalDate>,
+    ): Either<DomainError, List<Page>> {
+        val dateSet = dates.toHashSet()
+        return pages.value.values.filter { it.journalDate != null && it.journalDate in dateSet }.right()
+    }
+
     override suspend fun savePage(page: Page): Either<DomainError, Unit> {
         return try {
             val current = pages.value.toMutableMap()

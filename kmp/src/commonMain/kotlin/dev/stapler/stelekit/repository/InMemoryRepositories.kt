@@ -582,9 +582,8 @@ class InMemoryPageRepository : PageRepository {
         }
     }
 
-    override fun countUnloadedPages(): Flow<Either<DomainError, Long>> {
-        return pages.map { map -> map.values.count { !it.isContentLoaded }.toLong().right() }
-    }
+    override suspend fun countUnloadedPages(): Either<DomainError, Long> =
+        pages.value.values.count { !it.isContentLoaded }.toLong().right()
 
     override fun getPageNameEntries(): Flow<Either<DomainError, List<PageNameEntry>>> {
         return pages.map { map ->

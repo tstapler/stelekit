@@ -51,7 +51,7 @@ class InstrumentedPageRepository(
     override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         delegate.getUnloadedPages(limit, offset)
 
-    override fun countUnloadedPages(): Flow<Either<DomainError, Long>> = delegate.countUnloadedPages()
+    override suspend fun countUnloadedPages(): Either<DomainError, Long> = delegate.countUnloadedPages()
 
     // Explicit delegation (not the interface defaults) so the SQL-optimized chunked IN
     // queries and bounded-batch snapshot of the wrapped repository are preserved.

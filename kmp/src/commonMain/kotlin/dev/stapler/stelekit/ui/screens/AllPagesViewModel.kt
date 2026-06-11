@@ -15,8 +15,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -49,8 +51,10 @@ class AllPagesViewModel(
     private val _pageTypeFilter = MutableStateFlow(PageTypeFilter.ALL)
     private val _isLoading = MutableStateFlow(true)
     private val _selectedUuids = MutableStateFlow<Set<String>>(emptySet())
+    private val _error = MutableStateFlow<String?>(null)
 
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+    val error: StateFlow<String?> = _error.asStateFlow()
     val selectedUuids: StateFlow<Set<String>> = _selectedUuids.asStateFlow()
     val isInSelectionMode: StateFlow<Boolean> = _selectedUuids
         .map { it.isNotEmpty() }
@@ -115,6 +119,14 @@ class AllPagesViewModel(
 
     init {
         scope.launch { loadAllPages() }
+        // Auto-refresh when the page count changes (e.g. new page created while screen is open).
+        // drop(1) skips the initial emission that mirrors the init load above.
+        scope.launch {
+            pageRepository.countPages()
+                .drop(1)
+                .debounce(2_000)
+                .collect { loadAllPages() }
+        }
     }
 
     private suspend fun loadAllPages() {
@@ -157,6 +169,7 @@ class AllPagesViewModel(
             throw e
         } catch (e: Exception) {
             _isLoading.value = false
+            _error.value = e.message ?: "Failed to load pages"
         }
     }
 

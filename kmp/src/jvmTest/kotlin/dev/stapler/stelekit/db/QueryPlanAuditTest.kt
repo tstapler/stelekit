@@ -37,10 +37,8 @@ class QueryPlanAuditTest {
         // Aggregate / analytics scans — intentionally full-table
         "selectDuplicateBlockHashes", "selectMostConnectedBlocks", "selectOrphanedBlocks",
         // pages columns without an index
-        "selectUnloadedPagesPaginated", // is_content_loaded has no index; LIMIT bounds rows returned
-        "countUnloadedPages",           // is_content_loaded has no index
         "selectFavoritePages",          // is_favorite has no index; favorites are few by nature
-        "selectJournalPagesByDates",    // journal_date IN — no index on journal_date
+        "selectJournalPagesByDates",    // is_journal and journal_date have no dedicated index; reconcile call is bounded
         "selectRecentlyUpdatedPages", // updated_at has no index on pages
         "selectRecentlyCreatedPages", // created_at has no index on pages
         "selectJournalPages",         // is_journal has no index
@@ -143,7 +141,7 @@ class QueryPlanAuditTest {
         AuditQuery("countPages",
             "SELECT COUNT(*) FROM pages"),
         AuditQuery("selectJournalPages",
-            "SELECT * FROM pages WHERE is_journal = 1 ORDER BY COALESCE(journal_date, name) DESC LIMIT 10 OFFSET 0"),
+            "SELECT * FROM pages WHERE is_journal = 1 AND journal_date IS NOT NULL ORDER BY journal_date DESC LIMIT 10 OFFSET 0"),
         AuditQuery("selectJournalPageByDate",
             "SELECT * FROM pages WHERE is_journal = 1 AND journal_date = '2024-01-01' LIMIT 1"),
         AuditQuery("selectPagesByNameLike",
@@ -287,6 +285,14 @@ class QueryPlanAuditTest {
                         "INSERT OR IGNORE INTO pages(uuid,name,namespace,file_path,created_at,updated_at," +
                         "properties,version,is_favorite,is_journal,journal_date,is_content_loaded,backlink_count) " +
                         "VALUES('p$i','Page $i',NULL,NULL,0,0,NULL,0,0,0,NULL,1,0)"
+                    )
+                }
+                // Unloaded pages — populates the partial index so the planner can evaluate it
+                repeat(200) { i ->
+                    seed.execute(
+                        "INSERT OR IGNORE INTO pages(uuid,name,namespace,file_path,created_at,updated_at," +
+                        "properties,version,is_favorite,is_journal,journal_date,is_content_loaded,backlink_count) " +
+                        "VALUES('u$i','Unloaded $i',NULL,NULL,0,0,NULL,0,0,0,NULL,0,0)"
                     )
                 }
                 repeat(5000) { i ->

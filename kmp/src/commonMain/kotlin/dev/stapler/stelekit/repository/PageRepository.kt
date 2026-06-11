@@ -7,7 +7,6 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flow
 
 /**
  * Lightweight (name, isJournal) projection of a page row. Used by consumers that need
@@ -62,24 +61,22 @@ interface PageRepository {
      * Count of not-yet-content-loaded pages — O(1) progress denominator for indexing.
      * Default drains [getUnloadedPages] in bounded batches; SQL-backed repositories
      * override with `SELECT COUNT(*)`.
+     *
+     * Suspend function — returns the current count. Not reactive; call again to re-check.
      */
-    fun countUnloadedPages(): Flow<Either<DomainError, Long>> = flow {
+    suspend fun countUnloadedPages(): Either<DomainError, Long> {
         var count = 0L
         var offset = 0
         while (true) {
             when (val batch = getUnloadedPages(SNAPSHOT_BATCH_SIZE, offset).first()) {
-                is Either.Left -> {
-                    emit(batch)
-                    return@flow
-                }
+                is Either.Left -> return batch
                 is Either.Right -> {
                     count += batch.value.size
-                    if (batch.value.size < SNAPSHOT_BATCH_SIZE) break
+                    if (batch.value.size < SNAPSHOT_BATCH_SIZE) return Either.Right(count)
                     offset += batch.value.size
                 }
             }
         }
-        emit(count.right())
     }
 
     /**
@@ -94,6 +91,10 @@ interface PageRepository {
      * by graph reconcile: one query per file chunk instead of preloading the whole table.
      * SQL implementations chunk the IN list to ≤500 to respect Android's
      * SQLITE_MAX_VARIABLE_NUMBER=999 on API < 30. Default scans in bounded batches.
+     *
+     * **Warning**: the default fallback calls [getAllPagesSnapshot], which materializes
+     * the entire graph in memory. Implementations MUST override this with a bounded IN-clause
+     * query — never rely on the default in production code.
      */
     suspend fun getPagesByNames(names: Collection<String>): Either<DomainError, List<Page>> {
         if (names.isEmpty()) return Either.Right(emptyList())

@@ -80,7 +80,7 @@ class UpgradeResilienceTest {
                 repoSet.pageRepository.getUnloadedPages(10, 0).first()
             }
             assertFlowEmitsLeft("PageRepository.countUnloadedPages") {
-                repoSet.pageRepository.countUnloadedPages().first()
+                repoSet.pageRepository.countUnloadedPages()
             }
 
             // ── BlockRepository ───────────────────────────────────────────────

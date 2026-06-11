@@ -248,7 +248,7 @@ class ExportService(
             // stop below the range — never a full-table read.
             val inRange = mutableListOf<Page>()
             var offset = 0
-            val batchSize = 200
+            val batchSize = PageRepository.SNAPSHOT_BATCH_SIZE
             while (true) {
                 val batch = pageRepo.getJournalPages(batchSize, offset).first().getOrNull() ?: emptyList()
                 if (batch.isEmpty()) break
@@ -258,8 +258,9 @@ class ExportService(
                 }
                 // DESC ordering: once the oldest date in the batch is before the range start,
                 // no later batch can contain in-range pages.
+                // oldest == null means no journal_date in this batch — stop to avoid an infinite scan.
                 val oldest = batch.lastOrNull()?.journalDate
-                if (oldest != null && oldest < from) break
+                if (oldest == null || oldest < from) break
                 if (batch.size < batchSize) break
                 offset += batch.size
             }

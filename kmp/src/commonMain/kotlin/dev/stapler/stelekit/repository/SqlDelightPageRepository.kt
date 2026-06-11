@@ -124,15 +124,15 @@ class SqlDelightPageRepository(
         queries.selectUnloadedPagesPaginated(limit.toLong(), offset.toLong())
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
-    override fun countUnloadedPages(): Flow<Either<DomainError, Long>> = flow {
+    override suspend fun countUnloadedPages(): Either<DomainError, Long> = withContext(PlatformDispatcher.DB) {
         try {
-            emit(queries.countUnloadedPages().executeAsOne().right())
+            queries.countUnloadedPages().executeAsOne().right()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            emit(DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left())
+            DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
         }
-    }.flowOn(PlatformDispatcher.DB)
+    }
 
     override fun getPageNameEntries(): Flow<Either<DomainError, List<PageNameEntry>>> =
         queries.selectPageNameEntries()
@@ -145,10 +145,16 @@ class SqlDelightPageRepository(
     override suspend fun getPagesByNames(names: Collection<String>): Either<DomainError, List<Page>> =
         withContext(PlatformDispatcher.DB) {
             try {
+                // Wrap all chunks in a single read transaction for snapshot isolation —
+                // without it, a write between chunks could make the result set inconsistent.
                 // Chunk the IN list: SQLITE_MAX_VARIABLE_NUMBER is 999 on Android API < 30.
-                names.chunked(IN_CLAUSE_CHUNK_SIZE).flatMap { chunk ->
-                    queries.selectPagesByNames(chunk).executeAsList().map { it.toModel() }
-                }.right()
+                var result: List<Page> = emptyList()
+                queries.transaction {
+                    result = names.chunked(IN_CLAUSE_CHUNK_SIZE).flatMap { chunk ->
+                        queries.selectPagesByNames(chunk).executeAsList().map { it.toModel() }
+                    }
+                }
+                result.right()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -160,10 +166,14 @@ class SqlDelightPageRepository(
         dates: Collection<kotlinx.datetime.LocalDate>,
     ): Either<DomainError, List<Page>> = withContext(PlatformDispatcher.DB) {
         try {
-            dates.chunked(IN_CLAUSE_CHUNK_SIZE).flatMap { chunk ->
-                queries.selectJournalPagesByDates(chunk.map { it.toString() })
-                    .executeAsList().map { it.toModel() }
-            }.right()
+            var result: List<Page> = emptyList()
+            queries.transaction {
+                result = dates.chunked(IN_CLAUSE_CHUNK_SIZE).flatMap { chunk ->
+                    queries.selectJournalPagesByDates(chunk.map { it.toString() })
+                        .executeAsList().map { it.toModel() }
+                }
+            }
+            result.right()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

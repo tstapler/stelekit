@@ -14,7 +14,6 @@ import dev.stapler.stelekit.ui.fixtures.InMemorySettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -183,8 +182,12 @@ class LargeGraphWarmStartCrashTest {
 
             // The page-name suggestion index must eventually build at this scale.
             withTimeout(60_000) {
-                while (vm.suggestionMatcher.value == null) delay(100)
+                vm.suggestionMatcher.first { it != null }
             }
+            assertTrue(
+                vm.suggestionMatcher.value != null,
+                "suggestionMatcher must be non-null at 8030-page scale"
+            )
 
             assertTrue(
                 recorder.uncaught.isEmpty(),
