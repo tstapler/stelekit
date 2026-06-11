@@ -227,7 +227,8 @@ class ExportService(
     /**
      * Exports all journal pages in the date range [[from], [to]] (inclusive) as a single string.
      *
-     * Uses [pageRepo.getAllPages()] and filters in memory (ADR-4). Empty days are skipped.
+     * Pages through [PageRepository.getJournalPages] (journal_date DESC) in bounded batches,
+     * stopping early once dates fall before [from]. Empty days are skipped.
      * Pages within the range are sorted by date ascending and separated by a `## date` heading.
      *
      * @return [Left] with [ExportError.SerializationFailed] if no journal pages are in range.
@@ -243,15 +244,26 @@ class ExportService(
             val exporter = exporterMap[formatId]
                 ?: return@withContext ExportError.SerializationFailed("Unknown export format: $formatId").left()
 
-            val allPages = pageRepo.getAllPages().first().getOrNull() ?: emptyList()
-
-            // Filter to journal pages whose date falls in [from, to]
-            val journalPages = allPages
-                .filter { page ->
-                    val date = page.journalDate ?: return@filter false
-                    date in from..to
+            // Bounded-batch pagination over journals (ordered journal_date DESC) with early
+            // stop below the range — never a full-table read.
+            val inRange = mutableListOf<Page>()
+            var offset = 0
+            val batchSize = 200
+            while (true) {
+                val batch = pageRepo.getJournalPages(batchSize, offset).first().getOrNull() ?: emptyList()
+                if (batch.isEmpty()) break
+                for (page in batch) {
+                    val date = page.journalDate ?: continue
+                    if (date in from..to) inRange.add(page)
                 }
-                .sortedBy { it.journalDate }
+                // DESC ordering: once the oldest date in the batch is before the range start,
+                // no later batch can contain in-range pages.
+                val oldest = batch.lastOrNull()?.journalDate
+                if (oldest != null && oldest < from) break
+                if (batch.size < batchSize) break
+                offset += batch.size
+            }
+            val journalPages = inRange.sortedBy { it.journalDate }
 
             if (journalPages.isEmpty()) {
                 return@withContext ExportError.SerializationFailed(

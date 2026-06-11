@@ -67,9 +67,6 @@ open class FakePageRepository(initialPages: List<Page> = emptyList()) : PageRepo
     override fun getPageByName(name: String): Flow<Either<DomainError, Page?>> =
         _pages.map { pages -> pages.values.find { it.name == name }.right() }
 
-    override fun getAllPages(): Flow<Either<DomainError, List<Page>>> =
-        _pages.map { it.values.toList().right() }
-
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         _pages.map { pages ->
             pages.values.filter { it.isJournal }.sortedByDescending { it.journalDate }.drop(offset).take(limit).right()
@@ -99,9 +96,6 @@ open class FakePageRepository(initialPages: List<Page> = emptyList()) : PageRepo
 
     override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> =
         _pages.map { pages -> pages.values.filter { it.isFavorite }.sortedBy { it.name }.right() }
-
-    override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> =
-        _pages.map { pages -> pages.values.filter { !it.isContentLoaded }.right() }
 
     override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         _pages.map { pages ->

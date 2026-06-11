@@ -18,14 +18,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.LocalDate
 import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -161,41 +159,8 @@ class StelekitViewModelCrashReproductionTest {
         }
     }
 
-    // ─── TC-SCAN-001: no standing full-table observers in the ViewModel ─────────
-
-    private class CountingPageRepository : FakePageRepository() {
-        val getAllPagesSubscriptions = AtomicInteger(0)
-        override fun getAllPages(): Flow<Either<DomainError, List<Page>>> {
-            val base = super.getAllPages()
-            return flow {
-                getAllPagesSubscriptions.incrementAndGet()
-                emitAll(base)
-            }
-        }
-    }
-
-    /**
-     * The hang half of "hangs and crashes": every DB write invalidates getAllPages(), so
-     * each standing collector re-materializes the entire table per write burst during
-     * import/reconcile — O(N) full Page allocations × thousands of writes = GC thrash and
-     * OOM. No production observer may subscribe to getAllPages() at all: the sidebar uses
-     * bounded queries (favorites, point lookups) and PageNameIndex uses the names-only
-     * getPageNameEntries() projection.
-     */
-    @Test
-    fun viewmodel_holds_no_getAllPages_subscription() = runBlocking {
-        val repo = CountingPageRepository()
-        makeViewModel(repo)
-
-        // Let init-time observers (observeSpecialPages, PageNameIndex) subscribe.
-        delay(1_500)
-
-        val subscriptions = repo.getAllPagesSubscriptions.get()
-        assertTrue(
-            subscriptions == 0,
-            "Expected no getAllPages() subscription from the ViewModel, found $subscriptions — " +
-                "full-table observers re-materialize all pages on every write and OOM Android " +
-                "on 8 000+ page graphs"
-        )
-    }
+    // Note: this file previously asserted at runtime that the ViewModel holds no standing
+    // getAllPages() subscription. That guarantee is now structural — PageRepository has no
+    // unbounded full-table read at all; whole-graph consumers go through the bounded
+    // getAllPagesSnapshot() / getPageNameEntries() reads.
 }

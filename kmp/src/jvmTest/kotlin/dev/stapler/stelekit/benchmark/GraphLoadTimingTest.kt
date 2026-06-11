@@ -348,7 +348,7 @@ class GraphLoadTimingTest {
             val pageRepo  = InMemoryPageRepository()
             val blockRepo = InMemoryBlockRepository()
             loadAndTime(dir.absolutePath, GraphLoader(fileSystem, pageRepo, blockRepo), "synthetic / in-memory") {
-                pageRepo.getAllPages().first().getOrNull()?.size ?: 0
+                pageRepo.getAllPagesSnapshot().getOrNull()?.size ?: 0
             }
             Unit
         } finally {
@@ -369,7 +369,7 @@ class GraphLoadTimingTest {
             val loader  = GraphLoader(fileSystem, repoSet.pageRepository, repoSet.blockRepository,
                                       externalWriteActor = repoSet.writeActor, histogramWriter = repoSet.histogramWriter)
             val result = loadAndTime(dir.absolutePath, loader, "synthetic / SQLite") {
-                repoSet.pageRepository.getAllPages().first().getOrNull()?.size ?: 0
+                repoSet.pageRepository.getAllPagesSnapshot().getOrNull()?.size ?: 0
             }
             assertTrue(result.totalMs < 60_000L,
                 "SQLite synthetic load took ${result.totalMs}ms — catastrophic regression detected (> 60s)")
@@ -431,7 +431,7 @@ class GraphLoadTimingTest {
             val loader  = GraphLoader(fileSystem, repoSet.pageRepository, repoSet.blockRepository,
                                       externalWriteActor = repoSet.writeActor, histogramWriter = repoSet.histogramWriter)
             loadAndTime(tempDir.absolutePath, loader, "real graph / SQLite") {
-                repoSet.pageRepository.getAllPages().first().getOrNull()?.size ?: 0
+                repoSet.pageRepository.getAllPagesSnapshot().getOrNull()?.size ?: 0
             }.also { }
             factory.close()
         } finally {

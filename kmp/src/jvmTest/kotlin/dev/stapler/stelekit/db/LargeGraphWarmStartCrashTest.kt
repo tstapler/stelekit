@@ -66,34 +66,16 @@ class LargeGraphWarmStartCrashTest {
     }
 
     /**
-     * Records query-boundedness during the run: the whole pipeline must never subscribe to
-     * the unbounded getAllPages()/getUnloadedPages() reads, and every batch lookup must be
-     * chunk-sized — that is what keeps peak memory O(chunk) instead of O(graph).
+     * Records query-boundedness during the run: every batch lookup must be chunk-sized —
+     * that is what keeps peak memory O(chunk) instead of O(graph). (Unbounded full-table
+     * reads no longer exist on PageRepository, so their absence is compile-time enforced.)
      */
     private class BoundedQueryRecordingRepository(
         initial: List<Page>,
     ) : FakePageRepository(initial) {
-        val getAllPagesSubscriptions = AtomicInteger(0)
-        val unboundedUnloadedSubscriptions = AtomicInteger(0)
         val maxNamesPerLookup = AtomicInteger(0)
         val maxUnloadedBatchLimit = AtomicInteger(0)
         val boundedUnloadedFetches = AtomicInteger(0)
-
-        override fun getAllPages(): Flow<Either<DomainError, List<Page>>> {
-            val base = super.getAllPages()
-            return flow {
-                getAllPagesSubscriptions.incrementAndGet()
-                emitAll(base)
-            }
-        }
-
-        override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> {
-            val base = super.getUnloadedPages()
-            return flow {
-                unboundedUnloadedSubscriptions.incrementAndGet()
-                emitAll(base)
-            }
-        }
 
         override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
             boundedUnloadedFetches.incrementAndGet()
@@ -223,16 +205,6 @@ class LargeGraphWarmStartCrashTest {
             )
 
             // ── Query boundedness: peak memory must stay O(chunk), not O(graph) ─────
-            assertTrue(
-                pageRepo.getAllPagesSubscriptions.get() == 0,
-                "getAllPages() must never be subscribed during load — found " +
-                    "${pageRepo.getAllPagesSubscriptions.get()} subscription(s); full-table " +
-                    "reads re-materialize all $PAGE_COUNT pages and OOM Android"
-            )
-            assertTrue(
-                pageRepo.unboundedUnloadedSubscriptions.get() == 0,
-                "Unbounded getUnloadedPages() must not be used — Phase 3 must drain in batches"
-            )
             assertTrue(
                 pageRepo.maxNamesPerLookup.get() in 1..100,
                 "Reconcile name lookups must be chunk-sized (≤100); max was " +

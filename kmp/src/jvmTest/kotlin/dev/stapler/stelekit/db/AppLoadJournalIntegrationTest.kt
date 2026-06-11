@@ -100,7 +100,7 @@ class AppLoadJournalIntegrationTest {
 
         h.appLoad()
 
-        val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = h.pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val todayPages = allPages.filter { it.journalDate == today() }
         assertEquals(1, todayPages.size, "Exactly one today journal, got: ${todayPages.map { it.name }}")
     }
@@ -128,7 +128,7 @@ class AppLoadJournalIntegrationTest {
 
         h.appLoad()
 
-        val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = h.pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val todayPages = allPages.filter { it.journalDate == today() || it.name == todayHyphen }
         assertEquals(1, todayPages.size, "No duplicate, got: ${todayPages.map { it.name }}")
     }
@@ -140,7 +140,7 @@ class AppLoadJournalIntegrationTest {
 
         h.appLoad()
 
-        val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = h.pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val journal = allPages.first { it.journalDate == today() || it.name == todayHyphen }
         val blocks = h.blockRepo.getBlocksForPage(journal.uuid).first().getOrNull() ?: emptyList()
         assertTrue(blocks.isNotEmpty(), "Disk content should not be wiped — blocks expected")
@@ -157,7 +157,7 @@ class AppLoadJournalIntegrationTest {
 
         h.appLoad()
 
-        val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = h.pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val todayPages = allPages.filter { it.journalDate == today() || it.name == todayUnderscore }
         assertEquals(1, todayPages.size, "No duplicate, got: ${todayPages.map { it.name }}")
     }
@@ -169,7 +169,7 @@ class AppLoadJournalIntegrationTest {
 
         h.appLoad()
 
-        val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = h.pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val journal = allPages.first { it.journalDate == today() || it.name == todayUnderscore }
         val blocks = h.blockRepo.getBlocksForPage(journal.uuid).first().getOrNull() ?: emptyList()
         assertTrue(blocks.isNotEmpty(), "Disk content should not be wiped — blocks expected")
@@ -247,7 +247,7 @@ class AppLoadJournalIntegrationTest {
 
         h.appLoad()
 
-        val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = h.pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
 
         // Today must be created
         val todayJournal = allPages.firstOrNull { it.journalDate == today() }
@@ -270,7 +270,7 @@ class AppLoadJournalIntegrationTest {
 
         h.appLoad()
 
-        val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = h.pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         // 2 past + 1 today = 3 total
         assertEquals(3, allPages.size, "Should have 2 past journals + 1 today, got: ${allPages.map { it.name }}")
     }
@@ -290,7 +290,7 @@ class AppLoadJournalIntegrationTest {
 
         h.appLoad()
 
-        val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = h.pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val todayPages = allPages.filter { it.journalDate == today() }
         assertEquals(1, todayPages.size, "Duplicates should be merged, got: ${todayPages.map { it.name }}")
     }
@@ -306,7 +306,7 @@ class AppLoadJournalIntegrationTest {
 
         h.appLoad()
 
-        val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = h.pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val todayPage = allPages.first { it.journalDate == today() }
         val blocks = h.blockRepo.getBlocksForPage(todayPage.uuid).first().getOrNull() ?: emptyList()
         assertTrue(blocks.isNotEmpty(), "Merged page should retain blocks from surviving format")
@@ -400,7 +400,7 @@ class AppLoadJournalIntegrationTest {
 
         assertEquals(PageUuid("stub-uuid"), result.uuid, "Should return the existing stub, not create a second page")
 
-        val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = h.pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         assertEquals(1, allPages.filter { it.journalDate == today() }.size, "No duplicate for stub page")
     }
 
@@ -418,7 +418,7 @@ class AppLoadJournalIntegrationTest {
         val distinctUuids = results.map { it.uuid }.toSet()
         assertEquals(1, distinctUuids.size, "All concurrent calls must return the same page UUID")
 
-        val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = h.pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         assertEquals(1, allPages.filter { it.journalDate == today() }.size, "Exactly one page after concurrent calls")
     }
 
@@ -435,7 +435,7 @@ class AppLoadJournalIntegrationTest {
         h.appLoad()
         h.appLoad()
 
-        val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = h.pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val todayPages = allPages.filter { it.journalDate == today() }
         assertEquals(1, todayPages.size, "Repeated loads should not duplicate today's journal")
     }
@@ -515,7 +515,7 @@ class AppLoadJournalIntegrationTest {
         ensureDeferred.await()
         loadDeferred.await()
 
-        val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = h.pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val todayPages = allPages.filter { it.journalDate == today() }
         assertEquals(1, todayPages.size, "Concurrent warm-cache load must not duplicate today's journal")
     }
@@ -533,7 +533,7 @@ class AppLoadJournalIntegrationTest {
         val lookedUp = h.journalService.getPageByJournalDate(today())
         assertEquals(existingPage.uuid, lookedUp?.uuid, "Lookup should return the same page, not create a new one")
 
-        val allPages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = h.pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         assertEquals(1, allPages.filter { it.journalDate == today() }.size, "No duplicate created by lookup")
     }
 }

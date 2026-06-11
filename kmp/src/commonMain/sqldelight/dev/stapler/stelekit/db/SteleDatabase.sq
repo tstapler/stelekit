@@ -313,14 +313,13 @@ SELECT COUNT(*) FROM pages WHERE uuid = ?;
 existsPageByName:
 SELECT COUNT(*) FROM pages WHERE name = ?;
 
-selectAllPages:
-SELECT * FROM pages ORDER BY name;
-
+-- NOTE: there is intentionally no unpaginated `SELECT * FROM pages` (or unpaginated
+-- unloaded-pages) query. Standing collectors of unbounded queries re-materialize the
+-- entire table per write burst and OOM Android on 8 000+ page graphs. Whole-graph
+-- consumers use PageRepository.getAllPagesSnapshot() (bounded batches over
+-- selectAllPagesPaginated) or the selectPageNameEntries projection.
 selectAllPagesPaginated:
 SELECT * FROM pages ORDER BY name LIMIT ? OFFSET ?;
-
-selectUnloadedPages:
-SELECT * FROM pages WHERE is_content_loaded = 0;
 
 -- Bounded batch for background indexing. ORDER BY uuid gives a stable drain order so a
 -- caller can advance OFFSET past permanently-failing rows without re-fetching them forever.

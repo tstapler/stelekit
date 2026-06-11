@@ -8,6 +8,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
+import dev.stapler.stelekit.repository.PageNameEntry
 import dev.stapler.stelekit.repository.PageRepository
 import io.opentelemetry.api.trace.StatusCode
 import io.opentelemetry.api.trace.Tracer
@@ -33,8 +34,6 @@ class InstrumentedPageRepository(
     override fun searchPages(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         delegate.searchPages(query, limit, offset)
 
-    override fun getAllPages(): Flow<Either<DomainError, List<Page>>> = delegate.getAllPages()
-
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         delegate.getJournalPages(limit, offset)
 
@@ -44,7 +43,26 @@ class InstrumentedPageRepository(
     override fun getRecentPages(limit: Int): Flow<Either<DomainError, List<Page>>> =
         delegate.getRecentPages(limit)
 
-    override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> = delegate.getUnloadedPages()
+    override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> = delegate.getFavoritePages()
+
+    override fun getPageNameEntries(): Flow<Either<DomainError, List<PageNameEntry>>> =
+        delegate.getPageNameEntries()
+
+    override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        delegate.getUnloadedPages(limit, offset)
+
+    override fun countUnloadedPages(): Flow<Either<DomainError, Long>> = delegate.countUnloadedPages()
+
+    // Explicit delegation (not the interface defaults) so the SQL-optimized chunked IN
+    // queries and bounded-batch snapshot of the wrapped repository are preserved.
+    override suspend fun getPagesByNames(names: Collection<String>): Either<DomainError, List<Page>> =
+        delegate.getPagesByNames(names)
+
+    override suspend fun getJournalPagesByDates(dates: Collection<LocalDate>): Either<DomainError, List<Page>> =
+        delegate.getJournalPagesByDates(dates)
+
+    override suspend fun getAllPagesSnapshot(batchSize: Int): Either<DomainError, List<Page>> =
+        delegate.getAllPagesSnapshot(batchSize)
 
     override fun countPages(): Flow<Either<DomainError, Long>> = delegate.countPages()
 

@@ -1,12 +1,13 @@
 package dev.stapler.stelekit.repository
 
 import arrow.core.Either
+import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flow
 
 /**
  * Lightweight (name, isJournal) projection of a page row. Used by consumers that need
@@ -15,13 +16,23 @@ import kotlinx.coroutines.flow.map
  */
 data class PageNameEntry(val name: String, val isJournal: Boolean)
 
+/**
+ * There is deliberately NO `getAllPages()` on this interface. A reactive full-table flow
+ * is re-materialized in its entirety on every write that invalidates it; standing
+ * collectors of such a flow caused GC thrash and OutOfMemoryError on Android during
+ * 8 000+ page graph imports. All reads are paginated, projected, or chunked:
+ * - whole-graph one-shots (export, migration, tests): [getAllPagesSnapshot] — bounded batches
+ * - whole-graph standing observers: [getPageNameEntries] — names-only projection
+ * - UI lists: [getPages] / [getJournalPages] / [getFavoritePages] / point lookups
+ * - reconcile existence checks: [getPagesByNames] / [getJournalPagesByDates] — chunked IN
+ * - background indexing: [getUnloadedPages] (limit, offset) drain + [countUnloadedPages]
+ */
 interface PageRepository {
     fun getPageByUuid(uuid: PageUuid): Flow<Either<DomainError, Page?>>
     fun getPageByName(name: String): Flow<Either<DomainError, Page?>>
     fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>>
     fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>>
     fun searchPages(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>>
-    fun getAllPages(): Flow<Either<DomainError, List<Page>>>
     fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>>
 
     /**
@@ -35,61 +46,59 @@ interface PageRepository {
 
     /**
      * Favorite pages only — the bounded query standing UI observers (sidebar) must use.
-     *
-     * The default implementation derives from [getAllPages] for in-memory/test backends.
-     * SQL-backed repositories MUST override it with a dedicated `WHERE is_favorite = 1`
-     * query: a standing collector on [getAllPages] re-materializes the entire pages table
-     * on every write, which on 8 000+ page graphs causes GC thrash and OutOfMemoryError
-     * on Android during graph import/reconcile.
+     * SQL-backed repositories implement this with a dedicated `WHERE is_favorite = 1` query.
      */
-    fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> =
-        getAllPages().map { either -> either.map { pages -> pages.filter { it.isFavorite } } }
-
-    fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>>
+    fun getFavoritePages(): Flow<Either<DomainError, List<Page>>>
 
     /**
-     * Bounded batch of not-yet-content-loaded pages in stable (uuid) order — the
-     * backpressure-friendly variant of [getUnloadedPages] for background indexing.
-     * Callers drain by re-fetching at a fixed limit and advancing [offset] only past
-     * rows that permanently fail, so peak memory is O(limit) rather than O(graph).
-     *
-     * Default derives from [getUnloadedPages] for in-memory/test backends; SQL-backed
-     * repositories must override with a dedicated LIMIT/OFFSET query
-     * (`selectUnloadedPagesPaginated`) — the in-memory fallback here exists only so fakes
-     * keep compiling.
+     * Bounded batch of not-yet-content-loaded pages in stable (uuid) order — used by the
+     * background-indexing drain loop. Callers re-fetch at a fixed limit and advance
+     * [offset] only past rows that permanently fail, so peak memory is O(limit) rather
+     * than O(graph).
      */
-    @Suppress("InMemoryPagination")
-    fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
-        getUnloadedPages().map { either ->
-            either.map { pages -> pages.sortedBy { it.uuid.value }.drop(offset).take(limit) }
+    fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>>
+
+    /**
+     * Count of not-yet-content-loaded pages — O(1) progress denominator for indexing.
+     * Default drains [getUnloadedPages] in bounded batches; SQL-backed repositories
+     * override with `SELECT COUNT(*)`.
+     */
+    fun countUnloadedPages(): Flow<Either<DomainError, Long>> = flow {
+        var count = 0L
+        var offset = 0
+        while (true) {
+            when (val batch = getUnloadedPages(SNAPSHOT_BATCH_SIZE, offset).first()) {
+                is Either.Left -> {
+                    emit(batch)
+                    return@flow
+                }
+                is Either.Right -> {
+                    count += batch.value.size
+                    if (batch.value.size < SNAPSHOT_BATCH_SIZE) break
+                    offset += batch.value.size
+                }
+            }
         }
-
-    /** Count of not-yet-content-loaded pages — O(1) progress denominator for indexing. */
-    fun countUnloadedPages(): Flow<Either<DomainError, Long>> =
-        getUnloadedPages().map { either -> either.map { it.size.toLong() } }
+        emit(count.right())
+    }
 
     /**
-     * Names-only projection of all pages for the suggestion index. Unlike [getAllPages],
-     * a standing observer of this flow materializes only (name, isJournal) pairs —
+     * Names-only projection of all pages for the suggestion index. Unlike a full-table
+     * read, a standing observer of this flow materializes only (name, isJournal) pairs —
      * a few hundred KB on an 8 000-page graph instead of tens of MB of full Page objects.
-     *
-     * SQL-backed repositories must override with a dedicated two-column query.
      */
-    fun getPageNameEntries(): Flow<Either<DomainError, List<PageNameEntry>>> =
-        getAllPages().map { either ->
-            either.map { pages -> pages.map { PageNameEntry(it.name, it.isJournal) } }
-        }
+    fun getPageNameEntries(): Flow<Either<DomainError, List<PageNameEntry>>>
 
     /**
      * Pages whose names match [names] (case-insensitive). Bounded existence lookup used
      * by graph reconcile: one query per file chunk instead of preloading the whole table.
-     * Implementations must chunk the IN list to ≤500 to respect Android's
-     * SQLITE_MAX_VARIABLE_NUMBER=999 on API < 30.
+     * SQL implementations chunk the IN list to ≤500 to respect Android's
+     * SQLITE_MAX_VARIABLE_NUMBER=999 on API < 30. Default scans in bounded batches.
      */
     suspend fun getPagesByNames(names: Collection<String>): Either<DomainError, List<Page>> {
         if (names.isEmpty()) return Either.Right(emptyList())
         val lower = names.mapTo(HashSet()) { it.lowercase() }
-        return getAllPages().first().map { pages -> pages.filter { it.name.lowercase() in lower } }
+        return getAllPagesSnapshot().map { pages -> pages.filter { it.name.lowercase() in lower } }
     }
 
     /** Journal pages whose dates match [dates]. Bounded chunk lookup for reconcile. */
@@ -98,7 +107,29 @@ interface PageRepository {
     ): Either<DomainError, List<Page>> {
         if (dates.isEmpty()) return Either.Right(emptyList())
         val dateSet = dates.toHashSet()
-        return getAllPages().first().map { pages -> pages.filter { it.journalDate in dateSet } }
+        return getAllPagesSnapshot().map { pages -> pages.filter { it.journalDate in dateSet } }
+    }
+
+    /**
+     * One-shot whole-graph snapshot for export, migration tooling, benchmarks, and tests.
+     * Reads in bounded batches of [batchSize] via [getPages] — never a single unbounded
+     * query, and never a reactive flow that re-materializes per write. Callers that hold
+     * the returned list accept O(graph) memory knowingly (whole-graph export/migration);
+     * UI code must use the paginated/projected reads instead.
+     */
+    suspend fun getAllPagesSnapshot(batchSize: Int = SNAPSHOT_BATCH_SIZE): Either<DomainError, List<Page>> {
+        val all = mutableListOf<Page>()
+        var offset = 0
+        while (true) {
+            when (val batch = getPages(batchSize, offset).first()) {
+                is Either.Left -> return batch
+                is Either.Right -> {
+                    all += batch.value
+                    if (batch.value.size < batchSize) return Either.Right(all)
+                    offset += batch.value.size
+                }
+            }
+        }
     }
 
     @DirectRepositoryWrite
@@ -126,4 +157,9 @@ interface PageRepository {
     suspend fun clear()
 
     suspend fun cacheEvictAll() {}
+
+    companion object {
+        /** Batch size for snapshot/drain defaults — bounds per-fetch memory. */
+        const val SNAPSHOT_BATCH_SIZE = 500
+    }
 }

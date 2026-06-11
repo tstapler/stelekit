@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -121,42 +120,39 @@ class AllPagesViewModel(
     private suspend fun loadAllPages() {
         _isLoading.value = true
         try {
-            pageRepository.getAllPages()
-                .distinctUntilChanged { old, new ->
-                    // Only re-trigger backlink loading when the set of page UUIDs changes,
-                    // not on every metadata update (e.g. updatedAt tick during indexing).
-                    old.getOrNull()?.map { it.uuid } == new.getOrNull()?.map { it.uuid }
-                }
-                .collect { result ->
-                    val pageList = result.getOrNull()
-                    if (pageList != null) {
-                        // Preserve existing backlink counts for pages already loaded.
-                        val existingCounts = _allRows.value.associate { it.page.uuid to it.backlinkCount }
-                        _allRows.value = pageList.map { PageRow(it, existingCounts[it.uuid] ?: 0) }
-                        _isLoading.value = false
+            // One-shot bounded-batch snapshot, NOT a standing getAllPages() collector: every
+            // write invalidates a full-table flow, so a standing observer re-materialized all
+            // pages per write burst while indexing ran — GC thrash and OOM on 8 000+ page
+            // graphs on Android. This screen holds all rows by design (whole-graph table with
+            // in-memory sort/filter); refresh() reloads on demand.
+            val pageList = pageRepository.getAllPagesSnapshot().getOrNull()
+            if (pageList != null) {
+                // Preserve existing backlink counts for pages already loaded.
+                val existingCounts = _allRows.value.associate { it.page.uuid to it.backlinkCount }
+                _allRows.value = pageList.map { PageRow(it, existingCounts[it.uuid] ?: 0) }
+                _isLoading.value = false
 
-                        // Only fetch backlink counts for pages we haven't counted yet.
-                        val uncounted = pageList.filter { existingCounts[it.uuid] == null }
-                        if (uncounted.isNotEmpty()) {
-                            val semaphore = Semaphore(8)
-                            uncounted.forEach { page ->
-                                scope.launch {
-                                    semaphore.withPermit {
-                                        val count = blockRepository.countLinkedReferences(page.name)
-                                            .first().getOrNull() ?: 0L
-                                        _allRows.update { rows ->
-                                            rows.map { row ->
-                                                if (row.page.uuid == page.uuid) row.copy(backlinkCount = count.toInt()) else row
-                                            }
-                                        }
+                // Only fetch backlink counts for pages we haven't counted yet.
+                val uncounted = pageList.filter { existingCounts[it.uuid] == null }
+                if (uncounted.isNotEmpty()) {
+                    val semaphore = Semaphore(8)
+                    uncounted.forEach { page ->
+                        scope.launch {
+                            semaphore.withPermit {
+                                val count = blockRepository.countLinkedReferences(page.name)
+                                    .first().getOrNull() ?: 0L
+                                _allRows.update { rows ->
+                                    rows.map { row ->
+                                        if (row.page.uuid == page.uuid) row.copy(backlinkCount = count.toInt()) else row
                                     }
                                 }
                             }
                         }
-                    } else {
-                        _isLoading.value = false
                     }
                 }
+            } else {
+                _isLoading.value = false
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

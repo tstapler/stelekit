@@ -100,14 +100,6 @@ class SqlDelightPageRepository(
         queries.selectPagesByNameLikePaginated("%$query%", limit.toLong(), offset.toLong())
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
-    override fun getAllPages(): Flow<Either<DomainError, List<Page>>> =
-        queries.selectAllPages()
-            .asFlow()
-            .conflate()  // drop intermediate invalidations during bulk import to avoid O(N²) full-table scans
-            .mapToList(PlatformDispatcher.DB)
-            .map { list -> list.map { it.toModel() }.right() }
-            .catchDbError()
-
     override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> =
         queries.selectFavoritePages()
             .asFlow()
@@ -126,10 +118,6 @@ class SqlDelightPageRepository(
 
     override fun getRecentPages(limit: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectRecentlyUpdatedPages(limit.toLong())
-            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
-
-    override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> =
-        queries.selectUnloadedPages()
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =

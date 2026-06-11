@@ -83,7 +83,7 @@ class AndroidGraphBenchmark {
 
         val phase3Ms = measureTime { loader.indexRemainingPages {} }.inWholeMilliseconds
 
-        val pageCount = repoSet.pageRepository.getAllPages().first().getOrNull()?.size ?: 0
+        val pageCount = repoSet.pageRepository.getAllPagesSnapshot().getOrNull()?.size ?: 0
 
         android.util.Log.i("ANDROID_BENCH", """{"metric":"loadPhase","phase1Ms":$phase1Ms,"phase3Ms":$phase3Ms,"pageCount":$pageCount}""")
 
@@ -205,7 +205,7 @@ class AndroidGraphBenchmark {
         loader.indexRemainingPages {}
 
         // Pick a journal page to edit
-        val pages = repoSet.pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+        val pages = repoSet.pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val journalPage = pages.firstOrNull { it.isJournal } ?: pages.first()
         val pageUuid = journalPage.uuid
 

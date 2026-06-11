@@ -27,7 +27,7 @@ class QueryPlanAuditTest {
     private val ALLOWLIST = setOf(
         // No WHERE clause — full traversal by design
         "selectAllBlocks", "selectAllBlocksPaginated", "countBlocks",
-        "selectAllPages", "selectAllPagesPaginated", "countPages",
+        "selectAllPagesPaginated", "countPages", "selectPageNameEntries",
         "selectAllMetadata", "selectAllDebugFlags",
         // content LIKE — no index on content; FTS handles production full-text search
         "selectBlocksWithContentLike", "selectBlocksWithContentLikePaginated",
@@ -37,7 +37,10 @@ class QueryPlanAuditTest {
         // Aggregate / analytics scans — intentionally full-table
         "selectDuplicateBlockHashes", "selectMostConnectedBlocks", "selectOrphanedBlocks",
         // pages columns without an index
-        "selectUnloadedPages",        // is_content_loaded has no index
+        "selectUnloadedPagesPaginated", // is_content_loaded has no index; LIMIT bounds rows returned
+        "countUnloadedPages",           // is_content_loaded has no index
+        "selectFavoritePages",          // is_favorite has no index; favorites are few by nature
+        "selectJournalPagesByDates",    // journal_date IN — no index on journal_date
         "selectRecentlyUpdatedPages", // updated_at has no index on pages
         "selectRecentlyCreatedPages", // created_at has no index on pages
         "selectJournalPages",         // is_journal has no index
@@ -113,12 +116,20 @@ class QueryPlanAuditTest {
             "SELECT COUNT(*) FROM pages WHERE uuid = 'x'"),
         AuditQuery("existsPageByName",
             "SELECT COUNT(*) FROM pages WHERE name = 'x'"),
-        AuditQuery("selectAllPages",
-            "SELECT * FROM pages ORDER BY name"),
         AuditQuery("selectAllPagesPaginated",
             "SELECT * FROM pages ORDER BY name LIMIT 10 OFFSET 0"),
-        AuditQuery("selectUnloadedPages",
-            "SELECT * FROM pages WHERE is_content_loaded = 0"),
+        AuditQuery("selectUnloadedPagesPaginated",
+            "SELECT * FROM pages WHERE is_content_loaded = 0 ORDER BY uuid LIMIT 10 OFFSET 0"),
+        AuditQuery("countUnloadedPages",
+            "SELECT COUNT(*) FROM pages WHERE is_content_loaded = 0"),
+        AuditQuery("selectPageNameEntries",
+            "SELECT name, is_journal FROM pages"),
+        AuditQuery("selectFavoritePages",
+            "SELECT * FROM pages WHERE is_favorite = 1 ORDER BY name"),
+        AuditQuery("selectPagesByNames",
+            "SELECT * FROM pages WHERE name IN ('x')"),
+        AuditQuery("selectJournalPagesByDates",
+            "SELECT * FROM pages WHERE is_journal = 1 AND journal_date IN ('2024-01-01')"),
         AuditQuery("selectPagesByNamespace",
             "SELECT * FROM pages WHERE namespace = 'x' ORDER BY name LIMIT 10 OFFSET 0"),
         AuditQuery("selectPagesByNamespaceUnpaginated",

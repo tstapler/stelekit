@@ -69,9 +69,15 @@ class DatalogPageRepository : PageRepository {
         }
     }
 
-    override fun getAllPages(): Flow<Either<DomainError, List<Page>>> {
+    override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
-            map.values.toList().right()
+            map.values.filter { it.isFavorite }.sortedBy { it.name }.right()
+        }
+    }
+
+    override fun getPageNameEntries(): Flow<Either<DomainError, List<PageNameEntry>>> {
+        return pages.map { map ->
+            map.values.map { PageNameEntry(it.name, it.isJournal) }.right()
         }
     }
 
@@ -98,9 +104,10 @@ class DatalogPageRepository : PageRepository {
         }
     }
 
-    override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> {
+    override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
-            map.values.filter { !it.isContentLoaded }.right()
+            map.values.filter { !it.isContentLoaded }
+                .sortedBy { it.uuid.value }.drop(offset).take(limit).right()
         }
     }
 

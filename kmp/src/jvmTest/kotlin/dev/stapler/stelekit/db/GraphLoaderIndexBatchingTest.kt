@@ -36,12 +36,6 @@ class GraphLoaderIndexBatchingTest {
     private class RecordingRepository(initial: List<Page>) : FakePageRepository(initial) {
         val maxBatchLimit = AtomicInteger(0)
         val boundedFetches = AtomicInteger(0)
-        val unboundedSubscriptions = AtomicInteger(0)
-
-        override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> {
-            unboundedSubscriptions.incrementAndGet()
-            return super.getUnloadedPages()
-        }
 
         override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
             boundedFetches.incrementAndGet()
@@ -89,10 +83,6 @@ class GraphLoaderIndexBatchingTest {
         assertTrue(
             pageRepo.boundedFetches.get() >= 3,
             "250 pages at ≤100 per batch needs ≥3 fetches; got ${pageRepo.boundedFetches.get()}"
-        )
-        assertEquals(
-            0, pageRepo.unboundedSubscriptions.get(),
-            "the unbounded getUnloadedPages() snapshot must not be used"
         )
     }
 

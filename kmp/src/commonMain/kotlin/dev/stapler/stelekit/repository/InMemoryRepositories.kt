@@ -8,6 +8,7 @@ import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.Property
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOf
 import arrow.core.Either
@@ -544,12 +545,6 @@ class InMemoryBlockRepository : BlockRepository {
 class InMemoryPageRepository : PageRepository {
     private val pages = MutableStateFlow<Map<String, Page>>(emptyMap())
 
-    override fun getAllPages(): Flow<Either<DomainError, List<Page>>> {
-        return pages.map { map ->
-            map.values.toList().right()
-        }
-    }
-
     override fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
             val result = map.values.sortedBy { it.name }.drop(offset).take(limit)
@@ -648,12 +643,6 @@ class InMemoryPageRepository : PageRepository {
         }
     }
 
-    override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> {
-        return pages.map { map ->
-            map.values.filter { !it.isContentLoaded }.right()
-        }
-    }
-
     override suspend fun savePage(page: Page): Either<DomainError, Unit> {
         val current = pages.value.toMutableMap()
         current[page.uuid.value] = page
@@ -732,11 +721,17 @@ class InMemorySearchRepository(
 
     override fun searchPagesByTitle(query: String, limit: Int): Flow<Either<DomainError, List<Page>>> {
         if (pageRepository == null || query.isEmpty()) return flowOf(emptyList<Page>().right())
-        return pageRepository.getAllPages().map { res ->
-            res.map { pages ->
-                pages.filter { it.name.contains(query, ignoreCase = true) || it.properties["alias"]?.contains(query, ignoreCase = true) == true }
-                    .take(limit)
-            }
+        // Test backend: one-shot bounded-batch snapshot (the alias-property filter has no
+        // SQL equivalent here). Production search uses FTS-backed repositories.
+        return flow {
+            emit(
+                pageRepository.getAllPagesSnapshot().map { pages ->
+                    pages.filter {
+                        it.name.contains(query, ignoreCase = true) ||
+                            it.properties["alias"]?.contains(query, ignoreCase = true) == true
+                    }.take(limit)
+                }
+            )
         }
     }
 

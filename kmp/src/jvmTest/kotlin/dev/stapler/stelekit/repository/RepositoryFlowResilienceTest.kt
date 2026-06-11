@@ -38,7 +38,7 @@ class RepositoryFlowResilienceTest {
             // Compose LaunchedEffect would be collecting the flow.
             factory.close()
 
-            val result = repoSet.pageRepository.getAllPages().first()
+            val result = repoSet.pageRepository.getAllPagesSnapshot()
 
             assertTrue(
                 result.isLeft(),

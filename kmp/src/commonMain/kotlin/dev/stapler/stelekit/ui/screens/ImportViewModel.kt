@@ -193,8 +193,9 @@ class ImportViewModel(
     }
 
     private suspend fun runScan(text: String, matcher: AhoCorasickMatcher) {
-        // Get existing page names so suggestions don't duplicate known pages
-        val existingNames = pageRepository.getAllPages()
+        // Get existing page names so suggestions don't duplicate known pages.
+        // Names-only projection — never materialize full Page objects for the whole graph.
+        val existingNames = pageRepository.getPageNameEntries()
             .first()
             .getOrNull()
             ?.map { it.name }
@@ -376,9 +377,10 @@ class ImportViewModel(
             return
         }
 
-        // URL deduplication: reject if another page was already imported from this URL
+        // URL deduplication: reject if another page was already imported from this URL.
+        // One-shot bounded-batch snapshot (the source-URL property has no SQL index).
         if (currentState.activeTab == ImportTab.URL && currentState.urlInput.isNotBlank()) {
-            val allPages = pageRepository.getAllPages().first().getOrNull()
+            val allPages = pageRepository.getAllPagesSnapshot().getOrNull()
             val duplicatePage = allPages?.firstOrNull { it.properties["source"] == currentState.urlInput }
             if (duplicatePage != null) {
                 _state.update { it.copy(pageNameError = "A page from this URL already exists: '${duplicatePage.name}'") }
