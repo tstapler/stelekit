@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.3](https://github.com/tstapler/stelekit/compare/v0.40.2...v0.40.3) (2026-06-11)
+
+
+### Bug Fixes
+
+* **android:** stop large-graph startup crash from uncaught Throwables on the ViewModel scope ([#141](https://github.com/tstapler/stelekit/issues/141)) ([dd96cd1](https://github.com/tstapler/stelekit/commit/dd96cd17c92322ce00f28a3752f9737f918afa12))
+
 ## [0.40.2](https://github.com/tstapler/stelekit/compare/v0.40.1...v0.40.2) (2026-06-09)
 
 
