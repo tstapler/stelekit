@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.4](https://github.com/tstapler/stelekit/compare/v0.40.3...v0.40.4) (2026-06-11)
+
+
+### Bug Fixes
+
+* **android:** prevent crash when value class used as LazyColumn item key ([#143](https://github.com/tstapler/stelekit/issues/143)) ([3b0caa6](https://github.com/tstapler/stelekit/commit/3b0caa62e64e74d9a3d31eb2827bc0b088f8e0c2))
+
 ## [0.40.3](https://github.com/tstapler/stelekit/compare/v0.40.2...v0.40.3) (2026-06-11)
 
 
