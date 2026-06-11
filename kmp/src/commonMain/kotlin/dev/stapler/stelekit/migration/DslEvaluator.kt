@@ -35,7 +35,7 @@ class DslEvaluator(private val repoSet: RepositorySet) {
     suspend fun evaluate(migration: Migration): List<BlockChange> {
         // Pre-fetch all pages and their blocks so the sync forBlocks/forPages methods
         // don't need to call runBlocking themselves.
-        val allPages = repoSet.pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = repoSet.pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val blocksByPage: Map<PageUuid, List<Block>> = allPages.associate { page ->
             page.uuid to (repoSet.blockRepository.getBlocksForPage(page.uuid)
                 .first().getOrNull() ?: emptyList())

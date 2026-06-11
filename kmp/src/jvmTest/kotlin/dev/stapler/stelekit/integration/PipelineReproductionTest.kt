@@ -60,7 +60,7 @@ class PipelineReproductionTest {
         
         graphLoader.loadGraph("/graph") { }
         
-        val pagesResult = pageRepository.getAllPages().first()
+        val pagesResult = pageRepository.getAllPagesSnapshot()
         val pages = pagesResult.getOrNull()!!
         val page = pages[0]
         val blocksResult = blockRepository.getBlocksForPage(page.uuid).first()

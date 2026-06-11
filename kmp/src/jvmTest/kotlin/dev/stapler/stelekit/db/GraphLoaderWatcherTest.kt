@@ -64,7 +64,7 @@ class GraphLoaderWatcherTest {
             assertTrue(blocksBeforeTick.isEmpty(), "No blocks should exist before the watcher runs")
 
             // Capture baseline: page count right after loadGraph (empty graph = 0 pages)
-            val pageCountBaseline = pageRepo.getAllPages().first().getOrNull()?.size ?: 0
+            val pageCountBaseline = pageRepo.getAllPagesSnapshot().getOrNull()?.size ?: 0
 
             // Touch file (change mtime without changing content)
             delay(50)
@@ -76,7 +76,7 @@ class GraphLoaderWatcherTest {
 
             // If markFileWrittenByUs is working, the watcher must not re-parse the file
             // on an mtime-only change, so the page count must equal the baseline.
-            val pageCountAfter = pageRepo.getAllPages().first().getOrNull()?.size ?: 0
+            val pageCountAfter = pageRepo.getAllPagesSnapshot().getOrNull()?.size ?: 0
             assertEquals(pageCountBaseline, pageCountAfter,
                 "markFileWrittenByUs should suppress re-parse on mtime-only change; " +
                 "page count must not grow from $pageCountBaseline to $pageCountAfter")

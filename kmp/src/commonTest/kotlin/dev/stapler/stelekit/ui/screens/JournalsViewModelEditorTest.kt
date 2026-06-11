@@ -275,7 +275,11 @@ class JournalsViewModelEditorTest {
 
         fun addPage(page: Page) { pages.add(page) }
 
-        override fun getAllPages(): Flow<Either<DomainError, List<Page>>> = flowOf(pages.toList().right())
+        override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> =
+            flowOf(pages.filter { it.isFavorite }.right())
+
+        override fun getPageNameEntries(): Flow<Either<DomainError, List<dev.stapler.stelekit.repository.PageNameEntry>>> =
+            flowOf(pages.map { dev.stapler.stelekit.repository.PageNameEntry(it.name, it.isJournal) }.right())
 
         override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
             val journals = pages.filter { it.isJournal }
@@ -314,8 +318,8 @@ class JournalsViewModelEditorTest {
         override fun getJournalPageByDate(date: LocalDate): Flow<Either<DomainError, Page?>> =
             flowOf(pages.find { it.journalDate == date }.right())
 
-        override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> =
-            flowOf(pages.filter { !it.isContentLoaded }.right())
+        override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+            flowOf(pages.filter { !it.isContentLoaded }.sortedBy { it.uuid.value }.drop(offset).take(limit).right())
 
         override suspend fun savePage(page: Page): Either<DomainError, Unit> {
             pages.removeAll { it.uuid == page.uuid }

@@ -76,7 +76,7 @@ class GraphManagerDatabaseLifecycleTest {
         // Simulate a Compose LaunchedEffect: collect from a repository Flow
         val collectJob = launch(Dispatchers.Default) {
             try {
-                repoSet.pageRepository.getAllPages().collect { result ->
+                repoSet.pageRepository.getPages(50, 0).collect { result ->
                     collectedValues.add(result)
                 }
             } catch (e: Throwable) {
@@ -128,7 +128,7 @@ class GraphManagerDatabaseLifecycleTest {
         var collectionCrashed = false
         val collectJob = launch(Dispatchers.Default) {
             try {
-                repoSet.pageRepository.getAllPages().collect { }
+                repoSet.pageRepository.getPages(50, 0).collect { }
             } catch (e: Throwable) {
                 if (e !is kotlinx.coroutines.CancellationException) collectionCrashed = true
             }

@@ -45,6 +45,7 @@ import dev.stapler.stelekit.domain.PageNameIndex
 import dev.stapler.stelekit.ui.screens.SearchResultItem
 import dev.stapler.stelekit.ui.state.BlockStateManager
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -68,6 +69,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -114,8 +117,35 @@ class StelekitViewModel(
     private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(deps.ringBuffer)
     // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
     // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
-    private val scope = deps.scope
+    //
+    // The CoroutineExceptionHandler is the last line of defense for every coroutine launched on
+    // this scope (standing collectors, fire-and-forget launches, stateIn upstreams). Without it,
+    // an OutOfMemoryError — which under heap pressure is thrown in whichever coroutine allocates
+    // next, not necessarily the one doing the heavy work — reaches the platform default handler.
+    // On Android that kills the process ("SteleKit keeps stopping"); on desktop it merely prints,
+    // which is why large-graph crashes reproduced only on Android. Surface as fatalError instead
+    // so the user gets the recoverable error screen.
+    private val scope = CoroutineScope(
+        deps.scope.coroutineContext + CoroutineExceptionHandler { _, e ->
+            if (e !is CancellationException) {
+                logger.error("Uncaught Throwable in ViewModel coroutine — ${e::class.simpleName}: ${e.message}")
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        fatalError = "${e::class.simpleName ?: "UnknownError"}: ${sanitizeErrorMessage(e.message)}"
+                    )
+                }
+            }
+        }
+    )
+    private val recentMutex = Mutex()
     private val logger = Logger("StelekitViewModel")
+
+    private fun sanitizeErrorMessage(message: String?): String =
+        message
+            ?.replace(Regex("/[^\\s,;:]+"), "<path>")
+            ?.replace(Regex("[A-Za-z]:\\\\[^\\s,;:]*"), "<path>")
+            ?.take(200) ?: "unknown"
 
     /**
      * Platform-provided callback that opens the image picker and attaches the selected image
@@ -221,8 +251,12 @@ class StelekitViewModel(
 
     private val recentPagesKey: String
         get() = "recent_pages_${_uiState.value.currentGraphPath}"
-        
-    private var cachedAllPages: List<Page> = emptyList()
+
+    // Resolved Page objects for the recent-pages list, keyed by UUID and bounded by
+    // recentPageUuids (≤20 entries). Replaces the former cachedAllPages field, which
+    // pinned the entire pages table (8 000+ Page objects on large graphs) in memory
+    // for the lifetime of the ViewModel.
+    private val recentPagesByUuid = mutableMapOf<String, Page>()
 
     // Initialize command system
     private val commandManager = CommandManager.create(scope) { message, type, timeout ->
@@ -283,32 +317,55 @@ class StelekitViewModel(
     private fun observeSpecialPages() {
         scope.launch {
             // Load recents for the current graph before starting collection
-            recentPageUuids = platformSettings.getString(recentPagesKey, "")
-                .split(",")
-                .filter { it.isNotEmpty() }
-                .toMutableList()
+            recentMutex.withLock {
+                recentPageUuids = platformSettings.getString(recentPagesKey, "")
+                    .split(",")
+                    .filter { it.isNotEmpty() }
+                    .toMutableList()
+            }
+            refreshRecentPages()
 
-            // We still need to know which pages are favorites for the sidebar
-            // This is usually a small list
-            pageRepository.getAllPages().collect { result ->
-                val allPages = result.getOrNull() ?: emptyList()
-                cachedAllPages = allPages // Keep for UUID lookups
-
-                _uiState.update { state ->
-                    val recent = recentPageUuids.mapNotNull { uuid ->
-                        allPages.find { it.uuid.value == uuid }
-                    }.take(10)
-                    state.copy(
-                        favoritePages = allPages.filter { it.isFavorite },
-                        recentPages = recent
-                    )
-                }
+            // Favorites for the sidebar via the dedicated bounded query. Never collect
+            // getAllPages() from a standing observer: every DB write invalidates that query,
+            // so during graph import/reconcile the collector re-materializes the entire
+            // pages table over and over — on 8 000+ page graphs this causes GC thrash
+            // (UI hang) and eventually OutOfMemoryError on Android.
+            pageRepository.getFavoritePages().collect { result ->
+                val favorites = result.getOrNull() ?: emptyList()
+                _uiState.update { it.copy(favoritePages = favorites) }
             }
         }
-        
+
         // Initial load of regular pages and journals
         loadMoreRegularPages(reset = true)
         loadMoreJournalPages(reset = true)
+    }
+
+    /**
+     * Re-resolves [recentPageUuids] into Page objects via point lookups (≤10 indexed
+     * queries) and publishes them to the UI state. Cheap by construction — never scans
+     * the pages table.
+     *
+     * Snapshots the UUID list under [recentMutex], releases the lock, performs DB work
+     * outside the lock to avoid starving [addToRecent], then re-acquires to write results.
+     */
+    private suspend fun refreshRecentPages() {
+        val uuidsToResolve = recentMutex.withLock { recentPageUuids.take(10).toList() }
+
+        val resolved = uuidsToResolve.mapNotNull { uuid ->
+            val cached = recentMutex.withLock { recentPagesByUuid[uuid] }
+            cached ?: pageRepository.getPageByUuid(PageUuid(uuid)).first().getOrNull()
+                ?.also { page -> recentMutex.withLock { recentPagesByUuid[uuid] = page } }
+        }
+
+        recentMutex.withLock {
+            trimRecentPagesCache()
+        }
+        _uiState.update { it.copy(recentPages = resolved) }
+    }
+
+    private fun trimRecentPagesCache() {
+        recentPagesByUuid.keys.retainAll(recentPageUuids.toSet())
     }
 
     fun loadMoreRegularPages(reset: Boolean = false) {
@@ -345,29 +402,20 @@ class StelekitViewModel(
         }
     }
 
-    private fun updateUiStateWithPages(pages: List<Page>) {
-        // This is now handled by observers and loadMore functions
-    }
-
     private fun addToRecent(page: Page) {
-        // Remove if exists to move to top
-        recentPageUuids.remove(page.uuid.value)
-        recentPageUuids.add(0, page.uuid.value)
-        
-        // Keep max 20 items
-        if (recentPageUuids.size > 20) {
-            recentPageUuids.removeAt(recentPageUuids.lastIndex)
-        }
-        
-        // Save to settings
-        platformSettings.putString(recentPagesKey, recentPageUuids.joinToString(","))
-
-        // Update UI state
-        _uiState.update { state ->
-            val recent = recentPageUuids.mapNotNull { uuid ->
-                cachedAllPages.find { it.uuid.value == uuid }
-            }.take(10)
-            state.copy(recentPages = recent)
+        scope.launch {
+            recentMutex.withLock {
+                recentPageUuids.remove(page.uuid.value)
+                recentPageUuids.add(0, page.uuid.value)
+                if (recentPageUuids.size > 20) {
+                    recentPageUuids.removeAt(recentPageUuids.lastIndex)
+                }
+                platformSettings.putString(recentPagesKey, recentPageUuids.joinToString(","))
+                recentPagesByUuid[page.uuid.value] = page
+                trimRecentPagesCache()
+                val recent = recentPageUuids.mapNotNull { recentPagesByUuid[it] }.take(10)
+                _uiState.update { it.copy(recentPages = recent) }
+            }
         }
     }
 
@@ -396,8 +444,16 @@ class StelekitViewModel(
         logger.info("setGraphPath: '$path'")
         platformSettings.putString("lastGraphPath", path)
         _uiState.update { it.copy(currentGraphPath = path) }
-        recentPageUuids = platformSettings.getString(recentPagesKey, "")
-            .split(",").filter { it.isNotEmpty() }.toMutableList()
+        scope.launch {
+            recentMutex.withLock {
+                recentPageUuids = platformSettings.getString(recentPagesKey, "")
+                    .split(",").filter { it.isNotEmpty() }.toMutableList()
+                recentPagesByUuid.clear()
+            }
+            // refreshRecentPages() is deferred to onPhase1Complete inside loadGraph so that
+            // getPageByUuid lookups run after the new graph's DB is populated, not while
+            // loadGraph is mid-clear.
+        }
         loadGraph(path)
     }
 
@@ -453,6 +509,10 @@ class StelekitViewModel(
                             onPhase1Complete = {
                                 logger.info("Phase 1 complete - UI is now interactive")
                                 _uiState.update { it.copy(isLoading = false, statusMessage = "Ready") }
+
+                                // Resolve saved recents now that Phase 1 has populated the DB.
+                                // Running before loadGraph is finished would race with clear().
+                                scope.launch { refreshRecentPages() }
 
                                 // Ensure today's journal exists so it appears at the top of the
                                 // journals list. No navigation — the list updates reactively.
@@ -520,7 +580,7 @@ class StelekitViewModel(
             } catch (e: Exception) {
                 val errorText = buildString {
                     append(e::class.simpleName ?: e::class.qualifiedName ?: "UnknownError")
-                    e.message?.let { append(": ", it) }
+                    e.message?.let { append(": ", sanitizeErrorMessage(it)) }
                 }
                 e.printStackTrace()
                 logger.error("Error loading graph: $errorText")
@@ -532,7 +592,7 @@ class StelekitViewModel(
                 // report screen where the user can copy the full message for filing a bug.
                 val errorText = buildString {
                     append(e::class.simpleName ?: e::class.qualifiedName ?: "UnknownError")
-                    e.message?.let { append(": ", it) }
+                    e.message?.let { append(": ", sanitizeErrorMessage(it)) }
                 }
                 logger.error("Fatal error loading graph (Throwable): $errorText")
                 _uiState.update { it.copy(isLoading = false, isFullyLoaded = true, statusMessage = "Error: $errorText", fatalError = errorText) }
@@ -812,6 +872,10 @@ class StelekitViewModel(
     @OptIn(DirectRepositoryWrite::class)
     fun navigateTo(screen: Screen, addToHistory: Boolean = true) {
         val navStart = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        // addToRecent must run outside the update lambda — it has side effects (launches a
+        // coroutine, calls platformSettings) and calls _uiState.update itself, which would
+        // create a nested update.
+        if (screen is Screen.PageView) addToRecent(screen.page)
         _uiState.update { state ->
             val newHistory = if (addToHistory) {
                 // Trim any forward history and add new screen
@@ -828,10 +892,7 @@ class StelekitViewModel(
                 navigationHistory = newHistory,
                 historyIndex = newIndex,
                 statusMessage = when(screen) {
-                    is Screen.PageView -> {
-                        addToRecent(screen.page)
-                        "Opened page: ${screen.page.name}"
-                    }
+                    is Screen.PageView -> "Opened page: ${screen.page.name}"
                     is Screen.Journals -> "Opened Journals"
                     is Screen.Flashcards -> "Opened Flashcards"
                     is Screen.AllPages -> "Opened All Pages"
@@ -988,7 +1049,7 @@ class StelekitViewModel(
         scope.launch {
             val block = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull()
             if (block != null) {
-                val page = cachedAllPages.find { it.uuid == block.pageUuid }
+                val page = pageRepository.getPageByUuid(block.pageUuid).first().getOrNull()
                 if (page != null) {
                     navigateTo(Screen.PageView(page))
                     // TODO: Scroll to block

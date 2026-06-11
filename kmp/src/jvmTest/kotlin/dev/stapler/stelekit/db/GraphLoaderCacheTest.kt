@@ -131,7 +131,7 @@ class GraphLoaderCacheTest {
         h.loader.parseAndSavePage(FilePath(filePath), "- Block V1", ParseMode.FULL)
 
         // Verify V1 in DB
-        val pages = h.pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val pages = h.pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         assertFalse(pages.isEmpty(), "Page should be loaded after parseAndSavePage")
         val page = pages.first()
 
@@ -173,7 +173,7 @@ class GraphLoaderCacheTest {
         h.loader.setGraphPath("/graph")
         h.loader.parseAndSavePage(FilePath(filePath), "- Block V1", ParseMode.FULL)
 
-        val page = h.pageRepo.getAllPages().first().getOrNull()?.firstOrNull()
+        val page = h.pageRepo.getAllPagesSnapshot().getOrNull()?.firstOrNull()
         assertNotNull(page, "Page should be in DB after loading V1")
 
         // External write with same mtime (FAT granularity: both writes in same 2s window)
@@ -209,7 +209,7 @@ class GraphLoaderCacheTest {
         h.loader.setGraphPath("/graph")
         h.loader.parseAndSavePage(FilePath(filePath), "- Block V1", ParseMode.FULL)
 
-        val page = h.pageRepo.getAllPages().first().getOrNull()?.firstOrNull()
+        val page = h.pageRepo.getAllPagesSnapshot().getOrNull()?.firstOrNull()
         assertNotNull(page, "Page should be in DB")
 
         // Simulate: watcher detected external edit and marked dirty (skipped onReloadFile
@@ -260,7 +260,7 @@ class GraphLoaderCacheTest {
         // Force initial load to populate DB and store content hash
         h.loader.loadFullPage_forceLoad(filePath, contentV1)
 
-        val page = h.pageRepo.getAllPages().first().getOrNull()?.firstOrNull()
+        val page = h.pageRepo.getAllPagesSnapshot().getOrNull()?.firstOrNull()
         assertNotNull(page, "Page should be in DB")
 
         // Verify content hash was stored
@@ -302,7 +302,7 @@ class GraphLoaderCacheTest {
         // Force initial load
         h.loader.loadFullPage_forceLoad(filePath, contentV1)
 
-        val page = h.pageRepo.getAllPages().first().getOrNull()?.firstOrNull()
+        val page = h.pageRepo.getAllPagesSnapshot().getOrNull()?.firstOrNull()
         assertNotNull(page, "Page should be in DB")
 
         // Reset the read counter
@@ -354,7 +354,7 @@ class GraphLoaderCacheTest {
         // Load V1 so page.updatedAt is set
         h.loader.parseAndSavePage(FilePath(filePath), contentV1, ParseMode.FULL)
 
-        val page = h.pageRepo.getAllPages().first().getOrNull()?.firstOrNull()
+        val page = h.pageRepo.getAllPagesSnapshot().getOrNull()?.firstOrNull()
         assertNotNull(page, "Page should be in DB")
 
         // Verify V1 is loaded
@@ -397,7 +397,7 @@ class GraphLoaderCacheTest {
         h.loader.startWatching("/graph")
         h.loader.fileRegistry.scanDirectory("/graph/pages")
 
-        val page = h.pageRepo.getAllPages().first().getOrNull()?.firstOrNull()
+        val page = h.pageRepo.getAllPagesSnapshot().getOrNull()?.firstOrNull()
         assertNotNull(page, "Page should be in DB")
 
         // External edit: bump mtime and content

@@ -80,7 +80,7 @@ class JournalServiceTest {
         assertEquals(PageUuid("existing-uuid"), result.uuid)
 
         // Should NOT create additional pages
-        val allPages = pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         assertEquals(1, allPages.size)
     }
 
@@ -158,7 +158,7 @@ class JournalServiceTest {
         assertEquals(null, pageAStill)
 
         // Only one page should remain
-        val allPages = pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val allPages = pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val todayPages = allPages.filter { it.journalDate == today() }
         assertEquals(1, todayPages.size)
     }

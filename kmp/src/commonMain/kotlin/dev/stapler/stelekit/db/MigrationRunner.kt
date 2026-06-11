@@ -376,6 +376,16 @@ object MigrationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_measurement_annotations_image_uuid ON measurement_annotations(image_uuid)"
             )
         ),
+        Migration(
+            name = "pages_unloaded_partial_index",
+            statements = listOf(
+                // Partial index covering only unloaded pages (is_content_loaded = 0).
+                // Makes selectUnloadedPagesPaginated and countUnloadedPages O(unloaded) instead
+                // of O(total) — on a large graph where most pages are loaded the index is small
+                // and both the drain-loop OFFSET scan and the COUNT(*) become index-only ops.
+                "CREATE INDEX IF NOT EXISTS idx_pages_unloaded ON pages(uuid) WHERE is_content_loaded = 0"
+            )
+        ),
     )
 
     /**

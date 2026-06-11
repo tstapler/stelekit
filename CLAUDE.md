@@ -283,6 +283,29 @@ class SomeManager(...) {
 val manager = remember { SomeManager() }
 ```
 
+### Uncaught coroutine Throwables kill the process on Android — guard long-lived scopes
+
+An uncaught `Throwable` (notably `OutOfMemoryError`) escaping any coroutine reaches the platform default uncaught-exception handler. **On Android that handler kills the process ("app keeps stopping"); on desktop JVM it only prints** — so this class of crash never reproduces on desktop. Under heap pressure the OOM is thrown in whichever coroutine allocates next, not necessarily the one doing the heavy work, so per-call-site `catch(Throwable)` is not sufficient.
+
+Rules:
+- Every long-lived `CoroutineScope` that hosts user-path collectors or fire-and-forget launches must attach a `CoroutineExceptionHandler` (see `StelekitViewModel.scope`, `GraphLoader.parallelScope`). Surface errors as `fatalError` UI state where possible.
+- Standing `collect { }` bodies and `stateIn` upstream chains on such scopes are the unguarded vectors — a repository flow's `catchDbError()` does not protect them.
+- Regression tests: `StelekitViewModelCrashReproductionTest`, `PageNameIndexResilienceTest`, `LargeGraphWarmStartCrashTest` (8 030-page warm start with a recording default uncaught-exception handler).
+
+### Graph-scale reads must be paginated, projected, or chunked — never O(graph)
+
+Every DB write invalidates SQLDelight queries on the written table, so a standing collector of an unbounded query re-materializes its **entire result set per write burst**. During graph import/reconcile on an 8 000+ page graph this causes GC thrash (UI hang) and `OutOfMemoryError` (crash) on Android. **`PageRepository` therefore has no `getAllPages()` / unbounded `getUnloadedPages()` at all — the absence is compile-time enforced.** Do not add unbounded reads back to any repository interface.
+
+Patterns, by consumer type:
+- **Standing UI observers** (sidebar, etc.): bounded queries only — `getFavoritePages()` (`WHERE is_favorite = 1`), `getPages(limit, offset)`, `getPageByUuid` point lookups.
+- **Standing whole-graph observers** (e.g. `PageNameIndex`): use a **projection** (`getPageNameEntries()` — name + is_journal only), plus `conflate()` + `distinctUntilChanged()` + debounce as backpressure, plus `Throwable` guards.
+- **Bulk reconcile** (`GraphLoader.loadDirectory`): per-chunk `IN`-clause lookups — `getPagesByNames(chunk)` / `getJournalPagesByDates(chunk)` — never a full-table preload. `IN` lists chunked ≤500 (`SQLITE_MAX_VARIABLE_NUMBER` = 999 on Android API < 30).
+- **Background indexing** (`GraphLoader.indexRemainingPages`): drain loop over `getUnloadedPages(limit, offset)` (`INDEX_BATCH_SIZE` = 100); offset advances past permanently-failing rows via an attempted-UUID set so the loop is guaranteed to terminate; `countUnloadedPages()` provides the O(1) progress denominator.
+- **Whole-graph one-shots** (export, migration tooling, benchmarks, tests): `getAllPagesSnapshot()` — a suspend interface method that pages through `getPages(limit, offset)` in bounded batches (never a single unbounded query, never a reactive flow).
+- Do not pin full-table snapshots in fields (the former `cachedAllPages` pattern is forbidden).
+
+Regression tests: `LargeGraphWarmStartCrashTest` (asserts ≤100-row batches across a full 8 030-page warm start), `GraphLoaderIndexBatchingTest` (bounded drain + termination with permanently-failing pages), `QueryPlanAuditTest` (audits query plans for the bounded query set).
+
 ### Android Application.onCreate — catch Throwable, not Exception
 
 `Application.onCreate()` must use `catch (e: Throwable)`, not `catch (e: Exception)`. Native library loading failures (`UnsatisfiedLinkError`, `NoClassDefFoundError`) are `Error` subclasses, not `Exception`. Catching only `Exception` lets them propagate uncaught and crash the app at startup before the UI is shown. See `SteleKitApplication.kt`.

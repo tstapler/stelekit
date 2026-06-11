@@ -69,7 +69,7 @@ class GraphLoaderTest {
 
             graphLoader.loadGraph(graphDir.absolutePath) {}
 
-            val pages = pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+            val pages = pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()
             assertTrue(pages.isNotEmpty(), "No pages loaded")
 
             // Verify the fixture pages were loaded (name matching is case-insensitive in loader)
@@ -108,7 +108,7 @@ class GraphLoaderTest {
             assertTrue(phase1Complete, "Phase 1 should be complete")
             assertTrue(fullyLoaded, "Graph should be fully loaded")
 
-            val pages = pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+            val pages = pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()
             assertTrue(pages.isNotEmpty(), "Pages should be loaded")
 
             val contentsPage = pages.firstOrNull { it.name.lowercase().contains("contents") }

@@ -313,14 +313,38 @@ SELECT COUNT(*) FROM pages WHERE uuid = ?;
 existsPageByName:
 SELECT COUNT(*) FROM pages WHERE name = ?;
 
-selectAllPages:
-SELECT * FROM pages ORDER BY name;
-
+-- NOTE: there is intentionally no unpaginated `SELECT * FROM pages` (or unpaginated
+-- unloaded-pages) query. Standing collectors of unbounded queries re-materialize the
+-- entire table per write burst and OOM Android on 8 000+ page graphs. Whole-graph
+-- consumers use PageRepository.getAllPagesSnapshot() (bounded batches over
+-- selectAllPagesPaginated) or the selectPageNameEntries projection.
 selectAllPagesPaginated:
 SELECT * FROM pages ORDER BY name LIMIT ? OFFSET ?;
 
-selectUnloadedPages:
-SELECT * FROM pages WHERE is_content_loaded = 0;
+-- Bounded batch for background indexing. ORDER BY uuid gives a stable drain order so a
+-- caller can advance OFFSET past permanently-failing rows without re-fetching them forever.
+selectUnloadedPagesPaginated:
+SELECT * FROM pages WHERE is_content_loaded = 0 ORDER BY uuid LIMIT ? OFFSET ?;
+
+countUnloadedPages:
+SELECT COUNT(*) FROM pages WHERE is_content_loaded = 0;
+
+-- Names-only projection for the page-name suggestion index: no properties/file_path/etc.
+-- materialization, so a standing observer stays cheap even on 8 000+ page graphs.
+selectPageNameEntries:
+SELECT name, is_journal FROM pages;
+
+-- Per-chunk existence lookups for graph reconcile (bounded IN list, caller chunks ≤500
+-- to stay under SQLITE_MAX_VARIABLE_NUMBER=999 on Android API < 30).
+-- name is COLLATE NOCASE so matching is case-insensitive.
+selectPagesByNames:
+SELECT * FROM pages WHERE name IN ?;
+
+selectJournalPagesByDates:
+SELECT * FROM pages WHERE is_journal = 1 AND journal_date IN ?;
+
+selectFavoritePages:
+SELECT * FROM pages WHERE is_favorite = 1 ORDER BY name;
 
 selectPagesByNamespace:
 SELECT * FROM pages WHERE namespace = ? ORDER BY name LIMIT ? OFFSET ?;

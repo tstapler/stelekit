@@ -52,8 +52,14 @@ class UpgradeResilienceTest {
             factory.close()
 
             // ── PageRepository ────────────────────────────────────────────────
-            assertFlowEmitsLeft("PageRepository.getAllPages") {
-                repoSet.pageRepository.getAllPages().first()
+            assertFlowEmitsLeft("PageRepository.getAllPagesSnapshot") {
+                repoSet.pageRepository.getAllPagesSnapshot()
+            }
+            assertFlowEmitsLeft("PageRepository.getFavoritePages") {
+                repoSet.pageRepository.getFavoritePages().first()
+            }
+            assertFlowEmitsLeft("PageRepository.getPageNameEntries") {
+                repoSet.pageRepository.getPageNameEntries().first()
             }
             assertFlowEmitsLeft("PageRepository.getPages") {
                 repoSet.pageRepository.getPages(10, 0).first()
@@ -71,7 +77,10 @@ class UpgradeResilienceTest {
                 repoSet.pageRepository.searchPages("test", 10, 0).first()
             }
             assertFlowEmitsLeft("PageRepository.getUnloadedPages") {
-                repoSet.pageRepository.getUnloadedPages().first()
+                repoSet.pageRepository.getUnloadedPages(10, 0).first()
+            }
+            assertFlowEmitsLeft("PageRepository.countUnloadedPages") {
+                repoSet.pageRepository.countUnloadedPages()
             }
 
             // ── BlockRepository ───────────────────────────────────────────────
@@ -152,7 +161,7 @@ class UpgradeResilienceTest {
             // Re-open the same in-memory database with a fresh factory instance.
             // On a file-backed DB this would be the upgrade scenario; on an in-memory
             // DB it confirms the schema is stable across re-attach.
-            val pages = repoSet.pageRepository.getAllPages().first().getOrNull()
+            val pages = repoSet.pageRepository.getAllPagesSnapshot().getOrNull()
             assertTrue(pages != null && pages.any { it.uuid.value == FIXTURE_PAGE_UUID },
                 "v0.36.0 page must survive upgrade")
 
@@ -179,7 +188,7 @@ class UpgradeResilienceTest {
             factory.close()
 
             assertFlowEmitsLeft("upgraded PageRepository.getAllPages") {
-                repoSet.pageRepository.getAllPages().first()
+                repoSet.pageRepository.getAllPagesSnapshot()
             }
             val imageRepo2 = repoSet.imageAnnotationRepository as? SqlDelightImageAnnotationRepository
             if (imageRepo2 != null) {

@@ -180,7 +180,7 @@ class UserSessionBenchmarkTest {
             val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope)
             // Warm up: ensure schema creation completes on the calling thread before
             // the ViewModel's Dispatchers.Default workers first access the database.
-            repoSet.pageRepository.getAllPages().first()
+            repoSet.pageRepository.getAllPagesSnapshot()
 
             val ringBuffer = repoSet.ringBuffer?.also { it.enabled = true }
 
@@ -228,7 +228,7 @@ class UserSessionBenchmarkTest {
                 while (repoSet.writeActor?.hasPendingWrites == true) delay(200)
             } ?: println("[user-session] WARNING — write actor did not drain after 120s")
 
-            val allPages = repoSet.pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+            val allPages = repoSet.pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()
             println("[user-session] Pages in DB after actor drain: ${allPages.size}")
             if (allPages.isEmpty()) {
                 println("[user-session] SKIPPED — no pages loaded from $graphPath after 60s")

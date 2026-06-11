@@ -110,6 +110,39 @@ class ExportServiceJournalRangeTest {
         assertTrue(result.isLeft(), "Expected Left for empty range but got Right")
     }
 
+    // ── U-EJR-04: batch with null journal date terminates without hanging ────
+
+    @Test
+    fun uEJR04_batchWithNullJournalDate_terminatesWithoutHanging() = runTest {
+        // A journal page with is_journal=true but no journal_date (corrupted/migrated data).
+        // Before the fix, the drain loop would never break on oldest==null — infinite scan.
+        val pageRepo = InMemoryPageRepository()
+        val blockRepo = InMemoryBlockRepository()
+
+        val badPage = Page(
+            uuid = PageUuid("p-null-date"),
+            name = "corrupted-journal",
+            isJournal = true,
+            journalDate = null, // triggers oldest==null early-exit guard
+            createdAt = now,
+            updatedAt = now,
+        )
+        pageRepo.savePage(badPage)
+        blockRepo.saveBlock(block("b-null", "some content", "p-null-date"))
+
+        val service = makeService()
+        // The call must terminate (not hang) even when the page has no journal_date.
+        // The result is Left because no pages fall within a valid date range.
+        val result = service.exportJournalRange(
+            from = LocalDate(2026, 1, 1),
+            to = LocalDate(2026, 1, 7),
+            formatId = "markdown",
+            pageRepo = pageRepo,
+            blockRepo = blockRepo,
+        )
+        assertTrue(result.isLeft(), "Expected Left when only null-date journal pages exist, got Right")
+    }
+
     // ── U-EJR-03: pages in range with no blocks → second Left path ───────────
 
     @Test

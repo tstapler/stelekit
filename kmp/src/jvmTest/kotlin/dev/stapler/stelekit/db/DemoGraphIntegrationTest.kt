@@ -33,7 +33,7 @@ class DemoGraphIntegrationTest {
 
             graphLoader.loadGraph(graphDir.absolutePath) {}
 
-            val pages = pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+            val pages = pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()
             Triple(pages, pageRepository, blockRepository)
         }
 
