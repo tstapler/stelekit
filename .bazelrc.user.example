@@ -1,10 +1,22 @@
 # Copy this file to .bazelrc.user (gitignored) and edit for your machine.
 # .bazelrc.user is imported by .bazelrc via try-import — it is NOT committed.
 
-# Android SDK path.  Set to wherever your SDK lives.
+# ── Android SDK path ──────────────────────────────────────────────────────────
 # build --repo_env=ANDROID_HOME=/home/<you>/Android/Sdk       # Linux
 # build --repo_env=ANDROID_HOME=/Users/<you>/Library/Android/sdk  # macOS
 
-# If unzip is only available outside the default hermetic PATH (e.g. Homebrew),
-# extend the action PATH so aar_import can find it:
+# ── Tool PATH (if unzip is outside the hermetic PATH, e.g. Homebrew) ─────────
 # build --action_env=PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin
+
+# ── Local disk cache ─────────────────────────────────────────────────────────
+# Persists build action results between sessions and workspace switches.
+# Dramatically speeds up incremental builds — similar benefit to ccache for C++.
+# Grows unboundedly; run `bazel clean --expunge` or delete the dir to reclaim space.
+# build --disk_cache=~/.cache/bazel-disk-cache
+
+# ── BuildBuddy remote cache (optional, free tier available) ──────────────────
+# Shared cache across machines — useful if you build on multiple devices.
+# Sign up at https://buildbuddy.io, get an API key, and uncomment:
+# build --remote_cache=grpcs://remote.buildbuddy.io
+# build --remote_header=x-buildbuddy-api-key=<YOUR_KEY>
+# build --remote_cache_compression=zstd
