@@ -560,6 +560,7 @@ fun SearchResultRow(
     subtitle: String,
     isSelected: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     snippet: String? = null
 ) = SearchResultRow(
     title = title,
@@ -568,7 +569,8 @@ fun SearchResultRow(
     inlineTags = emptyList(),
     snippet = snippet,
     isSelected = isSelected,
-    onClick = onClick
+    onClick = onClick,
+    modifier = modifier,
 )
 
 /**

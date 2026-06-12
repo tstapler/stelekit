@@ -12,6 +12,9 @@ import java.net.URL
  * JARs. When the resource is inside a JAR, this function extracts it to a temp
  * directory so tests can access it via the normal File API.
  */
+
+private val extractionLock = Any()
+
 fun getClasspathDirectory(loader: ClassLoader, resourceName: String): File {
     val url: URL = loader.getResource(resourceName)
         ?: error("$resourceName not found in classpath")
@@ -21,18 +24,20 @@ fun getClasspathDirectory(loader: ClassLoader, resourceName: String): File {
         System.getenv("TEST_TMPDIR") ?: System.getProperty("java.io.tmpdir"),
         resourceName.replace('/', '_'),
     )
-    if (!dest.exists()) {
-        dest.mkdirs()
-        val conn = url.openConnection() as JarURLConnection
-        conn.jarFile.use { jar ->
-            val prefix = conn.entryName + "/"
-            jar.entries().asSequence()
-                .filter { !it.isDirectory && it.name.startsWith(prefix) }
-                .forEach { entry ->
-                    val target = File(dest, entry.name.removePrefix(prefix))
-                    target.parentFile?.mkdirs()
-                    jar.getInputStream(entry).use { input -> input.copyTo(target.outputStream()) }
-                }
+    synchronized(extractionLock) {
+        if (!dest.exists()) {
+            dest.mkdirs()
+            val conn = url.openConnection() as JarURLConnection
+            conn.jarFile.use { jar ->
+                val prefix = conn.entryName + "/"
+                jar.entries().asSequence()
+                    .filter { !it.isDirectory && it.name.startsWith(prefix) }
+                    .forEach { entry ->
+                        val target = File(dest, entry.name.removePrefix(prefix))
+                        target.parentFile?.mkdirs()
+                        jar.getInputStream(entry).use { input -> input.copyTo(target.outputStream()) }
+                    }
+            }
         }
     }
     return dest

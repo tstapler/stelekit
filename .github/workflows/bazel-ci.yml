@@ -35,7 +35,11 @@ jobs:
             bazel-jvm-${{ runner.os }}-
 
       - name: Install Xvfb (headless display for Compose Desktop tests)
-        run: sudo apt-get install -y xvfb
+        run: |
+          sudo apt-get install -y xvfb
+          # Ensure /tmp/.X11-unix exists before Bazel sandbox tries to bind-mount it
+          # (xvfb-run creates the socket, but Bazel validates the mount source at startup)
+          mkdir -p /tmp/.X11-unix
 
       - name: Build JVM target
         run: bazel build //kmp:desktop_app ${{ github.ref == 'refs/heads/main' && '--config=ci --config=ci-main' || '--config=ci --config=ci-pr' }}
