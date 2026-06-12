@@ -1665,6 +1665,14 @@ class StelekitViewModel(
         _uiState.update { it.copy(statusMessage = message) }
     }
 
+    fun setPendingSnackbar(message: String) {
+        _uiState.update { it.copy(pendingSnackbar = message) }
+    }
+
+    fun clearPendingSnackbar() {
+        _uiState.update { it.copy(pendingSnackbar = null) }
+    }
+
     fun toggleDebugMode() {
         _uiState.update { state ->
             val newDebugMode = !state.isDebugMode

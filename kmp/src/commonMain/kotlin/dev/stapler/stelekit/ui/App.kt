@@ -116,6 +116,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import arrow.core.Either
+import dev.stapler.stelekit.error.toUiMessage
 import dev.stapler.stelekit.model.ImageSource
 import dev.stapler.stelekit.platform.sensor.SensorModule
 
@@ -977,24 +978,30 @@ private fun GraphContent(
     val syncState by viewModel.syncState.collectAsState()
 
     suspend fun captureAndImport(pageUuid: String, navigateAfterImport: Boolean) {
+        val service = imageImportService ?: run {
+            graphContentLogger.warn("captureAndImport called with no imageImportService")
+            return
+        }
+        val graphPath = graphManager.getActiveGraphInfo()?.path?.takeIf { it.isNotEmpty() } ?: run {
+            graphContentLogger.warn("captureAndImport called with no active graph path")
+            return
+        }
         when (val captured = SensorModule.cameraProvider.capturePhoto()) {
             is Either.Left -> {
-                val msg = "Camera capture failed: ${captured.value.message}"
-                graphContentLogger.warn(msg)
-                viewModel.setStatusMessage(msg)
+                graphContentLogger.warn("Camera capture failed: ${captured.value.message}")
+                viewModel.setPendingSnackbar(captured.value.toUiMessage())
             }
             is Either.Right -> {
-                val result = imageImportService!!.import(
+                val result = service.import(
                     tempFile = captured.value,
-                    graphPath = graphManager.getActiveGraphInfo()?.path ?: "",
+                    graphPath = graphPath,
                     pageUuid = pageUuid,
                     source = ImageSource.CAMERA,
                     insertToJournalPage = false,
                 )
                 result.onLeft { err ->
-                    val msg = "Camera image import failed: ${err.message}"
-                    graphContentLogger.warn(msg)
-                    viewModel.setStatusMessage(msg)
+                    graphContentLogger.warn("Camera image import failed: ${err.message}")
+                    viewModel.setPendingSnackbar(err.toUiMessage())
                 }
                 if (navigateAfterImport) {
                     result.onRight { annotation ->
@@ -1062,10 +1069,10 @@ private fun GraphContent(
                     val windowSizeClass = windowSizeClassFor(maxWidth)
                     val isMobile = windowSizeClass.isMobile
                     val snackbarHostState = remember { SnackbarHostState() }
-                    LaunchedEffect(appState.statusMessage) {
-                        if (isMobile && appState.statusMessage != "Ready") {
-                            snackbarHostState.showSnackbar(appState.statusMessage)
-                        }
+                    LaunchedEffect(appState.pendingSnackbar) {
+                        val msg = appState.pendingSnackbar ?: return@LaunchedEffect
+                        snackbarHostState.showSnackbar(msg)
+                        viewModel.clearPendingSnackbar()
                     }
 
                     CompositionLocalProvider(
@@ -1197,6 +1204,8 @@ private fun GraphContent(
                             )
                         },
                         content = {
+                            val cameraImportEnabled = imageImportService != null &&
+                                SensorModule.cameraProvider.isAvailable
                             ScreenRouter(
                                 screen = appState.currentScreen,
                                 repos = repos,
@@ -1289,8 +1298,7 @@ private fun GraphContent(
                                             } else false
                                         }
                                     } else null,
-                                    onCaptureImage = if (imageImportService != null &&
-                                        SensorModule.cameraProvider.isAvailable) {
+                                    onCaptureImage = if (cameraImportEnabled) {
                                         {
                                             scope.launch {
                                                 // Resolve page UUID before capturing — camera suspends for seconds,
@@ -1305,8 +1313,7 @@ private fun GraphContent(
                                         }
                                     } else null,
                                 ),
-                                onImportImage = if (imageImportService != null &&
-                                    SensorModule.cameraProvider.isAvailable) {
+                                onImportImage = if (cameraImportEnabled) {
                                     {
                                         scope.launch {
                                             val page = repos.journalService.ensureTodayJournal()
