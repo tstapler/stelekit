@@ -60,6 +60,7 @@ import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.platform.FileSystem
+import kotlin.time.Clock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -490,7 +491,7 @@ private suspend fun startOAuthFlow(
         return
     }
     val response = (deviceCodeResult as Either.Right).value
-    val expiresAt = System.currentTimeMillis() + response.expiresIn * 1000L
+    val expiresAt = Clock.System.now().toEpochMilliseconds() + response.expiresIn * 1000L
     onDialogStateChange(OAuthDialogState.ShowCode(response.userCode, response.verificationUri, expiresAt))
 
     val tokenResult = deviceFlowClient.pollForToken(
