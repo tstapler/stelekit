@@ -3,10 +3,20 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'CHANGELOG.md'
+      - '.release-please-manifest.json'
+      - 'Formula/**'
+      - 'Casks/**'
   workflow_dispatch:
   # Called from release.yml after fdroid.yml uploads its artifact, so that the
   # Pages deploy picks up the fresh F-Droid index without a separate site build.
   workflow_call:
+    inputs:
+      skip_demo_rebuild:
+        type: boolean
+        default: false
+        description: 'Skip Wasm rebuild — pass true from release.yml to avoid rebuilding on every release deploy'
 
 # Queue pages.yml runs rather than cancelling them. A fast CI-only push completing
 # and deploying would otherwise cancel a concurrent workflow_dispatch run mid-way
@@ -34,9 +44,10 @@ jobs:
         # Use the full push range (github.event.before → HEAD) so multi-commit pushes
         # don't miss changes that landed in earlier commits of the same push.
         run: |
-          # On workflow_call (release deploy), skip the expensive Wasm rebuild.
-          # The release has already been tested; the last artifact is current enough.
-          if [ "${{ github.event_name }}" = "workflow_call" ]; then
+          # When called from release.yml with skip_demo_rebuild=true, skip the Wasm rebuild.
+          # github.event_name propagates the caller's trigger (push, not workflow_call),
+          # so we use an explicit boolean input instead.
+          if [ "${{ inputs.skip_demo_rebuild }}" = "true" ]; then
             echo "kmp=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -74,7 +85,16 @@ jobs:
         with:
           path: ~/.konan
           key: konan-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml', 'settings.gradle.kts', 'gradle.properties') }}
+      - name: Cache Wasm demo distribution
+        id: cache-demo
+        uses: actions/cache@v4
+        with:
+          path: kmp/build/dist/wasmJs/productionExecutable/
+          key: wasm-demo-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml', 'settings.gradle.kts', 'gradle.properties', 'kmp/src/wasmJsMain/**', 'kmp/src/jsMain/**', 'kmp/src/commonMain/**') }}
+          restore-keys: |
+            wasm-demo-${{ runner.os }}-
       - name: Build wasmJs demo
+        if: steps.cache-demo.outputs.cache-hit != 'true'
         run: ./gradlew :kmp:wasmJsBrowserDistribution --no-daemon --build-cache -PenableJs=true
       - name: Assert expected output exists
         run: test -d kmp/build/dist/wasmJs/productionExecutable/
@@ -107,29 +127,28 @@ jobs:
         with:
           name: demo-dist
           path: site/public/demo/
+      - name: Restore demo from cache (fallback when current-run artifact absent)
+        if: steps.download-demo.outcome == 'failure'
+        uses: actions/cache/restore@v4
+        with:
+          path: kmp/build/dist/wasmJs/productionExecutable/
+          key: wasm-demo-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml', 'settings.gradle.kts', 'gradle.properties', 'kmp/src/wasmJsMain/**', 'kmp/src/jsMain/**', 'kmp/src/commonMain/**') }}
+          restore-keys: |
+            wasm-demo-${{ runner.os }}-
       - id: download-demo-fallback
-        name: Download demo artifact (last successful run)
+        name: Copy cached demo to site/public/demo
         if: steps.download-demo.outcome == 'failure'
         continue-on-error: true
         run: |
-          # Iterate recent successful runs until we find one that has demo-dist.
-          # build-demo is skipped on site-only pushes, so the very latest run may
-          # not have the artifact — search up to 20 runs to find one that does.
-          FOUND=false
-          for RUN_ID in $(gh run list --workflow pages.yml --status success --limit 20 \
-            --json databaseId --jq '.[].databaseId'); do
-            if gh run download "$RUN_ID" --name demo-dist --dir site/public/demo/ 2>/dev/null; then
-              echo "Downloaded demo-dist from run $RUN_ID"
-              FOUND=true
-              break
-            fi
-          done
-          if [ "$FOUND" != "true" ]; then
-            echo "No recent successful run with demo-dist found"
+          if [ -d kmp/build/dist/wasmJs/productionExecutable ] && \
+             [ "$(ls -A kmp/build/dist/wasmJs/productionExecutable 2>/dev/null)" ]; then
+            mkdir -p site/public/demo
+            cp -r kmp/build/dist/wasmJs/productionExecutable/. site/public/demo/
+            echo "Demo restored from cache"
+          else
+            echo "No demo cache available — demo will be absent from this deploy"
             exit 1
           fi
-        env:
-          GH_TOKEN: ${{ github.token }}
 
       # ── F-Droid content ───────────────────────────────────────────────────
       # Primary: current run — present when fdroid.yml ran before us in the same
