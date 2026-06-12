@@ -16,6 +16,6 @@ git add kmp/src/generated/sqldelight/
 
 ## Rationale
 
-See ADR-001: checked-in generated sources vs. a custom `sqldelight_codegen` Bazel rule.
-Checked-in sources are simpler and avoid a complex code-generation Bazel rule that would
+See `project_plans/stelekit-bazel/decisions/ADR-003-checkin-sqldelight-generated.md`:
+checked-in sources are simpler and avoid a complex code-generation Bazel rule that would
 require Kotlin scripting support not yet stable in `rules_kotlin`.

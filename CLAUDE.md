@@ -8,11 +8,11 @@ SteleKit is a Kotlin Multiplatform (KMP) migration of Logseq — a Markdown-base
 
 ## Bazel Build Commands
 
-Bazel is the preferred build system for JVM/Desktop, Android, and Web targets.
-Gradle is kept for iOS, screenshot tests (Roborazzi), and benchmarks until those are
-migrated (see Epic 7 in `project_plans/stelekit-bazel/`).
+**Bazel is the canonical build system.** Use Bazel for all JVM/Desktop, Android, and Web
+work. Gradle is kept only for iOS (no Bazel KMP support yet), screenshot tests
+(Roborazzi), and benchmarks until those are migrated (Epic 7).
 
-| Gradle | Bazel |
+| Gradle (legacy) | Bazel (canonical) |
 |--------|-------|
 | `./gradlew run` | `bazel run //kmp:desktop_app` |
 | `./gradlew jvmTest` | `bazel test //kmp:jvm_tests` |

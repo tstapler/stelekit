@@ -26,17 +26,25 @@ fun getClasspathDirectory(loader: ClassLoader, resourceName: String): File {
     )
     synchronized(extractionLock) {
         if (!dest.exists()) {
-            dest.mkdirs()
-            val conn = url.openConnection() as JarURLConnection
-            conn.jarFile.use { jar ->
-                val prefix = conn.entryName + "/"
-                jar.entries().asSequence()
-                    .filter { !it.isDirectory && it.name.startsWith(prefix) }
-                    .forEach { entry ->
-                        val target = File(dest, entry.name.removePrefix(prefix))
-                        target.parentFile?.mkdirs()
-                        jar.getInputStream(entry).use { input -> input.copyTo(target.outputStream()) }
-                    }
+            val tmp = File(dest.parent, dest.name + ".tmp")
+            tmp.deleteRecursively()
+            tmp.mkdirs()
+            try {
+                val conn = url.openConnection() as JarURLConnection
+                conn.jarFile.use { jar ->
+                    val prefix = conn.entryName + "/"
+                    jar.entries().asSequence()
+                        .filter { !it.isDirectory && it.name.startsWith(prefix) }
+                        .forEach { entry ->
+                            val target = File(tmp, entry.name.removePrefix(prefix))
+                            target.parentFile?.mkdirs()
+                            jar.getInputStream(entry).use { input -> input.copyTo(target.outputStream()) }
+                        }
+                }
+                tmp.renameTo(dest)
+            } catch (e: Exception) {
+                tmp.deleteRecursively()
+                throw e
             }
         }
     }

@@ -16,6 +16,7 @@ jobs:
   bazel-jvm:
     name: Bazel JVM tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
@@ -58,6 +59,7 @@ jobs:
   bazel-android:
     name: Bazel Android build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
@@ -99,6 +101,7 @@ jobs:
   bazel-android-tests:
     name: Bazel Android unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
@@ -145,6 +148,7 @@ jobs:
   bazel-web:
     name: Bazel web (WASM/JS via Gradle genrule)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
