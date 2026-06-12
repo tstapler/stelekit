@@ -1,0 +1,31 @@
+# SteleKit .bazelrc
+# All Bazel flags for local and CI builds.
+
+# ── Bazel server JVM heap ─────────────────────────────────────────────────────
+# Caps the Bazel server at 6 GB so Maven resolution doesn't OOM the host.
+# Coursier's transitive graph for Compose+AndroidX is large; capping forces GC
+# before the machine swaps out.  Increase to -Xmx8g on 32 GB machines.
+startup --host_jvm_args=-Xmx6g
+
+# ── JVM toolchain ─────────────────────────────────────────────────────────────
+build --java_runtime_version=21
+build --tool_java_runtime_version=21
+
+# ── Android SDK ───────────────────────────────────────────────────────────────
+build --android_sdk=@androidsdk//:sdk
+build --incompatible_enable_android_toolchain_resolution
+
+# ── Correctness / hermetic sandbox ────────────────────────────────────────────
+build --sandbox_default_allow_network=false
+build --incompatible_strict_action_env
+
+# ── CI base config (shared by ci-main and ci-pr) ──────────────────────────────
+build:ci --remote_cache=grpcs://remote.buildbuddy.io
+build:ci --remote_header=x-buildbuddy-api-key=$BUILDBUDDY_API_KEY
+build:ci --build_event_log_file=build_events.json
+
+# ── CI: main-branch pushes seed the remote cache ──────────────────────────────
+build:ci-main --remote_upload_local_results
+
+# ── CI: PRs read from cache but do not upload (avoid cache poisoning) ─────────
+build:ci-pr --noremote_upload_local_results

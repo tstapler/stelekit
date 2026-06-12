@@ -1,0 +1,50 @@
+"""
+androidUnitTest — Android local unit tests via Robolectric.
+
+Screenshot tests using roborazzi are excluded (kept in Gradle).
+
+Note: The @robolectric//bazel:android-all shorthand is not available because
+the robolectric module is not in BCR for the required version. Instead,
+android-all is declared as a Maven artifact directly.
+
+To run: bazel test //kmp/src/androidUnitTest/kotlin:android_unit_tests
+"""
+
+load("@rules_android//rules:rules.bzl", "android_local_test")
+load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
+
+# Compile test sources into an Android library first
+kt_android_library(
+    name = "android_unit_test_lib",
+    srcs = glob(
+        ["**/*.kt"],
+        exclude = [
+            # Roborazzi screenshot tests — no Bazel integration; kept in Gradle
+            "**/*Roborazzi*.kt",
+            "**/*Screenshot*.kt",
+        ],
+    ),
+    custom_package = "dev.stapler.stelekit",
+    testonly = True,
+    deps = [
+        "//kmp/src/androidMain/kotlin:android_main",
+        "@maven//:junit_junit",
+        "@maven//:org_robolectric_robolectric",
+        "@maven//:androidx_test_core",
+        "@maven//:androidx_test_ext_junit",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+        "@maven//:androidx_arch_core_core_testing",
+        "@maven//:androidx_glance_glance_appwidget_testing",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+)
+
+android_local_test(
+    name = "android_unit_tests",
+    manifest = "//androidApp:src/main/AndroidManifest.xml",
+    deps = [
+        ":android_unit_test_lib",
+        "@maven//:org_robolectric_robolectric",
+    ],
+    visibility = ["//visibility:public"],
+)

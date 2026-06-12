@@ -1,0 +1,32 @@
+"""
+Root BUILD.bazel — Kotlin toolchain + Compose compiler plugin.
+All sub-packages reference //:compose_compiler_plugin and the toolchain
+registered here.
+"""
+
+load("@rules_kotlin//kotlin:core.bzl", "define_kt_toolchain", "kt_compiler_plugin")
+
+# ── Kotlin JVM toolchain ───────────────────────────────────────────────────────
+define_kt_toolchain(
+    name = "kotlin_toolchain",
+    api_version = "2.1",
+    jvm_target = "21",
+    language_version = "2.1",
+)
+
+# ── Compose compiler plugin ────────────────────────────────────────────────────
+# Uses the embeddable compiler plugin jar from Maven.
+# suppressKotlinVersionCompatibilityCheck is required because the Compose
+# compiler plugin may not yet list Kotlin 2.3.21 as a known-compatible version
+# (see ADR-004 and rules_kotlin issue #1388).
+kt_compiler_plugin(
+    name = "compose_compiler_plugin",
+    id = "androidx.compose.compiler.plugins.kotlin",
+    target_embedded_compiler = True,
+    visibility = ["//visibility:public"],
+    options = {
+        "suppressKotlinVersionCompatibilityCheck": "2.3.21",
+        "sourceInformation": "true",
+    },
+    deps = ["@maven//:org_jetbrains_kotlin_kotlin_compose_compiler_plugin_embeddable"],
+)

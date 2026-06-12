@@ -1,0 +1,54 @@
+"""
+jvmTest — JVM/Desktop test suite (minus screenshot/Roborazzi tests).
+
+Screenshot tests (*Screenshot*.kt, ui/screenshots/**) are excluded because they
+require Roborazzi which has no Bazel integration (kept in Gradle only).
+
+Test framework: JUnit 4 via kotlin-test-junit (run by kt_jvm_test runner).
+
+To run: bazel test //kmp/src/jvmTest/kotlin:jvm_tests
+Or via alias: bazel test //kmp:jvm_tests
+"""
+
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_test")
+
+kt_jvm_test(
+    name = "jvm_tests",
+    srcs = glob(
+        ["**/*.kt"],
+        exclude = [
+            # Roborazzi screenshot tests — no Bazel integration; kept in Gradle
+            "**/*Screenshot*.kt",
+            "**/*Roborazzi*.kt",
+            "**/screenshots/**",
+        ],
+    ),
+    test_class = "dev.stapler.stelekit.AllTestsKt",
+    deps = [
+        "//kmp/src/jvmMain/kotlin:jvm_main_lib",
+        "//kmp/src/businessTest/kotlin:business_tests",
+        "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
+        "@maven//:org_jetbrains_compose_ui_ui_test_junit4_desktop",
+        "@maven//:io_ktor_ktor_client_mock_jvm",
+        "@maven//:io_projectreactor_tools_blockhound",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+    jvm_flags = [
+        # Required for JVM attach (BlockHound, async-profiler)
+        "-Djdk.attach.allowAttachSelf=true",
+        # Required by Compose Desktop test infrastructure
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+        # Software rendering for CI (no GPU required)
+        "-Djava.awt.headless=false",
+    ],
+    env = {
+        # Force software OpenGL for Compose Desktop tests on headless CI
+        "LIBGL_ALWAYS_SOFTWARE": "1",
+    },
+    visibility = ["//visibility:public"],
+    tags = [
+        # Some tests open a Compose window — requires an X display on Linux CI
+        "requires-display",
+    ],
+)

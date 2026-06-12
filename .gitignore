@@ -152,3 +152,11 @@ fdroid/archive/
 *.bak
 *.tmp
 *.temp
+
+# --------------------
+# Bazel
+# --------------------
+/bazel-bin
+/bazel-out
+/bazel-testlogs
+/bazel-*

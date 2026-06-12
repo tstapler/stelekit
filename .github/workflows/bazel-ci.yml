@@ -1,0 +1,156 @@
+name: Bazel CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# Only one CI run per branch at a time; newer push cancels in-progress run.
+concurrency:
+  group: bazel-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── JVM / Desktop tests ────────────────────────────────────────────────────
+  bazel-jvm:
+    name: Bazel JVM tests
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.9.1
+        with:
+          bazelisk-version: "1.x"
+
+      - name: Cache Bazel outputs
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel
+          key: bazel-jvm-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'rules_jvm_external++maven+maven_install.json') }}-${{ github.sha }}
+          restore-keys: |
+            bazel-jvm-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'rules_jvm_external++maven+maven_install.json') }}-
+            bazel-jvm-${{ runner.os }}-
+
+      - name: Install Xvfb (headless display for Compose Desktop tests)
+        run: sudo apt-get install -y xvfb
+
+      - name: Build JVM target
+        run: bazel build //kmp:desktop_app ${{ github.ref == 'refs/heads/main' && '--config=ci --config=ci-main' || '--config=ci --config=ci-pr' }}
+        env:
+          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+
+      - name: Run JVM tests
+        run: |
+          xvfb-run --auto-servernum bazel test //kmp:jvm_tests \
+            ${{ github.ref == 'refs/heads/main' && '--config=ci --config=ci-main' || '--config=ci --config=ci-pr' }} \
+            --test_output=summary
+        env:
+          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+
+  # ── Android build ──────────────────────────────────────────────────────────
+  bazel-android:
+    name: Bazel Android build
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.9.1
+        with:
+          bazelisk-version: "1.x"
+
+      - name: Cache Bazel outputs
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel
+          key: bazel-android-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'rules_jvm_external++maven+maven_install.json') }}-${{ github.sha }}
+          restore-keys: |
+            bazel-android-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'rules_jvm_external++maven+maven_install.json') }}-
+            bazel-android-${{ runner.os }}-
+
+      - name: Build Android APK
+        run: |
+          bazel build //kmp:android_app \
+            ${{ github.ref == 'refs/heads/main' && '--config=ci --config=ci-main' || '--config=ci --config=ci-pr' }}
+        env:
+          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+
+  # ── Android unit tests ─────────────────────────────────────────────────────
+  bazel-android-tests:
+    name: Bazel Android unit tests
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.9.1
+        with:
+          bazelisk-version: "1.x"
+
+      - name: Cache Bazel outputs
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel
+          key: bazel-android-tests-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'rules_jvm_external++maven+maven_install.json') }}-${{ github.sha }}
+          restore-keys: |
+            bazel-android-tests-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'rules_jvm_external++maven+maven_install.json') }}-
+            bazel-android-tests-${{ runner.os }}-
+
+      - name: Run Android unit tests
+        run: |
+          bazel test //kmp/src/androidUnitTest/kotlin:android_unit_tests \
+            ${{ github.ref == 'refs/heads/main' && '--config=ci --config=ci-main' || '--config=ci --config=ci-pr' }} \
+            --test_output=summary
+        env:
+          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
+
+  # ── WASM/JS web build ─────────────────────────────────────────────────────
+  # rules_kotlin does not yet support Kotlin/WASM natively (rules_kotlin#567).
+  # //kmp:web_app is a genrule that delegates to Gradle's wasmJsBrowserDistribution.
+  # Gradle's own incremental cache is preserved via the gradle-home cache key.
+  bazel-web:
+    name: Bazel web (WASM/JS via Gradle genrule)
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Cache Gradle home
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle
+          key: gradle-web-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'settings.gradle.kts', 'gradle.properties') }}-${{ github.sha }}
+          restore-keys: |
+            gradle-web-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'settings.gradle.kts', 'gradle.properties') }}-
+            gradle-web-${{ runner.os }}-
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.9.1
+        with:
+          bazelisk-version: "1.x"
+
+      - name: Build web bundle
+        run: bazel build //kmp:web_app
+
+      - name: Upload web distribution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: bazel-bin/kmp/web_dist.tar.gz
+          retention-days: 7

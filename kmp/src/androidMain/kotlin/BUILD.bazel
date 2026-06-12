@@ -1,0 +1,70 @@
+"""
+androidMain — Android-specific source files (Activity, SQLite driver, etc.).
+
+Depends on jvm_common_main_android which provides shared JVM+Android sources.
+
+Note on JGit versioning: rules_jvm_external cannot resolve the same
+groupId:artifactId at two different versions. The JGit 5.13.x ssh.jsch
+module (org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:5.13.3) has a different
+artifactId than the 7.x ssh.apache module, so both can co-exist in the
+artifact list. However org.eclipse.jgit:org.eclipse.jgit:7.3.0 is the
+resolved version — Android code calling JGit 5.13.x APIs must be aware
+that the 7.x JAR is on the compile classpath.
+"""
+
+load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
+
+kt_android_library(
+    name = "android_main",
+    srcs = glob(["**/*.kt"]),
+    plugins = ["//:compose_compiler_plugin"],
+    custom_package = "dev.stapler.stelekit",
+    deps = [
+        "//kmp/src/jvmCommonMain/kotlin:jvm_common_main_android",
+
+        # SQLDelight Android driver
+        "@maven//:app_cash_sqldelight_android_driver",
+        "@maven//:com_github_requery_sqlite_android",
+
+        # AndroidX
+        "@maven//:androidx_activity_activity_compose",
+        "@maven//:androidx_appcompat_appcompat",
+        "@maven//:androidx_core_core_ktx",
+        "@maven//:androidx_documentfile_documentfile",
+
+        # Kotlin coroutines Android
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_android",
+
+        # Ktor OkHttp engine (Android)
+        "@maven//:io_ktor_ktor_client_okhttp_jvm",
+
+        # OpenTelemetry SDK (Android)
+        "@maven//:io_opentelemetry_opentelemetry_sdk",
+        "@maven//:io_opentelemetry_opentelemetry_exporter_logging",
+
+        # JankStats (zero-allocation frame jank classification)
+        "@maven//:androidx_metrics_metrics_performance",
+
+        # Security-crypto (EncryptedSharedPreferences for API key storage)
+        "@maven//:androidx_security_security_crypto",
+
+        # MLKit on-device LLM (Gemini Nano)
+        "@maven//:com_google_mlkit_genai_prompt",
+
+        # Glance (Compose-based home screen widgets)
+        "@maven//:androidx_glance_glance_appwidget",
+        "@maven//:androidx_glance_glance_material3",
+
+        # WorkManager (background git sync)
+        "@maven//:androidx_work_work_runtime_ktx",
+
+        # JGit (see note above about version conflict)
+        "@maven//:org_eclipse_jgit_org_eclipse_jgit",
+        "@maven//:org_eclipse_jgit_org_eclipse_jgit_ssh_jsch",
+        "@maven//:com_github_mwiede_jsch",
+
+        # Kotlin stdlib
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+    visibility = ["//kmp:__subpackages__", "//androidApp:__subpackages__"],
+)

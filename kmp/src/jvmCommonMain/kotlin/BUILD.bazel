@@ -1,0 +1,36 @@
+"""
+jvmCommonMain — shared JVM/Android sources (OpenTelemetry API layer).
+
+This source set is shared between Desktop (JVM) and Android targets.
+It adds OpenTelemetry API to the common_jvm base.
+"""
+
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
+
+# JVM flavor (used by jvmMain and indirectly by tests)
+kt_jvm_library(
+    name = "jvm_common_main",
+    srcs = glob(["**/*.kt"]),
+    plugins = ["//:compose_compiler_plugin"],
+    deps = [
+        "//kmp/src/commonMain/kotlin:common_jvm",
+        "@maven//:io_opentelemetry_opentelemetry_api",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+)
+
+# ── Android flavor ─────────────────────────────────────────────────────────────
+load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
+
+kt_android_library(
+    name = "jvm_common_main_android",
+    srcs = glob(["**/*.kt"]),
+    custom_package = "dev.stapler.stelekit",
+    deps = [
+        "//kmp/src/commonMain/kotlin:common_android",
+        "@maven//:io_opentelemetry_opentelemetry_api",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+)

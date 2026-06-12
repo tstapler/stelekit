@@ -1,0 +1,23 @@
+"""
+businessTest — business logic tests (no UI dependencies).
+
+This source set compiles against common_jvm only; it has no Compose or platform
+dependencies, making it fast to run in CI.
+"""
+
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library", "kt_jvm_test")
+
+# Shared test library (depended on by jvmTest)
+kt_jvm_library(
+    name = "business_tests",
+    srcs = glob(["**/*.kt"]),
+    testonly = True,
+    deps = [
+        "//kmp/src/commonMain/kotlin:common_jvm",
+        "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+)

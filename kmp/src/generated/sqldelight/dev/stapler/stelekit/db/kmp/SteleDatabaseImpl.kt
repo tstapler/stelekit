@@ -1,0 +1,351 @@
+package dev.stapler.stelekit.db.kmp
+
+import app.cash.sqldelight.SuspendingTransacterImpl
+import app.cash.sqldelight.db.AfterVersion
+import app.cash.sqldelight.db.QueryResult
+import app.cash.sqldelight.db.SqlDriver
+import app.cash.sqldelight.db.SqlSchema
+import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.db.SteleDatabaseQueries
+import kotlin.Long
+import kotlin.Unit
+import kotlin.reflect.KClass
+
+internal val KClass<SteleDatabase>.schema: SqlSchema<QueryResult.AsyncValue<Unit>>
+  get() = SteleDatabaseImpl.Schema
+
+internal fun KClass<SteleDatabase>.newInstance(driver: SqlDriver): SteleDatabase = SteleDatabaseImpl(driver)
+
+private class SteleDatabaseImpl(
+  driver: SqlDriver,
+) : SuspendingTransacterImpl(driver),
+    SteleDatabase {
+  override val steleDatabaseQueries: SteleDatabaseQueries = SteleDatabaseQueries(driver)
+
+  public object Schema : SqlSchema<QueryResult.AsyncValue<Unit>> {
+    override val version: Long
+      get() = 4
+
+    override fun create(driver: SqlDriver): QueryResult.AsyncValue<Unit> = QueryResult.AsyncValue {
+      driver.execute(null, """
+          |CREATE TABLE pages (
+          |    uuid TEXT NOT NULL PRIMARY KEY,
+          |    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+          |    namespace TEXT,
+          |    file_path TEXT,
+          |    created_at INTEGER NOT NULL,
+          |    updated_at INTEGER NOT NULL,
+          |    properties TEXT, -- JSON string for page properties
+          |    version INTEGER NOT NULL DEFAULT 0,
+          |    is_favorite INTEGER DEFAULT 0,
+          |    is_journal INTEGER DEFAULT 0,
+          |    journal_date TEXT,
+          |    is_content_loaded INTEGER NOT NULL DEFAULT 1,
+          |    backlink_count INTEGER NOT NULL DEFAULT 0
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE blocks (
+          |    id INTEGER PRIMARY KEY AUTOINCREMENT, -- Hidden numeric ID for FTS5 internal use
+          |    uuid TEXT NOT NULL UNIQUE,
+          |    page_uuid TEXT NOT NULL,
+          |    parent_uuid TEXT,
+          |    left_uuid TEXT,
+          |    content TEXT NOT NULL,
+          |    level INTEGER NOT NULL DEFAULT 0,
+          |    position INTEGER NOT NULL,
+          |    created_at INTEGER NOT NULL,
+          |    updated_at INTEGER NOT NULL,
+          |    properties TEXT, -- JSON string for block properties
+          |    version INTEGER NOT NULL DEFAULT 0,
+          |    content_hash TEXT, -- SHA-256 hex digest of normalised content (used for deduplication)
+          |    block_type TEXT NOT NULL DEFAULT 'bullet', -- Structural discriminator (bullet, paragraph, heading, etc.) — excluded from FTS intentionally
+          |    FOREIGN KEY (page_uuid) REFERENCES pages(uuid) ON DELETE CASCADE,
+          |    FOREIGN KEY (parent_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE,
+          |    FOREIGN KEY (left_uuid) REFERENCES blocks(uuid) ON DELETE SET NULL
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE properties (
+          |    uuid TEXT NOT NULL PRIMARY KEY,
+          |    block_uuid TEXT NOT NULL,
+          |    key TEXT NOT NULL,
+          |    value TEXT NOT NULL,
+          |    created_at INTEGER NOT NULL,
+          |    FOREIGN KEY (block_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE plugin_data (
+          |    id INTEGER PRIMARY KEY AUTOINCREMENT,
+          |    plugin_id TEXT NOT NULL,
+          |    entity_type TEXT NOT NULL,
+          |    entity_uuid TEXT NOT NULL,
+          |    key TEXT NOT NULL,
+          |    value TEXT NOT NULL,
+          |    created_at INTEGER NOT NULL,
+          |    updated_at INTEGER,
+          |    UNIQUE(plugin_id, entity_type, entity_uuid, key)
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE block_references (
+          |    id INTEGER PRIMARY KEY AUTOINCREMENT,
+          |    from_block_uuid TEXT NOT NULL,
+          |    to_block_uuid TEXT NOT NULL,
+          |    created_at INTEGER NOT NULL,
+          |    UNIQUE(from_block_uuid, to_block_uuid),
+          |    FOREIGN KEY (from_block_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE,
+          |    FOREIGN KEY (to_block_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE migration_changelog (
+          |    id              TEXT NOT NULL,
+          |    graph_id        TEXT NOT NULL,
+          |    description     TEXT NOT NULL,
+          |    checksum        TEXT NOT NULL,
+          |    applied_at      INTEGER NOT NULL,
+          |    execution_ms    INTEGER NOT NULL DEFAULT 0,
+          |    status          TEXT NOT NULL DEFAULT 'APPLIED',
+          |    applied_by      TEXT NOT NULL DEFAULT '',
+          |    execution_order INTEGER NOT NULL DEFAULT 0,
+          |    changes_applied INTEGER NOT NULL DEFAULT 0,
+          |    error_message   TEXT,
+          |    PRIMARY KEY (id, graph_id)
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS page_visits (
+          |    page_uuid       TEXT NOT NULL PRIMARY KEY,
+          |    visit_count     INTEGER NOT NULL DEFAULT 0,
+          |    last_visited_at INTEGER NOT NULL   -- epoch milliseconds (Unix)
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS perf_histogram_buckets (
+          |    id INTEGER PRIMARY KEY AUTOINCREMENT,
+          |    operation_name TEXT NOT NULL,
+          |    bucket_ms INTEGER NOT NULL,
+          |    count INTEGER NOT NULL DEFAULT 0,
+          |    recorded_at INTEGER NOT NULL
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS debug_flags (
+          |    key TEXT NOT NULL PRIMARY KEY,
+          |    value INTEGER NOT NULL DEFAULT 0,
+          |    updated_at INTEGER NOT NULL
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE metadata (
+          |    key TEXT NOT NULL PRIMARY KEY,
+          |    value TEXT NOT NULL
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE operations (
+          |    op_id       TEXT NOT NULL PRIMARY KEY,  -- UUID v7 (time-ordered for efficient range scans)
+          |    session_id  TEXT NOT NULL,
+          |    seq         INTEGER NOT NULL,            -- Lamport clock value (monotonically increasing per session)
+          |    op_type     TEXT NOT NULL,               -- INSERT_BLOCK | UPDATE_BLOCK | DELETE_BLOCK | MOVE_BLOCK | BATCH_START | BATCH_END | SYNC_BARRIER
+          |    entity_uuid TEXT,                        -- block UUID affected (NULL for BATCH_START/END and SYNC_BARRIER)
+          |    page_uuid   TEXT,                        -- page context (NULL for BATCH_START/END and SYNC_BARRIER)
+          |    payload     TEXT NOT NULL DEFAULT '{}',  -- JSON: {"before": {...}, "after": {...}}
+          |    created_at  INTEGER NOT NULL
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE logical_clock (
+          |    session_id  TEXT NOT NULL PRIMARY KEY,
+          |    seq         INTEGER NOT NULL DEFAULT 0
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS spans (
+          |    id INTEGER PRIMARY KEY AUTOINCREMENT,
+          |    trace_id TEXT NOT NULL DEFAULT '',
+          |    span_id TEXT NOT NULL DEFAULT '',
+          |    parent_span_id TEXT NOT NULL DEFAULT '',
+          |    name TEXT NOT NULL,
+          |    start_epoch_ms INTEGER NOT NULL,
+          |    end_epoch_ms INTEGER NOT NULL,
+          |    duration_ms INTEGER NOT NULL,
+          |    attributes_json TEXT NOT NULL DEFAULT '{}',
+          |    status_code TEXT NOT NULL DEFAULT 'OK'
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS query_stats (
+          |    app_version TEXT NOT NULL,
+          |    table_name  TEXT NOT NULL,
+          |    operation   TEXT NOT NULL,
+          |    calls       INTEGER NOT NULL DEFAULT 0,
+          |    errors      INTEGER NOT NULL DEFAULT 0,
+          |    total_ms    INTEGER NOT NULL DEFAULT 0,
+          |    min_ms      INTEGER NOT NULL DEFAULT 9999999,
+          |    max_ms      INTEGER NOT NULL DEFAULT 0,
+          |    b1          INTEGER NOT NULL DEFAULT 0,   -- ≤ 1 ms
+          |    b5          INTEGER NOT NULL DEFAULT 0,   -- ≤ 5 ms
+          |    b16         INTEGER NOT NULL DEFAULT 0,   -- ≤ 16 ms
+          |    b50         INTEGER NOT NULL DEFAULT 0,   -- ≤ 50 ms
+          |    b100        INTEGER NOT NULL DEFAULT 0,   -- ≤ 100 ms
+          |    b500        INTEGER NOT NULL DEFAULT 0,   -- ≤ 500 ms
+          |    b_inf       INTEGER NOT NULL DEFAULT 0,   -- > 500 ms
+          |    first_seen  INTEGER NOT NULL,
+          |    last_seen   INTEGER NOT NULL,
+          |    PRIMARY KEY (app_version, table_name, operation)
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS git_config (
+          |    graph_id                TEXT NOT NULL PRIMARY KEY,
+          |    repo_root               TEXT NOT NULL,
+          |    wiki_subdir             TEXT NOT NULL DEFAULT '',
+          |    remote_name             TEXT NOT NULL DEFAULT 'origin',
+          |    remote_branch           TEXT NOT NULL DEFAULT 'main',
+          |    auth_type               TEXT NOT NULL DEFAULT 'NONE',
+          |    ssh_key_path            TEXT,
+          |    ssh_key_passphrase_key  TEXT,
+          |    https_token_key         TEXT,
+          |    poll_interval_minutes   INTEGER NOT NULL DEFAULT 5,
+          |    auto_commit             INTEGER NOT NULL DEFAULT 1,
+          |    commit_message_template TEXT NOT NULL DEFAULT 'SteleKit: {date}'
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, "CREATE INDEX idx_pages_uuid ON pages(uuid)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_pages_name ON pages(name)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_pages_namespace ON pages(namespace)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_blocks_uuid ON blocks(uuid)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_blocks_page_uuid ON blocks(page_uuid)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_blocks_parent_uuid ON blocks(parent_uuid)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_blocks_left_uuid ON blocks(left_uuid)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_blocks_level ON blocks(level)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_blocks_content_hash ON blocks(content_hash)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_properties_block_uuid ON properties(block_uuid)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_properties_key ON properties(key)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_plugin_data_plugin_id ON plugin_data(plugin_id)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_plugin_data_entity ON plugin_data(entity_type, entity_uuid)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_plugin_data_key ON plugin_data(key)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_references_from ON block_references(from_block_uuid)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_references_to ON block_references(to_block_uuid)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_changelog_graph_status ON migration_changelog(graph_id, status)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_changelog_applied_at ON migration_changelog(graph_id, applied_at)", 0).await()
+      driver.execute(null, """
+          |CREATE TRIGGER blocks_ai AFTER INSERT ON blocks BEGIN
+          |    INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content);
+          |END
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TRIGGER blocks_ad AFTER DELETE ON blocks BEGIN
+          |    INSERT INTO blocks_fts(blocks_fts, rowid, content)
+          |    VALUES('delete', old.id, old.content);
+          |END
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TRIGGER blocks_au AFTER UPDATE OF content ON blocks BEGIN
+          |    INSERT INTO blocks_fts(blocks_fts, rowid, content)
+          |    VALUES('delete', old.id, old.content);
+          |    INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content);
+          |END
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TRIGGER pages_ai AFTER INSERT ON pages BEGIN
+          |    INSERT INTO pages_fts(rowid, name) VALUES (new.rowid, new.name);
+          |END
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TRIGGER pages_ad AFTER DELETE ON pages BEGIN
+          |    INSERT INTO pages_fts(pages_fts, rowid, name) VALUES('delete', old.rowid, old.name);
+          |END
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TRIGGER pages_au AFTER UPDATE OF name ON pages BEGIN
+          |    INSERT INTO pages_fts(pages_fts, rowid, name) VALUES('delete', old.rowid, old.name);
+          |    INSERT INTO pages_fts(rowid, name) VALUES (new.rowid, new.name);
+          |END
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE UNIQUE INDEX IF NOT EXISTS idx_perf_hist_op_bucket
+          |    ON perf_histogram_buckets(operation_name, bucket_ms)
+          """.trimMargin(), 0).await()
+      driver.execute(null, "CREATE INDEX idx_operations_session_seq ON operations(session_id, seq)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_operations_page ON operations(page_uuid)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_operations_entity ON operations(entity_uuid)", 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS spans_start_epoch_ms_idx ON spans(start_epoch_ms DESC)", 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS spans_trace_id_idx ON spans(trace_id)", 0).await()
+      driver.execute(null, """
+          |CREATE INDEX IF NOT EXISTS idx_query_stats_version_ms
+          |    ON query_stats(app_version, total_ms DESC)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE VIRTUAL TABLE blocks_fts USING fts5(
+          |    content,
+          |    content=blocks,
+          |    content_rowid=id,
+          |    tokenize='porter unicode61'
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE VIRTUAL TABLE pages_fts USING fts5(
+          |    name,
+          |    content=pages,
+          |    content_rowid=rowid,
+          |    tokenize='porter unicode61'
+          |)
+          """.trimMargin(), 0).await()
+    }
+
+    private fun migrateInternal(
+      driver: SqlDriver,
+      oldVersion: Long,
+      newVersion: Long,
+    ): QueryResult.AsyncValue<Unit> = QueryResult.AsyncValue {
+      if (oldVersion <= 2 && newVersion > 2) {
+        driver.execute(null, "ALTER TABLE blocks ADD COLUMN block_type TEXT NOT NULL DEFAULT 'bullet'", 0).await()
+      }
+      if (oldVersion <= 3 && newVersion > 3) {
+        driver.execute(null, """
+            |CREATE TABLE IF NOT EXISTS migration_changelog (
+            |    id              TEXT NOT NULL,
+            |    graph_id        TEXT NOT NULL,
+            |    description     TEXT NOT NULL,
+            |    checksum        TEXT NOT NULL,
+            |    applied_at      INTEGER NOT NULL,
+            |    execution_ms    INTEGER NOT NULL DEFAULT 0,
+            |    status          TEXT NOT NULL DEFAULT 'APPLIED',
+            |    applied_by      TEXT NOT NULL DEFAULT '',
+            |    execution_order INTEGER NOT NULL DEFAULT 0,
+            |    changes_applied INTEGER NOT NULL DEFAULT 0,
+            |    error_message   TEXT,
+            |    PRIMARY KEY (id, graph_id)
+            |)
+            """.trimMargin(), 0).await()
+        driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_changelog_graph_status ON migration_changelog(graph_id, status)", 0).await()
+        driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_changelog_applied_at ON migration_changelog(graph_id, applied_at)", 0).await()
+      }
+    }
+
+    override fun migrate(
+      driver: SqlDriver,
+      oldVersion: Long,
+      newVersion: Long,
+      vararg callbacks: AfterVersion,
+    ): QueryResult.AsyncValue<Unit> = QueryResult.AsyncValue {
+      var lastVersion = oldVersion
+
+      callbacks.filter { it.afterVersion in oldVersion until newVersion }
+      .sortedBy { it.afterVersion }
+      .forEach { callback ->
+        migrateInternal(driver, oldVersion = lastVersion, newVersion = callback.afterVersion + 1).await()
+        callback.block(driver)
+        lastVersion = callback.afterVersion + 1
+      }
+
+      if (lastVersion < newVersion) {
+        migrateInternal(driver, lastVersion, newVersion).await()
+      }
+    }
+  }
+}

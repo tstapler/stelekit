@@ -1,0 +1,59 @@
+"""
+jvmMain — Desktop entry point library and runnable binary.
+
+Provides the JVM-specific implementations (file watching, JVM logging, desktop UI)
+and the kt_jvm_binary alias that launches the SteleKit desktop application.
+"""
+
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_binary", "kt_jvm_library")
+
+# Desktop library (all JVM-specific sources)
+kt_jvm_library(
+    name = "jvm_main_lib",
+    srcs = glob(["**/*.kt"]),
+    plugins = ["//:compose_compiler_plugin"],
+    deps = [
+        "//kmp/src/jvmCommonMain/kotlin:jvm_common_main",
+
+        # SQLite driver for Desktop
+        "@maven//:app_cash_sqldelight_sqlite_driver",
+
+        # Compose Desktop runtime
+        "@maven//:org_jetbrains_compose_desktop_desktop_jvm_linux_x64",
+
+        # Kotlinx Swing dispatcher (required for Compose Desktop event loop)
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_swing",
+
+        # JGit 7.x (Desktop git operations — SSH via Apache Mina SSHD)
+        "@maven//:org_eclipse_jgit_org_eclipse_jgit",
+        "@maven//:org_eclipse_jgit_org_eclipse_jgit_ssh_apache",
+
+        # OpenTelemetry SDK (span processing + export)
+        "@maven//:io_opentelemetry_opentelemetry_sdk",
+        "@maven//:io_opentelemetry_opentelemetry_exporter_logging",
+
+        # BouncyCastle (Argon2id KDF for vault encryption)
+        "@maven//:org_bouncycastle_bcprov_jdk18on",
+
+        # Ktor engine for Desktop
+        "@maven//:io_ktor_ktor_client_okhttp_jvm",
+
+        # Kotlin stdlib
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+)
+
+# Desktop application binary
+kt_jvm_binary(
+    name = "desktop_app",
+    main_class = "dev.stapler.stelekit.desktop.MainKt",
+    runtime_deps = [":jvm_main_lib"],
+    jvm_flags = [
+        # Required for JVM attach (async-profiler + JFR)
+        "-Djdk.attach.allowAttachSelf=true",
+        # Required by Compose Desktop for reflection into java.lang
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+    ],
+    visibility = ["//visibility:public"],
+)

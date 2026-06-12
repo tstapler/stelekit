@@ -6,7 +6,49 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SteleKit is a Kotlin Multiplatform (KMP) migration of Logseq — a Markdown-based outliner/note-taking app. It targets Desktop (JVM), Android, iOS, and Web from a single shared codebase in the `kmp/` module.
 
-## Build & Run Commands
+## Bazel Build Commands
+
+Bazel is the preferred build system for JVM/Desktop, Android, and Web targets.
+Gradle is kept for iOS, screenshot tests (Roborazzi), and benchmarks until those are
+migrated (see Epic 7 in `project_plans/stelekit-bazel/`).
+
+| Gradle | Bazel |
+|--------|-------|
+| `./gradlew run` | `bazel run //kmp:desktop_app` |
+| `./gradlew jvmTest` | `bazel test //kmp:jvm_tests` |
+| `./gradlew allTests` | `bazel test //...` |
+| `./gradlew ciCheck` | `bazel test //... --config=ci` |
+| `./gradlew installAndroid` | `bazel mobile-install //kmp:android_app` |
+| `./gradlew packageDistributionForCurrentOS` | _(Gradle only — see Future Epic D)_ |
+| `./gradlew testDebugUnitTest` | `bazel test //kmp/src/androidUnitTest/kotlin:android_unit_tests` |
+| `./gradlew wasmJsBrowserDistribution` | `bazel build //kmp:web_app` |
+
+```bash
+# Launch desktop app
+bazel run //kmp:desktop_app
+
+# Run all JVM tests (excluding screenshot tests which remain Gradle-only)
+bazel test //kmp:jvm_tests
+
+# Run only business-logic tests (no UI, fastest)
+bazel test //kmp:business_tests
+
+# Build Android APK
+bazel build //kmp:android_app
+
+# Build web (WASM/JS) bundle — output: bazel-bin/kmp/web_dist.tar.gz
+# Note: delegates to Gradle internally until rules_kotlin#567 lands
+bazel build //kmp:web_app
+
+# Run all Bazel tests
+bazel test //...
+
+# Re-generate SQLDelight sources (when .sq files change)
+./gradlew :kmp:generateCommonMainSteleDatabase
+rsync -a kmp/build/generated/sqldelight/code/SteleDatabase/commonMain/ kmp/src/generated/sqldelight/
+```
+
+## Gradle Build & Run Commands
 
 ```bash
 # Run desktop app
