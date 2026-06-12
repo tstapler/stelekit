@@ -1084,8 +1084,9 @@ private fun GraphContent(
                         viewModel.snackbarEvents.collect { msg ->
                             try {
                                 snackbarHostState.showSnackbar(msg)
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
                             } catch (e: Exception) {
-                                if (e is kotlinx.coroutines.CancellationException) throw e
                                 graphContentLogger.warn("showSnackbar failed: $e")
                             }
                         }

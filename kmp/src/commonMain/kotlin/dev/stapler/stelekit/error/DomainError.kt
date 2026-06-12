@@ -129,7 +129,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.ValidationError.EmptyName -> "Name cannot be empty"
     is DomainError.ValidationError.ConstraintViolation -> "Validation failed"
     is DomainError.NetworkError.HttpError -> "Network error (HTTP $statusCode)"
-    is DomainError.NetworkError.CircuitOpen -> message
+    is DomainError.NetworkError.CircuitOpen -> "Service temporarily unavailable"
     is DomainError.NetworkError.Timeout -> "Request timed out"
     is DomainError.NetworkError.RequestFailed -> "Request failed"
     is DomainError.SensorError.PermissionDenied -> "Camera permission denied"

@@ -115,6 +115,27 @@ class CaptureAndImportTest {
         assertFalse(snackbars[0].contains("android.hardware"), "raw exception text must not reach UI")
     }
 
+    @Test
+    fun `capture failed - posts sanitized error to snackbar`() = runBlocking {
+        val snackbars = mutableListOf<String>()
+        val captureError = DomainError.SensorError.CaptureFailed(
+            "java.lang.RuntimeException: android.hardware.camera2.CameraAccessException: CAMERA_DISABLED (1)"
+        )
+        executeCaptureAndImport(
+            imageImportService = wiredService(),
+            getActiveGraphPath = { "/graph" },
+            pageUuid = "page-1",
+            navigateAfterImport = false,
+            cameraProvider = FakeCameraProvider(captureError.left()),
+            onSnackbar = { snackbars += it },
+            onNavigate = { _, _ -> },
+            onWarn = {},
+        )
+        assertEquals(1, snackbars.size)
+        assertEquals("Capture failed", snackbars[0])
+        assertFalse(snackbars[0].contains("RuntimeException"), "raw exception text must not reach UI")
+    }
+
     // ── Import failure ──────────────────────────────────────────────────────
 
     @Test
