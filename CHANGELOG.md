@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.41.0](https://github.com/tstapler/stelekit/compare/v0.40.4...v0.41.0) (2026-06-12)
+
+
+### Features
+
+* **editor:** add camera capture button to editor toolbar ([#147](https://github.com/tstapler/stelekit/issues/147)) ([a555aaa](https://github.com/tstapler/stelekit/commit/a555aaa26fd6e7eac082bf7a13496a626f86df03))
+* **git-smart-sync:** repo auto-detection, algorithmic journal merge, CLI sync ([6aef1db](https://github.com/tstapler/stelekit/commit/6aef1db5f719674647d3fe12c8483f68b54c888f))
+* **git:** native file pickers and GitHub OAuth device flow in git setup ([2b188f2](https://github.com/tstapler/stelekit/commit/2b188f25936028b0bceae682872df378eebc49b7))
+
+
+### Bug Fixes
+
+* **android-auto:** add service label and sideload discovery guidance ([#146](https://github.com/tstapler/stelekit/issues/146)) ([70d7ad8](https://github.com/tstapler/stelekit/commit/70d7ad80284827b9584576e92b07c259eb1aa68e))
+* **cask:** use non-deprecated macos depends_on syntax ([cb3ea88](https://github.com/tstapler/stelekit/commit/cb3ea882e794dad3e57311d26b2173e6f13417fc))
+* **git-setup:** triad review fixes — accessibility, tests, Android SSH key wiring ([6c37055](https://github.com/tstapler/stelekit/commit/6c37055752960ae557a61354a6cc49def607fa67))
+* **linux:** use wrapper script to run AppImage without FUSE ([3179edb](https://github.com/tstapler/stelekit/commit/3179edb2a8b894046e31c5dfbb317b003116b01c))
+
 ## [0.40.4](https://github.com/tstapler/stelekit/compare/v0.40.3...v0.40.4) (2026-06-11)
 
 
