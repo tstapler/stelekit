@@ -116,10 +116,10 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.DatabaseError.ReadFailed -> "Read failed: $message"
     is DomainError.DatabaseError.NotFound -> message
     is DomainError.DatabaseError.TransactionFailed -> "Transaction failed: $message"
-    is DomainError.FileSystemError.NotFound -> message
-    is DomainError.FileSystemError.WriteFailed -> "File write failed: $message"
-    is DomainError.FileSystemError.ReadFailed -> "File read failed: $message"
-    is DomainError.FileSystemError.DeleteFailed -> "File delete failed: $message"
+    is DomainError.FileSystemError.NotFound -> "File not found"
+    is DomainError.FileSystemError.WriteFailed -> "File write failed"
+    is DomainError.FileSystemError.ReadFailed -> "File read failed"
+    is DomainError.FileSystemError.DeleteFailed -> "File delete failed"
     is DomainError.ParseError.EmptyFile -> message
     is DomainError.ParseError.InvalidSyntax -> "Parse error: $message"
     is DomainError.ParseError.MalformedMarkdown -> "Malformed markdown: $message"

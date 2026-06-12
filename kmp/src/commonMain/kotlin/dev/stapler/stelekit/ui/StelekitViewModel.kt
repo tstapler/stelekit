@@ -50,6 +50,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlin.time.Clock
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -59,6 +60,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.cancel
@@ -1665,12 +1667,11 @@ class StelekitViewModel(
         _uiState.update { it.copy(statusMessage = message) }
     }
 
-    fun setPendingSnackbar(message: String) {
-        _uiState.update { it.copy(pendingSnackbar = message) }
-    }
+    private val _snackbarEvents = Channel<String>(Channel.BUFFERED)
+    val snackbarEvents: Flow<String> = _snackbarEvents.receiveAsFlow()
 
-    fun clearPendingSnackbar() {
-        _uiState.update { it.copy(pendingSnackbar = null) }
+    fun sendSnackbar(message: String) {
+        _snackbarEvents.trySend(message)
     }
 
     fun toggleDebugMode() {

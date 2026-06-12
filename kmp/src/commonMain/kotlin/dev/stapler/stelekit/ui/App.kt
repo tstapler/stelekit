@@ -116,9 +116,55 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import arrow.core.Either
+import dev.stapler.stelekit.db.ImageImportService
 import dev.stapler.stelekit.error.toUiMessage
 import dev.stapler.stelekit.model.ImageSource
+import dev.stapler.stelekit.platform.sensor.CameraProvider
 import dev.stapler.stelekit.platform.sensor.SensorModule
+
+internal suspend fun executeCaptureAndImport(
+    imageImportService: ImageImportService?,
+    getActiveGraphPath: () -> String?,
+    pageUuid: String,
+    navigateAfterImport: Boolean,
+    cameraProvider: CameraProvider = SensorModule.cameraProvider,
+    onSnackbar: (String) -> Unit,
+    onNavigate: (annotationUuid: String, pageUuid: String) -> Unit,
+    onWarn: (String) -> Unit,
+) {
+    val service = imageImportService ?: run {
+        onWarn("captureAndImport called with no imageImportService")
+        return
+    }
+    val graphPath = getActiveGraphPath()?.takeIf { it.isNotEmpty() } ?: run {
+        onWarn("captureAndImport called with no active graph path")
+        return
+    }
+    when (val captured = cameraProvider.capturePhoto()) {
+        is Either.Left -> {
+            onWarn("Camera capture failed: ${captured.value.message}")
+            onSnackbar(captured.value.toUiMessage())
+        }
+        is Either.Right -> {
+            val result = service.import(
+                tempFile = captured.value,
+                graphPath = graphPath,
+                pageUuid = pageUuid,
+                source = ImageSource.CAMERA,
+                insertToJournalPage = false,
+            )
+            result.onLeft { err ->
+                onWarn("Camera image import failed: ${err.message}")
+                onSnackbar(err.toUiMessage())
+            }
+            if (navigateAfterImport) {
+                result.onRight { annotation ->
+                    onNavigate(annotation.uuid, pageUuid)
+                }
+            }
+        }
+    }
+}
 
 /**
  * Root Composable for the Logseq application.
@@ -977,41 +1023,6 @@ private fun GraphContent(
     val activeGraphId = graphRegistry.activeGraphId
     val syncState by viewModel.syncState.collectAsState()
 
-    suspend fun captureAndImport(pageUuid: String, navigateAfterImport: Boolean) {
-        val service = imageImportService ?: run {
-            graphContentLogger.warn("captureAndImport called with no imageImportService")
-            return
-        }
-        val graphPath = graphManager.getActiveGraphInfo()?.path?.takeIf { it.isNotEmpty() } ?: run {
-            graphContentLogger.warn("captureAndImport called with no active graph path")
-            return
-        }
-        when (val captured = SensorModule.cameraProvider.capturePhoto()) {
-            is Either.Left -> {
-                graphContentLogger.warn("Camera capture failed: ${captured.value.message}")
-                viewModel.setPendingSnackbar(captured.value.toUiMessage())
-            }
-            is Either.Right -> {
-                val result = service.import(
-                    tempFile = captured.value,
-                    graphPath = graphPath,
-                    pageUuid = pageUuid,
-                    source = ImageSource.CAMERA,
-                    insertToJournalPage = false,
-                )
-                result.onLeft { err ->
-                    graphContentLogger.warn("Camera image import failed: ${err.message}")
-                    viewModel.setPendingSnackbar(err.toUiMessage())
-                }
-                if (navigateAfterImport) {
-                    result.onRight { annotation ->
-                        viewModel.navigateToAnnotationEditor(annotation.uuid, pageUuid)
-                    }
-                }
-            }
-        }
-    }
-
     StelekitTheme(themeMode = appState.themeMode) {
         CompositionLocalProvider(LocalI18n provides I18n(appState.language)) {
             if (!appState.onboardingCompleted) {
@@ -1069,10 +1080,10 @@ private fun GraphContent(
                     val windowSizeClass = windowSizeClassFor(maxWidth)
                     val isMobile = windowSizeClass.isMobile
                     val snackbarHostState = remember { SnackbarHostState() }
-                    LaunchedEffect(appState.pendingSnackbar) {
-                        val msg = appState.pendingSnackbar ?: return@LaunchedEffect
-                        snackbarHostState.showSnackbar(msg)
-                        viewModel.clearPendingSnackbar()
+                    LaunchedEffect(Unit) {
+                        viewModel.snackbarEvents.collect { msg ->
+                            snackbarHostState.showSnackbar(msg)
+                        }
                     }
 
                     CompositionLocalProvider(
@@ -1204,8 +1215,9 @@ private fun GraphContent(
                             )
                         },
                         content = {
-                            val cameraImportEnabled = imageImportService != null &&
-                                SensorModule.cameraProvider.isAvailable
+                            val cameraImportEnabled = remember(imageImportService) {
+                                imageImportService != null && SensorModule.cameraProvider.isAvailable
+                            }
                             ScreenRouter(
                                 screen = appState.currentScreen,
                                 repos = repos,
@@ -1308,7 +1320,15 @@ private fun GraphContent(
                                                         ?: appState.currentPage?.uuid?.value
                                                 val resolvedPageUuid = pageUuid
                                                     ?: repos.journalService.ensureTodayJournal().uuid.value
-                                                captureAndImport(resolvedPageUuid, navigateAfterImport = false)
+                                                executeCaptureAndImport(
+                                                    imageImportService = imageImportService,
+                                                    getActiveGraphPath = { graphManager.getActiveGraphInfo()?.path },
+                                                    pageUuid = resolvedPageUuid,
+                                                    navigateAfterImport = false,
+                                                    onSnackbar = { viewModel.sendSnackbar(it) },
+                                                    onNavigate = { annUuid, pgUuid -> viewModel.navigateToAnnotationEditor(annUuid, pgUuid) },
+                                                    onWarn = { graphContentLogger.warn(it) },
+                                                )
                                             }
                                         }
                                     } else null,
@@ -1317,7 +1337,15 @@ private fun GraphContent(
                                     {
                                         scope.launch {
                                             val page = repos.journalService.ensureTodayJournal()
-                                            captureAndImport(page.uuid.value, navigateAfterImport = true)
+                                            executeCaptureAndImport(
+                                                imageImportService = imageImportService,
+                                                getActiveGraphPath = { graphManager.getActiveGraphInfo()?.path },
+                                                pageUuid = page.uuid.value,
+                                                navigateAfterImport = true,
+                                                onSnackbar = { viewModel.sendSnackbar(it) },
+                                                onNavigate = { annUuid, pgUuid -> viewModel.navigateToAnnotationEditor(annUuid, pgUuid) },
+                                                onWarn = { graphContentLogger.warn(it) },
+                                            )
                                         }
                                         Unit
                                     }

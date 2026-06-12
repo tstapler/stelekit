@@ -78,7 +78,6 @@ data class AppState(
     val searchDialogInitialQuery: String = "",
     val commands: List<Command> = emptyList(),
     val statusMessage: String = "Ready",
-    val pendingSnackbar: String? = null,
     // Navigation history for forward/back navigation
     val navigationHistory: List<Screen> = listOf(Screen.Journals),
     val historyIndex: Int = 0,
