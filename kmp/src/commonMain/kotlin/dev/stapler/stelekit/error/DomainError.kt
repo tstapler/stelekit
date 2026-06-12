@@ -114,13 +114,13 @@ fun Throwable.toDatabaseError(): DomainError.DatabaseError.WriteFailed =
 fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.DatabaseError.WriteFailed -> "Save failed"
     is DomainError.DatabaseError.ReadFailed -> "Read failed"
-    is DomainError.DatabaseError.NotFound -> message
+    is DomainError.DatabaseError.NotFound -> "Not found"
     is DomainError.DatabaseError.TransactionFailed -> "Transaction failed"
     is DomainError.FileSystemError.NotFound -> "File not found"
     is DomainError.FileSystemError.WriteFailed -> "File write failed"
     is DomainError.FileSystemError.ReadFailed -> "File read failed"
     is DomainError.FileSystemError.DeleteFailed -> "File delete failed"
-    is DomainError.ParseError.EmptyFile -> message
+    is DomainError.ParseError.EmptyFile -> "File is empty"
     is DomainError.ParseError.InvalidSyntax -> "Parse error: $message"
     is DomainError.ParseError.MalformedMarkdown -> "Malformed markdown: $message"
     is DomainError.ConflictError.DiskConflict -> "Disk conflict: $message"
@@ -143,9 +143,9 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.AuthFailed -> "Git authentication failed: $message"
     is DomainError.GitError.MergeConflict -> message
     is DomainError.GitError.CommitFailed -> "Git commit failed: $message"
-    is DomainError.GitError.NotAGitRepo -> message
-    is DomainError.GitError.DetachedHead -> message
-    is DomainError.GitError.StaleLockFile -> message
+    is DomainError.GitError.NotAGitRepo -> "Not a git repository"
+    is DomainError.GitError.DetachedHead -> "Repository in detached HEAD state"
+    is DomainError.GitError.StaleLockFile -> "Git lock file found — another process may be using the repository"
     is DomainError.GitError.NotSupported -> message
     is DomainError.GitError.Offline -> message
     is DomainError.GitError.EditingInProgress -> message

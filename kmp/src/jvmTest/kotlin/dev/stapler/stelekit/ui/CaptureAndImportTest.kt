@@ -129,6 +129,7 @@ class CaptureAndImportTest {
             onWarn = {},
         )
         assertEquals(1, snackbars.size, "snackbar posted on import failure")
+        assertEquals("File not found", snackbars[0], "snackbar must not embed raw filesystem path")
         assertTrue(navigations.isEmpty(), "no navigation on failure")
     }
 
