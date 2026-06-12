@@ -318,10 +318,13 @@ class AnnotationEditorViewModel(
         scope.launch {
             val result = measurementRepository.getMeasurementsForImage(imageAnnotation.uuid).first()
             result.onRight { list ->
-                // Skip the load if the user has already committed or deleted annotations;
-                // applying stale repository results would overwrite optimistic UI state.
-                if (!hasBeenMutated.value) {
-                    _state.update { currentSt -> currentSt.copy(committedAnnotations = list) }
+                // Guard against TOCTOU: check hasBeenMutated inside _state.update so that the
+                // check and the write are part of the same CAS operation. If commitAnnotation
+                // wins the race and sets hasBeenMutated=true before our CAS succeeds, the
+                // MutableStateFlow CAS loop retries the lambda and we see true on retry.
+                _state.update { currentSt ->
+                    if (!hasBeenMutated.value) currentSt.copy(committedAnnotations = list)
+                    else currentSt
                 }
             }
         }
