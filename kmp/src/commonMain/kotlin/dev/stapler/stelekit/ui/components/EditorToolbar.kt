@@ -73,6 +73,7 @@ fun EditorToolbar(
         onAttachImage = if (capabilities.onAttachImage != null) {
             { capabilities.onAttachImage.invoke(editingBlockUuid) }
         } else null,
+        onCaptureImage = capabilities.onCaptureImage,
         onLinkPicker = if (searchViewModel != null) {
             {
                 val curBlockUuid = editingBlockUuid

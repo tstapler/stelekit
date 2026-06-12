@@ -1251,6 +1251,50 @@ private fun GraphContent(
                                             } else false
                                         }
                                     } else null,
+                                    onCaptureImage = if (imageImportService != null &&
+                                        dev.stapler.stelekit.platform.sensor.SensorModule.cameraProvider.isAvailable) {
+                                        {
+                                            scope.launch {
+                                                // Resolve the target page UUID.
+                                                // appState.currentPage is null on JournalsView (Screen.Journals),
+                                                // because StelekitViewModel only populates currentPage for Screen.PageView.
+                                                // Fall back to ensureTodayJournal() when no explicit page is open,
+                                                // matching the existing onImportImage pattern.
+                                                val pageUuid: String? =
+                                                    (appState.currentScreen as? Screen.PageView)?.page?.uuid?.value
+                                                        ?: appState.currentPage?.uuid?.value
+                                                val resolvedPageUuid: String = if (pageUuid != null) {
+                                                    pageUuid
+                                                } else {
+                                                    repos.journalService.ensureTodayJournal().uuid.value
+                                                }
+                                                when (val captured =
+                                                    dev.stapler.stelekit.platform.sensor.SensorModule.cameraProvider.capturePhoto()) {
+                                                    is arrow.core.Either.Left -> {
+                                                        val msg = "Camera capture failed: ${captured.value.message}"
+                                                        graphContentLogger.warn(msg)
+                                                        viewModel.setStatusMessage(msg)
+                                                    }
+                                                    is arrow.core.Either.Right -> {
+                                                        val result = imageImportService.import(
+                                                            tempFile = captured.value,
+                                                            graphPath = activeGraphPath,
+                                                            pageUuid = resolvedPageUuid,
+                                                            source = dev.stapler.stelekit.model.ImageSource.CAMERA,
+                                                            insertToJournalPage = false,
+                                                        )
+                                                        result.onLeft { err ->
+                                                            val msg = "Camera image import failed: ${err.message}"
+                                                            graphContentLogger.warn(msg)
+                                                            viewModel.setStatusMessage(msg)
+                                                        }
+                                                        // No automatic navigation to annotation editor —
+                                                        // user taps the image to open it (pre-existing block tap behavior).
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else null,
                                 ),
                                 onImportImage = if (imageImportService != null &&
                                     dev.stapler.stelekit.platform.sensor.SensorModule.cameraProvider.isAvailable) {

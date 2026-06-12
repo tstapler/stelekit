@@ -1660,7 +1660,11 @@ class StelekitViewModel(
         platformSettings.putBoolean("onboardingCompleted", completed)
         _uiState.update { it.copy(onboardingCompleted = completed) }
     }
-    
+
+    fun setStatusMessage(message: String) {
+        _uiState.update { it.copy(statusMessage = message) }
+    }
+
     fun toggleDebugMode() {
         _uiState.update { state ->
             val newDebugMode = !state.isDebugMode

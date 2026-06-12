@@ -26,4 +26,10 @@ data class EditorCapabilities(
      * Null disables clipboard-image paste.
      */
     val onPasteImage: ((editingBlockUuid: BlockUuid?) -> Boolean)? = null,
+    /**
+     * Triggers a camera capture and inserts the resulting IMAGE_ANNOTATION block on the
+     * current page below the editing cursor. Null hides the camera toolbar button.
+     * Only non-null on Android when SensorModule.cameraProvider.isAvailable is true.
+     */
+    val onCaptureImage: (() -> Unit)? = null,
 )
