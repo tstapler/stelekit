@@ -17,6 +17,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -50,10 +52,13 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.CredentialStore
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitConfigRepository
+import dev.stapler.stelekit.git.GitHubDeviceFlowClient
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.platform.FileSystem
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -61,7 +66,7 @@ import kotlinx.coroutines.launch
  *
  * Step 1: Clone mode — use existing clone or clone new repo.
  * Step 2: Repo path and wiki subdirectory.
- * Step 3: Auth type (SSH key / HTTPS token / None) and credentials.
+ * Step 3: Auth type (SSH key / HTTPS token / GitHub OAuth / None) and credentials.
  * Step 4: Branch name and poll interval.
  * Step 5: Test connection then save.
  *
@@ -70,6 +75,8 @@ import kotlinx.coroutines.launch
  * @param gitRepository Platform-specific git implementation.
  * @param gitConfigRepository Persistence for [GitConfig].
  * @param gitSyncService Active service; used for immediate fetchOnly after save.
+ * @param fileSystem Platform file system for directory/file pickers.
+ * @param deviceFlowClient GitHub OAuth device flow client; null disables the OAuth option.
  * @param onDismiss Called when the user cancels the wizard.
  * @param onSaved Called after configuration is saved and initial fetch succeeds.
  */
@@ -80,6 +87,7 @@ fun GitSetupScreen(
     gitRepository: GitRepository,
     gitConfigRepository: GitConfigRepository,
     gitSyncService: GitSyncService,
+    fileSystem: FileSystem,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     existingConfig: GitConfig? = null,
@@ -89,6 +97,7 @@ fun GitSetupScreen(
     onSave: () -> Unit = {},
     onCloneAndAdd: (suspend (url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit) -> Either<DomainError.GitError, String>)? = null,
     onCloneComplete: ((String) -> Unit)? = null,
+    deviceFlowClient: GitHubDeviceFlowClient? = null,
 ) {
     val scope = rememberCoroutineScope()
     var step by remember { mutableIntStateOf(initialStep) }
@@ -114,6 +123,12 @@ fun GitSetupScreen(
     var remoteBranch by remember { mutableStateOf(existingConfig?.remoteBranch ?: "main") }
     var pollIntervalMinutes by remember { mutableStateOf(existingConfig?.pollIntervalMinutes ?: 5) }
 
+    // OAuth flow state
+    var showOAuthDialog by remember { mutableStateOf(false) }
+    var oauthDialogState by remember { mutableStateOf<OAuthDialogState?>(null) }
+    var oauthConnectedAs by remember { mutableStateOf<String?>(null) }
+    var oauthJob by remember { mutableStateOf<Job?>(null) }
+
     // Step 5: connection test state
     var testInProgress by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<String?>(null) }
@@ -135,6 +150,44 @@ fun GitSetupScreen(
         4 -> "Sync settings"
         5 -> "Test & save"
         else -> "Git Sync Setup"
+    }
+
+    if (showOAuthDialog && oauthDialogState != null) {
+        GitHubOAuthDialog(
+            state = oauthDialogState!!,
+            onCopyCode = { code ->
+                // Use platform clipboard via androidx.compose clipboard
+                // (writeText available via clipboard manager in composable scope)
+            },
+            onOpenBrowser = { url ->
+                dev.stapler.stelekit.platform.openInBrowser(url)
+            },
+            onCancel = {
+                oauthJob?.cancel()
+                showOAuthDialog = false
+                oauthDialogState = null
+            },
+            onRetry = {
+                showOAuthDialog = false
+                oauthDialogState = null
+                // Restart OAuth flow
+                oauthJob?.cancel()
+                oauthJob = scope.launch {
+                    startOAuthFlow(
+                        deviceFlowClient = deviceFlowClient,
+                        graphId = graphId,
+                        credentialStore = credentialStore,
+                        onDialogStateChange = { oauthDialogState = it },
+                        onShowDialog = { showOAuthDialog = true },
+                        onConnected = { username -> oauthConnectedAs = username },
+                    )
+                }
+            },
+            onDone = {
+                showOAuthDialog = false
+                oauthDialogState = null
+            },
+        )
     }
 
     Scaffold(
@@ -175,13 +228,26 @@ fun GitSetupScreen(
                     onBack = { step = 1 },
                     onNext = { step = 3 },
                     nextEnabled = repoRoot.isNotBlank() && (useExistingClone || cloneUrl.isNotBlank()),
+                    onBrowseRepoRoot = {
+                        scope.launch {
+                            val path = fileSystem.pickDirectoryAsync()
+                            if (path != null) repoRoot = path
+                        }
+                    },
                 )
 
                 3 -> {
                     var tokenVisible by remember { mutableStateOf(false) }
                     Step3Auth(
                         authType = authType,
-                        onAuthTypeChange = { authType = it },
+                        onAuthTypeChange = { newType ->
+                            if (authType == GitAuthType.GITHUB_OAUTH && newType != GitAuthType.GITHUB_OAUTH) {
+                                // Delete stored OAuth token when switching away
+                                credentialStore.delete("git_github_oauth_$graphId")
+                                oauthConnectedAs = null
+                            }
+                            authType = newType
+                        },
                         sshKeyPath = sshKeyPath,
                         onSshKeyPathChange = { sshKeyPath = it },
                         httpsToken = httpsToken,
@@ -192,6 +258,30 @@ fun GitSetupScreen(
                         onSshPassphraseChange = { sshPassphrase = it },
                         onBack = { step = 2 },
                         onNext = { step = 4 },
+                        oauthConnectedAs = oauthConnectedAs,
+                        onStartOAuthFlow = {
+                            showOAuthDialog = true
+                            oauthDialogState = OAuthDialogState.Loading
+                            oauthJob?.cancel()
+                            oauthJob = scope.launch {
+                                startOAuthFlow(
+                                    deviceFlowClient = deviceFlowClient,
+                                    graphId = graphId,
+                                    credentialStore = credentialStore,
+                                    onDialogStateChange = { oauthDialogState = it },
+                                    onShowDialog = { showOAuthDialog = true },
+                                    onConnected = { username -> oauthConnectedAs = username },
+                                )
+                            }
+                        },
+                        showOAuthDialog = showOAuthDialog,
+                        deviceFlowEnabled = deviceFlowClient != null,
+                        onBrowseSshKey = {
+                            scope.launch {
+                                val path = fileSystem.pickFileAsync()
+                                if (path != null) sshKeyPath = path
+                            }
+                        },
                     )
                 }
 
@@ -225,11 +315,15 @@ fun GitSetupScreen(
                                 credentialStore.store(key, sshPassphrase)
                                 key
                             } else null
+                            val testOauthTokenKey = if (authType == GitAuthType.GITHUB_OAUTH && oauthConnectedAs != null) {
+                                "git_github_oauth_$graphId"
+                            } else null
                             val config = buildConfig(
                                 graphId, repoRoot, wikiSubdir, authType,
                                 sshKeyPath, remoteBranch, pollIntervalMinutes,
                                 httpsTokenKey = testHttpsTokenKey,
                                 sshKeyPassphraseKey = testSshPassphraseKey,
+                                oauthTokenKey = testOauthTokenKey,
                             )
                             val result = gitRepository.fetch(config)
                             testInProgress = false
@@ -264,6 +358,12 @@ fun GitSetupScreen(
                                         keyPath = sshKeyPath,
                                         passphraseProvider = { sshPassphrase.takeIf { it.isNotBlank() } },
                                     )
+                                    GitAuthType.GITHUB_OAUTH -> GitAuth.HttpsToken(
+                                        username = "x-oauth-basic",
+                                        tokenProvider = {
+                                            credentialStore.retrieve("git_github_oauth_$graphId")
+                                        }
+                                    )
                                     GitAuthType.NONE -> GitAuth.None
                                 }
                                 val cloneResult = onCloneAndAdd(cloneUrl, repoRoot, cloneAuth) { progress ->
@@ -290,11 +390,15 @@ fun GitSetupScreen(
                                 } else {
                                     null
                                 }
+                                val oauthTokenKey = if (authType == GitAuthType.GITHUB_OAUTH) {
+                                    "git_github_oauth_$newGraphId"
+                                } else null
                                 val config = buildConfig(
                                     newGraphId,
                                     repoRoot, wikiSubdir, authType, sshKeyPath, remoteBranch, pollIntervalMinutes,
                                     httpsTokenKey = httpsTokenKey,
                                     sshKeyPassphraseKey = sshPassphraseKey,
+                                    oauthTokenKey = oauthTokenKey,
                                 )
                                 val saveResult = gitConfigRepository.saveConfig(config)
                                 saving = false
@@ -321,11 +425,15 @@ fun GitSetupScreen(
                             } else {
                                 existingConfig?.sshKeyPassphraseKey
                             }
+                            val oauthTokenKey = if (authType == GitAuthType.GITHUB_OAUTH) {
+                                existingConfig?.oauthTokenKey ?: "git_github_oauth_$graphId"
+                            } else null
                             val config = buildConfig(
                                 graphId, repoRoot, wikiSubdir, authType,
                                 sshKeyPath, remoteBranch, pollIntervalMinutes,
                                 httpsTokenKey = httpsTokenKey,
                                 sshKeyPassphraseKey = sshPassphraseKey,
+                                oauthTokenKey = oauthTokenKey,
                             )
                             val result = gitConfigRepository.saveConfig(config)
                             saving = false
@@ -344,6 +452,61 @@ fun GitSetupScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+}
+
+/**
+ * Runs the OAuth device flow: requests code, polls for token, fetches username.
+ * Designed to run in the composable's coroutine scope.
+ */
+private suspend fun startOAuthFlow(
+    deviceFlowClient: GitHubDeviceFlowClient?,
+    graphId: String,
+    credentialStore: CredentialStore,
+    onDialogStateChange: (OAuthDialogState) -> Unit,
+    onShowDialog: () -> Unit,
+    onConnected: (String) -> Unit,
+) {
+    if (deviceFlowClient == null) {
+        onDialogStateChange(OAuthDialogState.Error("GitHub OAuth is not available on this platform"))
+        return
+    }
+
+    onShowDialog()
+    onDialogStateChange(OAuthDialogState.Loading)
+
+    val deviceCodeResult = deviceFlowClient.requestDeviceCode()
+    if (deviceCodeResult.isLeft()) {
+        val err = (deviceCodeResult as Either.Left).value
+        onDialogStateChange(OAuthDialogState.Error(err.message))
+        return
+    }
+    val response = (deviceCodeResult as Either.Right).value
+    val expiresAt = System.currentTimeMillis() + response.expiresIn * 1000L
+    onDialogStateChange(OAuthDialogState.ShowCode(response.userCode, response.verificationUri, expiresAt))
+
+    val tokenResult = deviceFlowClient.pollForToken(
+        deviceCode = response.deviceCode,
+        expiresIn = response.expiresIn,
+        initialInterval = response.interval,
+        onStateChange = { pollState ->
+            // Once user has opened browser (we're polling), transition to Polling state
+            onDialogStateChange(OAuthDialogState.Polling)
+        },
+    )
+
+    if (tokenResult.isLeft()) {
+        val err = (tokenResult as Either.Left).value
+        onDialogStateChange(OAuthDialogState.Error(err.message))
+        return
+    }
+
+    val token = (tokenResult as Either.Right).value
+    val key = "git_github_oauth_$graphId"
+    credentialStore.store(key, token)
+
+    val username = deviceFlowClient.fetchUsername(token) ?: "GitHub User"
+    onConnected(username)
+    onDialogStateChange(OAuthDialogState.Success(username))
 }
 
 @Composable
@@ -385,6 +548,7 @@ private fun Step2RepoPath(
     onBack: () -> Unit,
     onNext: () -> Unit,
     nextEnabled: Boolean = repoRoot.isNotBlank(),
+    onBrowseRepoRoot: (() -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Repository path", style = MaterialTheme.typography.titleMedium)
@@ -405,6 +569,16 @@ private fun Step2RepoPath(
             label = { Text("Local repository root path") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
+            trailingIcon = if (onBrowseRepoRoot != null) {
+                {
+                    IconButton(onClick = onBrowseRepoRoot) {
+                        Icon(
+                            imageVector = Icons.Default.FolderOpen,
+                            contentDescription = "Browse for directory",
+                        )
+                    }
+                }
+            } else null,
         )
 
         OutlinedTextField(
@@ -442,6 +616,11 @@ private fun Step3Auth(
     onSshPassphraseChange: (String) -> Unit,
     onBack: () -> Unit,
     onNext: () -> Unit,
+    oauthConnectedAs: String? = null,
+    onStartOAuthFlow: () -> Unit = {},
+    showOAuthDialog: Boolean = false,
+    deviceFlowEnabled: Boolean = false,
+    onBrowseSshKey: (() -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Authentication", style = MaterialTheme.typography.titleMedium)
@@ -461,6 +640,11 @@ private fun Step3Auth(
             Spacer(modifier = Modifier.width(8.dp))
             Text("HTTPS token (GitHub PAT, etc.)")
         }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = authType == GitAuthType.GITHUB_OAUTH, onClick = { onAuthTypeChange(GitAuthType.GITHUB_OAUTH) })
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("GitHub (OAuth)")
+        }
 
         if (authType == GitAuthType.SSH_KEY) {
             OutlinedTextField(
@@ -469,6 +653,16 @@ private fun Step3Auth(
                 label = { Text("SSH private key path (e.g. ~/.ssh/id_ed25519)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                trailingIcon = if (onBrowseSshKey != null) {
+                    {
+                        IconButton(onClick = onBrowseSshKey) {
+                            Icon(
+                                imageVector = Icons.Default.Key,
+                                contentDescription = "Browse for SSH key file",
+                            )
+                        }
+                    }
+                } else null,
             )
             var passphraseVisible by remember { mutableStateOf(false) }
             OutlinedTextField(
@@ -511,6 +705,45 @@ private fun Step3Auth(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+
+        if (authType == GitAuthType.GITHUB_OAUTH) {
+            if (oauthConnectedAs != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        tint = Color(0xFF10B981),
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        "Connected as @$oauthConnectedAs",
+                        color = Color(0xFF10B981),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                OutlinedButton(
+                    onClick = onStartOAuthFlow,
+                    enabled = deviceFlowEnabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Re-connect") }
+            } else {
+                Button(
+                    onClick = onStartOAuthFlow,
+                    enabled = deviceFlowEnabled,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Connect GitHub Account") }
+                if (!deviceFlowEnabled) {
+                    Text(
+                        "GitHub OAuth is not available on this platform.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
 
         Row(
@@ -675,6 +908,7 @@ private fun buildConfig(
     pollIntervalMinutes: Int,
     httpsTokenKey: String? = null,
     sshKeyPassphraseKey: String? = null,
+    oauthTokenKey: String? = null,
 ): GitConfig = GitConfig(
     graphId = graphId,
     repoRoot = repoRoot,
@@ -685,4 +919,5 @@ private fun buildConfig(
     pollIntervalMinutes = pollIntervalMinutes,
     httpsTokenKey = httpsTokenKey,
     sshKeyPassphraseKey = sshKeyPassphraseKey,
+    oauthTokenKey = oauthTokenKey,
 )

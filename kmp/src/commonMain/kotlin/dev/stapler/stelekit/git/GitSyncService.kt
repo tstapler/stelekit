@@ -11,6 +11,7 @@ import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.FilePath
+import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.model.wikiRoot
@@ -135,7 +136,12 @@ class GitSyncService(
             _syncState.value = SyncState.Fetching
             val fetchResult = when (val r = gitRepository.fetch(config)) {
                 is Either.Left -> {
-                    _syncState.value = SyncState.Error(r.value)
+                    val err = r.value
+                    if (err is DomainError.GitError.AuthFailed && config.authType == GitAuthType.GITHUB_OAUTH) {
+                        _syncState.value = SyncState.CredentialExpired(graphId)
+                    } else {
+                        _syncState.value = SyncState.Error(err)
+                    }
                     return@withContext r.value.left()
                 }
                 is Either.Right -> r.value
@@ -220,8 +226,13 @@ class GitSyncService(
             _syncState.value = SyncState.Fetching
             when (val result = gitRepository.fetch(config)) {
                 is Either.Left -> {
-                    _syncState.value = SyncState.Error(result.value)
-                    result.value.left()
+                    val err = result.value
+                    if (err is DomainError.GitError.AuthFailed && config.authType == GitAuthType.GITHUB_OAUTH) {
+                        _syncState.value = SyncState.CredentialExpired(graphId)
+                    } else {
+                        _syncState.value = SyncState.Error(err)
+                    }
+                    err.left()
                 }
                 is Either.Right -> {
                     val fetchResult = result.value

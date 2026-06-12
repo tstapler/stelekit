@@ -215,6 +215,26 @@ private fun SyncStateBadge(
             }
         }
 
+        is SyncState.CredentialExpired -> {
+            Row(
+                modifier = modifier.clickable { onAuthError?.invoke() ?: onSyncClick() },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Error,
+                    contentDescription = "GitHub authentication expired — tap to re-connect",
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(modifier = Modifier.width(2.dp))
+                Text(
+                    text = "Re-connect GitHub",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+
         is SyncState.Success -> {
             // Brief green checkmark that fades after 3 seconds
             var visible by remember(syncState) { mutableStateOf(true) }

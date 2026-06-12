@@ -79,5 +79,6 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     }
     actual override fun pickDirectory(): String? = null
     actual override suspend fun pickDirectoryAsync(): String? = null
+    override suspend fun pickFileAsync(): String? = null
     actual override fun getLastModifiedTime(path: String): Long? = null
 }

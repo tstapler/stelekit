@@ -16,6 +16,7 @@ sealed class SyncState {
     data object CredentialVaultLocked : SyncState()
     data class ConflictPending(val conflicts: List<ConflictFile>) : SyncState()
     data class Error(val error: DomainError.GitError) : SyncState()
+    data class CredentialExpired(val graphId: String) : SyncState()
     data class Success(
         val localCommitsMade: Int,
         val remoteCommitsMerged: Int,
