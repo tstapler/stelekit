@@ -14,6 +14,16 @@ module(
 ###############################################################################
 
 bazel_dep(name = "rules_kotlin", version = "2.3.20")
+
+# Patch rules_kotlin to add common_srcs support for Kotlin Multiplatform (KMP) compilation.
+# common_srcs enables -Xcommon-sources, allowing expect/actual to work when commonMain and
+# jvmMain sources are compiled together in a single kt_jvm_library.
+single_version_override(
+    module_name = "rules_kotlin",
+    patches = ["//third_party/patches:rules_kotlin_kmp.patch"],
+    patch_strip = 1,
+)
+bazel_dep(name = "rules_cc", version = "0.1.1")
 bazel_dep(name = "rules_android", version = "0.7.1")
 bazel_dep(name = "rules_jvm_external", version = "6.9")
 bazel_dep(name = "bazel_skylib", version = "1.8.2")
@@ -33,6 +43,27 @@ android_sdk_repository_extension = use_extension(
 android_sdk_repository_extension.configure(
     api_level = 36,
     build_tools_version = "35.0.0",
+)
+
+###############################################################################
+# InfoZip unzip — built from source by Bazel.
+# rules_android's aar_import extracts AAR manifests using an `unzip` tool; by
+# building it here we avoid any system-level unzip dependency.  The resulting
+# binary is exposed via a custom android_toolchain registered in BUILD.bazel.
+###############################################################################
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+http_archive(
+    name = "unzip_src",
+    urls = ["https://downloads.sourceforge.net/infozip/unzip60.tar.gz"],
+    sha256 = "036d96991646d0449ed0aa952e4fbe21b476ce994abc276e49d30e686708bd37",
+    strip_prefix = "unzip60",
+    build_file = "//:third_party/unzip.BUILD",
+    # InfoZip 6.0 has K&R-style time declarations that conflict with modern
+    # glibc headers.  Guard them so they only apply on truly ancient platforms.
+    patch_cmds = [
+        "sed -i 's/   struct tm \\*gmtime(), \\*localtime();/#if !defined(__GLIBC__) \\&\\& !defined(linux)\\n   struct tm *gmtime(), *localtime();\\n#endif/' unix/unxcfg.h",
+    ],
 )
 
 ###############################################################################
@@ -111,8 +142,9 @@ maven.install(
         "org.jetbrains.kotlin:kotlin-reflect:2.3.21",
         "org.jetbrains.kotlin:kotlin-test-junit:2.3.21",
 
-        # ── Compose compiler plugin embeddable ───────────────────────────────
+        # ── Compiler plugins (embeddable — used as kt_compiler_plugin deps) ────
         "org.jetbrains.kotlin:kotlin-compose-compiler-plugin-embeddable:2.3.21",
+        "org.jetbrains.kotlin:kotlin-serialization-compiler-plugin-embeddable:2.3.21",
 
         # ── Arrow 2.2.1.1 (KMP — use -jvm classifier) ───────────────────────
         "io.arrow-kt:arrow-core-jvm:2.2.1.1",
@@ -321,3 +353,7 @@ maven.install(
 )
 
 use_repo(maven, "maven")
+
+# Custom android toolchain that uses the Bazel-built unzip (registered before
+# the rules_android default so it wins toolchain resolution for aar_import).
+register_toolchains("//:stelekit_android_toolchain")

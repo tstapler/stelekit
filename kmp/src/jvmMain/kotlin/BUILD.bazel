@@ -1,42 +1,97 @@
 """
 jvmMain — Desktop entry point library and runnable binary.
 
-Provides the JVM-specific implementations (file watching, JVM logging, desktop UI)
-and the kt_jvm_binary alias that launches the SteleKit desktop application.
+jvm_main_lib compiles commonMain + jvmCommonMain + jvmMain sources in a single
+compilation unit, which is required for Kotlin Multiplatform expect/actual
+resolution under Bazel. Gradle does the same by combining all three source sets
+into one kotlinc invocation when targeting JVM.
 """
 
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_binary", "kt_jvm_library")
 
-# Desktop library (all JVM-specific sources)
+# Desktop library — all JVM sources compiled together (commonMain + jvmCommonMain + jvmMain).
+# common_srcs marks the commonMain sources as KMP common (containing expect declarations).
+# The compiler receives -Xcommon-sources for these files and resolves actual implementations
+# from jvmCommonMain and jvmMain sources in the same compilation.
 kt_jvm_library(
     name = "jvm_main_lib",
-    srcs = glob(["**/*.kt"]),
-    plugins = ["//:compose_compiler_plugin"],
+    srcs = [
+        "//kmp/src/commonMain/kotlin:kt_srcs",
+        "//kmp/src/jvmCommonMain/kotlin:kt_srcs",
+    ] + glob(
+        ["**/*.kt"],
+        exclude = ["**/benchmarks/**"],  # JMH benchmarks — Gradle-only (jmh plugin)
+    ),
+    common_srcs = ["//kmp/src/commonMain/kotlin:kt_srcs"],
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    plugins = [
+        "//:compose_compiler_plugin",
+        "//:serialization_compiler_plugin",
+    ],
     deps = [
-        "//kmp/src/jvmCommonMain/kotlin:jvm_common_main",
-
-        # SQLite driver for Desktop
+        # SQLDelight generated code + runtime (from commonMain)
+        "//kmp/src/generated/sqldelight:sqldelight_generated_jvm",
+        "@maven//:app_cash_sqldelight_runtime_jvm",
+        "@maven//:app_cash_sqldelight_coroutines_extensions_jvm",
+        "@maven//:app_cash_sqldelight_async_extensions_jvm",
         "@maven//:app_cash_sqldelight_sqlite_driver",
 
-        # Compose Desktop runtime
+        # Arrow (from commonMain)
+        "@maven//:io_arrow_kt_arrow_core_jvm",
+        "@maven//:io_arrow_kt_arrow_optics_jvm",
+        "@maven//:io_arrow_kt_arrow_fx_coroutines_jvm",
+        "@maven//:io_arrow_kt_arrow_resilience_jvm",
+
+        # Kotlinx (from commonMain)
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_datetime_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
+
+        # Markdown (from commonMain)
+        "@maven//:org_jetbrains_markdown_jvm",
+
+        # Compose Desktop (from commonMain + jvmMain)
+        "@maven//:org_jetbrains_compose_runtime_runtime_desktop",
+        "@maven//:org_jetbrains_compose_foundation_foundation_desktop",
+        "@maven//:org_jetbrains_compose_material3_material3_desktop",
+        "@maven//:org_jetbrains_compose_material_material_icons_extended_desktop",
+        "@maven//:org_jetbrains_compose_components_components_resources_desktop",
         "@maven//:org_jetbrains_compose_desktop_desktop_jvm_linux_x64",
 
-        # Kotlinx Swing dispatcher (required for Compose Desktop event loop)
-        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_swing",
+        # Lifecycle (from commonMain)
+        "@maven//:org_jetbrains_androidx_lifecycle_lifecycle_runtime_compose",
+        "@maven//:org_jetbrains_androidx_lifecycle_lifecycle_viewmodel_compose",
 
-        # JGit 7.x (Desktop git operations — SSH via Apache Mina SSHD)
-        "@maven//:org_eclipse_jgit_org_eclipse_jgit",
-        "@maven//:org_eclipse_jgit_org_eclipse_jgit_ssh_apache",
+        # Coil (from commonMain)
+        "@maven//:io_coil_kt_coil3_coil_compose_jvm",
+        "@maven//:io_coil_kt_coil3_coil_network_ktor3_jvm",
 
-        # OpenTelemetry SDK (span processing + export)
+        # Ktor (from commonMain + jvmMain)
+        "@maven//:io_ktor_ktor_client_core_jvm",
+        "@maven//:io_ktor_ktor_client_content_negotiation_jvm",
+        "@maven//:io_ktor_ktor_serialization_kotlinx_json_jvm",
+        "@maven//:io_ktor_ktor_client_okhttp_jvm",
+
+        # Ksoup (from commonMain)
+        "@maven//:com_fleeksoft_ksoup_ksoup_jvm",
+
+        # Kotlin Multiplatform Diff (from commonMain)
+        "@maven//:io_github_petertrr_kotlin_multiplatform_diff_jvm",
+
+        # OpenTelemetry API (from jvmCommonMain) + SDK (from jvmMain)
+        "@maven//:io_opentelemetry_opentelemetry_api",
         "@maven//:io_opentelemetry_opentelemetry_sdk",
         "@maven//:io_opentelemetry_opentelemetry_exporter_logging",
 
-        # BouncyCastle (Argon2id KDF for vault encryption)
-        "@maven//:org_bouncycastle_bcprov_jdk18on",
+        # Kotlinx Swing dispatcher (from jvmMain)
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_swing",
 
-        # Ktor engine for Desktop
-        "@maven//:io_ktor_ktor_client_okhttp_jvm",
+        # JGit 7.x (from jvmMain)
+        "@maven//:org_eclipse_jgit_org_eclipse_jgit",
+        "@maven//:org_eclipse_jgit_org_eclipse_jgit_ssh_apache",
+
+        # BouncyCastle (from jvmMain)
+        "@maven//:org_bouncycastle_bcprov_jdk18on",
 
         # Kotlin stdlib
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",

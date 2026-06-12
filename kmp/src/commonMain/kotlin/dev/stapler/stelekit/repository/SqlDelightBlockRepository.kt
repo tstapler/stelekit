@@ -184,10 +184,11 @@ class SqlDelightBlockRepository(
     override fun getBlockParent(blockUuid: String): Flow<Either<DomainError, Block?>> = flow {
         try {
             val block = queries.selectBlockByUuid(blockUuid).executeAsOneOrNull()
-            if (block == null || block.parent_uuid == null) {
+            val parentUuid = block?.parent_uuid
+            if (block == null || parentUuid == null) {
                 emit(null.right())
             } else {
-                val parent = queries.selectBlockByUuid(block.parent_uuid).executeAsOneOrNull()
+                val parent = queries.selectBlockByUuid(parentUuid).executeAsOneOrNull()
                 emit(parent?.toBlockModel().right())
             }
         } catch (e: CancellationException) {
@@ -987,7 +988,7 @@ class SqlDelightBlockRepository(
     )
 
     /** Fold WAL frames into the main database file, shrinking the WAL to near-zero. */
-    suspend fun walCheckpoint() = withContext(PlatformDispatcher.DB) {
+    suspend fun walCheckpoint(): Unit = withContext(PlatformDispatcher.DB) {
         try {
             queries.pragmaWalCheckpointTruncate()
         } catch (e: CancellationException) {

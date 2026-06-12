@@ -23,9 +23,14 @@ kt_jvm_test(
             "**/screenshots/**",
         ],
     ),
-    test_class = "dev.stapler.stelekit.AllTestsKt",
+    test_class = "dev.stapler.stelekit.AllJvmTests",
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    plugins = [
+        "//:compose_compiler_plugin",
+        "//:serialization_compiler_plugin",
+    ],
+    associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"],
     deps = [
-        "//kmp/src/jvmMain/kotlin:jvm_main_lib",
         "//kmp/src/businessTest/kotlin:business_tests",
         "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
         "@maven//:org_jetbrains_compose_ui_ui_test_junit4_desktop",

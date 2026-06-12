@@ -29,15 +29,15 @@ alias(
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
-alias(
+test_suite(
     name = "jvm_tests",
-    actual = "//kmp/src/jvmTest/kotlin:jvm_tests",
+    tests = ["//kmp/src/jvmTest/kotlin:jvm_tests"],
     visibility = ["//visibility:public"],
 )
 
-alias(
+test_suite(
     name = "business_tests",
-    actual = "//kmp/src/businessTest/kotlin:business_tests",
+    tests = ["//kmp/src/businessTest/kotlin:business_tests"],
     visibility = ["//visibility:public"],
 )
 

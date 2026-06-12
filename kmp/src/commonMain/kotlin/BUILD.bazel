@@ -1,69 +1,22 @@
 """
-commonMain JVM library target.
+commonMain sources for JVM and Android compilation.
 
-Compiles the KMP shared sources against JVM-variant Maven artifacts.
-The same sources are also compiled by common_android target below for Android.
+JVM: sources are exported via the kt_srcs filegroup and compiled together with
+jvmCommonMain and jvmMain sources in //kmp/src/jvmMain/kotlin:jvm_main_lib.
+Compiling commonMain alone for JVM is not possible because expect declarations
+require their actual implementations to be present in the same compilation unit.
 
-See ADR-005 for the rationale of compiling commonMain twice (JVM + Android flavors).
+Android: common_android compiles commonMain sources against Android Maven artifacts.
+
+See ADR-005 for the double-compilation trade-off.
 """
 
-load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
-
 # ── JVM flavor ────────────────────────────────────────────────────────────────
-kt_jvm_library(
-    name = "common_jvm",
+# Sources exported for inclusion in //kmp/src/jvmMain/kotlin:jvm_main_lib,
+# which combines commonMain + jvmCommonMain + jvmMain into a single compilation.
+filegroup(
+    name = "kt_srcs",
     srcs = glob(["**/*.kt"]),
-    plugins = ["//:compose_compiler_plugin"],
-    deps = [
-        # SQLDelight runtime (JVM)
-        "//kmp/src/generated/sqldelight:sqldelight_generated_jvm",
-        "@maven//:app_cash_sqldelight_runtime_jvm",
-        "@maven//:app_cash_sqldelight_coroutines_extensions_jvm",
-        "@maven//:app_cash_sqldelight_async_extensions_jvm",
-
-        # Arrow (JVM classifier)
-        "@maven//:io_arrow_kt_arrow_core_jvm",
-        "@maven//:io_arrow_kt_arrow_optics_jvm",
-        "@maven//:io_arrow_kt_arrow_fx_coroutines_jvm",
-        "@maven//:io_arrow_kt_arrow_resilience_jvm",
-
-        # Kotlinx
-        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_datetime_jvm",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
-
-        # Markdown
-        "@maven//:org_jetbrains_markdown_jvm",
-
-        # Compose Desktop (JVM)
-        "@maven//:org_jetbrains_compose_runtime_runtime_desktop",
-        "@maven//:org_jetbrains_compose_foundation_foundation_desktop",
-        "@maven//:org_jetbrains_compose_material3_material3_desktop",
-        "@maven//:org_jetbrains_compose_material_material_icons_extended_desktop",
-        "@maven//:org_jetbrains_compose_components_components_resources_desktop",
-
-        # Lifecycle (JVM)
-        "@maven//:org_jetbrains_androidx_lifecycle_lifecycle_runtime_compose",
-        "@maven//:org_jetbrains_androidx_lifecycle_lifecycle_viewmodel_compose",
-
-        # Coil (JVM)
-        "@maven//:io_coil_kt_coil3_coil_compose_jvm",
-        "@maven//:io_coil_kt_coil3_coil_network_ktor3_jvm",
-
-        # Ktor (JVM)
-        "@maven//:io_ktor_ktor_client_core_jvm",
-        "@maven//:io_ktor_ktor_client_content_negotiation_jvm",
-        "@maven//:io_ktor_ktor_serialization_kotlinx_json_jvm",
-
-        # Ksoup (JVM)
-        "@maven//:com_fleeksoft_ksoup_ksoup_jvm",
-
-        # Kotlin Multiplatform Diff (JVM)
-        "@maven//:io_github_petertrr_kotlin_multiplatform_diff_jvm",
-
-        # Kotlin stdlib
-        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
-    ],
     visibility = ["//kmp:__subpackages__"],
 )
 
@@ -75,7 +28,10 @@ load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
 kt_android_library(
     name = "common_android",
     srcs = glob(["**/*.kt"]),
-    plugins = ["//:compose_compiler_plugin"],
+    plugins = [
+        "//:compose_compiler_plugin",
+        "//:serialization_compiler_plugin",
+    ],
     custom_package = "dev.stapler.stelekit",
     deps = [
         # SQLDelight runtime (JVM variant resolves for Android too)
