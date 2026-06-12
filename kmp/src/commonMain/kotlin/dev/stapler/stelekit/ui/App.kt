@@ -115,6 +115,56 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
+import arrow.core.Either
+import dev.stapler.stelekit.db.ImageImportService
+import dev.stapler.stelekit.error.toUiMessage
+import dev.stapler.stelekit.model.ImageSource
+import dev.stapler.stelekit.platform.sensor.CameraProvider
+import dev.stapler.stelekit.platform.sensor.SensorModule
+
+internal suspend fun executeCaptureAndImport(
+    imageImportService: ImageImportService?,
+    getActiveGraphPath: () -> String?,
+    pageUuid: String,
+    navigateAfterImport: Boolean,
+    cameraProvider: CameraProvider = SensorModule.cameraProvider,
+    onSnackbar: (String) -> Unit,
+    onNavigate: (annotationUuid: String, pageUuid: String) -> Unit,
+    onWarn: (String) -> Unit,
+) {
+    val service = imageImportService ?: run {
+        onWarn("captureAndImport called with no imageImportService")
+        return
+    }
+    val graphPath = getActiveGraphPath()?.takeIf { it.isNotEmpty() } ?: run {
+        onWarn("captureAndImport called with no active graph path")
+        return
+    }
+    when (val captured = cameraProvider.capturePhoto()) {
+        is Either.Left -> {
+            onWarn("Camera capture failed: ${captured.value.message}")
+            onSnackbar(captured.value.toUiMessage())
+        }
+        is Either.Right -> {
+            val result = service.import(
+                tempFile = captured.value,
+                graphPath = graphPath,
+                pageUuid = pageUuid,
+                source = ImageSource.CAMERA,
+                insertToJournalPage = false,
+            )
+            result.onLeft { err ->
+                onWarn("Camera image import failed: ${err.message}")
+                onSnackbar(err.toUiMessage())
+            }
+            if (navigateAfterImport) {
+                result.onRight { annotation ->
+                    onNavigate(annotation.uuid, pageUuid)
+                }
+            }
+        }
+    }
+}
 
 /**
  * Root Composable for the Logseq application.
@@ -1029,6 +1079,18 @@ private fun GraphContent(
                 ) {
                     val windowSizeClass = windowSizeClassFor(maxWidth)
                     val isMobile = windowSizeClass.isMobile
+                    val snackbarHostState = remember { SnackbarHostState() }
+                    LaunchedEffect(Unit) {
+                        viewModel.snackbarEvents.collect { msg ->
+                            try {
+                                snackbarHostState.showSnackbar(msg)
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                graphContentLogger.warn("showSnackbar failed: $e")
+                            }
+                        }
+                    }
 
                     CompositionLocalProvider(
                         LocalWindowSizeClass provides windowSizeClass,
@@ -1159,6 +1221,8 @@ private fun GraphContent(
                             )
                         },
                         content = {
+                            val cameraImportEnabled =
+                                imageImportService != null && SensorModule.cameraProvider.isAvailable
                             ScreenRouter(
                                 screen = appState.currentScreen,
                                 repos = repos,
@@ -1251,31 +1315,42 @@ private fun GraphContent(
                                             } else false
                                         }
                                     } else null,
+                                    onCaptureImage = if (cameraImportEnabled) {
+                                        {
+                                            scope.launch {
+                                                // Resolve page UUID before capturing — camera suspends for seconds,
+                                                // so we snapshot navigation state at button-tap time, not return time.
+                                                val pageUuid: String? =
+                                                    (appState.currentScreen as? Screen.PageView)?.page?.uuid?.value
+                                                        ?: appState.currentPage?.uuid?.value
+                                                val resolvedPageUuid = pageUuid
+                                                    ?: repos.journalService.ensureTodayJournal().uuid.value
+                                                executeCaptureAndImport(
+                                                    imageImportService = imageImportService,
+                                                    getActiveGraphPath = { graphManager.getActiveGraphInfo()?.path },
+                                                    pageUuid = resolvedPageUuid,
+                                                    navigateAfterImport = false,
+                                                    onSnackbar = { viewModel.sendSnackbar(it) },
+                                                    onNavigate = { annUuid, pgUuid -> viewModel.navigateToAnnotationEditor(annUuid, pgUuid) },
+                                                    onWarn = { graphContentLogger.warn(it) },
+                                                )
+                                            }
+                                        }
+                                    } else null,
                                 ),
-                                onImportImage = if (imageImportService != null &&
-                                    dev.stapler.stelekit.platform.sensor.SensorModule.cameraProvider.isAvailable) {
+                                onImportImage = if (cameraImportEnabled) {
                                     {
                                         scope.launch {
                                             val page = repos.journalService.ensureTodayJournal()
-                                            when (val captured = dev.stapler.stelekit.platform.sensor.SensorModule.cameraProvider.capturePhoto()) {
-                                                is arrow.core.Either.Left ->
-                                                    graphContentLogger.warn("Camera capture failed: ${captured.value}")
-                                                is arrow.core.Either.Right -> {
-                                                    val result = imageImportService.import(
-                                                        tempFile = captured.value,
-                                                        graphPath = activeGraphPath,
-                                                        pageUuid = page.uuid.value,
-                                                        source = dev.stapler.stelekit.model.ImageSource.CAMERA,
-                                                        insertToJournalPage = false,
-                                                    )
-                                                    result.onRight { annotation ->
-                                                        viewModel.navigateToAnnotationEditor(annotation.uuid, page.uuid.value)
-                                                    }
-                                                    result.onLeft { err ->
-                                                        graphContentLogger.warn("Image import failed: ${err.message}")
-                                                    }
-                                                }
-                                            }
+                                            executeCaptureAndImport(
+                                                imageImportService = imageImportService,
+                                                getActiveGraphPath = { graphManager.getActiveGraphInfo()?.path },
+                                                pageUuid = page.uuid.value,
+                                                navigateAfterImport = true,
+                                                onSnackbar = { viewModel.sendSnackbar(it) },
+                                                onNavigate = { annUuid, pgUuid -> viewModel.navigateToAnnotationEditor(annUuid, pgUuid) },
+                                                onWarn = { graphContentLogger.warn(it) },
+                                            )
                                         }
                                         Unit
                                     }
@@ -1312,6 +1387,7 @@ private fun GraphContent(
                                     }
                                 }
                             }
+                            SnackbarHost(hostState = snackbarHostState)
                         },
                         bottomBar = {
                             PlatformBottomBar(

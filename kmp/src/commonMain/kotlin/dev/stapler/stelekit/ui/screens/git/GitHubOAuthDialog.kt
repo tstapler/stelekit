@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import kotlin.time.Clock
 import kotlinx.coroutines.delay
 
 /**
@@ -184,11 +185,11 @@ fun GitHubOAuthDialog(
 
 @Composable
 private fun CountdownText(expiresAt: Long) {
-    var secondsLeft by remember { mutableLongStateOf(maxOf(0L, (expiresAt - System.currentTimeMillis()) / 1000L)) }
+    var secondsLeft by remember { mutableLongStateOf(maxOf(0L, (expiresAt - Clock.System.now().toEpochMilliseconds()) / 1000L)) }
     LaunchedEffect(expiresAt) {
         while (secondsLeft > 0) {
             delay(1000L)
-            secondsLeft = maxOf(0L, (expiresAt - System.currentTimeMillis()) / 1000L)
+            secondsLeft = maxOf(0L, (expiresAt - Clock.System.now().toEpochMilliseconds()) / 1000L)
         }
     }
     val minutes = secondsLeft / 60

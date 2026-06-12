@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -38,6 +39,7 @@ fun MobileBlockToolbar(
     onFormat: (FormatAction) -> Unit = {},
     onLinkPicker: (() -> Unit)? = null,
     onAttachImage: (() -> Unit)? = null,
+    onCaptureImage: (() -> Unit)? = null,
     isInSelectionMode: Boolean = false,
     selectedCount: Int = 0,
     onDeleteSelected: () -> Unit = {},
@@ -193,6 +195,14 @@ fun MobileBlockToolbar(
                                 modifier = Modifier.semantics { contentDescription = "Attach image" }
                             ) {
                                 Icon(Icons.Default.AttachFile, contentDescription = null)
+                            }
+                        }
+                        if (onCaptureImage != null) {
+                            IconButton(
+                                onClick = onCaptureImage,
+                                modifier = Modifier.semantics { contentDescription = "Capture photo" }
+                            ) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = null)
                             }
                         }
                     }

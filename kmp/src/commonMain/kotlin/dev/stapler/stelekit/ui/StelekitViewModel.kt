@@ -50,6 +50,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlin.time.Clock
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -59,6 +60,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.cancel
@@ -1660,7 +1662,19 @@ class StelekitViewModel(
         platformSettings.putBoolean("onboardingCompleted", completed)
         _uiState.update { it.copy(onboardingCompleted = completed) }
     }
-    
+
+    fun setStatusMessage(message: String) {
+        _uiState.update { it.copy(statusMessage = message) }
+    }
+
+    private val _snackbarEvents = Channel<String>(Channel.BUFFERED)
+    val snackbarEvents: Flow<String> = _snackbarEvents.receiveAsFlow()
+
+    fun sendSnackbar(message: String) {
+        val result = _snackbarEvents.trySend(message)
+        if (!result.isSuccess) logger.warn("sendSnackbar: channel full, message dropped: $message")
+    }
+
     fun toggleDebugMode() {
         _uiState.update { state ->
             val newDebugMode = !state.isDebugMode

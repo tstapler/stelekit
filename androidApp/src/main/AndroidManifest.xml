@@ -8,6 +8,12 @@
          access for orders-of-magnitude lower write latency. Play Store policy explicitly
          permits productivity file-editing apps. SAF remains the fallback if not granted. -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!-- CAMERA: required for CameraX image capture via AndroidCameraProvider.
+         Without this declaration, ContextCompat.checkSelfPermission always returns DENIED.
+         android:required="false" prevents Play Store filtering for camera-less devices;
+         the toolbar button is already hidden when SensorModule.cameraProvider.isAvailable is false. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- SAF (Storage Access Framework) grants are given at runtime via ACTION_OPEN_DOCUMENT_TREE
          and stored as persistable URI permissions — no manifest storage permissions needed. -->
 
