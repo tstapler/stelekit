@@ -2,6 +2,7 @@ package dev.stapler.stelekit
 
 import android.Manifest
 import android.content.ComponentCallbacks2
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -39,6 +40,7 @@ import dev.stapler.stelekit.voice.buildVoicePipeline
 import dev.stapler.stelekit.platform.google.AndroidGoogleAuthManager
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
+import java.io.File
 
 class MainActivity : ComponentActivity() {
 
@@ -47,6 +49,7 @@ class MainActivity : ComponentActivity() {
     private var pendingFolderPick: CompletableDeferred<String?>? = null
     private var pendingMicPermission: CompletableDeferred<Boolean>? = null
     private var pendingSaveFile: CompletableDeferred<String?>? = null
+    private var pendingFilePick: CompletableDeferred<String?>? = null
 
     private val micPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -60,6 +63,36 @@ class MainActivity : ComponentActivity() {
     ) { uri: Uri? ->
         pendingSaveFile?.complete(uri?.toString())
         pendingSaveFile = null
+    }
+
+    private val filePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) {
+            pendingFilePick?.complete(null)
+            pendingFilePick = null
+            return@registerForActivityResult
+        }
+        try {
+            val sshKeysDir = getDir("ssh_keys", Context.MODE_PRIVATE)
+            sshKeysDir.mkdirs()
+            val displayName = contentResolver.query(
+                uri,
+                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            } ?: uri.lastPathSegment ?: "ssh_key"
+            val destFile = File(sshKeysDir, displayName)
+            contentResolver.openInputStream(uri)?.use { input ->
+                destFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            pendingFilePick?.complete(destFile.absolutePath)
+        } catch (e: Exception) {
+            Log.e(TAG, "filePickerLauncher: failed to copy SSH key file", e)
+            pendingFilePick?.complete(null)
+        }
+        pendingFilePick = null
     }
 
     private val folderPickerLauncher = registerForActivityResult(
@@ -143,6 +176,12 @@ class MainActivity : ComponentActivity() {
             runOnUiThread { saveFileLauncher.launch(suggestedName) }
             deferred.await()
         }
+        fileSystem.initFilePicker {
+            val deferred = CompletableDeferred<String?>()
+            pendingFilePick = deferred
+            runOnUiThread { filePickerLauncher.launch(arrayOf("*/*")) }
+            deferred.await()
+        }
 
         if (!OtelProvider.isInitialized) {
             OtelProvider.initialize(OtelExporterConfig(enableStdout = false, enableRingBuffer = true))
@@ -163,6 +202,12 @@ class MainActivity : ComponentActivity() {
                         val deferred = CompletableDeferred<String?>()
                         pendingSaveFile = deferred
                         runOnUiThread { saveFileLauncher.launch(suggestedName) }
+                        deferred.await()
+                    }
+                    initFilePicker {
+                        val deferred = CompletableDeferred<String?>()
+                        pendingFilePick = deferred
+                        runOnUiThread { filePickerLauncher.launch(arrayOf("*/*")) }
                         deferred.await()
                     }
                 }

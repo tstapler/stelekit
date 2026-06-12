@@ -189,4 +189,12 @@ class GitHubDeviceFlowClient(
             null
         }
     }
+
+    /**
+     * Closes the underlying Ktor [HttpClient] if one was provided.
+     * Call this when the composable that owns this client leaves composition.
+     */
+    fun close() {
+        httpClient?.close()
+    }
 }

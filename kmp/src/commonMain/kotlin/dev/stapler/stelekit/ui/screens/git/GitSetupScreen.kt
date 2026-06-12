@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.ui.screens.git
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -100,6 +102,7 @@ fun GitSetupScreen(
     deviceFlowClient: GitHubDeviceFlowClient? = null,
 ) {
     val scope = rememberCoroutineScope()
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     var step by remember { mutableIntStateOf(initialStep) }
 
     // Form state
@@ -152,12 +155,17 @@ fun GitSetupScreen(
         else -> "Git Sync Setup"
     }
 
+    DisposableEffect(deviceFlowClient) {
+        onDispose {
+            deviceFlowClient?.close()
+        }
+    }
+
     if (showOAuthDialog && oauthDialogState != null) {
         GitHubOAuthDialog(
             state = oauthDialogState!!,
             onCopyCode = { code ->
-                // Use platform clipboard via androidx.compose clipboard
-                // (writeText available via clipboard manager in composable scope)
+                clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(code))
             },
             onOpenBrowser = { url ->
                 dev.stapler.stelekit.platform.openInBrowser(url)
@@ -332,7 +340,8 @@ fun GitSetupScreen(
                                 testResult = "Connection successful."
                             } else {
                                 testSuccess = false
-                                testResult = "Connection failed."
+                                val errMsg = (result as? Either.Left)?.value?.message ?: "Unknown error"
+                                testResult = "Connection failed: $errMsg"
                             }
                         }
                     },
@@ -519,12 +528,18 @@ private fun Step1CloneMode(
         Text("Repository mode", style = MaterialTheme.typography.titleMedium)
         Text("Do you already have a local git clone of your notes repository?", style = MaterialTheme.typography.bodyMedium)
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { onUseExistingClone(true) },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             RadioButton(selected = useExistingClone, onClick = { onUseExistingClone(true) })
             Spacer(modifier = Modifier.width(8.dp))
             Text("Use existing clone")
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { onUseExistingClone(false) },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             RadioButton(selected = !useExistingClone, onClick = { onUseExistingClone(false) })
             Spacer(modifier = Modifier.width(8.dp))
             Text("Clone a remote repository")
@@ -625,22 +640,34 @@ private fun Step3Auth(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Authentication", style = MaterialTheme.typography.titleMedium)
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { onAuthTypeChange(GitAuthType.NONE) },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             RadioButton(selected = authType == GitAuthType.NONE, onClick = { onAuthTypeChange(GitAuthType.NONE) })
             Spacer(modifier = Modifier.width(8.dp))
             Text("No authentication (public repo)")
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { onAuthTypeChange(GitAuthType.SSH_KEY) },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             RadioButton(selected = authType == GitAuthType.SSH_KEY, onClick = { onAuthTypeChange(GitAuthType.SSH_KEY) })
             Spacer(modifier = Modifier.width(8.dp))
             Text("SSH key")
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { onAuthTypeChange(GitAuthType.HTTPS_TOKEN) },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             RadioButton(selected = authType == GitAuthType.HTTPS_TOKEN, onClick = { onAuthTypeChange(GitAuthType.HTTPS_TOKEN) })
             Spacer(modifier = Modifier.width(8.dp))
             Text("HTTPS token (GitHub PAT, etc.)")
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { onAuthTypeChange(GitAuthType.GITHUB_OAUTH) },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             RadioButton(selected = authType == GitAuthType.GITHUB_OAUTH, onClick = { onAuthTypeChange(GitAuthType.GITHUB_OAUTH) })
             Spacer(modifier = Modifier.width(8.dp))
             Text("GitHub (OAuth)")
@@ -663,6 +690,12 @@ private fun Step3Auth(
                         }
                     }
                 } else null,
+            )
+            Text(
+                "On Android, the selected file is copied to secure app storage. The path shown is the app-private copy.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
             )
             var passphraseVisible by remember { mutableStateOf(false) }
             OutlinedTextField(
@@ -715,7 +748,7 @@ private fun Step3Auth(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Check,
-                        contentDescription = null,
+                        contentDescription = "Connected",
                         tint = Color(0xFF10B981),
                         modifier = Modifier.size(16.dp),
                     )
@@ -780,7 +813,10 @@ private fun Step4Branch(
 
         val intervals = listOf(0 to "Off", 5 to "5 minutes", 15 to "15 minutes", 30 to "30 minutes", 60 to "1 hour")
         intervals.forEach { (minutes, label) ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { onPollIntervalChange(minutes) },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 RadioButton(
                     selected = pollIntervalMinutes == minutes,
                     onClick = { onPollIntervalChange(minutes) },
@@ -834,7 +870,7 @@ private fun Step5TestAndSave(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = if (testSuccess) Icons.Default.Check else Icons.Default.Error,
-                    contentDescription = null,
+                    contentDescription = if (testSuccess) "Success" else "Error",
                     tint = if (testSuccess) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(16.dp),
                 )

@@ -120,6 +120,11 @@ fun GitHubOAuthDialog(
                             Text("Waiting for GitHub authorization…")
                         }
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Text(
+                            "Once you approve in the browser, this screen will update automatically.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
 
                     is OAuthDialogState.Success -> {
@@ -129,7 +134,7 @@ fun GitHubOAuthDialog(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Check,
-                                contentDescription = null,
+                                contentDescription = "Authorization successful",
                                 tint = Color(0xFF10B981),
                                 modifier = Modifier.size(24.dp),
                             )
@@ -147,7 +152,7 @@ fun GitHubOAuthDialog(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Error,
-                                contentDescription = null,
+                                contentDescription = "Authorization error",
                                 tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(24.dp),
                             )
