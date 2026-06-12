@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -194,6 +195,37 @@ class StelekitViewModelLoadingTest {
         }
 
         assertNull(vm.uiState.value.fatalError, "fatalError must be null after clearFatalError()")
+    }
+
+    // ─── Snackbar channel ────────────────────────────────────────────────────
+
+    @Test
+    fun sendSnackbar_delivers_message_to_snackbarEvents_collector() = runBlocking {
+        val vm = makeViewModel()
+        vm.sendSnackbar("Camera permission denied")
+        val received = withTimeout(1_000) { vm.snackbarEvents.first() }
+        assertEquals("Camera permission denied", received)
+    }
+
+    @Test
+    fun sendSnackbar_second_call_delivers_second_message() = runBlocking {
+        val vm = makeViewModel()
+        vm.sendSnackbar("first")
+        vm.sendSnackbar("second")
+        val first = withTimeout(1_000) { vm.snackbarEvents.first() }
+        val second = withTimeout(1_000) { vm.snackbarEvents.first() }
+        assertEquals(listOf("first", "second"), listOf(first, second))
+    }
+
+    @Test
+    fun sendSnackbar_identical_messages_both_delivered() = runBlocking {
+        val vm = makeViewModel()
+        vm.sendSnackbar("error A")
+        vm.sendSnackbar("error A")
+        val first = withTimeout(1_000) { vm.snackbarEvents.first() }
+        val second = withTimeout(1_000) { vm.snackbarEvents.first() }
+        assertEquals("error A", first)
+        assertEquals("error A", second)
     }
 
     // ─── Cancellation resilience ─────────────────────────────────────────────

@@ -1671,7 +1671,8 @@ class StelekitViewModel(
     val snackbarEvents: Flow<String> = _snackbarEvents.receiveAsFlow()
 
     fun sendSnackbar(message: String) {
-        _snackbarEvents.trySend(message)
+        val result = _snackbarEvents.trySend(message)
+        if (!result.isSuccess) logger.warn("sendSnackbar: channel full, message dropped: $message")
     }
 
     fun toggleDebugMode() {

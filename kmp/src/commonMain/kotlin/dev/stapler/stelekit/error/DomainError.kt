@@ -112,10 +112,10 @@ fun Throwable.toDatabaseError(): DomainError.DatabaseError.WriteFailed =
     DomainError.DatabaseError.WriteFailed(message ?: "unknown")
 
 fun DomainError.toUiMessage(): String = when (this) {
-    is DomainError.DatabaseError.WriteFailed -> "Save failed: $message"
-    is DomainError.DatabaseError.ReadFailed -> "Read failed: $message"
+    is DomainError.DatabaseError.WriteFailed -> "Save failed"
+    is DomainError.DatabaseError.ReadFailed -> "Read failed"
     is DomainError.DatabaseError.NotFound -> message
-    is DomainError.DatabaseError.TransactionFailed -> "Transaction failed: $message"
+    is DomainError.DatabaseError.TransactionFailed -> "Transaction failed"
     is DomainError.FileSystemError.NotFound -> "File not found"
     is DomainError.FileSystemError.WriteFailed -> "File write failed"
     is DomainError.FileSystemError.ReadFailed -> "File read failed"
