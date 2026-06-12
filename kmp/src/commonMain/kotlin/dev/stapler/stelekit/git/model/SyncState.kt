@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.git.model
 
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.merge.JournalMergeProposal
 
 sealed class SyncState {
     data object Idle : SyncState()
@@ -15,6 +16,7 @@ sealed class SyncState {
     /** Emitted when sync requires credentials but the vault is locked. */
     data object CredentialVaultLocked : SyncState()
     data class ConflictPending(val conflicts: List<ConflictFile>) : SyncState()
+    data class JournalMergeReady(val proposal: JournalMergeProposal) : SyncState()
     data class Error(val error: DomainError.GitError) : SyncState()
     data class CredentialExpired(val graphId: String) : SyncState()
     data class Success(

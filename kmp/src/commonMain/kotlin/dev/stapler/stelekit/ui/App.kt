@@ -64,6 +64,7 @@ import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.repository.*
 import dev.stapler.stelekit.ui.components.*
+import dev.stapler.stelekit.ui.components.git.GitDetectionBanner
 import dev.stapler.stelekit.ui.components.settings.SettingsDialog
 import dev.stapler.stelekit.ui.rememberShareProvider
 import dev.stapler.stelekit.ui.i18n.I18n
@@ -608,6 +609,7 @@ private fun GraphContent(
                 ringBuffer = repos.ringBuffer,
                 activeGitSyncService = graphManager.activeGitSyncService,
                 activeGraphIdProvider = { graphManager.getActiveGraphId() },
+                onDismissGitDetection = { graphId -> graphManager.setGitDetectionDismissed(graphId, true) },
                 scope = viewModelScope,
             )
         ).also {
@@ -1223,6 +1225,22 @@ private fun GraphContent(
                         content = {
                             val cameraImportEnabled =
                                 imageImportService != null && SensorModule.cameraProvider.isAvailable
+                            val activeGraphInfo2 = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }
+                            val showGitBanner = activeGraphInfo2?.detectedRepoRoot != null &&
+                                appState.gitConfig == null &&
+                                activeGraphInfo2.gitDetectionDismissed == false
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                if (showGitBanner) {
+                                    GitDetectionBanner(
+                                        repoRoot = activeGraphInfo2!!.detectedRepoRoot!!,
+                                        onSetupSync = { viewModel.openGitSetup() },
+                                        onDismiss = {
+                                            val gid = activeGraphId ?: return@GitDetectionBanner
+                                            viewModel.dismissGitDetection(gid)
+                                        },
+                                    )
+                                }
+                            Box(modifier = Modifier.weight(1f)) {
                             ScreenRouter(
                                 screen = appState.currentScreen,
                                 repos = repos,
@@ -1360,6 +1378,8 @@ private fun GraphContent(
                                 perfHistograms = perfHistograms,
                                 perfQueryStats = perfQueryStats,
                             )
+                            } // Box
+                            } // Column
                         },
                         statusBar = {
                             if (!isMobile) {

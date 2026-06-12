@@ -116,6 +116,7 @@ class StelekitViewModel(
     private val debugFlagRepository: dev.stapler.stelekit.performance.DebugFlagRepository? = deps.debugFlagRepository
     private val activeGitSyncService: StateFlow<GitSyncService?> = deps.activeGitSyncService
     private val activeGraphIdProvider: () -> String? = deps.activeGraphIdProvider
+    private val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = deps.onDismissGitDetection
     private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(deps.ringBuffer)
     // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
     // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
@@ -246,6 +247,13 @@ class StelekitViewModel(
     /** Dismisses the conflict resolution screen. */
     fun dismissConflictResolution() {
         _uiState.update { it.copy(conflictResolutionVisible = false) }
+    }
+
+    /** Dismisses the git auto-detection banner for the given graph. */
+    fun dismissGitDetection(graphId: String) {
+        scope.launch {
+            onDismissGitDetection?.invoke(graphId)
+        }
     }
 
     // Track recent pages manually to avoid "recently loaded" issues

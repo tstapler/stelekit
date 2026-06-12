@@ -12,6 +12,9 @@ data class GraphInfo(
     val displayName: String,  // User-facing name (defaults to directory name)
     val addedAt: Long,        // Epoch millis
     val isParanoidMode: Boolean = false,  // True when .stele-vault is present
+    val detectedRepoRoot: String? = null,
+    val detectedWikiSubdir: String? = null,
+    val gitDetectionDismissed: Boolean = false,
 )
 
 /**

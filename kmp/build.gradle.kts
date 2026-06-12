@@ -776,6 +776,19 @@ tasks.register("runApp") {
     dependsOn("run")
 }
 
+// ── SteleKit headless sync CLI ───────────────────────────────────────────────
+// Run with: ./gradlew :kmp:runSync -Pargs="--graph /path/to/graph"
+tasks.register<JavaExec>("runSync") {
+    group = "application"
+    description = "Run the SteleKit headless sync CLI"
+    classpath = kotlin.jvm().compilations["main"].output.allOutputs +
+                kotlin.jvm().compilations["main"].runtimeDependencyFiles
+    mainClass.set("dev.stapler.stelekit.cli.SyncMainKt")
+    val argsStr = project.findProperty("args") as String? ?: ""
+    args = argsStr.split(" ").filter { it.isNotBlank() }
+    dependsOn("jvmJar")
+}
+
 // ── Detekt static analysis ──────────────────────────────────────────────────
 detekt {
     config.setFrom(file("config/detekt/detekt.yml"))

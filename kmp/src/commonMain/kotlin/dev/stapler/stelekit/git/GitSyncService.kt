@@ -11,6 +11,7 @@ import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.FilePath
+import dev.stapler.stelekit.git.merge.JournalMergeService
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
@@ -48,6 +49,7 @@ class GitSyncService(
     private val fileSystem: FileSystem,
     /** Returns the active [CredentialAccess] for checking vault availability before sync. Null means always available. */
     private val credentialAccessProvider: (() -> CredentialAccess)? = null,
+    private val journalMergeService: JournalMergeService? = null,
 ) {
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
@@ -160,6 +162,29 @@ class GitSyncService(
                 }
 
                 if (mergeResult.hasConflicts) {
+                    // Try algorithmic journal merge for journal files
+                    val journalConflicts = mergeResult.conflicts.filter {
+                        JournalMergeService.isJournalFile(
+                            it.filePath.substringAfterLast('/').substringAfterLast('\\')
+                        )
+                    }
+                    if (journalConflicts.isNotEmpty() && journalMergeService != null) {
+                        val proposal = try {
+                            journalMergeService.propose(journalConflicts.first(), config.wikiRoot)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            null
+                        }
+                        if (proposal != null) {
+                            _syncState.value = SyncState.JournalMergeReady(proposal)
+                            val conflictErr = DomainError.GitError.MergeConflict(
+                                conflictCount = mergeResult.conflicts.size,
+                                conflictPaths = mergeResult.conflicts.map { it.filePath },
+                            )
+                            return@withContext conflictErr.left()
+                        }
+                    }
                     val conflictErr = DomainError.GitError.MergeConflict(
                         conflictCount = mergeResult.conflicts.size,
                         conflictPaths = mergeResult.conflicts.map { it.filePath },

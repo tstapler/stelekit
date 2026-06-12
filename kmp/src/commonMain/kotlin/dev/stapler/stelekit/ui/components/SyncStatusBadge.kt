@@ -235,6 +235,23 @@ private fun SyncStateBadge(
             }
         }
 
+        is SyncState.JournalMergeReady -> {
+            Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = "Journal merge ready",
+                    tint = Color(0xFFF59E0B), // amber-400
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(modifier = Modifier.width(2.dp))
+                Text(
+                    text = "Merge ready",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFF59E0B),
+                )
+            }
+        }
+
         is SyncState.Success -> {
             // Brief green checkmark that fades after 3 seconds
             var visible by remember(syncState) { mutableStateOf(true) }

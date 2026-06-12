@@ -141,8 +141,14 @@ actual class CredentialStore actual constructor() : dev.stapler.stelekit.git.Cre
 
     actual override fun retrieve(key: String): String? {
         val props = loadProperties()
-        val encoded = props.getProperty(key) ?: return null
-        return decrypt(encoded)
+        val encoded = props.getProperty(key)
+        val decrypted = if (encoded != null) decrypt(encoded) else null
+        // Fall back to STELEKIT_GIT_TOKEN env var for headless/CI usage when no stored credential is found
+        if (decrypted == null) {
+            val envToken = System.getenv("STELEKIT_GIT_TOKEN")
+            if (envToken != null) return envToken
+        }
+        return decrypted
     }
 
     actual override fun delete(key: String) {
