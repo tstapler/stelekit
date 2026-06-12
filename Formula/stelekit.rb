@@ -19,9 +19,16 @@ class Stelekit < Formula
   def install
     if OS.linux?
       appimage = "SteleKit-v#{version}-linux.AppImage"
-      (prefix/"bin").mkpath
-      cp appimage, prefix/"bin/stelekit"
-      chmod 0755, prefix/"bin/stelekit"
+      (libexec).mkpath
+      cp appimage, libexec/"stelekit.AppImage"
+      chmod 0755, libexec/"stelekit.AppImage"
+
+      # Wrapper script — sets APPIMAGE_EXTRACT_AND_RUN=1 so AppImage works without FUSE
+      (bin/"stelekit").write <<~SH
+        #!/bin/sh
+        exec env APPIMAGE_EXTRACT_AND_RUN=1 "#{libexec}/stelekit.AppImage" "$@"
+      SH
+      chmod 0755, bin/"stelekit"
 
       # Desktop entry
       (share/"applications").mkpath
@@ -38,7 +45,7 @@ class Stelekit < Formula
       DESKTOP
 
       # Extract icon from AppImage and install to hicolor
-      system "#{prefix}/bin/stelekit", "--appimage-extract", "stelekit.png"
+      system "env", "APPIMAGE_EXTRACT_AND_RUN=1", "#{libexec}/stelekit.AppImage", "--appimage-extract", "stelekit.png"
       icon_dir = share/"icons/hicolor/256x256/apps"
       icon_dir.mkpath
       cp "squashfs-root/stelekit.png", icon_dir/"stelekit.png"
@@ -98,9 +105,6 @@ class Stelekit < Formula
         Homebrew's share directory to XDG_DATA_DIRS by sourcing brew shellenv
         in ~/.profile or ~/.bash_profile:
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-
-        If the app fails to start, try:
-          APPIMAGE_EXTRACT_AND_RUN=1 stelekit
       EOS
     end
   end
