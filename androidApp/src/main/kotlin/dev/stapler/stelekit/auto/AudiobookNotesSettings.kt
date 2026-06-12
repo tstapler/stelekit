@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -119,7 +121,12 @@ fun AudiobookNotesSettings(settings: AudiobookAutoSettings) {
                         snippetDuration = seconds
                         settings.setSnippetDurationSeconds(seconds)
                     },
-                    modifier = if (snippetDuration == seconds) Modifier else Modifier
+                    colors = if (snippetDuration == seconds)
+                        ButtonDefaults.outlinedButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    else
+                        ButtonDefaults.outlinedButtonColors(),
                 ) {
                     Text("${seconds}s")
                 }
