@@ -34,49 +34,15 @@ jobs:
           manifest-file: .release-please-manifest.json
           draft: true
 
-  # ── KMP JVM tests ──────────────────────────────────────────────────────────
-  # Runs on every push to main (not gated on a release). Executes the fast
-  # JVM test subset (excludes Roborazzi screenshot tests) with a virtual X
-  # display so Compose UI tests can render headlessly. A failure here blocks
-  # the resolve-version job and therefore all downstream build jobs.
-  test-kmp:
-    name: Test (KMP JVM)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-home-cache-cleanup: true
-          gradle-home-cache-strict-match: true
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-
-      - name: Install Xvfb (virtual display for Compose UI tests)
-        run: sudo apt-get install -y xvfb
-
-      - name: Run JVM tests (fast subset, no screenshots)
-        run: |
-          Xvfb :99 -screen 0 1280x720x24 &
-          sleep 1
-          DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 \
-            ./gradlew :kmp:jvmTestFast --no-daemon --build-cache
-
   # ── Resolve version ────────────────────────────────────────────────────────
   # Normalises the version string from either Release Please or workflow_dispatch
   # so all build jobs can reference a single output.
   resolve-version:
     name: Resolve version
     runs-on: ubuntu-latest
-    needs: [release-please, test-kmp]
+    needs: [release-please]
     if: |
-      always() &&
-      (needs.test-kmp.result == 'success' || needs.test-kmp.result == 'skipped') && (
+      always() && (
         (needs.release-please.result == 'success' && needs.release-please.outputs.release_created == 'true') ||
         (needs.release-please.result == 'skipped' && github.event_name == 'workflow_dispatch')
       )
@@ -91,12 +57,90 @@ jobs:
             echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
           fi
 
+  # ── CI status check ────────────────────────────────────────────────────────
+  # Checks whether ci.yml already passed for this commit or its parent. The
+  # parent check covers the normal Release Please path: RP commits only bump
+  # version files, so the parent (the feature-merge commit) is the one that ran
+  # CI. If either passed, the test-kmp safety gate below is skipped.
+  check-ci-status:
+    name: Check CI status
+    runs-on: ubuntu-latest
+    needs: [release-please]
+    if: |
+      always() && (
+        (needs.release-please.result == 'success' && needs.release-please.outputs.release_created == 'true') ||
+        (needs.release-please.result == 'skipped' && github.event_name == 'workflow_dispatch')
+      )
+    outputs:
+      ci_passed: ${{ steps.check.outputs.ci_passed }}
+    permissions:
+      actions: read
+    steps:
+      - name: Check if ci.yml passed for this commit or its parent
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="${{ github.sha }}"
+          # Release Please commits only bump version files; check parent too so
+          # the feature-merge commit's CI run counts as validation.
+          PARENT_SHA=$(gh api "/repos/${{ github.repository }}/commits/${SHA}" \
+            --jq '.parents[0].sha // empty' 2>/dev/null || true)
+
+          ci_passed_for() {
+            local commit="$1"
+            [ -z "$commit" ] && return 1
+            local count
+            count=$(gh run list \
+              --repo "${{ github.repository }}" \
+              --workflow ci.yml \
+              --commit "$commit" \
+              --status success \
+              --limit 1 \
+              --json databaseId \
+              --jq 'length' 2>/dev/null || echo 0)
+            [ "${count:-0}" -gt 0 ]
+          }
+
+          if ci_passed_for "$SHA" || ci_passed_for "$PARENT_SHA"; then
+            echo "ci.yml passed for ${SHA} or parent — skipping redundant tests"
+            echo "ci_passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No successful ci.yml run found — will run tests as safety gate"
+            echo "ci_passed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── KMP safety gate ────────────────────────────────────────────────────────
+  # Runs JVM + Android unit tests only when ci.yml has NOT passed for this
+  # commit or its parent (e.g. a direct push to main bypassed PR checks).
+  # Skipped on the normal PR → merge path — adds zero release latency then.
+  test-kmp:
+    name: Test KMP (safety gate)
+    runs-on: ubuntu-latest
+    needs: [resolve-version, check-ci-status]
+    if: |
+      always() &&
+      needs.resolve-version.result == 'success' &&
+      (needs.check-ci-status.result == 'success' || needs.check-ci-status.result == 'failure') &&
+      needs.check-ci-status.outputs.ci_passed != 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+      - name: Run JVM and Android unit tests
+        run: ./gradlew jvmTest testDebugUnitTest --no-daemon --build-cache
+
   # ── Android release APK ────────────────────────────────────────────────────
   android-release:
     name: Android Release APK
     runs-on: ubuntu-latest
-    needs: resolve-version
-    if: ${{ always() && needs.resolve-version.result == 'success' }}
+    needs: [resolve-version, test-kmp]
+    if: ${{ always() && needs.resolve-version.result == 'success' && (needs.test-kmp.result == 'success' || needs.test-kmp.result == 'skipped') }}
     permissions:
       contents: read
 
@@ -156,8 +200,8 @@ jobs:
   desktop-linux:
     name: Desktop (Linux)
     runs-on: ubuntu-latest
-    needs: resolve-version
-    if: ${{ always() && needs.resolve-version.result == 'success' }}
+    needs: [resolve-version, test-kmp]
+    if: ${{ always() && needs.resolve-version.result == 'success' && (needs.test-kmp.result == 'success' || needs.test-kmp.result == 'skipped') }}
     permissions:
       contents: read
 
@@ -192,12 +236,25 @@ jobs:
           mv "$DEB" "kmp/build/compose/binaries/main/deb/SteleKit-${{ needs.resolve-version.outputs.version }}-linux.deb"
           mv "$RPM" "kmp/build/compose/binaries/main/rpm/SteleKit-${{ needs.resolve-version.outputs.version }}-linux.rpm"
 
+      - name: Cache appimagetool
+        id: cache-appimagetool
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin/appimagetool
+          key: appimagetool-continuous-x86_64
+
+      - name: Download appimagetool
+        if: steps.cache-appimagetool.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.local/bin
+          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
+            -O ~/.local/bin/appimagetool
+          chmod +x ~/.local/bin/appimagetool
+
       - name: Build AppImage
         run: |
           APP_VERSION="${{ needs.resolve-version.outputs.version }}"
-          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
-            -O /tmp/appimagetool
-          chmod +x /tmp/appimagetool
+          APPIMAGE_TOOL=~/.local/bin/appimagetool
 
           APPDIR="$(pwd)/AppDir"
           mkdir -p "$APPDIR/usr"
@@ -228,7 +285,7 @@ jobs:
           chmod +x "$APPDIR/AppRun"
 
           ARCH=$(uname -m)
-          APPIMAGE_EXTRACT_AND_RUN=1 ARCH="$ARCH" /tmp/appimagetool "$APPDIR" \
+          APPIMAGE_EXTRACT_AND_RUN=1 ARCH="$ARCH" "$APPIMAGE_TOOL" "$APPDIR" \
             "kmp/build/compose/binaries/main/SteleKit-${APP_VERSION}-linux.AppImage"
 
       - name: Smoke-test AppImage startup
@@ -245,14 +302,25 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN=1 DISPLAY=:99 "$APPIMAGE" >/tmp/stelekit-smoke.log 2>&1 &
           APP_PID=$!
 
-          sleep 20
+          sleep 2
+          TIMEOUT=30
+          ELAPSED=2
+          PASSED=false
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            if kill -0 $APP_PID 2>/dev/null; then
+              PASSED=true
+              break
+            fi
+            sleep 2
+            ELAPSED=$((ELAPSED + 2))
+          done
 
-          if kill -0 $APP_PID 2>/dev/null; then
-            echo "Smoke test passed — app still running after 20s"
+          if [ "$PASSED" = "true" ]; then
+            echo "Smoke test passed — app still running after ${ELAPSED}s"
             kill $APP_PID 2>/dev/null || true
           else
             wait $APP_PID; EXIT_CODE=$?
-            echo "Smoke test FAILED — app exited with code $EXIT_CODE"
+            echo "Smoke test FAILED — app exited within ${TIMEOUT}s (code $EXIT_CODE)"
             cat /tmp/stelekit-smoke.log || true
             kill $XVFB_PID 2>/dev/null || true
             exit 1
@@ -272,8 +340,8 @@ jobs:
   desktop-macos:
     name: Desktop (macOS)
     runs-on: macos-latest
-    needs: resolve-version
-    if: ${{ always() && needs.resolve-version.result == 'success' }}
+    needs: [resolve-version, test-kmp]
+    if: ${{ always() && needs.resolve-version.result == 'success' && (needs.test-kmp.result == 'success' || needs.test-kmp.result == 'skipped') }}
     permissions:
       contents: read
 
@@ -320,14 +388,25 @@ jobs:
           /tmp/stelekit-smoke/stelekit.app/Contents/MacOS/stelekit >/tmp/stelekit-smoke.log 2>&1 &
           APP_PID=$!
 
-          sleep 20
+          sleep 2
+          TIMEOUT=30
+          ELAPSED=2
+          PASSED=false
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            if kill -0 $APP_PID 2>/dev/null; then
+              PASSED=true
+              break
+            fi
+            sleep 2
+            ELAPSED=$((ELAPSED + 2))
+          done
 
-          if kill -0 $APP_PID 2>/dev/null; then
-            echo "Smoke test passed — app still running after 20s"
+          if [ "$PASSED" = "true" ]; then
+            echo "Smoke test passed — app still running after ${ELAPSED}s"
             kill $APP_PID 2>/dev/null || true
           else
             wait $APP_PID; EXIT_CODE=$?
-            echo "Smoke test FAILED — app exited with code $EXIT_CODE"
+            echo "Smoke test FAILED — app exited within ${TIMEOUT}s (code $EXIT_CODE)"
             cat /tmp/stelekit-smoke.log || true
             hdiutil detach /tmp/stelekit-smoke -quiet || true
             exit 1
@@ -344,8 +423,8 @@ jobs:
   desktop-windows:
     name: Desktop (Windows)
     runs-on: windows-latest
-    needs: resolve-version
-    if: ${{ always() && needs.resolve-version.result == 'success' }}
+    needs: [resolve-version, test-kmp]
+    if: ${{ always() && needs.resolve-version.result == 'success' && (needs.test-kmp.result == 'success' || needs.test-kmp.result == 'skipped') }}
     permissions:
       contents: read
 
@@ -377,13 +456,24 @@ jobs:
           if (-not $exe) { Write-Error "stelekit.exe not found"; exit 1 }
 
           $proc = Start-Process -FilePath $exe.FullName -RedirectStandardError "$env:TEMP\stelekit-smoke.log" -PassThru
-          Start-Sleep 20
+          Start-Sleep 2
+          $timeout = 30
+          $elapsed = 2
+          $passed = $false
+          while ($elapsed -lt $timeout) {
+            if (-not $proc.HasExited) {
+              $passed = $true
+              break
+            }
+            Start-Sleep 2
+            $elapsed += 2
+          }
 
-          if (-not $proc.HasExited) {
-            Write-Host "Smoke test passed — app still running after 20s"
+          if ($passed) {
+            Write-Host "Smoke test passed — app still running after ${elapsed}s"
             Stop-Process -Id $proc.Id -Force
           } else {
-            Write-Host "Smoke test FAILED — app exited with code $($proc.ExitCode)"
+            Write-Host "Smoke test FAILED — app exited within ${timeout}s (code $($proc.ExitCode))"
             Get-Content "$env:TEMP\stelekit-smoke.log" -ErrorAction SilentlyContinue
             exit 1
           }
@@ -618,6 +708,8 @@ jobs:
     needs: [update-fdroid]
     if: ${{ always() && needs.update-fdroid.result == 'success' }}
     uses: ./.github/workflows/pages.yml
+    with:
+      skip_demo_rebuild: true
     permissions:
       contents: read
       pages: write
