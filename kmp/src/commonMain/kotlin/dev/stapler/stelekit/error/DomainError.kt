@@ -121,22 +121,22 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.FileSystemError.ReadFailed -> "File read failed"
     is DomainError.FileSystemError.DeleteFailed -> "File delete failed"
     is DomainError.ParseError.EmptyFile -> "File is empty"
-    is DomainError.ParseError.InvalidSyntax -> "Parse error: $message"
-    is DomainError.ParseError.MalformedMarkdown -> "Malformed markdown: $message"
-    is DomainError.ConflictError.DiskConflict -> "Disk conflict: $message"
-    is DomainError.ConflictError.ConcurrentWrite -> "Concurrent write conflict: $message"
-    is DomainError.ValidationError.InvalidUuid -> message
+    is DomainError.ParseError.InvalidSyntax -> "Parse error"
+    is DomainError.ParseError.MalformedMarkdown -> "Malformed markdown"
+    is DomainError.ConflictError.DiskConflict -> "Disk conflict detected"
+    is DomainError.ConflictError.ConcurrentWrite -> "Concurrent write conflict"
+    is DomainError.ValidationError.InvalidUuid -> "Invalid identifier"
     is DomainError.ValidationError.EmptyName -> "Invalid name: $message"
     is DomainError.ValidationError.ConstraintViolation -> "Validation error: $message"
     is DomainError.NetworkError.HttpError -> "HTTP $statusCode: $message"
     is DomainError.NetworkError.CircuitOpen -> message
-    is DomainError.NetworkError.Timeout -> "Request timed out: $message"
-    is DomainError.NetworkError.RequestFailed -> "Request failed: $message"
+    is DomainError.NetworkError.Timeout -> "Request timed out"
+    is DomainError.NetworkError.RequestFailed -> "Request failed"
     is DomainError.SensorError.PermissionDenied -> message
     is DomainError.SensorError.HardwareUnavailable -> message
-    is DomainError.SensorError.CaptureFailed -> "Capture failed: $message"
-    is DomainError.BleError.ConnectionFailed -> "BLE connection failed: $message"
-    is DomainError.BleError.Gatt133 -> "BLE GATT error after $attempts attempts: $message"
+    is DomainError.SensorError.CaptureFailed -> "Capture failed"
+    is DomainError.BleError.ConnectionFailed -> "BLE connection failed"
+    is DomainError.BleError.Gatt133 -> "BLE GATT error after $attempts attempts"
     is DomainError.GitError.CloneFailed -> "Git clone failed: $message"
     is DomainError.GitError.FetchFailed -> "Git fetch failed: $message"
     is DomainError.GitError.PushFailed -> "Git push failed: $message"
@@ -149,12 +149,12 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.NotSupported -> message
     is DomainError.GitError.Offline -> message
     is DomainError.GitError.EditingInProgress -> message
-    is DomainError.AttachmentError.CopyFailed -> "Attachment failed: $message"
-    is DomainError.AttachmentError.PickerFailed -> "Could not open file picker: $message"
-    is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory: $message"
-    is DomainError.ExportError.SerializationFailed -> "Export failed: $message"
-    is DomainError.ExportError.ClipboardFailed -> "Clipboard write failed: $message"
-    is DomainError.ExportError.ShareFailed -> "Share failed: $message"
+    is DomainError.AttachmentError.CopyFailed -> "Attachment failed"
+    is DomainError.AttachmentError.PickerFailed -> "Could not open file picker"
+    is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory"
+    is DomainError.ExportError.SerializationFailed -> "Export failed"
+    is DomainError.ExportError.ClipboardFailed -> "Clipboard write failed"
+    is DomainError.ExportError.ShareFailed -> "Share failed"
 }
 
 fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
