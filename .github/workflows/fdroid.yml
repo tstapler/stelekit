@@ -105,7 +105,7 @@ jobs:
           restore-keys: |
             fdroid-apk-repo-
 
-      - name: Download signed APKs from all releases
+      - name: Download signed APKs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -120,7 +120,10 @@ jobs:
               DOWNLOADED=1
             fi
           else
-            echo "APK cache miss — downloading all historical APKs"
+            # archive_older: 5 in fdroid/config.yml means fdroid update keeps only the
+            # 5 newest APKs in the live repo/; older ones go to archive/ which is never
+            # deployed. Downloading more than 5 on a cache miss wastes bandwidth.
+            echo "APK cache miss — downloading 5 most recent APKs (matches archive_older: 5)"
             DOWNLOADED=0
             while IFS= read -r tag; do
               if gh release download "$tag" \
@@ -128,7 +131,7 @@ jobs:
                 --dir fdroid/repo/ 2>/dev/null; then
                 DOWNLOADED=$((DOWNLOADED + 1))
               fi
-            done < <(gh release list --limit 100 --json tagName --jq '.[].tagName')
+            done < <(gh release list --limit 5 --json tagName --jq '.[].tagName')
           fi
           echo "Downloaded $DOWNLOADED APK(s)"
           [ "$DOWNLOADED" -gt 0 ] || { echo "No APKs downloaded — refusing to publish empty F-Droid repo"; exit 1; }
