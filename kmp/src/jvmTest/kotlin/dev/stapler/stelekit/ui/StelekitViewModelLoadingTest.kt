@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
@@ -212,9 +214,8 @@ class StelekitViewModelLoadingTest {
         val vm = makeViewModel()
         vm.sendSnackbar("first")
         vm.sendSnackbar("second")
-        val first = withTimeout(1_000) { vm.snackbarEvents.first() }
-        val second = withTimeout(1_000) { vm.snackbarEvents.first() }
-        assertEquals(listOf("first", "second"), listOf(first, second))
+        val received = withTimeout(1_000) { vm.snackbarEvents.take(2).toList() }
+        assertEquals(listOf("first", "second"), received)
     }
 
     @Test
@@ -222,10 +223,8 @@ class StelekitViewModelLoadingTest {
         val vm = makeViewModel()
         vm.sendSnackbar("error A")
         vm.sendSnackbar("error A")
-        val first = withTimeout(1_000) { vm.snackbarEvents.first() }
-        val second = withTimeout(1_000) { vm.snackbarEvents.first() }
-        assertEquals("error A", first)
-        assertEquals("error A", second)
+        val received = withTimeout(1_000) { vm.snackbarEvents.take(2).toList() }
+        assertEquals(listOf("error A", "error A"), received)
     }
 
     // ─── Cancellation resilience ─────────────────────────────────────────────

@@ -1082,7 +1082,12 @@ private fun GraphContent(
                     val snackbarHostState = remember { SnackbarHostState() }
                     LaunchedEffect(Unit) {
                         viewModel.snackbarEvents.collect { msg ->
-                            snackbarHostState.showSnackbar(msg)
+                            try {
+                                snackbarHostState.showSnackbar(msg)
+                            } catch (e: Exception) {
+                                if (e is kotlinx.coroutines.CancellationException) throw e
+                                graphContentLogger.warn("showSnackbar failed: $e")
+                            }
                         }
                     }
 
@@ -1215,9 +1220,8 @@ private fun GraphContent(
                             )
                         },
                         content = {
-                            val cameraImportEnabled = remember(imageImportService) {
+                            val cameraImportEnabled =
                                 imageImportService != null && SensorModule.cameraProvider.isAvailable
-                            }
                             ScreenRouter(
                                 screen = appState.currentScreen,
                                 repos = repos,
@@ -1381,9 +1385,8 @@ private fun GraphContent(
                                         }
                                     }
                                 }
-                            } else {
-                                SnackbarHost(hostState = snackbarHostState)
                             }
+                            SnackbarHost(hostState = snackbarHostState)
                         },
                         bottomBar = {
                             PlatformBottomBar(

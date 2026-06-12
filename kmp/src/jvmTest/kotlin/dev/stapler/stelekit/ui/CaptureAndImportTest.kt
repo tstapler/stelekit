@@ -14,6 +14,7 @@ import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryImageAnnotationRepository
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -95,7 +96,10 @@ class CaptureAndImportTest {
     @Test
     fun `permission denied capture failure - posts sanitized error to snackbar`() = runBlocking {
         val snackbars = mutableListOf<String>()
-        val captureError = DomainError.SensorError.PermissionDenied("Camera permission denied")
+        // Use a realistic Android exception string to verify internal details are stripped
+        val captureError = DomainError.SensorError.PermissionDenied(
+            "android.hardware.camera2.CameraAccessException: CAMERA_ERROR (3): Camera service is currently unavailable"
+        )
         executeCaptureAndImport(
             imageImportService = wiredService(),
             getActiveGraphPath = { "/graph" },
@@ -107,7 +111,8 @@ class CaptureAndImportTest {
             onWarn = {},
         )
         assertEquals(1, snackbars.size)
-        assertEquals(captureError.toUiMessage(), snackbars[0])
+        assertEquals("Camera permission denied", snackbars[0])
+        assertFalse(snackbars[0].contains("android.hardware"), "raw exception text must not reach UI")
     }
 
     // ── Import failure ──────────────────────────────────────────────────────
