@@ -115,6 +115,9 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
+import arrow.core.Either
+import dev.stapler.stelekit.model.ImageSource
+import dev.stapler.stelekit.platform.sensor.SensorModule
 
 /**
  * Root Composable for the Logseq application.
@@ -973,6 +976,35 @@ private fun GraphContent(
     val activeGraphId = graphRegistry.activeGraphId
     val syncState by viewModel.syncState.collectAsState()
 
+    suspend fun captureAndImport(pageUuid: String, navigateAfterImport: Boolean) {
+        when (val captured = SensorModule.cameraProvider.capturePhoto()) {
+            is Either.Left -> {
+                val msg = "Camera capture failed: ${captured.value.message}"
+                graphContentLogger.warn(msg)
+                viewModel.setStatusMessage(msg)
+            }
+            is Either.Right -> {
+                val result = imageImportService!!.import(
+                    tempFile = captured.value,
+                    graphPath = graphManager.getActiveGraphInfo()?.path ?: "",
+                    pageUuid = pageUuid,
+                    source = ImageSource.CAMERA,
+                    insertToJournalPage = false,
+                )
+                result.onLeft { err ->
+                    val msg = "Camera image import failed: ${err.message}"
+                    graphContentLogger.warn(msg)
+                    viewModel.setStatusMessage(msg)
+                }
+                if (navigateAfterImport) {
+                    result.onRight { annotation ->
+                        viewModel.navigateToAnnotationEditor(annotation.uuid, pageUuid)
+                    }
+                }
+            }
+        }
+    }
+
     StelekitTheme(themeMode = appState.themeMode) {
         CompositionLocalProvider(LocalI18n provides I18n(appState.language)) {
             if (!appState.onboardingCompleted) {
@@ -1029,6 +1061,12 @@ private fun GraphContent(
                 ) {
                     val windowSizeClass = windowSizeClassFor(maxWidth)
                     val isMobile = windowSizeClass.isMobile
+                    val snackbarHostState = remember { SnackbarHostState() }
+                    LaunchedEffect(appState.statusMessage) {
+                        if (isMobile && appState.statusMessage != "Ready") {
+                            snackbarHostState.showSnackbar(appState.statusMessage)
+                        }
+                    }
 
                     CompositionLocalProvider(
                         LocalWindowSizeClass provides windowSizeClass,
@@ -1252,74 +1290,27 @@ private fun GraphContent(
                                         }
                                     } else null,
                                     onCaptureImage = if (imageImportService != null &&
-                                        dev.stapler.stelekit.platform.sensor.SensorModule.cameraProvider.isAvailable) {
+                                        SensorModule.cameraProvider.isAvailable) {
                                         {
                                             scope.launch {
-                                                // Resolve the target page UUID.
-                                                // appState.currentPage is null on JournalsView (Screen.Journals),
-                                                // because StelekitViewModel only populates currentPage for Screen.PageView.
-                                                // Fall back to ensureTodayJournal() when no explicit page is open,
-                                                // matching the existing onImportImage pattern.
+                                                // Resolve page UUID before capturing — camera suspends for seconds,
+                                                // so we snapshot navigation state at button-tap time, not return time.
                                                 val pageUuid: String? =
                                                     (appState.currentScreen as? Screen.PageView)?.page?.uuid?.value
                                                         ?: appState.currentPage?.uuid?.value
-                                                val resolvedPageUuid: String = if (pageUuid != null) {
-                                                    pageUuid
-                                                } else {
-                                                    repos.journalService.ensureTodayJournal().uuid.value
-                                                }
-                                                when (val captured =
-                                                    dev.stapler.stelekit.platform.sensor.SensorModule.cameraProvider.capturePhoto()) {
-                                                    is arrow.core.Either.Left -> {
-                                                        val msg = "Camera capture failed: ${captured.value.message}"
-                                                        graphContentLogger.warn(msg)
-                                                        viewModel.setStatusMessage(msg)
-                                                    }
-                                                    is arrow.core.Either.Right -> {
-                                                        val result = imageImportService.import(
-                                                            tempFile = captured.value,
-                                                            graphPath = activeGraphPath,
-                                                            pageUuid = resolvedPageUuid,
-                                                            source = dev.stapler.stelekit.model.ImageSource.CAMERA,
-                                                            insertToJournalPage = false,
-                                                        )
-                                                        result.onLeft { err ->
-                                                            val msg = "Camera image import failed: ${err.message}"
-                                                            graphContentLogger.warn(msg)
-                                                            viewModel.setStatusMessage(msg)
-                                                        }
-                                                        // No automatic navigation to annotation editor —
-                                                        // user taps the image to open it (pre-existing block tap behavior).
-                                                    }
-                                                }
+                                                val resolvedPageUuid = pageUuid
+                                                    ?: repos.journalService.ensureTodayJournal().uuid.value
+                                                captureAndImport(resolvedPageUuid, navigateAfterImport = false)
                                             }
                                         }
                                     } else null,
                                 ),
                                 onImportImage = if (imageImportService != null &&
-                                    dev.stapler.stelekit.platform.sensor.SensorModule.cameraProvider.isAvailable) {
+                                    SensorModule.cameraProvider.isAvailable) {
                                     {
                                         scope.launch {
                                             val page = repos.journalService.ensureTodayJournal()
-                                            when (val captured = dev.stapler.stelekit.platform.sensor.SensorModule.cameraProvider.capturePhoto()) {
-                                                is arrow.core.Either.Left ->
-                                                    graphContentLogger.warn("Camera capture failed: ${captured.value}")
-                                                is arrow.core.Either.Right -> {
-                                                    val result = imageImportService.import(
-                                                        tempFile = captured.value,
-                                                        graphPath = activeGraphPath,
-                                                        pageUuid = page.uuid.value,
-                                                        source = dev.stapler.stelekit.model.ImageSource.CAMERA,
-                                                        insertToJournalPage = false,
-                                                    )
-                                                    result.onRight { annotation ->
-                                                        viewModel.navigateToAnnotationEditor(annotation.uuid, page.uuid.value)
-                                                    }
-                                                    result.onLeft { err ->
-                                                        graphContentLogger.warn("Image import failed: ${err.message}")
-                                                    }
-                                                }
-                                            }
+                                            captureAndImport(page.uuid.value, navigateAfterImport = true)
                                         }
                                         Unit
                                     }
@@ -1355,6 +1346,8 @@ private fun GraphContent(
                                         }
                                     }
                                 }
+                            } else {
+                                SnackbarHost(hostState = snackbarHostState)
                             }
                         },
                         bottomBar = {
