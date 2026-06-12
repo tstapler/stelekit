@@ -57,6 +57,23 @@ fun AudiobookNotesSettings(settings: AudiobookAutoSettings) {
             Text("Grant media access (for book detection)")
         }
 
+        // Developer-mode guidance for F-Droid / sideloaded users.
+        // Android Auto hides apps not installed from the Play Store unless the user
+        // explicitly enables "Unknown sources" via developer mode.
+        // Steps verified against Android Auto 13.x, 2026-06 — re-verify on major AA updates.
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            "If SteleKit does not appear in Android Auto (F-Droid / sideloaded build):",
+            fontSize = 13.sp
+        )
+        Text(
+            "1. Open the Android Auto app\n" +
+            "2. Tap the version number 10 times to unlock developer settings\n" +
+            "3. Enable \"Unknown sources\"\n" +
+            "4. Reconnect to your car",
+            fontSize = 12.sp
+        )
+
         Spacer(modifier = Modifier.height(16.dp))
 
         // Quick Tags
