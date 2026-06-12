@@ -57,7 +57,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_with_no_backlinks_succeeds(): Unit = runBlocking {
-        val tempDir = File(System.getProperty("user.home"), "stelekit_renamer_test_${System.currentTimeMillis()}")
+        val tempDir = File(System.getProperty("java.io.tmpdir"), "stelekit_renamer_test_${System.currentTimeMillis()}")
         tempDir.mkdirs()
         try {
             // Create a markdown file for the page to be renamed
@@ -88,7 +88,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_rewrites_backlinks_in_other_pages(): Unit = runBlocking {
-        val tempDir = File(System.getProperty("user.home"), "stelekit_renamer_test_${System.currentTimeMillis()}")
+        val tempDir = File(System.getProperty("java.io.tmpdir"), "stelekit_renamer_test_${System.currentTimeMillis()}")
         tempDir.mkdirs()
         try {
             val pagesDir = File(tempDir, "pages")
@@ -124,7 +124,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_rewrites_multiple_backlinks_in_same_block(): Unit = runBlocking {
-        val tempDir = File(System.getProperty("user.home"), "stelekit_renamer_test_${System.currentTimeMillis()}")
+        val tempDir = File(System.getProperty("java.io.tmpdir"), "stelekit_renamer_test_${System.currentTimeMillis()}")
         tempDir.mkdirs()
         try {
             val pagesDir = File(tempDir, "pages")
@@ -157,7 +157,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_rewrites_aliased_backlinks_end_to_end(): Unit = runBlocking {
-        val tempDir = File(System.getProperty("user.home"), "stelekit_renamer_test_${System.currentTimeMillis()}")
+        val tempDir = File(System.getProperty("java.io.tmpdir"), "stelekit_renamer_test_${System.currentTimeMillis()}")
         tempDir.mkdirs()
         try {
             val pagesDir = File(tempDir, "pages")
@@ -193,7 +193,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_returns_failure_when_page_not_found_in_repo(): Unit = runBlocking {
-        val tempDir = File(System.getProperty("user.home"), "stelekit_renamer_test_${System.currentTimeMillis()}")
+        val tempDir = File(System.getProperty("java.io.tmpdir"), "stelekit_renamer_test_${System.currentTimeMillis()}")
         tempDir.mkdirs()
         try {
             val pageRepo = InMemoryPageRepository()
@@ -242,7 +242,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_rewrites_hashtag_references_end_to_end(): Unit = runBlocking {
-        val tempDir = File(System.getProperty("user.home"), "stelekit_renamer_test_${System.currentTimeMillis()}")
+        val tempDir = File(System.getProperty("java.io.tmpdir"), "stelekit_renamer_test_${System.currentTimeMillis()}")
         tempDir.mkdirs()
         try {
             val pagesDir = File(tempDir, "pages")
@@ -277,7 +277,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_returns_failure_when_page_has_no_file_path(): Unit = runBlocking {
-        val tempDir = File(System.getProperty("user.home"), "stelekit_renamer_test_${System.currentTimeMillis()}")
+        val tempDir = File(System.getProperty("java.io.tmpdir"), "stelekit_renamer_test_${System.currentTimeMillis()}")
         tempDir.mkdirs()
         try {
             val pageRepo = InMemoryPageRepository()

@@ -25,7 +25,7 @@ class GraphWriterTest {
             val writer = GraphWriter(fileSystem)
             
             // Create a temp directory
-            val userHome = System.getProperty("user.home")
+            val userHome = System.getProperty("java.io.tmpdir")
             val tempDir = File(userHome, "stelekit_test_${System.currentTimeMillis()}")
             tempDir.mkdirs()
             val graphPath = tempDir.absolutePath
@@ -174,7 +174,7 @@ class GraphWriterTest {
 
     @Test
     fun `PlatformFileSystem writeFile logs exception when write fails`() {
-        val userHome = System.getProperty("user.home")
+        val userHome = System.getProperty("java.io.tmpdir")
         val tempDir = File(userHome, "stelekit_test_fs_${System.currentTimeMillis()}")
         // Create a directory with the same name as the target file — forces an IOException
         val dirNamedAsFile = File(tempDir, "cannotwrite.md")

@@ -1,5 +1,10 @@
 # SteleKit .bazelrc
 # All Bazel flags for local and CI builds.
+#
+# Machine-specific overrides (ANDROID_HOME path, extra tool paths, etc.) go in
+# .bazelrc.user — that file is gitignored and imported below.  Copy
+# .bazelrc.user.example to .bazelrc.user and edit for your machine.
+try-import %workspace%/.bazelrc.user
 
 # ── Bazel server JVM heap ─────────────────────────────────────────────────────
 # Caps the Bazel server at 6 GB so Maven resolution doesn't OOM the host.
@@ -12,12 +17,29 @@ build --java_runtime_version=21
 build --tool_java_runtime_version=21
 
 # ── Android SDK ───────────────────────────────────────────────────────────────
-build --android_sdk=@androidsdk//:sdk
-build --incompatible_enable_android_toolchain_resolution
+# android_sdk_repository_extension runs at repo-loading time (before config
+# flags), so ANDROID_HOME must be a global repo_env, not scoped to :android.
+# The value is supplied by .bazelrc.user locally and by the CI environment on
+# GitHub Actions (android-actions/setup-android sets ANDROID_HOME).
+build --repo_env=ANDROID_HOME
+
+# --android_sdk and the toolchain flag are kept in :android so that JVM-only
+# targets (business_tests, desktop_app) do not trigger Android toolchain
+# resolution.  Pass --config=android when building Android targets.
+build:android --android_sdk=@androidsdk//:sdk
 
 # ── Correctness / hermetic sandbox ────────────────────────────────────────────
 build --sandbox_default_allow_network=false
 build --incompatible_strict_action_env
+
+# ── X11 socket access for Compose Desktop tests ───────────────────────────────
+# Compose Desktop tests require an X display.  The Linux sandbox creates a new
+# mount namespace and does not include /tmp/.X11-unix by default, so the X11
+# socket (DISPLAY=:N → /tmp/.X11-unix/XN) is inaccessible even when DISPLAY is
+# inherited.  Mount the X11 socket directory into every test sandbox.
+# Locally: use whatever X server is running.
+# CI: xvfb-run --auto-servernum creates the socket before bazel runs.
+test --sandbox_add_mount_pair=/tmp/.X11-unix
 
 # ── CI base config (shared by ci-main and ci-pr) ──────────────────────────────
 build:ci --remote_cache=grpcs://remote.buildbuddy.io

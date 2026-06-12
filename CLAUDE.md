@@ -18,9 +18,9 @@ migrated (see Epic 7 in `project_plans/stelekit-bazel/`).
 | `./gradlew jvmTest` | `bazel test //kmp:jvm_tests` |
 | `./gradlew allTests` | `bazel test //...` |
 | `./gradlew ciCheck` | `bazel test //... --config=ci` |
-| `./gradlew installAndroid` | `bazel mobile-install //kmp:android_app` |
+| `./gradlew installAndroid` | `bazel mobile-install //kmp:android_app --config=android` |
 | `./gradlew packageDistributionForCurrentOS` | _(Gradle only — see Future Epic D)_ |
-| `./gradlew testDebugUnitTest` | `bazel test //kmp/src/androidUnitTest/kotlin:android_unit_tests` |
+| `./gradlew testDebugUnitTest` | `bazel test //kmp/src/androidUnitTest/kotlin:android_unit_tests --config=android` |
 | `./gradlew wasmJsBrowserDistribution` | `bazel build //kmp:web_app` |
 
 ```bash
@@ -33,8 +33,8 @@ bazel test //kmp:jvm_tests
 # Run only business-logic tests (no UI, fastest)
 bazel test //kmp:business_tests
 
-# Build Android APK
-bazel build //kmp:android_app
+# Build Android APK (requires ANDROID_HOME to be set)
+bazel build //kmp:android_app --config=android
 
 # Build web (WASM/JS) bundle — output: bazel-bin/kmp/web_dist.tar.gz
 # Note: delegates to Gradle internally until rules_kotlin#567 lands

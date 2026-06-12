@@ -160,3 +160,5 @@ fdroid/archive/
 /bazel-out
 /bazel-testlogs
 /bazel-*
+# Machine-specific overrides (ANDROID_HOME, tool paths) — see .bazelrc.user.example
+.bazelrc.user

@@ -32,6 +32,7 @@ kt_jvm_test(
     associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"],
     deps = [
         "//kmp/src/businessTest/kotlin:business_tests",
+        "//kmp/src/commonMain/resources:common_resources",
         "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
         "@maven//:org_jetbrains_compose_ui_ui_test_junit4_desktop",
         "@maven//:io_ktor_ktor_client_mock_jvm",
@@ -51,6 +52,7 @@ kt_jvm_test(
         # Force software OpenGL for Compose Desktop tests on headless CI
         "LIBGL_ALWAYS_SOFTWARE": "1",
     },
+    env_inherit = ["DISPLAY"],
     visibility = ["//visibility:public"],
     tags = [
         # Some tests open a Compose window — requires an X display on Linux CI

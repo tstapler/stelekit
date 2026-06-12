@@ -29,6 +29,9 @@ kt_jvm_library(
         "//:serialization_compiler_plugin",
     ],
     deps = [
+        # Resources (demo-graph, icons) from commonMain/resources
+        "//kmp/src/commonMain/resources:common_resources",
+
         # SQLDelight generated code + runtime (from commonMain)
         "//kmp/src/generated/sqldelight:sqldelight_generated_jvm",
         "@maven//:app_cash_sqldelight_runtime_jvm",

@@ -1,0 +1,10 @@
+# Copy this file to .bazelrc.user (gitignored) and edit for your machine.
+# .bazelrc.user is imported by .bazelrc via try-import — it is NOT committed.
+
+# Android SDK path.  Set to wherever your SDK lives.
+# build --repo_env=ANDROID_HOME=/home/<you>/Android/Sdk       # Linux
+# build --repo_env=ANDROID_HOME=/Users/<you>/Library/Android/sdk  # macOS
+
+# If unzip is only available outside the default hermetic PATH (e.g. Homebrew),
+# extend the action PATH so aar_import can find it:
+# build --action_env=PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin

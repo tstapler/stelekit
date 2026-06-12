@@ -58,6 +58,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up JDK 21 + Android SDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install host tools required by aar_import
+        run: sudo apt-get install -y unzip
+
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.9.1
         with:
@@ -74,7 +86,7 @@ jobs:
 
       - name: Build Android APK
         run: |
-          bazel build //kmp:android_app \
+          bazel build //kmp:android_app --config=android \
             ${{ github.ref == 'refs/heads/main' && '--config=ci --config=ci-main' || '--config=ci --config=ci-pr' }}
         env:
           BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
@@ -86,6 +98,18 @@ jobs:
     if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up JDK 21 + Android SDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install host tools required by aar_import
+        run: sudo apt-get install -y unzip
 
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.9.1
@@ -104,6 +128,7 @@ jobs:
       - name: Run Android unit tests
         run: |
           bazel test //kmp/src/androidUnitTest/kotlin:android_unit_tests \
+            --config=android \
             ${{ github.ref == 'refs/heads/main' && '--config=ci --config=ci-main' || '--config=ci --config=ci-pr' }} \
             --test_output=summary
         env:
