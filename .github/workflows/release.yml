@@ -121,7 +121,7 @@ jobs:
     if: |
       always() &&
       needs.resolve-version.result == 'success' &&
-      needs.check-ci-status.result == 'success' &&
+      (needs.check-ci-status.result == 'success' || needs.check-ci-status.result == 'failure') &&
       needs.check-ci-status.outputs.ci_passed != 'true'
     steps:
       - uses: actions/checkout@v4
