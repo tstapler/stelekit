@@ -41,19 +41,7 @@ build --incompatible_strict_action_env
 # CI: xvfb-run --auto-servernum creates the socket before bazel runs.
 test --sandbox_add_mount_pair=/tmp/.X11-unix
 
-# ── CI: remote cache (BuildBuddy) ────────────────────────────────────────────
-build:ci --remote_cache=grpcs://remote.buildbuddy.io
-build:ci --remote_header=x-buildbuddy-api-key=$BUILDBUDDY_API_KEY
-# zstd compression shrinks cache payloads ~60% — significant for Compose+AndroidX
-build:ci --remote_cache_compression=zstd
-# Build Event Service — streams structured invocation data to BuildBuddy UI
-build:ci --bes_backend=grpcs://remote.buildbuddy.io
-build:ci --bes_results_url=https://app.buildbuddy.io/invocation/
-build:ci --bes_header=x-buildbuddy-api-key=$BUILDBUDDY_API_KEY
-build:ci --build_event_log_file=build_events.json
-
-# ── CI: main-branch pushes seed the remote cache ──────────────────────────────
-build:ci-main --remote_upload_local_results
-
-# ── CI: PRs read from cache but do not upload (avoid cache poisoning) ─────────
-build:ci-pr --noremote_upload_local_results
+# ── CI caching ────────────────────────────────────────────────────────────────
+# Bazel caching in CI is handled entirely by bazel-contrib/setup-bazel@0.19.0
+# (disk-cache, repository-cache, external-cache inputs) which uses GitHub Actions
+# native cache — no third-party service required.  See .github/workflows/bazel-ci.yml.

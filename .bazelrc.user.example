@@ -14,9 +14,12 @@
 # Grows unboundedly; run `bazel clean --expunge` or delete the dir to reclaim space.
 # build --disk_cache=~/.cache/bazel-disk-cache
 
-# ── BuildBuddy remote cache (optional, free tier available) ──────────────────
-# Shared cache across machines — useful if you build on multiple devices.
-# Sign up at https://buildbuddy.io, get an API key, and uncomment:
+# ── Remote cache (optional — for sharing across machines) ────────────────────
+# If you build on multiple machines and want a shared cache, you can point at
+# any Bazel-compatible remote cache (BuildBuddy free tier, self-hosted bazel-remote, etc.):
 # build --remote_cache=grpcs://remote.buildbuddy.io
 # build --remote_header=x-buildbuddy-api-key=<YOUR_KEY>
 # build --remote_cache_compression=zstd
+#
+# CI uses GitHub Actions native caching (setup-bazel disk/repo/external-cache)
+# so no API key is needed there.
