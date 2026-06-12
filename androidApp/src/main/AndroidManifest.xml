@@ -139,7 +139,8 @@
         <!-- Android Auto Car App Service -->
         <service
             android:name="dev.stapler.stelekit.auto.SteleKitCarAppService"
-            android:exported="true">
+            android:exported="true"
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="androidx.car.app.CarAppService" />
                 <category android:name="androidx.car.app.category.IOT" />

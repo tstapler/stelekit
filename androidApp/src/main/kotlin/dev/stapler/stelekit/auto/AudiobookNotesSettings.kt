@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -56,6 +58,23 @@ fun AudiobookNotesSettings(settings: AudiobookAutoSettings) {
         ) {
             Text("Grant media access (for book detection)")
         }
+
+        // Developer-mode guidance for F-Droid / sideloaded users.
+        // Android Auto hides apps not installed from the Play Store unless the user
+        // explicitly enables "Unknown sources" via developer mode.
+        // Steps verified against Android Auto 13.x, 2026-06 — re-verify on major AA updates.
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            "If SteleKit does not appear in Android Auto (F-Droid / sideloaded build):",
+            fontSize = 13.sp
+        )
+        Text(
+            "1. Open the Android Auto app\n" +
+            "2. Tap the version number 10 times to unlock developer settings\n" +
+            "3. Enable \"Unknown sources\"\n" +
+            "4. Reconnect to your car",
+            fontSize = 12.sp
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -102,7 +121,12 @@ fun AudiobookNotesSettings(settings: AudiobookAutoSettings) {
                         snippetDuration = seconds
                         settings.setSnippetDurationSeconds(seconds)
                     },
-                    modifier = if (snippetDuration == seconds) Modifier else Modifier
+                    colors = if (snippetDuration == seconds)
+                        ButtonDefaults.outlinedButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        )
+                    else
+                        ButtonDefaults.outlinedButtonColors(),
                 ) {
                     Text("${seconds}s")
                 }

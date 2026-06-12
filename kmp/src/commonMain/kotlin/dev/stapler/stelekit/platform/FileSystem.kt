@@ -47,6 +47,8 @@ interface FileSystem {
      */
     suspend fun pickSaveFileAsync(suggestedName: String, mimeType: String = "application/json"): String? = null
 
+    suspend fun pickFileAsync(): String? = null
+
     /**
      * Read raw bytes from a file. Used by paranoid-mode decryption to read STEK-format files.
      * Platforms that support paranoid mode must override this with true byte-level IO.

@@ -93,6 +93,7 @@ sealed interface DomainError {
         data object EditingInProgress : GitError {
             override val message: String = "Cannot sync while editing is in progress"
         }
+        data class CredentialExpired(override val message: String) : GitError
     }
 
     sealed interface AttachmentError : DomainError {
@@ -149,6 +150,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.NotSupported -> message
     is DomainError.GitError.Offline -> message
     is DomainError.GitError.EditingInProgress -> message
+    is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
     is DomainError.AttachmentError.CopyFailed -> "Attachment failed"
     is DomainError.AttachmentError.PickerFailed -> "Could not open file picker"
     is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory"
@@ -170,4 +172,5 @@ fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
     is DomainError.GitError.NotAGitRepo -> "Not a git repository"
     is DomainError.GitError.NotSupported -> "Git not supported on this platform"
     is DomainError.GitError.EditingInProgress -> "Editing in progress — sync will resume when idle"
+    is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
 }

@@ -480,6 +480,10 @@ class JvmGitRepository(
                     }
                 }
             }
+            GitAuthType.GITHUB_OAUTH -> {
+                val token = config.oauthTokenKey?.let { credentialAccess.retrieve(it) } ?: return
+                cmd.setCredentialsProvider(UsernamePasswordCredentialsProvider("x-oauth-basic", token))
+            }
             GitAuthType.NONE -> {}
         }
     }

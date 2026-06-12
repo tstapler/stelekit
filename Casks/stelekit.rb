@@ -8,7 +8,7 @@ cask "stelekit" do
   desc "Markdown-based outliner and note-taking app"
   homepage "https://github.com/tstapler/stelekit"
 
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
 
   app "stelekit.app"
 

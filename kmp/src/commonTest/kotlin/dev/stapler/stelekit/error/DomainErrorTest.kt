@@ -84,6 +84,7 @@ class DomainErrorTest {
                 is DomainError.GitError.NotSupported -> err.message
                 DomainError.GitError.Offline -> err.message
                 DomainError.GitError.EditingInProgress -> err.message
+                is DomainError.GitError.CredentialExpired -> err.message
                 is DomainError.AttachmentError.CopyFailed -> err.message
                 is DomainError.AttachmentError.PickerFailed -> err.message
                 is DomainError.AttachmentError.AssetsDirectoryFailed -> err.message

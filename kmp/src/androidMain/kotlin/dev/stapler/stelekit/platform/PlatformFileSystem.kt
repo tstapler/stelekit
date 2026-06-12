@@ -16,6 +16,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     private var context: Context? = null
     private var onPickDirectory: (suspend () -> String?)? = null
     private var onPickSaveFile: (suspend (suggestedName: String, mimeType: String) -> String?)? = null
+    private var onPickFile: (suspend () -> String?)? = null
     private val maxPathLength = 4096
     private val maxFileSize = 100 * 1024 * 1024
     private val homeDir: String by lazy {
@@ -64,6 +65,17 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             }
         }
     }
+
+    /**
+     * Registers a callback for picking SSH key files from device storage.
+     * The callback must copy the file to app-private storage (context.getDir("ssh_keys", ...))
+     * and return the app-private path. Do NOT call takePersistableUriPermission on the URI.
+     */
+    fun initFilePicker(onPickFile: suspend () -> String?) {
+        this.onPickFile = onPickFile
+    }
+
+    override suspend fun pickFileAsync(): String? = onPickFile?.invoke()
 
     fun init(context: Context, onPickDirectory: (suspend () -> String?)? = null) {
         this.context = context

@@ -155,6 +155,7 @@ internal fun GraphDialogLayer(
             gitRepository = gitRepository,
             gitConfigRepository = gitConfigRepository,
             gitSyncService = gitSyncService,
+            fileSystem = fileSystem,
             onDismiss = { viewModel.dismissGitSetup() },
             onSave = { viewModel.dismissGitSetup() },
             onCloneAndAdd = onCloneAndAdd,
