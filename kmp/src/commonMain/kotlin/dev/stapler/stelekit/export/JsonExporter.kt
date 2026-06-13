@@ -13,7 +13,7 @@ class JsonExporter : PageExporter {
 
     override fun export(page: Page, blocks: List<Block>, resolvedRefs: Map<String, String>): String {
         val pageDto = PageDto(
-            uuid = page.uuid,
+            uuid = page.uuid.value,
             name = page.name,
             isJournal = page.isJournal,
             journalDate = page.journalDate?.toString(),
@@ -40,16 +40,16 @@ class JsonExporter : PageExporter {
         fun buildChildren(parentUuid: String?): List<BlockDto> {
             val children = blocksByParent[parentUuid] ?: return emptyList()
             return children
-                .sortedWith(compareBy<Block> { it.position }.thenBy { it.uuid })
+                .sortedWith(compareBy<Block> { it.position }.thenBy { it.uuid.value })
                 .map { block ->
                     BlockDto(
-                        uuid = block.uuid,
+                        uuid = block.uuid.value,
                         parentUuid = block.parentUuid,
                         position = block.position,
                         level = block.level,
                         content = block.content,
                         properties = block.properties.filterKeys { it != "id" },
-                        children = buildChildren(block.uuid)
+                        children = buildChildren(block.uuid.value)
                     )
                 }
         }

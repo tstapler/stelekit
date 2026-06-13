@@ -34,7 +34,7 @@ val V20260418001_normalizeJournalNames = migration("V20260418001__normalize-jour
             if (target == null) {
                 renamePage(underscoreName)
             } else {
-                mergeIntoPage(target.uuid)
+                mergeIntoPage(target.uuid.value)
             }
         }
     }

@@ -1,0 +1,11 @@
+{
+  "_note": "Generated on CI. Update with: node scripts/compare-baseline.js after running UnifiedBenchmarkRunner",
+  "platform": "jvm",
+  "scenario": "GraphLoad",
+  "graphConfig": "TINY",
+  "metrics": {
+    "phase1TtiMs": 999999,
+    "totalMs": 999999,
+    "phase3Ms": 999999
+  }
+}

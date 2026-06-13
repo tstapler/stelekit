@@ -46,6 +46,24 @@ sealed interface DomainError {
         data class HttpError(val statusCode: Int, override val message: String) : NetworkError
         data class CircuitOpen(override val message: String = "Circuit breaker is open") : NetworkError
         data class Timeout(override val message: String) : NetworkError
+        data class RequestFailed(override val message: String) : NetworkError
+    }
+
+    sealed interface SensorError : DomainError {
+        data class PermissionDenied(val sensor: String) : SensorError {
+            override val message: String = "Permission denied for sensor: $sensor"
+        }
+        data class HardwareUnavailable(val sensor: String) : SensorError {
+            override val message: String = "Hardware unavailable: $sensor"
+        }
+        data class CaptureFailed(override val message: String) : SensorError
+    }
+
+    sealed interface BleError : DomainError {
+        data class ConnectionFailed(override val message: String) : BleError
+        data class Gatt133(val attempts: Int, override val message: String) : BleError {
+            override fun toString(): String = "GATT 133 after $attempts attempts: $message"
+        }
     }
 
     sealed interface GitError : DomainError {
@@ -75,6 +93,19 @@ sealed interface DomainError {
         data object EditingInProgress : GitError {
             override val message: String = "Cannot sync while editing is in progress"
         }
+        data class CredentialExpired(override val message: String) : GitError
+    }
+
+    sealed interface AttachmentError : DomainError {
+        data class CopyFailed(override val message: String) : AttachmentError
+        data class PickerFailed(override val message: String) : AttachmentError
+        data class AssetsDirectoryFailed(override val message: String) : AttachmentError
+    }
+
+    sealed interface ExportError : DomainError {
+        data class SerializationFailed(override val message: String) : ExportError
+        data class ClipboardFailed(override val message: String) : ExportError
+        data class ShareFailed(override val message: String) : ExportError
     }
 }
 
@@ -82,35 +113,64 @@ fun Throwable.toDatabaseError(): DomainError.DatabaseError.WriteFailed =
     DomainError.DatabaseError.WriteFailed(message ?: "unknown")
 
 fun DomainError.toUiMessage(): String = when (this) {
-    is DomainError.DatabaseError.WriteFailed -> "Save failed: $message"
-    is DomainError.DatabaseError.ReadFailed -> "Read failed: $message"
-    is DomainError.DatabaseError.NotFound -> message
-    is DomainError.DatabaseError.TransactionFailed -> "Transaction failed: $message"
-    is DomainError.FileSystemError.NotFound -> message
-    is DomainError.FileSystemError.WriteFailed -> "File write failed: $message"
-    is DomainError.FileSystemError.ReadFailed -> "File read failed: $message"
-    is DomainError.FileSystemError.DeleteFailed -> "File delete failed: $message"
-    is DomainError.ParseError.EmptyFile -> message
-    is DomainError.ParseError.InvalidSyntax -> "Parse error: $message"
-    is DomainError.ParseError.MalformedMarkdown -> "Malformed markdown: $message"
-    is DomainError.ConflictError.DiskConflict -> "Disk conflict: $message"
-    is DomainError.ConflictError.ConcurrentWrite -> "Concurrent write conflict: $message"
-    is DomainError.ValidationError.InvalidUuid -> message
-    is DomainError.ValidationError.EmptyName -> "Invalid name: $message"
-    is DomainError.ValidationError.ConstraintViolation -> "Validation error: $message"
-    is DomainError.NetworkError.HttpError -> "HTTP $statusCode: $message"
-    is DomainError.NetworkError.CircuitOpen -> message
-    is DomainError.NetworkError.Timeout -> "Request timed out: $message"
-    is DomainError.GitError.CloneFailed -> "Git clone failed: $message"
-    is DomainError.GitError.FetchFailed -> "Git fetch failed: $message"
-    is DomainError.GitError.PushFailed -> "Git push failed: $message"
-    is DomainError.GitError.AuthFailed -> "Git authentication failed: $message"
+    is DomainError.DatabaseError.WriteFailed -> "Save failed"
+    is DomainError.DatabaseError.ReadFailed -> "Read failed"
+    is DomainError.DatabaseError.NotFound -> "Not found"
+    is DomainError.DatabaseError.TransactionFailed -> "Transaction failed"
+    is DomainError.FileSystemError.NotFound -> "File not found"
+    is DomainError.FileSystemError.WriteFailed -> "File write failed"
+    is DomainError.FileSystemError.ReadFailed -> "File read failed"
+    is DomainError.FileSystemError.DeleteFailed -> "File delete failed"
+    is DomainError.ParseError.EmptyFile -> "File is empty"
+    is DomainError.ParseError.InvalidSyntax -> "Parse error"
+    is DomainError.ParseError.MalformedMarkdown -> "Malformed markdown"
+    is DomainError.ConflictError.DiskConflict -> "Disk conflict detected"
+    is DomainError.ConflictError.ConcurrentWrite -> "Concurrent write conflict"
+    is DomainError.ValidationError.InvalidUuid -> "Invalid identifier"
+    is DomainError.ValidationError.EmptyName -> "Name cannot be empty"
+    is DomainError.ValidationError.ConstraintViolation -> "Validation failed"
+    is DomainError.NetworkError.HttpError -> "Network error (HTTP $statusCode)"
+    is DomainError.NetworkError.CircuitOpen -> "Service temporarily unavailable"
+    is DomainError.NetworkError.Timeout -> "Request timed out"
+    is DomainError.NetworkError.RequestFailed -> "Request failed"
+    is DomainError.SensorError.PermissionDenied -> "Camera permission denied"
+    is DomainError.SensorError.HardwareUnavailable -> "Camera unavailable"
+    is DomainError.SensorError.CaptureFailed -> "Capture failed"
+    is DomainError.BleError.ConnectionFailed -> "BLE connection failed"
+    is DomainError.BleError.Gatt133 -> "BLE GATT error after $attempts attempts"
+    is DomainError.GitError.CloneFailed -> "Git clone failed"
+    is DomainError.GitError.FetchFailed -> "Git fetch failed"
+    is DomainError.GitError.PushFailed -> "Git push failed"
+    is DomainError.GitError.AuthFailed -> "Git authentication failed — check your credentials"
     is DomainError.GitError.MergeConflict -> message
-    is DomainError.GitError.CommitFailed -> "Git commit failed: $message"
-    is DomainError.GitError.NotAGitRepo -> message
-    is DomainError.GitError.DetachedHead -> message
-    is DomainError.GitError.StaleLockFile -> message
+    is DomainError.GitError.CommitFailed -> "Git commit failed"
+    is DomainError.GitError.NotAGitRepo -> "Not a git repository"
+    is DomainError.GitError.DetachedHead -> "Repository in detached HEAD state"
+    is DomainError.GitError.StaleLockFile -> "Git lock file found — another process may be using the repository"
     is DomainError.GitError.NotSupported -> message
     is DomainError.GitError.Offline -> message
     is DomainError.GitError.EditingInProgress -> message
+    is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
+    is DomainError.AttachmentError.CopyFailed -> "Attachment failed"
+    is DomainError.AttachmentError.PickerFailed -> "Could not open file picker"
+    is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory"
+    is DomainError.ExportError.SerializationFailed -> "Export failed"
+    is DomainError.ExportError.ClipboardFailed -> "Clipboard write failed"
+    is DomainError.ExportError.ShareFailed -> "Share failed"
+}
+
+fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
+    is DomainError.GitError.AuthFailed -> "Authentication failed — tap to update credentials"
+    is DomainError.GitError.Offline -> "Offline — sync will resume when connected"
+    is DomainError.GitError.DetachedHead -> "Repository is in detached HEAD state"
+    is DomainError.GitError.StaleLockFile -> "Stale git lock file — tap to retry"
+    is DomainError.GitError.MergeConflict -> "Merge conflict in $conflictCount file(s) — resolve to continue"
+    is DomainError.GitError.FetchFailed -> "Fetch failed — tap to retry"
+    is DomainError.GitError.PushFailed -> "Push failed — tap to retry"
+    is DomainError.GitError.CommitFailed -> "Commit failed — tap to retry"
+    is DomainError.GitError.CloneFailed -> "Clone failed — check the repository URL and credentials"
+    is DomainError.GitError.NotAGitRepo -> "Not a git repository"
+    is DomainError.GitError.NotSupported -> "Git not supported on this platform"
+    is DomainError.GitError.EditingInProgress -> "Editing in progress — sync will resume when idle"
+    is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
 }

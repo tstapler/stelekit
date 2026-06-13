@@ -5,7 +5,9 @@ package dev.stapler.stelekit.cache
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.SqlDelightBlockRepository
 import dev.stapler.stelekit.repository.SqlDelightPageRepository
 import dev.stapler.stelekit.testing.BlockHoundTestBase
@@ -32,10 +34,10 @@ class CacheHitBenchmarkTest : BlockHoundTestBase() {
 
     private fun now() = Clock.System.now()
 
-    private fun page(uuid: String) = Page(uuid = uuid, name = uuid, createdAt = now(), updatedAt = now())
+    private fun page(uuid: String) = Page(uuid = PageUuid(uuid), name = uuid, createdAt = now(), updatedAt = now())
 
     private fun block(uuid: String, pageUuid: String, parentUuid: String? = null) = Block(
-        uuid = uuid, pageUuid = pageUuid, content = "c-$uuid",
+        uuid = BlockUuid(uuid), pageUuid = PageUuid(pageUuid), content = "c-$uuid",
         position = 0, parentUuid = parentUuid,
         createdAt = now(), updatedAt = now()
     )
@@ -50,7 +52,7 @@ class CacheHitBenchmarkTest : BlockHoundTestBase() {
         blockRepo.cacheStats()
 
         // Cold read
-        blockRepo.getBlockHierarchy("root").first()
+        blockRepo.getBlockHierarchy(BlockUuid("root")).first()
         val stats = blockRepo.cacheStats()
 
         assertEquals(0, stats["hierarchy"]!!.hits, "cold hierarchy read must be a miss, not a hit")
@@ -67,13 +69,13 @@ class CacheHitBenchmarkTest : BlockHoundTestBase() {
         blockRepo.cacheStats() // drain
 
         // First read: miss
-        blockRepo.getBlockHierarchy("root").first()
+        blockRepo.getBlockHierarchy(BlockUuid("root")).first()
         val afterCold = blockRepo.cacheStats()
         assertEquals(0, afterCold["hierarchy"]!!.hits)
         assertEquals(1, afterCold["hierarchy"]!!.misses)
 
         // Second read within TTL: hit
-        blockRepo.getBlockHierarchy("root").first()
+        blockRepo.getBlockHierarchy(BlockUuid("root")).first()
         val afterWarm = blockRepo.cacheStats()
         assertEquals(1, afterWarm["hierarchy"]!!.hits, "second hierarchy read within TTL must be a cache hit")
         assertEquals(0, afterWarm["hierarchy"]!!.misses)
@@ -88,14 +90,14 @@ class CacheHitBenchmarkTest : BlockHoundTestBase() {
         blockRepo.cacheStats() // drain
 
         // Warm the cache
-        blockRepo.getBlockHierarchy("root").first()
+        blockRepo.getBlockHierarchy(BlockUuid("root")).first()
         blockRepo.cacheStats() // drain the miss counter
 
         // Evict
         blockRepo.evictHierarchyForPage("p")
 
         // Next read must miss
-        blockRepo.getBlockHierarchy("root").first()
+        blockRepo.getBlockHierarchy(BlockUuid("root")).first()
         val stats = blockRepo.cacheStats()
         assertEquals(0, stats["hierarchy"]!!.hits)
         assertEquals(1, stats["hierarchy"]!!.misses, "read after targeted eviction must be a cache miss")

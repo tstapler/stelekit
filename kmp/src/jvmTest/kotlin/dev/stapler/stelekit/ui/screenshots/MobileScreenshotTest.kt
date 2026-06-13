@@ -51,7 +51,6 @@ class MobileScreenshotTest {
                 ) {
                     JournalsView(
                         viewModel = viewModel,
-                        blockRepository = blockRepo,
                         isDebugMode = false,
                         onLinkClick = {},
                     )
@@ -75,7 +74,6 @@ class MobileScreenshotTest {
                 ) {
                     JournalsView(
                         viewModel = viewModel,
-                        blockRepository = blockRepo,
                         isDebugMode = false,
                         onLinkClick = {},
                     )

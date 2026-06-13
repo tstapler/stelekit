@@ -3,7 +3,7 @@ package dev.stapler.stelekit.repository
 import dev.stapler.stelekit.benchmark.SyntheticGraphDbBuilder
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -34,7 +34,7 @@ class SearchLatencyTest {
         val repo = SqlDelightSearchRepository(db)
 
         val start = System.currentTimeMillis()
-        val result = repo.searchWithFilters(SearchRequest(query = "programming", limit = 50)).first()
+        val result = repo.searchWithFilters(SearchRequest(query = "programming", limit = 50)).last()
         val coldStartMs = System.currentTimeMillis() - start
 
         assertTrue(result.isRight(), "Cold-start search should succeed")
@@ -55,7 +55,7 @@ class SearchLatencyTest {
 
         // Warm up — excluded from measurement
         repeat(5) { i ->
-            val r = repo.searchWithFilters(SearchRequest(query = queryTerms[i % queryTerms.size], limit = 50)).first()
+            val r = repo.searchWithFilters(SearchRequest(query = queryTerms[i % queryTerms.size], limit = 50)).last()
             assertTrue(r.isRight(), "Warm-up query $i should succeed")
         }
 
@@ -64,7 +64,7 @@ class SearchLatencyTest {
         repeat(100) { i ->
             val query = queryTerms[i % queryTerms.size]
             val start = System.currentTimeMillis()
-            val r = repo.searchWithFilters(SearchRequest(query = query, limit = 50)).first()
+            val r = repo.searchWithFilters(SearchRequest(query = query, limit = 50)).last()
             latencies.add(System.currentTimeMillis() - start)
             assertTrue(r.isRight(), "Measured query $i should succeed")
         }

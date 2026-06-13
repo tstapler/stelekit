@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.export
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.fixtures.FakeBlockRepository
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -23,7 +25,7 @@ class ExportIntegrationTest {
     @Test
     fun testMarkdownExportProducesCleanOutput() {
         val page = Page(
-            uuid = "page-md",
+            uuid = PageUuid("page-md"),
             name = "My Notes",
             createdAt = now,
             updatedAt = now,
@@ -32,8 +34,8 @@ class ExportIntegrationTest {
 
         val blocks = listOf(
             Block(
-                uuid = "block-1",
-                pageUuid = "page-md",
+                uuid = BlockUuid("block-1"),
+                pageUuid = PageUuid("page-md"),
                 content = "[[WikiLink]] is a cool page",
                 level = 0,
                 position = 0,
@@ -41,8 +43,8 @@ class ExportIntegrationTest {
                 updatedAt = now
             ),
             Block(
-                uuid = "block-2",
-                pageUuid = "page-md",
+                uuid = BlockUuid("block-2"),
+                pageUuid = PageUuid("page-md"),
                 content = "((ref-uuid))",
                 level = 1,
                 position = 1,
@@ -51,8 +53,8 @@ class ExportIntegrationTest {
                 updatedAt = now
             ),
             Block(
-                uuid = "block-3",
-                pageUuid = "page-md",
+                uuid = BlockUuid("block-3"),
+                pageUuid = PageUuid("page-md"),
                 content = "key:: value",
                 level = 1,
                 position = 2,
@@ -92,7 +94,7 @@ class ExportIntegrationTest {
     @Test
     fun testPlainTextExportStripsAllMarkup() {
         val page = Page(
-            uuid = "page-pt",
+            uuid = PageUuid("page-pt"),
             name = "Plain Page",
             createdAt = now,
             updatedAt = now
@@ -100,8 +102,8 @@ class ExportIntegrationTest {
 
         val blocks = listOf(
             Block(
-                uuid = "b-pt-1",
-                pageUuid = "page-pt",
+                uuid = BlockUuid("b-pt-1"),
+                pageUuid = PageUuid("page-pt"),
                 content = "**bold** and *italic* text",
                 level = 0,
                 position = 0,
@@ -109,8 +111,8 @@ class ExportIntegrationTest {
                 updatedAt = now
             ),
             Block(
-                uuid = "b-pt-2",
-                pageUuid = "page-pt",
+                uuid = BlockUuid("b-pt-2"),
+                pageUuid = PageUuid("page-pt"),
                 content = "[[Link Name]] and ==highlight==",
                 level = 0,
                 position = 1,
@@ -145,7 +147,7 @@ class ExportIntegrationTest {
     @Test
     fun testHtmlExportEscapesCodeBlocks() {
         val page = Page(
-            uuid = "page-html",
+            uuid = PageUuid("page-html"),
             name = "Code Page",
             createdAt = now,
             updatedAt = now
@@ -154,8 +156,8 @@ class ExportIntegrationTest {
         // A block with a newline triggers the code-fence path in HtmlExporter
         val scriptContent = "<script>alert(1)</script>\nmore content"
         val block = Block(
-            uuid = "b-html-1",
-            pageUuid = "page-html",
+            uuid = BlockUuid("b-html-1"),
+            pageUuid = PageUuid("page-html"),
             content = scriptContent,
             level = 0,
             position = 0,
@@ -177,15 +179,15 @@ class ExportIntegrationTest {
     fun testJsonExportIsValidJson() {
         val pageName = "JSON Test Page"
         val page = Page(
-            uuid = "page-json",
+            uuid = PageUuid("page-json"),
             name = pageName,
             createdAt = now,
             updatedAt = now
         )
 
         val rootBlock = Block(
-            uuid = "b-json-root",
-            pageUuid = "page-json",
+            uuid = BlockUuid("b-json-root"),
+            pageUuid = PageUuid("page-json"),
             content = "Root block",
             level = 0,
             position = 0,
@@ -193,8 +195,8 @@ class ExportIntegrationTest {
             updatedAt = now
         )
         val childA = Block(
-            uuid = "b-json-childA",
-            pageUuid = "page-json",
+            uuid = BlockUuid("b-json-childA"),
+            pageUuid = PageUuid("page-json"),
             parentUuid = "b-json-root",
             content = "Child A",
             level = 1,
@@ -203,8 +205,8 @@ class ExportIntegrationTest {
             updatedAt = now
         )
         val childB = Block(
-            uuid = "b-json-childB",
-            pageUuid = "page-json",
+            uuid = BlockUuid("b-json-childB"),
+            pageUuid = PageUuid("page-json"),
             parentUuid = "b-json-root",
             content = "Child B",
             level = 1,
@@ -238,8 +240,8 @@ class ExportIntegrationTest {
         //     childB (level 1, pos 1, parent=root)
         //   sibling (level 0, pos 1)  ← different root
         val root = Block(
-            uuid = "sub-root",
-            pageUuid = pageUuid,
+            uuid = BlockUuid("sub-root"),
+            pageUuid = PageUuid(pageUuid),
             content = "Root",
             level = 0,
             position = 0,
@@ -247,8 +249,8 @@ class ExportIntegrationTest {
             updatedAt = now
         )
         val childA = Block(
-            uuid = "sub-childA",
-            pageUuid = pageUuid,
+            uuid = BlockUuid("sub-childA"),
+            pageUuid = PageUuid(pageUuid),
             parentUuid = "sub-root",
             content = "Child A",
             level = 1,
@@ -257,8 +259,8 @@ class ExportIntegrationTest {
             updatedAt = now
         )
         val grandchild = Block(
-            uuid = "sub-grand",
-            pageUuid = pageUuid,
+            uuid = BlockUuid("sub-grand"),
+            pageUuid = PageUuid(pageUuid),
             parentUuid = "sub-childA",
             content = "Grandchild",
             level = 2,
@@ -267,8 +269,8 @@ class ExportIntegrationTest {
             updatedAt = now
         )
         val childB = Block(
-            uuid = "sub-childB",
-            pageUuid = pageUuid,
+            uuid = BlockUuid("sub-childB"),
+            pageUuid = PageUuid(pageUuid),
             parentUuid = "sub-root",
             content = "Child B",
             level = 1,
@@ -277,8 +279,8 @@ class ExportIntegrationTest {
             updatedAt = now
         )
         val sibling = Block(
-            uuid = "sub-sibling",
-            pageUuid = pageUuid,
+            uuid = BlockUuid("sub-sibling"),
+            pageUuid = PageUuid(pageUuid),
             content = "Sibling root",
             level = 0,
             position = 1,
@@ -298,7 +300,7 @@ class ExportIntegrationTest {
         )
 
         val result = service.subtreeBlocks(allBlocks, setOf("sub-childA"))
-        val resultUuids = result.map { it.uuid }.toSet()
+        val resultUuids = result.map { it.uuid.value }.toSet()
 
         assertTrue("sub-childA" in resultUuids, "childA must be in subtree result")
         assertTrue("sub-grand" in resultUuids, "grandchild must be in subtree result")

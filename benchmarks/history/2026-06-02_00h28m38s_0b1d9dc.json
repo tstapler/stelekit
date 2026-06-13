@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-06-02 00:28:38 UTC",
+  "gitSha": "0b1d9dc",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 1,
+  "phase2Ms": 0,
+  "phase3Ms": 1,
+  "totalMs": 2,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 3,
+  "jankLoadP50Ms": 1,
+  "jankLoadP95Ms": 1,
+  "jankFactor": 0.33,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 445,
+      "pct": 39.6
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 107,
+      "pct": 9.5
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 90,
+      "pct": 8.0
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 49,
+      "pct": 4.4
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 43,
+      "pct": 3.8
+    },
+    {
+      "frame": "java.nio.DirectByteBuffer_[k]",
+      "samples": 27,
+      "pct": 2.4
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 26,
+      "pct": 2.3
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 25,
+      "pct": 2.2
+    },
+    {
+      "frame": "char[]_[k]",
+      "samples": 23,
+      "pct": 2.0
+    },
+    {
+      "frame": "java.lang.String[]_[k]",
+      "samples": 23,
+      "pct": 2.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 12831,
+      "pct": 94.2
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-20ff317b-cfd1-4dab-b330-9f3328ab5945-libsqlitejdbc.so",
+      "samples": 333,
+      "pct": 2.4
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 53,
+      "pct": 0.4
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 47,
+      "pct": 0.3
+    },
+    {
+      "frame": "fsync",
+      "samples": 46,
+      "pct": 0.3
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 40,
+      "pct": 0.3
+    },
+    {
+      "frame": "pread",
+      "samples": 21,
+      "pct": 0.2
+    },
+    {
+      "frame": "munmap",
+      "samples": 17,
+      "pct": 0.1
+    },
+    {
+      "frame": "prctl",
+      "samples": 7,
+      "pct": 0.1
+    },
+    {
+      "frame": "__libc_free",
+      "samples": 7,
+      "pct": 0.1
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}

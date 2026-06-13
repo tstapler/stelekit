@@ -11,6 +11,8 @@ import java.util.Properties
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.logging.Logger
 
@@ -30,8 +32,8 @@ import java.util.logging.Logger
  * SQLite `:memory:` databases are connection-scoped: each JDBC connection gets a separate
  * empty database. Overflow connections (created when the pool is exhausted) would return a
  * fresh schema-less database, causing "no such table" errors. For in-memory URLs,
- * [getConnection] blocks via [ArrayBlockingQueue.take] instead of creating an overflow
- * connection — ensuring all queries share the same connection that owns the schema.
+ * [getConnection] polls with a 50 ms timeout instead of creating an overflow connection,
+ * checking [closed] each iteration so that [close] is detected within 50 ms.
  */
 internal class PooledJdbcSqliteDriver(
     private val url: String,
@@ -52,6 +54,8 @@ internal class PooledJdbcSqliteDriver(
     // Thread-safe listener registry backing SQLDelight's reactive Flow invalidation.
     private val listeners = ConcurrentHashMap<String, CopyOnWriteArrayList<Query.Listener>>()
 
+    private val closed = AtomicBoolean(false)
+
     // Atomic counters for pool wait-time metrics. Thread-safe accumulation; drained every 5s.
     private val poolWaitTotalMs = AtomicLong(0L)
     private val poolWaitCallCount = AtomicLong(0L)
@@ -65,25 +69,28 @@ internal class PooledJdbcSqliteDriver(
     // ── ConnectionManager ─────────────────────────────────────────────────────
 
     // Called by JdbcDriver before every statement and at transaction start.
-    override fun getConnection(): Connection =
-        if (isMemory) {
-            // Block until the single pooled connection is available. Creating an overflow
-            // connection for in-memory databases would return a fresh empty database with
-            // no schema, causing "no such table" errors.
-            val t0 = System.nanoTime()
-            val conn = pool.take()
-            val waitNs = System.nanoTime() - t0
-            val waitMs = waitNs / 1_000_000L
+    override fun getConnection(): Connection {
+        if (!isMemory) {
+            // Non-blocking poll: returns a pooled connection immediately or null if all are
+            // checked out. Fallback creates a temporary connection that is closed after use.
+            return pool.poll() ?: DriverManager.getConnection(url, properties)
+        }
+        // In-memory path: block until the single pooled connection is available. Creating an
+        // overflow connection would return a fresh schema-less database ("no such table").
+        // Poll with a short timeout instead of take() so that close() can be detected —
+        // take() blocks forever once the pool is drained, causing a 58-minute test hang.
+        val t0 = System.nanoTime()
+        while (true) {
+            if (closed.get()) error("PooledJdbcSqliteDriver is closed")
+            val conn = pool.poll(50, TimeUnit.MILLISECONDS) ?: continue
+            val waitMs = (System.nanoTime() - t0) / 1_000_000L
             if (waitMs >= 1L) {
                 poolWaitTotalMs.addAndGet(waitMs)
                 poolWaitCallCount.incrementAndGet()
             }
-            conn
-        } else {
-            // Non-blocking poll: returns a pooled connection immediately or null if all are
-            // checked out. Fallback creates a temporary connection that is closed after use.
-            pool.poll() ?: DriverManager.getConnection(url, properties)
+            return conn
         }
+    }
 
     // Called by JdbcDriver after every non-transactional statement and at transaction end.
     override fun closeConnection(connection: Connection) {
@@ -121,6 +128,7 @@ internal class PooledJdbcSqliteDriver(
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     override fun close() {
+        closed.set(true)
         listeners.clear()
         var conn = pool.poll()
         while (conn != null) {

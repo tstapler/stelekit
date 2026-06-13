@@ -18,15 +18,17 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
-import dev.stapler.stelekit.repository.BlockRepository
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.components.BlockList
-import dev.stapler.stelekit.ui.components.MobileBlockToolbar
-import dev.stapler.stelekit.ui.components.SearchDialog
+import dev.stapler.stelekit.ui.components.EditorCapabilities
+import dev.stapler.stelekit.ui.components.EditorToolbar
+import dev.stapler.stelekit.ui.components.asLazyKey
 import dev.stapler.stelekit.ui.components.SuggestionItem
+import dev.stapler.stelekit.ui.components.typedItems
 import dev.stapler.stelekit.ui.components.SuggestionNavigatorPanel
 import dev.stapler.stelekit.performance.NavigationTracingEffect
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import kotlinx.datetime.LocalDate
 
@@ -39,13 +41,14 @@ import kotlinx.datetime.LocalDate
 @Composable
 fun JournalsView(
     viewModel: JournalsViewModel,
-    blockRepository: BlockRepository,
     isDebugMode: Boolean,
     onLinkClick: (String) -> Unit,
     searchViewModel: SearchViewModel? = null,
     onSearchPages: (String) -> kotlinx.coroutines.flow.Flow<List<SearchResultItem>> = { kotlinx.coroutines.flow.emptyFlow() },
     suggestionMatcher: AhoCorasickMatcher? = null,
     isLeftHanded: Boolean = false,
+    onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
+    capabilities: EditorCapabilities = EditorCapabilities(),
     modifier: Modifier = Modifier
 ) {
     NavigationTracingEffect("Journals")
@@ -58,7 +61,6 @@ fun JournalsView(
     val selectedBlockUuids by viewModel.selectedBlockUuids.collectAsState()
     val isInSelectionMode by viewModel.isInSelectionMode.collectAsState()
     val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     var toolbarHeight by remember { mutableStateOf(0) }
 
@@ -70,13 +72,6 @@ fun JournalsView(
     // Navigator panel state — empty list means closed
     var navigatorSuggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
     var navigatorIndex by remember { mutableStateOf(0) }
-
-    // Link picker state
-    var showLinkPicker by remember { mutableStateOf(false) }
-    var linkPickerBlockUuid by remember { mutableStateOf<String?>(null) }
-    var linkPickerCursorIndex by remember { mutableStateOf<Int?>(null) }
-    var linkPickerSelectionRange by remember { mutableStateOf<IntRange?>(null) }
-    var linkPickerInitialQuery by remember { mutableStateOf<String?>(null) }
 
     // Infinite scroll detection
     val shouldLoadMore = remember {
@@ -114,55 +109,55 @@ fun JournalsView(
                 },
             contentPadding = PaddingValues(top = 16.dp, bottom = toolbarHeightDp + 8.dp)
         ) {
-            items(
+            typedItems(
                 items = uiState.pages,
-                key = { page -> page.uuid },
+                key = { page -> page.uuid.asLazyKey() },
                 contentType = { "journal_entry" }
             ) { page ->
-                val blockList = allBlocks[page.uuid] ?: emptyList()
+                val blockList = allBlocks[page.uuid.value] ?: emptyList()
 
                 JournalEntry(
                     page = page,
                     blocks = blockList,
-                    isLoading = !page.isContentLoaded || page.uuid in loadingPageUuids,
+                    isLoading = !page.isContentLoaded || page.uuid.value in loadingPageUuids,
                     isDebugMode = isDebugMode,
-                    editingBlockUuid = editingBlockUuid,
+                    editingBlockUuid = editingBlockUuid?.value,
                     editingCursorIndex = editingCursorIndex,
                     collapsedBlocks = collapsedBlockUuids,
                     selectedBlockUuids = selectedBlockUuids,
                     isInSelectionMode = isInSelectionMode,
-                    onToggleSelect = { blockUuid -> viewModel.toggleBlockSelection(blockUuid) },
-                    onEnterSelectionMode = { blockUuid -> viewModel.enterSelectionMode(blockUuid) },
-                    onShiftClick = { blockUuid -> viewModel.extendSelectionTo(blockUuid) },
+                    onToggleSelect = { blockUuid -> viewModel.toggleBlockSelection(BlockUuid(blockUuid)) },
+                    onEnterSelectionMode = { blockUuid -> viewModel.enterSelectionMode(BlockUuid(blockUuid)) },
+                    onShiftClick = { blockUuid -> viewModel.extendSelectionTo(BlockUuid(blockUuid)) },
                     onShiftArrowUp = { viewModel.extendSelectionByOne(up = true) },
                     onShiftArrowDown = { viewModel.extendSelectionByOne(up = false) },
-                    onStartEditing = { blockUuid -> viewModel.requestEditBlock(blockUuid) },
-                    onStopEditing = { blockUuid -> viewModel.stopEditingBlock(blockUuid) },
+                    onStartEditing = { blockUuid -> viewModel.requestEditBlock(BlockUuid(blockUuid)) },
+                    onStopEditing = { blockUuid -> viewModel.stopEditingBlock(BlockUuid(blockUuid)) },
                     onContentChange = { blockUuid, newContent, version ->
-                        viewModel.updateBlockContent(blockUuid, newContent, version)
+                        viewModel.updateBlockContent(BlockUuid(blockUuid), newContent, version)
                     },
                     onLinkClick = onLinkClick,
-                    onNewBlock = { uuid -> viewModel.addNewBlock(uuid) },
-                    onSplitBlock = { uuid, pos -> viewModel.splitBlock(uuid, pos) },
-                    onMergeBlock = { uuid -> viewModel.mergeBlock(uuid) },
+                    onNewBlock = { uuid -> viewModel.addNewBlock(BlockUuid(uuid)) },
+                    onSplitBlock = { uuid, pos -> viewModel.splitBlock(BlockUuid(uuid), pos) },
+                    onMergeBlock = { uuid -> viewModel.mergeBlock(BlockUuid(uuid)) },
                     onIndent = { blockUuid ->
-                        viewModel.indentBlock(blockUuid)
+                        viewModel.indentBlock(BlockUuid(blockUuid))
                     },
                     onOutdent = { blockUuid ->
-                        viewModel.outdentBlock(blockUuid)
+                        viewModel.outdentBlock(BlockUuid(blockUuid))
                     },
                     onMoveUp = { blockUuid ->
-                        viewModel.moveBlockUp(blockUuid)
+                        viewModel.moveBlockUp(BlockUuid(blockUuid))
                     },
                     onMoveDown = { blockUuid ->
-                        viewModel.moveBlockDown(blockUuid)
+                        viewModel.moveBlockDown(BlockUuid(blockUuid))
                     },
-                    onLoadContent = { pageUuid -> viewModel.loadPageContent(pageUuid) },
-                    onBackspace = { blockUuid -> viewModel.handleBackspace(blockUuid) },
-                    onAddBlockToPage = { pageUuid -> viewModel.addBlockToPage(pageUuid) },
-                    onToggleCollapse = { blockUuid -> viewModel.toggleBlockCollapse(blockUuid) },
-                    onFocusUp = { blockUuid -> viewModel.focusPreviousBlock(blockUuid) },
-                    onFocusDown = { blockUuid -> viewModel.focusNextBlock(blockUuid) },
+                    onLoadContent = { pageUuid -> viewModel.loadPageContent(PageUuid(pageUuid)) },
+                    onBackspace = { blockUuid -> viewModel.handleBackspace(BlockUuid(blockUuid)) },
+                    onAddBlockToPage = { pageUuid -> viewModel.addBlockToPage(PageUuid(pageUuid)) },
+                    onToggleCollapse = { blockUuid -> viewModel.toggleBlockCollapse(BlockUuid(blockUuid)) },
+                    onFocusUp = { blockUuid -> viewModel.focusPreviousBlock(BlockUuid(blockUuid)) },
+                    onFocusDown = { blockUuid -> viewModel.focusNextBlock(BlockUuid(blockUuid)) },
                     onSearchPages = onSearchPages,
                     formatEvents = viewModel.formatEvents,
                     suggestionMatcher = suggestionMatcher,
@@ -172,9 +167,10 @@ fun JournalsView(
                     },
                     onBlockSelectionChange = { blockUuid, range ->
                         viewModel.updateEditingSelection(
-                            if (blockUuid == editingBlockUuid) range else null
+                            if (blockUuid == editingBlockUuid?.value) range else null
                         )
                     },
+                    onOpenAnnotationEditor = onOpenAnnotationEditor,
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -204,14 +200,14 @@ fun JournalsView(
                 currentIndex = navigatorIndex,
                 onLink = {
                     val item = navigatorSuggestions[navigatorIndex]
-                    val block = allBlocks.values.flatten().find { it.uuid == item.blockUuid }
+                    val block = allBlocks.values.flatten().find { it.uuid.value == item.blockUuid }
                     if (block != null) {
                         val safeEnd = item.contentEnd.coerceAtMost(block.content.length)
                         val safeStart = item.contentStart.coerceIn(0, safeEnd)
                         val newContent = block.content.substring(0, safeStart) +
                             "[[${item.canonicalName}]]" +
                             block.content.substring(safeEnd)
-                        viewModel.updateBlockContent(item.blockUuid, newContent, block.version)
+                        viewModel.updateBlockContent(BlockUuid(item.blockUuid), newContent, block.version)
                     }
                     val updated = navigatorSuggestions.toMutableList().also { it.removeAt(navigatorIndex) }
                     navigatorSuggestions = updated
@@ -229,64 +225,14 @@ fun JournalsView(
             )
         }
 
-        // Link picker dialog
-        if (showLinkPicker && searchViewModel != null) {
-            SearchDialog(
-                visible = true,
-                onDismiss = { showLinkPicker = false },
-                onNavigateToPage = { /* not used in link picker mode */ },
-                onNavigateToBlock = { /* not used in link picker mode */ },
-                onCreatePage = { pageName ->
-                    linkPickerBlockUuid?.let { blockUuid ->
-                        viewModel.acceptLinkPickerResult(blockUuid, pageName, linkPickerSelectionRange, linkPickerCursorIndex)
-                    }
-                    showLinkPicker = false
-                },
-                viewModel = searchViewModel,
-                initialQuery = linkPickerInitialQuery ?: "",
-                onPageSelected = { pageName ->
-                    linkPickerBlockUuid?.let { blockUuid ->
-                        viewModel.acceptLinkPickerResult(blockUuid, pageName, linkPickerSelectionRange, linkPickerCursorIndex)
-                    }
-                    showLinkPicker = false
-                }
-            )
-        }
-
-        MobileBlockToolbar(
-            editingBlockId = editingBlockUuid,
-            onIndent = { blockUuid -> scope.launch { viewModel.indentBlock(blockUuid) } },
-            onOutdent = { blockUuid -> scope.launch { viewModel.outdentBlock(blockUuid) } },
-            onMoveUp = { blockUuid -> scope.launch { viewModel.moveBlockUp(blockUuid) } },
-            onMoveDown = { blockUuid -> scope.launch { viewModel.moveBlockDown(blockUuid) } },
-            onAddBlock = { blockUuid -> scope.launch { viewModel.addNewBlock(blockUuid) } },
-            onUndo = { scope.launch { viewModel.undo() } },
-            onRedo = { scope.launch { viewModel.redo() } },
-            onFormat = { action -> viewModel.requestFormat(action) },
-            onLinkPicker = if (searchViewModel != null) {
-                {
-                    val curBlockUuid = editingBlockUuid
-                    // Read selection directly from StateFlow — avoids root-scope recomposition
-                    val sel = viewModel.editingSelectionRange.value
-                    linkPickerBlockUuid = curBlockUuid
-                    // editingCursorIndex is only set via requestEditBlock; fall back to
-                    // selection start so cursor-move link insertion lands at the caret
-                    linkPickerCursorIndex = editingCursorIndex ?: sel?.first
-                    linkPickerSelectionRange = sel
-                    linkPickerInitialQuery = if (sel != null && sel.first < sel.last && curBlockUuid != null) {
-                        val block = allBlocks.values.flatten().find { it.uuid == curBlockUuid }
-                        block?.content?.substring(
-                            sel.first.coerceAtMost(block.content.length),
-                            sel.last.coerceAtMost(block.content.length)
-                        )
-                    } else null
-                    showLinkPicker = true
-                }
-            } else null,
+        EditorToolbar(
+            blockStateManager = viewModel.blockStateManager,
+            capabilities = capabilities,
+            searchViewModel = searchViewModel,
             isLeftHanded = isLeftHanded,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .onSizeChanged { toolbarHeight = it.height }
+                .onSizeChanged { toolbarHeight = it.height },
         )
     }
 }
@@ -332,6 +278,7 @@ private fun JournalEntry(
     suggestionMatcher: AhoCorasickMatcher? = null,
     onNavigateAllSuggestions: ((List<SuggestionItem>) -> Unit)? = null,
     onBlockSelectionChange: ((blockUuid: String, range: IntRange?) -> Unit)? = null,
+    onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
@@ -357,7 +304,7 @@ private fun JournalEntry(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onAddBlockToPage(page.uuid) }
+                        .clickable { onAddBlockToPage(page.uuid.value) }
                         .padding(vertical = 8.dp)
                 ) {
                     Text(
@@ -408,6 +355,7 @@ private fun JournalEntry(
                 suggestionMatcher = suggestionMatcher,
                 onNavigateAllSuggestions = onNavigateAllSuggestions,
                 onBlockSelectionChange = onBlockSelectionChange,
+                onOpenAnnotationEditor = onOpenAnnotationEditor,
             )
 
             // Clickable area below blocks to append new block
@@ -415,7 +363,7 @@ private fun JournalEntry(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
-                    .clickable { onAddBlockToPage(page.uuid) }
+                    .clickable { onAddBlockToPage(page.uuid.value) }
             )
         }
     }

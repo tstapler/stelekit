@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
@@ -26,7 +28,7 @@ class BacklinkRenamerTest {
     private val now = Clock.System.now()
 
     private fun makePage(uuid: String, name: String, filePath: String? = null) = Page(
-        uuid = uuid,
+        uuid = PageUuid(uuid),
         name = name,
         createdAt = now,
         updatedAt = now,
@@ -34,8 +36,8 @@ class BacklinkRenamerTest {
     )
 
     private fun makeBlock(uuid: String, pageUuid: String, content: String) = Block(
-        uuid = uuid,
-        pageUuid = pageUuid,
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid(pageUuid),
         content = content,
         position = 0,
         createdAt = now,
@@ -79,7 +81,7 @@ class BacklinkRenamerTest {
             assertEquals(0, result.updatedBlockCount)
 
             // Verify page was renamed in the repository
-            val renamedPage = pageRepo.getPageByUuid("page-alpha").first().getOrNull()
+            val renamedPage = pageRepo.getPageByUuid(PageUuid("page-alpha")).first().getOrNull()
             assertEquals("Beta", renamedPage?.name)
         } finally {
             tempDir.deleteRecursively()
@@ -115,7 +117,7 @@ class BacklinkRenamerTest {
             assertEquals(1, result.updatedBlockCount)
 
             // Block content should now reference Beta
-            val updatedBlock = blockRepo.getBlockByUuid("block-1").first().getOrNull()
+            val updatedBlock = blockRepo.getBlockByUuid(BlockUuid("block-1")).first().getOrNull()
             assertEquals("See [[Beta]]", updatedBlock?.content)
         } finally {
             tempDir.deleteRecursively()
@@ -148,7 +150,7 @@ class BacklinkRenamerTest {
 
             assertIs<RenameResult.Success>(result)
 
-            val updatedBlock = blockRepo.getBlockByUuid("block-1").first().getOrNull()
+            val updatedBlock = blockRepo.getBlockByUuid(BlockUuid("block-1")).first().getOrNull()
             assertEquals("See [[Beta]] and [[Beta]] again", updatedBlock?.content)
         } finally {
             tempDir.deleteRecursively()
@@ -182,7 +184,7 @@ class BacklinkRenamerTest {
             assertIs<RenameResult.Success>(result)
             assertEquals(1, result.updatedBlockCount)
 
-            val updatedBlock = blockRepo.getBlockByUuid("block-1").first().getOrNull()
+            val updatedBlock = blockRepo.getBlockByUuid(BlockUuid("block-1")).first().getOrNull()
             assertEquals("See [[Beta|the alpha page]]", updatedBlock?.content)
         } finally {
             tempDir.deleteRecursively()
@@ -233,10 +235,10 @@ class BacklinkRenamerTest {
         assertEquals("Alpha", preview.oldName)
         assertEquals("Beta", preview.newName)
         assertEquals(2, preview.affectedBlockCount)
-        assertTrue(preview.affectedPageUuids.contains("page-referrer"))
+        assertTrue(preview.affectedPageUuids.contains(PageUuid("page-referrer")))
 
         // Page name must NOT have changed
-        val unchanged = pageRepo.getPageByUuid("page-alpha").first().getOrNull()
+        val unchanged = pageRepo.getPageByUuid(PageUuid("page-alpha")).first().getOrNull()
         assertEquals("Alpha", unchanged?.name)
     }
 
@@ -268,7 +270,7 @@ class BacklinkRenamerTest {
             assertIs<RenameResult.Success>(result)
             assertEquals(1, result.updatedBlockCount)
 
-            val updatedBlock = blockRepo.getBlockByUuid("block-1").first().getOrNull()
+            val updatedBlock = blockRepo.getBlockByUuid(BlockUuid("block-1")).first().getOrNull()
             assertEquals("#Beta and #[[Beta]] here", updatedBlock?.content)
         } finally {
             tempDir.deleteRecursively()

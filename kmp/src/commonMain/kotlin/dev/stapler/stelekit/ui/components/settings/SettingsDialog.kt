@@ -15,9 +15,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import arrow.core.Either
 import dev.stapler.stelekit.performance.getDeviceInfo
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.ui.i18n.Language
+import dev.stapler.stelekit.vault.VaultError
 import dev.stapler.stelekit.voice.VoiceSettings
 
 @Composable
@@ -35,6 +37,23 @@ fun SettingsDialog(
     onRebuildVoicePipeline: (() -> Unit)? = null,
     deviceSttAvailable: Boolean = false,
     deviceLlmAvailable: Boolean = false,
+    // Google Account settings (Story 7.2)
+    isGoogleAuthenticated: Boolean = false,
+    googleConnectedEmail: String? = null,
+    isGoogleConnecting: Boolean = false,
+    googleAuthError: String? = null,
+    onConnectGoogle: (() -> Unit)? = null,
+    onDisconnectGoogle: (() -> Unit)? = null,
+    // Vault / encryption settings
+    isParanoidMode: Boolean = false,
+    isVaultUnlocked: Boolean = false,
+    onCreateVault: (suspend (CharArray) -> Either<VaultError, Unit>)? = null,
+    onAddKeyslot: (suspend (CharArray) -> Either<VaultError, Unit>)? = null,
+    onRemoveKeyslot: (suspend (Int) -> Either<VaultError, Unit>)? = null,
+    onLockVault: (() -> Unit)? = null,
+    onListActiveSlots: (suspend () -> List<Int>)? = null,
+    // Audiobook Notes settings (Android Auto feature; null hides the category on non-Android platforms)
+    audiobookNotesSettingsContent: (@Composable () -> Unit)? = null,
 ) {
     if (visible) {
         Dialog(
@@ -63,12 +82,22 @@ fun SettingsDialog(
                         Text(
                             "Settings",
                             style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        SettingsCategory.entries.forEach { category ->
+                        val visibleCategories = remember(onConnectGoogle, audiobookNotesSettingsContent) {
+                            SettingsCategory.entries.filter { category ->
+                                when (category) {
+                                    SettingsCategory.GOOGLE_ACCOUNT -> onConnectGoogle != null
+                                    SettingsCategory.AUDIOBOOK_NOTES -> audiobookNotesSettingsContent != null
+                                    else -> true
+                                }
+                            }
+                        }
+                        visibleCategories.forEach { category ->
                             CategoryItem(
                                 category = category,
                                 isSelected = selectedCategory == category,
@@ -135,6 +164,24 @@ fun SettingsDialog(
                                         deviceLlmAvailable = deviceLlmAvailable,
                                     )
                                 }
+                                SettingsCategory.AUDIOBOOK_NOTES -> audiobookNotesSettingsContent?.invoke()
+                                SettingsCategory.GOOGLE_ACCOUNT -> GoogleAccountSettings(
+                                    isAuthenticated = isGoogleAuthenticated,
+                                    connectedEmail = googleConnectedEmail,
+                                    isConnecting = isGoogleConnecting,
+                                    errorMessage = googleAuthError,
+                                    onConnect = { onConnectGoogle?.invoke() },
+                                    onDisconnect = { onDisconnectGoogle?.invoke() },
+                                )
+                                SettingsCategory.VAULT -> VaultSettings(
+                                    isParanoidMode = isParanoidMode,
+                                    isVaultUnlocked = isVaultUnlocked,
+                                    onCreateVault = onCreateVault,
+                                    onAddKeyslot = onAddKeyslot,
+                                    onRemoveKeyslot = onRemoveKeyslot,
+                                    onLockVault = onLockVault,
+                                    onListActiveSlots = onListActiveSlots,
+                                )
                             }
                         }
                     }
@@ -182,4 +229,7 @@ enum class SettingsCategory(val label: String, val icon: ImageVector) {
     PLUGINS("Plugins", Icons.Default.Extension),
     ADVANCED("Advanced", Icons.Default.Build),
     VOICE("Voice Capture", Icons.Default.Mic),
+    AUDIOBOOK_NOTES("Audiobook Notes", Icons.Default.Book),
+    GOOGLE_ACCOUNT("Google Account", Icons.Default.Cloud),
+    VAULT("Vault", Icons.Default.Lock),
 }

@@ -191,7 +191,7 @@ class VoiceNoteBlockFormatTest {
 
         assertIs<VoiceCaptureState.Done>(vm.state.value)
         val page = fakeJournal.ensureTodayJournal()
-        assertTrue(page.uuid.isNotBlank())
+        assertTrue(page.uuid.value.isNotBlank())
         // Verify the inserted block has the expected structure by reading from the shared repo
         val blocks = blockRepo.getBlocksForPage(page.uuid).first().getOrNull().orEmpty()
         assertTrue(blocks.isNotEmpty(), "Expected at least one block inserted")
@@ -204,7 +204,7 @@ class VoiceNoteBlockFormatTest {
             "#+BEGIN_QUOTE must not appear in inline block")
 
         // Verify no transcript page was created (below threshold)
-        val allPages = pageRepo.getAllPages().first().getOrNull().orEmpty()
+        val allPages = pageRepo.getAllPagesSnapshot().getOrNull().orEmpty()
         val transcriptPages = allPages.filter { it.name.startsWith("Voice Note ") }
         assertTrue(transcriptPages.isEmpty(),
             "Expected no Voice Note transcript page for short (below-threshold) note")

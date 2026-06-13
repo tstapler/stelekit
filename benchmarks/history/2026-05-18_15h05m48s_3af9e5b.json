@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-18 15:05:48 UTC",
+  "gitSha": "3af9e5b",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 8,
+  "phase2Ms": 3,
+  "phase3Ms": 14,
+  "totalMs": 24,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 35,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 135,
+      "pct": 68.5
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 11,
+      "pct": 5.6
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 4,
+      "pct": 2.0
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 4,
+      "pct": 2.0
+    },
+    {
+      "frame": "java.lang.String[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "long[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.invoke.MemberName_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.Object_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2102,
+      "pct": 99.5
+    },
+    {
+      "frame": "Symbol::as_klass_external_name",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "InterpreterRuntime::resolve_from_cache",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "I2C/C2I adapters(0xaa)",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/util/zip/ZipFile.getEntry_[j]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/invoke/Invokers$Holder.linkToTargetMethod_[j]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pread",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "InstanceKlass::allocate_instance_klass",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "vframeStream::vframeStream",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-58414d8d-c9ff-4de1-9a8f-b7effe615925-libsqlitejdbc.so",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}

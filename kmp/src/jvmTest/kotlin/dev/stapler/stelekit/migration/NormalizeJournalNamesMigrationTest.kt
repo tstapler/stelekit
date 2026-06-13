@@ -9,7 +9,9 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -48,7 +50,7 @@ class NormalizeJournalNamesMigrationTest {
     }
 
     private fun makePage(uuid: String, name: String, isJournal: Boolean = true) = Page(
-        uuid = uuid,
+        uuid = PageUuid(uuid),
         name = name,
         createdAt = journalDate.atStartOfDayIn(TimeZone.UTC),
         updatedAt = now,
@@ -57,8 +59,8 @@ class NormalizeJournalNamesMigrationTest {
     )
 
     private fun makeBlock(uuid: String, pageUuid: String, content: String, position: Int = 0) = Block(
-        uuid = uuid,
-        pageUuid = pageUuid,
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid(pageUuid),
         content = content,
         position = position,
         createdAt = now,
@@ -97,8 +99,8 @@ class NormalizeJournalNamesMigrationTest {
 
         harness.buildRunner().runPending("graph-1", harness.repoSet, "/tmp/test")
 
-        val undBlocks = harness.repoSet.blockRepository.getBlocksForPage("page-und").first().getOrNull() ?: emptyList()
-        val hypBlocks = harness.repoSet.blockRepository.getBlocksForPage("page-hyp").first().getOrNull() ?: emptyList()
+        val undBlocks = harness.repoSet.blockRepository.getBlocksForPage(PageUuid("page-und")).first().getOrNull() ?: emptyList()
+        val hypBlocks = harness.repoSet.blockRepository.getBlocksForPage(PageUuid("page-hyp")).first().getOrNull() ?: emptyList()
         val deletedHypPage = harness.repoSet.pageRepository.getPageByName(hyphenName).first().getOrNull()
 
         val undContents = undBlocks.map { it.content }.toSet()
@@ -108,10 +110,10 @@ class NormalizeJournalNamesMigrationTest {
 
         // UUID preserved — block-ref wikilinks remain valid after merge
         val movedBlock = undBlocks.firstOrNull { it.content == "Important note" }
-        assertEquals("block-content", movedBlock?.uuid, "Block UUID must be preserved during merge")
+        assertEquals(BlockUuid("block-content"), movedBlock?.uuid, "Block UUID must be preserved during merge")
 
         // Root position offset — moved block should be placed after existing block (position 0)
-        val existingPos = undBlocks.first { it.uuid == "block-existing" }.position
+        val existingPos = undBlocks.first { it.uuid.value == "block-existing" }.position
         val movedPos = movedBlock!!.position
         assertTrue(movedPos > existingPos, "Moved block position ($movedPos) should be > existing block position ($existingPos)")
     }

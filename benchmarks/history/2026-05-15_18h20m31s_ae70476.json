@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-15 18:20:31 UTC",
+  "gitSha": "ae70476",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 10,
+  "phase2Ms": 3,
+  "phase3Ms": 14,
+  "totalMs": 26,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 30,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 139,
+      "pct": 66.5
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 10,
+      "pct": 4.8
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 6,
+      "pct": 2.9
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 5,
+      "pct": 2.4
+    },
+    {
+      "frame": "java.net.URL_[k]",
+      "samples": 4,
+      "pct": 1.9
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry[]_[k]",
+      "samples": 4,
+      "pct": 1.9
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 3,
+      "pct": 1.4
+    },
+    {
+      "frame": "java.util.concurrent.ConcurrentHashMap$Node_[k]",
+      "samples": 3,
+      "pct": 1.4
+    },
+    {
+      "frame": "java.util.HashMap$Node_[k]",
+      "samples": 3,
+      "pct": 1.4
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 3,
+      "pct": 1.4
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2100,
+      "pct": 99.5
+    },
+    {
+      "frame": "pread",
+      "samples": 2,
+      "pct": 0.1
+    },
+    {
+      "frame": "java/lang/StringUTF16.getChar_[j]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/net/URLStreamHandler.setURL_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/String.concat_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "AccessInternal::PostRuntimeDispatch<G1BarrierSet::AccessBarrier<548964ul, G1BarrierSet>, (AccessInternal::BarrierType)2, 548964ul>::oop_access_barrier",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-9abc54bd-e000-4892-900a-44c411a1b57e-libsqlitejdbc.so",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "kotlin/time/Instant$Companion.fromEpochSeconds_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "Java_java_lang_ClassLoader_defineClass1",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__close",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 2
+    }
+  ]
+}

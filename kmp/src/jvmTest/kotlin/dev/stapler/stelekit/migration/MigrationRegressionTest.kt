@@ -4,7 +4,9 @@
 package dev.stapler.stelekit.migration
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlin.test.AfterTest
@@ -40,7 +42,7 @@ class MigrationRegressionTest {
     // ── Fixtures ───────────────────────────────────────────────────────────────
 
     private fun makePage(uuid: String, name: String, properties: Map<String, String> = emptyMap()) =
-        Page(uuid = uuid, name = name, createdAt = now, updatedAt = now, properties = properties)
+        Page(uuid = PageUuid(uuid), name = name, createdAt = now, updatedAt = now, properties = properties)
 
     private fun makeBlock(
         uuid: String,
@@ -49,8 +51,8 @@ class MigrationRegressionTest {
         position: Int = 0,
         properties: Map<String, String> = emptyMap(),
     ) = Block(
-        uuid = uuid,
-        pageUuid = pageUuid,
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid(pageUuid),
         content = content,
         position = position,
         createdAt = now,
@@ -126,7 +128,7 @@ class MigrationRegressionTest {
         // All five blocks should now carry the property.
         val blockUuids = listOf("blk-1", "blk-2", "blk-3", "blk-4", "blk-5")
         for (uuid in blockUuids) {
-            val block = harness.repoSet.blockRepository.getBlockByUuid(uuid).first().getOrNull()
+            val block = harness.repoSet.blockRepository.getBlockByUuid(BlockUuid(uuid)).first().getOrNull()
             assertNotNull(block, "Block $uuid should exist")
             assertEquals(
                 "true",
@@ -232,7 +234,7 @@ class MigrationRegressionTest {
         assertEquals(0, result.skipped)
 
         // Spot-check a block for both properties.
-        val block = harness.repoSet.blockRepository.getBlockByUuid("blk-1").first().getOrNull()
+        val block = harness.repoSet.blockRepository.getBlockByUuid(BlockUuid("blk-1")).first().getOrNull()
         assertNotNull(block)
         assertEquals("note", block.properties["type"])
         assertEquals("false", block.properties["reviewed"])
@@ -272,7 +274,7 @@ class MigrationRegressionTest {
         assertEquals(1, result.applied)
 
         // No block should have been modified.
-        val block = harness.repoSet.blockRepository.getBlockByUuid("blk-1").first().getOrNull()
+        val block = harness.repoSet.blockRepository.getBlockByUuid(BlockUuid("blk-1")).first().getOrNull()
         assertNotNull(block)
         assertNull(block.properties["touched"], "Block should not have 'touched' property")
 

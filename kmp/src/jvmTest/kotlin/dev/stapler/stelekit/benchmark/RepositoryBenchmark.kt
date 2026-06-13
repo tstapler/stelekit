@@ -4,7 +4,9 @@ package dev.stapler.stelekit.benchmark
 
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.PageRepository
 import kotlinx.coroutines.flow.first
@@ -69,8 +71,8 @@ class RepositoryBenchmark(
             if (blockRepo != null) {
                 val testBlocks = (1..3).map { i ->
                     dev.stapler.stelekit.model.Block(
-                        uuid = "test-block-$i",
-                        pageUuid = "test-page-1",
+                        uuid = BlockUuid("test-block-$i"),
+                        pageUuid = PageUuid("test-page-1"),
                         parentUuid = if (i > 1) "test-block-${i - 1}" else null,
                         leftUuid = null,
                         content = "Test block content $i",
@@ -89,17 +91,17 @@ class RepositoryBenchmark(
 
         // Test block retrieval (currently stubbed)
         benchmarkOperation("Retrieve single block by UUID") {
-            blockRepo?.getBlockByUuid("test-block-1")
+            blockRepo?.getBlockByUuid(BlockUuid("test-block-1"))
         }
 
         // Test block children (current API)
         benchmarkOperation("Get Block Children") {
-            blockRepo?.getBlockChildren("test-uuid")
+            blockRepo?.getBlockChildren(BlockUuid("test-uuid"))
         }
 
         // Test block hierarchy (current API)
         benchmarkOperation("Get Block Hierarchy") {
-            blockRepo?.getBlockHierarchy("test-block-1")
+            blockRepo?.getBlockHierarchy(BlockUuid("test-block-1"))
         }
     }
 
@@ -111,7 +113,7 @@ class RepositoryBenchmark(
             if (pageRepo != null) {
                 val testPages = (1..2).map { i ->
                     dev.stapler.stelekit.model.Page(
-                        uuid = "test-page-$i",
+                        uuid = PageUuid("test-page-$i"),
                         name = "test-page-$i",
                         namespace = if (i % 2 == 0) "test" else null,
                         filePath = "/test/page$i.md",
@@ -127,7 +129,7 @@ class RepositoryBenchmark(
         }
 
         benchmarkOperation("Retrieve page by UUID") {
-            pageRepo?.getPageByUuid("test-page-1")
+            pageRepo?.getPageByUuid(PageUuid("test-page-1"))
         }
 
         benchmarkOperation("Retrieve page by name") {
@@ -155,7 +157,7 @@ class RepositoryBenchmark(
 
         // Test block children (current API)
         benchmarkOperation("Get Block Children") {
-            blockRepo?.getBlockChildren("test-block-1")
+            blockRepo?.getBlockChildren(BlockUuid("test-block-1"))
         }
     }
 

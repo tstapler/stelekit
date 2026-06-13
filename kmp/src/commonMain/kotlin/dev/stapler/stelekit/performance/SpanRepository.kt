@@ -1,10 +1,12 @@
 package dev.stapler.stelekit.performance
 
+import arrow.core.Either
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import kotlinx.coroutines.flow.Flow
 
 interface SpanRepository {
-    fun getRecentSpans(limit: Int = 500): Flow<List<SerializedSpan>>
+    fun getRecentSpans(limit: Int = 500): Flow<Either<DomainError, List<SerializedSpan>>>
     @DirectRepositoryWrite
     suspend fun insertSpan(span: SerializedSpan)
     @DirectRepositoryWrite

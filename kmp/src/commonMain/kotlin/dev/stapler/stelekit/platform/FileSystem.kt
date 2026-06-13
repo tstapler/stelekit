@@ -47,6 +47,8 @@ interface FileSystem {
      */
     suspend fun pickSaveFileAsync(suggestedName: String, mimeType: String = "application/json"): String? = null
 
+    suspend fun pickFileAsync(): String? = null
+
     /**
      * Read raw bytes from a file. Used by paranoid-mode decryption to read STEK-format files.
      * Platforms that support paranoid mode must override this with true byte-level IO.
@@ -65,6 +67,31 @@ interface FileSystem {
     fun writeFileBytes(path: String, data: ByteArray): Boolean =
         throw UnsupportedOperationException("writeFileBytes is not implemented for this platform. Override in a platform-specific FileSystem implementation.")
 
+    /**
+     * Write-behind hook: writes [content] to shadow storage and enqueues [path] in the
+     * dirty-page queue for background SAF flush. Returns true if write-behind is active
+     * (caller should NOT call writeFile). Returns false if write-behind is not supported
+     * on this platform/mode (caller must call writeFile instead).
+     */
+    fun markDirty(path: String, content: String): Boolean = false
+
+    /**
+     * Reads file content from the shadow cache only; returns null if no warm shadow exists.
+     * Never makes a SAF Binder IPC call. Safe to call from any dispatcher.
+     * On non-SAF file systems (JVM, legacy Android) always returns null.
+     */
+    fun readShadowOnly(path: String): String? = null
+
+    /**
+     * Returns true if the shadow cache has a warm (non-empty) entry for [path].
+     * A warm shadow implies the file was previously written to SAF successfully.
+     * Never makes a SAF Binder IPC call. On non-SAF file systems always returns false.
+     */
+    fun shadowExists(path: String): Boolean = false
+
+    /** Flush all pending write-behind pages to SAF. No-op on platforms without write-behind. */
+    suspend fun flushPendingWrites() {}
+
     /** Updates the shadow copy after a SAF write. No-op on non-SAF file systems. */
     fun updateShadow(path: String, content: String) { /* no-op */ }
 
@@ -72,9 +99,21 @@ interface FileSystem {
     fun invalidateShadow(path: String) { /* no-op */ }
 
     /**
-     * Syncs the shadow copy for [graphPath] from SAF using batch mtime queries.
-     * No-op on non-SAF file systems. Should run concurrently with Phase 2 metadata loading
-     * so Phase 3 reads can use the shadow instead of SAF Binder IPC.
+     * Invalidates shadow entries that are stale relative to SAF using a single batch
+     * mtime query per directory — no SAF file content is read.
+     *
+     * After this call, stale shadow files are deleted so [readFile] falls through to
+     * SAF for those files and returns fresh content. Fresh shadow files are untouched.
+     *
+     * No-op on non-SAF file systems. Must complete before any parsing reads in
+     * [GraphLoader.loadJournalsImmediate] and [GraphLoader.loadDirectory].
+     */
+    suspend fun invalidateStaleShadow(graphPath: String) { /* no-op */ }
+
+    /**
+     * Syncs the shadow copy for [graphPath] from SAF using batch mtime queries,
+     * reading and caching stale file content. Slower than [invalidateStaleShadow]
+     * but warms the cache for subsequent reads. No-op on non-SAF file systems.
      */
     suspend fun syncShadow(graphPath: String) { /* no-op */ }
 }

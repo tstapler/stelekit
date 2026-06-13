@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-06-09 12:03:06 UTC",
+  "gitSha": "82d8ffc",
+  "branch": "main",
+  "phase1Ms": 46,
+  "phase3Ms": 5063,
+  "pageCount": 530,
+  "baselineP95Ms": 6,
+  "phase3P95Ms": 19,
+  "jankFactor": 3.17,
+  "writes": 25,
+  "safDirectMs": 0,
+  "safProviderMs": 7,
+  "safPerFileMs": 0.23,
+  "safDirectPerFileMs": 0.0,
+  "safOverhead": 7.0
+}

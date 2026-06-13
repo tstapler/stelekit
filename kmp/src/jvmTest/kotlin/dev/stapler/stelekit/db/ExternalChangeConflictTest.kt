@@ -1,7 +1,10 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
@@ -85,7 +88,7 @@ class ExternalChangeConflictTest {
         fs.writeFile(filePath, "- User typed content")
         loader.markFileWrittenByUs(filePath)
 
-        val pagesBefore = pageRepo.getAllPages().first().getOrNull()?.size ?: 0
+        val pagesBefore = pageRepo.getAllPagesSnapshot().getOrNull()?.size ?: 0
 
         // Manually invoke checkDirectoryForChanges via detectChanges
         val changeSet = loader.fileRegistry.detectChanges("/graph/journals")
@@ -176,7 +179,7 @@ class ExternalChangeConflictTest {
         loader.loadGraph("/graph") {}
 
         // Record how many pages exist before the change
-        val pagesBefore = pageRepo.getAllPages().first().getOrNull() ?: emptyList()
+        val pagesBefore = pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
 
         // Subscribe to externalFileChanges and always suppress
         val suppressJob = launch {
@@ -225,7 +228,7 @@ class ExternalChangeConflictTest {
 
         loader2.loadGraph("/graph") {}
 
-        val pagesAfterLoad = pageRepo2.getAllPages().first().getOrNull() ?: emptyList()
+        val pagesAfterLoad = pageRepo2.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val journalPage = pagesAfterLoad.firstOrNull { it.name.contains("2026") }
 
         if (journalPage != null) {
@@ -236,7 +239,7 @@ class ExternalChangeConflictTest {
 
             // External process blanks the file — parseAndSavePage is called with blank content
             if (journalPage.filePath != null && hasContent) {
-                loader2.parseAndSavePage(journalPage.filePath!!, "", dev.stapler.stelekit.parsing.ParseMode.FULL)
+                loader2.parseAndSavePage(FilePath(journalPage.filePath!!), "", dev.stapler.stelekit.parsing.ParseMode.FULL)
                 advanceUntilIdle()
 
                 val blocksAfterBlankParse = blockRepo2.getBlocksForPage(journalPage.uuid).first().getOrNull() ?: emptyList()
@@ -264,21 +267,21 @@ class ExternalChangeConflictTest {
 
         // Pre-populate: user has a page with real content in memory
         val page = Page(
-            uuid = "journal-today",
+            uuid = PageUuid("journal-today"),
             name = "2026_04_13",
             filePath = filePath,
             createdAt = now, updatedAt = now,
             isJournal = true
         )
         pageRepo.savePage(page)
-        blockRepo.saveBlock(Block(uuid = "b1", pageUuid = "journal-today", content = "Important meeting notes", position = 0, createdAt = now, updatedAt = now))
-        blockRepo.saveBlock(Block(uuid = "b2", pageUuid = "journal-today", content = "Action items", position = 1, createdAt = now, updatedAt = now))
+        blockRepo.saveBlock(Block(uuid = BlockUuid("b1"), pageUuid = PageUuid("journal-today"), content = "Important meeting notes", position = 0, createdAt = now, updatedAt = now))
+        blockRepo.saveBlock(Block(uuid = BlockUuid("b2"), pageUuid = PageUuid("journal-today"), content = "Action items", position = 1, createdAt = now, updatedAt = now))
 
         // Watcher calls parseAndSavePage with blank file content (no suppress happened)
-        loader.parseAndSavePage(filePath, "", dev.stapler.stelekit.parsing.ParseMode.FULL)
+        loader.parseAndSavePage(FilePath(filePath), "", dev.stapler.stelekit.parsing.ParseMode.FULL)
         advanceUntilIdle()
 
-        val blocks = blockRepo.getBlocksForPage("journal-today").first().getOrNull() ?: emptyList()
+        val blocks = blockRepo.getBlocksForPage(PageUuid("journal-today")).first().getOrNull() ?: emptyList()
         // B2 fix: blocks should be preserved because the incoming content is blank
         assertTrue(
             blocks.any { it.content == "Important meeting notes" },

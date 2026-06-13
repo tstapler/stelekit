@@ -44,7 +44,7 @@ fun TopBar(
     onGoBack: () -> Unit = {},
     onGoForward: () -> Unit = {},
     onMenuToggle: () -> Unit = {},
-    onExportPage: ((formatId: String) -> Unit)? = null,
+    onShareClick: (() -> Unit)? = null,
     onShowDebugMenu: (() -> Unit)? = null,
 ) {
     val isMobile = LocalWindowSizeClass.current.isMobile
@@ -144,6 +144,16 @@ fun TopBar(
                             onResetOnboarding()
                         }
                     )
+                    if (onShareClick != null && appState.currentPage != null) {
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("Share…") },
+                            onClick = {
+                                overflowMenuExpanded = false
+                                onShareClick.invoke()
+                            }
+                        )
+                    }
                     HorizontalDivider()
                     Text(
                         t("settings.language"),
@@ -236,22 +246,14 @@ fun TopBar(
                         }
                     )
                     HorizontalDivider()
-                    val exportFormats = listOf(
-                        "markdown" to "Export as Markdown",
-                        "plain-text" to "Export as Plain Text",
-                        "html" to "Export as HTML",
-                        "json" to "Export as JSON"
+                    DropdownMenuItem(
+                        text = { Text("Share…") },
+                        enabled = appState.currentPage != null,
+                        onClick = {
+                            fileMenuExpanded = false
+                            onShareClick?.invoke()
+                        }
                     )
-                    exportFormats.forEach { (formatId, label) ->
-                        DropdownMenuItem(
-                            text = { Text(label) },
-                            enabled = appState.currentPage != null,
-                            onClick = {
-                                fileMenuExpanded = false
-                                onExportPage?.invoke(formatId)
-                            }
-                        )
-                    }
                 }
             }
             TextButton(

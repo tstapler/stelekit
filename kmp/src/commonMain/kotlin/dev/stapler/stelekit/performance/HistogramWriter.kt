@@ -93,6 +93,10 @@ class HistogramWriter(
         channel.trySend(HistogramSample(operationName, durationMs, recordedAt))
     }
 
+    /** Returns all operation names that have at least one recorded sample. */
+    fun queryAllOperations(): List<String> =
+        database.steleDatabaseQueries.selectAllHistogramOperations().executeAsList()
+
     /**
      * Query approximate percentiles for [operationName] from the stored buckets.
      * Returns null if no data is available for the operation.

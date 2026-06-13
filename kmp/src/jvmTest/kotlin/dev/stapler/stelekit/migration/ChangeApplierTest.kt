@@ -8,7 +8,9 @@ import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.OperationLogger
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.repository.InMemoryPropertyRepository
@@ -33,7 +35,7 @@ class ChangeApplierTest {
     private val now = Clock.System.now()
 
     private fun makePage(uuid: String, name: String) = Page(
-        uuid = uuid,
+        uuid = PageUuid(uuid),
         name = name,
         createdAt = now,
         updatedAt = now,
@@ -46,8 +48,8 @@ class ChangeApplierTest {
         position: Int = 0,
         properties: Map<String, String> = emptyMap(),
     ) = Block(
-        uuid = uuid,
-        pageUuid = pageUuid,
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid(pageUuid),
         content = content,
         position = position,
         createdAt = now,
@@ -94,7 +96,7 @@ class ChangeApplierTest {
         assertEquals(0, summary.skipped)
         assertTrue(summary.failed.isEmpty())
 
-        val updated = repoSet.blockRepository.getBlockByUuid("block-1").first().getOrNull()
+        val updated = repoSet.blockRepository.getBlockByUuid(BlockUuid("block-1")).first().getOrNull()
         assertNotNull(updated)
         assertEquals("done", updated.properties["status"])
 
@@ -180,12 +182,12 @@ class ChangeApplierTest {
         assertTrue(summary.failed.isEmpty())
 
         // Page must be renamed.
-        val renamedPage = repoSet.pageRepository.getPageByUuid("page-alpha").first().getOrNull()
+        val renamedPage = repoSet.pageRepository.getPageByUuid(PageUuid("page-alpha")).first().getOrNull()
         assertNotNull(renamedPage)
         assertEquals("Beta", renamedPage.name)
 
         // Block that referenced [[Alpha]] must now reference [[Beta]].
-        val updatedBlock = repoSet.blockRepository.getBlockByUuid("block-link").first().getOrNull()
+        val updatedBlock = repoSet.blockRepository.getBlockByUuid(BlockUuid("block-link")).first().getOrNull()
         assertNotNull(updatedBlock)
         assertEquals("See [[Beta]] for details", updatedBlock.content)
 

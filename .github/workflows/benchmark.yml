@@ -9,7 +9,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -19,7 +19,7 @@ jobs:
   benchmark:
     name: Load Benchmark
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     if: github.event_name == 'push' || github.event.pull_request.draft == false
 
     steps:
@@ -38,16 +38,25 @@ jobs:
           gradle-home-cache-cleanup: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
+      - name: Cache async-profiler
+        id: cache-ap
+        uses: actions/cache@v4
+        with:
+          path: async-profiler-4.4-linux-x64
+          key: async-profiler-4.4-linux-x64
+
       - name: Install tools
         run: |
-          wget -q -O ap.tar.gz https://github.com/async-profiler/async-profiler/releases/download/v4.4/async-profiler-4.4-linux-x64.tar.gz
-          tar xf ap.tar.gz
+          if [ "${{ steps.cache-ap.outputs.cache-hit }}" != "true" ]; then
+            wget -q -O ap.tar.gz https://github.com/async-profiler/async-profiler/releases/download/v4.4/async-profiler-4.4-linux-x64.tar.gz
+            tar xf ap.tar.gz
+          fi
           echo "$PWD/async-profiler-4.4-linux-x64/bin" >> $GITHUB_PATH
           sudo apt-get install -y librsvg2-bin
 
       - name: Run benchmark
         run: |
-          ./gradlew :kmp:jvmTestProfile --rerun-tasks --no-daemon \
+          ./gradlew :kmp:jvmTestProfile --no-daemon \
             -PapLib="$PWD/async-profiler-4.4-linux-x64/lib/libasyncProfiler.so"
 
       - name: Generate flamegraph PNGs

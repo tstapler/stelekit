@@ -2,6 +2,7 @@ package dev.stapler.stelekit
 
 import android.Manifest
 import android.content.ComponentCallbacks2
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -21,16 +22,25 @@ import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.domain.UrlFetcherAndroid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.git.AndroidGitRepository
+import dev.stapler.stelekit.git.GitSyncServiceRegistry
+import dev.stapler.stelekit.service.rememberAndroidMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
 import android.speech.SpeechRecognizer
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import dev.stapler.stelekit.performance.OtelExporterConfig
+import dev.stapler.stelekit.performance.OtelProvider
+import dev.stapler.stelekit.performance.createAndroidSpanRecorder
 import dev.stapler.stelekit.voice.AndroidAudioRecorder
 import dev.stapler.stelekit.voice.AndroidSpeechRecognizerProvider
 import dev.stapler.stelekit.voice.MlKitLlmFormatterProvider
 import dev.stapler.stelekit.voice.VoiceSettings
 import dev.stapler.stelekit.voice.buildVoicePipeline
+import dev.stapler.stelekit.platform.google.AndroidGoogleAuthManager
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
+import java.io.File
 
 class MainActivity : ComponentActivity() {
 
@@ -39,6 +49,7 @@ class MainActivity : ComponentActivity() {
     private var pendingFolderPick: CompletableDeferred<String?>? = null
     private var pendingMicPermission: CompletableDeferred<Boolean>? = null
     private var pendingSaveFile: CompletableDeferred<String?>? = null
+    private var pendingFilePick: CompletableDeferred<String?>? = null
 
     private val micPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -52,6 +63,36 @@ class MainActivity : ComponentActivity() {
     ) { uri: Uri? ->
         pendingSaveFile?.complete(uri?.toString())
         pendingSaveFile = null
+    }
+
+    private val filePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) {
+            pendingFilePick?.complete(null)
+            pendingFilePick = null
+            return@registerForActivityResult
+        }
+        try {
+            val sshKeysDir = getDir("ssh_keys", Context.MODE_PRIVATE)
+            sshKeysDir.mkdirs()
+            val displayName = contentResolver.query(
+                uri,
+                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            } ?: uri.lastPathSegment ?: "ssh_key"
+            val destFile = File(sshKeysDir, displayName)
+            contentResolver.openInputStream(uri)?.use { input ->
+                destFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            pendingFilePick?.complete(destFile.absolutePath)
+        } catch (e: Exception) {
+            Log.e(TAG, "filePickerLauncher: failed to copy SSH key file", e)
+            pendingFilePick?.complete(null)
+        }
+        pendingFilePick = null
     }
 
     private val folderPickerLauncher = registerForActivityResult(
@@ -135,6 +176,16 @@ class MainActivity : ComponentActivity() {
             runOnUiThread { saveFileLauncher.launch(suggestedName) }
             deferred.await()
         }
+        fileSystem.initFilePicker {
+            val deferred = CompletableDeferred<String?>()
+            pendingFilePick = deferred
+            runOnUiThread { filePickerLauncher.launch(arrayOf("*/*")) }
+            deferred.await()
+        }
+
+        if (!OtelProvider.isInitialized) {
+            OtelProvider.initialize(OtelExporterConfig(enableStdout = false, enableRingBuffer = true))
+        }
 
         setContent {
             val fileSystem = remember {
@@ -151,6 +202,12 @@ class MainActivity : ComponentActivity() {
                         val deferred = CompletableDeferred<String?>()
                         pendingSaveFile = deferred
                         runOnUiThread { saveFileLauncher.launch(suggestedName) }
+                        deferred.await()
+                    }
+                    initFilePicker {
+                        val deferred = CompletableDeferred<String?>()
+                        pendingFilePick = deferred
+                        runOnUiThread { filePickerLauncher.launch(arrayOf("*/*")) }
                         deferred.await()
                     }
                 }
@@ -179,6 +236,23 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(deviceLlmAvailable) {
                 voicePipeline = buildPipeline()
             }
+            val spanRecorder = remember { createAndroidSpanRecorder() }
+            val gitRepository = remember { AndroidGitRepository() }
+            val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity)
+
+            // Keep GitSyncServiceRegistry in sync so GitSyncWorker can reach the active service
+            // even when the process was revived by WorkManager without the UI being foregrounded.
+            val appGm = app.graphManager
+            val activeGitSyncService by (appGm?.activeGitSyncService
+                ?: kotlinx.coroutines.flow.MutableStateFlow(null)).collectAsState()
+            LaunchedEffect(activeGitSyncService) {
+                if (appGm == null) return@LaunchedEffect
+                val graphId = appGm.getActiveGraphId() ?: return@LaunchedEffect
+                val svc = activeGitSyncService
+                if (svc != null) GitSyncServiceRegistry.register(graphId, svc)
+                else GitSyncServiceRegistry.unregister(graphId)
+            }
+
             StelekitApp(
                 fileSystem = fileSystem,
                 // When the benchmark extra is absent and SAF permission is not yet
@@ -194,9 +268,39 @@ class MainActivity : ComponentActivity() {
                 onRebuildVoicePipeline = { voicePipeline = buildPipeline() },
                 deviceSttAvailable = deviceSttAvailable,
                 deviceLlmAvailable = deviceLlmAvailable,
+                spanRecorder = spanRecorder,
+                gitRepository = gitRepository,
                 onGraphManagerReady = { gm -> graphManager = gm },
                 onMemoryPressure = { handler -> onMemoryPressureHandler = handler },
+                attachmentService = attachmentService,
             )
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Handle OAuth 2.0 deep-link callback: com.stelekit.app:/oauth2redirect?code=...
+        val data = intent.data
+        if (data?.scheme == "com.stelekit.app" && data.path == "/oauth2redirect") {
+            val code = data.getQueryParameter("code") ?: return
+            val state = data.getQueryParameter("state")
+            // Validate CSRF state nonce before accepting the code.
+            // An empty or mismatched state rejects the callback silently.
+            if (state.isNullOrBlank() || state != AndroidGoogleAuthManager.pendingOAuthState) return
+            AndroidGoogleAuthManager.pendingOAuthState = null
+            // Emit (state, code) pair so authenticate() can filter by its own nonce,
+            // discarding any stale codes from a prior auth session still in the buffer.
+            AndroidGoogleAuthManager.oauthCodeFlow.tryEmit(state to code)
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Flush any pending write-behind pages to SAF before the process may be killed.
+        val app = application as? SteleKitApplication ?: return
+        lifecycleScope.launch {
+            try { app.fileSystem.flushPendingWrites() }
+            catch (e: Exception) { Log.w(TAG, "onStop write-behind flush failed", e) }
         }
     }
 

@@ -4,6 +4,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 
 import androidx.compose.material3.MaterialTheme
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.Screen
 import dev.stapler.stelekit.ui.components.LeftSidebar
 import kotlin.test.assertEquals
@@ -19,7 +20,7 @@ class SidebarLoadingStateTest {
     private val now = Clock.System.now()
 
     private fun fakePage(uuid: String, name: String) = Page(
-        uuid = uuid,
+        uuid = PageUuid(uuid),
         name = name,
         createdAt = now,
         updatedAt = now,

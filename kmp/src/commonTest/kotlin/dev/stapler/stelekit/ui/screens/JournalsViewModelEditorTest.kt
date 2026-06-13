@@ -11,10 +11,14 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.ui.state.BlockStateManager
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.BlockRepository
+import dev.stapler.stelekit.repository.BlockReferences
 import dev.stapler.stelekit.repository.BlockWithDepth
+import dev.stapler.stelekit.repository.BlockWithReferenceCount
 import dev.stapler.stelekit.repository.DuplicateGroup
 import dev.stapler.stelekit.repository.JournalService
 import dev.stapler.stelekit.repository.PageRepository
@@ -72,57 +76,57 @@ class JournalsViewModelEditorTest {
         private val blocks = MutableStateFlow<Map<String, Block>>(emptyMap())
 
         fun addBlock(block: Block) {
-            blocks.value = blocks.value + (block.uuid to block)
+            blocks.value = blocks.value + (block.uuid.value to block)
         }
 
-        fun getBlock(uuid: String): Block? = blocks.value[uuid]
+        fun getBlock(uuid: BlockUuid): Block? = blocks.value[uuid.value]
 
         fun getAllBlocks(): List<Block> = blocks.value.values.toList()
 
-        override fun getBlocksForPage(pageUuid: String): Flow<Either<DomainError, List<Block>>> {
+        override fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>> {
             return blocks.map { map ->
                 val pageBlocks = map.values.filter { it.pageUuid == pageUuid }.sortedBy { it.position }
                 pageBlocks.right()
             }
         }
 
-        override fun getBlockByUuid(uuid: String): Flow<Either<DomainError, Block?>> {
-            return blocks.map { map -> map[uuid].right() }
+        override fun getBlockByUuid(uuid: BlockUuid): Flow<Either<DomainError, Block?>> {
+            return blocks.map { map -> map[uuid.value].right() }
         }
 
-        override fun getBlockChildren(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
+        override fun getBlockChildren(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> {
             return blocks.map { map ->
-                val block = map[blockUuid]
+                val block = map[blockUuid.value]
                 if (block == null) {
                     emptyList<Block>().right()
                 } else {
-                    val children = map.values.filter { it.parentUuid == block.uuid }.sortedBy { it.position }
+                    val children = map.values.filter { it.parentUuid == block.uuid.value }.sortedBy { it.position }
                     children.right()
                 }
             }
         }
 
-        override fun getBlockHierarchy(rootUuid: String): Flow<Either<DomainError, List<BlockWithDepth>>> =
+        override fun getBlockHierarchy(rootUuid: BlockUuid): Flow<Either<DomainError, List<BlockWithDepth>>> =
             flowOf(emptyList<BlockWithDepth>().right())
 
-        override fun getBlockAncestors(blockUuid: String): Flow<Either<DomainError, List<Block>>> =
+        override fun getBlockAncestors(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> =
             flowOf(emptyList<Block>().right())
 
-        override fun getBlockParent(blockUuid: String): Flow<Either<DomainError, Block?>> {
+        override fun getBlockParent(blockUuid: BlockUuid): Flow<Either<DomainError, Block?>> {
             return blocks.map { map ->
-                val block = map[blockUuid]
+                val block = map[blockUuid.value]
                 if (block?.parentUuid == null) {
                     null.right()
                 } else {
-                    val parent = map.values.find { it.uuid == block.parentUuid }
+                    val parent = map.values.find { it.uuid.value == block.parentUuid }
                     parent.right()
                 }
             }
         }
 
-        override fun getBlockSiblings(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
+        override fun getBlockSiblings(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> {
             return blocks.map { map ->
-                val block = map[blockUuid] ?: return@map emptyList<Block>().right()
+                val block = map[blockUuid.value] ?: return@map emptyList<Block>().right()
                 val siblings = map.values
                     .filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid && it.uuid != blockUuid }
                     .sortedBy { it.position }
@@ -148,101 +152,102 @@ class JournalsViewModelEditorTest {
             flowOf(emptyList<Block>().right())
 
         override suspend fun saveBlock(block: Block): Either<DomainError, Unit> {
-            blocks.value = blocks.value + (block.uuid to block)
+            blocks.value = blocks.value + (block.uuid.value to block)
             return Unit.right()
         }
 
         override suspend fun saveBlocks(blockList: List<Block>): Either<DomainError, Unit> {
             val newMap = blocks.value.toMutableMap()
-            blockList.forEach { newMap[it.uuid] = it }
+            blockList.forEach { newMap[it.uuid.value] = it }
             blocks.value = newMap
             return Unit.right()
         }
 
-        override suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean): Either<DomainError, Unit> {
-            val block = blocks.value[blockUuid] ?: return Unit.right()
+        override suspend fun saveBlocksUpdate(blocks: List<Block>): Either<DomainError, Unit> =
+            saveBlocks(blocks)
+
+        override suspend fun deleteBlock(blockUuid: BlockUuid, deleteChildren: Boolean): Either<DomainError, Unit> {
             val newMap = blocks.value.toMutableMap()
 
             if (deleteChildren) {
-                // Recursively delete children
                 fun deleteRecursive(uuid: String) {
                     val b = newMap[uuid] ?: return
-                    newMap.values.filter { it.parentUuid == b.uuid }.forEach { deleteRecursive(it.uuid) }
+                    newMap.values.filter { it.parentUuid == b.uuid.value }.forEach { deleteRecursive(it.uuid.value) }
                     newMap.remove(uuid)
                 }
-                deleteRecursive(blockUuid)
+                deleteRecursive(blockUuid.value)
             } else {
-                newMap.remove(blockUuid)
+                newMap.remove(blockUuid.value)
             }
 
             blocks.value = newMap
             return Unit.right()
         }
 
-        override suspend fun deleteBulk(blockUuids: List<String>, deleteChildren: Boolean): Either<DomainError, Unit> {
+        override suspend fun deleteBulk(blockUuids: List<BlockUuid>, deleteChildren: Boolean): Either<DomainError, Unit> {
             blockUuids.forEach { uuid -> deleteBlock(uuid, deleteChildren) }
             return Unit.right()
         }
 
-        override suspend fun deleteBlocksForPage(pageUuid: String): Either<DomainError, Unit> {
+        override suspend fun deleteBlocksForPage(pageUuid: PageUuid): Either<DomainError, Unit> {
             blocks.value = blocks.value.filterValues { it.pageUuid != pageUuid }
             return Unit.right()
         }
 
-        override suspend fun deleteBlocksForPages(pageUuids: List<String>): Either<DomainError, Unit> {
+        override suspend fun deleteBlocksForPages(pageUuids: List<PageUuid>): Either<DomainError, Unit> {
             val uuidSet = pageUuids.toSet()
             blocks.value = blocks.value.filterValues { it.pageUuid !in uuidSet }
             return Unit.right()
         }
 
-        override suspend fun moveBlock(blockUuid: String, newParentUuid: String?, newPosition: Int): Either<DomainError, Unit> =
+        override suspend fun moveBlock(blockUuid: BlockUuid, newParentUuid: BlockUuid?, newPosition: Int): Either<DomainError, Unit> =
             Unit.right()
 
-        override suspend fun indentBlock(blockUuid: String): Either<DomainError, Unit> = Unit.right()
-        override suspend fun outdentBlock(blockUuid: String): Either<DomainError, Unit> = Unit.right()
-        override suspend fun moveBlockUp(blockUuid: String): Either<DomainError, Unit> = Unit.right()
-        override suspend fun moveBlockDown(blockUuid: String): Either<DomainError, Unit> = Unit.right()
+        override suspend fun indentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()
+        override suspend fun outdentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()
+        override suspend fun moveBlockUp(blockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()
+        override suspend fun moveBlockDown(blockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()
 
-        override suspend fun mergeBlocks(blockUuid: String, nextBlockUuid: String, separator: String): Either<DomainError, Unit> {
+        override suspend fun mergeBlocks(blockUuid: BlockUuid, nextBlockUuid: BlockUuid, separator: String): Either<DomainError, Unit> {
             val currentMap = blocks.value.toMutableMap()
-            val blockA = currentMap[blockUuid] ?: return Unit.right()
-            val blockB = currentMap[nextBlockUuid] ?: return Unit.right()
-            
-            currentMap[blockUuid] = blockA.copy(content = blockA.content + separator + blockB.content)
-            currentMap.remove(nextBlockUuid)
+            val blockA = currentMap[blockUuid.value] ?: return Unit.right()
+            val blockB = currentMap[nextBlockUuid.value] ?: return Unit.right()
+
+            currentMap[blockUuid.value] = blockA.copy(content = blockA.content + separator + blockB.content)
+            currentMap.remove(nextBlockUuid.value)
             blocks.value = currentMap
             return Unit.right()
         }
 
-        override suspend fun splitBlock(blockUuid: String, cursorPosition: Int): Either<DomainError, Block> {
+        override suspend fun splitBlock(blockUuid: BlockUuid, cursorPosition: Int, newBlockUuid: BlockUuid?): Either<DomainError, Block> {
             val currentMap = blocks.value.toMutableMap()
-            val block = currentMap[blockUuid] ?: return DomainError.DatabaseError.NotFound("block", blockUuid).left()
-            
+            val block = currentMap[blockUuid.value] ?: return DomainError.DatabaseError.NotFound("block", blockUuid.value).left()
+
             val fullContent = block.content
             val safeSplitIndex = cursorPosition.coerceIn(0, fullContent.length)
-            
+
             val firstPart = fullContent.substring(0, safeSplitIndex).trim()
             val secondPart = fullContent.substring(safeSplitIndex).trim()
-            
+
             val updatedBlock = block.copy(content = firstPart)
             val newPosition = block.position + 1
-            
+
             // Shift siblings
-            val siblingsToShift = currentMap.values.filter { 
-                it.pageUuid == block.pageUuid && it.parentUuid == block.parentUuid && it.position >= newPosition 
+            val siblingsToShift = currentMap.values.filter {
+                it.pageUuid == block.pageUuid && it.parentUuid == block.parentUuid && it.position >= newPosition
             }
             siblingsToShift.forEach { sibling ->
-                currentMap[sibling.uuid] = sibling.copy(position = sibling.position + 1)
+                currentMap[sibling.uuid.value] = sibling.copy(position = sibling.position + 1)
             }
-            
+
             val newBlock = block.copy(
-                uuid = java.util.UUID.randomUUID().toString(),
+                uuid = newBlockUuid ?: BlockUuid(java.util.UUID.randomUUID().toString()),
                 content = secondPart,
                 position = newPosition
             )
-            
-            currentMap[blockUuid] = updatedBlock
-            currentMap[newBlock.uuid] = newBlock
+
+            currentMap[blockUuid.value] = updatedBlock
+            currentMap[newBlock.uuid.value] = newBlock
             blocks.value = currentMap
             return newBlock.right()
         }
@@ -250,19 +255,19 @@ class JournalsViewModelEditorTest {
         override fun findDuplicateBlocks(limit: Int): Flow<Either<DomainError, List<DuplicateGroup>>> =
             flowOf(emptyList<DuplicateGroup>().right())
 
-        override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> {
-            val existing = blocks.value[blockUuid] ?: return Unit.right()
-            blocks.value = blocks.value + (blockUuid to existing.copy(content = content, version = existing.version + 1))
+        override suspend fun updateBlockContentOnly(blockUuid: BlockUuid, content: String): Either<DomainError, Unit> {
+            val existing = blocks.value[blockUuid.value] ?: return Unit.right()
+            blocks.value = blocks.value + (blockUuid.value to existing.copy(content = content, version = existing.version + 1))
             return Unit.right()
         }
 
-        override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> {
-            val existing = blocks.value[blockUuid] ?: return Unit.right()
-            blocks.value = blocks.value + (blockUuid to existing.copy(properties = properties))
+        override suspend fun updateBlockPropertiesOnly(blockUuid: BlockUuid, properties: Map<String, String>): Either<DomainError, Unit> {
+            val existing = blocks.value[blockUuid.value] ?: return Unit.right()
+            blocks.value = blocks.value + (blockUuid.value to existing.copy(properties = properties))
             return Unit.right()
         }
 
-        override suspend fun clear() { blocks.value = emptyMap() }
+        override suspend fun clear(): Either<DomainError, Unit> { blocks.value = emptyMap(); return Unit.right() }
     }
 
     class FakePageRepository : PageRepository {
@@ -270,7 +275,11 @@ class JournalsViewModelEditorTest {
 
         fun addPage(page: Page) { pages.add(page) }
 
-        override fun getAllPages(): Flow<Either<DomainError, List<Page>>> = flowOf(pages.toList().right())
+        override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> =
+            flowOf(pages.filter { it.isFavorite }.right())
+
+        override fun getPageNameEntries(): Flow<Either<DomainError, List<dev.stapler.stelekit.repository.PageNameEntry>>> =
+            flowOf(pages.map { dev.stapler.stelekit.repository.PageNameEntry(it.name, it.isJournal) }.right())
 
         override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
             val journals = pages.filter { it.isJournal }
@@ -280,7 +289,7 @@ class JournalsViewModelEditorTest {
             return flowOf(journals.right())
         }
 
-        override fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>> = 
+        override fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>> =
             flowOf(pages.filter { it.namespace == namespace }.right())
 
         override fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
@@ -297,7 +306,7 @@ class JournalsViewModelEditorTest {
             return flowOf(result.right())
         }
 
-        override fun getPageByUuid(uuid: String): Flow<Either<DomainError, Page?>> =
+        override fun getPageByUuid(uuid: PageUuid): Flow<Either<DomainError, Page?>> =
             flowOf(pages.find { it.uuid == uuid }.right())
 
         override fun getPageByName(name: String): Flow<Either<DomainError, Page?>> =
@@ -309,8 +318,8 @@ class JournalsViewModelEditorTest {
         override fun getJournalPageByDate(date: LocalDate): Flow<Either<DomainError, Page?>> =
             flowOf(pages.find { it.journalDate == date }.right())
 
-        override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> =
-            flowOf(pages.filter { !it.isContentLoaded }.right())
+        override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+            flowOf(pages.filter { !it.isContentLoaded }.sortedBy { it.uuid.value }.drop(offset).take(limit).right())
 
         override suspend fun savePage(page: Page): Either<DomainError, Unit> {
             pages.removeAll { it.uuid == page.uuid }
@@ -326,13 +335,13 @@ class JournalsViewModelEditorTest {
             return Unit.right()
         }
 
-        override suspend fun deletePage(pageUuid: String): Either<DomainError, Unit> {
+        override suspend fun deletePage(pageUuid: PageUuid): Either<DomainError, Unit> {
             pages.removeAll { it.uuid == pageUuid }
             return Unit.right()
         }
 
-        override suspend fun renamePage(pageUuid: String, newName: String): Either<DomainError, Unit> = Unit.right()
-        override suspend fun toggleFavorite(pageUuid: String): Either<DomainError, Unit> = Unit.right()
+        override suspend fun renamePage(pageUuid: PageUuid, newName: String): Either<DomainError, Unit> = Unit.right()
+        override suspend fun toggleFavorite(pageUuid: PageUuid): Either<DomainError, Unit> = Unit.right()
         override fun countPages(): Flow<Either<DomainError, Long>> = flowOf(pages.size.toLong().right())
         override suspend fun clear() { pages.clear() }
     }
@@ -341,7 +350,7 @@ class JournalsViewModelEditorTest {
 
     private fun createPage(uuid: String, name: String = "TestPage"): Page {
         return Page(
-            uuid = uuid,
+            uuid = PageUuid(uuid),
             name = name,
             createdAt = now,
             updatedAt = now,
@@ -359,8 +368,8 @@ class JournalsViewModelEditorTest {
         level: Int = 0
     ): Block {
         return Block(
-            uuid = uuid,
-            pageUuid = pageUuid,
+            uuid = BlockUuid(uuid),
+            pageUuid = PageUuid(pageUuid),
             parentUuid = parentUuid,
             content = content,
             position = position,
@@ -411,10 +420,10 @@ class JournalsViewModelEditorTest {
         val viewModel = createViewModel(pageRepo, blockRepo)
 
         // Load the page blocks into the ViewModel state
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Merge block2 into block1
-        viewModel.mergeBlock(block2.uuid)
+        viewModel.mergeBlock(BlockUuid(block2.uuid.value))
 
         // Wait for coroutine to complete
         testScheduler.advanceUntilIdle()
@@ -441,10 +450,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block1)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Try to merge the first block (should do nothing - no previous block)
-        viewModel.mergeBlock(block1.uuid)
+        viewModel.mergeBlock(BlockUuid(block1.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
@@ -470,15 +479,15 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block3)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Merge block2 into block1
-        viewModel.mergeBlock(block2.uuid)
+        viewModel.mergeBlock(BlockUuid(block2.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
         // Verify remaining blocks have correct positions
-        val remainingBlocks = blockRepo.getBlocksForPage("page-1").first().getOrNull()
+        val remainingBlocks = blockRepo.getBlocksForPage(PageUuid("page-1")).first().getOrNull()
             ?.sortedBy { it.position }
             ?: emptyList()
 
@@ -505,10 +514,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block2)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Handle backspace on empty block2
-        viewModel.handleBackspace(block2.uuid)
+        viewModel.handleBackspace(BlockUuid(block2.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
@@ -535,10 +544,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block2)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Handle backspace on first empty root block
-        viewModel.handleBackspace(block1.uuid)
+        viewModel.handleBackspace(BlockUuid(block1.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
@@ -563,10 +572,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block1)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Handle backspace on the only root block
-        viewModel.handleBackspace(block1.uuid)
+        viewModel.handleBackspace(BlockUuid(block1.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
@@ -589,10 +598,10 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(child)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Handle backspace on empty child
-        viewModel.handleBackspace(child.uuid)
+        viewModel.handleBackspace(BlockUuid(child.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
@@ -621,15 +630,15 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Split at position 5 (after "Hello")
-        viewModel.splitBlock(block.uuid, 5)
+        viewModel.splitBlock(BlockUuid(block.uuid.value),5)
 
         testScheduler.advanceUntilIdle()
 
         // Verify the split
-        val blocks = blockRepo.getBlocksForPage("page-1").first().getOrNull()
+        val blocks = blockRepo.getBlocksForPage(PageUuid("page-1")).first().getOrNull()
             ?.sortedBy { it.position }
             ?: emptyList()
 
@@ -650,14 +659,14 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Split at position 0 (start)
-        viewModel.splitBlock(block.uuid, 0)
+        viewModel.splitBlock(BlockUuid(block.uuid.value),0)
 
         testScheduler.advanceUntilIdle()
 
-        val blocks = blockRepo.getBlocksForPage("page-1").first().getOrNull()
+        val blocks = blockRepo.getBlocksForPage(PageUuid("page-1")).first().getOrNull()
             ?.sortedBy { it.position }
             ?: emptyList()
 
@@ -678,14 +687,14 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Split at end (position = content length)
-        viewModel.splitBlock(block.uuid, 12)  // "Full content".length = 12
+        viewModel.splitBlock(BlockUuid(block.uuid.value),12)  // "Full content".length = 12
 
         testScheduler.advanceUntilIdle()
 
-        val blocks = blockRepo.getBlocksForPage("page-1").first().getOrNull()
+        val blocks = blockRepo.getBlocksForPage(PageUuid("page-1")).first().getOrNull()
             ?.sortedBy { it.position }
             ?: emptyList()
 
@@ -710,14 +719,14 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block3)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Split block2 at position 5
-        viewModel.splitBlock(block2.uuid, 5)
+        viewModel.splitBlock(BlockUuid(block2.uuid.value), 5)
 
         testScheduler.advanceUntilIdle()
 
-        val blocks = blockRepo.getBlocksForPage("page-1").first().getOrNull()
+        val blocks = blockRepo.getBlocksForPage(PageUuid("page-1")).first().getOrNull()
             ?.sortedBy { it.position }
             ?: emptyList()
 
@@ -749,14 +758,14 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block1)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Add new block after block1
-        viewModel.addNewBlock(block1.uuid)
+        viewModel.addNewBlock(BlockUuid(block1.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
-        val blocks = blockRepo.getBlocksForPage("page-1").first().getOrNull()
+        val blocks = blockRepo.getBlocksForPage(PageUuid("page-1")).first().getOrNull()
             ?.sortedBy { it.position }
             ?: emptyList()
 
@@ -781,14 +790,14 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(block3)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
+        viewModel.loadPageContent(PageUuid("page-1"))
 
         // Add new block after block1
-        viewModel.addNewBlock(block1.uuid)
+        viewModel.addNewBlock(BlockUuid(block1.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
-        val blocks = blockRepo.getBlocksForPage("page-1").first().getOrNull()
+        val blocks = blockRepo.getBlocksForPage(PageUuid("page-1")).first().getOrNull()
             ?.sortedBy { it.position }
             ?: emptyList()
 
@@ -826,16 +835,16 @@ class JournalsViewModelEditorTest {
         blockRepo.addBlock(p2Block2)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
-        viewModel.loadPageContent("page-1")
-        viewModel.loadPageContent("page-2")
+        viewModel.loadPageContent(PageUuid("page-1"))
+        viewModel.loadPageContent(PageUuid("page-2"))
 
         // Merge blocks on page 1
-        viewModel.mergeBlock(p1Block2.uuid)
+        viewModel.mergeBlock(BlockUuid(p1Block2.uuid.value))
 
         testScheduler.advanceUntilIdle()
 
         // Page 2 blocks should be unchanged
-        val page2Blocks = blockRepo.getBlocksForPage("page-2").first().getOrNull() ?: emptyList()
+        val page2Blocks = blockRepo.getBlocksForPage(PageUuid("page-2")).first().getOrNull() ?: emptyList()
         assertEquals(2, page2Blocks.size)
         assertEquals("Page2-A", page2Blocks[0].content)
         assertEquals("Page2-B", page2Blocks[1].content)

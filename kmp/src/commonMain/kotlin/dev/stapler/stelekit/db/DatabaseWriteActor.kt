@@ -9,7 +9,9 @@ import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.performance.AppSession
 import dev.stapler.stelekit.performance.HistogramWriter
 import dev.stapler.stelekit.performance.RingBufferSpanExporter
@@ -19,6 +21,9 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.util.UuidGenerator
+import arrow.atomic.AtomicInt
+import arrow.atomic.update
+import arrow.atomic.value
 import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -56,6 +61,7 @@ class DatabaseWriteActor(
     private val blockRepository: BlockRepository,
     private val pageRepository: PageRepository,
     private val opLogger: OperationLogger? = null,
+    scope: CoroutineScope? = null,
 ) {
     private val logger = Logger("DatabaseWriteActor")
 
@@ -88,13 +94,13 @@ class DatabaseWriteActor(
         ) : WriteRequest()
 
         class DeleteBlocksForPage(
-            val pageUuid: String,
+            val pageUuid: PageUuid,
             override val priority: Priority = Priority.HIGH,
             override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
         ) : WriteRequest()
 
         class DeleteBlocksForPages(
-            val pageUuids: List<String>,
+            val pageUuids: List<PageUuid>,
             override val priority: Priority = Priority.LOW,
             override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
         ) : WriteRequest()
@@ -116,9 +122,45 @@ class DatabaseWriteActor(
     private fun channelFor(priority: Priority) =
         if (priority == Priority.HIGH) highPriority else lowPriority
 
+    // True while the actor coroutine is executing a processRequest call.
+    // Written exclusively by the single actor coroutine; read by callers.
+    // @Volatile gives the required single-writer/multi-reader visibility without atomics.
+    @Volatile private var _isActorProcessing: Boolean = false
+
+    /**
+     * Counts callers that have successfully sent a request but whose [CompletableDeferred.await]
+     * has not yet returned. Incremented just before [Channel.send] and decremented in the
+     * finally-block that wraps [CompletableDeferred.await], so the counter stays balanced even
+     * when [send] throws (e.g. channel closed) or when the calling coroutine is cancelled while
+     * suspended in [await].
+     *
+     * Uses [AtomicInt] (Arrow KMP-safe typealias for [java.util.concurrent.atomic.AtomicInteger]
+     * on JVM/Android, native atomics on iOS/WASM) to avoid the lost-update race that would occur
+     * with a plain @Volatile Int incremented by concurrent callers.
+     */
+    private val _activeOps = AtomicInt(0)
+
+    /**
+     * True while any write is queued in the channels or currently being processed.
+     *
+     * Thread-safe: [Channel.isEmpty] is safe to call from any thread/coroutine;
+     * [_isActorProcessing] is written only by the actor coroutine (@Volatile suffices
+     * for single-writer/multi-reader visibility); [_activeOps] is an atomic counter
+     * incremented by every caller before [send] and decremented after [await] returns.
+     * Together they cover the full lifecycle of a write request from caller to result.
+     *
+     * Used by conflict detection: an external file change arriving while a split/merge is
+     * in-flight must trigger the conflict dialog rather than silently overwriting local data.
+     */
+    val hasPendingWrites: Boolean
+        get() = !highPriority.isEmpty || !lowPriority.isEmpty || _isActorProcessing || _activeOps.value != 0
+
     // Own scope so the actor loop survives Compose scope cancellation (e.g. key(activeGraphId)
     // graph switch). Callers must call close() to stop the actor.
-    private val actorScope = CoroutineScope(SupervisorJob() + PlatformDispatcher.Default)
+    // When a scope is injected (e.g. from tests with UnconfinedTestDispatcher), use it directly
+    // so that virtual-time control works correctly in tests.
+    private val injectedScope: Boolean = scope != null
+    private val actorScope = scope ?: CoroutineScope(SupervisorJob() + PlatformDispatcher.Default)
 
     init {
         actorScope.launch {
@@ -126,9 +168,10 @@ class DatabaseWriteActor(
                 while (isActive) {
                     // Prefer high-priority: non-blocking poll first, then suspend on either.
                     val request = highPriority.tryReceive().getOrNull()
+                        ?.also { _isActorProcessing = true }
                         ?: select {
-                            highPriority.onReceive { it }
-                            lowPriority.onReceive { it }
+                            highPriority.onReceive { _isActorProcessing = true; it }
+                            lowPriority.onReceive { _isActorProcessing = true; it }
                         }
                     try {
                         processRequest(request)
@@ -147,6 +190,8 @@ class DatabaseWriteActor(
                         if (!request.deferred.isCompleted) {
                             request.deferred.complete(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
                         }
+                    } finally {
+                        _isActorProcessing = false
                     }
                 }
             } catch (e: CancellationException) {
@@ -169,58 +214,86 @@ class DatabaseWriteActor(
                 if (result.isRight()) onWriteSuccess?.invoke(request)
                 request.deferred.complete(result)
             }
-            is WriteRequest.DeleteBlocksForPage -> {
-                if (opLogger != null) {
-                    try {
-                        val pageBlocks = blockRepository.getBlocksForPage(request.pageUuid).first().getOrNull()
-                        pageBlocks?.forEach { opLogger.logDelete(it) }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) {
-                        // Non-fatal: op log failure must not block the delete
-                    }
-                }
-                val result = blockRepository.deleteBlocksForPage(request.pageUuid)
-                if (result.isRight()) onWriteSuccess?.invoke(request)
-                request.deferred.complete(result)
-            }
-            is WriteRequest.DeleteBlocksForPages -> {
-                if (opLogger != null) {
-                    try {
-                        for (uuid in request.pageUuids) {
-                            val pageBlocks = blockRepository.getBlocksForPage(uuid).first().getOrNull()
-                            pageBlocks?.forEach { opLogger.logDelete(it) }
-                        }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        logger.warn("Op log pre-delete read failed (non-fatal)", e)
-                    }
-                }
-                val result = blockRepository.deleteBlocksForPages(request.pageUuids)
-                if (result.isRight()) onWriteSuccess?.invoke(request)
-                request.deferred.complete(result)
-            }
+            is WriteRequest.DeleteBlocksForPage -> processDeleteBlocksForPage(request)
+            is WriteRequest.DeleteBlocksForPages -> processDeleteBlocksForPages(request)
             is WriteRequest.SaveBlocks -> processSaveBlocks(request)
-            is WriteRequest.Execute -> {
-                val waitMs = HistogramWriter.epochMs() - request.enqueueMs
-                if (waitMs > 10L) {
-                    ringBuffer?.record(SerializedSpan(
-                        name = "db.queue_wait",
-                        startEpochMs = request.enqueueMs,
-                        endEpochMs = request.enqueueMs + waitMs,
-                        durationMs = waitMs,
-                        attributes = mapOf(
-                            "priority" to request.priority.name,
-                            "session.id" to AppSession.id,
-                        ),
-                        statusCode = if (waitMs > 500L) "ERROR" else "OK",
-                        traceId = UuidGenerator.generateV7(),
-                        spanId = UuidGenerator.generateV7(),
-                    ))
-                }
-                request.deferred.complete(request.op())
+            is WriteRequest.Execute -> processExecute(request)
+        }
+    }
+
+    private suspend fun processDeleteBlocksForPage(request: WriteRequest.DeleteBlocksForPage) {
+        if (opLogger != null) {
+            try {
+                val pageBlocks = blockRepository.getBlocksForPage(request.pageUuid).first().getOrNull()
+                pageBlocks?.forEach { opLogger.logDelete(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Non-fatal: op log failure must not block the delete
             }
+        }
+        val result = blockRepository.deleteBlocksForPage(request.pageUuid)
+        if (result.isRight()) onWriteSuccess?.invoke(request)
+        request.deferred.complete(result)
+    }
+
+    private suspend fun processExecute(request: WriteRequest.Execute) {
+        val waitMs = HistogramWriter.epochMs() - request.enqueueMs
+        if (waitMs > 10L) {
+            recordQueueWaitSpan(request, waitMs)
+        }
+        request.deferred.complete(request.op())
+    }
+
+    private fun recordQueueWaitSpan(request: WriteRequest.Execute, waitMs: Long) {
+        ringBuffer?.record(SerializedSpan(
+            name = "db.queue_wait",
+            startEpochMs = request.enqueueMs,
+            endEpochMs = request.enqueueMs + waitMs,
+            durationMs = waitMs,
+            attributes = mapOf(
+                "priority" to request.priority.name,
+                "session.id" to AppSession.id,
+            ),
+            statusCode = if (waitMs > 500L) "ERROR" else "OK",
+            traceId = UuidGenerator.generateV7(),
+            spanId = UuidGenerator.generateV7(),
+        ))
+    }
+
+    private suspend fun processDeleteBlocksForPages(request: WriteRequest.DeleteBlocksForPages) {
+        if (opLogger != null) {
+            // Chunk page UUIDs so we fetch and delete together per chunk rather than
+            // materializing all blocks across every page before the first delete runs.
+            // Bounds peak memory to PAGE_DELETE_CHUNK × (blocks per page).
+            for (chunk in request.pageUuids.chunked(PAGE_DELETE_CHUNK)) {
+                logDeletesForChunk(chunk)
+                val chunkResult = blockRepository.deleteBlocksForPages(chunk)
+                if (chunkResult.isLeft()) {
+                    request.deferred.complete(chunkResult)
+                    return
+                }
+            }
+            onWriteSuccess?.invoke(request)
+            request.deferred.complete(Unit.right())
+        } else {
+            val result = blockRepository.deleteBlocksForPages(request.pageUuids)
+            if (result.isRight()) onWriteSuccess?.invoke(request)
+            request.deferred.complete(result)
+        }
+    }
+
+    /** Log deletes for each UUID in [chunk] via the op-logger (non-fatal). */
+    private suspend fun logDeletesForChunk(chunk: List<PageUuid>) {
+        try {
+            for (uuid in chunk) {
+                val pageBlocks = blockRepository.getBlocksForPage(uuid).first().getOrNull()
+                pageBlocks?.forEach { opLogger?.logDelete(it) }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("Op log pre-delete read failed (non-fatal)", e)
         }
     }
 
@@ -279,11 +352,11 @@ class DatabaseWriteActor(
             )
             // Combined transaction failed — retry each request individually so that
             // pages with valid blocks still succeed and each caller gets accurate feedback.
+            // Reuse the already-fetched existingByUuid map — no additional DB round-trip needed.
             batch.forEach { req ->
-                val reqExisting = loadExistingBlocks(req.blocks)
                 val reqResult = blockRepository.saveBlocks(req.blocks)
                 if (reqResult.isRight()) {
-                    logSaveBlocks(req.blocks, reqExisting)
+                    logSaveBlocks(req.blocks, existingByUuid)
                     onWriteSuccess?.invoke(req)
                 }
                 req.deferred.complete(reqResult)
@@ -292,30 +365,31 @@ class DatabaseWriteActor(
     }
 
     /**
-     * Load existing blocks by UUID for INSERT vs UPDATE classification.
-     * Returns a map of uuid -> existing Block (only for blocks that already exist).
+     * Batch-fetch existing blocks by UUID for INSERT vs UPDATE classification.
+     * Uses a single [BlockRepository.getBlocksByUuids] round-trip (chunked internally to
+     * respect SQLite's 999-variable limit) instead of N individual lookups.
+     *
+     * Always runs regardless of [opLogger] — the batch fetch is a performance fix, not
+     * just a logging aid. The [opLogger] guard is applied only inside [logSaveBlocks].
      */
-    private suspend fun loadExistingBlocks(blocks: List<Block>): Map<String, Block> {
-        if (opLogger == null || blocks.isEmpty()) return emptyMap()
-        val result = mutableMapOf<String, Block>()
-        for (block in blocks) {
-            try {
-                val existing = blockRepository.getBlockByUuid(block.uuid).first().getOrNull()
-                if (existing != null) result[block.uuid] = existing
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                // Non-fatal: if lookup fails we skip logging for this block
-            }
+    private suspend fun loadExistingBlocks(blocks: List<Block>): Map<BlockUuid, Block> {
+        if (blocks.isEmpty()) return emptyMap()
+        return try {
+            blockRepository.getBlocksByUuids(blocks.map { it.uuid })
+                .getOrNull().orEmpty()
+                .associateBy { it.uuid }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyMap()
         }
-        return result
     }
 
     /**
      * Log INSERT or UPDATE operations for each block in the batch.
      * Blocks not present in [existingByUuid] are treated as inserts.
      */
-    private suspend fun logSaveBlocks(blocks: List<Block>, existingByUuid: Map<String, Block>) {
+    private suspend fun logSaveBlocks(blocks: List<Block>, existingByUuid: Map<BlockUuid, Block>) {
         val logger = opLogger ?: return
         for (block in blocks) {
             val existing = existingByUuid[block.uuid]
@@ -329,34 +403,29 @@ class DatabaseWriteActor(
 
     suspend fun savePage(page: Page, priority: Priority = Priority.HIGH): Either<DomainError, Unit> {
         val req = WriteRequest.SavePage(page, priority)
-        channelFor(priority).send(req)
-        return req.deferred.await()
+        return sendAndAwait(req)
     }
 
     suspend fun savePages(pages: List<Page>, priority: Priority = Priority.LOW): Either<DomainError, Unit> {
         if (pages.isEmpty()) return Unit.right()
         val req = WriteRequest.SavePages(pages, priority)
-        channelFor(priority).send(req)
-        return req.deferred.await()
+        return sendAndAwait(req)
     }
 
     suspend fun saveBlocks(blocks: List<Block>, priority: Priority = Priority.HIGH): Either<DomainError, Unit> {
         val req = WriteRequest.SaveBlocks(blocks, priority)
-        channelFor(priority).send(req)
-        return req.deferred.await()
+        return sendAndAwait(req)
     }
 
-    suspend fun deleteBlocksForPage(pageUuid: String, priority: Priority = Priority.HIGH): Either<DomainError, Unit> {
+    suspend fun deleteBlocksForPage(pageUuid: PageUuid, priority: Priority = Priority.HIGH): Either<DomainError, Unit> {
         val req = WriteRequest.DeleteBlocksForPage(pageUuid, priority)
-        channelFor(priority).send(req)
-        return req.deferred.await()
+        return sendAndAwait(req)
     }
 
-    suspend fun deleteBlocksForPages(pageUuids: List<String>, priority: Priority = Priority.LOW): Either<DomainError, Unit> {
+    suspend fun deleteBlocksForPages(pageUuids: List<PageUuid>, priority: Priority = Priority.LOW): Either<DomainError, Unit> {
         if (pageUuids.isEmpty()) return Unit.right()
         val req = WriteRequest.DeleteBlocksForPages(pageUuids, priority)
-        channelFor(priority).send(req)
-        return req.deferred.await()
+        return sendAndAwait(req)
     }
 
     /**
@@ -365,20 +434,44 @@ class DatabaseWriteActor(
      */
     suspend fun execute(priority: Priority = Priority.HIGH, op: suspend () -> Either<DomainError, Unit>): Either<DomainError, Unit> {
         val req = WriteRequest.Execute(op, priority)
-        channelFor(priority).send(req)
-        return req.deferred.await()
+        return sendAndAwait(req)
+    }
+
+    /**
+     * Increments [_activeOps], sends [req] to its priority channel, then awaits the result.
+     *
+     * The counter is decremented in all exit paths:
+     * - If [Channel.send] throws (channel closed / coroutine cancelled in send), the
+     *   increment is undone immediately and the exception propagates.
+     * - Once [send] returns, a finally-block around [CompletableDeferred.await] guarantees
+     *   the decrement regardless of whether [await] completes normally, throws, or is
+     *   cancelled — so [_activeOps] can never leak above zero.
+     */
+    private suspend fun sendAndAwait(req: WriteRequest): Either<DomainError, Unit> {
+        _activeOps.update { it + 1 }
+        try {
+            channelFor(req.priority).send(req)
+        } catch (e: Exception) {
+            _activeOps.update { it - 1 }
+            throw e
+        }
+        try {
+            return req.deferred.await()
+        } finally {
+            _activeOps.update { it - 1 }
+        }
     }
 
     suspend fun saveBlock(block: Block): Either<DomainError, Unit> =
         execute { blockRepository.saveBlock(block) }
 
-    suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> =
+    suspend fun updateBlockContentOnly(blockUuid: BlockUuid, content: String): Either<DomainError, Unit> =
         execute { blockRepository.updateBlockContentOnly(blockUuid, content) }
 
-    suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> =
+    suspend fun updateBlockPropertiesOnly(blockUuid: BlockUuid, properties: Map<String, String>): Either<DomainError, Unit> =
         execute { blockRepository.updateBlockPropertiesOnly(blockUuid, properties) }
 
-    suspend fun deleteBlock(blockUuid: String): Either<DomainError, Unit> =
+    suspend fun deleteBlock(blockUuid: BlockUuid): Either<DomainError, Unit> =
         execute {
             if (opLogger != null) {
                 try {
@@ -392,6 +485,54 @@ class DatabaseWriteActor(
             }
             blockRepository.deleteBlock(blockUuid)
         }
+
+    /**
+     * Splits [blockUuid] at [cursorPosition] through the actor's serialized queue.
+     * Guaranteed to execute after any pending [updateBlockContentOnly] for the same block.
+     *
+     * Returns the newly created [Block] on success, or a [DomainError] on failure.
+     */
+    suspend fun splitBlock(
+        blockUuid: BlockUuid,
+        cursorPosition: Int,
+        newBlockUuid: BlockUuid?,
+    ): Either<DomainError, Block> {
+        var newBlock: Block? = null
+        val opResult = execute {
+            blockRepository.splitBlock(blockUuid, cursorPosition, newBlockUuid)
+                .onRight { newBlock = it }
+                .map { }
+        }
+        return opResult.fold(
+            ifLeft = { it.left() },
+            ifRight = {
+                newBlock?.right()
+                    ?: DomainError.DatabaseError.WriteFailed(
+                        "splitBlock returned no block for $blockUuid"
+                    ).left()
+            }
+        )
+    }
+
+    /**
+     * Merges [nextBlockUuid] into [blockUuid] through the actor's serialized queue.
+     * Guaranteed to execute after any pending [updateBlockContentOnly] for either block.
+     */
+    suspend fun mergeBlocks(
+        blockUuid: BlockUuid,
+        nextBlockUuid: BlockUuid,
+        separator: String,
+    ): Either<DomainError, Unit> =
+        execute { blockRepository.mergeBlocks(blockUuid, nextBlockUuid, separator) }
+
+    /**
+     * Deletes [blockUuid] through the actor's serialized queue.
+     * Distinct from [deleteBlock] (which logs to op-logger); this variant is for
+     * structural deletions triggered by backspace/merge where the block being removed
+     * has no content to log.
+     */
+    suspend fun deleteBlockStructural(blockUuid: BlockUuid): Either<DomainError, Unit> =
+        execute { blockRepository.deleteBlock(blockUuid) }
 
     /**
      * Executes [block] with all writes wrapped in a BATCH_START / BATCH_END log entry.
@@ -412,16 +553,25 @@ class DatabaseWriteActor(
         }
     }
 
-    suspend fun deletePage(pageUuid: String): Either<DomainError, Unit> =
+    suspend fun deletePage(pageUuid: PageUuid): Either<DomainError, Unit> =
         execute { pageRepository.deletePage(pageUuid) }
 
     fun close() {
         highPriority.close()
         lowPriority.close()
-        actorScope.cancel()
+        // Only cancel the scope if we created it; injected scopes (e.g. test schedulers)
+        // are owned by the caller.
+        if (!injectedScope) actorScope.cancel()
     }
 
     companion object {
+        /**
+         * Page UUIDs processed per iteration in [DeleteBlocksForPages] when the op-logger is
+         * active. Bounds peak memory to PAGE_DELETE_CHUNK × (blocks per page) instead of
+         * materializing all blocks across every page before the first delete runs.
+         */
+        private const val PAGE_DELETE_CHUNK = 25
+
         /**
          * Creates a [Resource]-managed [DatabaseWriteActor].
          * The actor's [close] method is guaranteed to be called when the resource is released,

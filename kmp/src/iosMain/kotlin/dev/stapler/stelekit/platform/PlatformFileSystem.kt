@@ -155,6 +155,10 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     actual override suspend fun pickDirectoryAsync(): String? = pickDirectory()
 
+    // iOS SSH key picker: users must place their SSH key in the Files app first.
+    // See requirements doc for the iOS SSH key access prerequisite.
+    override suspend fun pickFileAsync(): String? = null
+
     actual override fun getLastModifiedTime(path: String): Long? {
         return try {
             val expandedPath = expandTilde(path)

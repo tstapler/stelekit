@@ -11,6 +11,7 @@ import arrow.core.getOrElse
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.util.UuidGenerator
@@ -85,7 +86,7 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
 
         val now = Clock.System.now()
         val newBlock = Block(
-            uuid = UuidGenerator.generateV7(),
+            uuid = BlockUuid(UuidGenerator.generateV7()),
             pageUuid = page.uuid,
             content = text,
             position = (existingBlocks.maxOfOrNull { it.position } ?: -1) + 1,

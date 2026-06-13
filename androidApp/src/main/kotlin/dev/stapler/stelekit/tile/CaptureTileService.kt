@@ -36,8 +36,14 @@ class CaptureTileService : TileService() {
     override fun onClick() {
         super.onClick()
         val app = applicationContext as? SteleKitApplication
-        val targetClass = if (app?.graphManager?.getActiveRepositorySet() != null) CaptureActivity::class.java
-                          else MainActivity::class.java
+        val graphId = app?.graphManager?.getActiveGraphId()
+        val graphInfo = graphId?.let { app?.graphManager?.getGraphInfo(it) }
+        val targetClass = when {
+            graphId == null -> MainActivity::class.java
+            // Paranoid-mode vaults must be unlocked through the main UI first.
+            graphInfo?.isParanoidMode == true -> MainActivity::class.java
+            else -> CaptureActivity::class.java
+        }
         val intent = Intent(this, targetClass).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }

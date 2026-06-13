@@ -3,6 +3,7 @@ package dev.stapler.stelekit.ui
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.ui.fixtures.InMemorySettings
@@ -36,7 +37,7 @@ class RecentPagesTest {
     private val now = Clock.System.now()
 
     private fun makePage(uuid: String, name: String): Page = Page(
-        uuid = uuid,
+        uuid = PageUuid(uuid),
         name = name,
         createdAt = now,
         updatedAt = now
@@ -69,15 +70,17 @@ class RecentPagesTest {
             graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" }
         )
         return StelekitViewModel(
-            PlatformFileSystem(),
-            pageRepo,
-            blockRepo,
-            searchRepo,
-            graphLoader,
-            graphWriter,
-            settings,
-            scope,
-            blockStateManager = bsm
+            StelekitViewModelDependencies(
+                fileSystem = PlatformFileSystem(),
+                pageRepository = pageRepo,
+                blockRepository = blockRepo,
+                searchRepository = searchRepo,
+                graphLoader = graphLoader,
+                graphWriter = graphWriter,
+                platformSettings = settings,
+                scope = scope,
+                blockStateManager = bsm,
+            )
         ).also { viewModelRef = it }
     }
 

@@ -8,6 +8,8 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.db.GraphWriter
@@ -49,9 +51,9 @@ class BlockOperations(
             val traceId = PerformanceMonitor.startTrace("create-block")
             
             val newBlock = Block(
-                uuid = uuid ?: generateBlockUuid(),
+                uuid = BlockUuid(uuid ?: generateBlockUuid()),
                 content = content,
-                pageUuid = pageId,
+                pageUuid = PageUuid(pageId),
                 parentUuid = parentId,
                 leftUuid = leftId,
                 position = position ?: 0,
@@ -80,15 +82,15 @@ class BlockOperations(
         try {
             val traceId = PerformanceMonitor.startTrace("update-block")
 
-            val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+            val block = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull()
                 ?: return@withLock DomainError.DatabaseError.NotFound("block", blockUuid).left()
-            
+
             val updatedBlock = block.copy(
                 content = content,
                 properties = properties ?: block.properties,
                 updatedAt = kotlin.time.Clock.System.now()
             )
-            
+
             val result = blockRepository.saveBlock(updatedBlock)
 
             PerformanceMonitor.endTrace(traceId)
@@ -106,7 +108,7 @@ class BlockOperations(
         mergeMode: Boolean
     ): Either<DomainError, Block> = operationMutex.withLock {
         try {
-            val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+            val block = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull()
                 ?: return@withLock DomainError.DatabaseError.NotFound("block", blockUuid).left()
 
             val newProperties = if (mergeMode) {
@@ -134,7 +136,7 @@ class BlockOperations(
         deleteStrategy: DeleteStrategy
     ): Either<DomainError, Unit> = operationMutex.withLock {
         val deleteChildren = deleteStrategy == DeleteStrategy.DELETE_CHILDREN
-        blockRepository.deleteBlock(blockUuid, deleteChildren)
+        blockRepository.deleteBlock(BlockUuid(blockUuid), deleteChildren)
     }
 
     override suspend fun moveBlockEnhanced(
@@ -144,48 +146,49 @@ class BlockOperations(
         targetUuid: String?
     ): Either<DomainError, Unit> = operationMutex.withLock {
         try {
-            val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+            val blockUuidTyped = BlockUuid(blockUuid)
+            val block = blockRepository.getBlockByUuid(blockUuidTyped).first().getOrNull()
                 ?: return@withLock DomainError.DatabaseError.NotFound("block", blockUuid).left()
-            
+
             // 1. Determine siblings and their positions
             val siblingsResult = if (targetParentUuid == null) {
                 blockRepository.getBlocksForPage(block.pageUuid).first()
             } else {
-                blockRepository.getBlockChildren(targetParentUuid).first()
+                blockRepository.getBlockChildren(BlockUuid(targetParentUuid)).first()
             }
-            
+
             val siblings = siblingsResult.getOrNull()
                 ?.let { if (targetParentUuid == null) it.filter { b -> b.parentUuid == null } else it }
                 ?.sortedBy { it.position }
                 ?: emptyList()
-            
+
             // 2. Calculate new position
             val newPosition = when (positioning) {
                 PositioningMode.START -> 0
                 PositioningMode.END -> (siblings.maxOfOrNull { it.position } ?: -1) + 1
                 PositioningMode.BEFORE -> {
-                    val targetBlock = siblings.find { it.uuid == targetUuid }
+                    val targetBlock = siblings.find { it.uuid.value == targetUuid }
                     targetBlock?.position ?: ((siblings.maxOfOrNull { it.position } ?: -1) + 1)
                 }
                 PositioningMode.AFTER -> {
-                    val targetBlock = siblings.find { it.uuid == targetUuid }
+                    val targetBlock = siblings.find { it.uuid.value == targetUuid }
                     (targetBlock?.position ?: (siblings.maxOfOrNull { it.position } ?: -1)) + 1
                 }
                 PositioningMode.REPLACE -> {
-                    val targetBlock = siblings.find { it.uuid == targetUuid }
+                    val targetBlock = siblings.find { it.uuid.value == targetUuid }
                     targetBlock?.position ?: ((siblings.maxOfOrNull { it.position } ?: -1) + 1)
                 }
             }
-            
+
             // 3. Shift siblings if inserting in between
-            val siblingsToShift = siblings.filter { it.position >= newPosition && it.uuid != blockUuid }
+            val siblingsToShift = siblings.filter { it.position >= newPosition && it.uuid.value != blockUuid }
             if (siblingsToShift.isNotEmpty()) {
                 val shifted = siblingsToShift.map { it.copy(position = it.position + 1) }
                 blockRepository.saveBlocks(shifted)
             }
-            
+
             // 4. Perform the move
-            blockRepository.moveBlock(blockUuid, targetParentUuid, newPosition)
+            blockRepository.moveBlock(blockUuidTyped, targetParentUuid?.let { BlockUuid(it) }, newPosition)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -197,14 +200,14 @@ class BlockOperations(
         blockUuid: String,
         indentMode: IndentMode
     ): Either<DomainError, Unit> = operationMutex.withLock {
-        blockRepository.indentBlock(blockUuid)
+        blockRepository.indentBlock(BlockUuid(blockUuid))
     }
 
     override suspend fun outdentBlockEnhanced(
         blockUuid: String,
         targetLevel: Int?
     ): Either<DomainError, Unit> = operationMutex.withLock {
-        blockRepository.outdentBlock(blockUuid)
+        blockRepository.outdentBlock(BlockUuid(blockUuid))
     }
 
     override suspend fun duplicateBlock(
@@ -214,11 +217,11 @@ class BlockOperations(
         targetUuid: String?
     ): Either<DomainError, Block> = operationMutex.withLock {
         try {
-            val originalBlock = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+            val originalBlock = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull()
                 ?: return@withLock DomainError.DatabaseError.NotFound("block", blockUuid).left()
-            
+
             val duplicate = originalBlock.copy(
-                uuid = generateBlockUuid(),
+                uuid = BlockUuid(generateBlockUuid()),
                 content = originalBlock.content + " (copy)",
                 createdAt = kotlin.time.Clock.System.now(),
                 updatedAt = kotlin.time.Clock.System.now(),
@@ -242,11 +245,11 @@ class BlockOperations(
     ): Either<DomainError, Block> = treeOps.duplicateSubtree(rootBlockUuid, targetParentUuid, targetPosition)
 
     override suspend fun splitBlock(
-        blockUuid: String,
+        blockUuid: BlockUuid,
         cursorPosition: Int,
-        keepContentInOriginal: Boolean
+        newBlockUuid: BlockUuid?,
     ): Either<DomainError, Block> = operationMutex.withLock {
-        blockRepository.splitBlock(blockUuid, cursorPosition)
+        blockRepository.splitBlock(blockUuid, cursorPosition, newBlockUuid)
     }
 
     override suspend fun mergeWithNext(
@@ -254,7 +257,8 @@ class BlockOperations(
         separator: String
     ): Either<DomainError, Block> = operationMutex.withLock {
         try {
-            val currentBlock = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+            val blockUuidTyped = BlockUuid(blockUuid)
+            val currentBlock = blockRepository.getBlockByUuid(blockUuidTyped).first().getOrNull()
                 ?: return@withLock DomainError.DatabaseError.NotFound("block", blockUuid).left()
 
             val siblings = if (currentBlock.parentUuid == null) {
@@ -263,15 +267,15 @@ class BlockOperations(
                 blockRepository.getBlockSiblings(currentBlock.uuid).first().getOrNull() ?: emptyList()
             }
 
-            val currentIndex = siblings.indexOfFirst { it.uuid == blockUuid }
+            val currentIndex = siblings.indexOfFirst { it.uuid == blockUuidTyped }
             if (currentIndex < 0 || currentIndex >= siblings.size - 1) {
                 return@withLock DomainError.DatabaseError.WriteFailed("No next sibling to merge with").left()
             }
-            
+
             val nextBlock = siblings[currentIndex + 1]
-            val mergeResult = blockRepository.mergeBlocks(blockUuid, nextBlock.uuid, separator)
+            val mergeResult = blockRepository.mergeBlocks(blockUuidTyped, nextBlock.uuid, separator)
             if (mergeResult.isLeft()) return@withLock mergeResult.map { error("unreachable") as Block }
-            val merged = blockRepository.getBlockByUuid(blockUuid).first()
+            val merged = blockRepository.getBlockByUuid(blockUuidTyped).first()
             val b = merged.getOrNull()
             b?.right() ?: DomainError.DatabaseError.NotFound("block", blockUuid).left()
         } catch (e: CancellationException) {
@@ -286,7 +290,8 @@ class BlockOperations(
         separator: String
     ): Either<DomainError, Block> = operationMutex.withLock {
         try {
-            val currentBlock = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+            val blockUuidTyped = BlockUuid(blockUuid)
+            val currentBlock = blockRepository.getBlockByUuid(blockUuidTyped).first().getOrNull()
                 ?: return@withLock DomainError.DatabaseError.NotFound("block", blockUuid).left()
 
             val siblings = if (currentBlock.parentUuid == null) {
@@ -295,17 +300,17 @@ class BlockOperations(
                 blockRepository.getBlockSiblings(currentBlock.uuid).first().getOrNull() ?: emptyList()
             }
 
-            val currentIndex = siblings.indexOfFirst { it.uuid == blockUuid }
+            val currentIndex = siblings.indexOfFirst { it.uuid == blockUuidTyped }
             if (currentIndex <= 0) {
                 return@withLock DomainError.DatabaseError.WriteFailed("No previous sibling to merge with").left()
             }
-            
+
             val prevBlock = siblings[currentIndex - 1]
-            val mergeResult = blockRepository.mergeBlocks(prevBlock.uuid, blockUuid, separator)
+            val mergeResult = blockRepository.mergeBlocks(prevBlock.uuid, blockUuidTyped, separator)
             if (mergeResult.isLeft()) return@withLock mergeResult.map { error("unreachable") as Block }
             val merged = blockRepository.getBlockByUuid(prevBlock.uuid).first()
             val b = merged.getOrNull()
-            b?.right() ?: DomainError.DatabaseError.NotFound("block", prevBlock.uuid).left()
+            b?.right() ?: DomainError.DatabaseError.NotFound("block", prevBlock.uuid.value).left()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

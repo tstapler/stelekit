@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.ui
 
 import androidx.compose.runtime.staticCompositionLocalOf
+import kotlinx.datetime.LocalDate
 import dev.stapler.stelekit.docs.AllPagesDocs
 import dev.stapler.stelekit.docs.FlashcardsDocs
 import dev.stapler.stelekit.docs.HelpPage
@@ -44,6 +45,20 @@ sealed class Screen {
 
     @HelpPage(docs = PageViewDocs::class)
     data class PageView(val page: Page) : Screen()
+
+    /** Full-screen gallery of annotated images. */
+    data object Gallery : Screen()
+
+    /**
+     * Annotation editor for a single image annotation.
+     *
+     * [imageAnnotationUuid] is the UUID of the [ImageAnnotation] to open.
+     * [pageUuid] is the UUID of the page that owns the block — used for "Go to page" navigation.
+     */
+    data class AnnotationEditor(
+        val imageAnnotationUuid: String,
+        val pageUuid: String? = null,
+    ) : Screen()
 }
 
 data class AppState(
@@ -90,6 +105,9 @@ data class AppState(
     val diskConflict: DiskConflict? = null,
     // Write error — non-null when a background DB write failed persistently
     val indexingError: String? = null,
+    // Fatal error — non-null when a Throwable-level crash was caught and converted to a
+    // recoverable state. Shown on the error report screen so the user can copy the message.
+    val fatalError: String? = null,
     // Rename dialog — non-null when the rename dialog is open for a specific page
     val renameDialogPage: Page? = null,
     val renameDialogBusy: Boolean = false,
@@ -98,8 +116,21 @@ data class AppState(
     val syncState: SyncState = SyncState.Idle,
     val gitConfig: GitConfig? = null,
     val gitSetupVisible: Boolean = false,
+    val gitSetupInitialStep: Int = 1,
+    val gitSetupOpenForClone: Boolean = false,
     val conflictResolutionVisible: Boolean = false,
-    val gitLogVisible: Boolean = false,
+    val journalMergeReviewVisible: Boolean = false,
+    // Export in-flight: true while an exportPage/exportSelectedBlocks coroutine is running
+    val isExporting: Boolean = false,
+    // Share dialog state
+    val shareDialogVisible: Boolean = false,
+    val shareFormat: String = "markdown",
+    val shareScope: ShareScope = ShareScope.CurrentPage,
+    val shareJournalFromDate: LocalDate? = null,
+    val shareJournalToDate: LocalDate? = null,
+    val shareIsGoogleAuthenticated: Boolean = false,
+    val shareGoogleEmail: String? = null,
+    val isExportingToDrive: Boolean = false,
 ) {
     val canGoBack: Boolean get() = historyIndex > 0
     val canGoForward: Boolean get() = historyIndex < navigationHistory.size - 1

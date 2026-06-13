@@ -55,15 +55,15 @@ fun RichTextEditor(
     val scope = rememberCoroutineScope()
     
     // Get reactive text state for this block
-    val textState by textOperations.getTextState(block.uuid).collectAsState()
+    val textState by textOperations.getTextState(block.uuid.value).collectAsState()
     
     // Local state for TextField
-    var textFieldValue by remember(block.uuid) {
+    var textFieldValue by remember(block.uuid.value) {
         mutableStateOf(TextFieldValue(text = textState.content))
     }
     
     // Track previous content to detect changes
-    var previousContent by remember(block.uuid) { mutableStateOf(textState.content) }
+    var previousContent by remember(block.uuid.value) { mutableStateOf(textState.content) }
     
     // Update TextField when external state changes
     LaunchedEffect(textState.content) {
@@ -82,7 +82,7 @@ fun RichTextEditor(
                 kotlinx.coroutines.delay(300)
                 if (textFieldValue.text == previousContent) {
                     textOperations.replaceText(
-                        block.uuid,
+                        block.uuid.value,
                         EditorTextRange(0, textState.content.length),
                         textFieldValue.text
                     )
@@ -98,7 +98,7 @@ fun RichTextEditor(
         val selStart = minOf(textFieldValue.selection.start, textFieldValue.selection.end)
         val selEnd = maxOf(textFieldValue.selection.start, textFieldValue.selection.end)
         textOperations.setSelection(
-            block.uuid,
+            block.uuid.value,
             EditorTextRange(selStart, selEnd)
         )
     }
@@ -124,7 +124,7 @@ fun RichTextEditor(
             onDone = {
                 // Handle Enter key for block operations
                 scope.launch {
-                    textOperations.insertText(block.uuid, "\n")
+                    textOperations.insertText(block.uuid.value, "\n")
                 }
             }
         ),
@@ -159,7 +159,7 @@ fun RichFormattedEditor(
     placeholder: String = ""
 ) {
     val scope = rememberCoroutineScope()
-    val textState by textOperations.getTextState(block.uuid).collectAsState()
+    val textState by textOperations.getTextState(block.uuid.value).collectAsState()
     
     val currentFormat by remember { derivedStateOf { TextFormat() } }
     
@@ -170,7 +170,7 @@ fun RichFormattedEditor(
             onFormatToggle = { format ->
                 scope.launch {
                     textOperations.applyFormat(
-                        block.uuid,
+                        block.uuid.value,
                         EditorTextRange(textState.selection.range.start, textState.selection.range.end),
                         format
                     )

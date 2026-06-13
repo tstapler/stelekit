@@ -15,8 +15,13 @@ class HtmlExporter : PageExporter {
         blocks: List<Block>,
         resolvedRefs: Map<String, String>
     ): String = buildString {
+        val heading = if (page.isJournal && page.journalDate != null) {
+            page.journalDate.toString()
+        } else {
+            page.name
+        }
         append("<article>")
-        append("<h1>").append(HtmlUtils.escape(page.name)).append("</h1>")
+        append("<h1>").append(HtmlUtils.escape(heading)).append("</h1>")
 
         // Page properties (excluding "id")
         val filteredProps = page.properties.filterKeys { it != "id" }

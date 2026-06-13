@@ -100,10 +100,26 @@ internal fun BlockEditor(
         value = textFieldValue,
         onValueChange = { newValue ->
             val oldText = textFieldValue.text
-            onTextFieldValueChange(newValue)
-            if (newValue.text != oldText) {
-                val newVersion = onLocalVersionIncrement()
-                onContentChange(newValue.text, newVersion)
+            val oldSelection = textFieldValue.selection
+
+            // Soft-keyboard [[ ]] wrapping: on mobile, typing '[' replaces the selection via
+            // onValueChange rather than firing Key.LeftBracket (handled separately in onKeyEvent
+            // for hardware keyboards). Detect the replacement pattern and re-wrap the original
+            // selection with [[ ]] before propagating.
+            val wrappedValue = detectSoftKeyboardBracketWrap(oldText, oldSelection, newValue)
+            val softKeyboardWrapped = wrappedValue != null
+            if (wrappedValue != null) {
+                onTextFieldValueChange(wrappedValue)
+                val version = onLocalVersionIncrement()
+                onContentChange(wrappedValue.text, version)
+            }
+
+            if (!softKeyboardWrapped) {
+                onTextFieldValueChange(newValue)
+                if (newValue.text != oldText) {
+                    val newVersion = onLocalVersionIncrement()
+                    onContentChange(newValue.text, newVersion)
+                }
             }
 
             // Autocomplete trigger detection
@@ -602,4 +618,29 @@ internal fun applyAutocompleteSelection(
             }
         }
     }
+}
+
+/**
+ * Detects the soft-keyboard `[[` wrapping pattern: when the user types `[` while text is
+ * selected, the soft keyboard delivers it as an `onValueChange` where the selection is replaced
+ * by `[`. This function recognises that pattern and returns the [TextFieldValue] with the
+ * selection wrapped in `[[` and `]]`, or `null` if the input doesn't match the pattern.
+ *
+ * The equivalent hardware-keyboard path is handled via `Key.LeftBracket` in [handleKeyEvent].
+ *
+ * Exposed as `internal` so it can be unit-tested without a full Compose harness.
+ */
+internal fun detectSoftKeyboardBracketWrap(
+    oldText: String,
+    oldSelection: TextRange,
+    newValue: TextFieldValue,
+): TextFieldValue? {
+    if (oldSelection.collapsed) return null
+    val selStart = oldSelection.min
+    val selEnd = oldSelection.max
+    val expectedAfterBracket = oldText.substring(0, selStart) + "[" + oldText.substring(selEnd)
+    if (newValue.text != expectedAfterBracket || newValue.selection != TextRange(selStart + 1)) return null
+    val selected = oldText.substring(selStart, selEnd)
+    val wrapped = oldText.substring(0, selStart) + "[[" + selected + "]]" + oldText.substring(selEnd)
+    return TextFieldValue(wrapped, TextRange(selStart + 2, selEnd + 2))
 }

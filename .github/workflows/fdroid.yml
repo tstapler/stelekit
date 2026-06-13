@@ -1,113 +1,177 @@
 name: F-Droid Repo Update
 
 on:
-  # Trigger after the Release workflow completes so all artifacts have been
-  # uploaded to the GitHub release before we try to download them.
-  workflow_run:
-    workflows: ["Release"]
-    types: [completed]
+  # Direct trigger when a release is published. Note: GITHUB_TOKEN-triggered
+  # release events cannot fire other workflows, so release.yml also calls this
+  # directly via workflow_call after publishing.
+  release:
+    types: [published]
   workflow_dispatch:
+  # Called from release.yml after the GitHub release is published.
+  workflow_call:
 
-# Share the pages concurrency group so this deploy doesn't collide with the
-# normal site deploy triggered by pushes to main.
 concurrency:
-  group: pages
+  # fdroid-update is separate from the pages group because this workflow no
+  # longer deploys to Pages — it only builds the index and uploads an artifact.
+  # Keeping it in the pages group caused it to be cancelled by pages.yml pushes.
+  group: fdroid-update
   cancel-in-progress: false
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
   actions: read
 
 jobs:
   update-fdroid:
     runs-on: ubuntu-latest
-    # For workflow_run: only proceed when the Release workflow succeeded.
-    # (Most pushes to main only update the release PR; only the PR-merge run
-    # sets release_created=true and uploads artifacts.)
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache uv packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-fdroid-${{ runner.os }}-${{ hashFiles('fdroid/uv.lock') }}
+          restore-keys: uv-fdroid-${{ runner.os }}-
+
       - name: Install fdroidserver
         run: |
-          sudo apt-get install -y python3-pip aapt zipalign
-          pip3 install --user fdroidserver
+          sudo apt-get install -y aapt zipalign
+          # Ensure uv is available (pre-installed on ubuntu-latest; install via
+          # pip3 as fallback if the runner image is older).
+          command -v uv >/dev/null 2>&1 || pip3 install --user uv
+          uv sync --directory fdroid
+
+      - name: Patch fdroidserver for androguard 4.x compatibility
+        # fdroidserver sets apkobject._v2_blocks = NoOverwriteDict() as a workaround
+        # for androguard issue #1030. But androguard 4.x now calls _v2_blocks.append(),
+        # which NoOverwriteDict (a dict subclass) doesn't support. Add append() so it
+        # works as both a dict (fdroidserver's intent) and a list (androguard 4.x).
+        # Tracked: https://gitlab.com/fdroid/fdroidserver/-/issues/1128
+        run: |
+          uv run --directory fdroid python3 - <<'PYEOF'
+          import fdroidserver.common as m, os, sys
+          path = os.path.abspath(m.__file__)
+          src = open(path).read()
+          OLD = '        def __setitem__(self, k, v):\n            if k not in self:\n                super().__setitem__(k, v)'
+          # append() stores items at integer indices; __iter__ must yield values
+          # (block objects) not keys (integers) so androguard 4.x can access .id
+          NEW = OLD + (
+              '\n        def append(self, item):\n            super().__setitem__(len(self), item)'
+              '\n        def __iter__(self):\n            return iter(self.values())'
+          )
+          if NEW in src:
+              print("Patch already applied")
+          elif OLD in src:
+              open(path, 'w').write(src.replace(OLD, NEW))
+              print(f"Patched {path}")
+          else:
+              print("WARNING: patch target not found — fdroidserver may have changed; skipping patch", file=sys.stderr)
+              sys.stderr.flush()
+          PYEOF
 
       - name: Restore fdroid repo signing keystore
         env:
           FDROID_KEYSTORE_BASE64: ${{ secrets.FDROID_KEYSTORE_BASE64 }}
         run: |
-          echo "$FDROID_KEYSTORE_BASE64" | base64 -d > fdroid/keystore.p12
+          [ -n "$FDROID_KEYSTORE_BASE64" ] || { echo "FDROID_KEYSTORE_BASE64 is unset"; exit 1; }
+          echo "$FDROID_KEYSTORE_BASE64" | base64 -d > /tmp/fdroid-keystore.p12
+          [ -s /tmp/fdroid-keystore.p12 ] || { echo "Keystore decoded to empty file"; exit 1; }
 
       - name: Append keystore credentials to fdroid config
         env:
           FDROID_KEY_PASS: ${{ secrets.FDROID_KEY_PASS }}
           FDROID_STORE_PASS: ${{ secrets.FDROID_STORE_PASS }}
         run: |
-          cat >> fdroid/config.yml <<EOF
-          keystore: keystore.p12
-          keystorepass: ${FDROID_STORE_PASS}
-          keypass: ${FDROID_KEY_PASS}
-          EOF
+          printf 'keystore: /tmp/fdroid-keystore.p12\nkeystorepass: %s\nkeypass: %s\n' \
+            "$FDROID_STORE_PASS" "$FDROID_KEY_PASS" >> fdroid/config.yml
 
-      - name: Download signed APKs from all releases
+      - name: Compute previous release tag for cache key
+        id: prev-tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PREV=$(gh release list --limit 2 --json tagName --jq '.[1].tagName // "none"')
+          echo "prev_tag=${PREV}" >> "$GITHUB_OUTPUT"
+          echo "Previous release tag: ${PREV}"
+
+      - name: Restore APK cache
+        uses: actions/cache@v4
+        with:
+          path: fdroid/repo
+          key: fdroid-apk-repo-${{ steps.prev-tag.outputs.prev_tag }}
+          restore-keys: |
+            fdroid-apk-repo-
+
+      - name: Download signed APKs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p fdroid/repo
-          gh release list --limit 100 --json tagName --jq '.[].tagName' | while read -r tag; do
-            gh release download "$tag" \
+          if [ -n "$(find fdroid/repo -maxdepth 1 -name '*.apk' -print -quit 2>/dev/null)" ]; then
+            echo "APK cache hit — downloading only the latest release APK"
+            CURRENT_TAG=$(gh release list --limit 1 --json tagName --jq '.[0].tagName')
+            DOWNLOADED=0
+            if gh release download "$CURRENT_TAG" \
               --pattern "SteleKit-*-android.apk" \
-              --dir fdroid/repo/ || true
-          done
+              --dir fdroid/repo/ --clobber 2>/dev/null; then
+              DOWNLOADED=1
+            fi
+          else
+            # archive_older: 5 in fdroid/config.yml means fdroid update keeps only the
+            # 5 newest APKs in the live repo/; older ones go to archive/ which is never
+            # deployed. Downloading more than 5 on a cache miss wastes bandwidth.
+            echo "APK cache miss — downloading 5 most recent APKs (matches archive_older: 5)"
+            DOWNLOADED=0
+            while IFS= read -r tag; do
+              if gh release download "$tag" \
+                --pattern "SteleKit-*-android.apk" \
+                --dir fdroid/repo/ 2>/dev/null; then
+                DOWNLOADED=$((DOWNLOADED + 1))
+              fi
+            done < <(gh release list --limit 5 --json tagName --jq '.[].tagName')
+          fi
+          echo "Downloaded $DOWNLOADED APK(s)"
+          [ "$DOWNLOADED" -gt 0 ] || { echo "No APKs downloaded — refusing to publish empty F-Droid repo"; exit 1; }
+
+      - name: Remove APKs that androguard cannot parse
+        # Some early APKs have resource tables that androguard rejects
+        # (ResParserError: res1 must be zero!, KeyError: 'resources.arsc').
+        # Pre-scan and remove them so fdroid update doesn't abort entirely.
+        # Locally: uv run --directory fdroid python3 fdroid/scan_apks.py fdroid/repo/
+        # Paths are relative to fdroid/ because --directory changes cwd there.
+        run: uv run --directory fdroid python3 scan_apks.py repo/
+
+      - name: Seed repo icon
+        run: |
+          mkdir -p fdroid/repo/icons
+          cp fdroid/icons/icon.png fdroid/repo/icons/icon.png
 
       - name: Generate fdroid index
-        working-directory: fdroid
-        run: fdroid update --create-metadata --verbose
+        run: uv run --directory fdroid fdroid update --create-metadata --verbose
 
-      - name: Download last Wasm demo artifact
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Stage fdroid content for upload
         run: |
-          LAST_RUN=$(gh run list --workflow pages.yml --status success --limit 1 \
-            --json databaseId --jq '.[0].databaseId // empty')
-          if [ -n "$LAST_RUN" ]; then
-            gh run download "$LAST_RUN" --name demo-dist --dir site/public/demo/ || true
-          fi
+          # Using a staging directory preserves the repo/ directory structure in the
+          # artifact. Without it, upload-artifact@v4 strips the fdroid/repo/ prefix and
+          # the artifact lands flat (no repo/ subdirectory), breaking the pages.yml check.
+          #
+          # APKs are included: the 100 MB Git file limit does not apply to Actions-deployed
+          # Pages artifacts. With archive_older:5, repo/ has at most 5 APKs (~500 MB total)
+          # which fits under the 900 MB site safety limit.
+          mkdir -p fdroid-staging/repo
+          rsync -a fdroid/repo/ fdroid-staging/repo/
 
-      - uses: actions/setup-node@v4
+      - name: Upload fdroid content
+        uses: actions/upload-artifact@v4
         with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: site/package-lock.json
-
-      - name: Build Astro site
-        working-directory: site
-        run: |
-          npm ci
-          npm run build
-
-      - name: Merge fdroid repo into site output
-        run: |
-          mkdir -p site/dist/fdroid
-          cp -r fdroid/repo site/dist/fdroid/
-          if [ -d fdroid/archive ]; then
-            cp -r fdroid/archive site/dist/fdroid/
-          fi
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site/dist/
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          name: fdroid-content
+          # Uploads fdroid-staging/ → artifact has repo/ as a subdirectory.
+          # pages.yml checks for fdroid-content/repo/ after download, which works correctly.
+          path: fdroid-staging
+          if-no-files-found: error
+          retention-days: 90
+      # Pages deployment is handled by pages.yml, which downloads this artifact
+      # and assembles the full site in a single build+deploy step.

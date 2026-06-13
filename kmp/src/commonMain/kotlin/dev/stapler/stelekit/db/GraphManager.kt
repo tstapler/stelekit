@@ -4,6 +4,10 @@
 
 package dev.stapler.stelekit.db
 
+import arrow.core.Either
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.GitAuth
+import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.migration.ChangeApplier
 import dev.stapler.stelekit.migration.ChangelogRepository
@@ -20,6 +24,7 @@ import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.RepositorySet
 import dev.stapler.stelekit.util.ContentHasher
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -31,6 +36,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
@@ -45,6 +51,9 @@ class GraphManager(
     private val driverFactory: DriverFactory,
     private val fileSystem: FileSystem,
     val defaultBackend: GraphBackend = GraphBackend.SQLDELIGHT,
+    /** Awaited before any driver is created — lets the Application flush write-behind pages
+     *  on a background thread while GraphManager initialization proceeds. */
+    private val preFlightJob: Deferred<Unit>? = null,
 ) {
     private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val logger = Logger("GraphManager")
@@ -55,11 +64,15 @@ class GraphManager(
     private val _activeRepositorySet = MutableStateFlow<RepositorySet?>(null)
     val activeRepositorySet: StateFlow<RepositorySet?> = _activeRepositorySet.asStateFlow()
     
-    // Track current factory for lifecycle management
+    // Track current factory for lifecycle management.
+    // Written from a background coroutine (switchGraph's IO launch) and read on the Compose
+    // main thread in createGitConfigRepository(); @Volatile is required for JVM visibility.
+    @kotlin.concurrent.Volatile
     private var currentFactory: dev.stapler.stelekit.repository.RepositoryFactory? = null
 
     // Deferred that resolves when the one-shot UUID migration for the active graph completes.
     // Callers can await this before loading graph content to ensure UUIDs are stable.
+    @kotlin.concurrent.Volatile
     private var _pendingMigration: Deferred<Unit> = CompletableDeferred<Unit>().also { it.complete(Unit) }
 
     // Track active coroutines for cleanup during graph switches
@@ -70,8 +83,22 @@ class GraphManager(
     private val _activeGitSyncService = MutableStateFlow<dev.stapler.stelekit.git.GitSyncService?>(null)
     val activeGitSyncService: StateFlow<dev.stapler.stelekit.git.GitSyncService?> = _activeGitSyncService.asStateFlow()
 
+    // Vault credential store for the currently active graph (non-null when paranoid mode is on).
+    // Populated by wiring in App.kt after vault unlock.
+    private val _activeVaultCredentialStore = kotlinx.coroutines.flow.MutableStateFlow<dev.stapler.stelekit.git.VaultCredentialStore?>(null)
+    val activeVaultCredentialStore: kotlinx.coroutines.flow.StateFlow<dev.stapler.stelekit.git.VaultCredentialStore?> = _activeVaultCredentialStore.asStateFlow()
+
     init {
         loadRegistry()
+        val activeId = _graphRegistry.value.activeGraphId
+        if (activeId != null) {
+            val graphInfo = _graphRegistry.value.graphs.firstOrNull { it.id == activeId }
+            // Paranoid-mode (encrypted vault) graphs must NOT be auto-restored on startup.
+            // The user must unlock the vault through the main app UI before the DB is exposed.
+            if (graphInfo?.isParanoidMode != true) {
+                switchGraph(activeId)
+            }
+        }
     }
     
     private fun loadRegistry() {
@@ -199,18 +226,22 @@ class GraphManager(
     fun graphIdFromPath(path: String): String = 
         ContentHasher.sha256(path).take(16)
     
-    fun addGraph(path: String): String {
+    suspend fun addGraph(path: String): String {
         // Use expanded path for consistent ID generation
         val expandedPath = fileSystem.expandTilde(path)
         val graphId = graphIdFromPath(expandedPath)
-        val displayName = fileSystem.displayNameForPath(expandedPath)
 
-        // Warn if the SQLite database files are not gitignored.
-        // The .db, .db-wal, and .db-shm files must never be committed to git
-        // as they are binary and will cause unresolvable merge conflicts.
-        checkGitignoreForDatabase(expandedPath)
-
-        val isParanoidMode = fileSystem.fileExists(VaultManager.vaultFilePath(expandedPath))
+        // Move SAF Binder IPC off the main thread — these calls can take hundreds of ms
+        // on real hardware and cause ANR when called from a LaunchedEffect.
+        val (displayName, isParanoidMode) = withContext(PlatformDispatcher.IO) {
+            val dn = fileSystem.displayNameForPath(expandedPath)
+            // Warn if the SQLite database files are not gitignored.
+            // The .db, .db-wal, and .db-shm files must never be committed to git
+            // as they are binary and will cause unresolvable merge conflicts.
+            checkGitignoreForDatabase(expandedPath)
+            val ipm = fileSystem.fileExists(VaultManager.vaultFilePath(expandedPath))
+            dn to ipm
+        }
         val info = GraphInfo(
             id = graphId,
             path = expandedPath,
@@ -227,10 +258,34 @@ class GraphManager(
             _graphRegistry.value = updated
             saveRegistry()
         }
-        
+
+        // Fire-and-forget git detection; updates registry when complete
+        coroutineScope.launch(PlatformDispatcher.IO) {
+            val detected = detectGitRoot(expandedPath)
+            if (detected != null) {
+                updateGraphInfoDetection(graphId, detected.first, detected.second)
+            }
+        }
+
         return graphId
     }
     
+    /**
+     * Clones a remote git repository to [localPath] and registers it as a new graph.
+     * Returns the new graphId on success, or a [DomainError.GitError] on failure.
+     * The clone step runs on [PlatformDispatcher.IO]; registration runs on the calling dispatcher.
+     */
+    suspend fun cloneAndAdd(
+        gitRepository: GitRepository,
+        url: String,
+        localPath: String,
+        auth: GitAuth,
+        onProgress: (String) -> Unit,
+    ): Either<DomainError.GitError, String> {
+        val cloneResult = gitRepository.clone(url, localPath, auth, onProgress)
+        return cloneResult.map { addGraph(localPath) }
+    }
+
     fun removeGraph(id: String): Boolean {
         // Cancel any active coroutines for this graph
         activeGraphJobs.remove(id)?.cancel()
@@ -246,6 +301,16 @@ class GraphManager(
         )
         _graphRegistry.value = updated
         saveRegistry()
+
+        // Clean up git credentials stored for this graph
+        try {
+            val cs = dev.stapler.stelekit.git.CredentialStore()
+            cs.delete("git_https_token_$id")
+            cs.delete("git_ssh_passphrase_$id")
+        } catch (_: Exception) {
+            // Non-critical — credential cleanup failure should not prevent graph removal
+        }
+
         return true
     }
     
@@ -271,68 +336,96 @@ class GraphManager(
         val registry = _graphRegistry.value
         val graphInfo = registry.graphs.firstOrNull { it.id == id }
         if (graphInfo == null) return
-        
-        // Cancel any existing coroutines for the previous graph
+
+        // Idempotency guard: skip re-initialization if this graph is already active AND either
+        // (a) its repositories are ready, or (b) an init job is already running for it.
+        // Without this guard, StelekitApp's LaunchedEffect fires a second switchGraph() right
+        // after GraphManager.init {} already called it. On fast devices (b) is rarely needed —
+        // DB init completes before the LaunchedEffect fires. On real devices with large graphs
+        // init is slow, so the LaunchedEffect arrives while _activeRepositorySet is still null,
+        // and checking only (a) lets the second call cancel the first init scope → crash.
         val currentGraphId = registry.activeGraphId
+        if (currentGraphId == id && (_activeRepositorySet.value != null || activeGraphJobs.containsKey(id))) return
         currentGraphId?.let { activeGraphJobs.remove(it)?.cancel() }
 
         // Shutdown any git sync service from the previous graph
         _activeGitSyncService.value?.shutdown()
         _activeGitSyncService.value = null
+        _activeVaultCredentialStore.value = null
 
-        // Close current factory and its database connection
+        // Null the repo set BEFORE closing the driver so Compose flow collectors see null
+        // and stop querying before the database connection is torn down. Closing first
+        // caused a race where in-flight LaunchedEffect queries hit an already-closed DB.
+        _activeRepositorySet.value = null
         currentFactory?.close()
         currentFactory = null
-        _activeRepositorySet.value = null
         
         // Create a new scope for this graph's operations first so the actor can use it
         val graphScope = CoroutineScope(coroutineScope.coroutineContext)
         activeGraphJobs[id] = graphScope
 
-        // Create new database for this graph (platform-agnostic URL)
-        val dbUrl = driverFactory.getDatabaseUrl(id)
-        val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl)
-        currentFactory = factory
-        val deviceInfo = try { dev.stapler.stelekit.performance.getDeviceInfo() } catch (_: Exception) { null }
-        val repoSet = factory.createRepositorySet(
-            backend = defaultBackend,
-            scope = graphScope,
-            fileSystem = fileSystem,
-            appVersion = deviceInfo?.appVersion ?: "unknown",
-            platform = deviceInfo?.platform ?: "unknown",
-        )
-        _activeRepositorySet.value = repoSet
-
-        // Run one-shot UUID migration before graph content is loaded.
-        // The migration goes through the writeActor so it is serialised ahead of any
-        // loadGraph writes. We also expose the Deferred so callers can await completion.
-        val writeActor = repoSet.writeActor
+        // Expose a Deferred for callers that need to await the full initialization.
         val deferred = CompletableDeferred<Unit>()
         _pendingMigration = deferred
-        if (writeActor != null && defaultBackend == GraphBackend.SQLDELIGHT) {
-            val db = factory.steleDatabase()
-            graphScope.launch {
-                try {
-                    UuidMigration(writeActor).runIfNeeded(db)
-                    try {
-                        MigrationRunner(
-                            registry = MigrationRegistry,
-                            changelogRepo = ChangelogRepository(db),
-                            evaluator = DslEvaluator(repoSet),
-                            applier = ChangeApplier(writeActor, opLogger = null),
-                            flusher = null,
-                        ).runPending(id, repoSet, graphInfo.path)
-                    } catch (e: InterruptedMigrationException) {
-                        logger.error("MigrationRunner: interrupted migration detected for graph $id", e)
-                    } catch (e: MigrationTamperedError) {
-                        logger.error("MigrationRunner: tampered migration detected for graph $id", e)
-                    }
-                } finally {
-                    deferred.complete(Unit)
+
+        // Driver creation (which runs MigrationRunner via runBlocking internally) and the
+        // subsequent UUID/changelog migrations all move to an IO coroutine so they never
+        // execute on the main/calling thread. preFlightJob is awaited first to ensure any
+        // startup write-behind flush completes before we open the database.
+        //
+        // The outer try/finally guarantees deferred.complete(Unit) is called in ALL cases —
+        // including unhandled exceptions from factory/repoSet creation — so awaitPendingMigration()
+        // never hangs permanently.
+        graphScope.launch(PlatformDispatcher.IO) {
+            try {
+                preFlightJob?.await()
+
+                val dbUrl = driverFactory.getDatabaseUrl(id)
+                val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl)
+                val deviceInfo = try {
+                    dev.stapler.stelekit.performance.getDeviceInfo()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
                 }
+                val repoSet = factory.createRepositorySet(
+                    backend = defaultBackend,
+                    scope = graphScope,
+                    fileSystem = fileSystem,
+                    appVersion = deviceInfo?.appVersion ?: "unknown",
+                    platform = deviceInfo?.platform ?: "unknown",
+                )
+                currentFactory = factory
+                _activeRepositorySet.value = repoSet
+
+                if (defaultBackend == GraphBackend.SQLDELIGHT) {
+                    val writeActor = repoSet.writeActor
+                    if (writeActor != null) {
+                        val db = factory.steleDatabase()
+                        UuidMigration(writeActor).runIfNeeded(db)
+                        try {
+                            MigrationRunner(
+                                registry = MigrationRegistry,
+                                changelogRepo = ChangelogRepository(db),
+                                evaluator = DslEvaluator(repoSet),
+                                applier = ChangeApplier(writeActor, opLogger = null),
+                                flusher = null,
+                            ).runPending(id, repoSet, graphInfo.path)
+                        } catch (e: InterruptedMigrationException) {
+                            logger.error("MigrationRunner: interrupted migration detected for graph $id", e)
+                        } catch (e: MigrationTamperedError) {
+                            logger.error("MigrationRunner: tampered migration detected for graph $id", e)
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.error("switchGraph initialization failed for graph $id", e)
+            } finally {
+                deferred.complete(Unit)
             }
-        } else {
-            deferred.complete(Unit)
         }
 
         // Update active graph
@@ -343,10 +436,27 @@ class GraphManager(
 
     /**
      * Suspends until the one-shot UUID migration for the currently active graph has completed.
-     * Call this before loading graph content to ensure block UUIDs are stable.
+     * Returns the [RepositorySet] that is ready to use, or null if initialization failed.
      */
-    suspend fun awaitPendingMigration() {
+    suspend fun awaitPendingMigration(): RepositorySet? {
         _pendingMigration.await()
+        return _activeRepositorySet.value
+    }
+
+    /**
+     * Registers [path] as a graph, switches to it, and waits until the database and migrations
+     * are ready. Returns the live [RepositorySet] for the opened graph.
+     *
+     * Use this instead of calling [addGraph] + [switchGraph] + [awaitPendingMigration] manually —
+     * the type system enforces the ordering and you cannot access the repository before it is ready.
+     *
+     * @throws IllegalStateException if the database failed to open after registration.
+     */
+    suspend fun openGraph(path: String): RepositorySet {
+        val id = addGraph(path)
+        switchGraph(id)
+        return awaitPendingMigration()
+            ?: error("Failed to open graph at '$path' — database did not initialise")
     }
     
     fun getGraphInfo(id: String): GraphInfo? {
@@ -367,6 +477,55 @@ class GraphManager(
     
     fun getActiveRepositorySet(): RepositorySet? = _activeRepositorySet.value
     
+    private suspend fun detectGitRoot(graphPath: String): Pair<String, String>? {
+        if (graphPath.startsWith("content://")) return null
+        return withContext(PlatformDispatcher.IO) {
+            try {
+                val normalizedPath = graphPath.replace('\\', '/')
+                var currentPath = normalizedPath.trimEnd('/')
+                var depth = 0
+                while (depth <= 10 && currentPath.isNotEmpty()) {
+                    val gitPath = "$currentPath/.git"
+                    if (fileSystem.fileExists(gitPath) || fileSystem.directoryExists(gitPath)) {
+                        val wikiSubdir = normalizedPath
+                            .removePrefix(currentPath)
+                            .trimStart('/')
+                        return@withContext Pair(currentPath, wikiSubdir)
+                    }
+                    val lastSlash = currentPath.lastIndexOf('/')
+                    if (lastSlash <= 0) break
+                    currentPath = currentPath.substring(0, lastSlash)
+                    depth++
+                }
+                null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    private suspend fun updateGraphInfoDetection(graphId: String, repoRoot: String, wikiSubdir: String) {
+        val registry = _graphRegistry.value
+        val updatedGraphs = registry.graphs.map { g ->
+            if (g.id == graphId) g.copy(detectedRepoRoot = repoRoot, detectedWikiSubdir = wikiSubdir)
+            else g
+        }
+        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
+        saveRegistry()
+    }
+
+    suspend fun setGitDetectionDismissed(graphId: String, dismissed: Boolean) {
+        val registry = _graphRegistry.value
+        val updatedGraphs = registry.graphs.map { g ->
+            if (g.id == graphId) g.copy(gitDetectionDismissed = dismissed)
+            else g
+        }
+        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
+        saveRegistry()
+    }
+
     private fun checkGitignoreForDatabase(graphPath: String) {
         val gitignorePath = "$graphPath/.gitignore"
         if (!fileSystem.fileExists(gitignorePath)) {
@@ -386,6 +545,9 @@ class GraphManager(
         if (!content.contains(".stele-vault")) {
             println("WARNING: $gitignorePath does not contain '.stele-vault' — vault header file may be accidentally committed to git.")
         }
+        if (!content.contains(".stele-credentials")) {
+            println("WARNING: $gitignorePath does not contain '.stele-credentials' — vault credential file may be accidentally committed to git.")
+        }
         if (!content.contains("_hidden_reserve")) {
             println("WARNING: $gitignorePath does not contain '_hidden_reserve/' — hidden volume directory may be accidentally committed to git, exposing its existence.")
         }
@@ -400,6 +562,15 @@ class GraphManager(
      */
     fun registerGitSyncService(service: dev.stapler.stelekit.git.GitSyncService?) {
         _activeGitSyncService.value = service
+    }
+
+    /**
+     * Registers the [VaultCredentialStore] for the currently active graph.
+     * Called from App.kt when a paranoid-mode graph is active.
+     * Set to null for non-paranoid graphs.
+     */
+    fun registerVaultCredentialStore(store: dev.stapler.stelekit.git.VaultCredentialStore?) {
+        _activeVaultCredentialStore.value = store
     }
 
     /**
@@ -428,12 +599,11 @@ class GraphManager(
         // Shutdown git sync service
         _activeGitSyncService.value?.shutdown()
         _activeGitSyncService.value = null
+        _activeVaultCredentialStore.value = null
 
-        // Close database connection
-        currentFactory?.close()
-
-        // Clear repository set
+        // Null repo set before closing so in-flight Compose flow collectors stop querying first.
         _activeRepositorySet.value = null
+        currentFactory?.close()
         currentFactory = null
     }
 }

@@ -20,6 +20,7 @@ import androidx.compose.ui.zIndex
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockTypes
+import dev.stapler.stelekit.model.BlockTypes.IMAGE_ANNOTATION
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.screens.FormatAction
 import dev.stapler.stelekit.ui.screens.SearchResultItem
@@ -85,6 +86,9 @@ internal fun BlockItem(
     dropAbove: Boolean = false,
     dropBelow: Boolean = false,
     dropAsChild: Boolean = false,
+    onArchiveUrl: ((url: String, blockUuid: String) -> Unit)? = null,
+    /** Called when user taps an image_annotation block thumbnail; receives the image annotation UUID. */
+    onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -295,7 +299,7 @@ internal fun BlockItem(
                 isSelected = isSelected,
                 isInSelectionMode = isInSelectionMode,
                 onToggleSelect = onToggleSelect,
-                blockUuid = block.uuid,
+                blockUuid = block.uuid.value,
                 onDragStart = onDragStart,
                 onDrag = onDrag,
                 onDragEnd = onDragEnd,
@@ -317,7 +321,7 @@ internal fun BlockItem(
                     isEditing = isEditing,
                     hasFocused = hasFocused,
                     onHasFocusedChange = { hasFocused = it },
-                    blockUuid = block.uuid,
+                    blockUuid = block.uuid.value,
                     autocompleteState = autocompleteState,
                     onAutocompleteStateChange = { autocompleteState = it },
                     searchResults = filteredResults,
@@ -347,6 +351,12 @@ internal fun BlockItem(
             } else {
                 // View mode — dispatch on block type
                 when (block.blockType) {
+                    IMAGE_ANNOTATION -> ImageAnnotationBlockItem(
+                        block = block,
+                        onOpenAnnotationEditor = onOpenAnnotationEditor,
+                        onStartEditing = onStartEditing,
+                        modifier = Modifier.weight(1f),
+                    )
                     BlockTypes.HEADING -> HeadingBlock(
                         content = block.content,
                         level = headingLevelFromContent(block.content),
@@ -385,24 +395,38 @@ internal fun BlockItem(
                         onStartEditing = onStartEditing,
                         modifier = Modifier.weight(1f),
                     )
-                    else -> BlockViewer( // BULLET, PARAGRAPH, RAW_HTML, unknown
-                        content = block.content,
-                        textColor = textColor,
-                        linkColor = linkColor,
-                        resolvedRefs = resolvedRefs,
-                        onLinkClick = onLinkClick,
-                        onStartEditing = onStartEditing,
-                        modifier = Modifier.weight(1f),
-                        isShiftDown = isShiftDown,
-                        onShiftClick = onShiftClick,
-                        suggestionMatcher = suggestionMatcher,
-                        onSuggestionClick = { canonicalName, contentStart, contentEnd ->
-                            suggestionState = SuggestionState(canonicalName, contentStart, contentEnd, block.content)
-                        },
-                        onSuggestionRightClick = { canonicalName, contentStart, contentEnd ->
-                            contextMenuState = SuggestionState(canonicalName, contentStart, contentEnd, block.content)
-                        },
-                    )
+                    else -> {
+                        val imageData = remember(block.content) { extractSingleImageNode(block.content) }
+                        if (imageData != null) {
+                            val (url, altText) = imageData
+                            ImageBlock(
+                                url = url,
+                                altText = altText,
+                                onStartEditing = onStartEditing,
+                                modifier = Modifier.weight(1f),
+                            )
+                        } else {
+                            BlockViewer( // BULLET, PARAGRAPH, RAW_HTML, unknown
+                                content = block.content,
+                                textColor = textColor,
+                                linkColor = linkColor,
+                                resolvedRefs = resolvedRefs,
+                                onLinkClick = onLinkClick,
+                                onStartEditing = onStartEditing,
+                                modifier = Modifier.weight(1f),
+                                isShiftDown = isShiftDown,
+                                onShiftClick = onShiftClick,
+                                suggestionMatcher = suggestionMatcher,
+                                onSuggestionClick = { canonicalName, contentStart, contentEnd ->
+                                    suggestionState = SuggestionState(canonicalName, contentStart, contentEnd, block.content)
+                                },
+                                onSuggestionRightClick = { canonicalName, contentStart, contentEnd ->
+                                    contextMenuState = SuggestionState(canonicalName, contentStart, contentEnd, block.content)
+                                },
+                                onUrlRightClick = onArchiveUrl?.let { archive -> { url -> archive(url, block.uuid.value) } },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -472,7 +496,8 @@ internal fun BlockItem(
         }
 
         // Render Autocomplete Menu
-        if (autocompleteState != null && searchResults.isNotEmpty()) {
+        val capturedAutocompleteState = autocompleteState
+        if (capturedAutocompleteState != null && searchResults.isNotEmpty()) {
             AutocompleteMenu(
                 items = filteredResults,
                 selectedIndex = selectedIndex,
@@ -482,7 +507,7 @@ internal fun BlockItem(
                         selectedIndex = filteredResults.indexOf(item).coerceAtLeast(0),
                         textFieldValue = textFieldValue,
                         onTextFieldValueChange = { textFieldValue = it; onSelectionChange?.invoke(IntRange(it.selection.min, it.selection.max)) },
-                        autocompleteState = autocompleteState!!,
+                        autocompleteState = capturedAutocompleteState,
                         onAutocompleteStateChange = { autocompleteState = it },
                         onLocalVersionIncrement = { ++localVersion },
                         onContentChange = onContentChange,

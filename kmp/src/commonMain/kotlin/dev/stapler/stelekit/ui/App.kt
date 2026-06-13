@@ -64,11 +64,19 @@ import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.repository.*
 import dev.stapler.stelekit.ui.components.*
+import dev.stapler.stelekit.ui.components.git.GitDetectionBanner
 import dev.stapler.stelekit.ui.components.settings.SettingsDialog
+import dev.stapler.stelekit.ui.rememberShareProvider
 import dev.stapler.stelekit.ui.i18n.I18n
 import dev.stapler.stelekit.ui.i18n.LocalI18n
 import dev.stapler.stelekit.ui.i18n.t
 import dev.stapler.stelekit.ui.onboarding.Onboarding
+import dev.stapler.stelekit.repository.InMemoryImageAnnotationRepository
+import dev.stapler.stelekit.repository.InMemoryMeasurementAnnotationRepository
+import dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel
+import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreen
+import dev.stapler.stelekit.ui.gallery.GalleryScreen
+import dev.stapler.stelekit.ui.gallery.GalleryViewModel
 import dev.stapler.stelekit.ui.screens.AllPagesScreen
 import dev.stapler.stelekit.ui.screens.AllPagesViewModel
 import dev.stapler.stelekit.ui.screens.LibraryStatsScreen
@@ -93,13 +101,71 @@ import dev.stapler.stelekit.voice.VoiceSettings
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import kotlin.math.roundToInt
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.performance.PercentileSummary
+import dev.stapler.stelekit.performance.QueryStat
+import dev.stapler.stelekit.performance.SerializedSpan
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
+import arrow.core.Either
+import dev.stapler.stelekit.db.ImageImportService
+import dev.stapler.stelekit.error.toUiMessage
+import dev.stapler.stelekit.model.ImageSource
+import dev.stapler.stelekit.platform.sensor.CameraProvider
+import dev.stapler.stelekit.platform.sensor.SensorModule
+
+internal suspend fun executeCaptureAndImport(
+    imageImportService: ImageImportService?,
+    getActiveGraphPath: () -> String?,
+    pageUuid: String,
+    navigateAfterImport: Boolean,
+    cameraProvider: CameraProvider = SensorModule.cameraProvider,
+    onSnackbar: (String) -> Unit,
+    onNavigate: (annotationUuid: String, pageUuid: String) -> Unit,
+    onWarn: (String) -> Unit,
+) {
+    val service = imageImportService ?: run {
+        onWarn("captureAndImport called with no imageImportService")
+        return
+    }
+    val graphPath = getActiveGraphPath()?.takeIf { it.isNotEmpty() } ?: run {
+        onWarn("captureAndImport called with no active graph path")
+        return
+    }
+    when (val captured = cameraProvider.capturePhoto()) {
+        is Either.Left -> {
+            onWarn("Camera capture failed: ${captured.value.message}")
+            onSnackbar(captured.value.toUiMessage())
+        }
+        is Either.Right -> {
+            val result = service.import(
+                tempFile = captured.value,
+                graphPath = graphPath,
+                pageUuid = pageUuid,
+                source = ImageSource.CAMERA,
+                insertToJournalPage = false,
+            )
+            result.onLeft { err ->
+                onWarn("Camera image import failed: ${err.message}")
+                onSnackbar(err.toUiMessage())
+            }
+            if (navigateAfterImport) {
+                result.onRight { annotation ->
+                    onNavigate(annotation.uuid, pageUuid)
+                }
+            }
+        }
+    }
+}
 
 /**
  * Root Composable for the Logseq application.
@@ -139,6 +205,23 @@ fun StelekitApp(
      * When null, paranoid mode is unavailable.
      */
     cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine? = null,
+    /**
+     * Platform-specific media attachment service. When non-null the attach-image button
+     * is shown in [MobileBlockToolbar] on the PageView screen.
+     *
+     * Pass [JvmMediaAttachmentService] on Desktop.
+     * Pass the Android service (from [rememberAndroidMediaAttachmentService]) on Android.
+     * Pass null (default) to hide the button entirely.
+     */
+    attachmentService: dev.stapler.stelekit.service.MediaAttachmentService? = null,
+    /**
+     * Platform-specific Google OAuth manager. When non-null the Google Account settings
+     * panel becomes interactive (Connect / Disconnect buttons are wired up).
+     *
+     * Pass [AndroidGoogleAuthManager] on Android, [JvmGoogleAuthManager] on Desktop.
+     * When null (default), the panel is rendered but the buttons are no-ops.
+     */
+    googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -299,6 +382,8 @@ fun StelekitApp(
             onMemoryPressure = onMemoryPressure,
             gitRepository = gitRepository,
             cryptoEngine = cryptoEngine,
+            attachmentService = attachmentService,
+            googleAuthManager = googleAuthManager,
         )
     }
 }
@@ -330,9 +415,12 @@ private fun GraphContent(
     onMemoryPressure: (((() -> Unit) -> Unit))? = null,
     gitRepository: dev.stapler.stelekit.git.GitRepository? = null,
     cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine? = null,
+    attachmentService: dev.stapler.stelekit.service.MediaAttachmentService? = null,
+    googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
 ) {
     CompositionLocalProvider(LocalSpanRecorder provides spanRecorder) {
     val scope = rememberCoroutineScope()
+    val graphContentLogger = remember { Logger("GraphContent") }
     val composeClipboard = LocalClipboardManager.current
     val clipboardProvider = rememberClipboardProvider(composeClipboard)
 
@@ -340,9 +428,11 @@ private fun GraphContent(
     val activeGraphPath = activeGraphInfo?.path ?: ""
 
     // Paranoid mode: true when a .stele-vault file exists for this graph and a crypto engine is available.
-    val isParanoidMode = remember {
-        cryptoEngine != null && activeGraphPath.isNotEmpty() &&
-            fileSystem.fileExists(dev.stapler.stelekit.vault.VaultManager.vaultFilePath(activeGraphPath))
+    var isParanoidMode by remember {
+        androidx.compose.runtime.mutableStateOf(
+            cryptoEngine != null && activeGraphPath.isNotEmpty() &&
+                fileSystem.fileExists(dev.stapler.stelekit.vault.VaultManager.vaultFilePath(activeGraphPath))
+        )
     }
 
     // Vault state drives the unlock screen and gates graph loading.
@@ -352,18 +442,65 @@ private fun GraphContent(
         )
     }
 
-    val vaultManager = remember {
-        if (!isParanoidMode || cryptoEngine == null) null
-        else dev.stapler.stelekit.vault.VaultManager(
-            crypto = cryptoEngine,
-            fileReadBytes = { path -> fileSystem.readFileBytes(path) },
-            fileWriteBytes = { path, data -> fileSystem.writeFileBytes(path, data) },
+    var vaultManager by remember {
+        androidx.compose.runtime.mutableStateOf(
+            if (!isParanoidMode || cryptoEngine == null) null
+            else dev.stapler.stelekit.vault.VaultManager(
+                crypto = cryptoEngine,
+                fileReadBytes = { path -> fileSystem.readFileBytes(path) },
+                fileWriteBytes = { path, data -> fileSystem.writeFileBytes(path, data) },
+            )
         )
+    }
+
+    // Vault-integrated credential store — non-null when paranoid mode is on and CryptoEngine is available.
+    // Swapped into gitRepository.credentialAccess on vault unlock/lock.
+    val vaultCredentialStore = remember(activeGraphPath, isParanoidMode, cryptoEngine) {
+        if (isParanoidMode && cryptoEngine != null && activeGraphPath.isNotEmpty()) {
+            dev.stapler.stelekit.git.VaultCredentialStore(activeGraphPath, cryptoEngine, fileSystem)
+        } else null
+    }
+
+    LaunchedEffect(vaultCredentialStore) {
+        graphManager.registerVaultCredentialStore(vaultCredentialStore)
     }
 
     val sidecarManager = remember {
         val graphPath = activeGraphPath.ifEmpty { null }
         if (graphPath != null) SidecarManager(fileSystem, graphPath) else null
+    }
+    val imageSidecarManager = remember {
+        if (activeGraphPath.isNotEmpty()) dev.stapler.stelekit.db.sidecar.ImageSidecarManager(fileSystem) else null
+    }
+    val imageImportService = remember(imageSidecarManager) {
+        if (imageSidecarManager != null && activeGraphPath.isNotEmpty()) {
+            dev.stapler.stelekit.db.ImageImportService(
+                fileSystem = fileSystem,
+                imageAnnotationRepository = repos.imageAnnotationRepository,
+                blockRepository = repos.blockRepository,
+                sidecarManager = imageSidecarManager,
+                journalService = repos.journalService,
+                writeActor = repos.writeActor,
+                measurementAnnotationRepository = repos.measurementAnnotationRepository,
+            )
+        } else null
+    }
+    LaunchedEffect(activeGraphPath) {
+        if (activeGraphPath.isNotEmpty() && imageSidecarManager != null) {
+            // Only rebuild if DB has no annotations — avoids full-scan on every open
+            val hasExisting = repos.imageAnnotationRepository.getAllImageAnnotations()
+                .first()
+                .getOrNull()
+                ?.isNotEmpty() == true
+            if (!hasExisting) {
+                dev.stapler.stelekit.db.sidecar.ImageSidecarIndexer(
+                    fileSystem = fileSystem,
+                    imageAnnotationRepository = repos.imageAnnotationRepository,
+                    measurementAnnotationRepository = repos.measurementAnnotationRepository,
+                ).rebuildFromSidecars(activeGraphPath)
+                    .onLeft { err -> graphContentLogger.warn("Sidecar reindex failed: ${err.message}") }
+            }
+        }
     }
     val graphLoader = remember {
         GraphLoader(
@@ -374,6 +511,7 @@ private fun GraphContent(
             externalWriteActor = repos.writeActor,
             backgroundPageRepository = repos.backgroundPageRepository,
             sidecarManager = sidecarManager,
+            histogramWriter = repos.histogramWriter,
             spanRepository = repos.spanRepository,
         ).also { it.onBulkImportComplete = repos.onBulkImportComplete }
     }
@@ -383,23 +521,35 @@ private fun GraphContent(
             repos.writeActor,
             onFileWritten = graphLoader::markFileWrittenByUs,
             sidecarManager = sidecarManager,
+            onPreWrite = { filePath -> graphLoader.fileRegistry.preMarkPendingWrite(dev.stapler.stelekit.model.FilePath(filePath)) },
+            onClearPendingWrite = { filePath -> graphLoader.fileRegistry.clearPendingWrite(dev.stapler.stelekit.model.FilePath(filePath)) },
+            checkPreWriteConflict = { filePath, diskContent ->
+                val lastKnown = graphLoader.fileRegistry.getContentHash(dev.stapler.stelekit.model.FilePath(filePath))
+                lastKnown != null && diskContent.hashCode() != lastKnown
+            },
+            onPreWriteConflict = { filePath, _, diskContent ->
+                graphLoader.emitExternalFileChange(filePath, diskContent)
+            },
         )
     }
 
     // Wire git sync service for the active graph.
     // Requires a platform-specific GitRepository; no-op when none is provided.
-    val gitSyncService = remember(gitRepository) {
-        if (gitRepository == null) return@remember null
-        val configRepo = graphManager.createGitConfigRepository() ?: return@remember null
+    val gitConfigRepository = remember(gitRepository) {
+        if (gitRepository == null) null else graphManager.createGitConfigRepository()
+    }
+    val gitSyncService = remember(gitConfigRepository) {
+        if (gitRepository == null || gitConfigRepository == null) return@remember null
         val networkMonitor = dev.stapler.stelekit.platform.NetworkMonitor()
         dev.stapler.stelekit.git.GitSyncService(
             gitRepository = gitRepository,
             graphLoader = graphLoader,
             graphWriter = graphWriter,
             editLock = dev.stapler.stelekit.git.EditLock(),
-            configRepository = configRepo,
+            configRepository = gitConfigRepository,
             networkMonitor = networkMonitor,
             fileSystem = fileSystem,
+            credentialAccessProvider = { vaultCredentialStore ?: dev.stapler.stelekit.git.CredentialStore() },
         )
     }
     DisposableEffect(gitSyncService) {
@@ -421,7 +571,8 @@ private fun GraphContent(
             graphLoader = graphLoader,
             graphWriter = graphWriter,
             pageRepository = repos.pageRepository,
-            graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" }
+            graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" },
+            histogramWriter = repos.histogramWriter
         )
     }
 
@@ -438,26 +589,36 @@ private fun GraphContent(
         )
     }
 
+    // Platform-specific share provider (share sheet, file save, etc.)
+    val shareProvider = rememberShareProvider()
+
+    // ViewModel scope must NOT be rememberCoroutineScope() — that scope is cancelled when the
+    // composable leaves the composition, which would cancel all ViewModel coroutines on pause.
+    val viewModelScope = remember { kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default) }
     val viewModel = remember {
         StelekitViewModel(
-            fileSystem,
-            repos.pageRepository,
-            repos.blockRepository,
-            repos.searchRepository,
-            graphLoader,
-            graphWriter,
-            platformSettings,
-            journalService = repos.journalService,
-            blockStateManager = blockStateManager,
-            writeActor = repos.writeActor,
-            undoManager = repos.undoManager,
-            exportService = exportService,
-            bugReportBuilder = repos.bugReportBuilder,
-            debugFlagRepository = repos.debugFlagRepository,
-            histogramWriter = repos.histogramWriter,
-            ringBuffer = repos.ringBuffer,
-            activeGitSyncService = graphManager.activeGitSyncService,
-            activeGraphIdProvider = { graphManager.getActiveGraphId() },
+            StelekitViewModelDependencies(
+                fileSystem = fileSystem,
+                pageRepository = repos.pageRepository,
+                blockRepository = repos.blockRepository,
+                searchRepository = repos.searchRepository,
+                graphLoader = graphLoader,
+                graphWriter = graphWriter,
+                platformSettings = platformSettings,
+                journalService = repos.journalService,
+                blockStateManager = blockStateManager,
+                writeActor = repos.writeActor,
+                undoManager = repos.undoManager,
+                exportService = exportService,
+                bugReportBuilder = repos.bugReportBuilder,
+                debugFlagRepository = repos.debugFlagRepository,
+                histogramWriter = repos.histogramWriter,
+                ringBuffer = repos.ringBuffer,
+                activeGitSyncService = graphManager.activeGitSyncService,
+                activeGraphIdProvider = { graphManager.getActiveGraphId() },
+                onDismissGitDetection = { graphId -> graphManager.setGitDetectionDismissed(graphId, true) },
+                scope = viewModelScope,
+            )
         ).also {
             viewModelRef = it
             it.startAutoSave()
@@ -473,6 +634,37 @@ private fun GraphContent(
     // Register the memory-pressure handler so the host Activity can invoke it.
     LaunchedEffect(viewModel) {
         onMemoryPressure?.invoke { viewModel.onMemoryPressure() }
+    }
+
+    // Wire the /image command in the command palette to the platform attachment service.
+    // The callback reads the currently editing block from blockStateManager so it works
+    // even when invoked from the command palette (no block UUID passed explicitly).
+    LaunchedEffect(viewModel, attachmentService) {
+        if (attachmentService != null) {
+            viewModel.registerAttachImageCallback {
+                scope.launch {
+                    val editingBlockUuid = blockStateManager.editingBlockUuid.value
+                    val graphRoot = viewModel.uiState.value.currentGraphPath
+                    val result = attachmentService.pickAndAttach(
+                        graphRoot = graphRoot,
+                        pageRelativePath = ""
+                    ) ?: return@launch
+                    result.fold(
+                        ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
+                            graphContentLogger.warn("Image attachment failed: $err")
+                        },
+                        ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
+                            val markdown = "![${attachment.displayName}](${attachment.relativePath})"
+                            if (editingBlockUuid != null) {
+                                blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                            }
+                        }
+                    )
+                }
+            }
+        } else {
+            viewModel.registerAttachImageCallback(null)
+        }
     }
 
     // Bootstrap loadGraph when the ViewModel has no persisted path but GraphManager has an
@@ -495,11 +687,12 @@ private fun GraphContent(
             if (event is VaultEvent.Locked) {
                 // DEK is already zeroed at this point — do not flush (would write with zero-key).
                 // The primary lock path (user-initiated) already flushed before calling lock().
-                // close() zeroes the CryptoLayer's owned DEK copy before nulling the reference.
-                graphLoader.cryptoLayer?.close()
-                graphLoader.cryptoLayer = null
-                graphWriter.cryptoLayer?.close()
-                graphWriter.cryptoLayer = null
+                // closeAndClearCryptoLayer() zeroes the CryptoLayer's owned DEK copy then nulls it.
+                graphLoader.closeAndClearCryptoLayer()
+                graphWriter.closeAndClearCryptoLayer()
+                vaultCredentialStore?.onVaultLocked()
+                // Revert git repository to PBKDF2 fallback store
+                gitRepository?.setCredentialAccess(dev.stapler.stelekit.git.CredentialStore())
                 vaultState = VaultState.Locked   // show lock/unlock screen; gates graph content
             }
         }
@@ -529,8 +722,11 @@ private fun GraphContent(
                     // cryptoLayer != null will also see the correct graphPath (used as AAD base).
                     graphWriter.graphPath = activeGraphPath
                     graphLoader.setGraphPath(activeGraphPath)
-                    graphLoader.cryptoLayer = layer
-                    graphWriter.cryptoLayer = layer
+                    graphLoader.setCryptoLayer(layer)
+                    graphWriter.setCryptoLayer(layer)
+                    vaultCredentialStore?.onVaultUnlocked(unlockResult.dek)
+                    // Swap git repository credential access to vault store
+                    gitRepository?.setCredentialAccess(vaultCredentialStore ?: dev.stapler.stelekit.git.CredentialStore())
                     // CryptoLayer must be injected before vaultState triggers graph load via LaunchedEffect
                     vaultState = VaultState.Unlocked(unlockResult.namespace)
                 }
@@ -541,10 +737,191 @@ private fun GraphContent(
         }
     }
 
+    // Vault settings callbacks — threaded into SettingsDialog via GraphDialogLayer.
+    val onCreateVault: (suspend (CharArray) -> arrow.core.Either<dev.stapler.stelekit.vault.VaultError, Unit>)? =
+        if (cryptoEngine != null && activeGraphPath.isNotEmpty()) {
+            { passphrase ->
+                val engine = cryptoEngine
+                val tempManager = dev.stapler.stelekit.vault.VaultManager(
+                    crypto = engine,
+                    fileReadBytes = { path -> fileSystem.readFileBytes(path) },
+                    fileWriteBytes = { path, data -> fileSystem.writeFileBytes(path, data) },
+                )
+                when (val result = tempManager.createVault(activeGraphPath, passphrase)) {
+                    is arrow.core.Either.Right -> {
+                        val unlockResult = result.value
+                        val layer = dev.stapler.stelekit.vault.CryptoLayer(engine, unlockResult.dek)
+                        graphWriter.graphPath = activeGraphPath
+                        graphLoader.setGraphPath(activeGraphPath)
+                        graphLoader.setCryptoLayer(layer)
+                        graphWriter.setCryptoLayer(layer)
+                        vaultCredentialStore?.onVaultUnlocked(unlockResult.dek)
+                        // Swap git repository credential access to vault store
+                        gitRepository?.setCredentialAccess(vaultCredentialStore ?: dev.stapler.stelekit.git.CredentialStore())
+                        // Migrate existing credentials from PBKDF2 store into vault
+                        val graphId = graphManager.getActiveGraphId() ?: ""
+                        if (graphId.isNotEmpty()) {
+                            vaultCredentialStore?.migrateFrom(
+                                source = dev.stapler.stelekit.git.CredentialStore(),
+                                keys = listOf("git_https_token_$graphId", "git_ssh_passphrase_$graphId"),
+                            )
+                        }
+                        vaultManager = tempManager
+                        isParanoidMode = true
+                        vaultState = VaultState.Unlocked(unlockResult.namespace)
+                        arrow.core.Either.Right(Unit)
+                    }
+                    is arrow.core.Either.Left -> result
+                }
+            }
+        } else null
+
+    val capturedVaultManager = vaultManager
+
+    val onAddKeyslot: (suspend (CharArray) -> arrow.core.Either<dev.stapler.stelekit.vault.VaultError, Unit>)? =
+        if (isParanoidMode && capturedVaultManager != null) {
+            { passphrase ->
+                val dek = capturedVaultManager.currentDek()
+                if (dek == null) {
+                    arrow.core.Either.Left(dev.stapler.stelekit.vault.VaultError.InvalidCredential("Vault is locked"))
+                } else {
+                    capturedVaultManager.addKeyslot(activeGraphPath, dek, passphrase)
+                }
+            }
+        } else null
+
+    val onRemoveKeyslot: (suspend (Int) -> arrow.core.Either<dev.stapler.stelekit.vault.VaultError, Unit>)? =
+        if (isParanoidMode && capturedVaultManager != null) {
+            { slotIndex -> capturedVaultManager.removeKeyslot(activeGraphPath, slotIndex) }
+        } else null
+
+    val onLockVault: (() -> Unit)? =
+        if (isParanoidMode && capturedVaultManager != null) {
+            {
+                scope.launch {
+                    graphWriter.flush()
+                    graphLoader.closeAndClearCryptoLayer()
+                    graphWriter.closeAndClearCryptoLayer()
+                    capturedVaultManager.lock()
+                }
+                Unit
+            }
+        } else null
+
+    val onListActiveSlots: (suspend () -> List<Int>)? =
+        if (isParanoidMode && capturedVaultManager != null) {
+            { capturedVaultManager.listActiveKeyslotIndices(activeGraphPath) }
+        } else null
+
+    // Google Account auth state — threaded into SettingsDialog via GraphDialogLayer.
+    var isGoogleAuthenticated by remember { mutableStateOf(false) }
+    var googleConnectedEmail by remember { mutableStateOf<String?>(null) }
+    var isGoogleConnecting by remember { mutableStateOf(false) }
+    var googleAuthError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(googleAuthManager) {
+        if (googleAuthManager != null) {
+            isGoogleAuthenticated = googleAuthManager.isAuthenticated()
+            googleConnectedEmail = googleAuthManager.getConnectedEmail()
+        }
+    }
+
+    val onConnectGoogle: (() -> Unit)? = if (googleAuthManager != null) {
+        {
+            scope.launch {
+                isGoogleConnecting = true
+                googleAuthError = null
+                val result = googleAuthManager.authenticate()
+                when {
+                    result is arrow.core.Either.Right -> {
+                        isGoogleAuthenticated = true
+                        googleConnectedEmail = result.value
+                    }
+                    result is arrow.core.Either.Left &&
+                        result.value is dev.stapler.stelekit.error.DomainError.NetworkError.HttpError &&
+                        (result.value as dev.stapler.stelekit.error.DomainError.NetworkError.HttpError).statusCode == 202 -> {
+                        // Browser launched — auth completes via deep-link callback; nothing to show.
+                    }
+                    else -> googleAuthError = (result as arrow.core.Either.Left).value.message
+                }
+                isGoogleConnecting = false
+            }
+        }
+    } else null
+
+    val onDisconnectGoogle: (() -> Unit)? = if (googleAuthManager != null) {
+        {
+            scope.launch {
+                googleAuthManager.signOut()
+                isGoogleAuthenticated = false
+                googleConnectedEmail = null
+                googleAuthError = null
+            }
+        }
+    } else null
+
     val frameMetricState = remember { kotlinx.coroutines.flow.MutableStateFlow(dev.stapler.stelekit.performance.FrameMetric()) }
 
     var debugMenuState by remember {
         mutableStateOf(repos.debugFlagRepository?.loadDebugMenuState() ?: DebugMenuState())
+    }
+
+    // Sync span capture toggle → ring buffer enabled flag (defaults to false in DebugMenuState).
+    androidx.compose.runtime.LaunchedEffect(debugMenuState.isSpanCaptureEnabled) {
+        repos.ringBuffer?.enabled = debugMenuState.isSpanCaptureEnabled
+    }
+
+    // ── Eager performance data collection ────────────────────────────────────────────────────
+    // Data collection starts when the Performance screen is first opened so the tabs show
+    // content immediately on first render. Pollers run only while the graph is loaded and
+    // the user has visited the Performance screen at least once — no background DB reads
+    // on devices that never open the Performance screen.
+
+    val perfSpans: MutableStateFlow<List<SerializedSpan>> = remember { MutableStateFlow(emptyList()) }
+    val perfHistograms: MutableStateFlow<Map<String, PercentileSummary>> = remember { MutableStateFlow(emptyMap()) }
+    val perfQueryStats: MutableStateFlow<List<QueryStat>> = remember { MutableStateFlow(emptyList()) }
+
+    // Set to true the first time the user navigates to Screen.Performance; never resets.
+    // This gates the pollers so we don't run background DB reads for users who never open
+    // the Performance screen.
+    val perfScreenEverOpened = remember { MutableStateFlow(false) }
+    androidx.compose.runtime.LaunchedEffect(viewModel) {
+        viewModel.uiState.collect { state ->
+            if (state.currentScreen is Screen.Performance) perfScreenEverOpened.value = true
+        }
+    }
+
+    // Span data: reactive SQLDelight flow — fires whenever new spans are written to SQLite.
+    // Starts immediately (spans are cheap to subscribe to; the reactive query only fires on writes).
+    androidx.compose.runtime.LaunchedEffect(repos.spanRepository) {
+        repos.spanRepository?.getRecentSpans(500)?.collect { result -> result.getOrNull()?.let { perfSpans.value = it } }
+    }
+
+    // Histogram summaries: poll every 2s, but only after Performance screen first opened.
+    androidx.compose.runtime.LaunchedEffect(repos.histogramWriter) {
+        val writer = repos.histogramWriter ?: return@LaunchedEffect
+        perfScreenEverOpened.first { it }   // suspend until first Performance screen visit
+        while (true) {
+            perfHistograms.value = withContext(PlatformDispatcher.DB) {
+                writer.queryAllOperations()
+                    .mapNotNull { op -> writer.queryPercentiles(op)?.let { op to it } }
+                    .toMap()
+            }
+            kotlinx.coroutines.delay(2_000)
+        }
+    }
+
+    // Query stats: poll every 5s, but only after Performance screen first opened.
+    androidx.compose.runtime.LaunchedEffect(repos.queryStatsRepository) {
+        val repo = repos.queryStatsRepository ?: return@LaunchedEffect
+        perfScreenEverOpened.first { it }   // suspend until first Performance screen visit
+        while (true) {
+            perfQueryStats.value = withContext(PlatformDispatcher.DB) {
+                val version = repo.getAllVersions().firstOrNull() ?: ""
+                repo.getTopByTotalMs(version, 50)
+            }
+            kotlinx.coroutines.delay(5_000)
+        }
     }
 
     PlatformJankStatsEffect(
@@ -591,7 +968,7 @@ private fun GraphContent(
         VoiceCaptureViewModel(
             voicePipeline,
             repos.journalService,
-            currentOpenPageUuid = { viewModel.uiState.value.currentPage?.uuid },
+            currentOpenPageUuid = { viewModel.uiState.value.currentPage?.uuid?.value },
         )
     }
     DisposableEffect(voiceCaptureViewModel) {
@@ -653,6 +1030,7 @@ private fun GraphContent(
     val voiceCaptureState by voiceCaptureViewModel.state.collectAsState()
     val graphRegistry by graphManager.graphRegistry.collectAsState()
     val activeGraphId = graphRegistry.activeGraphId
+    val syncState by viewModel.syncState.collectAsState()
 
     StelekitTheme(themeMode = appState.themeMode) {
         CompositionLocalProvider(LocalI18n provides I18n(appState.language)) {
@@ -663,15 +1041,13 @@ private fun GraphContent(
                     onGraphSelected = { path ->
                         scope.launch {
                             val graphId = graphManager.addGraph(path)
-                            if (graphId != null) {
-                                // Persist BEFORE switchGraph — switchGraph updates activeGraphId which
-                                // triggers key(activeGraphId) to destroy and recreate GraphContent
-                                // along with its scope. The new ViewModel reads these persisted values
-                                // in its init block and calls loadGraph automatically.
-                                viewModel.setGraphPath(path)
-                                viewModel.setOnboardingCompleted(true)
-                                graphManager.switchGraph(graphId)
-                            }
+                            // Persist BEFORE switchGraph — switchGraph updates activeGraphId which
+                            // triggers key(activeGraphId) to destroy and recreate GraphContent
+                            // along with its scope. The new ViewModel reads these persisted values
+                            // in its init block and calls loadGraph automatically.
+                            viewModel.setGraphPath(path)
+                            viewModel.setOnboardingCompleted(true)
+                            graphManager.switchGraph(graphId)
                         }
                     }
                 )
@@ -712,6 +1088,18 @@ private fun GraphContent(
                 ) {
                     val windowSizeClass = windowSizeClassFor(maxWidth)
                     val isMobile = windowSizeClass.isMobile
+                    val snackbarHostState = remember { SnackbarHostState() }
+                    LaunchedEffect(Unit) {
+                        viewModel.snackbarEvents.collect { msg ->
+                            try {
+                                snackbarHostState.showSnackbar(msg)
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                graphContentLogger.warn("showSnackbar failed: $e")
+                            }
+                        }
+                    }
 
                     CompositionLocalProvider(
                         LocalWindowSizeClass provides windowSizeClass,
@@ -777,7 +1165,7 @@ private fun GraphContent(
                                 onGoBack = { viewModel.goBack() },
                                 onGoForward = { viewModel.goForward() },
                                 onMenuToggle = { viewModel.toggleSidebar() },
-                                onExportPage = { formatId -> viewModel.exportPage(formatId) },
+                                onShareClick = { viewModel.showShareDialog() },
                                 onShowDebugMenu = if (DebugBuildConfig.isDebugBuild) {{ viewModel.showDebugMenu() }} else null,
                             )
                         },
@@ -815,7 +1203,21 @@ private fun GraphContent(
                                     closeSidebarIfMobile()
                                 },
                                 onRemoveGraph = { scope.launch { graphManager.removeGraph(it) } },
-                                onCollapse = { viewModel.toggleSidebar() }
+                                onCollapse = { viewModel.toggleSidebar() },
+                                syncState = syncState,
+                                onSyncClick = {
+                                    if (syncState is dev.stapler.stelekit.git.model.SyncState.CredentialVaultLocked) {
+                                        // Vault is locked — lock() re-shows the unlock screen
+                                        vaultManager?.lock()
+                                    } else {
+                                        viewModel.triggerSync()
+                                    }
+                                },
+                                onGitSetup = { viewModel.openGitSetup() },
+                                isGitConfigured = appState.gitConfig != null,
+                                onAuthError = { viewModel.openGitSetupForCredentials() },
+                                onCloneGraph = { viewModel.openGitSetupForClone() },
+                                gitSyncedGraphId = if (appState.gitConfig != null) activeGraphId else null,
                             )
                         },
                         rightSidebar = {
@@ -828,6 +1230,24 @@ private fun GraphContent(
                             )
                         },
                         content = {
+                            val cameraImportEnabled =
+                                imageImportService != null && SensorModule.cameraProvider.isAvailable
+                            val activeGraphInfo2 = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }
+                            val showGitBanner = activeGraphInfo2?.detectedRepoRoot != null &&
+                                appState.gitConfig == null &&
+                                activeGraphInfo2.gitDetectionDismissed == false
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                if (showGitBanner) {
+                                    GitDetectionBanner(
+                                        repoRoot = activeGraphInfo2!!.detectedRepoRoot!!,
+                                        onSetupSync = { viewModel.openGitSetup() },
+                                        onDismiss = {
+                                            val gid = activeGraphId ?: return@GitDetectionBanner
+                                            viewModel.dismissGitDetection(gid)
+                                        },
+                                    )
+                                }
+                            Box(modifier = Modifier.weight(1f)) {
                             ScreenRouter(
                                 screen = appState.currentScreen,
                                 repos = repos,
@@ -841,7 +1261,132 @@ private fun GraphContent(
                                 appState = appState,
                                 graphWriter = graphWriter,
                                 urlFetcher = urlFetcher,
+                                capabilities = dev.stapler.stelekit.ui.components.EditorCapabilities(
+                                    onAttachImage = if (attachmentService != null) {
+                                        { editingBlockUuid ->
+                                            val graphRoot = appState.currentGraphPath
+                                            scope.launch {
+                                                val result = attachmentService.pickAndAttach(
+                                                    graphRoot = graphRoot,
+                                                    pageRelativePath = ""
+                                                ) ?: return@launch
+                                                result.fold(
+                                                    ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
+                                                        graphContentLogger.warn("Image attachment failed: $err")
+                                                    },
+                                                    ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
+                                                        val safeAlt = attachment.displayName.replace("]", "\\]")
+                                                        val safePath = attachment.relativePath.replace(")", "\\)")
+                                                        val markdown = "![${safeAlt}](${safePath})"
+                                                        if (editingBlockUuid != null) {
+                                                            blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    } else null,
+                                    onFileDrop = if (attachmentService != null) {
+                                        { files ->
+                                            val graphRoot = appState.currentGraphPath
+                                            val pageUuid = (appState.currentScreen as? Screen.PageView)?.page?.uuid
+                                            if (pageUuid != null) {
+                                                scope.launch {
+                                                    files.forEach { file ->
+                                                        val result = attachmentService.attachFilePath(
+                                                            filePath = file.toString(),
+                                                            graphRoot = graphRoot
+                                                        ) ?: return@forEach
+                                                        result.fold(
+                                                            ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
+                                                                graphContentLogger.warn("Drag-and-drop attachment failed: $err")
+                                                            },
+                                                            ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
+                                                                val safeAlt = attachment.displayName.replace("]", "\\]")
+                                                                val safePath = attachment.relativePath.replace(")", "\\)")
+                                                                blockStateManager.addBlockWithContent(
+                                                                    pageUuid = pageUuid,
+                                                                    content = "![${safeAlt}](${safePath})"
+                                                                )
+                                                            }
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else null,
+                                    onPasteImage = if (attachmentService != null) {
+                                        { editingBlockUuid ->
+                                            if (attachmentService.hasClipboardImage()) {
+                                                val graphRoot = appState.currentGraphPath
+                                                scope.launch {
+                                                    val result = attachmentService.pasteFromClipboard(graphRoot)
+                                                        ?: return@launch
+                                                    result.fold(
+                                                        ifLeft = { err: dev.stapler.stelekit.error.DomainError ->
+                                                            graphContentLogger.warn("Clipboard paste failed: $err")
+                                                        },
+                                                        ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
+                                                            val safeAlt = attachment.displayName.replace("]", "\\]")
+                                                            val safePath = attachment.relativePath.replace(")", "\\)")
+                                                            val markdown = "![${safeAlt}](${safePath})"
+                                                            if (editingBlockUuid != null) {
+                                                                blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                                true
+                                            } else false
+                                        }
+                                    } else null,
+                                    onCaptureImage = if (cameraImportEnabled) {
+                                        {
+                                            scope.launch {
+                                                // Resolve page UUID before capturing — camera suspends for seconds,
+                                                // so we snapshot navigation state at button-tap time, not return time.
+                                                val pageUuid: String? =
+                                                    (appState.currentScreen as? Screen.PageView)?.page?.uuid?.value
+                                                        ?: appState.currentPage?.uuid?.value
+                                                val resolvedPageUuid = pageUuid
+                                                    ?: repos.journalService.ensureTodayJournal().uuid.value
+                                                executeCaptureAndImport(
+                                                    imageImportService = imageImportService,
+                                                    getActiveGraphPath = { graphManager.getActiveGraphInfo()?.path },
+                                                    pageUuid = resolvedPageUuid,
+                                                    navigateAfterImport = false,
+                                                    onSnackbar = { viewModel.sendSnackbar(it) },
+                                                    onNavigate = { annUuid, pgUuid -> viewModel.navigateToAnnotationEditor(annUuid, pgUuid) },
+                                                    onWarn = { graphContentLogger.warn(it) },
+                                                )
+                                            }
+                                        }
+                                    } else null,
+                                ),
+                                onImportImage = if (cameraImportEnabled) {
+                                    {
+                                        scope.launch {
+                                            val page = repos.journalService.ensureTodayJournal()
+                                            executeCaptureAndImport(
+                                                imageImportService = imageImportService,
+                                                getActiveGraphPath = { graphManager.getActiveGraphInfo()?.path },
+                                                pageUuid = page.uuid.value,
+                                                navigateAfterImport = true,
+                                                onSnackbar = { viewModel.sendSnackbar(it) },
+                                                onNavigate = { annUuid, pgUuid -> viewModel.navigateToAnnotationEditor(annUuid, pgUuid) },
+                                                onWarn = { graphContentLogger.warn(it) },
+                                            )
+                                        }
+                                        Unit
+                                    }
+                                } else null,
+                                platformSettings = platformSettings,
+                                perfSpans = perfSpans,
+                                perfHistograms = perfHistograms,
+                                perfQueryStats = perfQueryStats,
                             )
+                            } // Box
+                            } // Column
                         },
                         statusBar = {
                             if (!isMobile) {
@@ -856,9 +1401,10 @@ private fun GraphContent(
                                         pluginCount = pluginHost.getAllPlugins().size,
                                         modifier = Modifier.weight(1f),
                                     )
-                                    if (isParanoidMode && vaultManager != null) {
+                                    val vmForLockBtn = vaultManager
+                                    if (isParanoidMode && vmForLockBtn != null) {
                                         IconButton(onClick = {
-                                            viewModel.flushAndLockVault(graphLoader, graphWriter, vaultManager)
+                                            viewModel.flushAndLockVault(graphLoader, graphWriter, vmForLockBtn)
                                         }) {
                                             Icon(
                                                 imageVector = Icons.Filled.Lock,
@@ -868,6 +1414,7 @@ private fun GraphContent(
                                     }
                                 }
                             }
+                            SnackbarHost(hostState = snackbarHostState)
                         },
                         bottomBar = {
                             PlatformBottomBar(
@@ -903,11 +1450,47 @@ private fun GraphContent(
                         deviceLlmAvailable = deviceLlmAvailable,
                         frameMetric = frameMetricState,
                         debugState = debugMenuState,
-                        loadPageBlocks = repos.blockRepository::getBlocksForPage,
+                        loadPageBlocks = { pageUuidStr -> repos.blockRepository.getBlocksForPage(dev.stapler.stelekit.model.PageUuid(pageUuidStr)) },
                         onDebugStateChange = { newState ->
                             debugMenuState = newState
                             viewModel.onDebugMenuStateChange(newState)
                         },
+                        isParanoidMode = isParanoidMode,
+                        isVaultUnlocked = vaultState is VaultState.Unlocked,
+                        onCreateVault = onCreateVault,
+                        onAddKeyslot = onAddKeyslot,
+                        onRemoveKeyslot = onRemoveKeyslot,
+                        onLockVault = onLockVault,
+                        onListActiveSlots = onListActiveSlots,
+                        isGoogleAuthenticated = isGoogleAuthenticated,
+                        googleConnectedEmail = googleConnectedEmail,
+                        isGoogleConnecting = isGoogleConnecting,
+                        googleAuthError = googleAuthError,
+                        onConnectGoogle = onConnectGoogle,
+                        onDisconnectGoogle = onDisconnectGoogle,
+                        gitSyncService = gitSyncService,
+                        gitRepository = gitRepository,
+                        gitConfigRepository = gitConfigRepository,
+                        activeGraphId = activeGraphId,
+                        onCloneAndAdd = if (gitRepository != null) {
+                            { url, localPath, auth, onProgress ->
+                                graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress)
+                            }
+                        } else null,
+                        graphPath = activeGraphPath,
+                        onCloneComplete = { newGraphId ->
+                            scope.launch { graphManager.switchGraph(newGraphId) }
+                        },
+                        onAuthError = { viewModel.openGitSetupForCredentials() },
+                        shareProvider = shareProvider,
+                        exportService = exportService,
+                        driveClient = null, // DriveApiClient injected from platform entry point in a future phase
+                        shareGoogleAuthManager = googleAuthManager,
+                        currentPage = appState.currentPage,
+                        currentBlocks = appState.currentPage?.let {
+                            blockStateManager.blocksForPage(it.uuid.value)
+                        } ?: emptyList(),
+                        selectedBlockUuids = blockStateManager.selectedBlockUuids.collectAsState().value,
                     )
 
                     } // CompositionLocalProvider(LocalWindowSizeClass)
@@ -957,268 +1540,7 @@ private fun onGraphKeyEvent(
     }
 }
 
-/**
- * Routes the current [Screen] to its composable. Owns screen transition animations.
- * Forward navigation (historyIndex increases): slide in from right.
- * Back navigation (historyIndex decreases): slide in from left, suppress exit so the
- * system predictive-back preview is the only visual during the back swipe.
- *
- * Rule (ADR-001): every branch must call a named composable — no inline content.
- */
-@Composable
-private fun ScreenRouter(
-    screen: Screen,
-    repos: RepositorySet,
-    blockStateManager: dev.stapler.stelekit.ui.state.BlockStateManager,
-    journalsViewModel: JournalsViewModel,
-    allPagesViewModel: AllPagesViewModel,
-    libraryStatsViewModel: LibraryStatsViewModel,
-    viewModel: StelekitViewModel,
-    searchViewModel: SearchViewModel,
-    notificationManager: NotificationManager,
-    appState: AppState,
-    graphWriter: GraphWriter,
-    urlFetcher: UrlFetcher = NoOpUrlFetcher(),
-) {
-    if (appState.isLoading) {
-        LoadingOverlay(
-            message = if (appState.statusMessage.isNotEmpty()) appState.statusMessage
-                      else "Loading your notes…"
-        )
-        return
-    }
 
-    val suggestionMatcher by viewModel.suggestionMatcher.collectAsState()
-
-    // Track navigation direction for slide transition orientation.
-    var previousHistoryIndex by remember { mutableStateOf(appState.historyIndex) }
-    val isBack = appState.historyIndex < previousHistoryIndex
-
-    AnimatedContent(
-        targetState = screen,
-        transitionSpec = {
-            if (isBack) {
-                // Back: enter from left; suppress exit (predictive back handles the visual)
-                (slideInHorizontally(tween(300)) { -it / 4 } + fadeIn(tween(300))) togetherWith
-                        fadeOut(tween(1)) // near-instant exit — system back gesture owns the animation
-            } else {
-                // Forward: enter from right, exit to left
-                (slideInHorizontally(tween(300)) { it / 4 } + fadeIn(tween(300))) togetherWith
-                        (slideOutHorizontally(tween(300)) { -it / 4 } + fadeOut(tween(300)))
-            }
-        },
-        label = "screen-transition"
-    ) { currentScreen ->
-        // Update direction tracking after composition
-        previousHistoryIndex = appState.historyIndex
-
-        when (currentScreen) {
-            is Screen.PageView -> PageView(
-                page = currentScreen.page,
-                blockRepository = repos.blockRepository,
-                pageRepository = repos.pageRepository,
-                blockStateManager = blockStateManager,
-                currentGraphPath = appState.currentGraphPath,
-                onToggleFavorite = { viewModel.toggleFavorite(it) },
-                onRefresh = { viewModel.refreshCurrentPage() },
-                onLinkClick = { viewModel.navigateToPageByName(it) },
-                viewModel = viewModel,
-                searchViewModel = searchViewModel,
-                writeActor = repos.writeActor,
-                isDebugMode = appState.isDebugMode,
-                isLeftHanded = appState.isLeftHanded
-            )
-            is Screen.Journals -> JournalsView(
-                viewModel = journalsViewModel,
-                blockRepository = repos.blockRepository,
-                isDebugMode = appState.isDebugMode,
-                onLinkClick = { viewModel.navigateToPageByName(it) },
-                searchViewModel = searchViewModel,
-                onSearchPages = { query -> viewModel.searchPages(query) },
-                suggestionMatcher = suggestionMatcher,
-                isLeftHanded = appState.isLeftHanded
-            )
-            is Screen.Flashcards -> {
-                NavigationTracingEffect("Flashcards")
-                FlashcardsScreen(blockStateManager)
-            }
-            is Screen.AllPages -> AllPagesScreen(
-                viewModel = allPagesViewModel,
-                onPageClick = { page -> viewModel.navigateTo(Screen.PageView(page)) },
-                onBulkDelete = { uuids -> viewModel.bulkDeletePages(uuids) }
-            )
-            is Screen.LibraryStats -> LibraryStatsScreen(viewModel = libraryStatsViewModel)
-            is Screen.Notifications -> {
-                NavigationTracingEffect("Notifications")
-                NotificationHistory(notificationManager)
-            }
-            is Screen.Logs -> {
-                NavigationTracingEffect("Logs")
-                LogDashboard()
-            }
-            is Screen.Performance -> {
-                NavigationTracingEffect("Performance")
-                PerformanceDashboard(
-                    histogramWriter = repos.histogramWriter,
-                    ringBuffer = repos.ringBuffer,
-                    spanRepository = repos.spanRepository,
-                    perfExporter = repos.perfExporter,
-                )
-            }
-            is Screen.GlobalUnlinkedReferences -> GlobalUnlinkedReferencesScreen(
-                pageRepository = repos.pageRepository,
-                blockRepository = repos.blockRepository,
-                writeActor = repos.writeActor,
-                graphPath = appState.currentGraphPath,
-                suggestionMatcher = suggestionMatcher,
-                onNavigateTo = { viewModel.navigateTo(it) },
-            )
-            is Screen.Import -> {
-                val graphPath = appState.currentGraphPath
-                val importScope = rememberCoroutineScope()
-                val importViewModel = remember(graphPath) {
-                    dev.stapler.stelekit.ui.screens.ImportViewModel(
-                        coroutineScope = importScope,
-                        pageRepository = repos.pageRepository,
-                        graphWriter = graphWriter,
-                        graphPath = graphPath,
-                        urlFetcher = urlFetcher,
-                        matcherFlow = viewModel.suggestionMatcher,
-                    )
-                }
-                dev.stapler.stelekit.ui.screens.ImportScreen(
-                    viewModel = importViewModel,
-                    onDismiss = {
-                        val savedName = importViewModel.state.value.savedPageName
-                        viewModel.goBack()
-                        if (savedName != null) {
-                            viewModel.navigateToPageByName(savedName)
-                        }
-                    },
-                )
-            }
-            is Screen.VaultUnlock -> {
-                // Vault unlock is handled by the outer StelekitApp scaffold — no-op here
-            }
-        }
-    }
-}
-
-/**
- * All overlay dialogs for the graph content area, composed as a single layer.
- * Extracted from GraphContent so dialog additions don't modify the layout tree.
- * See ADR-001.
- */
-@Composable
-private fun GraphDialogLayer(
-    appState: AppState,
-    searchViewModel: SearchViewModel,
-    viewModel: StelekitViewModel,
-    notificationManager: NotificationManager,
-    fileSystem: FileSystem,
-    voiceSettings: VoiceSettings? = null,
-    onRebuildVoicePipeline: (() -> Unit)? = null,
-    deviceSttAvailable: Boolean = false,
-    deviceLlmAvailable: Boolean = false,
-    frameMetric: kotlinx.coroutines.flow.StateFlow<dev.stapler.stelekit.performance.FrameMetric>,
-    debugState: DebugMenuState = DebugMenuState(),
-    loadPageBlocks: (String) -> kotlinx.coroutines.flow.Flow<arrow.core.Either<dev.stapler.stelekit.error.DomainError, List<Block>>> = { kotlinx.coroutines.flow.flowOf(arrow.core.Either.Right(emptyList())) },
-    onDebugStateChange: (DebugMenuState) -> Unit = {},
-) {
-    val scope = rememberCoroutineScope()
-
-    CommandPalette(
-        visible = appState.commandPaletteVisible,
-        commands = appState.commands,
-        onDismiss = { viewModel.setCommandPaletteVisible(false) }
-    )
-
-    val indexingProgress by viewModel.indexingProgress.collectAsState()
-    SearchDialog(
-        visible = appState.searchDialogVisible,
-        viewModel = searchViewModel,
-        onDismiss = { viewModel.setSearchDialogVisible(false) },
-        onNavigateToPage = { viewModel.navigateToPageByUuid(it) },
-        onNavigateToBlock = { viewModel.navigateToBlock(it) },
-        onCreatePage = { viewModel.navigateToPageByName(it) },
-        initialQuery = appState.searchDialogInitialQuery,
-        isIndexing = indexingProgress is IndexingState.InProgress,
-        loadPageBlocks = loadPageBlocks
-    )
-
-    SettingsDialog(
-        visible = appState.settingsVisible,
-        onDismiss = { viewModel.setSettingsVisible(false) },
-        currentTheme = appState.themeMode,
-        onThemeChange = { viewModel.setThemeMode(it) },
-        currentLanguage = appState.language,
-        onLanguageChange = { viewModel.setLanguage(it) },
-        onReindex = {
-            viewModel.triggerReindex()
-            viewModel.setSettingsVisible(false)
-        },
-        isLeftHanded = appState.isLeftHanded,
-        onLeftHandedChange = { viewModel.setLeftHanded(it) },
-        voiceSettings = voiceSettings,
-        onRebuildVoicePipeline = onRebuildVoicePipeline,
-        deviceSttAvailable = deviceSttAvailable,
-        deviceLlmAvailable = deviceLlmAvailable,
-    )
-
-    appState.diskConflict?.let { conflict ->
-        DiskConflictDialog(
-            conflict = conflict,
-            onKeepLocal = { viewModel.keepLocalChanges() },
-            onUseDisk = { viewModel.acceptDiskVersion() },
-            onSaveAsNew = { viewModel.saveAsNewBlock() },
-            onManualResolve = { viewModel.manualResolve() }
-        )
-    }
-
-    appState.renameDialogPage?.let { page ->
-        RenamePageDialog(
-            page = page,
-            busy = appState.renameDialogBusy,
-            error = appState.renameDialogError,
-            onConfirm = { newName -> viewModel.renamePage(page, newName) },
-            onDismiss = { viewModel.dismissRenameDialog() }
-        )
-    }
-
-    NotificationOverlay(
-        notificationManager = notificationManager,
-        modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
-    )
-
-    // Frame-time debug overlay — shown in top corner when enabled, regardless of dialog state.
-    PlatformFrameTimeOverlay(isEnabled = debugState.isFrameOverlayEnabled, frameMetric = frameMetric)
-
-    if (appState.isDebugMenuVisible && DebugBuildConfig.isDebugBuild) {
-        DebugMenuOverlay(
-            state = debugState,
-            onStateChange = { newState -> onDebugStateChange(newState) },
-            onExportBugReport = {
-                val json = viewModel.exportBugReport()
-                if (json == null) {
-                    notificationManager.show("Bug report unavailable — OTel not initialized")
-                } else {
-                    scope.launch {
-                        val path = fileSystem.pickSaveFileAsync("stelekit-bug-report.json", "application/json")
-                        when {
-                            path == null -> { /* user cancelled */ }
-                            fileSystem.writeFile(path, json) ->
-                                notificationManager.show("Bug report saved to ${fileSystem.displayNameForPath(path)}")
-                            else ->
-                                notificationManager.show("Failed to save bug report. Check storage permissions.")
-                        }
-                    }
-                }
-            },
-            onDismiss = { viewModel.dismissDebugMenu() }
-        )
-    }
-
-}
 
 /**
  * Status bar row — pure presentational composable. Receives only primitives;
@@ -1274,246 +1596,3 @@ private fun StatusBarContent(
         )
     }
 }
-
-@Composable
-private fun FlashcardsScreen(blockStateManager: dev.stapler.stelekit.ui.state.BlockStateManager) {
-    val allBlocks by blockStateManager.blocks.collectAsState()
-    val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
-
-    // Find all blocks with card:: true property that are due today
-    val dueCards = remember(allBlocks) {
-        allBlocks.values.flatten()
-            .filter { block ->
-                block.properties["card"] == "true" &&
-                    (block.properties["card-next-review"].let { dateStr ->
-                        if (dateStr == null) true  // new card, always due
-                        else runCatching { LocalDate.parse(dateStr) }.getOrNull()?.let { it <= today } ?: true
-                    })
-            }
-    }
-
-    var currentIndex by remember(dueCards) { mutableStateOf(0) }
-    var showBack by remember(currentIndex) { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
-    fun onPass() {
-        val card = dueCards.getOrNull(currentIndex) ?: return
-        val ease = card.properties["card-ease"]?.toDoubleOrNull() ?: 2.5
-        val interval = card.properties["card-interval"]?.toIntOrNull() ?: 1
-        val newInterval = maxOf(1, (interval * ease).toInt())
-        val newEase = minOf(2.5, ease + 0.1)
-        val nextReview = today.plus(newInterval, DateTimeUnit.DAY)
-        val newProps = card.properties.toMutableMap().apply {
-            put("card-next-review", nextReview.toString())
-            put("card-ease", kotlin.math.round(newEase * 100).toLong().let { "${it / 100}.${(it % 100).toString().padStart(2, '0')}" })
-            put("card-interval", newInterval.toString())
-        }
-        scope.launch { blockStateManager.updateBlockProperties(card.uuid, newProps) }
-        showBack = false
-        currentIndex++
-    }
-
-    fun onFail() {
-        val card = dueCards.getOrNull(currentIndex) ?: return
-        val ease = card.properties["card-ease"]?.toDoubleOrNull() ?: 2.5
-        val newEase = maxOf(1.3, ease - 0.2)
-        val nextReview = today.plus(1, DateTimeUnit.DAY)
-        val newProps = card.properties.toMutableMap().apply {
-            put("card-next-review", nextReview.toString())
-            put("card-ease", kotlin.math.round(newEase * 100).toLong().let { "${it / 100}.${(it % 100).toString().padStart(2, '0')}" })
-            put("card-interval", "1")
-        }
-        scope.launch { blockStateManager.updateBlockProperties(card.uuid, newProps) }
-        showBack = false
-        currentIndex++
-    }
-
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // Header
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "Flashcards",
-                style = MaterialTheme.typography.titleLarge
-            )
-            Text(
-                "${minOf(currentIndex, dueCards.size)} / ${dueCards.size}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        if (dueCards.isEmpty()) {
-            // Empty state
-            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        Icons.Default.Style,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        "No cards due for review",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Tag a block with card:: true to create a flashcard",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
-            }
-        } else if (currentIndex >= dueCards.size) {
-            // All done state
-            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        Icons.Default.Check,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        "All done!",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "You've reviewed all ${dueCards.size} cards",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(24.dp))
-                    OutlinedButton(onClick = { currentIndex = 0 }) {
-                        Text("Review again")
-                    }
-                }
-            }
-        } else {
-            val card = dueCards[currentIndex]
-
-            // Card with swipe gesture
-            var offsetX by remember(currentIndex) { mutableStateOf(0f) }
-            val swipeThreshold = 200f
-
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(vertical = 16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.7f)
-                        .offset { IntOffset(offsetX.roundToInt() / 4, 0) }
-                        .pointerInput(currentIndex) {
-                            detectHorizontalDragGestures(
-                                onDragEnd = {
-                                    when {
-                                        offsetX > swipeThreshold -> onPass()
-                                        offsetX < -swipeThreshold -> onFail()
-                                        else -> offsetX = 0f
-                                    }
-                                },
-                                onDragCancel = { offsetX = 0f }
-                            ) { _, dragAmount -> offsetX += dragAmount }
-                        }
-                        .clickable { showBack = !showBack },
-                    colors = CardDefaults.cardColors(
-                        containerColor = when {
-                            offsetX > 80f -> MaterialTheme.colorScheme.primaryContainer
-                            offsetX < -80f -> MaterialTheme.colorScheme.errorContainer
-                            else -> MaterialTheme.colorScheme.surface
-                        }
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize().padding(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            // Front: strip properties from content display
-                            val displayContent = card.content.lines()
-                                .filterNot { it.contains("::") }
-                                .joinToString("\n")
-                                .trim()
-                            Text(
-                                displayContent.ifBlank { card.content },
-                                style = MaterialTheme.typography.bodyLarge,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                            )
-                            if (!showBack) {
-                                Spacer(Modifier.height(24.dp))
-                                Text(
-                                    "Tap to reveal",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
-                            } else {
-                                // Back: show child blocks hint (we don't have them here easily, show "Answer revealed")
-                                Spacer(Modifier.height(16.dp))
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                                Text(
-                                    "How did you do?",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Pass/Fail buttons (shown after revealing back)
-            if (showBack) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = ::onFail,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Text("Again")
-                    }
-                    Button(
-                        onClick = ::onPass,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Good")
-                    }
-                }
-            } else {
-                // Swipe hint
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("← Fail", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
-                    Text("Pass →", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
-                }
-            }
-        }
-    }
-}
-

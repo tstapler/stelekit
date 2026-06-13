@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.outliner
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 import kotlin.test.Test
@@ -22,8 +24,8 @@ class TreeOperationsPropertyTest {
         position: Int = 0,
         content: String = "content"
     ) = Block(
-        uuid = uuid,
-        pageUuid = "page-1",
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid("page-1"),
         parentUuid = parentUuid,
         leftUuid = leftUuid,
         content = content,
@@ -54,7 +56,7 @@ class TreeOperationsPropertyTest {
                     val result = TreeOperations.indent(block, siblings)
                     if (result != null) {
                         val indented = result.first { it.uuid == block.uuid }
-                        assertEquals(siblings[i - 1].uuid, indented.parentUuid)
+                        assertEquals(siblings[i - 1].uuid.value, indented.parentUuid)
                         assertEquals(siblings[i - 1].level + 1, indented.level)
                     }
                 } catch (e: CancellationException) {
@@ -114,7 +116,7 @@ class TreeOperationsPropertyTest {
             val children = (0 until childCount).map { i ->
                 createBlock(
                     uuid = "child-$i",
-                    parentUuid = parent.uuid,
+                    parentUuid = parent.uuid.value,
                     leftUuid = if (i > 0) "child-${i - 1}" else null,
                     level = parent.level + 1,
                     position = i
@@ -154,7 +156,7 @@ class TreeOperationsPropertyTest {
     @Test
     fun outdentShouldHandleSingleChild() {
         val parent = createBlock("parent")
-        val child = createBlock("child", parentUuid = parent.uuid, level = 1)
+        val child = createBlock("child", parentUuid = parent.uuid.value, level = 1)
         val siblings = listOf(child)
         val parentSiblings = listOf(parent)
         try {
@@ -256,7 +258,7 @@ class TreeOperationsPropertyTest {
                 if (count > 0) {
                     assertEquals(null, reordered[0].leftUuid)
                     for (i in 1 until count) {
-                        assertEquals(reordered[i - 1].uuid, reordered[i].leftUuid)
+                        assertEquals(reordered[i - 1].uuid.value, reordered[i].leftUuid)
                     }
                 }
             } catch (e: CancellationException) {
@@ -302,7 +304,7 @@ class TreeOperationsPropertyTest {
             }
 
             val root = createBlock("root", level = 0)
-            val children = createTree(1, root.uuid)
+            val children = createTree(1, root.uuid.value)
 
             children.forEach { child ->
                 try {
@@ -321,10 +323,10 @@ class TreeOperationsPropertyTest {
     fun updateLevelsShouldUpdateChildrenRecursively() {
         try {
             val parent = createBlock("parent", level = 1)
-            val child = createBlock("child", parentUuid = parent.uuid, level = 2)
+            val child = createBlock("child", parentUuid = parent.uuid.value, level = 2)
 
             val result = TreeOperations.updateLevels(parent, 10) { childUuid ->
-                if (childUuid == child.uuid) listOf(child) else emptyList()
+                if (childUuid == child.uuid.value) listOf(child) else emptyList()
             }
 
             // Just verify it doesn't crash
@@ -382,7 +384,7 @@ class TreeOperationsPropertyTest {
             var expectedLeftUuid: String? = null
             reordered.forEach { block ->
                 assertEquals(expectedLeftUuid, block.leftUuid)
-                expectedLeftUuid = block.uuid
+                expectedLeftUuid = block.uuid.value
             }
         } catch (e: CancellationException) {
             throw e

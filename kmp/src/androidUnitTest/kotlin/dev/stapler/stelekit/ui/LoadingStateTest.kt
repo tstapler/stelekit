@@ -76,15 +76,17 @@ class LoadingStateTest {
         val vmScope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher())
         vmScopes += vmScope
         return StelekitViewModel(
-            fileSystem = fileSystem,
-            pageRepository = pageRepo,
-            blockRepository = blockRepo,
-            searchRepository = searchRepo,
-            graphLoader = graphLoader,
-            graphWriter = graphWriter,
-            platformSettings = FakeSettings(),
-            scope = vmScope,
-            journalService = journalService,
+            StelekitViewModelDependencies(
+                fileSystem = fileSystem,
+                pageRepository = pageRepo,
+                blockRepository = blockRepo,
+                searchRepository = searchRepo,
+                graphLoader = graphLoader,
+                graphWriter = graphWriter,
+                platformSettings = FakeSettings(),
+                scope = vmScope,
+                journalService = journalService,
+            )
         )
     }
 

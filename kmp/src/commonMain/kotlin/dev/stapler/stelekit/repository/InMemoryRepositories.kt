@@ -1,10 +1,14 @@
+@file:Suppress("InMemoryPagination") // in-memory test fake — drop/take IS the right implementation
 package dev.stapler.stelekit.repository
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.Property
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOf
 import arrow.core.Either
@@ -22,22 +26,22 @@ class InMemoryBlockRepository : BlockRepository {
 
     private val blocks = MutableStateFlow<Map<String, Block>>(emptyMap())
 
-    override fun getBlockByUuid(uuid: String): Flow<Either<DomainError, Block?>> {
+    override fun getBlockByUuid(uuid: BlockUuid): Flow<Either<DomainError, Block?>> {
         return blocks.map { map ->
-            map[uuid].right()
+            map[uuid.value].right()
         }
     }
 
-    override fun getBlockChildren(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
+    override fun getBlockChildren(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> {
         return blocks.map { map ->
-            map.values.filter { it.parentUuid == blockUuid }.sortedBy { it.position }.right()
+            map.values.filter { it.parentUuid == blockUuid.value }.sortedBy { it.position }.right()
         }
     }
 
-    override fun getBlockHierarchy(rootUuid: String): Flow<Either<DomainError, List<BlockWithDepth>>> {
+    override fun getBlockHierarchy(rootUuid: BlockUuid): Flow<Either<DomainError, List<BlockWithDepth>>> {
         return blocks.map { map ->
             val result = mutableListOf<BlockWithDepth>()
-            collectHierarchy(map, rootUuid, 0, result)
+            collectHierarchy(map, rootUuid.value, 0, result)
             result.right()
         }
     }
@@ -50,23 +54,23 @@ class InMemoryBlockRepository : BlockRepository {
     ) {
         val block = allBlocks[uuid] ?: return
         result.add(BlockWithDepth(block, depth))
-        val children = allBlocks.values.filter { it.parentUuid == block.uuid }.sortedBy { it.position }
+        val children = allBlocks.values.filter { it.parentUuid == block.uuid.value }.sortedBy { it.position }
         children.forEach { child ->
-            collectHierarchy(allBlocks, child.uuid, depth + 1, result)
+            collectHierarchy(allBlocks, child.uuid.value, depth + 1, result)
         }
     }
 
-    override fun getBlockAncestors(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
+    override fun getBlockAncestors(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> {
         return blocks.map { map ->
             val ancestors = mutableListOf<Block>()
-            var currentUuid: String? = blockUuid
+            var currentUuid: String? = blockUuid.value
             while (currentUuid != null) {
                 val block = map[currentUuid] ?: break
                 if (block.parentUuid != null) {
                     val parent = map[block.parentUuid]
                     if (parent != null) {
                         ancestors.add(parent)
-                        currentUuid = parent.uuid
+                        currentUuid = parent.uuid.value
                     } else {
                         break
                     }
@@ -78,123 +82,147 @@ class InMemoryBlockRepository : BlockRepository {
         }
     }
 
-    override fun getBlockParent(blockUuid: String): Flow<Either<DomainError, Block?>> {
+    override fun getBlockParent(blockUuid: BlockUuid): Flow<Either<DomainError, Block?>> {
         return blocks.map { map ->
-            val block = map[blockUuid] ?: return@map null.right()
+            val block = map[blockUuid.value] ?: return@map null.right()
             val parent = block.parentUuid?.let { map[it] }
             parent.right()
         }
     }
 
-    override fun getBlockSiblings(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
+    override fun getBlockSiblings(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> {
         return blocks.map { map ->
-            val block = map[blockUuid] ?: return@map emptyList<Block>().right()
+            val block = map[blockUuid.value] ?: return@map emptyList<Block>().right()
             val siblings = if (block.parentUuid != null) {
-                map.values.filter { it.parentUuid == block.parentUuid && it.uuid != blockUuid }
+                map.values.filter { it.parentUuid == block.parentUuid && it.uuid.value != blockUuid.value }
             } else {
-                map.values.filter { it.parentUuid == null && it.uuid != blockUuid && it.pageUuid == block.pageUuid }
+                map.values.filter { it.parentUuid == null && it.uuid.value != blockUuid.value && it.pageUuid == block.pageUuid }
             }
             siblings.sortedBy { it.position }.right()
         }
     }
 
-    override fun getBlocksForPage(pageUuid: String): Flow<Either<DomainError, List<Block>>> {
+    override fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>> {
         return blocks.map { map ->
             val pageBlocks = map.values.filter { it.pageUuid == pageUuid }.sortedBy { it.position }
             pageBlocks.right()
         }
     }
 
-    override suspend fun deleteBlocksForPage(pageUuid: String): Either<DomainError, Unit> {
+    override suspend fun getBlocksByUuids(uuids: List<BlockUuid>): Either<DomainError, List<Block>> {
+        val uuidSet = uuids.map { it.value }.toHashSet()
+        return blocks.value.values.filter { it.uuid.value in uuidSet }.right()
+    }
+
+    override suspend fun deleteBlocksForPage(pageUuid: PageUuid): Either<DomainError, Unit> {
         val current = this.blocks.value.toMutableMap()
-        val toRemove = current.values.filter { it.pageUuid == pageUuid }.map { it.uuid }
+        val toRemove = current.values.filter { it.pageUuid == pageUuid }.map { it.uuid.value }
         toRemove.forEach { current.remove(it) }
         this.blocks.value = current
         return Unit.right()
     }
 
-    override suspend fun deleteBlocksForPages(pageUuids: List<String>): Either<DomainError, Unit> {
+    override suspend fun deleteBlocksForPages(pageUuids: List<PageUuid>): Either<DomainError, Unit> {
         if (pageUuids.isEmpty()) return Unit.right()
         val uuidSet = pageUuids.toSet()
         val current = this.blocks.value.toMutableMap()
-        val toRemove = current.values.filter { it.pageUuid in uuidSet }.map { it.uuid }
+        val toRemove = current.values.filter { it.pageUuid in uuidSet }.map { it.uuid.value }
         toRemove.forEach { current.remove(it) }
         this.blocks.value = current
         return Unit.right()
     }
 
-    override suspend fun clear() {
+    override suspend fun clear(): Either<DomainError, Unit> {
         blocks.value = emptyMap()
+        return Unit.right()
     }
 
     override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> {
         val current = this.blocks.value.toMutableMap()
-        blocks.forEach { current[it.uuid] = it }
+        blocks.forEach { current[it.uuid.value] = it }
         this.blocks.value = current
         return Unit.right()
     }
 
+    override suspend fun saveBlocksUpdate(blocks: List<Block>): Either<DomainError, Unit> =
+        saveBlocks(blocks)
+
     override suspend fun saveBlock(block: Block): Either<DomainError, Unit> {
         val current = blocks.value.toMutableMap()
-        current[block.uuid] = block
+        current[block.uuid.value] = block
         blocks.value = current
         return Unit.right()
     }
 
-    override suspend fun updateBlockContentOnly(blockUuid: String, content: String): Either<DomainError, Unit> {
+    override suspend fun updateBlockContentOnly(blockUuid: BlockUuid, content: String): Either<DomainError, Unit> {
         val current = blocks.value.toMutableMap()
-        val existing = current[blockUuid] ?: return Unit.right()
-        current[blockUuid] = existing.copy(content = content, version = existing.version + 1, updatedAt = kotlin.time.Clock.System.now())
+        val existing = current[blockUuid.value] ?: return Unit.right()
+        current[blockUuid.value] = existing.copy(content = content, version = existing.version + 1, updatedAt = kotlin.time.Clock.System.now())
         blocks.value = current
         return Unit.right()
     }
 
-    override suspend fun updateBlockPropertiesOnly(blockUuid: String, properties: Map<String, String>): Either<DomainError, Unit> {
+    override suspend fun updateBlockContentsForRename(
+        updates: List<Pair<BlockUuid, String>>,
+        oldPageName: String,
+        newPageName: String,
+    ): Either<DomainError, Unit> {
         val current = blocks.value.toMutableMap()
-        val existing = current[blockUuid] ?: return Unit.right()
-        current[blockUuid] = existing.copy(properties = properties)
-        blocks.value = current
-        return Unit.right()
-    }
-
-    override suspend fun deleteBlock(blockUuid: String, deleteChildren: Boolean): Either<DomainError, Unit> {
-        val current = blocks.value.toMutableMap()
-        val block = current[blockUuid] ?: return Unit.right()
-
-        if (deleteChildren) {
-            val uuidsToDelete = mutableListOf(blockUuid)
-            var index = 0
-            while (index < uuidsToDelete.size) {
-                val currentUuid = uuidsToDelete[index]
-                val childBlocks = current.values.filter { it.parentUuid == currentUuid }
-                childBlocks.forEach { child ->
-                    uuidsToDelete.add(child.uuid)
-                }
-                index++
-            }
-            uuidsToDelete.forEach { current.remove(it) }
-            // Repair sibling chain: fix positions of remaining siblings after deletion
-            repairSiblingPositions(current, block.pageUuid, block.parentUuid)
-        } else {
-            // Orphan children - they become root blocks (parent = null, level = 0)
-            val children = current.values.filter { it.parentUuid == blockUuid }
-            for (child in children) {
-                val levelDelta = 0 - child.level
-                val updatedChild = child.copy(parentUuid = null, level = 0)
-                current[child.uuid] = updatedChild
-                
-                // Recursively adjust levels for descendants
-                adjustDescendantLevels(child.uuid, levelDelta, current)
-            }
-            current.remove(blockUuid)
-            // Repair sibling chain: fix positions of remaining siblings after deletion
-            repairSiblingPositions(current, block.pageUuid, block.parentUuid)
+        val now = kotlin.time.Clock.System.now()
+        for ((uuid, content) in updates) {
+            val existing = current[uuid.value] ?: continue
+            current[uuid.value] = existing.copy(content = content, version = existing.version + 1, updatedAt = now)
         }
         blocks.value = current
         return Unit.right()
     }
 
-    override suspend fun deleteBulk(blockUuids: List<String>, deleteChildren: Boolean): Either<DomainError, Unit> {
+    override suspend fun updateBlockPropertiesOnly(blockUuid: BlockUuid, properties: Map<String, String>): Either<DomainError, Unit> {
+        val current = blocks.value.toMutableMap()
+        val existing = current[blockUuid.value] ?: return Unit.right()
+        current[blockUuid.value] = existing.copy(properties = properties)
+        blocks.value = current
+        return Unit.right()
+    }
+
+    override suspend fun deleteBlock(blockUuid: BlockUuid, deleteChildren: Boolean): Either<DomainError, Unit> {
+        val current = blocks.value.toMutableMap()
+        val block = current[blockUuid.value] ?: return Unit.right()
+
+        if (deleteChildren) {
+            val uuidsToDelete = mutableListOf(blockUuid.value)
+            var index = 0
+            while (index < uuidsToDelete.size) {
+                val currentUuid = uuidsToDelete[index]
+                val childBlocks = current.values.filter { it.parentUuid == currentUuid }
+                childBlocks.forEach { child ->
+                    uuidsToDelete.add(child.uuid.value)
+                }
+                index++
+            }
+            uuidsToDelete.forEach { current.remove(it) }
+            // Repair sibling chain: fix positions of remaining siblings after deletion
+            repairSiblingPositions(current, block.pageUuid.value, block.parentUuid)
+        } else {
+            // Orphan children - they become root blocks (parent = null, level = 0)
+            val children = current.values.filter { it.parentUuid == blockUuid.value }
+            for (child in children) {
+                val levelDelta = 0 - child.level
+                val updatedChild = child.copy(parentUuid = null, level = 0)
+                current[child.uuid.value] = updatedChild
+
+                // Recursively adjust levels for descendants
+                adjustDescendantLevels(child.uuid.value, levelDelta, current)
+            }
+            current.remove(blockUuid.value)
+            // Repair sibling chain: fix positions of remaining siblings after deletion
+            repairSiblingPositions(current, block.pageUuid.value, block.parentUuid)
+        }
+        blocks.value = current
+        return Unit.right()
+    }
+
+    override suspend fun deleteBulk(blockUuids: List<BlockUuid>, deleteChildren: Boolean): Either<DomainError, Unit> {
         blockUuids.forEach { uuid ->
             deleteBlock(uuid, deleteChildren)
         }
@@ -207,71 +235,71 @@ class InMemoryBlockRepository : BlockRepository {
         parentUuid: String?
     ) {
         val siblings = current.values
-            .filter { it.pageUuid == pageUuid && it.parentUuid == parentUuid }
+            .filter { it.pageUuid.value == pageUuid && it.parentUuid == parentUuid }
             .sortedBy { it.position }
-        
+
         var expectedPosition = 0
         for (sibling in siblings) {
             if (sibling.position != expectedPosition) {
-                current[sibling.uuid] = sibling.copy(position = expectedPosition)
+                current[sibling.uuid.value] = sibling.copy(position = expectedPosition)
             }
             expectedPosition++
         }
     }
 
     override suspend fun moveBlock(
-        blockUuid: String,
-        newParentUuid: String?,
+        blockUuid: BlockUuid,
+        newParentUuid: BlockUuid?,
         newPosition: Int
     ): Either<DomainError, Unit> {
         val current = blocks.value.toMutableMap()
-        val block = current[blockUuid] ?: return Unit.right()
+        val block = current[blockUuid.value] ?: return Unit.right()
 
-        val newLevel = if (newParentUuid == null) 0 else (current[newParentUuid]?.level ?: -1) + 1
+        val newLevel = if (newParentUuid == null) 0 else (current[newParentUuid.value]?.level ?: -1) + 1
         val levelDelta = newLevel - block.level
 
         val updatedBlock = block.copy(
-            parentUuid = newParentUuid,
+            parentUuid = newParentUuid?.value,
             position = newPosition,
             level = newLevel
         )
-        current[blockUuid] = updatedBlock
-        
+        current[blockUuid.value] = updatedBlock
+
         if (levelDelta != 0) {
-            adjustDescendantLevels(block.uuid, levelDelta, current)
+            adjustDescendantLevels(block.uuid.value, levelDelta, current)
         }
-        
+
         blocks.value = current
         return Unit.right()
     }
 
-    override suspend fun indentBlock(blockUuid: String): Either<DomainError, Unit> {
+    override suspend fun indentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> {
         val current = blocks.value.toMutableMap()
-        val block = current[blockUuid] ?: return Unit.right()
+        val block = current[blockUuid.value] ?: return Unit.right()
 
         val siblings = current.values
             .filter { it.pageUuid == block.pageUuid && it.parentUuid == block.parentUuid }
             .sortedBy { it.position }
 
-        val blockIndex = siblings.indexOfFirst { it.uuid == blockUuid }
+        val blockIndex = siblings.indexOfFirst { it.uuid.value == blockUuid.value }
         if (blockIndex <= 0) return Unit.right() // No previous sibling
 
         val prevSibling = siblings[blockIndex - 1]
-        val prevSiblingChildren = current.values.filter { it.parentUuid == prevSibling.uuid }
+        val prevSiblingChildren = current.values.filter { it.parentUuid == prevSibling.uuid.value }
         val newPosition = if (prevSiblingChildren.isEmpty()) 0 else (prevSiblingChildren.maxOfOrNull { it.position } ?: -1) + 1
 
-        val updatedBlock = block.copy(parentUuid = prevSibling.uuid, level = block.level + 1, position = newPosition)
-        current[block.uuid] = updatedBlock
-        
-        adjustDescendantLevels(block.uuid, +1, current)
+        val updatedBlock = block.copy(parentUuid = prevSibling.uuid.value, level = block.level + 1, position = newPosition)
+        current[block.uuid.value] = updatedBlock
+
+        adjustDescendantLevels(block.uuid.value, +1, current)
 
         blocks.value = current
         return Unit.right()
     }
 
-    override suspend fun outdentBlock(blockUuid: String): Either<DomainError, Unit> {
+    override suspend fun outdentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> {
         val current = blocks.value.toMutableMap()
-        val block = current[blockUuid] ?: return Unit.right()
+        val block = current[blockUuid.value] ?: return Unit.right()
         val parentUuid = block.parentUuid ?: return Unit.right() // Already at root
 
         val parent = current[parentUuid] ?: return Unit.right()
@@ -281,132 +309,136 @@ class InMemoryBlockRepository : BlockRepository {
             .filter { it.pageUuid == block.pageUuid && it.parentUuid == grandParentUuid }
             .sortedBy { it.position }
 
-        val parentInGrandchildren = grandparentChildren.find { it.uuid == parentUuid }
+        val parentInGrandchildren = grandparentChildren.find { it.uuid.value == parentUuid }
         val newPosition = (parentInGrandchildren?.position ?: -1) + 1
 
         // Shift grandparent's children at or after newPosition to make room
         for (sibling in grandparentChildren) {
             if (sibling.position >= newPosition) {
-                current[sibling.uuid] = sibling.copy(position = sibling.position + 1)
+                current[sibling.uuid.value] = sibling.copy(position = sibling.position + 1)
             }
         }
-        
+
         val updatedBlock = block.copy(parentUuid = grandParentUuid, level = parent.level, position = newPosition)
-        current[block.uuid] = updatedBlock
-        
+        current[block.uuid.value] = updatedBlock
+
         val levelDelta = parent.level - block.level
         if (levelDelta != 0) {
-            adjustDescendantLevels(block.uuid, levelDelta, current)
+            adjustDescendantLevels(block.uuid.value, levelDelta, current)
         }
 
         blocks.value = current
         return Unit.right()
     }
 
-    override suspend fun moveBlockUp(blockUuid: String): Either<DomainError, Unit> {
+    override suspend fun moveBlockUp(blockUuid: BlockUuid): Either<DomainError, Unit> {
         val current = blocks.value.toMutableMap()
-        val block = current[blockUuid] ?: return Unit.right()
+        val block = current[blockUuid.value] ?: return Unit.right()
 
         val siblings = current.values
             .filter { it.pageUuid == block.pageUuid && it.parentUuid == block.parentUuid }
             .sortedBy { it.position }
 
-        val blockIndex = siblings.indexOfFirst { it.uuid == blockUuid }
+        val blockIndex = siblings.indexOfFirst { it.uuid.value == blockUuid.value }
         if (blockIndex <= 0) return Unit.right()
 
         val prevSibling = siblings[blockIndex - 1]
-        current[block.uuid] = block.copy(position = prevSibling.position)
-        current[prevSibling.uuid] = prevSibling.copy(position = block.position)
-        
+        current[block.uuid.value] = block.copy(position = prevSibling.position)
+        current[prevSibling.uuid.value] = prevSibling.copy(position = block.position)
+
         blocks.value = current
         return Unit.right()
     }
 
-    override suspend fun moveBlockDown(blockUuid: String): Either<DomainError, Unit> {
+    override suspend fun moveBlockDown(blockUuid: BlockUuid): Either<DomainError, Unit> {
         val current = blocks.value.toMutableMap()
-        val block = current[blockUuid] ?: return Unit.right()
+        val block = current[blockUuid.value] ?: return Unit.right()
 
         val siblings = current.values
             .filter { it.pageUuid == block.pageUuid && it.parentUuid == block.parentUuid }
             .sortedBy { it.position }
 
-        val blockIndex = siblings.indexOfFirst { it.uuid == blockUuid }
+        val blockIndex = siblings.indexOfFirst { it.uuid.value == blockUuid.value }
         if (blockIndex < 0 || blockIndex >= siblings.size - 1) return Unit.right()
 
         val nextSibling = siblings[blockIndex + 1]
-        current[block.uuid] = block.copy(position = nextSibling.position)
-        current[nextSibling.uuid] = nextSibling.copy(position = block.position)
-        
+        current[block.uuid.value] = block.copy(position = nextSibling.position)
+        current[nextSibling.uuid.value] = nextSibling.copy(position = block.position)
+
         blocks.value = current
         return Unit.right()
     }
 
-    override suspend fun mergeBlocks(blockUuid: String, nextBlockUuid: String, separator: String): Either<DomainError, Unit> {
+    override suspend fun mergeBlocks(blockUuid: BlockUuid, nextBlockUuid: BlockUuid, separator: String): Either<DomainError, Unit> {
         val current = blocks.value.toMutableMap()
-        val blockA = current[blockUuid] ?: return Unit.right()
-        val blockB = current[nextBlockUuid] ?: return Unit.right()
-        
+        val blockA = current[blockUuid.value] ?: return Unit.right()
+        val blockB = current[nextBlockUuid.value] ?: return Unit.right()
+
         // 1. Update content of block A
-        current[blockUuid] = blockA.copy(content = blockA.content + separator + blockB.content)
-        
+        current[blockUuid.value] = blockA.copy(content = blockA.content + separator + blockB.content)
+
         // 2. Reparent children of block B to block A
-        val childrenOfB = current.values.filter { it.parentUuid == blockB.uuid }.sortedBy { it.position }
-        val lastChildOfA = current.values.filter { it.parentUuid == blockA.uuid }.maxByOrNull { it.position }
+        val childrenOfB = current.values.filter { it.parentUuid == blockB.uuid.value }.sortedBy { it.position }
+        val lastChildOfA = current.values.filter { it.parentUuid == blockA.uuid.value }.maxByOrNull { it.position }
         var nextPosition = (lastChildOfA?.position ?: -1) + 1
-        
+
         val targetLevelForChildren = blockA.level + 1
-        
+
         for (child in childrenOfB) {
             val levelDelta = targetLevelForChildren - child.level
             val updatedChild = child.copy(
-                parentUuid = blockA.uuid,
+                parentUuid = blockA.uuid.value,
                 position = nextPosition++,
                 level = targetLevelForChildren
             )
-            current[child.uuid] = updatedChild
+            current[child.uuid.value] = updatedChild
             // Recursively adjust levels for this child's descendants
             if (levelDelta != 0) {
-                adjustDescendantLevels(child.uuid, levelDelta, current)
+                adjustDescendantLevels(child.uuid.value, levelDelta, current)
             }
         }
-        
+
         // 3. Remove block B
-        current.remove(nextBlockUuid)
-        
+        current.remove(nextBlockUuid.value)
+
         // Repair sibling positions after deletion
-        repairSiblingPositions(current, blockA.pageUuid, blockA.parentUuid)
-        
+        repairSiblingPositions(current, blockA.pageUuid.value, blockA.parentUuid)
+
         blocks.value = current
         return Unit.right()
     }
 
-    override suspend fun splitBlock(blockUuid: String, cursorPosition: Int): Either<DomainError, Block> {
+    override suspend fun splitBlock(
+        blockUuid: BlockUuid,
+        cursorPosition: Int,
+        newBlockUuid: BlockUuid?,
+    ): Either<DomainError, Block> {
         val current = blocks.value.toMutableMap()
-        val block = current[blockUuid] ?: return DomainError.DatabaseError.WriteFailed("Block not found").left()
-        
+        val block = current[blockUuid.value] ?: return DomainError.DatabaseError.WriteFailed("Block not found").left()
+
         val firstPart = block.content.substring(0, cursorPosition).trim()
         val secondPart = block.content.substring(cursorPosition).trim()
-        
+
         val updatedBlock = block.copy(content = firstPart)
         val newPosition = block.position + 1
-        
+
         // Shift following siblings
         val siblings = current.values.filter { it.pageUuid == block.pageUuid && it.parentUuid == block.parentUuid }
         for (sibling in siblings) {
             if (sibling.position >= newPosition) {
-                current[sibling.uuid] = sibling.copy(position = sibling.position + 1)
+                current[sibling.uuid.value] = sibling.copy(position = sibling.position + 1)
             }
         }
 
         val newBlock = block.copy(
-            uuid = dev.stapler.stelekit.util.UuidGenerator.generateV7(),
+            uuid = newBlockUuid ?: BlockUuid(dev.stapler.stelekit.util.UuidGenerator.generateV7()),
             content = secondPart,
             position = newPosition,
             level = block.level // New block must be at the same level
         )
-        
-        current[blockUuid] = updatedBlock
-        current[newBlock.uuid] = newBlock
+
+        current[blockUuid.value] = updatedBlock
+        current[newBlock.uuid.value] = newBlock
         blocks.value = current
         return newBlock.right()
     }
@@ -419,13 +451,13 @@ class InMemoryBlockRepository : BlockRepository {
     ) {
         if (parentUuid in visited) return
         visited.add(parentUuid)
-        
+
         val children = current.values.filter { it.parentUuid == parentUuid }
         for (child in children) {
             val newLevel = child.level + delta
             if (newLevel >= 0) {
-                current[child.uuid] = child.copy(level = newLevel)
-                adjustDescendantLevels(child.uuid, delta, current, visited)
+                current[child.uuid.value] = child.copy(level = newLevel)
+                adjustDescendantLevels(child.uuid.value, delta, current, visited)
             }
         }
     }
@@ -437,7 +469,7 @@ class InMemoryBlockRepository : BlockRepository {
             val linkedBlocks = map.values.filter { block ->
                 wikiLinkPattern.containsMatchIn(block.content)
             }
-            linkedBlocks.sortedBy { it.pageUuid }.right()
+            linkedBlocks.sortedBy { it.pageUuid.value }.right()
         }
     }
 
@@ -448,7 +480,7 @@ class InMemoryBlockRepository : BlockRepository {
             val linkedBlocks = map.values.filter { block ->
                 wikiLinkPattern.containsMatchIn(block.content)
             }
-            linkedBlocks.sortedBy { it.pageUuid }.drop(offset).take(limit).right()
+            linkedBlocks.sortedBy { it.pageUuid.value }.drop(offset).take(limit).right()
         }
     }
 
@@ -461,7 +493,7 @@ class InMemoryBlockRepository : BlockRepository {
                 plainTextPattern.containsMatchIn(block.content) &&
                     !wikiLinkPattern.containsMatchIn(block.content)
             }
-            unlinkedBlocks.sortedBy { it.pageUuid }.right()
+            unlinkedBlocks.sortedBy { it.pageUuid.value }.right()
         }
     }
 
@@ -474,7 +506,7 @@ class InMemoryBlockRepository : BlockRepository {
                 plainTextPattern.containsMatchIn(block.content) &&
                     !wikiLinkPattern.containsMatchIn(block.content)
             }
-            unlinkedBlocks.sortedBy { it.pageUuid }.drop(offset).take(limit).right()
+            unlinkedBlocks.sortedBy { it.pageUuid.value }.drop(offset).take(limit).right()
         }
     }
 
@@ -483,7 +515,7 @@ class InMemoryBlockRepository : BlockRepository {
             val matchingBlocks = map.values.filter { block ->
                 block.content.contains(query, ignoreCase = true)
             }
-            matchingBlocks.sortedBy { it.pageUuid }.drop(offset).take(limit).right()
+            matchingBlocks.sortedBy { it.pageUuid.value }.drop(offset).take(limit).right()
         }
     }
 
@@ -499,7 +531,7 @@ class InMemoryBlockRepository : BlockRepository {
                     candidates.groupBy { it.content }
                         .filter { it.value.size > 1 }
                         .map { (_, trueGroup) ->
-                            DuplicateGroup(contentHash = hash, blocks = trueGroup, count = trueGroup.size)
+                            DuplicateGroup(contentHash = hash, blocks = trueGroup)
                         }
                 }
                 .flatten()
@@ -512,12 +544,6 @@ class InMemoryBlockRepository : BlockRepository {
 @OptIn(DirectRepositoryWrite::class)
 class InMemoryPageRepository : PageRepository {
     private val pages = MutableStateFlow<Map<String, Page>>(emptyMap())
-
-    override fun getAllPages(): Flow<Either<DomainError, List<Page>>> {
-        return pages.map { map ->
-            map.values.toList().right()
-        }
-    }
 
     override fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
@@ -543,6 +569,40 @@ class InMemoryPageRepository : PageRepository {
         }
     }
 
+    override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> {
+        return pages.map { map ->
+            map.values.filter { it.isFavorite }.sortedBy { it.name }.right()
+        }
+    }
+
+    override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
+        return pages.map { map ->
+            map.values.filter { !it.isContentLoaded }
+                .sortedBy { it.uuid.value }.drop(offset).take(limit).right()
+        }
+    }
+
+    override suspend fun countUnloadedPages(): Either<DomainError, Long> =
+        pages.value.values.count { !it.isContentLoaded }.toLong().right()
+
+    override fun getPageNameEntries(): Flow<Either<DomainError, List<PageNameEntry>>> {
+        return pages.map { map ->
+            map.values.map { PageNameEntry(it.name, it.isJournal) }.right()
+        }
+    }
+
+    override suspend fun getPagesByNames(names: Collection<String>): Either<DomainError, List<Page>> {
+        val lower = names.mapTo(HashSet()) { it.lowercase() }
+        return pages.value.values.filter { it.name.lowercase() in lower }.right()
+    }
+
+    override suspend fun getJournalPagesByDates(
+        dates: Collection<kotlinx.datetime.LocalDate>,
+    ): Either<DomainError, List<Page>> {
+        val dateSet = dates.toHashSet()
+        return pages.value.values.filter { it.journalDate != null && it.journalDate in dateSet }.right()
+    }
+
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> {
         return pages.map { map ->
             val journals = map.values
@@ -560,9 +620,9 @@ class InMemoryPageRepository : PageRepository {
         }
     }
 
-    override fun getPageByUuid(uuid: String): Flow<Either<DomainError, Page?>> {
+    override fun getPageByUuid(uuid: PageUuid): Flow<Either<DomainError, Page?>> {
         return pages.map { map ->
-            map[uuid].right()
+            map[uuid.value].right()
         }
     }
 
@@ -582,45 +642,39 @@ class InMemoryPageRepository : PageRepository {
         }
     }
 
-    override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> {
-        return pages.map { map ->
-            map.values.filter { !it.isContentLoaded }.right()
-        }
-    }
-
     override suspend fun savePage(page: Page): Either<DomainError, Unit> {
         val current = pages.value.toMutableMap()
-        current[page.uuid] = page
+        current[page.uuid.value] = page
         pages.value = current
         return Unit.right()
     }
 
     override suspend fun savePages(pageList: List<Page>): Either<DomainError, Unit> {
         val current = pages.value.toMutableMap()
-        pageList.forEach { current[it.uuid] = it }
+        pageList.forEach { current[it.uuid.value] = it }
         pages.value = current
         return Unit.right()
     }
 
-    override suspend fun deletePage(pageUuid: String): Either<DomainError, Unit> {
+    override suspend fun deletePage(pageUuid: PageUuid): Either<DomainError, Unit> {
         val current = pages.value.toMutableMap()
-        current.remove(pageUuid)
+        current.remove(pageUuid.value)
         pages.value = current
         return Unit.right()
     }
 
-    override suspend fun renamePage(pageUuid: String, newName: String): Either<DomainError, Unit> {
+    override suspend fun renamePage(pageUuid: PageUuid, newName: String): Either<DomainError, Unit> {
         val current = pages.value.toMutableMap()
-        val page = current[pageUuid] ?: return DomainError.DatabaseError.WriteFailed("Page not found").left()
-        current[pageUuid] = page.copy(name = newName, updatedAt = kotlin.time.Clock.System.now())
+        val page = current[pageUuid.value] ?: return DomainError.DatabaseError.WriteFailed("Page not found").left()
+        current[pageUuid.value] = page.copy(name = newName, updatedAt = kotlin.time.Clock.System.now())
         pages.value = current
         return Unit.right()
     }
 
-    override suspend fun toggleFavorite(pageUuid: String): Either<DomainError, Unit> {
+    override suspend fun toggleFavorite(pageUuid: PageUuid): Either<DomainError, Unit> {
         val current = pages.value.toMutableMap()
-        val page = current[pageUuid] ?: return DomainError.DatabaseError.WriteFailed("Page not found").left()
-        current[pageUuid] = page.copy(isFavorite = !page.isFavorite)
+        val page = current[pageUuid.value] ?: return DomainError.DatabaseError.WriteFailed("Page not found").left()
+        current[pageUuid.value] = page.copy(isFavorite = !page.isFavorite)
         pages.value = current
         return Unit.right()
     }
@@ -636,21 +690,21 @@ class InMemoryPageRepository : PageRepository {
 
 @OptIn(DirectRepositoryWrite::class)
 class InMemoryPropertyRepository : PropertyRepository {
-    override fun getPropertiesForBlock(blockUuid: String): Flow<Either<DomainError, List<Property>>> = flowOf(emptyList<Property>().right())
-    override fun getProperty(blockUuid: String, key: String): Flow<Either<DomainError, Property?>> = flowOf((null as Property?).right())
+    override fun getPropertiesForBlock(blockUuid: BlockUuid): Flow<Either<DomainError, List<Property>>> = flowOf(emptyList<Property>().right())
+    override fun getProperty(blockUuid: BlockUuid, key: String): Flow<Either<DomainError, Property?>> = flowOf((null as Property?).right())
     override suspend fun saveProperty(property: Property): Either<DomainError, Unit> = Unit.right()
-    override suspend fun deleteProperty(blockUuid: String, key: String): Either<DomainError, Unit> = Unit.right()
+    override suspend fun deleteProperty(blockUuid: BlockUuid, key: String): Either<DomainError, Unit> = Unit.right()
     override fun getBlocksWithPropertyKey(key: String): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
     override fun getBlocksWithPropertyValue(key: String, value: String): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
 }
 
 @OptIn(DirectRepositoryWrite::class)
 class InMemoryReferenceRepository : ReferenceRepository {
-    override fun getOutgoingReferences(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
-    override fun getIncomingReferences(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
-    override fun getAllReferences(blockUuid: String): Flow<Either<DomainError, BlockReferences>> = flowOf(BlockReferences(emptyList(), emptyList()).right())
-    override suspend fun addReference(fromBlockUuid: String, toBlockUuid: String): Either<DomainError, Unit> = Unit.right()
-    override suspend fun removeReference(fromBlockUuid: String, toBlockUuid: String): Either<DomainError, Unit> = Unit.right()
+    override fun getOutgoingReferences(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
+    override fun getIncomingReferences(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
+    override fun getAllReferences(blockUuid: BlockUuid): Flow<Either<DomainError, BlockReferences>> = flowOf(BlockReferences(emptyList(), emptyList()).right())
+    override suspend fun addReference(fromBlockUuid: BlockUuid, toBlockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()
+    override suspend fun removeReference(fromBlockUuid: BlockUuid, toBlockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()
     override fun getOrphanedBlocks(): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
     override fun getMostConnectedBlocks(limit: Int): Flow<Either<DomainError, List<BlockWithReferenceCount>>> = flowOf(emptyList<BlockWithReferenceCount>().right())
 }
@@ -666,15 +720,21 @@ class InMemorySearchRepository(
 
     override fun searchPagesByTitle(query: String, limit: Int): Flow<Either<DomainError, List<Page>>> {
         if (pageRepository == null || query.isEmpty()) return flowOf(emptyList<Page>().right())
-        return pageRepository.getAllPages().map { res ->
-            res.map { pages ->
-                pages.filter { it.name.contains(query, ignoreCase = true) || it.properties["alias"]?.contains(query, ignoreCase = true) == true }
-                    .take(limit)
-            }
+        // Test backend: one-shot bounded-batch snapshot (the alias-property filter has no
+        // SQL equivalent here). Production search uses FTS-backed repositories.
+        return flow {
+            emit(
+                pageRepository.getAllPagesSnapshot().map { pages ->
+                    pages.filter {
+                        it.name.contains(query, ignoreCase = true) ||
+                            it.properties["alias"]?.contains(query, ignoreCase = true) == true
+                    }.take(limit)
+                }
+            )
         }
     }
 
-    override fun findBlocksReferencing(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
+    override fun findBlocksReferencing(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flowOf(emptyList<Block>().right())
 
     override fun searchWithFilters(searchRequest: SearchRequest): Flow<Either<DomainError, SearchResult>> {
         if (searchRequest.query == null) return flowOf(SearchResult(emptyList(), emptyList(), totalCount = 0, hasMore = false).right())
@@ -689,8 +749,8 @@ class InMemorySearchRepository(
     internal val visitMap: MutableMap<String, Long> = mutableMapOf()
 
     @DirectRepositoryWrite
-    override suspend fun recordPageVisit(pageUuid: String): Either<DomainError, Unit> {
-        visitMap[pageUuid] = kotlin.time.Clock.System.now().toEpochMilliseconds()
+    override suspend fun recordPageVisit(pageUuid: PageUuid): Either<DomainError, Unit> {
+        visitMap[pageUuid.value] = kotlin.time.Clock.System.now().toEpochMilliseconds()
         return Unit.right()
     }
 

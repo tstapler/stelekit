@@ -17,6 +17,6 @@ fun Whiteboard(id: String) {
             .background(MaterialTheme.colorScheme.surface),
         contentAlignment = Alignment.Center
     ) {
-        Text("Whiteboard Placeholder: $id")
+        Text("Whiteboard Placeholder: $id", color = MaterialTheme.colorScheme.onSurface)
     }
 }

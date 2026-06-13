@@ -8,11 +8,15 @@ config:
 # Custom SteleKit rules (compiled from buildSrc)
 stelekit:
   active: true
+  InMemoryPagination:
+    active: true
   RegexInLambda:
     active: true
   MissingDirectRepositoryWrite:
     active: true
   RepositoryWriteCallSite:
+    active: true
+  ClassLevelDirectRepositoryWriteOptIn:
     active: true
   SaveBlockWithCopy:
     active: true
@@ -20,6 +24,13 @@ stelekit:
     active: true
   RememberKeyForConstructorArgs:
     active: true
+  NoRunBlockingInLifecycle:
+    active: true
+  UnthemedTextInBackgroundContainer:
+    active: true
+  MustUseTypedLazyItems:
+    active: true
+    excludes: ['**/TypedLazyItems.kt', '**/*Test.kt', '**/test/**', '**/*Spec.kt']
 
 # Compose Multiplatform rules (io.nlopez.compose.rules)
 Compose:

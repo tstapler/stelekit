@@ -20,6 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.ui.components.asLazyKey
+import dev.stapler.stelekit.ui.components.typedItems
 import dev.stapler.stelekit.performance.NavigationTracingEffect
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -187,21 +189,21 @@ fun AllPagesScreen(
             }
             else -> {
                 LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(items = pages, key = { it.page.uuid }) { row ->
+                    typedItems(items = pages, key = { it.page.uuid.asLazyKey() }) { row ->
                         PageRowItem(
                             row = row,
-                            isSelected = row.page.uuid in selectedUuids,
+                            isSelected = row.page.uuid.value in selectedUuids,
                             isInSelectionMode = isInSelectionMode,
-                            onToggleSelection = { viewModel.toggleSelection(row.page.uuid) },
+                            onToggleSelection = { viewModel.toggleSelection(row.page.uuid.value) },
                             onClick = {
                                 if (isInSelectionMode) {
-                                    viewModel.toggleSelection(row.page.uuid)
+                                    viewModel.toggleSelection(row.page.uuid.value)
                                 } else {
                                     onPageClick(row.page)
                                 }
                             },
                             onLongClick = {
-                                viewModel.toggleSelection(row.page.uuid)
+                                viewModel.toggleSelection(row.page.uuid.value)
                             }
                         )
                         HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)

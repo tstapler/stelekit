@@ -9,6 +9,8 @@ import dev.stapler.stelekit.db.Blocks
 import dev.stapler.stelekit.db.SelectMostConnectedBlocks
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -29,9 +31,9 @@ class SqlDelightReferenceRepository(
 
     private val queries = database.steleDatabaseQueries
 
-    override fun getOutgoingReferences(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flow {
+    override fun getOutgoingReferences(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flow {
         try {
-            val results = queries.selectOutgoingReferences(blockUuid).executeAsList().map { it.toBlockModel() }
+            val results = queries.selectOutgoingReferences(blockUuid.value).executeAsList().map { it.toBlockModel() }
             emit(results.right())
         } catch (e: CancellationException) {
             throw e
@@ -40,9 +42,9 @@ class SqlDelightReferenceRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getIncomingReferences(blockUuid: String): Flow<Either<DomainError, List<Block>>> = flow {
+    override fun getIncomingReferences(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flow {
         try {
-            val results = queries.selectIncomingReferences(blockUuid).executeAsList().map { it.toBlockModel() }
+            val results = queries.selectIncomingReferences(blockUuid.value).executeAsList().map { it.toBlockModel() }
             emit(results.right())
         } catch (e: CancellationException) {
             throw e
@@ -51,10 +53,10 @@ class SqlDelightReferenceRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getAllReferences(blockUuid: String): Flow<Either<DomainError, BlockReferences>> = flow {
+    override fun getAllReferences(blockUuid: BlockUuid): Flow<Either<DomainError, BlockReferences>> = flow {
         try {
-            val outgoing = queries.selectOutgoingReferences(blockUuid).executeAsList().map { it.toBlockModel() }
-            val incoming = queries.selectIncomingReferences(blockUuid).executeAsList().map { it.toBlockModel() }
+            val outgoing = queries.selectOutgoingReferences(blockUuid.value).executeAsList().map { it.toBlockModel() }
+            val incoming = queries.selectIncomingReferences(blockUuid.value).executeAsList().map { it.toBlockModel() }
             emit(BlockReferences(outgoing, incoming).right())
         } catch (e: CancellationException) {
             throw e
@@ -63,10 +65,10 @@ class SqlDelightReferenceRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override suspend fun addReference(fromBlockUuid: String, toBlockUuid: String): Either<DomainError, Unit> =
+    override suspend fun addReference(fromBlockUuid: BlockUuid, toBlockUuid: BlockUuid): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {
             try {
-                queries.insertBlockReference(fromBlockUuid, toBlockUuid, Clock.System.now().toEpochMilliseconds())
+                queries.insertBlockReference(fromBlockUuid.value, toBlockUuid.value, Clock.System.now().toEpochMilliseconds())
                 Unit.right()
             } catch (e: CancellationException) {
                 throw e
@@ -75,10 +77,10 @@ class SqlDelightReferenceRepository(
             }
         }
 
-    override suspend fun removeReference(fromBlockUuid: String, toBlockUuid: String): Either<DomainError, Unit> =
+    override suspend fun removeReference(fromBlockUuid: BlockUuid, toBlockUuid: BlockUuid): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {
             try {
-                queries.deleteBlockReference(fromBlockUuid, toBlockUuid)
+                queries.deleteBlockReference(fromBlockUuid.value, toBlockUuid.value)
                 Unit.right()
             } catch (e: CancellationException) {
                 throw e
@@ -125,8 +127,8 @@ class SqlDelightReferenceRepository(
         updatedAt: Long,
         version: Long?,
     ): Block = Block(
-        uuid = uuid,
-        pageUuid = pageUuid,
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid(pageUuid),
         parentUuid = parentUuid,
         leftUuid = leftUuid,
         content = content,

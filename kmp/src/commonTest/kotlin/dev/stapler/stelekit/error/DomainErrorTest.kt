@@ -27,6 +27,7 @@ class DomainErrorTest {
             DomainError.NetworkError.HttpError(404, "not found"),
             DomainError.NetworkError.CircuitOpen(),
             DomainError.NetworkError.Timeout("timeout"),
+            DomainError.NetworkError.RequestFailed("request failed"),
             DomainError.GitError.CloneFailed("clone"),
             DomainError.GitError.FetchFailed("fetch"),
             DomainError.GitError.PushFailed("push"),
@@ -39,6 +40,14 @@ class DomainErrorTest {
             DomainError.GitError.NotSupported("iOS"),
             DomainError.GitError.Offline,
             DomainError.GitError.EditingInProgress,
+            DomainError.BleError.ConnectionFailed("ble connect"),
+            DomainError.BleError.Gatt133(3, "gatt error"),
+            DomainError.SensorError.PermissionDenied("camera"),
+            DomainError.SensorError.HardwareUnavailable("lidar"),
+            DomainError.SensorError.CaptureFailed("capture failed"),
+            DomainError.ExportError.SerializationFailed("serialization failed"),
+            DomainError.ExportError.ClipboardFailed("clipboard failed"),
+            DomainError.ExportError.ShareFailed("share failed"),
         )
         for (err in errors) {
             // exhaustive when — compile error if any branch is missing
@@ -62,6 +71,7 @@ class DomainErrorTest {
                 is DomainError.NetworkError.HttpError -> err.message
                 is DomainError.NetworkError.CircuitOpen -> err.message
                 is DomainError.NetworkError.Timeout -> err.message
+                is DomainError.NetworkError.RequestFailed -> err.message
                 is DomainError.GitError.CloneFailed -> err.message
                 is DomainError.GitError.FetchFailed -> err.message
                 is DomainError.GitError.PushFailed -> err.message
@@ -74,6 +84,18 @@ class DomainErrorTest {
                 is DomainError.GitError.NotSupported -> err.message
                 DomainError.GitError.Offline -> err.message
                 DomainError.GitError.EditingInProgress -> err.message
+                is DomainError.GitError.CredentialExpired -> err.message
+                is DomainError.AttachmentError.CopyFailed -> err.message
+                is DomainError.AttachmentError.PickerFailed -> err.message
+                is DomainError.AttachmentError.AssetsDirectoryFailed -> err.message
+                is DomainError.SensorError.PermissionDenied -> err.message
+                is DomainError.SensorError.HardwareUnavailable -> err.message
+                is DomainError.SensorError.CaptureFailed -> err.message
+                is DomainError.BleError.ConnectionFailed -> err.message
+                is DomainError.BleError.Gatt133 -> err.message
+                is DomainError.ExportError.ClipboardFailed -> err.message
+                is DomainError.ExportError.SerializationFailed -> err.message
+                is DomainError.ExportError.ShareFailed -> err.message
             }
             assert(msg.isNotEmpty()) { "Expected non-empty message for $err" }
         }
@@ -126,6 +148,18 @@ class DomainErrorTest {
             DomainError.GitError.NotSupported("iOS"),
             DomainError.GitError.Offline,
             DomainError.GitError.EditingInProgress,
+            DomainError.NetworkError.RequestFailed("req failed"),
+            DomainError.AttachmentError.CopyFailed("copy"),
+            DomainError.AttachmentError.PickerFailed("picker"),
+            DomainError.AttachmentError.AssetsDirectoryFailed("assets"),
+            DomainError.SensorError.PermissionDenied("camera"),
+            DomainError.SensorError.HardwareUnavailable("lidar"),
+            DomainError.SensorError.CaptureFailed("capture"),
+            DomainError.BleError.ConnectionFailed("ble connect"),
+            DomainError.BleError.Gatt133(3, "gatt error"),
+            DomainError.ExportError.ClipboardFailed("clipboard failed"),
+            DomainError.ExportError.SerializationFailed("serialization failed"),
+            DomainError.ExportError.ShareFailed("share failed"),
         )
         for (err in errors) {
             assert(err.toUiMessage().isNotEmpty()) { "Expected non-empty UI message for $err" }

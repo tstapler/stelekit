@@ -1,5 +1,7 @@
+@file:Suppress("InMemoryPagination") // slicing a file-path list — no SQL involved
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.outliner.JournalUtils
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.sync.Mutex
@@ -15,8 +17,8 @@ import kotlinx.coroutines.sync.withLock
  */
 class FileRegistry(private val fileSystem: FileSystem) {
 
-    private val modTimes = mutableMapOf<String, Long>()
-    private val contentHashes = mutableMapOf<String, Int>()
+    private val modTimes = mutableMapOf<FilePath, Long>()
+    private val contentHashes = mutableMapOf<FilePath, Int>()
 
     // Serializes detectChanges so concurrent callers (polling loop + ContentObserver
     // callback) cannot both read the same stale modTime and double-emit the same change.
@@ -41,7 +43,7 @@ class FileRegistry(private val fileSystem: FileSystem) {
             .filter { (name, _) -> name.endsWith(".md") || name.endsWith(".md.stek") }
             .map { (fileName, modTime) ->
                 val filePath = "$dirPath/$fileName"
-                modTimes[filePath] = modTime
+                modTimes[FilePath(filePath)] = modTime
                 // Content hashes are populated lazily by detectChanges when a file change is
                 // detected. Reading every file here to pre-populate hashes costs O(N) SAF IPC
                 // calls on Android (thousands of round-trips for large graphs), adding 15-30s
@@ -102,45 +104,57 @@ class FileRegistry(private val fileSystem: FileSystem) {
 
         for ((fileName, modTime) in currentFilesWithTimes) {
             val filePath = "$dirPath/$fileName"
+            val filePathKey = FilePath(filePath)
             currentPaths.add(filePath)
-            val lastKnown = modTimes[filePath]
+            val lastKnown = modTimes[filePathKey]
             val isEncrypted = fileName.endsWith(".md.stek")
 
             if (lastKnown == null) {
                 // New file — not in registry.
                 // Encrypted files are binary; content is read via readFileDecrypted at the call site.
                 val content = if (isEncrypted) "" else fileSystem.readFile(filePath) ?: continue
-                modTimes[filePath] = modTime
-                if (!isEncrypted) contentHashes[filePath] = content.hashCode()
+                modTimes[filePathKey] = modTime
+                if (!isEncrypted) contentHashes[filePathKey] = content.hashCode()
                 newFiles.add(ChangedFile(FileEntry(fileName, filePath, modTime), content))
             } else if (modTime > lastKnown) {
                 if (isEncrypted) {
                     // Encrypted files are binary — skip the text content-hash guard.
                     // modTime change alone is sufficient signal; markWrittenByUs keeps own-write
                     // suppression accurate via the modTimes map.
-                    modTimes[filePath] = modTime
+                    modTimes[filePathKey] = modTime
                     changedFiles.add(ChangedFile(FileEntry(fileName, filePath, modTime), ""))
                 } else {
-                    // Mod time changed — check content hash guard
+                    // Mod time changed — invalidate shadow first so readFile falls through
+                    // to the real file (SAF on Android) rather than a stale on-device cache.
+                    // On JVM, invalidateShadow is a no-op; zero cost on desktop.
+                    // markWrittenByUs stores the SAF-queried mtime so own-written files satisfy
+                    // modTime == lastKnown and never enter this branch.
+                    fileSystem.invalidateShadow(filePath)
                     val content = fileSystem.readFile(filePath) ?: continue
                     val newHash = content.hashCode()
-                    if (contentHashes[filePath] == newHash) {
+                    // hashCode() is a 32-bit guard — false-negative probability ~1/4B per file.
+                    // Accepted trade-off: one missed external edit is less harmful than per-file SHA computation on startup.
+                    if (contentHashes[filePathKey] == newHash) {
                         // Same content (our own write) — update mod time, skip
-                        modTimes[filePath] = modTime
+                        modTimes[filePathKey] = modTime
                         continue
                     }
-                    modTimes[filePath] = modTime
-                    contentHashes[filePath] = newHash
+                    modTimes[filePathKey] = modTime
+                    contentHashes[filePathKey] = newHash
                     changedFiles.add(ChangedFile(FileEntry(fileName, filePath, modTime), content))
                 }
             }
         }
 
         // Detect deleted files — currentPaths was built in the loop above, no second pass needed
-        val deletedPaths = modTimes.keys
-            .filter { it.startsWith("$dirPath/") && it !in currentPaths }
+        val deletedPathKeys = modTimes.keys
+            .filter { it.value.startsWith("$dirPath/") && it.value !in currentPaths }
             .toList()
-        deletedPaths.forEach { modTimes.remove(it); contentHashes.remove(it) }
+        deletedPathKeys.forEach { path ->
+            modTimes.remove(path)
+            contentHashes.remove(path)
+        }
+        val deletedPaths = deletedPathKeys.map { it.value }
 
         ChangeSet(newFiles, changedFiles, deletedPaths)
     }
@@ -158,25 +172,60 @@ class FileRegistry(private val fileSystem: FileSystem) {
      */
     suspend fun markWrittenByUs(filePath: String) = detectMutex.withLock {
         val modTime = fileSystem.getLastModifiedTime(filePath) ?: return@withLock
-        modTimes[filePath] = modTime
+        val filePathKey = FilePath(filePath)
+        modTimes[filePathKey] = modTime
         // Binary encrypted files cannot be read as text — modTime update alone is sufficient
         // for own-write suppression (detectChanges skips the content-hash guard for .md.stek).
         if (!filePath.endsWith(".md.stek")) {
             val content = fileSystem.readFile(filePath)
             if (content != null) {
-                contentHashes[filePath] = content.hashCode()
+                contentHashes[filePathKey] = content.hashCode()
             }
         }
     }
 
     /** Updates mod time for a file (after parseAndSavePage). */
     suspend fun updateModTime(filePath: String, modTime: Long) = detectMutex.withLock {
-        modTimes[filePath] = modTime
+        modTimes[FilePath(filePath)] = modTime
     }
 
     /** Updates content hash for a file. */
     suspend fun updateContentHash(filePath: String, contentHash: Int) = detectMutex.withLock {
-        contentHashes[filePath] = contentHash
+        contentHashes[FilePath(filePath)] = contentHash
+    }
+
+    /** Returns the stored content hash for [filePath], or null if not yet hashed. */
+    suspend fun getContentHash(filePath: FilePath): Int? = detectMutex.withLock {
+        contentHashes[filePath]
+    }
+
+    /**
+     * Marks [filePath] as a pending own-write. Prevents the watcher from treating the file as
+     * an external change during the window between this call and [markWrittenByUs].
+     *
+     * Implementation: stores sentinel value [Long.MAX_VALUE] in modTimes so that the
+     * `modTime > lastKnown` check in [detectChanges] can never be true for any real mtime.
+     * [markWrittenByUs] replaces it with the real post-write mtime.
+     *
+     * IMPORTANT: If the write fails (saga compensation runs), call [clearPendingWrite] to remove
+     * the sentinel. Without this, the file is permanently suppressed from external-change
+     * detection for the lifetime of this [FileRegistry] instance.
+     */
+    suspend fun preMarkPendingWrite(filePath: FilePath) = detectMutex.withLock {
+        modTimes[filePath] = Long.MAX_VALUE
+    }
+
+    /**
+     * Removes the pending-write sentinel for [filePath]. Must be called from saga compensation
+     * if the file write fails after [preMarkPendingWrite] was called.
+     * Restores the file to the "unknown" state so the next [detectChanges] treats it as a
+     * new/unknown file and re-scans it.
+     */
+    suspend fun clearPendingWrite(filePath: FilePath) = detectMutex.withLock {
+        // Only clear if it's still the sentinel; markWrittenByUs may have already replaced it.
+        if (modTimes[filePath] == Long.MAX_VALUE) {
+            modTimes.remove(filePath)
+        }
     }
 
     // ---- Cleanup ----

@@ -170,7 +170,7 @@ class SearchViewModel(
 
         searchJob?.cancel()
         if (query.isBlank()) {
-            _uiState.update { it.copy(results = emptyList(), isLoading = false, isSkeletonVisible = false) }
+            _uiState.update { it.copy(results = emptyList(), isLoading = false, isSkeletonVisible = false, isLoadingBlocks = false) }
             return
         }
 
@@ -200,7 +200,7 @@ class SearchViewModel(
                         val items = mutableListOf<SearchResultItem>()
 
                         // Build a page name map from all pages in the result for block breadcrumbs
-                        val pageNameMap: Map<String, String> = searchResult.pages.associate { it.uuid to it.name }
+                        val pageNameMap: Map<String, String> = searchResult.pages.associate { it.uuid.value to it.name }
 
                         // Pages section — prefer searchedPages (with snippets) if available
                         val pagedItems = if (searchResult.searchedPages.isNotEmpty()) {
@@ -234,14 +234,14 @@ class SearchViewModel(
                                 SearchResultItem.BlockItem(
                                     block = sb.block,
                                     snippet = sb.snippet,
-                                    breadcrumb = pageNameMap[sb.block.pageUuid]
+                                    breadcrumb = pageNameMap[sb.block.pageUuid.value]
                                 )
                             }
                         } else {
                             searchResult.blocks.map { block ->
                                 SearchResultItem.BlockItem(
                                     block = block,
-                                    breadcrumb = pageNameMap[block.pageUuid]
+                                    breadcrumb = pageNameMap[block.pageUuid.value]
                                 )
                             }
                         }
@@ -255,14 +255,14 @@ class SearchViewModel(
                                 it is SearchResultItem.PageItem &&
                                     it.page.name.equals(query, ignoreCase = true)
                             }
-                            val withCreate = if (!exactPageMatch && query.isNotBlank()) {
+                            val withCreate = if (!exactPageMatch && query.isNotBlank() && !searchResult.hasMore) {
                                 listOf(SearchResultItem.CreatePageItem(query)) + items
                             } else {
                                 items
                             }
 
-                            // Record in recent queries when results are non-empty
-                            val recentQueries = if (items.isNotEmpty()) {
+                            // Record in recent queries when final results are non-empty
+                            val recentQueries = if (items.isNotEmpty() && !searchResult.hasMore) {
                                 val updated = (listOf(query) + state.recentQueries)
                                     .distinct()
                                     .take(MAX_RECENT_QUERIES)
@@ -275,17 +275,18 @@ class SearchViewModel(
                                 results = withCreate,
                                 isLoading = false,
                                 isSkeletonVisible = false,
+                                isLoadingBlocks = searchResult.hasMore,
                                 recentQueries = recentQueries
                             )
                         }
                     } else {
-                        _uiState.update { it.copy(isLoading = false, isSkeletonVisible = false, error = "Search failed") }
+                        _uiState.update { it.copy(isLoading = false, isSkeletonVisible = false, isLoadingBlocks = false, error = "Search failed") }
                     }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, isSkeletonVisible = false, error = e.message) }
+                _uiState.update { it.copy(isLoading = false, isSkeletonVisible = false, isLoadingBlocks = false, error = e.message) }
             }
         }
     }
@@ -302,11 +303,11 @@ class SearchViewModel(
             delay(150)
             val preview: PreviewPanelContent = when (val item = list[index]) {
                 is SearchResultItem.PageItem -> PreviewPanelContent.PagePreview(
-                    pageUuid = item.page.uuid,
+                    pageUuid = item.page.uuid.value,
                     pageTitle = item.page.name
                 )
                 is SearchResultItem.BlockItem -> PreviewPanelContent.BlockPreview(
-                    blockUuid = item.block.uuid,
+                    blockUuid = item.block.uuid.value,
                     pageTitle = item.breadcrumb ?: "Unknown",
                     blockSnippet = item.block.content.take(200)
                 )
@@ -341,6 +342,7 @@ data class SearchUiState(
     val results: List<SearchResultItem> = emptyList(),
     val isLoading: Boolean = false,
     val isSkeletonVisible: Boolean = false,
+    val isLoadingBlocks: Boolean = false,
     val error: String? = null,
     val scope: SearchScope = SearchScope.ALL,
     val recentQueries: List<String> = emptyList(),

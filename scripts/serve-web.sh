@@ -9,6 +9,6 @@ echo "Building wasmJs distribution..."
 
 DIST="$ROOT/kmp/build/dist/wasmJs/productionExecutable"
 echo ""
-echo "Starting local server at http://localhost:8787"
+echo "Starting local server at http://localhost:8765"
 echo "Serving: $DIST"
-DEMO_DIST="$DIST" node e2e/server.mjs
+PORT=8765 DEMO_DIST="$DIST" node e2e/server.mjs

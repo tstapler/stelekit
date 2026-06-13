@@ -5,6 +5,7 @@
 package dev.stapler.stelekit.ui.screens
 
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.fixtures.FakeBlockRepository
 import dev.stapler.stelekit.ui.fixtures.FakePageRepository
 import kotlin.test.Test
@@ -26,7 +27,7 @@ class AllPagesViewModelTest {
     ): Page {
         val now = Clock.System.now()
         return Page(
-            uuid = uuid,
+            uuid = PageUuid(uuid),
             name = name,
             createdAt = now,
             updatedAt = now,

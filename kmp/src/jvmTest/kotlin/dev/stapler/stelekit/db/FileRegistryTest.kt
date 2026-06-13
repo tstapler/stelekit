@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.platform.FileSystem
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -45,6 +46,46 @@ class FileRegistryTest {
         override fun getLastModifiedTime(path: String) = files[path]?.modTime
 
         /** Simulate an external write (bumps modtime like a real FS would). */
+        fun externalWrite(path: String, content: String) {
+            val existing = files[path]
+            val newMod = (existing?.modTime ?: 0L) + 1000L
+            files[path] = FakeFile(content, newMod)
+        }
+    }
+
+    // ── Fake filesystem with shadow layer ────────────────────────────────────
+
+    private class FakeFsWithShadow(
+        val files: MutableMap<String, FakeFile> = mutableMapOf(),
+        val shadowMap: MutableMap<String, String> = mutableMapOf()
+    ) : FileSystem {
+        override fun getDefaultGraphPath() = "/graph"
+        override fun expandTilde(path: String) = path
+        override fun readFile(path: String): String? = shadowMap[path] ?: files[path]?.content
+        override fun writeFile(path: String, content: String): Boolean {
+            val existing = files[path]
+            val newMod = (existing?.modTime ?: 0L) + 1000L
+            files[path] = FakeFile(content, newMod)
+            return true
+        }
+        override fun listFiles(path: String) =
+            files.keys.filter { it.startsWith("$path/") }.map { it.substringAfterLast("/") }
+        override fun listDirectories(path: String) = emptyList<String>()
+        override fun fileExists(path: String) = files.containsKey(path)
+        override fun directoryExists(path: String) = true
+        override fun createDirectory(path: String) = true
+        override fun deleteFile(path: String): Boolean { files.remove(path); return true }
+        override fun pickDirectory() = null
+        override fun getLastModifiedTime(path: String) = files[path]?.modTime
+        override fun invalidateShadow(path: String) { shadowMap.remove(path) }
+
+        fun ownWrite(path: String, content: String) {
+            val existing = files[path]
+            val newMod = (existing?.modTime ?: 0L) + 1000L
+            files[path] = FakeFile(content, newMod)
+            shadowMap[path] = content
+        }
+
         fun externalWrite(path: String, content: String) {
             val existing = files[path]
             val newMod = (existing?.modTime ?: 0L) + 1000L
@@ -447,5 +488,162 @@ class FileRegistryTest {
         val changes = registry.detectChanges("/graph/pages")
         assertTrue(changes.newFiles.isEmpty())
         assertTrue(changes.changedFiles.isEmpty())
+    }
+
+    // ── Scenario 11: Android shadow stale-read regression (Bug 2) ────────────
+
+    @Test
+    fun `FakeFsWithShadow externalWrite does not update shadowMap`() = runTest {
+        val fs = FakeFsWithShadow()
+        fs.files["/graph/f.md"] = FakeFile("old", 1000L)
+        fs.shadowMap["/graph/f.md"] = "old"
+
+        fs.externalWrite("/graph/f.md", "new")
+
+        assertEquals("old", fs.shadowMap["/graph/f.md"],
+            "shadowMap must NOT be updated by externalWrite — it simulates stale shadow")
+        assertEquals("new", fs.files["/graph/f.md"]!!.content,
+            "files map must be updated by externalWrite")
+    }
+
+    @Test
+    fun `external write with stale shadow is detected after shadow invalidation`() = runTest {
+        val fs = FakeFsWithShadow()
+        fs.files["/graph/journals/2026_05_29.md"] = FakeFile("- old content", 1000L)
+        fs.shadowMap["/graph/journals/2026_05_29.md"] = "- old content"
+        val registry = FileRegistry(fs)
+
+        registry.detectChanges("/graph/journals")
+
+        fs.externalWrite("/graph/journals/2026_05_29.md", "- new content from sync")
+
+        val changes = registry.detectChanges("/graph/journals")
+        assertEquals(1, changes.changedFiles.size,
+            "External write with stale shadow must be reported (invalidateShadow must be called before readFile)")
+        assertEquals("- new content from sync", changes.changedFiles[0].content)
+    }
+
+    @Test
+    fun `own write with shadow is still suppressed after shadow invalidation fix`() = runTest {
+        val fs = FakeFsWithShadow()
+        fs.files["/graph/journals/2026_05_29.md"] = FakeFile("- original", 1000L)
+        fs.shadowMap["/graph/journals/2026_05_29.md"] = "- original"
+        val registry = FileRegistry(fs)
+        registry.detectChanges("/graph/journals")
+
+        fs.ownWrite("/graph/journals/2026_05_29.md", "- user typed content")
+        registry.markWrittenByUs("/graph/journals/2026_05_29.md")
+
+        val changes = registry.detectChanges("/graph/journals")
+        assertTrue(changes.changedFiles.isEmpty(),
+            "Own write marked via markWrittenByUs must still be suppressed after shadow-invalidation fix")
+    }
+
+    // ── Scenario 12: invalidateShadow is called before readFile ──────────────
+
+    @Test
+    fun `invalidateShadow is called before readFile for changed files`() = runTest {
+        val callOrder = mutableListOf<String>()
+        val filePath = "/graph/journals/2026_05_29.md"
+        // Stand-alone tracking FileSystem that records invalidateShadow and readFile call order.
+        val innerFiles = mutableMapOf(filePath to FakeFile("old content", 1000L))
+        val innerShadow = mutableMapOf(filePath to "old content")
+        val fs = object : FileSystem {
+            override fun getDefaultGraphPath() = "/graph"
+            override fun expandTilde(path: String) = path
+            override fun readFile(path: String): String? {
+                callOrder.add("read:$path")
+                // After invalidation shadow entry is removed; fall through to real file.
+                return innerShadow[path] ?: innerFiles[path]?.content
+            }
+            override fun writeFile(path: String, content: String): Boolean {
+                val existing = innerFiles[path]
+                innerFiles[path] = FakeFile(content, (existing?.modTime ?: 0L) + 1000L)
+                return true
+            }
+            override fun listFiles(path: String) =
+                innerFiles.keys.filter { it.startsWith("$path/") }.map { it.substringAfterLast("/") }
+            override fun listDirectories(path: String) = emptyList<String>()
+            override fun fileExists(path: String) = innerFiles.containsKey(path)
+            override fun directoryExists(path: String) = true
+            override fun createDirectory(path: String) = true
+            override fun deleteFile(path: String): Boolean { innerFiles.remove(path); return true }
+            override fun pickDirectory() = null
+            override fun getLastModifiedTime(path: String) = innerFiles[path]?.modTime
+            override fun invalidateShadow(path: String) {
+                callOrder.add("invalidate:$path")
+                innerShadow.remove(path)
+            }
+        }
+        val registry = FileRegistry(fs)
+        // Establish baseline — first detectChanges registers the file (may call readFile here)
+        registry.detectChanges("/graph/journals")
+
+        // Clear the call log so we only observe the second detectChanges (the change scenario)
+        callOrder.clear()
+
+        // Simulate external change — bumps mtime, updates underlying file but not shadow
+        val existing = innerFiles[filePath]!!
+        innerFiles[filePath] = FakeFile("new content", existing.modTime + 1000L)
+        registry.detectChanges("/graph/journals")
+
+        val invalidateIdx = callOrder.indexOfFirst { it == "invalidate:$filePath" }
+        val readIdx = callOrder.indexOfFirst { it == "read:$filePath" }
+        assertTrue(invalidateIdx >= 0, "invalidateShadow must be called")
+        assertTrue(readIdx >= 0, "readFile must be called")
+        assertTrue(invalidateIdx < readIdx,
+            "invalidateShadow must precede readFile, got order: $callOrder")
+    }
+
+    // ── TC-07: preMarkPendingWrite suppresses detectChanges ───────────────────
+
+    @Test
+    fun `TC-07 preMarkPendingWrite suppresses own write detection in detectChanges`() = runTest {
+        val fs = FakeFs()
+        fs.externalWrite("/graph/pages/page.md", "- V1")
+        val registry = FileRegistry(fs)
+        registry.detectChanges("/graph/pages") // register baseline (modTime = 1000)
+
+        // Act: pre-mark before the write (simulates GraphWriter.savePageInternal Step 0)
+        registry.preMarkPendingWrite(FilePath("/graph/pages/page.md"))
+        // Now simulate what the external OS would show after GraphWriter writes:
+        // bump real modTime as if the write happened
+        val file = fs.files["/graph/pages/page.md"]!!
+        fs.files["/graph/pages/page.md"] = FakeFile("- V2", file.modTime + 1000L)
+
+        // The sentinel Long.MAX_VALUE means modTime (1000+1000 = 2000) > Long.MAX_VALUE is false
+        val changes = registry.detectChanges("/graph/pages")
+
+        assertTrue(changes.changedFiles.isEmpty(),
+            "preMarkPendingWrite must suppress detection: modTime can never exceed Long.MAX_VALUE sentinel")
+        assertTrue(changes.newFiles.isEmpty(), "No new files expected")
+    }
+
+    // ── TC-08: clearPendingWrite restores detection after saga rollback ───────
+
+    @Test
+    fun `TC-08 clearPendingWrite removes sentinel so subsequent external edits are detected`() = runTest {
+        val fs = FakeFs()
+        fs.externalWrite("/graph/pages/page.md", "- V1")
+        val registry = FileRegistry(fs)
+        registry.detectChanges("/graph/pages") // register baseline
+
+        // Simulate saga: pre-mark, then compensation (write failed)
+        registry.preMarkPendingWrite(dev.stapler.stelekit.model.FilePath("/graph/pages/page.md"))
+        registry.clearPendingWrite(dev.stapler.stelekit.model.FilePath("/graph/pages/page.md")) // sentinel removed
+
+        // Now a real external edit arrives
+        fs.externalWrite("/graph/pages/page.md", "- V2 from external")
+
+        val changes = registry.detectChanges("/graph/pages")
+
+        // After clearPendingWrite the file is in "unknown" state: modTimes[path] was removed,
+        // so detectChanges treats it as a new file OR detects it as changed depending on
+        // whether the path was already removed from modTimes.
+        // Either way, the file MUST appear in newFiles or changedFiles — not suppressed.
+        val detected = changes.newFiles.isNotEmpty() || changes.changedFiles.isNotEmpty()
+        assertTrue(detected,
+            "After clearPendingWrite, subsequent external edits must still be detected. " +
+            "newFiles=${changes.newFiles.size}, changedFiles=${changes.changedFiles.size}")
     }
 }

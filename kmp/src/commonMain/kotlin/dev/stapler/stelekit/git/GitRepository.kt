@@ -35,6 +35,13 @@ interface GitRepository {
     suspend fun markResolved(config: GitConfig, filePath: String): Either<DomainError.GitError, Unit>
     suspend fun hasDetachedHead(config: GitConfig): Boolean
     suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit>
+
+    /**
+     * Replaces the active credential store. Called from App.kt to swap in a
+     * [VaultCredentialStore] on vault unlock, or back to [CredentialStore] on lock.
+     * Default no-op for platform stubs (iOS).
+     */
+    fun setCredentialAccess(access: CredentialAccess) {}
 }
 
 data class FetchResult(val hasRemoteChanges: Boolean, val remoteCommitCount: Int)

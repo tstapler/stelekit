@@ -31,7 +31,18 @@ object MigrationRunner {
 
     private val logger = Logger("MigrationRunner")
 
-    data class Migration(val name: String, val statements: List<String>) {
+    data class Migration(
+        val name: String,
+        val statements: List<String>,
+        /**
+         * When true, a hash mismatch for this migration (recorded hash ≠ current hash) is
+         * treated as an intentional update rather than tampering: the old hash is replaced with
+         * the new one and the migration is re-applied on next startup. Use ONLY for migrations
+         * whose SQL has been deliberately updated to remove a correctness issue (e.g. an
+         * expensive side-effect) after the migration was already shipped.
+         */
+        val allowContentUpdate: Boolean = false,
+    ) {
         /** FNV-1a-64 digest of all statements joined with newlines. */
         val hash: String = fnv1a64(statements.joinToString("\n"))
     }
@@ -182,6 +193,7 @@ object MigrationRunner {
         ),
         Migration(
             name = "pages_backlink_count_fix",
+            allowContentUpdate = true,
             statements = listOf(
                 // Repair for databases where pages_backlink_count was recorded as applied but
                 // the column was never added: the original migration used ADD COLUMN IF NOT EXISTS,
@@ -189,13 +201,13 @@ object MigrationRunner {
                 // migration hash was falsely marked applied. This migration uses the correct
                 // syntax; on databases that already have the column, "duplicate column name"
                 // is swallowed by applyAll leaving the column untouched.
-                "ALTER TABLE pages ADD COLUMN backlink_count INTEGER NOT NULL DEFAULT 0",
-                """
-                UPDATE pages SET backlink_count = (
-                    SELECT COUNT(*) FROM blocks
-                    WHERE blocks.content LIKE '%[[' || pages.name || ']]%'
-                )
-                """
+                //
+                // The O(P×B) UPDATE that used to follow this ADD COLUMN has been intentionally
+                // removed (allowContentUpdate = true). On large libraries (500+ pages, 50k+
+                // blocks) it took 10–60+ minutes and caused permanent "Initializing…" hangs.
+                // Backlink counts start at 0 (the column default) and are recomputed
+                // incrementally as the user edits notes, or fully via Search > Rebuild Index.
+                "ALTER TABLE pages ADD COLUMN backlink_count INTEGER NOT NULL DEFAULT 0"
             )
         ),
         Migration(
@@ -213,6 +225,165 @@ object MigrationRunner {
                     INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content);
                 END
                 """
+            )
+        ),
+        Migration(
+            name = "covering_indexes_page_blocks",
+            statements = listOf(
+                // Eliminates filesort for selectBlocksByPageUuidUnpaginated (called every page open).
+                // SQLite delivers rows in (page_uuid, position) order — no in-memory sort needed.
+                // Also benefits countBlocksByPageUuid (index-only scan, no table fetch).
+                "CREATE INDEX IF NOT EXISTS idx_blocks_page_position ON blocks(page_uuid, position)",
+                // Eliminates filesort for selectBlocksByParentUuidOrdered, selectBlockChildren,
+                // selectLastChild — all child-listing queries fired during tree expand/indent/move.
+                "CREATE INDEX IF NOT EXISTS idx_blocks_parent_position ON blocks(parent_uuid, position)",
+                // True covering index for selectBlocksHashByPageUuid: SELECT uuid, content_hash
+                // FROM blocks WHERE page_uuid = ? — zero table lookups, sequential index leaf scan.
+                // Replaces 500 random B-tree reads per save on large pages with one index scan.
+                "CREATE INDEX IF NOT EXISTS idx_blocks_page_hash ON blocks(page_uuid, uuid, content_hash)"
+            )
+        ),
+        Migration(
+            name = "drop_subsumed_blocks_single_column_indexes",
+            statements = listOf(
+                // idx_blocks_page_uuid(page_uuid) is fully subsumed by idx_blocks_page_position(page_uuid, position).
+                // idx_blocks_parent_uuid(parent_uuid) is fully subsumed by idx_blocks_parent_position(parent_uuid, position).
+                // Both composites handle all queries the single-column indexes served, with equal or better performance.
+                // Dropping them eliminates redundant write overhead on every blocks INSERT/UPDATE/DELETE.
+                "DROP INDEX IF EXISTS idx_blocks_page_uuid",
+                "DROP INDEX IF EXISTS idx_blocks_parent_uuid"
+            )
+        ),
+        Migration(
+            name = "query_stats_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS query_stats (
+                    app_version TEXT NOT NULL,
+                    table_name  TEXT NOT NULL,
+                    operation   TEXT NOT NULL,
+                    calls       INTEGER NOT NULL DEFAULT 0,
+                    errors      INTEGER NOT NULL DEFAULT 0,
+                    total_ms    INTEGER NOT NULL DEFAULT 0,
+                    min_ms      INTEGER NOT NULL DEFAULT 9999999,
+                    max_ms      INTEGER NOT NULL DEFAULT 0,
+                    b1          INTEGER NOT NULL DEFAULT 0,
+                    b5          INTEGER NOT NULL DEFAULT 0,
+                    b16         INTEGER NOT NULL DEFAULT 0,
+                    b50         INTEGER NOT NULL DEFAULT 0,
+                    b100        INTEGER NOT NULL DEFAULT 0,
+                    b500        INTEGER NOT NULL DEFAULT 0,
+                    b_inf       INTEGER NOT NULL DEFAULT 0,
+                    first_seen  INTEGER NOT NULL,
+                    last_seen   INTEGER NOT NULL,
+                    PRIMARY KEY (app_version, table_name, operation)
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_query_stats_version_ms ON query_stats(app_version, total_ms DESC)"
+            )
+        ),
+        Migration(
+            name = "perf_histogram_and_debug_flags",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS perf_histogram_buckets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    operation_name TEXT NOT NULL,
+                    bucket_ms INTEGER NOT NULL,
+                    count INTEGER NOT NULL DEFAULT 0,
+                    recorded_at INTEGER NOT NULL
+                )
+                """,
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_perf_hist_op_bucket ON perf_histogram_buckets(operation_name, bucket_ms)",
+                """
+                CREATE TABLE IF NOT EXISTS debug_flags (
+                    key TEXT NOT NULL PRIMARY KEY,
+                    value INTEGER NOT NULL DEFAULT 0,
+                    updated_at INTEGER NOT NULL
+                )
+                """
+            )
+        ),
+        Migration(
+            name = "git_config_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS git_config (
+                    graph_id                TEXT NOT NULL PRIMARY KEY,
+                    repo_root               TEXT NOT NULL,
+                    wiki_subdir             TEXT NOT NULL DEFAULT '',
+                    remote_name             TEXT NOT NULL DEFAULT 'origin',
+                    remote_branch           TEXT NOT NULL DEFAULT 'main',
+                    auth_type               TEXT NOT NULL DEFAULT 'NONE',
+                    ssh_key_path            TEXT,
+                    ssh_key_passphrase_key  TEXT,
+                    https_token_key         TEXT,
+                    poll_interval_minutes   INTEGER NOT NULL DEFAULT 5,
+                    auto_commit             INTEGER NOT NULL DEFAULT 1,
+                    commit_message_template TEXT NOT NULL DEFAULT 'SteleKit: {date}'
+                )
+                """
+            )
+        ),
+        Migration(
+            name = "image_and_measurement_annotations",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS image_annotations (
+                    uuid                       TEXT NOT NULL PRIMARY KEY,
+                    block_uuid                 TEXT NOT NULL,
+                    page_uuid                  TEXT NOT NULL,
+                    graph_path                 TEXT NOT NULL,
+                    file_path                  TEXT NOT NULL,
+                    thumbnail_path             TEXT,
+                    source                     TEXT NOT NULL DEFAULT 'FILE',
+                    source_uri                 TEXT,
+                    captured_at_ms             INTEGER,
+                    imported_at_ms             INTEGER NOT NULL DEFAULT 0,
+                    calibration_method         TEXT NOT NULL DEFAULT 'NONE',
+                    pixels_per_meter           REAL NOT NULL DEFAULT 0.0,
+                    calibration_confidence_pct INTEGER NOT NULL DEFAULT 0,
+                    unit                       TEXT NOT NULL DEFAULT 'METERS',
+                    tags                       TEXT NOT NULL DEFAULT '[]',
+                    lat_lng                    TEXT,
+                    altitude_m                 REAL,
+                    bearing_deg                REAL,
+                    pitch_deg                  REAL,
+                    roll_deg                   REAL,
+                    focal_length_mm            REAL,
+                    focal_length_35mm_eq       REAL,
+                    camera_make                TEXT,
+                    camera_model               TEXT
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_image_annotations_block_uuid ON image_annotations(block_uuid)",
+                "CREATE INDEX IF NOT EXISTS idx_image_annotations_page_uuid ON image_annotations(page_uuid)",
+                "CREATE INDEX IF NOT EXISTS idx_image_annotations_graph_path ON image_annotations(graph_path)",
+                """
+                CREATE TABLE IF NOT EXISTS measurement_annotations (
+                    uuid              TEXT NOT NULL PRIMARY KEY,
+                    image_uuid        TEXT NOT NULL,
+                    annotation_type   TEXT NOT NULL,
+                    normalized_points TEXT NOT NULL DEFAULT '[]',
+                    value_meters      REAL,
+                    value_display     TEXT,
+                    label             TEXT,
+                    color_hex         TEXT NOT NULL DEFAULT '#FF0000',
+                    ble_device_id     TEXT,
+                    FOREIGN KEY (image_uuid) REFERENCES image_annotations(uuid) ON DELETE CASCADE
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_measurement_annotations_image_uuid ON measurement_annotations(image_uuid)"
+            )
+        ),
+        Migration(
+            name = "pages_unloaded_partial_index",
+            statements = listOf(
+                // Partial index covering only unloaded pages (is_content_loaded = 0).
+                // Makes selectUnloadedPagesPaginated and countUnloadedPages O(unloaded) instead
+                // of O(total) — on a large graph where most pages are loaded the index is small
+                // and both the drain-loop OFFSET scan and the COUNT(*) become index-only ops.
+                "CREATE INDEX IF NOT EXISTS idx_pages_unloaded ON pages(uuid) WHERE is_content_loaded = 0"
             )
         ),
     )
@@ -268,13 +439,29 @@ object MigrationRunner {
             val recordedHash = appliedByName[migration.name]
 
             if (recordedHash != null) {
-                // Migration was previously applied — verify it hasn't been edited.
-                check(recordedHash == migration.hash) {
-                    "Migration '${migration.name}' has been modified after being applied. " +
-                    "Recorded hash: $recordedHash, current hash: ${migration.hash}. " +
-                    "Never edit a shipped migration — add a new Migration entry instead."
+                if (recordedHash != migration.hash) {
+                    check(migration.allowContentUpdate) {
+                        "Migration '${migration.name}' has been modified after being applied. " +
+                        "Recorded hash: $recordedHash, current hash: ${migration.hash}. " +
+                        "Never edit a shipped migration — add a new Migration entry instead."
+                    }
+                    // allowContentUpdate=true: deliberate SQL update — replace the stored hash so
+                    // the new version runs on databases that have not yet applied it, and the old
+                    // hash passes on databases that already did.
+                    logger.warn(
+                        "Migration '${migration.name}' content updated (allowContentUpdate). " +
+                        "Replacing stored hash $recordedHash → ${migration.hash}."
+                    )
+                    driver.execute(
+                        identifier = null,
+                        sql = "UPDATE schema_migrations SET hash = ? WHERE name = ?",
+                        parameters = 2
+                    ) {
+                        bindString(0, migration.hash)
+                        bindString(1, migration.name)
+                    }.await()
                 }
-                continue // already applied and untampered, skip
+                continue // already applied (or hash updated above), skip
             }
 
             var encounteredRealError = false

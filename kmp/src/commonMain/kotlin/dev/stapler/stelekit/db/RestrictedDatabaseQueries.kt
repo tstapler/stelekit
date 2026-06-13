@@ -77,6 +77,24 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
         queries.updateBlockContent(content, updated_at, content_hash, uuid)
 
     @DirectSqlWrite
+    suspend fun updateBlockFull(
+        page_uuid: String,
+        parent_uuid: String?,
+        left_uuid: String?,
+        content: String,
+        level: Long,
+        position: Long,
+        updated_at: Long,
+        properties: String?,
+        content_hash: String?,
+        block_type: String,
+        uuid: String,
+    ): Long = queries.updateBlockFull(
+        page_uuid, parent_uuid, left_uuid, content, level, position,
+        updated_at, properties, content_hash, block_type, uuid,
+    )
+
+    @DirectSqlWrite
     suspend fun updateBlockLevelOnly(level: Long, uuid: String): Long =
         queries.updateBlockLevelOnly(level, uuid)
 
@@ -403,6 +421,10 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     suspend fun recomputeBacklinkCountForPage(name: String): Long =
         queries.recomputeBacklinkCountForPage(name)
 
+    @DirectSqlWrite
+    suspend fun setPageBacklinkCount(name: String, count: Long): Long =
+        queries.setPageBacklinkCount(count, name)
+
     // ── Git config writes ─────────────────────────────────────────────────────
 
     @DirectSqlWrite
@@ -427,4 +449,105 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
 
     @DirectSqlWrite
     suspend fun deleteGitConfig(graph_id: String) = queries.deleteGitConfig(graph_id)
+
+    // ── Image annotation writes ───────────────────────────────────────────────
+
+    @DirectSqlWrite
+    suspend fun insertImageAnnotation(
+        uuid: String,
+        block_uuid: String,
+        page_uuid: String,
+        graph_path: String,
+        file_path: String,
+        thumbnail_path: String?,
+        source: String,
+        source_uri: String?,
+        captured_at_ms: Long?,
+        imported_at_ms: Long,
+        calibration_method: String,
+        pixels_per_meter: Double,
+        calibration_confidence_pct: Long,
+        unit: String,
+        tags: String,
+        lat_lng: String?,
+        altitude_m: Double?,
+        bearing_deg: Double?,
+        pitch_deg: Double?,
+        roll_deg: Double?,
+        focal_length_mm: Double?,
+        focal_length_35mm_eq: Double?,
+        camera_make: String?,
+        camera_model: String?,
+    ): Long = queries.insertImageAnnotation(
+        uuid, block_uuid, page_uuid, graph_path, file_path, thumbnail_path,
+        source, source_uri, captured_at_ms, imported_at_ms,
+        calibration_method, pixels_per_meter, calibration_confidence_pct,
+        unit, tags, lat_lng, altitude_m, bearing_deg, pitch_deg, roll_deg,
+        focal_length_mm, focal_length_35mm_eq, camera_make, camera_model,
+    )
+
+    @DirectSqlWrite
+    suspend fun updateImageAnnotation(
+        block_uuid: String,
+        page_uuid: String,
+        graph_path: String,
+        file_path: String,
+        thumbnail_path: String?,
+        source: String,
+        source_uri: String?,
+        captured_at_ms: Long?,
+        imported_at_ms: Long,
+        calibration_method: String,
+        pixels_per_meter: Double,
+        calibration_confidence_pct: Long,
+        unit: String,
+        tags: String,
+        lat_lng: String?,
+        altitude_m: Double?,
+        bearing_deg: Double?,
+        pitch_deg: Double?,
+        roll_deg: Double?,
+        focal_length_mm: Double?,
+        focal_length_35mm_eq: Double?,
+        camera_make: String?,
+        camera_model: String?,
+        uuid: String,
+    ): Long = queries.updateImageAnnotation(
+        block_uuid, page_uuid, graph_path, file_path, thumbnail_path,
+        source, source_uri, captured_at_ms, imported_at_ms,
+        calibration_method, pixels_per_meter, calibration_confidence_pct,
+        unit, tags, lat_lng, altitude_m, bearing_deg, pitch_deg, roll_deg,
+        focal_length_mm, focal_length_35mm_eq, camera_make, camera_model,
+        uuid,
+    )
+
+    @DirectSqlWrite
+    suspend fun deleteImageAnnotation(uuid: String): Long =
+        queries.deleteImageAnnotation(uuid)
+
+    // ── Measurement annotation writes ─────────────────────────────────────────
+
+    @DirectSqlWrite
+    suspend fun insertMeasurementAnnotation(
+        uuid: String,
+        image_uuid: String,
+        annotation_type: String,
+        normalized_points: String,
+        value_meters: Double?,
+        value_display: String?,
+        label: String?,
+        color_hex: String,
+        ble_device_id: String?,
+    ): Long = queries.insertMeasurementAnnotation(
+        uuid, image_uuid, annotation_type, normalized_points,
+        value_meters, value_display, label, color_hex, ble_device_id,
+    )
+
+    @DirectSqlWrite
+    suspend fun deleteMeasurementsForImage(image_uuid: String): Long =
+        queries.deleteMeasurementsForImage(image_uuid)
+
+    @DirectSqlWrite
+    suspend fun deleteMeasurementAnnotation(uuid: String): Long =
+        queries.deleteMeasurementAnnotation(uuid)
 }

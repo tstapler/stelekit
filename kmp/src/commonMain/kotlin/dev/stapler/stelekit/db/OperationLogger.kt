@@ -3,6 +3,8 @@ package dev.stapler.stelekit.db
 import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlin.time.Clock
 import kotlin.time.Clock.System
@@ -67,22 +69,22 @@ class OperationLogger(
 
     suspend fun logInsert(block: Block) = log(
         opType = OpType.INSERT_BLOCK,
-        entityUuid = block.uuid,
-        pageUuid = block.pageUuid,
+        entityUuid = block.uuid.value,
+        pageUuid = block.pageUuid.value,
         payload = OpPayload(after = block.toSnapshot()),
     )
 
     suspend fun logUpdate(before: Block, after: Block) = log(
         opType = OpType.UPDATE_BLOCK,
-        entityUuid = after.uuid,
-        pageUuid = after.pageUuid,
+        entityUuid = after.uuid.value,
+        pageUuid = after.pageUuid.value,
         payload = OpPayload(before = before.toSnapshot(), after = after.toSnapshot()),
     )
 
     suspend fun logDelete(block: Block) = log(
         opType = OpType.DELETE_BLOCK,
-        entityUuid = block.uuid,
-        pageUuid = block.pageUuid,
+        entityUuid = block.uuid.value,
+        pageUuid = block.pageUuid.value,
         payload = OpPayload(before = block.toSnapshot()),
     )
 
@@ -137,7 +139,7 @@ class OperationLogger(
     }
 
     private fun Block.toSnapshot() = BlockSnapshot(
-        uuid = uuid,
+        uuid = uuid.value,
         content = content,
         position = position,
         parentUuid = parentUuid,

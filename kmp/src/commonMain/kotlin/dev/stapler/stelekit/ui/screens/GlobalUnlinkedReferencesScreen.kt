@@ -2,7 +2,7 @@ package dev.stapler.stelekit.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import dev.stapler.stelekit.ui.components.typedItems
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -113,7 +113,7 @@ fun GlobalUnlinkedReferencesScreen(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(
+                    typedItems(
                         items = state.results,
                         key = { "${it.block.uuid}::${it.targetPageName}::${it.matchStart}" },
                     ) { entry ->

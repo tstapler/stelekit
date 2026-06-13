@@ -7,4 +7,6 @@
     <string name="tile_label_capture">SteleKit Capture</string>
     <string name="widget_capture_button">Capture note</string>
     <string name="widget_description">Quick note capture to today\'s journal</string>
+    <string name="widget_voice_button">Voice note</string>
+    <string name="widget_voice_description">Voice capture to today\'s journal</string>
 </resources>

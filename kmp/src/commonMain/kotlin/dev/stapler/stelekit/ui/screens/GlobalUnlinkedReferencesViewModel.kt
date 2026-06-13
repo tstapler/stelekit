@@ -52,7 +52,6 @@ data class UnlinkedRefEntry(
  * if a [DatabaseWriteActor] is available it is preferred; otherwise the call falls back to
  * a direct [BlockRepository.saveBlock] invocation (in-memory / test mode).
  */
-@OptIn(DirectRepositoryWrite::class)
 class GlobalUnlinkedReferencesViewModel(
     private val pageRepository: PageRepository,
     private val blockRepository: BlockRepository,
@@ -104,7 +103,8 @@ class GlobalUnlinkedReferencesViewModel(
         scope.launch {
             _state.update { it.copy(isLoading = true, results = emptyList(), errorMessage = null) }
             try {
-                val pages = pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+                // Names-only projection — this scan only needs page names, never full Pages.
+                val pages = pageRepository.getPageNameEntries().first().getOrNull() ?: emptyList()
                 allPageNames = pages.map { it.name }
                 pageCursorIndex = 0
                 pendingEntries = mutableListOf()
@@ -159,6 +159,7 @@ class GlobalUnlinkedReferencesViewModel(
      * Stale-guard (ADR-002): if [entry].capturedContent no longer matches the live block
      * content, the entry is removed without writing and an error message is shown.
      */
+    @OptIn(DirectRepositoryWrite::class)
     fun acceptSuggestion(entry: UnlinkedRefEntry) {
         scope.launch {
             // Re-fetch live block to perform stale check

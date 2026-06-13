@@ -5,7 +5,6 @@ package dev.stapler.stelekit.macrobenchmark
 
 import android.content.Intent
 import androidx.benchmark.macro.CompilationMode
-import dev.stapler.stelekit.MainActivity
 import androidx.benchmark.macro.FrameTimingMetric
 import androidx.benchmark.macro.MacrobenchmarkScope
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
@@ -128,7 +127,7 @@ private const val BENCH_GRAPH_PATH = "/data/local/tmp/stelekit-bench"
  */
 private fun MacrobenchmarkScope.startActivityWithBenchmarkGraph() {
     startActivityAndWait { intent ->
-        intent.putExtra(MainActivity.EXTRA_BENCHMARK_GRAPH_PATH, BENCH_GRAPH_PATH)
+        intent.putExtra("benchmark_graph_path", BENCH_GRAPH_PATH)
         intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TASK or Intent.FLAG_ACTIVITY_NEW_TASK
     }
 }

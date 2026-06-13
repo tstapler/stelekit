@@ -14,13 +14,27 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class VoiceCaptureViewModelTest {
 
     private fun makeJournalService() =
         JournalService(InMemoryPageRepository(), InMemoryBlockRepository())
+
+    private fun successRecorder(
+        path: String = "/tmp/test.m4a",
+        bytes: ByteArray = ByteArray(100),
+        onDelete: (String) -> Unit = {},
+    ): AudioRecorder = object : AudioRecorder {
+        override suspend fun startRecording(): PlatformAudioFile = PlatformAudioFile(path)
+        override suspend fun stopRecording() = Unit
+        override suspend fun readBytes(file: PlatformAudioFile): ByteArray = bytes
+        override fun deleteRecording(file: PlatformAudioFile) = onDelete(file.path)
+    }
 
     @Test
     fun `initial state is Idle`() = runTest {
@@ -367,7 +381,11 @@ class VoiceCaptureViewModelTest {
         )
         vm.onMicTapped()
         advanceUntilIdle()
-        assertIs<VoiceCaptureState.Done>(vm.state.first())
+
+        val doneState = vm.state.first()
+        assertIs<VoiceCaptureState.Done>(doneState)
+        assertNull(doneState.transcriptPageTitle, "Short transcript must not create a transcript page")
+        assertNull(doneState.savedToPageName, "No page open means savedToPageName must be null")
     }
 
     @Test
@@ -385,12 +403,16 @@ class VoiceCaptureViewModelTest {
         val vm = VoiceCaptureViewModel(
             VoicePipelineConfig(audioRecorder = fakeRecorder, sttProvider = fakeStt),
             journalService,
-            currentOpenPageUuid = { targetPage.uuid },
+            currentOpenPageUuid = { targetPage.uuid.value },
             scope = this,
         )
         vm.onMicTapped()
         advanceUntilIdle()
-        assertIs<VoiceCaptureState.Done>(vm.state.first())
+
+        val doneState = vm.state.first()
+        assertIs<VoiceCaptureState.Done>(doneState)
+        assertNull(doneState.transcriptPageTitle, "Short transcript must not create a transcript page even with open page")
+        assertNotNull(doneState.savedToPageName, "Short transcript with open page must set savedToPageName")
         val blocks = blockRepo.getBlocksForPage(targetPage.uuid).first().getOrNull().orEmpty()
         assertTrue(blocks.any { it.content.contains("📝 Voice note") })
     }
@@ -558,5 +580,249 @@ class VoiceCaptureViewModelTest {
         assert(stopCalled) { "stopRecording was not called" }
         // After stop, startRecording returns the file, pipeline proceeds to Transcribing/Error
         assertIs<VoiceCaptureState.Error>(vm.state.first()) // Empty transcript → Error
+    }
+
+    // ─── Long-transcript path (>20 words) ───────────────────────────────────────
+
+    @Test
+    fun `long transcript creates transcript page and inline block with wikilink`() = runTest {
+        // 25 words — above the default transcriptPageWordThreshold of 20
+        val transcript = "one two three four five six seven eight nine ten " +
+                "eleven twelve thirteen fourteen fifteen sixteen seventeen " +
+                "eighteen nineteen twenty one two three four five"
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val journalService = JournalService(pageRepo, blockRepo)
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success(transcript) }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(audioRecorder = successRecorder(), sttProvider = fakeStt),
+            journalService,
+            currentOpenPageUuid = { null },
+            scope = this,
+        )
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        val doneState = vm.state.first()
+        assertIs<VoiceCaptureState.Done>(doneState)
+        assertNotNull(doneState.transcriptPageTitle, "Done.transcriptPageTitle must be non-null for long transcript")
+        assertNull(doneState.savedToPageName, "Done.savedToPageName must be null when no page is open")
+        val journalPage = journalService.ensureTodayJournal()
+        val blocks = blockRepo.getBlocksForPage(journalPage.uuid).first().getOrNull().orEmpty()
+        val voiceBlock = blocks.firstOrNull { it.content.contains("📝 Voice note") }
+        assertNotNull(voiceBlock, "Expected voice note block in journal")
+        assertTrue(voiceBlock!!.content.contains("[[Voice Note "), "Long transcript block must contain wikilink")
+        assertTrue(voiceBlock.content.contains("[[${doneState.transcriptPageTitle}]]"),
+            "Wikilink in journal block must match Done.transcriptPageTitle")
+    }
+
+    @Test
+    fun `long transcript with open page uses page name as sourcePage`() = runTest {
+        val transcript = "word ".repeat(25).trim()
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val journalService = JournalService(pageRepo, blockRepo)
+        val targetPage = journalService.ensureTodayJournal()
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success(transcript) }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(audioRecorder = successRecorder(), sttProvider = fakeStt),
+            journalService,
+            currentOpenPageUuid = { targetPage.uuid.value },
+            scope = this,
+        )
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        val doneState = vm.state.first()
+        assertIs<VoiceCaptureState.Done>(doneState)
+        assertNotNull(doneState.transcriptPageTitle, "Done.transcriptPageTitle must be non-null for long transcript")
+        assertNotNull(doneState.savedToPageName, "Done.savedToPageName must be non-null when page is open")
+        // Verify transcript page was created
+        val journalPage = journalService.ensureTodayJournal()
+        val journalBlocks = blockRepo.getBlocksForPage(journalPage.uuid).first().getOrNull().orEmpty()
+        assertTrue(journalBlocks.any { it.content.contains("[[Voice Note ") },
+            "Expected wikilink block on target page")
+    }
+
+    @Test
+    fun `long transcript with LLM failure stores raw transcript in transcript page`() = runTest {
+        val transcript = "word ".repeat(25).trim()
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val journalService = JournalService(pageRepo, blockRepo)
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success(transcript) }
+        val fakeLlm = LlmFormatterProvider { _, _ -> LlmResult.Failure.NetworkError }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(audioRecorder = successRecorder(), sttProvider = fakeStt, llmProvider = fakeLlm),
+            journalService,
+            currentOpenPageUuid = { null },
+            scope = this,
+        )
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        // Done state should still be reached
+        assertIs<VoiceCaptureState.Done>(vm.state.first())
+        // Journal block should still have the voice note entry
+        val journalPage = journalService.ensureTodayJournal()
+        val journalBlocks = blockRepo.getBlocksForPage(journalPage.uuid).first().getOrNull().orEmpty()
+        assertTrue(journalBlocks.any { it.content.contains("📝 Voice note") },
+            "Expected voice note block even on LLM failure + long transcript")
+    }
+
+    @Test
+    fun `includeRawTranscript=false is forwarded to transcript page content`() = runTest {
+        val transcript = "word ".repeat(25).trim()
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val journalService = JournalService(pageRepo, blockRepo)
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success(transcript) }
+        val fakeLlm = LlmFormatterProvider { _, _ -> LlmResult.Success("- formatted note.", false) }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(
+                audioRecorder = successRecorder(),
+                sttProvider = fakeStt,
+                llmProvider = fakeLlm,
+                includeRawTranscript = false,
+            ),
+            journalService,
+            currentOpenPageUuid = { null },
+            scope = this,
+        )
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        assertIs<VoiceCaptureState.Done>(vm.state.first())
+        // When includeRawTranscript=false, the #+BEGIN_QUOTE block must not appear in any page block
+        val journalPage = journalService.ensureTodayJournal()
+        val journalBlocks = blockRepo.getBlocksForPage(journalPage.uuid).first().getOrNull().orEmpty()
+        // The transcript page is a separate page; find it via the wikilink in the journal block
+        val voiceBlock = journalBlocks.firstOrNull { it.content.contains("[[Voice Note ") }
+        assertNotNull(voiceBlock, "Expected wikilink block in journal")
+        // Find the transcript page title from the wikilink
+        val linkStart = voiceBlock!!.content.indexOf("[[Voice Note ") + 2
+        val linkEnd = voiceBlock.content.indexOf("]]", linkStart)
+        val transcriptPageTitle = voiceBlock.content.substring(linkStart, linkEnd)
+        val transcriptPage = pageRepo.getPageByName(transcriptPageTitle).first().getOrNull()
+        assertNotNull(transcriptPage, "Expected transcript page to exist")
+        val transcriptBlocks = blockRepo.getBlocksForPage(transcriptPage!!.uuid).first().getOrNull().orEmpty()
+        assertFalse(transcriptBlocks.any { it.content.contains("#+BEGIN_QUOTE") },
+            "includeRawTranscript=false must not produce a #+BEGIN_QUOTE block")
+    }
+
+    // ─── isLikelyTruncated sources ───────────────────────────────────────────────
+
+    @Test
+    fun `LLM truncation flag alone sets isLikelyTruncated on Done state`() = runTest {
+        val shortTranscript = "buy milk and eggs today"
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success(shortTranscript) }
+        val fakeLlm = LlmFormatterProvider { _, _ -> LlmResult.Success("- buy milk and eggs", isLikelyTruncated = true) }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(audioRecorder = successRecorder(), sttProvider = fakeStt, llmProvider = fakeLlm),
+            makeJournalService(), scope = this,
+        )
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        val state = vm.state.first()
+        assertIs<VoiceCaptureState.Done>(state)
+        assertTrue(state.isLikelyTruncated, "Expected isLikelyTruncated=true when LLM signals truncation")
+    }
+
+    @Test
+    fun `no truncation source leaves isLikelyTruncated false`() = runTest {
+        val shortTranscript = "buy milk"
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success(shortTranscript) }
+        val fakeLlm = LlmFormatterProvider { _, _ -> LlmResult.Success("- buy milk.", isLikelyTruncated = false) }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(audioRecorder = successRecorder(), sttProvider = fakeStt, llmProvider = fakeLlm),
+            makeJournalService(), scope = this,
+        )
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        val state = vm.state.first()
+        assertIs<VoiceCaptureState.Done>(state)
+        assertFalse(state.isLikelyTruncated, "Expected isLikelyTruncated=false when neither source signals truncation")
+    }
+
+    // ─── STT ApiError path ────────────────────────────────────────────────────────
+
+    @Test
+    fun `STT ApiError emits Error at TRANSCRIBING with message`() = runTest {
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Failure.ApiError(403, "Forbidden") }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(audioRecorder = successRecorder(), sttProvider = fakeStt),
+            makeJournalService(), scope = this,
+        )
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        val state = vm.state.first()
+        assertIs<VoiceCaptureState.Error>(state)
+        assertEquals(PipelineStage.TRANSCRIBING, state.stage)
+        assertTrue(state.message.contains("Forbidden"), "Expected provider error message forwarded")
+    }
+
+    // ─── directSpeechProvider.stopListening path ─────────────────────────────────
+
+    @Test
+    fun `onMicTapped while Recording calls stopListening on directSpeechProvider`() = runTest {
+        var stopListenCalled = false
+        val fakeDirectProvider = object : DirectSpeechProvider {
+            private var stopped = false
+            override suspend fun listen(): TranscriptResult {
+                while (!stopped) delay(10)
+                return TranscriptResult.Empty
+            }
+            override suspend fun stopListening() {
+                stopped = true
+                stopListenCalled = true
+            }
+        }
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(directSpeechProvider = fakeDirectProvider),
+            makeJournalService(), scope = this,
+        )
+
+        vm.onMicTapped()
+        delay(1)
+        assertIs<VoiceCaptureState.Recording>(vm.state.first())
+
+        vm.onMicTapped() // should route to stopListening
+        advanceUntilIdle()
+
+        assertTrue(stopListenCalled, "stopListening was not called on directSpeechProvider")
+    }
+
+    // ─── Journal write error ──────────────────────────────────────────────────────
+
+    @Test
+    fun `journal write failure emits Error at JOURNAL stage`() = runTest {
+        val fakeStt = SpeechToTextProvider { _ -> TranscriptResult.Success("buy milk") }
+        // Use a block repo that throws after the first saveBlock call to simulate a journal
+        // write failure on the actual voice-note append (the first call is for the journal page's
+        // initial empty block created by ensureTodayJournal).
+        val delegate = InMemoryBlockRepository()
+        var saveCount = 0
+        val failingBlockRepo = object : dev.stapler.stelekit.repository.BlockRepository by delegate {
+            @OptIn(dev.stapler.stelekit.repository.DirectRepositoryWrite::class)
+            override suspend fun saveBlock(block: dev.stapler.stelekit.model.Block): arrow.core.Either<dev.stapler.stelekit.error.DomainError, Unit> {
+                saveCount++
+                if (saveCount <= 1) return delegate.saveBlock(block)
+                throw RuntimeException("disk full")
+            }
+        }
+        val failingJournalService = JournalService(InMemoryPageRepository(), failingBlockRepo)
+        val vm = VoiceCaptureViewModel(
+            VoicePipelineConfig(audioRecorder = successRecorder(), sttProvider = fakeStt),
+            failingJournalService, scope = this,
+        )
+        vm.onMicTapped()
+        advanceUntilIdle()
+
+        val state = vm.state.first()
+        assertIs<VoiceCaptureState.Error>(state)
+        assertEquals(PipelineStage.JOURNAL, state.stage)
     }
 }

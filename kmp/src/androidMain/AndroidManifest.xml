@@ -1,6 +1,54 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- GPS tagging for image annotations (Story 8.2.4).
+         Required by AndroidMotionSensorProvider to request location updates.
+         Requested at runtime before MotionSensorProvider.startSensing() is called;
+         the provider gracefully falls back to null GPS fields if denied. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- Camera capture (Story 9.2).
+         CAMERA is a runtime permission requested before AndroidCameraProvider.capturePhoto().
+         required=false so the app installs on devices without a camera (tablets, emulators). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- ARCore Depth API (Story 8.5).
+         required=false — ARCore depth is optional; the CalibrationFallbackChain degrades
+         gracefully to EXIF/ML on devices that lack AR hardware or the ARCore APK.
+         The meta-data tag in <application> tells Google Play that ARCore is optional,
+         allowing the app to install on all devices (not just AR-capable ones). -->
+    <uses-feature android:name="android.hardware.camera.ar" android:required="false" />
+
+    <!-- BLE Laser Rangefinder permissions (Story 5.2.3, Epic 5).
+         BLUETOOTH_SCAN + BLUETOOTH_CONNECT: required on API 31+ for BLE scanning and GATT.
+         BLUETOOTH_ADVERTISE: declared for completeness (not used by scanner role).
+         All three are runtime permissions on API 31+ — requested before KableBleScanner.scan(). -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <!-- Legacy BLE permissions for API < 31 -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+
+    <!-- BLE hardware feature declaration — marks the feature as not required so the app
+         installs on non-BLE devices (BLE features degrade gracefully to keyboard mode). -->
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+
+    <!-- Foreground service permission required for BLE connection lifecycle on API 31+. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
+    <!-- USB host feature for USB serial (OTG) fallback (Story 5.6).
+         Declared as not required so the app installs on non-OTG devices. -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+
     <application>
+        <!-- ARCore optional — allows Google Play to show an "Install ARCore" prompt on
+             AR-capable devices without blocking installation on non-AR devices. -->
+        <meta-data android:name="com.google.ar.core" android:value="optional" />
+
         <!-- Benchmark-only FileProvider: serves cacheDir files via ContentResolver to measure
              Binder IPC overhead vs direct file I/O. Declared here (kmp androidMain) so the
              provider is present in the kmp instrumented-test APK with the correct ${applicationId}
@@ -14,5 +62,15 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/bench_file_paths" />
         </provider>
+
+        <!-- BLE measurement foreground service (Story 5.2.4).
+             foregroundServiceType="connectedDevice" required on API 31+ for BLE GATT connections
+             initiated in the background. Auto-dismisses notification on device disconnect. -->
+        <service
+            android:name="dev.stapler.stelekit.platform.measurement.ble.AndroidMeasurementForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
     </application>
+
+
 </manifest>

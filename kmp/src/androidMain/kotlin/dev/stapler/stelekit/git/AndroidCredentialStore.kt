@@ -16,7 +16,7 @@ import androidx.security.crypto.MasterKey
  * no-arg constructor in the expect declaration, this implementation retrieves the application
  * context via a companion object that must be initialized from the Application class.
  */
-actual class CredentialStore actual constructor() {
+actual class CredentialStore actual constructor() : dev.stapler.stelekit.git.CredentialAccess {
 
     companion object {
         private var applicationContext: Context? = null
@@ -45,13 +45,13 @@ actual class CredentialStore actual constructor() {
         )
     }
 
-    actual fun store(key: String, value: String) {
+    actual override fun store(key: String, value: String) {
         prefs.edit().putString(key, value).apply()
     }
 
-    actual fun retrieve(key: String): String? = prefs.getString(key, null)
+    actual override fun retrieve(key: String): String? = prefs.getString(key, null)
 
-    actual fun delete(key: String) {
+    actual override fun delete(key: String) {
         prefs.edit().remove(key).apply()
     }
 }

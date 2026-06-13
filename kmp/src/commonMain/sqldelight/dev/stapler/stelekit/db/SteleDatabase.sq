@@ -235,6 +235,13 @@ UPDATE blocks SET position = ? WHERE uuid = ?;
 updateBlockContent:
 UPDATE blocks SET content = ?, updated_at = ?, version = version + 1, content_hash = ? WHERE uuid = ?;
 
+updateBlockFull:
+UPDATE blocks SET
+    page_uuid = ?, parent_uuid = ?, left_uuid = ?, content = ?,
+    level = ?, position = ?, updated_at = ?, properties = ?,
+    version = version + 1, content_hash = ?, block_type = ?
+WHERE uuid = ?;
+
 updateBlockLevelOnly:
 UPDATE blocks SET level = ? WHERE uuid = ?;
 
@@ -275,6 +282,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 selectBlocksHashByPageUuid:
 SELECT uuid, content_hash FROM blocks WHERE page_uuid = ?;
 
+-- Batch lookup by UUID set — used by DatabaseWriteActor.loadExistingBlocks to replace N
+-- individual selectBlockByUuid calls with one round-trip (eliminates N+1 IO dispatch).
+selectBlocksByUuids:
+SELECT * FROM blocks WHERE uuid IN ?;
+
 -- Deduplication queries
 selectBlocksByContentHash:
 SELECT * FROM blocks WHERE content_hash = ? ORDER BY created_at;
@@ -301,14 +313,38 @@ SELECT COUNT(*) FROM pages WHERE uuid = ?;
 existsPageByName:
 SELECT COUNT(*) FROM pages WHERE name = ?;
 
-selectAllPages:
-SELECT * FROM pages ORDER BY name;
-
+-- NOTE: there is intentionally no unpaginated `SELECT * FROM pages` (or unpaginated
+-- unloaded-pages) query. Standing collectors of unbounded queries re-materialize the
+-- entire table per write burst and OOM Android on 8 000+ page graphs. Whole-graph
+-- consumers use PageRepository.getAllPagesSnapshot() (bounded batches over
+-- selectAllPagesPaginated) or the selectPageNameEntries projection.
 selectAllPagesPaginated:
 SELECT * FROM pages ORDER BY name LIMIT ? OFFSET ?;
 
-selectUnloadedPages:
-SELECT * FROM pages WHERE is_content_loaded = 0;
+-- Bounded batch for background indexing. ORDER BY uuid gives a stable drain order so a
+-- caller can advance OFFSET past permanently-failing rows without re-fetching them forever.
+selectUnloadedPagesPaginated:
+SELECT * FROM pages WHERE is_content_loaded = 0 ORDER BY uuid LIMIT ? OFFSET ?;
+
+countUnloadedPages:
+SELECT COUNT(*) FROM pages WHERE is_content_loaded = 0;
+
+-- Names-only projection for the page-name suggestion index: no properties/file_path/etc.
+-- materialization, so a standing observer stays cheap even on 8 000+ page graphs.
+selectPageNameEntries:
+SELECT name, is_journal FROM pages;
+
+-- Per-chunk existence lookups for graph reconcile (bounded IN list, caller chunks ≤500
+-- to stay under SQLITE_MAX_VARIABLE_NUMBER=999 on Android API < 30).
+-- name is COLLATE NOCASE so matching is case-insensitive.
+selectPagesByNames:
+SELECT * FROM pages WHERE name IN ?;
+
+selectJournalPagesByDates:
+SELECT * FROM pages WHERE is_journal = 1 AND journal_date IN ?;
+
+selectFavoritePages:
+SELECT * FROM pages WHERE is_favorite = 1 ORDER BY name;
 
 selectPagesByNamespace:
 SELECT * FROM pages WHERE namespace = ? ORDER BY name LIMIT ? OFFSET ?;
@@ -673,6 +709,15 @@ UPDATE pages SET backlink_count = (
     WHERE blocks.content LIKE '%[[' || pages.name || ']]%'
 ) WHERE pages.name = ?;
 
+-- Set backlink count directly (O(1) via idx_pages_name).
+-- Used by rename: caller computes the new count arithmetically instead of scanning all blocks.
+setPageBacklinkCount:
+UPDATE pages SET backlink_count = ? WHERE name = ?;
+
+-- Read backlink count for a single page (O(1) via idx_pages_name).
+selectPageBacklinkCount:
+SELECT backlink_count FROM pages WHERE name = ?;
+
 -- Metadata table for schema versioning and graph-level facts
 CREATE TABLE metadata (
     key TEXT NOT NULL PRIMARY KEY,
@@ -922,3 +967,123 @@ INSERT OR REPLACE INTO git_config(
 
 deleteGitConfig:
 DELETE FROM git_config WHERE graph_id = ?;
+
+-- Image annotations table: stores one row per imported image with calibration & sensor data.
+-- The authoritative source is the sidecar JSON; this table is a query-optimised cache.
+CREATE TABLE IF NOT EXISTS image_annotations (
+    uuid                       TEXT NOT NULL PRIMARY KEY,
+    block_uuid                 TEXT NOT NULL,
+    page_uuid                  TEXT NOT NULL,
+    graph_path                 TEXT NOT NULL,
+    file_path                  TEXT NOT NULL,
+    thumbnail_path             TEXT,
+    source                     TEXT NOT NULL DEFAULT 'FILE',
+    source_uri                 TEXT,
+    captured_at_ms             INTEGER,
+    imported_at_ms             INTEGER NOT NULL DEFAULT 0,
+    calibration_method         TEXT NOT NULL DEFAULT 'NONE',
+    pixels_per_meter           REAL NOT NULL DEFAULT 0.0,
+    calibration_confidence_pct INTEGER NOT NULL DEFAULT 0,
+    unit                       TEXT NOT NULL DEFAULT 'METERS',
+    tags                       TEXT NOT NULL DEFAULT '[]',
+    lat_lng                    TEXT,
+    altitude_m                 REAL,
+    bearing_deg                REAL,
+    pitch_deg                  REAL,
+    roll_deg                   REAL,
+    focal_length_mm            REAL,
+    focal_length_35mm_eq       REAL,
+    camera_make                TEXT,
+    camera_model               TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_image_annotations_block_uuid ON image_annotations(block_uuid);
+CREATE INDEX IF NOT EXISTS idx_image_annotations_page_uuid ON image_annotations(page_uuid);
+CREATE INDEX IF NOT EXISTS idx_image_annotations_graph_path ON image_annotations(graph_path);
+
+-- Measurement annotations table: stores individual measurements drawn on an image.
+-- Cascade-deletes when the parent image_annotation is deleted.
+CREATE TABLE IF NOT EXISTS measurement_annotations (
+    uuid              TEXT NOT NULL PRIMARY KEY,
+    image_uuid        TEXT NOT NULL,
+    annotation_type   TEXT NOT NULL,
+    normalized_points TEXT NOT NULL DEFAULT '[]',
+    value_meters      REAL,
+    value_display     TEXT,
+    label             TEXT,
+    color_hex         TEXT NOT NULL DEFAULT '#FF0000',
+    ble_device_id     TEXT,
+    FOREIGN KEY (image_uuid) REFERENCES image_annotations(uuid) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_measurement_annotations_image_uuid ON measurement_annotations(image_uuid);
+
+-- Image annotation queries
+
+selectAllImageAnnotations:
+SELECT * FROM image_annotations ORDER BY imported_at_ms DESC;
+
+selectImageAnnotationByUuid:
+SELECT * FROM image_annotations WHERE uuid = ?;
+
+selectImageAnnotationsByPage:
+SELECT * FROM image_annotations WHERE page_uuid = ? ORDER BY imported_at_ms DESC;
+
+selectImageAnnotationsByTag:
+SELECT * FROM image_annotations WHERE tags LIKE '%"' || ? || '"%' ORDER BY imported_at_ms DESC;
+
+insertImageAnnotation:
+INSERT OR REPLACE INTO image_annotations (
+    uuid, block_uuid, page_uuid, graph_path, file_path, thumbnail_path,
+    source, source_uri, captured_at_ms, imported_at_ms,
+    calibration_method, pixels_per_meter, calibration_confidence_pct,
+    unit, tags, lat_lng, altitude_m, bearing_deg, pitch_deg, roll_deg,
+    focal_length_mm, focal_length_35mm_eq, camera_make, camera_model
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+updateImageAnnotation:
+UPDATE image_annotations SET
+    block_uuid = ?,
+    page_uuid = ?,
+    graph_path = ?,
+    file_path = ?,
+    thumbnail_path = ?,
+    source = ?,
+    source_uri = ?,
+    captured_at_ms = ?,
+    imported_at_ms = ?,
+    calibration_method = ?,
+    pixels_per_meter = ?,
+    calibration_confidence_pct = ?,
+    unit = ?,
+    tags = ?,
+    lat_lng = ?,
+    altitude_m = ?,
+    bearing_deg = ?,
+    pitch_deg = ?,
+    roll_deg = ?,
+    focal_length_mm = ?,
+    focal_length_35mm_eq = ?,
+    camera_make = ?,
+    camera_model = ?
+WHERE uuid = ?;
+
+deleteImageAnnotation:
+DELETE FROM image_annotations WHERE uuid = ?;
+
+-- Measurement annotation queries
+
+selectMeasurementsForImage:
+SELECT * FROM measurement_annotations WHERE image_uuid = ? ORDER BY rowid;
+
+insertMeasurementAnnotation:
+INSERT OR REPLACE INTO measurement_annotations (
+    uuid, image_uuid, annotation_type, normalized_points,
+    value_meters, value_display, label, color_hex, ble_device_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+deleteMeasurementsForImage:
+DELETE FROM measurement_annotations WHERE image_uuid = ?;
+
+deleteMeasurementAnnotation:
+DELETE FROM measurement_annotations WHERE uuid = ?;

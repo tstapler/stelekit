@@ -13,9 +13,6 @@ permissions:
   contents: write
   pull-requests: write
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
 
 jobs:
   # ── Release Please ─────────────────────────────────────────────────────────
@@ -37,49 +34,15 @@ jobs:
           manifest-file: .release-please-manifest.json
           draft: true
 
-  # ── KMP JVM tests ──────────────────────────────────────────────────────────
-  # Runs on every push to main (not gated on a release). Executes the fast
-  # JVM test subset (excludes Roborazzi screenshot tests) with a virtual X
-  # display so Compose UI tests can render headlessly. A failure here blocks
-  # the resolve-version job and therefore all downstream build jobs.
-  test-kmp:
-    name: Test (KMP JVM)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-home-cache-cleanup: true
-          gradle-home-cache-strict-match: true
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-
-      - name: Install Xvfb (virtual display for Compose UI tests)
-        run: sudo apt-get install -y xvfb
-
-      - name: Run JVM tests (fast subset, no screenshots)
-        run: |
-          Xvfb :99 -screen 0 1280x720x24 &
-          sleep 1
-          DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 \
-            ./gradlew :kmp:jvmTestFast --no-daemon --build-cache
-
   # ── Resolve version ────────────────────────────────────────────────────────
   # Normalises the version string from either Release Please or workflow_dispatch
   # so all build jobs can reference a single output.
   resolve-version:
     name: Resolve version
     runs-on: ubuntu-latest
-    needs: [release-please, test-kmp]
+    needs: [release-please]
     if: |
-      always() &&
-      (needs.test-kmp.result == 'success' || needs.test-kmp.result == 'skipped') && (
+      always() && (
         (needs.release-please.result == 'success' && needs.release-please.outputs.release_created == 'true') ||
         (needs.release-please.result == 'skipped' && github.event_name == 'workflow_dispatch')
       )
@@ -94,12 +57,92 @@ jobs:
             echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
           fi
 
+  # ── CI status check ────────────────────────────────────────────────────────
+  # Checks whether ci.yml already passed for this commit or its parent. The
+  # parent check covers the normal Release Please path: RP commits only bump
+  # version files, so the parent (the feature-merge commit) is the one that ran
+  # CI. If either passed, the test-kmp safety gate below is skipped.
+  check-ci-status:
+    name: Check CI status
+    runs-on: ubuntu-latest
+    needs: [release-please]
+    if: |
+      always() && (
+        (needs.release-please.result == 'success' && needs.release-please.outputs.release_created == 'true') ||
+        (needs.release-please.result == 'skipped' && github.event_name == 'workflow_dispatch')
+      )
+    outputs:
+      ci_passed: ${{ steps.check.outputs.ci_passed }}
+    permissions:
+      actions: read
+    steps:
+      - name: Check if ci.yml passed for this commit or its parent
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="${{ github.sha }}"
+          # Release Please commits only bump version files; check parent too so
+          # the feature-merge commit's CI run counts as validation.
+          PARENT_SHA=$(gh api "/repos/${{ github.repository }}/commits/${SHA}" \
+            --jq '.parents[0].sha // empty' 2>/dev/null || true)
+
+          ci_passed_for() {
+            local commit="$1"
+            [ -z "$commit" ] && return 1
+            local count
+            count=$(gh run list \
+              --repo "${{ github.repository }}" \
+              --workflow ci.yml \
+              --commit "$commit" \
+              --status success \
+              --limit 1 \
+              --json databaseId \
+              --jq 'length' 2>/dev/null || echo 0)
+            [ "${count:-0}" -gt 0 ]
+          }
+
+          if ci_passed_for "$SHA" || ci_passed_for "$PARENT_SHA"; then
+            echo "ci.yml passed for ${SHA} or parent — skipping redundant tests"
+            echo "ci_passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No successful ci.yml run found — will run tests as safety gate"
+            echo "ci_passed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── KMP safety gate ────────────────────────────────────────────────────────
+  # Runs JVM + Android unit tests only when ci.yml has NOT passed for this
+  # commit or its parent (e.g. a direct push to main bypassed PR checks).
+  # Skipped on the normal PR → merge path — adds zero release latency then.
+  test-kmp:
+    name: Test KMP (safety gate)
+    runs-on: ubuntu-latest
+    needs: [resolve-version, check-ci-status]
+    if: |
+      always() &&
+      needs.resolve-version.result == 'success' &&
+      (needs.check-ci-status.result == 'success' || needs.check-ci-status.result == 'failure') &&
+      needs.check-ci-status.outputs.ci_passed != 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+      - name: Install Xvfb
+        run: sudo apt-get install -y xvfb
+      - name: Run JVM and Android unit tests
+        run: xvfb-run --auto-servernum ./gradlew jvmTest testDebugUnitTest --no-daemon --build-cache
+
   # ── Android release APK ────────────────────────────────────────────────────
   android-release:
     name: Android Release APK
     runs-on: ubuntu-latest
-    needs: resolve-version
-    if: ${{ always() && needs.resolve-version.result == 'success' }}
+    needs: [resolve-version, test-kmp]
+    if: ${{ always() && needs.resolve-version.result == 'success' && (needs.test-kmp.result == 'success' || needs.test-kmp.result == 'skipped') }}
     permissions:
       contents: read
 
@@ -131,6 +174,14 @@ jobs:
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # lintVitalAnalyzeRelease and D8 desugar exhaust the 512m default Metaspace.
+          # Override gradle.properties jvmargs: reduce heap pre-alloc (no warm daemon),
+          # double Metaspace to 1g to prevent intermittent OOM on CI runners.
+          GRADLE_OPTS: >-
+            -Xms2g -Xmx4g
+            -XX:MaxMetaspaceSize=1g
+            -XX:ReservedCodeCacheSize=512m
+            -Dfile.encoding=UTF-8
         run: |
           APP_VERSION="${{ needs.resolve-version.outputs.version }}"
           ./gradlew :androidApp:assembleRelease --no-daemon --build-cache \
@@ -151,8 +202,8 @@ jobs:
   desktop-linux:
     name: Desktop (Linux)
     runs-on: ubuntu-latest
-    needs: resolve-version
-    if: ${{ always() && needs.resolve-version.result == 'success' }}
+    needs: [resolve-version, test-kmp]
+    if: ${{ always() && needs.resolve-version.result == 'success' && (needs.test-kmp.result == 'success' || needs.test-kmp.result == 'skipped') }}
     permissions:
       contents: read
 
@@ -187,12 +238,25 @@ jobs:
           mv "$DEB" "kmp/build/compose/binaries/main/deb/SteleKit-${{ needs.resolve-version.outputs.version }}-linux.deb"
           mv "$RPM" "kmp/build/compose/binaries/main/rpm/SteleKit-${{ needs.resolve-version.outputs.version }}-linux.rpm"
 
+      - name: Cache appimagetool
+        id: cache-appimagetool
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin/appimagetool
+          key: appimagetool-continuous-x86_64
+
+      - name: Download appimagetool
+        if: steps.cache-appimagetool.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.local/bin
+          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
+            -O ~/.local/bin/appimagetool
+          chmod +x ~/.local/bin/appimagetool
+
       - name: Build AppImage
         run: |
           APP_VERSION="${{ needs.resolve-version.outputs.version }}"
-          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
-            -O /tmp/appimagetool
-          chmod +x /tmp/appimagetool
+          APPIMAGE_TOOL=~/.local/bin/appimagetool
 
           APPDIR="$(pwd)/AppDir"
           mkdir -p "$APPDIR/usr"
@@ -223,7 +287,7 @@ jobs:
           chmod +x "$APPDIR/AppRun"
 
           ARCH=$(uname -m)
-          APPIMAGE_EXTRACT_AND_RUN=1 ARCH="$ARCH" /tmp/appimagetool "$APPDIR" \
+          APPIMAGE_EXTRACT_AND_RUN=1 ARCH="$ARCH" "$APPIMAGE_TOOL" "$APPDIR" \
             "kmp/build/compose/binaries/main/SteleKit-${APP_VERSION}-linux.AppImage"
 
       - name: Smoke-test AppImage startup
@@ -240,14 +304,25 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN=1 DISPLAY=:99 "$APPIMAGE" >/tmp/stelekit-smoke.log 2>&1 &
           APP_PID=$!
 
-          sleep 20
+          sleep 2
+          TIMEOUT=30
+          ELAPSED=2
+          PASSED=false
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            if kill -0 $APP_PID 2>/dev/null; then
+              PASSED=true
+              break
+            fi
+            sleep 2
+            ELAPSED=$((ELAPSED + 2))
+          done
 
-          if kill -0 $APP_PID 2>/dev/null; then
-            echo "Smoke test passed — app still running after 20s"
+          if [ "$PASSED" = "true" ]; then
+            echo "Smoke test passed — app still running after ${ELAPSED}s"
             kill $APP_PID 2>/dev/null || true
           else
             wait $APP_PID; EXIT_CODE=$?
-            echo "Smoke test FAILED — app exited with code $EXIT_CODE"
+            echo "Smoke test FAILED — app exited within ${TIMEOUT}s (code $EXIT_CODE)"
             cat /tmp/stelekit-smoke.log || true
             kill $XVFB_PID 2>/dev/null || true
             exit 1
@@ -267,8 +342,8 @@ jobs:
   desktop-macos:
     name: Desktop (macOS)
     runs-on: macos-latest
-    needs: resolve-version
-    if: ${{ always() && needs.resolve-version.result == 'success' }}
+    needs: [resolve-version, test-kmp]
+    if: ${{ always() && needs.resolve-version.result == 'success' && (needs.test-kmp.result == 'success' || needs.test-kmp.result == 'skipped') }}
     permissions:
       contents: read
 
@@ -285,6 +360,15 @@ jobs:
           gradle-home-cache-cleanup: true
           gradle-home-cache-strict-match: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Install Bazelisk
+        run: brew install bazelisk
+
+      - name: Generate icon.icns
+        run: |
+          bazel build //kmp/src/jvmMain/resources/icons:icon_icns
+          cp bazel-bin/kmp/src/jvmMain/resources/icons/icon.icns \
+             kmp/src/jvmMain/resources/icons/icon.icns
 
       - name: Package desktop distributable
         run: |
@@ -306,14 +390,25 @@ jobs:
           /tmp/stelekit-smoke/stelekit.app/Contents/MacOS/stelekit >/tmp/stelekit-smoke.log 2>&1 &
           APP_PID=$!
 
-          sleep 20
+          sleep 2
+          TIMEOUT=30
+          ELAPSED=2
+          PASSED=false
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            if kill -0 $APP_PID 2>/dev/null; then
+              PASSED=true
+              break
+            fi
+            sleep 2
+            ELAPSED=$((ELAPSED + 2))
+          done
 
-          if kill -0 $APP_PID 2>/dev/null; then
-            echo "Smoke test passed — app still running after 20s"
+          if [ "$PASSED" = "true" ]; then
+            echo "Smoke test passed — app still running after ${ELAPSED}s"
             kill $APP_PID 2>/dev/null || true
           else
             wait $APP_PID; EXIT_CODE=$?
-            echo "Smoke test FAILED — app exited with code $EXIT_CODE"
+            echo "Smoke test FAILED — app exited within ${TIMEOUT}s (code $EXIT_CODE)"
             cat /tmp/stelekit-smoke.log || true
             hdiutil detach /tmp/stelekit-smoke -quiet || true
             exit 1
@@ -330,8 +425,8 @@ jobs:
   desktop-windows:
     name: Desktop (Windows)
     runs-on: windows-latest
-    needs: resolve-version
-    if: ${{ always() && needs.resolve-version.result == 'success' }}
+    needs: [resolve-version, test-kmp]
+    if: ${{ always() && needs.resolve-version.result == 'success' && (needs.test-kmp.result == 'success' || needs.test-kmp.result == 'skipped') }}
     permissions:
       contents: read
 
@@ -363,13 +458,24 @@ jobs:
           if (-not $exe) { Write-Error "stelekit.exe not found"; exit 1 }
 
           $proc = Start-Process -FilePath $exe.FullName -RedirectStandardError "$env:TEMP\stelekit-smoke.log" -PassThru
-          Start-Sleep 20
+          Start-Sleep 2
+          $timeout = 30
+          $elapsed = 2
+          $passed = $false
+          while ($elapsed -lt $timeout) {
+            if (-not $proc.HasExited) {
+              $passed = $true
+              break
+            }
+            Start-Sleep 2
+            $elapsed += 2
+          }
 
-          if (-not $proc.HasExited) {
-            Write-Host "Smoke test passed — app still running after 20s"
+          if ($passed) {
+            Write-Host "Smoke test passed — app still running after ${elapsed}s"
             Stop-Process -Id $proc.Id -Force
           } else {
-            Write-Host "Smoke test FAILED — app exited with code $($proc.ExitCode)"
+            Write-Host "Smoke test FAILED — app exited within ${timeout}s (code $($proc.ExitCode))"
             Get-Content "$env:TEMP\stelekit-smoke.log" -ErrorAction SilentlyContinue
             exit 1
           }
@@ -407,33 +513,6 @@ jobs:
 
       - name: List release artifacts
         run: find release-artifacts -type f | sort
-
-      - name: Update Homebrew formula SHA256s
-        run: |
-          LINUX_APPIMAGE=$(find release-artifacts -name "*.AppImage" | head -1)
-          MACOS_DMG=$(find release-artifacts -name "*.dmg" | head -1)
-
-          if [ -n "$LINUX_APPIMAGE" ]; then
-            LINUX_SHA=$(sha256sum "$LINUX_APPIMAGE" | awk '{print $1}')
-            sed -i "/on_linux/,/end/{s/sha256 \"[0-9a-f]\{64\}\"/sha256 \"$LINUX_SHA\"/; s/sha256 \"PLACEHOLDER_LINUX_SHA256\"/sha256 \"$LINUX_SHA\"/}" Formula/stelekit.rb
-          fi
-          if [ -n "$MACOS_DMG" ]; then
-            MACOS_SHA=$(sha256sum "$MACOS_DMG" | awk '{print $1}')
-            sed -i "/on_macos/,/end/{s/sha256 \"[0-9a-f]\{64\}\"/sha256 \"$MACOS_SHA\"/; s/sha256 \"PLACEHOLDER_MACOS_SHA256\"/sha256 \"$MACOS_SHA\"/}" Formula/stelekit.rb
-            sed -i "s/sha256 \"[0-9a-f]\{64\}\"/sha256 \"$MACOS_SHA\"/" Casks/stelekit.rb
-          fi
-
-          VER="${{ needs.resolve-version.outputs.version }}"
-          sed -i "s/^  version \".*\"/  version \"${VER#v}\"/" Formula/stelekit.rb
-          sed -i "s/^  version \".*\"/  version \"${VER#v}\"/" Casks/stelekit.rb
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/stelekit.rb Casks/stelekit.rb
-          git diff --cached --quiet || git commit -m "chore: update Homebrew formula for ${{ needs.resolve-version.outputs.version }}"
-          git fetch origin main
-          git rebase origin/main
-          git push origin HEAD:main
 
       - name: Upload artifacts and prepend download table (Release Please release)
         if: github.event_name == 'push'
@@ -483,6 +562,10 @@ jobs:
           # Publish: all artifacts are attached — promote from draft to live release
           gh release edit "$VER" --draft=false
 
+      # NOTE: fdroid.yml cannot be triggered via 'release: published' here because
+      # GITHUB_TOKEN-triggered events do not fire other workflows. It is called
+      # directly via the 'update-fdroid-pages' job below instead.
+
       - name: Create or update release (workflow_dispatch)
         if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
@@ -525,3 +608,113 @@ jobs:
 
             ---
             _Full changelog is auto-generated below._
+
+  # ── Homebrew formula update ────────────────────────────────────────────────
+  # Runs after artifact upload. Its own concurrency group (homebrew-formula)
+  # ensures concurrent release builds queue here instead of racing on a push.
+  # A version guard skips the update when an older release is being backfilled
+  # (e.g. re-running v0.34.0 must not overwrite the v0.38.1 formula already in
+  # main). update-fdroid and deploy-pages do NOT wait on this job.
+  update-homebrew:
+    name: Update Homebrew Formula
+    runs-on: ubuntu-latest
+    needs: [resolve-version, github-release]
+    if: ${{ always() && needs.resolve-version.result == 'success' && needs.github-release.result == 'success' }}
+    concurrency:
+      group: homebrew-formula
+      cancel-in-progress: false
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Update Homebrew formula SHA256s
+        env:
+          VER: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          # Fetch origin/main so we can read the formula version currently there.
+          # With the concurrency queue, only one update-homebrew job runs at a time,
+          # so by the time we start the formula reflects all earlier queued updates.
+          git fetch origin main
+
+          CURRENT_VER=$(git show origin/main:Formula/stelekit.rb \
+            | grep -m1 'version "' | grep -oP '[0-9]+\.[0-9]+\.[0-9]+')
+          BUILD_VER="${VER#v}"
+
+          # Skip if formula already points to a newer release. This prevents a
+          # backfill build (v0.34.0) from overwriting a formula already updated
+          # to v0.38.1 by a normal release run.
+          if ! python3 -c "
+          a = tuple(map(int, '$CURRENT_VER'.split('.')))
+          b = tuple(map(int, '$BUILD_VER'.split('.')))
+          exit(0 if b >= a else 1)
+          "; then
+            echo "Formula is already at $CURRENT_VER (newer than $BUILD_VER) — skipping"
+            exit 0
+          fi
+
+          echo "Updating formula: $CURRENT_VER → $BUILD_VER"
+
+          LINUX_APPIMAGE=$(find release-artifacts -name "*.AppImage" | head -1)
+          MACOS_DMG=$(find release-artifacts -name "*.dmg" | head -1)
+
+          if [ -n "$LINUX_APPIMAGE" ]; then
+            LINUX_SHA=$(sha256sum "$LINUX_APPIMAGE" | awk '{print $1}')
+            sed -i "/on_linux/,/end/{s/sha256 \"[0-9a-f]\{64\}\"/sha256 \"$LINUX_SHA\"/; s/sha256 \"PLACEHOLDER_LINUX_SHA256\"/sha256 \"$LINUX_SHA\"/}" Formula/stelekit.rb
+          fi
+          if [ -n "$MACOS_DMG" ]; then
+            MACOS_SHA=$(sha256sum "$MACOS_DMG" | awk '{print $1}')
+            sed -i "/on_macos/,/end/{s/sha256 \"[0-9a-f]\{64\}\"/sha256 \"$MACOS_SHA\"/; s/sha256 \"PLACEHOLDER_MACOS_SHA256\"/sha256 \"$MACOS_SHA\"/}" Formula/stelekit.rb
+            sed -i "s/sha256 \"[0-9a-f]\{64\}\"/sha256 \"$MACOS_SHA\"/" Casks/stelekit.rb
+          fi
+
+          sed -i "s/^  version \".*\"/  version \"$BUILD_VER\"/" Formula/stelekit.rb
+          sed -i "s/^  version \".*\"/  version \"$BUILD_VER\"/" Casks/stelekit.rb
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/stelekit.rb Casks/stelekit.rb
+          git diff --cached --quiet || git commit -m "chore: update Homebrew formula for $VER"
+          git rebase origin/main
+          git push origin HEAD:main
+
+  # ── F-Droid index build ────────────────────────────────────────────────────
+  # Called directly after github-release because GITHUB_TOKEN-triggered events
+  # (gh release edit --draft=false) cannot fire the release: [published] trigger
+  # in fdroid.yml — GitHub blocks cross-workflow events from GITHUB_TOKEN.
+  #
+  # fdroid.yml uploads the fdroid-content artifact; deploy-pages (below) downloads
+  # it and assembles+deploys the site in a single pass — no duplicate site build.
+  # update-homebrew runs in parallel — site deploy does not wait on Homebrew.
+  update-fdroid:
+    name: Build F-Droid Index
+    needs: [github-release]
+    if: ${{ always() && needs.github-release.result == 'success' }}
+    uses: ./.github/workflows/fdroid.yml
+    permissions:
+      contents: read
+      actions: read
+    secrets: inherit
+
+  # ── Site deploy (with fresh F-Droid index) ────────────────────────────────
+  # Runs after fdroid.yml so pages.yml finds the fdroid-content artifact in the
+  # current run (reusable workflows share the parent run's artifact space).
+  deploy-pages:
+    name: Deploy Site
+    needs: [update-fdroid]
+    if: ${{ always() && needs.update-fdroid.result == 'success' }}
+    uses: ./.github/workflows/pages.yml
+    with:
+      skip_demo_rebuild: true
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+      actions: read
+    secrets: inherit

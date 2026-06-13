@@ -8,8 +8,9 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.BlockWithDepth
-import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.flow.Flow
@@ -68,17 +69,17 @@ class BlockTreeOperations(
     ): Either<DomainError, List<BlockWithDepth>> {
         return try {
             // Get current blocks snapshot
-            val pageBlocksResult = blockOperations.getBlocksForPage(pageUuid).first()
+            val pageBlocksResult = blockOperations.getBlocksForPage(PageUuid(pageUuid)).first()
             val pageBlocks = pageBlocksResult.getOrNull() ?: emptyList()
-            
+
             val rootBlocks = pageBlocks.filter { it.parentUuid == null }
             val visibleBlocks = mutableListOf<BlockWithDepth>()
-            
+
             rootBlocks.forEach { rootBlock ->
                 collectSubtree(
-                    rootBlock.uuid, 
-                    0, 
-                    visibleBlocks, 
+                    rootBlock.uuid.value,
+                    0,
+                    visibleBlocks,
                     includeCollapsed,
                     null
                 )
@@ -125,9 +126,9 @@ class BlockTreeOperations(
      */
     suspend fun getAncestorPath(blockUuid: String): Either<DomainError, List<String>> {
         return try {
-            val ancestorsResult = blockOperations.getBlockAncestors(blockUuid).first()
+            val ancestorsResult = blockOperations.getBlockAncestors(BlockUuid(blockUuid)).first()
             val ancestors = ancestorsResult.getOrNull() ?: emptyList()
-            (ancestors.map { it.uuid } + blockUuid).right()
+            (ancestors.map { it.uuid.value } + blockUuid).right()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -158,15 +159,15 @@ class BlockTreeOperations(
      */
     suspend fun getCollapsedBlocks(pageUuid: String): Either<DomainError, List<String>> {
         return try {
-            val pageBlocksResult = blockOperations.getBlocksForPage(pageUuid).first()
+            val pageBlocksResult = blockOperations.getBlocksForPage(PageUuid(pageUuid)).first()
             val pageBlocks = pageBlocksResult.getOrNull() ?: emptyList()
-            
+
             val collapsed = pageBlocks.filter { block ->
-                block.properties.containsKey("collapsed") && 
+                block.properties.containsKey("collapsed") &&
                 block.properties["collapsed"] == "true"
             }
-            
-            collapsed.map { it.uuid }.right()
+
+            collapsed.map { it.uuid.value }.right()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -179,7 +180,7 @@ class BlockTreeOperations(
      */
     suspend fun toggleCollapseState(blockUuid: String): Either<DomainError, Unit> {
         return try {
-            val blockResult = blockOperations.getBlockByUuid(blockUuid).first()
+            val blockResult = blockOperations.getBlockByUuid(BlockUuid(blockUuid)).first()
             val block = blockResult.getOrNull() ?: return DomainError.DatabaseError.NotFound("block", blockUuid).left()
 
             val isCurrentlyCollapsed = block.properties["collapsed"] == "true"
@@ -220,15 +221,15 @@ class BlockTreeOperations(
             val newBlocks = mutableListOf<Block>()
             
             // Generate all new UUIDs first
-            subtree.forEach { 
-                oldToNewUuid[it.block.uuid] = UuidGenerator.generateV7()
+            subtree.forEach {
+                oldToNewUuid[it.block.uuid.value] = UuidGenerator.generateV7()
             }
             
             // 3. Resolve target root level
             val targetLevel = if (targetParentUuid == null) {
                 0
             } else {
-                val targetParent = blockOperations.getBlockByUuid(targetParentUuid).first().getOrNull()
+                val targetParent = blockOperations.getBlockByUuid(BlockUuid(targetParentUuid)).first().getOrNull()
                     ?: return DomainError.DatabaseError.NotFound("block", targetParentUuid!!).left()
                 targetParent.level + 1
             }
@@ -236,18 +237,18 @@ class BlockTreeOperations(
             // 4. Create new blocks with adjusted parent pointers and levels
             subtree.forEach { item ->
                 val oldBlock = item.block
-                val newUuid = oldToNewUuid[oldBlock.uuid]!!
-                
-                val newParentUuid = if (oldBlock.uuid == rootBlockUuid) {
+                val newUuid = oldToNewUuid[oldBlock.uuid.value]!!
+
+                val newParentUuid = if (oldBlock.uuid.value == rootBlockUuid) {
                     targetParentUuid
                 } else {
                     oldToNewUuid[oldBlock.parentUuid]
                 }
-                
+
                 val itemTargetLevel = targetLevel + item.depth
-                
+
                 val newBlock = oldBlock.copy(
-                    uuid = newUuid,
+                    uuid = BlockUuid(newUuid),
                     pageUuid = oldBlock.pageUuid, // Remains on same page
                     parentUuid = newParentUuid,
                     level = itemTargetLevel,
@@ -257,12 +258,12 @@ class BlockTreeOperations(
                 )
                 newBlocks.add(newBlock)
             }
-            
+
             // 5. Batch save the new blocks
             blockOperations.saveBlocks(newBlocks)
-            
+
             // 6. Return the new root
-            newBlocks.first { it.uuid == oldToNewUuid[rootBlockUuid] }.right()
+            newBlocks.first { it.uuid.value == oldToNewUuid[rootBlockUuid] }.right()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -283,7 +284,7 @@ class BlockTreeOperations(
             // Basic validation - check if trying to move block into its own subtree
             if (targetParentUuid != null) {
                 val subtree = getSubtree(rootUuid).getOrNull() ?: return DomainError.DatabaseError.NotFound("block", rootUuid).left()
-                if (subtree.any { it.block.uuid == targetParentUuid }) {
+                if (subtree.any { it.block.uuid.value == targetParentUuid }) {
                     return DomainError.DatabaseError.WriteFailed("Cannot move a block into its own subtree").left()
                 }
             }
@@ -294,17 +295,17 @@ class BlockTreeOperations(
             val targetLevel = if (targetParentUuid == null) {
                 0
             } else {
-                val targetParent = blockOperations.getBlockByUuid(targetParentUuid).first().getOrNull()
+                val targetParent = blockOperations.getBlockByUuid(BlockUuid(targetParentUuid)).first().getOrNull()
                     ?: return DomainError.DatabaseError.NotFound("block", targetParentUuid).left()
                 targetParent.level + 1
             }
-            
+
             // Move the root block first
             val moveResult = blockOperations.moveBlockEnhanced(rootUuid, targetParentUuid, positioning, targetUuid)
             if (moveResult.isLeft()) return moveResult
-            
+
             // Update levels for all descendants
-            val descendants = subtree.filter { it.block.uuid != rootUuid }
+            val descendants = subtree.filter { it.block.uuid.value != rootUuid }
             val descendantsToUpdate = descendants.map { item ->
                 val newLevel = targetLevel + item.depth
                 item.block.copy(level = newLevel)
@@ -329,7 +330,7 @@ class BlockTreeOperations(
         levels: Int = 1
     ): Either<DomainError, Unit> {
         return try {
-            val block = blockOperations.getBlockByUuid(rootUuid).first().getOrNull()
+            val block = blockOperations.getBlockByUuid(BlockUuid(rootUuid)).first().getOrNull()
                 ?: return DomainError.DatabaseError.NotFound("block", rootUuid).left()
 
             if (block.parentUuid == null) {
@@ -339,7 +340,7 @@ class BlockTreeOperations(
             // Get the current parent and its parent
             val parent = blockOperations.getBlockParent(block.uuid).first().getOrNull()
                 ?: return DomainError.DatabaseError.NotFound("block", block.parentUuid!!).left()
-            
+
             val targetParent = if (levels == 1) {
                 blockOperations.getBlockParent(parent.uuid).first().getOrNull()
             } else {
@@ -351,12 +352,12 @@ class BlockTreeOperations(
                 }
                 currentParent
             }
-            
+
             moveSubtree(
                 rootUuid,
-                targetParent?.uuid,
+                targetParent?.uuid?.value,
                 PositioningMode.AFTER,
-                parent.uuid
+                parent.uuid.value
             )
         } catch (e: CancellationException) {
             throw e
@@ -373,19 +374,19 @@ class BlockTreeOperations(
         levels: Int = 1
     ): Either<DomainError, Unit> {
         return try {
-            val block = blockOperations.getBlockByUuid(rootUuid).first().getOrNull()
+            val block = blockOperations.getBlockByUuid(BlockUuid(rootUuid)).first().getOrNull()
                 ?: return DomainError.DatabaseError.NotFound("block", rootUuid).left()
 
             // Find the target parent by looking at siblings
-            val siblings = blockOperations.getBlockSiblings(rootUuid).first().getOrNull() ?: emptyList()
+            val siblings = blockOperations.getBlockSiblings(BlockUuid(rootUuid)).first().getOrNull() ?: emptyList()
             val precedingSiblings = siblings.filter { it.position < block.position }
-            
+
             if (precedingSiblings.isEmpty()) {
                 return DomainError.DatabaseError.WriteFailed("No preceding sibling to demote into").left()
             }
-            
+
             val targetParent = precedingSiblings.last()
-            
+
             // For multiple levels, we'd need to find the deepest descendant
             var finalTargetParent = targetParent
             repeat(levels - 1) {
@@ -396,10 +397,10 @@ class BlockTreeOperations(
                     return DomainError.DatabaseError.WriteFailed("Cannot demote that many levels").left()
                 }
             }
-            
+
             moveSubtree(
                 rootUuid,
-                finalTargetParent.uuid,
+                finalTargetParent.uuid.value,
                 PositioningMode.END
             )
         } catch (e: CancellationException) {
@@ -420,19 +421,19 @@ class BlockTreeOperations(
     ) {
         if (maxDepth != null && depth > maxDepth) return
         
-        val blockResult = blockOperations.getBlockByUuid(blockUuid).first()
+        val blockResult = blockOperations.getBlockByUuid(BlockUuid(blockUuid)).first()
         val block = blockResult.getOrNull() ?: return
         result.add(BlockWithDepth(block, depth))
-        
+
         // Check if this block is collapsed
         val isCollapsed = block.properties["collapsed"] == "true"
         if (!includeCollapsed && isCollapsed) return
-        
+
         // Recursively collect children
-        val childrenResult = blockOperations.getBlockChildren(blockUuid).first()
+        val childrenResult = blockOperations.getBlockChildren(BlockUuid(blockUuid)).first()
         val children = childrenResult.getOrNull() ?: emptyList()
         children.sortedBy { it.position }.forEach { child ->
-            collectSubtree(child.uuid, depth + 1, result, includeCollapsed, maxDepth)
+            collectSubtree(child.uuid.value, depth + 1, result, includeCollapsed, maxDepth)
         }
     }
 }
@@ -483,14 +484,14 @@ object BlockOperationValidator {
             if (targetParentUuid != null) {
                 // Use BlockTreeOperations extension
                 val subtree = blockOperations.create().getSubtree(blockUuid).getOrNull()
-                if (subtree?.any { it.block.uuid == targetParentUuid } == true) {
+                if (subtree?.any { it.block.uuid.value == targetParentUuid } == true) {
                     errors.add("Cannot move a block into its own subtree")
                 }
             }
             
             // Check if target parent exists
             if (targetParentUuid != null) {
-                val targetExists = blockOperations.getBlockByUuid(targetParentUuid).first().getOrNull() != null
+                val targetExists = blockOperations.getBlockByUuid(BlockUuid(targetParentUuid)).first().getOrNull() != null
                 if (!targetExists) {
                     errors.add("Target parent block does not exist")
                 }

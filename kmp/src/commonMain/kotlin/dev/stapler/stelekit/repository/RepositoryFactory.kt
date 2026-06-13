@@ -20,10 +20,58 @@ import dev.stapler.stelekit.performance.SpanEmitter
 import dev.stapler.stelekit.performance.SpanLogSink
 import dev.stapler.stelekit.performance.TimingDriverWrapper
 import dev.stapler.stelekit.performance.wrapWithOtelIfAvailable
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
+
+enum class GraphBackend {
+    SQLDELIGHT,
+    DATASCRIPT,
+    KUZU,
+    NEO4J,
+    IN_MEMORY
+}
+
+interface RepositoryFactory {
+    fun createBlockRepository(backend: GraphBackend): BlockRepository
+    fun createPageRepository(backend: GraphBackend): PageRepository
+    fun createPropertyRepository(backend: GraphBackend): PropertyRepository
+    fun createReferenceRepository(backend: GraphBackend): ReferenceRepository
+    fun createSearchRepository(backend: GraphBackend): SearchRepository
+    fun close()
+}
+
+data class RepositorySet(
+    val blockRepository: BlockRepository,
+    val pageRepository: PageRepository,
+    /** Write-only view of [pageRepository] with cache population disabled. For background indexing. */
+    val backgroundPageRepository: PageRepository = pageRepository,
+    val propertyRepository: PropertyRepository,
+    val referenceRepository: ReferenceRepository,
+    val searchRepository: SearchRepository,
+    val journalService: JournalService,
+    val writeActor: dev.stapler.stelekit.db.DatabaseWriteActor? = null,
+    val undoManager: dev.stapler.stelekit.db.UndoManager? = null,
+    val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
+    val debugFlagRepository: dev.stapler.stelekit.performance.DebugFlagRepository? = null,
+    val ringBuffer: dev.stapler.stelekit.performance.RingBufferSpanExporter? = null,
+    val spanRepository: dev.stapler.stelekit.performance.SpanRepository? = null,
+    val bugReportBuilder: dev.stapler.stelekit.performance.BugReportBuilder? = null,
+    val perfExporter: dev.stapler.stelekit.performance.PerfExporter? = null,
+    val spanEmitter: dev.stapler.stelekit.performance.SpanEmitter? = null,
+    val sloChecker: dev.stapler.stelekit.performance.SloChecker? = null,
+    val spanLogSink: dev.stapler.stelekit.performance.SpanLogSink? = null,
+    /** Callback that runs WAL checkpoint after bulk graph import. Pass to [GraphLoader.onBulkImportComplete]. */
+    val onBulkImportComplete: (suspend () -> Unit)? = null,
+    val queryStatsRepository: dev.stapler.stelekit.performance.QueryStatsRepository? = null,
+    val queryStatsCollector: dev.stapler.stelekit.performance.QueryStatsCollector? = null,
+    val queryPlanRepository: dev.stapler.stelekit.performance.QueryPlanRepository? = null,
+    val imageAnnotationRepository: ImageAnnotationRepository = InMemoryImageAnnotationRepository(),
+    val measurementAnnotationRepository: MeasurementAnnotationRepository = InMemoryMeasurementAnnotationRepository(),
+)
 
 /**
  * Factory implementation for creating repository instances.
@@ -60,7 +108,7 @@ class RepositoryFactoryImpl(
                 InMemoryBlockRepository()
             }
             GraphBackend.DATASCRIPT -> getOrCreateInstance("block_datascript") {
-                DatascriptBlockRepository()
+                DatalogBlockRepository()
             }
             GraphBackend.SQLDELIGHT -> getOrCreateInstance("block_sqldelight") {
                 SqlDelightBlockRepository(database)
@@ -75,7 +123,7 @@ class RepositoryFactoryImpl(
                 InMemoryPageRepository()
             }
             GraphBackend.DATASCRIPT -> getOrCreateInstance("page_datascript") {
-                DatascriptPageRepository()
+                DatalogPageRepository()
             }
             GraphBackend.SQLDELIGHT -> getOrCreateInstance("page_sqldelight") {
                 val repo = SqlDelightPageRepository(database)
@@ -91,7 +139,7 @@ class RepositoryFactoryImpl(
                 InMemoryPropertyRepository()
             }
             GraphBackend.DATASCRIPT -> getOrCreateInstance("property_datascript") {
-                DatascriptPropertyRepository()
+                DatalogPropertyRepository()
             }
             GraphBackend.SQLDELIGHT -> getOrCreateInstance("property_sqldelight") {
                 SqlDelightPropertyRepository(database)
@@ -106,7 +154,7 @@ class RepositoryFactoryImpl(
                 InMemoryReferenceRepository()
             }
             GraphBackend.DATASCRIPT -> getOrCreateInstance("reference_datascript") {
-                DatascriptReferenceRepository()
+                DatalogReferenceRepository()
             }
             GraphBackend.SQLDELIGHT -> getOrCreateInstance("reference_sqldelight") {
                 SqlDelightReferenceRepository(database)
@@ -241,6 +289,11 @@ class RepositoryFactoryImpl(
 
         val walCallback: (suspend () -> Unit)? = sqlBlockRepo?.let { repo -> suspend { repo.walCheckpoint() } }
 
+        val queryPlanRepo = if (backend == GraphBackend.SQLDELIGHT) {
+            val rawDriver = activeDriver
+            if (rawDriver != null) dev.stapler.stelekit.performance.QueryPlanRepository(rawDriver) else null
+        } else null
+
         return RepositorySet(
             blockRepository = blockRepo,
             pageRepository = pageRepo,
@@ -263,6 +316,13 @@ class RepositoryFactoryImpl(
             onBulkImportComplete = walCallback,
             queryStatsRepository = queryStatsRepo,
             queryStatsCollector = collector,
+            queryPlanRepository = queryPlanRepo,
+            imageAnnotationRepository = if (backend == GraphBackend.SQLDELIGHT)
+                SqlDelightImageAnnotationRepository(database)
+            else InMemoryImageAnnotationRepository(),
+            measurementAnnotationRepository = if (backend == GraphBackend.SQLDELIGHT)
+                SqlDelightMeasurementAnnotationRepository(database)
+            else InMemoryMeasurementAnnotationRepository(),
         )
     }
 
@@ -271,11 +331,11 @@ class RepositoryFactoryImpl(
         actor.onWriteSuccess = { request ->
             when (request) {
                 is DatabaseWriteActor.WriteRequest.SaveBlocks ->
-                    request.blocks.forEach { sqlBlockRepo.evictBlock(it.uuid) }
+                    request.blocks.forEach { sqlBlockRepo.evictBlock(it.uuid.value) }
                 is DatabaseWriteActor.WriteRequest.DeleteBlocksForPage ->
-                    sqlBlockRepo.evictHierarchyForPage(request.pageUuid)
+                    sqlBlockRepo.evictHierarchyForPage(request.pageUuid.value)
                 is DatabaseWriteActor.WriteRequest.DeleteBlocksForPages ->
-                    request.pageUuids.forEach { sqlBlockRepo.evictHierarchyForPage(it) }
+                    request.pageUuids.forEach { sqlBlockRepo.evictHierarchyForPage(it.value) }
                 // Execute requests wrap arbitrary lambdas — no block UUID to extract.
                 // Entries written via Execute (e.g. saveBlock) rely on TTL expiry for
                 // cache invalidation rather than explicit eviction.
@@ -298,6 +358,9 @@ class RepositoryFactoryImpl(
             while (true) {
                 delay(5_000)
                 val drained = ringBuffer.drain()
+                if (drained.isNotEmpty()) withContext(PlatformDispatcher.IO) {
+                    dev.stapler.stelekit.performance.SpanArchiver.archive(drained)
+                }
                 val drainBlock: suspend () -> Either<DomainError, Unit> = {
                     drained.forEach { span -> spanRepository.insertSpan(span) }
                     spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)

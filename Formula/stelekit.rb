@@ -2,16 +2,16 @@
 class Stelekit < Formula
   desc "Markdown-based outliner and note-taking app (Kotlin Multiplatform)"
   homepage "https://github.com/tstapler/stelekit"
-  version "0.24.1"
+  version "0.40.4"
 
   on_linux do
     url "https://github.com/tstapler/stelekit/releases/download/v#{version}/SteleKit-v#{version}-linux.AppImage"
-    sha256 "01dbf9be32936a798278c86a3b59786b926e807a723997c7199f1458780125be"
+    sha256 "c9da912ebd0f025051431724e5bf9ed68e34a08d85cf68c550c42b912262e36c"
   end
 
   on_macos do
     url "https://github.com/tstapler/stelekit/releases/download/v#{version}/SteleKit-v#{version}-macos.dmg"
-    sha256 "940abd99ca87503d47ed53b1f167ef2dbd9a12056f4cdf37362a8a3e8a83d906"
+    sha256 "049382878c496f798684085cc59befdeca1b13610bc24693793267f2b45e827f"
 
     depends_on "openjdk"
   end
@@ -19,9 +19,16 @@ class Stelekit < Formula
   def install
     if OS.linux?
       appimage = "SteleKit-v#{version}-linux.AppImage"
-      (prefix/"bin").mkpath
-      cp appimage, prefix/"bin/stelekit"
-      chmod 0755, prefix/"bin/stelekit"
+      (libexec).mkpath
+      cp appimage, libexec/"stelekit.AppImage"
+      chmod 0755, libexec/"stelekit.AppImage"
+
+      # Wrapper script — sets APPIMAGE_EXTRACT_AND_RUN=1 so AppImage works without FUSE
+      (bin/"stelekit").write <<~SH
+        #!/bin/sh
+        exec env APPIMAGE_EXTRACT_AND_RUN=1 "#{libexec}/stelekit.AppImage" "$@"
+      SH
+      chmod 0755, bin/"stelekit"
 
       # Desktop entry
       (share/"applications").mkpath
@@ -38,7 +45,7 @@ class Stelekit < Formula
       DESKTOP
 
       # Extract icon from AppImage and install to hicolor
-      system "#{prefix}/bin/stelekit", "--appimage-extract", "stelekit.png"
+      system "env", "APPIMAGE_EXTRACT_AND_RUN=1", "#{libexec}/stelekit.AppImage", "--appimage-extract", "stelekit.png"
       icon_dir = share/"icons/hicolor/256x256/apps"
       icon_dir.mkpath
       cp "squashfs-root/stelekit.png", icon_dir/"stelekit.png"
@@ -98,9 +105,6 @@ class Stelekit < Formula
         Homebrew's share directory to XDG_DATA_DIRS by sourcing brew shellenv
         in ~/.profile or ~/.bash_profile:
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-
-        If the app fails to start, try:
-          APPIMAGE_EXTRACT_AND_RUN=1 stelekit
       EOS
     end
   end

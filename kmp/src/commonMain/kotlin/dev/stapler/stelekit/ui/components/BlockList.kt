@@ -87,6 +87,8 @@ fun BlockList(
     onMoveSelectedBlocks: (newParentUuid: String?, insertAfterUuid: String?) -> Unit = { _, _ -> },
     onAutoSelectForDrag: (String) -> Unit = {},
     onBlockSelectionChange: ((blockUuid: String, range: IntRange?) -> Unit)? = null,
+    /** Called when the user taps an image_annotation block thumbnail to open the annotation editor. */
+    onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (isDebugMode) {
@@ -112,8 +114,8 @@ fun BlockList(
         while (queue.isNotEmpty()) {
             val current = queue.removeFirst()
             childrenByParent[current]?.forEach { child ->
-                descendants.add(child.uuid)
-                queue.add(child.uuid)
+                descendants.add(child.uuid.value)
+                queue.add(child.uuid.value)
             }
         }
         return descendants
@@ -187,42 +189,42 @@ fun BlockList(
         Column {
         blocks.forEach { block ->
             // Only show if not hidden by a collapsed ancestor
-            if (block.uuid !in hiddenBlocks) {
-                val hasChildren = block.uuid in blocksWithChildren
-                val isCollapsed = block.uuid in collapsedBlocks
+            if (block.uuid.value !in hiddenBlocks) {
+                val hasChildren = block.uuid.value in blocksWithChildren
+                val isCollapsed = block.uuid.value in collapsedBlocks
 
-                val isDropTarget = dragState != null && dropTargetUuid == block.uuid
+                val isDropTarget = dragState != null && dropTargetUuid == block.uuid.value
                 BlockRenderer(
                     block = block,
                     isDebugMode = isDebugMode,
-                    isEditing = editingBlockUuid == block.uuid,
+                    isEditing = editingBlockUuid == block.uuid.value,
                     hasChildren = hasChildren,
                     isCollapsed = isCollapsed,
-                    isSelected = block.uuid in selectedBlockUuids,
+                    isSelected = block.uuid.value in selectedBlockUuids,
                     isInSelectionMode = isInSelectionMode,
-                    onToggleSelect = { onToggleSelect(block.uuid) },
-                    onEnterSelectionMode = { onEnterSelectionMode(block.uuid) },
+                    onToggleSelect = { onToggleSelect(block.uuid.value) },
+                    onEnterSelectionMode = { onEnterSelectionMode(block.uuid.value) },
                     isShiftDown = isShiftDown,
-                    onShiftClick = { onShiftClick(block.uuid) },
+                    onShiftClick = { onShiftClick(block.uuid.value) },
                     onStartEditing = {
-                        if (isInSelectionMode) onToggleSelect(block.uuid) else onStartEditing(block.uuid)
+                        if (isInSelectionMode) onToggleSelect(block.uuid.value) else onStartEditing(block.uuid.value)
                     },
-                    onStopEditing = { onStopEditing(block.uuid) },
-                    onContentChange = { newContent, version -> onContentChange(block.uuid, newContent, version) },
+                    onStopEditing = { onStopEditing(block.uuid.value) },
+                    onContentChange = { newContent, version -> onContentChange(block.uuid.value, newContent, version) },
                     onLinkClick = onLinkClick,
                     onNewBlock = onNewBlock,
                     onSplitBlock = onSplitBlock,
                     onMergeBlock = onMergeBlock,
-                    initialCursorPosition = if (editingBlockUuid == block.uuid) editingCursorIndex else null,
-                    onBackspace = { onBackspace(block.uuid) },
-                    onLoadContent = { onLoadContent(block.pageUuid) },
-                    onToggleCollapse = { onToggleCollapse(block.uuid) },
-                    onIndent = { onIndent(block.uuid) },
-                    onOutdent = { onOutdent(block.uuid) },
-                    onMoveUp = { onMoveUp(block.uuid) },
-                    onMoveDown = { onMoveDown(block.uuid) },
-                    onFocusUp = { onFocusUp(block.uuid) },
-                    onFocusDown = { onFocusDown(block.uuid) },
+                    initialCursorPosition = if (editingBlockUuid == block.uuid.value) editingCursorIndex else null,
+                    onBackspace = { onBackspace(block.uuid.value) },
+                    onLoadContent = { onLoadContent(block.pageUuid.value) },
+                    onToggleCollapse = { onToggleCollapse(block.uuid.value) },
+                    onIndent = { onIndent(block.uuid.value) },
+                    onOutdent = { onOutdent(block.uuid.value) },
+                    onMoveUp = { onMoveUp(block.uuid.value) },
+                    onMoveDown = { onMoveDown(block.uuid.value) },
+                    onFocusUp = { onFocusUp(block.uuid.value) },
+                    onFocusDown = { onFocusDown(block.uuid.value) },
                     onResolveContent = onResolveContent,
                     onSearchPages = onSearchPages,
                     formatEvents = formatEvents,
@@ -231,16 +233,17 @@ fun BlockList(
                         {
                             // Collect suggestions from all visible blocks
                             val allSuggestions = blocks
-                                .filter { it.uuid !in hiddenBlocks }
+                                .filter { it.uuid.value !in hiddenBlocks }
                                 .flatMap { b ->
                                     extractSuggestions(b.content, suggestionMatcher)
                                         .map { span ->
-                                            SuggestionItem(b.uuid, span.canonicalName, span.start, span.end)
+                                            SuggestionItem(b.uuid.value, span.canonicalName, span.start, span.end)
                                         }
                                 }
                             onNavigateAllSuggestions(allSuggestions)
                         }
                     } else null,
+                    onOpenAnnotationEditor = onOpenAnnotationEditor,
                     onDragStart = { uuid, startY ->
                         val toHighlight = if (uuid in selectedBlockUuids) selectedBlockUuids else setOf(uuid)
                         if (uuid !in selectedBlockUuids) {
@@ -270,20 +273,20 @@ fun BlockList(
                             val allDescendants = state.draggedUuids + state.draggedUuids.flatMap { getDescendantUuids(it) }
                             val isOwnSubtree = targetUuid != null && targetUuid in allDescendants
                             if (!isOwnSubtree && targetUuid != null && zone != null) {
-                                val targetBlock = blocks.find { it.uuid == targetUuid }
+                                val targetBlock = blocks.find { it.uuid.value == targetUuid }
                                 if (targetBlock != null) {
                                     when (zone) {
                                         DropZone.ABOVE -> {
                                             val siblingBefore = blocks
                                                 .filter { it.parentUuid == targetBlock.parentUuid && it.position < targetBlock.position }
                                                 .maxByOrNull { it.position }
-                                            onMoveSelectedBlocks(targetBlock.parentUuid, siblingBefore?.uuid)
+                                            onMoveSelectedBlocks(targetBlock.parentUuid, siblingBefore?.uuid?.value)
                                         }
                                         DropZone.BELOW -> {
-                                            onMoveSelectedBlocks(targetBlock.parentUuid, targetBlock.uuid)
+                                            onMoveSelectedBlocks(targetBlock.parentUuid, targetBlock.uuid.value)
                                         }
                                         DropZone.CHILD -> {
-                                            onMoveSelectedBlocks(targetBlock.uuid, null)
+                                            onMoveSelectedBlocks(targetBlock.uuid.value, null)
                                         }
                                     }
                                 }
@@ -297,11 +300,11 @@ fun BlockList(
                     dropBelow = isDropTarget && currentDropZone == DropZone.BELOW,
                     dropAsChild = isDropTarget && currentDropZone == DropZone.CHILD,
                     onSelectionChange = if (onBlockSelectionChange != null) {
-                        { range -> onBlockSelectionChange(block.uuid, range) }
+                        { range -> onBlockSelectionChange(block.uuid.value, range) }
                     } else null,
                     modifier = Modifier.onGloballyPositioned { coords ->
                         val top = coords.positionInParent().y
-                        blockBounds = blockBounds + (block.uuid to Pair(top, top + coords.size.height))
+                        blockBounds = blockBounds + (block.uuid.value to Pair(top, top + coords.size.height))
                     },
                 )
             }

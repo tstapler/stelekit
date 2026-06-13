@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.performance
 
+import dev.stapler.stelekit.cache.PlatformLock
+import dev.stapler.stelekit.cache.withLock
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -18,28 +20,38 @@ data class SerializedSpan(
 /**
  * Fixed-capacity circular buffer for [SerializedSpan] entries.
  *
- * Not thread-safe. All calls to [record], [snapshot], and [clear] must be made from a
- * single thread or coroutine context. On wasmJs this is always true (single-threaded).
- * On JVM, dispatch to a dedicated coroutine dispatcher before calling.
+ * Thread-safe: [record], [snapshot], [drain], and [clear] synchronize on [lock] so callers
+ * on different threads (backgroundIndexDispatcher, DatabaseWriteActor coroutine, UI frame loop)
+ * can all call [record] concurrently without corruption or ConcurrentModificationException.
  *
- * When capacity is exceeded, the oldest entry is dropped.
+ * On wasmJs (single-threaded) [PlatformLock] is a no-op.
+ *
+ * When capacity is exceeded the oldest entry is dropped.
+ *
+ * Set [enabled] to false to make [record] a no-op (for opt-in span capture).
+ * Histograms are unaffected by this flag — they are collected separately.
  */
 class RingBufferSpanExporter(val capacity: Int = 1000) {
+    @kotlin.concurrent.Volatile var enabled: Boolean = false
+    private val lock = PlatformLock()
     private val buffer = ArrayDeque<SerializedSpan>(capacity)
 
     fun record(span: SerializedSpan) {
-        if (buffer.size >= capacity) buffer.removeFirst()
-        buffer.addLast(span)
+        if (!enabled) return
+        lock.withLock {
+            if (buffer.size >= capacity) buffer.removeFirst()
+            buffer.addLast(span)
+        }
     }
 
-    fun snapshot(): List<SerializedSpan> = buffer.toList()
+    fun snapshot(): List<SerializedSpan> = lock.withLock { buffer.toList() }
 
     /** Returns all buffered spans and clears the buffer. */
-    fun drain(): List<SerializedSpan> {
+    fun drain(): List<SerializedSpan> = lock.withLock {
         val all = buffer.toList()
         buffer.clear()
-        return all
+        all
     }
 
-    fun clear() = buffer.clear()
+    fun clear() = lock.withLock { buffer.clear() }
 }

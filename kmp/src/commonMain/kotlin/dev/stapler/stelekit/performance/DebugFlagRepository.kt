@@ -30,7 +30,8 @@ class DebugFlagRepository(private val database: SteleDatabase) {
         isOtelStdoutEnabled = getFlag("otel_stdout"),
         isJankStatsEnabled = getFlag("jank_stats"),
         isQueryTracingEnabled = getFlag("query_tracing"),
-        isDebugMenuVisible = false  // never persisted as visible
+        isDebugMenuVisible = false,  // never persisted as visible
+        isSpanCaptureEnabled = getFlag("span_capture"),
     )
 
     suspend fun saveDebugMenuState(state: DebugMenuState) {
@@ -38,5 +39,6 @@ class DebugFlagRepository(private val database: SteleDatabase) {
         setFlag("otel_stdout", state.isOtelStdoutEnabled)
         setFlag("jank_stats", state.isJankStatsEnabled)
         setFlag("query_tracing", state.isQueryTracingEnabled)
+        setFlag("span_capture", state.isSpanCaptureEnabled)
     }
 }

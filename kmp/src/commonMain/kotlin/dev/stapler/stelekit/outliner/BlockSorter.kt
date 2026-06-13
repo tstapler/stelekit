@@ -18,27 +18,27 @@ object BlockSorter {
         if (blocks.isEmpty()) return emptyList()
 
         val childrenByParent = blocks.groupBy { it.parentUuid }
-        val allBlockUuids = blocks.map { it.uuid }.toSet()
+        val allBlockUuidValues = blocks.map { it.uuid.value }.toSet()
 
         // Roots are blocks with no parent OR parent is not in the current list
         // Sort descending because we'll push them onto a stack (LIFO)
-        val roots = blocks.filter { 
-            it.parentUuid == null || !allBlockUuids.contains(it.parentUuid) 
-        }.sortedWith(compareByDescending<Block> { it.position }.thenByDescending { it.uuid })
+        val roots = blocks.filter {
+            it.parentUuid == null || !allBlockUuidValues.contains(it.parentUuid)
+        }.sortedWith(compareByDescending<Block> { it.position }.thenByDescending { it.uuid.value })
 
         val result = mutableListOf<Block>()
         val visited = mutableSetOf<String>()
         // Stack stores pair of (Block, ActualLevel) to repair levels during traversal
         val stack = mutableListOf<Pair<Block, Int>>()
-        
+
         roots.forEach { stack.add(it to 0) }
-        
+
         while (stack.isNotEmpty()) {
             val (block, actualLevel) = stack.removeAt(stack.size - 1)
-            if (visited.contains(block.uuid)) continue
-            
-            visited.add(block.uuid)
-            
+            if (visited.contains(block.uuid.value)) continue
+
+            visited.add(block.uuid.value)
+
             // Repair the level if it doesn't match the actual depth in the hierarchy
             val repairedBlock = if (block.level != actualLevel) {
                 block.copy(level = actualLevel)
@@ -46,18 +46,18 @@ object BlockSorter {
                 block
             }
             result.add(repairedBlock)
-            
+
             // Push children in reverse order so the first child is popped first
-            val children = childrenByParent[block.uuid]
-                ?.sortedWith(compareByDescending<Block> { it.position }.thenByDescending { it.uuid }) 
+            val children = childrenByParent[block.uuid.value]
+                ?.sortedWith(compareByDescending<Block> { it.position }.thenByDescending { it.uuid.value })
                 ?: emptyList()
-            
+
             children.forEach { stack.add(it to actualLevel + 1) }
         }
 
         // Sanity check: If we missed any blocks (e.g. cycles), add them at the end
         if (result.size < blocks.size) {
-            val remaining = blocks.filter { !visited.contains(it.uuid) }
+            val remaining = blocks.filter { !visited.contains(it.uuid.value) }
             println("BlockSorter WARNING: ${remaining.size} orphaned blocks found (orphaned from hierarchy or cycle). Appending to end.")
             remaining.forEach { println(" - Orphan: ${it.content} (Parent: ${it.parentUuid})") }
             result.addAll(remaining)

@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 
 /**
  * Position-aware diff between the existing DB blocks for a page and a freshly parsed block list.
@@ -12,7 +13,7 @@ import dev.stapler.stelekit.model.Block
 object DiffMerge {
 
     data class ExistingBlockSummary(
-        val uuid: String,
+        val uuid: BlockUuid,
         val contentHash: String?,
         val isLoaded: Boolean = true,
     )
@@ -20,8 +21,8 @@ object DiffMerge {
     data class BlockDiff(
         val toInsert: List<Block>,
         val toUpdate: List<Block>,
-        val toDelete: List<String>,   // UUIDs no longer present
-        val unchanged: List<String>,  // UUIDs with matching contentHash
+        val toDelete: List<BlockUuid>,   // UUIDs no longer present
+        val unchanged: List<BlockUuid>,  // UUIDs with matching contentHash
     )
 
     fun diff(existing: List<ExistingBlockSummary>, parsed: List<Block>): BlockDiff {
@@ -30,8 +31,8 @@ object DiffMerge {
 
         val toInsert = mutableListOf<Block>()
         val toUpdate = mutableListOf<Block>()
-        val unchanged = mutableListOf<String>()
-        val toDelete = mutableListOf<String>()
+        val unchanged = mutableListOf<BlockUuid>()
+        val toDelete = mutableListOf<BlockUuid>()
 
         for (block in parsed) {
             val existingSummary = existingByUuid[block.uuid]

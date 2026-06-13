@@ -4,7 +4,9 @@ package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
@@ -43,7 +45,9 @@ class GraphLoaderWatcherTest {
             val fileSystem = PlatformFileSystem()
             val pageRepo = InMemoryPageRepository()
             val blockRepo = InMemoryBlockRepository()
-            val loader = GraphLoader(fileSystem, pageRepo, blockRepo)
+            // Use a 100ms poll interval so the watcher cycles fast enough for the test to
+            // observe whether suppression works within a short delay.
+            val loader = GraphLoader(fileSystem, pageRepo, blockRepo, watcherPollIntervalMs = 100L)
 
             // Load the (empty) graph so the watcher has a base state
             loader.loadGraph(graphDir.absolutePath) {}
@@ -56,18 +60,26 @@ class GraphLoaderWatcherTest {
             loader.markFileWrittenByUs(pagePath)
 
             // No blocks should exist yet — markFileWrittenByUs doesn't parse
-            val blocksBeforeTick: List<Block> = blockRepo.getBlocksForPage("any").first().getOrNull() ?: emptyList()
+            val blocksBeforeTick: List<Block> = blockRepo.getBlocksForPage(PageUuid("any")).first().getOrNull() ?: emptyList()
             assertTrue(blocksBeforeTick.isEmpty(), "No blocks should exist before the watcher runs")
+
+            // Capture baseline: page count right after loadGraph (empty graph = 0 pages)
+            val pageCountBaseline = pageRepo.getAllPagesSnapshot().getOrNull()?.size ?: 0
 
             // Touch file (change mtime without changing content)
             delay(50)
             File(pagePath).setLastModified(System.currentTimeMillis())
 
-            // Verify repository state hasn't changed
-            val pageCountAfter = pageRepo.getAllPages().first().getOrNull()?.size ?: 0
-            // Pages from loadGraph may have loaded an empty graph, so just check
-            // no new pages appeared beyond what was there after loadGraph
-            assertTrue(pageCountAfter >= 0, "Repository should be in a consistent state")
+            // Wait for at least 2 watcher poll cycles (100ms each) so the watcher has a
+            // real chance to detect the mtime change and trigger — or correctly suppress it.
+            delay(300L)
+
+            // If markFileWrittenByUs is working, the watcher must not re-parse the file
+            // on an mtime-only change, so the page count must equal the baseline.
+            val pageCountAfter = pageRepo.getAllPagesSnapshot().getOrNull()?.size ?: 0
+            assertEquals(pageCountBaseline, pageCountAfter,
+                "markFileWrittenByUs should suppress re-parse on mtime-only change; " +
+                "page count must not grow from $pageCountBaseline to $pageCountAfter")
         } finally {
             graphDir.deleteRecursively()
         }
@@ -92,14 +104,14 @@ class GraphLoaderWatcherTest {
 
             val now = Clock.System.now()
             val page = Page(
-                uuid = "test-page-uuid",
+                uuid = PageUuid("test-page-uuid"),
                 name = "WriterTestPage",
                 createdAt = now,
                 updatedAt = now
             )
             val blocks = listOf(
                 Block(
-                    uuid = "block-uuid-1",
+                    uuid = BlockUuid("block-uuid-1"),
                     pageUuid = page.uuid,
                     content = "Block written by GraphWriter",
                     level = 0,
@@ -159,9 +171,9 @@ class GraphLoaderWatcherTest {
 
             // Save a page via GraphWriter (onFileWritten fires → markFileWrittenByUs)
             val now = Clock.System.now()
-            val page = Page(uuid = "p1", name = "IntegPage", createdAt = now, updatedAt = now)
+            val page = Page(uuid = PageUuid("p1"), name = "IntegPage", createdAt = now, updatedAt = now)
             val blocks = listOf(
-                Block(uuid = "b1", pageUuid = "p1", content = "Hello", level = 0, position = 0, createdAt = now, updatedAt = now)
+                Block(uuid = BlockUuid("b1"), pageUuid = PageUuid("p1"), content = "Hello", level = 0, position = 0, createdAt = now, updatedAt = now)
             )
             writer.savePage(page, blocks, graphDir.absolutePath)
 
