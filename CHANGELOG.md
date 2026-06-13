@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.41.3](https://github.com/tstapler/stelekit/compare/v0.41.2...v0.41.3) (2026-06-13)
+
+
+### Bug Fixes
+
+* **android:** request camera permission at capture time and enable GitHub OAuth device flow ([adb6238](https://github.com/tstapler/stelekit/commit/adb6238652a56f5495a86bfcfa3cd373006651ce))
+
 ## [0.41.2](https://github.com/tstapler/stelekit/compare/v0.41.1...v0.41.2) (2026-06-13)
 
 
