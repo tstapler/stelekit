@@ -13,10 +13,9 @@ class AndroidPdfTextExtractor : PdfTextExtractor {
     override suspend fun extractText(absoluteFilePath: String): Either<DomainError, String> =
         withContext(Dispatchers.IO.limitedParallelism(1)) {
             try {
-                val doc = com.tom_roush.pdfbox.pdmodel.PDDocument.load(File(absoluteFilePath))
-                val stripper = com.tom_roush.pdfbox.text.PDFTextStripper()
-                val text = stripper.getText(doc)
-                doc.close()
+                val text = com.tom_roush.pdfbox.pdmodel.PDDocument.load(File(absoluteFilePath)).use { doc ->
+                    com.tom_roush.pdfbox.text.PDFTextStripper().getText(doc)
+                }
                 text.right()
             } catch (e: CancellationException) {
                 throw e

@@ -81,9 +81,11 @@ class SqlDelightAssetRepository(
         query: String,
         limit: Int,
         offset: Int,
-    ): Flow<Either<DomainError, List<AssetEntry>>> =
-        queries.searchAssets("%$query%", limit.toLong(), offset.toLong())
+    ): Flow<Either<DomainError, List<AssetEntry>>> {
+        val escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return queries.searchAssets("%$escaped%", limit.toLong(), offset.toLong())
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+    }
 
     override fun getUnprocessedAssets(
         limit: Int,
@@ -116,7 +118,7 @@ class SqlDelightAssetRepository(
     override suspend fun saveAsset(asset: AssetEntry): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {
             try {
-                queries.insertAsset(
+                queries.insertAssetOrIgnore(
                     uuid = asset.uuid.value,
                     file_path = asset.filePath,
                     relative_path = asset.relativePath,

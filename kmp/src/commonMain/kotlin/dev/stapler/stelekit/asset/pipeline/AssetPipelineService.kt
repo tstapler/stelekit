@@ -16,6 +16,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.yield
 
 class AssetPipelineService(
@@ -29,12 +31,13 @@ class AssetPipelineService(
                 logger.error("AssetPipelineService uncaught: ${throwable.message}")
             }
     )
+    private val attemptedMutex = Mutex()
     private val attemptedUuids = mutableSetOf<String>()
     private var backfillJob: Job? = null
 
     suspend fun processAsset(asset: AssetEntry, writeActor: DatabaseWriteActor?) {
-        if (attemptedUuids.contains(asset.uuid.value)) return
-        attemptedUuids.add(asset.uuid.value)
+        val alreadyAttempted = attemptedMutex.withLock { !attemptedUuids.add(asset.uuid.value) }
+        if (alreadyAttempted) return
 
         val plugins = registry.all.filter { it.canProcess(asset) }
         val allLabels = mutableListOf<String>()
@@ -79,9 +82,11 @@ class AssetPipelineService(
         } else {
             val finalLabels = allLabels.distinct()
             if (writeActor != null) {
-                writeActor.execute { assetRepository.updateAutoLabels(asset.uuid, finalLabels, "LOCAL") }
-                writeActor.execute { assetRepository.updateOcrText(asset.uuid, ocrText) }
-                writeActor.execute { assetRepository.markMlProcessed(asset.uuid, now) }
+                writeActor.execute {
+                    assetRepository.updateAutoLabels(asset.uuid, finalLabels, "LOCAL")
+                    assetRepository.updateOcrText(asset.uuid, ocrText)
+                    assetRepository.markMlProcessed(asset.uuid, now)
+                }
             } else {
                 assetRepository.updateAutoLabels(asset.uuid, finalLabels, "LOCAL")
                 assetRepository.updateOcrText(asset.uuid, ocrText)
@@ -117,17 +122,19 @@ class AssetPipelineService(
 
     private suspend fun drainUnprocessed(writeActor: DatabaseWriteActor?) {
         val batchSize = 10
+        var offset = 0
         while (true) {
-            val batch = assetRepository.getUnprocessedAssets(limit = batchSize, offset = 0)
+            val batch = assetRepository.getUnprocessedAssets(limit = batchSize, offset = offset)
                 .first()
                 .getOrNull() ?: break
-            val filtered = batch.filter { it.uuid.value !in attemptedUuids }
-            if (filtered.isEmpty()) break
+            if (batch.isEmpty()) break
+            val filtered = attemptedMutex.withLock { batch.filter { it.uuid.value !in attemptedUuids } }
             for (asset in filtered) {
                 processAsset(asset, writeActor)
             }
             yield()
-            if (filtered.size < batchSize) break
+            if (batch.size < batchSize) break
+            offset += batchSize
         }
     }
 

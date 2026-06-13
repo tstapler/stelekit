@@ -13,9 +13,9 @@ class JvmPdfTextExtractor : PdfTextExtractor {
     override suspend fun extractText(absoluteFilePath: String): Either<DomainError, String> =
         withContext(Dispatchers.IO) {
             try {
-                val doc = org.apache.pdfbox.Loader.loadPDF(File(absoluteFilePath))
-                val text = org.apache.pdfbox.text.PDFTextStripper().getText(doc)
-                doc.close()
+                val text = org.apache.pdfbox.Loader.loadPDF(File(absoluteFilePath)).use { doc ->
+                    org.apache.pdfbox.text.PDFTextStripper().getText(doc)
+                }
                 text.right()
             } catch (e: CancellationException) {
                 throw e

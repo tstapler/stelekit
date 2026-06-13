@@ -37,12 +37,7 @@ class AssetMoveService(
     private val restrictedQueries: RestrictedDatabaseQueries?,
 ) {
     private val logger = Logger("AssetMoveService")
-    private val mutexMap = mutableMapOf<String, Mutex>()
-    private val mapMutex = Mutex()
-
-    private suspend fun mutexFor(uuid: String): Mutex = mapMutex.withLock {
-        mutexMap.getOrPut(uuid) { Mutex() }
-    }
+    private val moveMutex = Mutex()
 
     suspend fun moveAsset(
         asset: AssetEntry,
@@ -52,11 +47,12 @@ class AssetMoveService(
         graphWriter: GraphWriter,
         writeActor: DatabaseWriteActor?,
     ): Either<DomainError, Unit> {
-        val mutex = mutexFor(asset.uuid.value)
-        return mutex.withLock {
+        return moveMutex.withLock {
             moveAssetInternal(asset, newSubfolder, graphRoot, fileSystem, graphWriter, writeActor)
         }
     }
+
+    private val allowedSubfolders = setOf("images", "pdfs", "audio", "video", "documents", "files")
 
     private suspend fun moveAssetInternal(
         asset: AssetEntry,
@@ -66,6 +62,7 @@ class AssetMoveService(
         graphWriter: GraphWriter,
         writeActor: DatabaseWriteActor?,
     ): Either<DomainError, Unit> {
+        require(newSubfolder in allowedSubfolders) { "Invalid subfolder: $newSubfolder" }
         val filename = asset.filePath.substringAfterLast('/')
         val newFilePath = AssetStoragePathResolver.resolvePath(graphRoot, newSubfolder, filename)
         val newRelativePath = AssetStoragePathResolver.relativeMarkdownPath(newSubfolder, filename)
@@ -222,7 +219,10 @@ class AssetMoveService(
         oldRelativePath: String,
         newRelativePath: String,
     ): Long? {
-        val queries = restrictedQueries ?: return null
+        val queries = restrictedQueries ?: run {
+            logger.warn("WAL disabled — restrictedQueries is null; crash recovery unavailable for this move")
+            return null
+        }
         return try {
             queries.insertPendingMove(
                 asset_uuid = assetUuid,
@@ -232,7 +232,7 @@ class AssetMoveService(
                 new_relative_path = newRelativePath,
                 created_at_ms = Clock.System.now().toEpochMilliseconds(),
             )
-            queries.rawQueries.selectAllPendingMoves().executeAsList().lastOrNull()?.id
+            queries.lastInsertRowId()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

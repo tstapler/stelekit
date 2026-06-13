@@ -109,4 +109,83 @@ class AssetRepositoryTest {
         val fetched = r.getAssetByUuid(entry.uuid).first().getOrNull()
         assertNull(fetched)
     }
+
+    @Test fun `updateFilePath persists new paths`() = runTest {
+        val r = repo()
+        val entry = makeEntry()
+        r.saveAsset(entry)
+        r.updateFilePath(entry.uuid, "/graph/assets/pdfs/photo.pdf", "../assets/pdfs/photo.pdf")
+        val fetched = r.getAssetByUuid(entry.uuid).first().getOrNull()!!
+        assertEquals("/graph/assets/pdfs/photo.pdf", fetched.filePath)
+        assertEquals("../assets/pdfs/photo.pdf", fetched.relativePath)
+    }
+
+    @Test fun `markMlFailed flags asset`() = runTest {
+        val r = repo()
+        val entry = makeEntry()
+        r.saveAsset(entry)
+        r.markMlFailed(entry.uuid, 5555L)
+        val fetched = r.getAssetByUuid(entry.uuid).first().getOrNull()!!
+        assertTrue(fetched.mlFailed)
+        assertEquals(5555L, fetched.mlAttemptedAt)
+    }
+
+    @Test fun `updateAutoLabels persists labels and source`() = runTest {
+        val r = repo()
+        val entry = makeEntry()
+        r.saveAsset(entry)
+        r.updateAutoLabels(entry.uuid, listOf("cat", "dog"), "LOCAL")
+        val fetched = r.getAssetByUuid(entry.uuid).first().getOrNull()!!
+        assertEquals(listOf("cat", "dog"), fetched.autoLabels)
+        assertEquals("LOCAL", fetched.mlTagsSource)
+    }
+
+    @Test fun `updateOcrText persists ocr text`() = runTest {
+        val r = repo()
+        val entry = makeEntry()
+        r.saveAsset(entry)
+        r.updateOcrText(entry.uuid, "Hello world")
+        val fetched = r.getAssetByUuid(entry.uuid).first().getOrNull()!!
+        assertEquals("Hello world", fetched.ocrText)
+    }
+
+    @Test fun `updatePageUuids persists page uuids`() = runTest {
+        val r = repo()
+        val entry = makeEntry()
+        r.saveAsset(entry)
+        r.updatePageUuids(entry.uuid, listOf("page-1", "page-2"))
+        val fetched = r.getAssetByUuid(entry.uuid).first().getOrNull()!!
+        assertEquals(listOf("page-1", "page-2"), fetched.pageUuids)
+    }
+
+    @Test fun `searchAssets finds by filename`() = runTest {
+        val r = repo()
+        r.saveAsset(makeEntry(uuid = "img1").copy(filePath = "/graph/assets/images/sunrise.jpg"))
+        r.saveAsset(makeEntry(uuid = "img2").copy(filePath = "/graph/assets/images/sunset.jpg"))
+        val results = r.searchAssets("sunrise", 10, 0).first().getOrNull()!!
+        assertEquals(1, results.size)
+        assertEquals(AssetUuid("img1"), results[0].uuid)
+    }
+
+    @Test fun `searchAssets with special chars does not throw`() = runTest {
+        val r = repo()
+        r.saveAsset(makeEntry())
+        // These chars are LIKE metacharacters — must not crash
+        val results = r.searchAssets("%file_name%", 10, 0).first().getOrNull()!!
+        assertTrue(results.isEmpty() || results.isNotEmpty()) // just must not throw
+    }
+
+    @Test fun `countAssets returns correct total`() = runTest {
+        val r = repo()
+        repeat(3) { i -> r.saveAsset(makeEntry(uuid = "uuid-$i")) }
+        assertEquals(3L, r.countAssets().getOrNull())
+    }
+
+    @Test fun `countUnprocessedAssets excludes processed and failed`() = runTest {
+        val r = repo()
+        r.saveAsset(makeEntry(uuid = "ok"))
+        r.saveAsset(makeEntry(uuid = "done", mlProcessed = true))
+        r.saveAsset(makeEntry(uuid = "bad", mlFailed = true))
+        assertEquals(1L, r.countUnprocessedAssets().getOrNull())
+    }
 }

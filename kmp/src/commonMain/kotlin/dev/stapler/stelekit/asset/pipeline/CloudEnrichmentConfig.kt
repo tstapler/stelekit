@@ -7,4 +7,6 @@ data class CloudEnrichmentConfig(
     val apiKey: String,
     val sessionCap: Int = 20,
     val enabled: Boolean = false,
-)
+) {
+    override fun toString(): String = "CloudEnrichmentConfig(apiKey=REDACTED)"
+}

@@ -1110,8 +1110,16 @@ CREATE TABLE IF NOT EXISTS asset_index (
     ml_tags_source TEXT NOT NULL DEFAULT 'NONE'
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_file_path_unique ON asset_index(file_path);
+CREATE INDEX IF NOT EXISTS idx_asset_unprocessed ON asset_index(ml_processed, ml_failed, imported_at_ms);
+CREATE INDEX IF NOT EXISTS idx_asset_media_type ON asset_index(media_type);
+
 insertAsset:
 INSERT INTO asset_index(uuid, file_path, relative_path, media_type, subfolder, tags, auto_labels, ocr_text, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_failed, content_hash, is_orphan, ml_tags_source)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, 'NONE');
+
+insertAssetOrIgnore:
+INSERT OR IGNORE INTO asset_index(uuid, file_path, relative_path, media_type, subfolder, tags, auto_labels, ocr_text, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_failed, content_hash, is_orphan, ml_tags_source)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, 'NONE');
 
 selectAssetByUuid:
@@ -1124,7 +1132,7 @@ selectAssetsByMediaType:
 SELECT * FROM asset_index WHERE media_type = ? ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
 
 searchAssets:
-SELECT * FROM asset_index WHERE (file_path LIKE :query OR tags LIKE :query OR auto_labels LIKE :query OR ocr_text LIKE :query) ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
+SELECT * FROM asset_index WHERE (file_path LIKE :query ESCAPE '\' OR tags LIKE :query ESCAPE '\' OR auto_labels LIKE :query ESCAPE '\' OR ocr_text LIKE :query ESCAPE '\') ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
 
 selectUnprocessedAssets:
 SELECT * FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0 ORDER BY imported_at_ms ASC LIMIT :limit OFFSET :offset;
@@ -1183,3 +1191,6 @@ DELETE FROM pending_asset_moves WHERE id = ?;
 
 selectAllPendingMoves:
 SELECT * FROM pending_asset_moves;
+
+selectLastInsertRowId:
+SELECT last_insert_rowid();

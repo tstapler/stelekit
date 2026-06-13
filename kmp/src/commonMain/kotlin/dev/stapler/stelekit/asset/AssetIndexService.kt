@@ -36,16 +36,15 @@ class AssetIndexService(
         fileSystem: FileSystem,
     ): Either<DomainError, AssetEntry> {
         val filename = filePath.substringAfterLast('/')
-        val bytes = try {
-            fileSystem.readFileBytes(filePath)?.take(16)?.toByteArray() ?: ByteArray(0)
-        } catch (_: Exception) { ByteArray(0) }
+        val fileBytes = try {
+            fileSystem.readFileBytes(filePath)
+        } catch (_: Exception) { null }
+        val bytes = fileBytes?.take(16)?.toByteArray() ?: ByteArray(0)
         val mime = mimeHint ?: MimeTypeDetector.detect(bytes, filename)
         val mediaType = AssetMediaType.fromMimeType(mime)
         val subfolder = AssetStoragePathResolver.resolveSubfolder(mime)
         val relativePath = AssetStoragePathResolver.relativeMarkdownPath(subfolder, filename)
-        val sizeBytes = try {
-            fileSystem.readFileBytes(filePath)?.size?.toLong() ?: 0L
-        } catch (_: Exception) { 0L }
+        val sizeBytes = fileBytes?.size?.toLong() ?: 0L
         val uuid = AssetUuid(UuidGenerator.generateV7())
         val entry = AssetEntry(
             uuid = uuid,
@@ -127,6 +126,9 @@ class AssetIndexService(
                 result.addAll(collectFilesRecursively("$dir/$subDir", fileSystem))
             }
         } catch (_: Exception) {}
+        if (result.size > 1000) {
+            logger.warn("collectFilesRecursively: found ${result.size} files in '$dir' — large trees load entirely into memory before batching")
+        }
         return result
     }
 

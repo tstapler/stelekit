@@ -42,6 +42,7 @@ class AssetBrowserViewModel(
     val uiState: StateFlow<AssetBrowserUiState> = _uiState.asStateFlow()
 
     private var searchDebounceJob: Job? = null
+    private var loadJob: Job? = null
 
     init {
         loadAssets()
@@ -74,7 +75,8 @@ class AssetBrowserViewModel(
     }
 
     private fun loadAssets() {
-        scope.launch {
+        loadJob?.cancel()
+        loadJob = scope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 val state = _uiState.value

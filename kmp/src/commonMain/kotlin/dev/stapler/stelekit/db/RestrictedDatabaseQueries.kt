@@ -626,4 +626,27 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     @DirectSqlWrite
     suspend fun deletePendingMove(id: Long): Long =
         queries.deletePendingMove(id)
+
+    // SELECT — not a write, no @DirectSqlWrite needed
+    fun lastInsertRowId(): Long = queries.selectLastInsertRowId().executeAsOne()
+
+    @DirectSqlWrite
+    suspend fun insertAssetOrIgnore(
+        uuid: String,
+        file_path: String,
+        relative_path: String,
+        media_type: String,
+        subfolder: String,
+        tags: String,
+        auto_labels: String,
+        ocr_text: String?,
+        cloud_description: String?,
+        page_uuids: String,
+        size_bytes: Long,
+        imported_at_ms: Long,
+        content_hash: String?,
+    ): Long = queries.insertAssetOrIgnore(
+        uuid, file_path, relative_path, media_type, subfolder, tags, auto_labels,
+        ocr_text, cloud_description, page_uuids, size_bytes, imported_at_ms, content_hash,
+    )
 }

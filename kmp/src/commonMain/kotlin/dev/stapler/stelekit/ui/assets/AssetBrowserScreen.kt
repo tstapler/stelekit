@@ -1,11 +1,13 @@
 package dev.stapler.stelekit.ui.assets
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -160,6 +162,7 @@ private fun ScrollableFilterChipRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 12.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

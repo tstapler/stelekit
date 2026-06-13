@@ -429,6 +429,14 @@ object MigrationRunner {
                 """
             )
         ),
+        Migration(
+            name = "asset_index_indexes",
+            statements = listOf(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_file_path_unique ON asset_index(file_path)",
+                "CREATE INDEX IF NOT EXISTS idx_asset_unprocessed ON asset_index(ml_processed, ml_failed, imported_at_ms)",
+                "CREATE INDEX IF NOT EXISTS idx_asset_media_type ON asset_index(media_type)"
+            )
+        ),
     )
 
     /**
