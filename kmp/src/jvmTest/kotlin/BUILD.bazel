@@ -32,6 +32,7 @@ kt_jvm_test(
     associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"],
     deps = [
         "//kmp/src/commonMain/resources:common_resources",
+        "//kmp/src/commonTest/kotlin:common_test_fixtures",
         "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
         "@maven//:org_jetbrains_compose_ui_ui_test_junit4_desktop",
         "@maven//:io_ktor_ktor_client_mock_jvm",

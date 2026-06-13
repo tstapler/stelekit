@@ -16,7 +16,5 @@ android_binary(
     custom_package = "dev.stapler.stelekit.android",
     deps = ["//kmp/src/androidMain/kotlin:android_main"],
     multidex = "native",
-    # Core library desugaring — enables java.time.* and other Java 8+ APIs on Android < 8
-    desugar_java8_libs = True,
     visibility = ["//visibility:public"],
 )

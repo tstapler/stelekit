@@ -59,8 +59,11 @@ genrule(
     srcs = [],
     outs = ["web_dist.tar.gz"],
     cmd = """
-        ./gradlew :kmp:wasmJsBrowserDistribution -PenableJs=true --no-daemon --quiet && \
-        tar -czf $(OUTS) -C kmp/build/dist/wasmJs/productionExecutable .
+        WORKSPACE=$$(dirname $$(realpath gradlew)) && \
+        "$$WORKSPACE/gradlew" :kmp:wasmJsBrowserDistribution \
+          --project-dir "$$WORKSPACE" \
+          -PenableJs=true --no-daemon --quiet && \
+        tar -czf $(OUTS) -C "$$WORKSPACE/kmp/build/dist/wasmJs/productionExecutable" .
     """,
     tags = ["local"],
     visibility = ["//visibility:public"],
