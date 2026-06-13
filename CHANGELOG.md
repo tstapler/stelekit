@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.41.1](https://github.com/tstapler/stelekit/compare/v0.41.0...v0.41.1) (2026-06-13)
+
+
+### Bug Fixes
+
+* **git-smart-sync:** address code review findings — safety, correctness, and test coverage ([5086e0f](https://github.com/tstapler/stelekit/commit/5086e0fda0bd5d8e654ef4a908620d0410550e96))
+
 ## [0.41.0](https://github.com/tstapler/stelekit/compare/v0.40.4...v0.41.0) (2026-06-12)
 
 
