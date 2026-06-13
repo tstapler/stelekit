@@ -91,6 +91,7 @@ class DatabaseWriteActor(
             val blocks: List<Block>,
             override val priority: Priority = Priority.HIGH,
             override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
+            val enqueueMs: Long = HistogramWriter.epochMs(),
         ) : WriteRequest()
 
         class DeleteBlocksForPage(
@@ -324,7 +325,28 @@ class DatabaseWriteActor(
         flushBatch(batch)
     }
 
+    private fun recordSaveBlocksQueueWait(batch: List<WriteRequest.SaveBlocks>, waitMs: Long) {
+        ringBuffer?.record(SerializedSpan(
+            name = "db.queue_wait",
+            startEpochMs = batch[0].enqueueMs,
+            endEpochMs = batch[0].enqueueMs + waitMs,
+            durationMs = waitMs,
+            attributes = mapOf(
+                "priority" to batch[0].priority.name,
+                "request.type" to "SaveBlocks",
+                "batch.size" to batch.size.toString(),
+                "session.id" to AppSession.id,
+            ),
+            statusCode = if (waitMs > 500L) "ERROR" else "OK",
+            traceId = UuidGenerator.generateV7(),
+            spanId = UuidGenerator.generateV7(),
+        ))
+    }
+
     private suspend fun flushBatch(batch: List<WriteRequest.SaveBlocks>) {
+        val batchEnqueueMs = batch.minOf { it.enqueueMs }
+        val waitMs = HistogramWriter.epochMs() - batchEnqueueMs
+        if (waitMs > 10L) recordSaveBlocksQueueWait(batch, waitMs)
         if (batch.size == 1) {
             val blocks = batch[0].blocks
             val existingByUuid = loadExistingBlocks(blocks)

@@ -842,11 +842,15 @@ class GraphLoader(
             // Reached when the page needs (re-)loading: dirty-set hit, missing blocks, or
             // content-hash mismatch (iOS/WASM).
             fileSystem.invalidateShadow(filePath)
+            val fileReadTraceId = genId()
+            val fileReadSpan = Span("file.read", fileReadTraceId, "")
             val content = readFileDecrypted(filePath)
             if (content == null) {
+                fileReadSpan.finish("ERROR", "file.path" to filePath.redactPath())
                 logger.warn("Failed to read file: $filePath")
                 return
             }
+            fileReadSpan.finish("OK", "file.path" to filePath.redactPath(), "content.bytes" to content.length.toString())
 
             parseAndSavePage(FilePath(filePath), content, ParseMode.FULL, forceReload = forceReload)
         } finally {
@@ -1337,7 +1341,12 @@ class GraphLoader(
             val fileModTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
             val getBlocksSpan = Span("db.getBlocks", traceId, parentSpanId)
             val blocks = blockRepository.getBlocksForPage(existingPage.uuid).first().getOrNull() ?: emptyList()
-            getBlocksSpan.finish("OK", "block.count" to blocks.size.toString())
+            getBlocksSpan.finish(
+                "OK",
+                "block.count" to blocks.size.toString(),
+                "page.name" to name.redactPath(),
+                "page.is_journal" to isJournal.toString(),
+            )
             val allBlocksLoaded = blocks.isNotEmpty() && blocks.all { it.isLoaded }
             val pageIsUpToDate = !forceReload && fileModTime != 0L &&
                 existingPage.updatedAt.toEpochMilliseconds() >= fileModTime
