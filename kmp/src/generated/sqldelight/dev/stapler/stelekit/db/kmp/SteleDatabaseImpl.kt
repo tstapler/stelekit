@@ -24,7 +24,7 @@ private class SteleDatabaseImpl(
 
   public object Schema : SqlSchema<QueryResult.AsyncValue<Unit>> {
     override val version: Long
-      get() = 4
+      get() = 7
 
     override fun create(driver: SqlDriver): QueryResult.AsyncValue<Unit> = QueryResult.AsyncValue {
       driver.execute(null, """
@@ -214,6 +214,48 @@ private class SteleDatabaseImpl(
           |    commit_message_template TEXT NOT NULL DEFAULT 'SteleKit: {date}'
           |)
           """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS image_annotations (
+          |    uuid                       TEXT NOT NULL PRIMARY KEY,
+          |    block_uuid                 TEXT NOT NULL,
+          |    page_uuid                  TEXT NOT NULL,
+          |    graph_path                 TEXT NOT NULL,
+          |    file_path                  TEXT NOT NULL,
+          |    thumbnail_path             TEXT,
+          |    source                     TEXT NOT NULL DEFAULT 'FILE',
+          |    source_uri                 TEXT,
+          |    captured_at_ms             INTEGER,
+          |    imported_at_ms             INTEGER NOT NULL DEFAULT 0,
+          |    calibration_method         TEXT NOT NULL DEFAULT 'NONE',
+          |    pixels_per_meter           REAL NOT NULL DEFAULT 0.0,
+          |    calibration_confidence_pct INTEGER NOT NULL DEFAULT 0,
+          |    unit                       TEXT NOT NULL DEFAULT 'METERS',
+          |    tags                       TEXT NOT NULL DEFAULT '[]',
+          |    lat_lng                    TEXT,
+          |    altitude_m                 REAL,
+          |    bearing_deg                REAL,
+          |    pitch_deg                  REAL,
+          |    roll_deg                   REAL,
+          |    focal_length_mm            REAL,
+          |    focal_length_35mm_eq       REAL,
+          |    camera_make                TEXT,
+          |    camera_model               TEXT
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS measurement_annotations (
+          |    uuid              TEXT NOT NULL PRIMARY KEY,
+          |    image_uuid        TEXT NOT NULL,
+          |    annotation_type   TEXT NOT NULL,
+          |    normalized_points TEXT NOT NULL DEFAULT '[]',
+          |    value_meters      REAL,
+          |    value_display     TEXT,
+          |    label             TEXT,
+          |    color_hex         TEXT NOT NULL DEFAULT '#FF0000',
+          |    ble_device_id     TEXT,
+          |    FOREIGN KEY (image_uuid) REFERENCES image_annotations(uuid) ON DELETE CASCADE
+          |)
+          """.trimMargin(), 0).await()
       driver.execute(null, "CREATE INDEX idx_pages_uuid ON pages(uuid)", 0).await()
       driver.execute(null, "CREATE INDEX idx_pages_name ON pages(name)", 0).await()
       driver.execute(null, "CREATE INDEX idx_pages_namespace ON pages(namespace)", 0).await()
@@ -279,6 +321,10 @@ private class SteleDatabaseImpl(
           |CREATE INDEX IF NOT EXISTS idx_query_stats_version_ms
           |    ON query_stats(app_version, total_ms DESC)
           """.trimMargin(), 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_image_annotations_block_uuid ON image_annotations(block_uuid)", 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_image_annotations_page_uuid ON image_annotations(page_uuid)", 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_image_annotations_graph_path ON image_annotations(graph_path)", 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_measurement_annotations_image_uuid ON measurement_annotations(image_uuid)", 0).await()
       driver.execute(null, """
           |CREATE VIRTUAL TABLE blocks_fts USING fts5(
           |    content,
@@ -324,6 +370,87 @@ private class SteleDatabaseImpl(
             """.trimMargin(), 0).await()
         driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_changelog_graph_status ON migration_changelog(graph_id, status)", 0).await()
         driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_changelog_applied_at ON migration_changelog(graph_id, applied_at)", 0).await()
+      }
+      if (oldVersion <= 4 && newVersion > 4) {
+        driver.execute(null, """
+            |CREATE TABLE IF NOT EXISTS image_annotations (
+            |    uuid                     TEXT NOT NULL PRIMARY KEY,
+            |    block_uuid               TEXT NOT NULL,
+            |    page_uuid                TEXT NOT NULL,
+            |    graph_path               TEXT NOT NULL,
+            |    file_path                TEXT NOT NULL,
+            |    thumbnail_path           TEXT,
+            |    source                   TEXT NOT NULL DEFAULT 'FILE',
+            |    source_uri               TEXT,
+            |    captured_at_ms           INTEGER,
+            |    imported_at_ms           INTEGER NOT NULL DEFAULT 0,
+            |    calibration_method       TEXT NOT NULL DEFAULT 'NONE',
+            |    pixels_per_meter         REAL NOT NULL DEFAULT 0.0,
+            |    calibration_confidence_pct INTEGER NOT NULL DEFAULT 0,
+            |    unit                     TEXT NOT NULL DEFAULT 'METERS',
+            |    tags                     TEXT NOT NULL DEFAULT '[]',
+            |    lat_lng                  TEXT,
+            |    altitude_m               REAL,
+            |    bearing_deg              REAL,
+            |    pitch_deg                REAL,
+            |    roll_deg                 REAL,
+            |    focal_length_mm          REAL,
+            |    focal_length_35mm_eq     REAL,
+            |    camera_make              TEXT,
+            |    camera_model             TEXT
+            |)
+            """.trimMargin(), 0).await()
+        driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_image_annotations_block_uuid ON image_annotations(block_uuid)", 0).await()
+        driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_image_annotations_page_uuid ON image_annotations(page_uuid)", 0).await()
+        driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_image_annotations_graph_path ON image_annotations(graph_path)", 0).await()
+        driver.execute(null, """
+            |CREATE TABLE IF NOT EXISTS measurement_annotations (
+            |    uuid               TEXT NOT NULL PRIMARY KEY,
+            |    image_uuid         TEXT NOT NULL,
+            |    annotation_type    TEXT NOT NULL,
+            |    normalized_points  TEXT NOT NULL DEFAULT '[]',
+            |    value_meters       REAL,
+            |    value_display      TEXT,
+            |    label              TEXT,
+            |    color_hex          TEXT NOT NULL DEFAULT '#FF0000',
+            |    ble_device_id      TEXT,
+            |    FOREIGN KEY (image_uuid) REFERENCES image_annotations(uuid) ON DELETE CASCADE
+            |)
+            """.trimMargin(), 0).await()
+        driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_measurement_annotations_image_uuid ON measurement_annotations(image_uuid)", 0).await()
+      }
+      if (oldVersion <= 5 && newVersion > 5) {
+        driver.execute(null, """
+            |CREATE TABLE IF NOT EXISTS query_stats (
+            |    app_version TEXT NOT NULL,
+            |    table_name  TEXT NOT NULL,
+            |    operation   TEXT NOT NULL,
+            |    calls       INTEGER NOT NULL DEFAULT 0,
+            |    errors      INTEGER NOT NULL DEFAULT 0,
+            |    total_ms    INTEGER NOT NULL DEFAULT 0,
+            |    min_ms      INTEGER NOT NULL DEFAULT 9999999,
+            |    max_ms      INTEGER NOT NULL DEFAULT 0,
+            |    b1          INTEGER NOT NULL DEFAULT 0,
+            |    b5          INTEGER NOT NULL DEFAULT 0,
+            |    b16         INTEGER NOT NULL DEFAULT 0,
+            |    b50         INTEGER NOT NULL DEFAULT 0,
+            |    b100        INTEGER NOT NULL DEFAULT 0,
+            |    b500        INTEGER NOT NULL DEFAULT 0,
+            |    b_inf       INTEGER NOT NULL DEFAULT 0,
+            |    first_seen  INTEGER NOT NULL,
+            |    last_seen   INTEGER NOT NULL,
+            |    PRIMARY KEY (app_version, table_name, operation)
+            |)
+            """.trimMargin(), 0).await()
+        driver.execute(null, """
+            |CREATE INDEX IF NOT EXISTS idx_query_stats_version_ms
+            |    ON query_stats(app_version, total_ms DESC)
+            """.trimMargin(), 0).await()
+      }
+      if (oldVersion <= 6 && newVersion > 6) {
+        driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_blocks_page_uuid_position ON blocks(page_uuid, position)", 0).await()
+        driver.execute(null, "DROP INDEX IF EXISTS idx_blocks_page_uuid", 0).await()
+        driver.execute(null, "ANALYZE blocks", 0).await()
       }
     }
 

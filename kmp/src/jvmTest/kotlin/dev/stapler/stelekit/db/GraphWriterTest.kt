@@ -31,7 +31,8 @@ class GraphWriterTest {
                 "stelekit_test_",
             ).toFile()
             val graphPath = tempDir.absolutePath
-            
+            fileSystem.registerGraphRoot(graphPath)
+
             val now = Clock.System.now()
             
             try {
@@ -187,6 +188,7 @@ class GraphWriterTest {
 
         try {
             val fileSystem = PlatformFileSystem()
+            fileSystem.registerGraphRoot(tempDir.absolutePath)
 
             LogManager.clearLogs()
 

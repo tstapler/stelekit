@@ -632,6 +632,42 @@ public class SteleDatabaseQueries(
 
   public fun selectBlocksHashByPageUuid(page_uuid: String): Query<SelectBlocksHashByPageUuid> = selectBlocksHashByPageUuid(page_uuid, ::SelectBlocksHashByPageUuid)
 
+  public fun <T : Any> selectBlocksByUuids(uuid: Collection<String>, mapper: (
+    id: Long,
+    uuid: String,
+    page_uuid: String,
+    parent_uuid: String?,
+    left_uuid: String?,
+    content: String,
+    level: Long,
+    position: Long,
+    created_at: Long,
+    updated_at: Long,
+    properties: String?,
+    version: Long,
+    content_hash: String?,
+    block_type: String,
+  ) -> T): Query<T> = SelectBlocksByUuidsQuery(uuid) { cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3),
+      cursor.getString(4),
+      cursor.getString(5)!!,
+      cursor.getLong(6)!!,
+      cursor.getLong(7)!!,
+      cursor.getLong(8)!!,
+      cursor.getLong(9)!!,
+      cursor.getString(10),
+      cursor.getLong(11)!!,
+      cursor.getString(12),
+      cursor.getString(13)!!
+    )
+  }
+
+  public fun selectBlocksByUuids(uuid: Collection<String>): Query<Blocks> = selectBlocksByUuids(uuid, ::Blocks)
+
   public fun <T : Any> selectBlocksByContentHash(content_hash: String?, mapper: (
     id: Long,
     uuid: String,
@@ -753,40 +789,6 @@ public class SteleDatabaseQueries(
     cursor.getLong(0)!!
   }
 
-  public fun <T : Any> selectAllPages(mapper: (
-    uuid: String,
-    name: String,
-    namespace: String?,
-    file_path: String?,
-    created_at: Long,
-    updated_at: Long,
-    properties: String?,
-    version: Long,
-    is_favorite: Long?,
-    is_journal: Long?,
-    journal_date: String?,
-    is_content_loaded: Long,
-    backlink_count: Long,
-  ) -> T): Query<T> = Query(347_863_808, arrayOf("pages"), driver, "SteleDatabase.sq", "selectAllPages", "SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count FROM pages ORDER BY name") { cursor ->
-    mapper(
-      cursor.getString(0)!!,
-      cursor.getString(1)!!,
-      cursor.getString(2),
-      cursor.getString(3),
-      cursor.getLong(4)!!,
-      cursor.getLong(5)!!,
-      cursor.getString(6),
-      cursor.getLong(7)!!,
-      cursor.getLong(8),
-      cursor.getLong(9),
-      cursor.getString(10),
-      cursor.getLong(11)!!,
-      cursor.getLong(12)!!
-    )
-  }
-
-  public fun selectAllPages(): Query<Pages> = selectAllPages(::Pages)
-
   public fun <T : Any> selectAllPagesPaginated(
     `value`: Long,
     value_: Long,
@@ -825,21 +827,25 @@ public class SteleDatabaseQueries(
 
   public fun selectAllPagesPaginated(value_: Long, value__: Long): Query<Pages> = selectAllPagesPaginated(value_, value__, ::Pages)
 
-  public fun <T : Any> selectUnloadedPages(mapper: (
-    uuid: String,
-    name: String,
-    namespace: String?,
-    file_path: String?,
-    created_at: Long,
-    updated_at: Long,
-    properties: String?,
-    version: Long,
-    is_favorite: Long?,
-    is_journal: Long?,
-    journal_date: String?,
-    is_content_loaded: Long,
-    backlink_count: Long,
-  ) -> T): Query<T> = Query(-228_185_015, arrayOf("pages"), driver, "SteleDatabase.sq", "selectUnloadedPages", "SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count FROM pages WHERE is_content_loaded = 0") { cursor ->
+  public fun <T : Any> selectUnloadedPagesPaginated(
+    `value`: Long,
+    value_: Long,
+    mapper: (
+      uuid: String,
+      name: String,
+      namespace: String?,
+      file_path: String?,
+      created_at: Long,
+      updated_at: Long,
+      properties: String?,
+      version: Long,
+      is_favorite: Long?,
+      is_journal: Long?,
+      journal_date: String?,
+      is_content_loaded: Long,
+      backlink_count: Long,
+    ) -> T,
+  ): Query<T> = SelectUnloadedPagesPaginatedQuery(value, value_) { cursor ->
     mapper(
       cursor.getString(0)!!,
       cursor.getString(1)!!,
@@ -857,7 +863,122 @@ public class SteleDatabaseQueries(
     )
   }
 
-  public fun selectUnloadedPages(): Query<Pages> = selectUnloadedPages(::Pages)
+  public fun selectUnloadedPagesPaginated(value_: Long, value__: Long): Query<Pages> = selectUnloadedPagesPaginated(value_, value__, ::Pages)
+
+  public fun countUnloadedPages(): Query<Long> = Query(-58_485_640, arrayOf("pages"), driver, "SteleDatabase.sq", "countUnloadedPages", "SELECT COUNT(*) FROM pages WHERE is_content_loaded = 0") { cursor ->
+    cursor.getLong(0)!!
+  }
+
+  public fun <T : Any> selectPageNameEntries(mapper: (name: String, is_journal: Long?) -> T): Query<T> = Query(-1_279_862_151, arrayOf("pages"), driver, "SteleDatabase.sq", "selectPageNameEntries", "SELECT name, is_journal FROM pages") { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getLong(1)
+    )
+  }
+
+  public fun selectPageNameEntries(): Query<SelectPageNameEntries> = selectPageNameEntries(::SelectPageNameEntries)
+
+  public fun <T : Any> selectPagesByNames(name: Collection<String>, mapper: (
+    uuid: String,
+    name: String,
+    namespace: String?,
+    file_path: String?,
+    created_at: Long,
+    updated_at: Long,
+    properties: String?,
+    version: Long,
+    is_favorite: Long?,
+    is_journal: Long?,
+    journal_date: String?,
+    is_content_loaded: Long,
+    backlink_count: Long,
+  ) -> T): Query<T> = SelectPagesByNamesQuery(name) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2),
+      cursor.getString(3),
+      cursor.getLong(4)!!,
+      cursor.getLong(5)!!,
+      cursor.getString(6),
+      cursor.getLong(7)!!,
+      cursor.getLong(8),
+      cursor.getLong(9),
+      cursor.getString(10),
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!
+    )
+  }
+
+  public fun selectPagesByNames(name: Collection<String>): Query<Pages> = selectPagesByNames(name, ::Pages)
+
+  public fun <T : Any> selectJournalPagesByDates(journal_date: Collection<String?>, mapper: (
+    uuid: String,
+    name: String,
+    namespace: String?,
+    file_path: String?,
+    created_at: Long,
+    updated_at: Long,
+    properties: String?,
+    version: Long,
+    is_favorite: Long?,
+    is_journal: Long?,
+    journal_date: String?,
+    is_content_loaded: Long,
+    backlink_count: Long,
+  ) -> T): Query<T> = SelectJournalPagesByDatesQuery(journal_date) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2),
+      cursor.getString(3),
+      cursor.getLong(4)!!,
+      cursor.getLong(5)!!,
+      cursor.getString(6),
+      cursor.getLong(7)!!,
+      cursor.getLong(8),
+      cursor.getLong(9),
+      cursor.getString(10),
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!
+    )
+  }
+
+  public fun selectJournalPagesByDates(journal_date: Collection<String?>): Query<Pages> = selectJournalPagesByDates(journal_date, ::Pages)
+
+  public fun <T : Any> selectFavoritePages(mapper: (
+    uuid: String,
+    name: String,
+    namespace: String?,
+    file_path: String?,
+    created_at: Long,
+    updated_at: Long,
+    properties: String?,
+    version: Long,
+    is_favorite: Long?,
+    is_journal: Long?,
+    journal_date: String?,
+    is_content_loaded: Long,
+    backlink_count: Long,
+  ) -> T): Query<T> = Query(1_623_585_099, arrayOf("pages"), driver, "SteleDatabase.sq", "selectFavoritePages", "SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count FROM pages WHERE is_favorite = 1 ORDER BY name") { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2),
+      cursor.getString(3),
+      cursor.getLong(4)!!,
+      cursor.getLong(5)!!,
+      cursor.getString(6),
+      cursor.getLong(7)!!,
+      cursor.getLong(8),
+      cursor.getLong(9),
+      cursor.getString(10),
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!
+    )
+  }
+
+  public fun selectFavoritePages(): Query<Pages> = selectFavoritePages(::Pages)
 
   public fun <T : Any> selectPagesByNamespace(
     namespace: String?,
@@ -1838,6 +1959,10 @@ public class SteleDatabaseQueries(
 
   public fun selectBacklinkCountsForPages(uuid: Collection<String>): Query<SelectBacklinkCountsForPages> = selectBacklinkCountsForPages(uuid, ::SelectBacklinkCountsForPages)
 
+  public fun selectPageBacklinkCount(name: String): Query<Long> = SelectPageBacklinkCountQuery(name) { cursor ->
+    cursor.getLong(0)!!
+  }
+
   public fun selectMetadata(key: String): Query<String> = SelectMetadataQuery(key) { cursor ->
     cursor.getString(0)!!
   }
@@ -2272,6 +2397,256 @@ public class SteleDatabaseQueries(
 
   public fun selectGitConfig(graph_id: String): Query<Git_config> = selectGitConfig(graph_id, ::Git_config)
 
+  public fun <T : Any> selectAllImageAnnotations(mapper: (
+    uuid: String,
+    block_uuid: String,
+    page_uuid: String,
+    graph_path: String,
+    file_path: String,
+    thumbnail_path: String?,
+    source: String,
+    source_uri: String?,
+    captured_at_ms: Long?,
+    imported_at_ms: Long,
+    calibration_method: String,
+    pixels_per_meter: Double,
+    calibration_confidence_pct: Long,
+    unit: String,
+    tags: String,
+    lat_lng: String?,
+    altitude_m: Double?,
+    bearing_deg: Double?,
+    pitch_deg: Double?,
+    roll_deg: Double?,
+    focal_length_mm: Double?,
+    focal_length_35mm_eq: Double?,
+    camera_make: String?,
+    camera_model: String?,
+  ) -> T): Query<T> = Query(-1_056_409_075, arrayOf("image_annotations"), driver, "SteleDatabase.sq", "selectAllImageAnnotations", "SELECT image_annotations.uuid, image_annotations.block_uuid, image_annotations.page_uuid, image_annotations.graph_path, image_annotations.file_path, image_annotations.thumbnail_path, image_annotations.source, image_annotations.source_uri, image_annotations.captured_at_ms, image_annotations.imported_at_ms, image_annotations.calibration_method, image_annotations.pixels_per_meter, image_annotations.calibration_confidence_pct, image_annotations.unit, image_annotations.tags, image_annotations.lat_lng, image_annotations.altitude_m, image_annotations.bearing_deg, image_annotations.pitch_deg, image_annotations.roll_deg, image_annotations.focal_length_mm, image_annotations.focal_length_35mm_eq, image_annotations.camera_make, image_annotations.camera_model FROM image_annotations ORDER BY imported_at_ms DESC") { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5),
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getLong(8),
+      cursor.getLong(9)!!,
+      cursor.getString(10)!!,
+      cursor.getDouble(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getString(13)!!,
+      cursor.getString(14)!!,
+      cursor.getString(15),
+      cursor.getDouble(16),
+      cursor.getDouble(17),
+      cursor.getDouble(18),
+      cursor.getDouble(19),
+      cursor.getDouble(20),
+      cursor.getDouble(21),
+      cursor.getString(22),
+      cursor.getString(23)
+    )
+  }
+
+  public fun selectAllImageAnnotations(): Query<Image_annotations> = selectAllImageAnnotations(::Image_annotations)
+
+  public fun <T : Any> selectImageAnnotationByUuid(uuid: String, mapper: (
+    uuid: String,
+    block_uuid: String,
+    page_uuid: String,
+    graph_path: String,
+    file_path: String,
+    thumbnail_path: String?,
+    source: String,
+    source_uri: String?,
+    captured_at_ms: Long?,
+    imported_at_ms: Long,
+    calibration_method: String,
+    pixels_per_meter: Double,
+    calibration_confidence_pct: Long,
+    unit: String,
+    tags: String,
+    lat_lng: String?,
+    altitude_m: Double?,
+    bearing_deg: Double?,
+    pitch_deg: Double?,
+    roll_deg: Double?,
+    focal_length_mm: Double?,
+    focal_length_35mm_eq: Double?,
+    camera_make: String?,
+    camera_model: String?,
+  ) -> T): Query<T> = SelectImageAnnotationByUuidQuery(uuid) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5),
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getLong(8),
+      cursor.getLong(9)!!,
+      cursor.getString(10)!!,
+      cursor.getDouble(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getString(13)!!,
+      cursor.getString(14)!!,
+      cursor.getString(15),
+      cursor.getDouble(16),
+      cursor.getDouble(17),
+      cursor.getDouble(18),
+      cursor.getDouble(19),
+      cursor.getDouble(20),
+      cursor.getDouble(21),
+      cursor.getString(22),
+      cursor.getString(23)
+    )
+  }
+
+  public fun selectImageAnnotationByUuid(uuid: String): Query<Image_annotations> = selectImageAnnotationByUuid(uuid, ::Image_annotations)
+
+  public fun <T : Any> selectImageAnnotationsByPage(page_uuid: String, mapper: (
+    uuid: String,
+    block_uuid: String,
+    page_uuid: String,
+    graph_path: String,
+    file_path: String,
+    thumbnail_path: String?,
+    source: String,
+    source_uri: String?,
+    captured_at_ms: Long?,
+    imported_at_ms: Long,
+    calibration_method: String,
+    pixels_per_meter: Double,
+    calibration_confidence_pct: Long,
+    unit: String,
+    tags: String,
+    lat_lng: String?,
+    altitude_m: Double?,
+    bearing_deg: Double?,
+    pitch_deg: Double?,
+    roll_deg: Double?,
+    focal_length_mm: Double?,
+    focal_length_35mm_eq: Double?,
+    camera_make: String?,
+    camera_model: String?,
+  ) -> T): Query<T> = SelectImageAnnotationsByPageQuery(page_uuid) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5),
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getLong(8),
+      cursor.getLong(9)!!,
+      cursor.getString(10)!!,
+      cursor.getDouble(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getString(13)!!,
+      cursor.getString(14)!!,
+      cursor.getString(15),
+      cursor.getDouble(16),
+      cursor.getDouble(17),
+      cursor.getDouble(18),
+      cursor.getDouble(19),
+      cursor.getDouble(20),
+      cursor.getDouble(21),
+      cursor.getString(22),
+      cursor.getString(23)
+    )
+  }
+
+  public fun selectImageAnnotationsByPage(page_uuid: String): Query<Image_annotations> = selectImageAnnotationsByPage(page_uuid, ::Image_annotations)
+
+  public fun <T : Any> selectImageAnnotationsByTag(`value`: String, mapper: (
+    uuid: String,
+    block_uuid: String,
+    page_uuid: String,
+    graph_path: String,
+    file_path: String,
+    thumbnail_path: String?,
+    source: String,
+    source_uri: String?,
+    captured_at_ms: Long?,
+    imported_at_ms: Long,
+    calibration_method: String,
+    pixels_per_meter: Double,
+    calibration_confidence_pct: Long,
+    unit: String,
+    tags: String,
+    lat_lng: String?,
+    altitude_m: Double?,
+    bearing_deg: Double?,
+    pitch_deg: Double?,
+    roll_deg: Double?,
+    focal_length_mm: Double?,
+    focal_length_35mm_eq: Double?,
+    camera_make: String?,
+    camera_model: String?,
+  ) -> T): Query<T> = SelectImageAnnotationsByTagQuery(value) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5),
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getLong(8),
+      cursor.getLong(9)!!,
+      cursor.getString(10)!!,
+      cursor.getDouble(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getString(13)!!,
+      cursor.getString(14)!!,
+      cursor.getString(15),
+      cursor.getDouble(16),
+      cursor.getDouble(17),
+      cursor.getDouble(18),
+      cursor.getDouble(19),
+      cursor.getDouble(20),
+      cursor.getDouble(21),
+      cursor.getString(22),
+      cursor.getString(23)
+    )
+  }
+
+  public fun selectImageAnnotationsByTag(value_: String): Query<Image_annotations> = selectImageAnnotationsByTag(value_, ::Image_annotations)
+
+  public fun <T : Any> selectMeasurementsForImage(image_uuid: String, mapper: (
+    uuid: String,
+    image_uuid: String,
+    annotation_type: String,
+    normalized_points: String,
+    value_meters: Double?,
+    value_display: String?,
+    label: String?,
+    color_hex: String,
+    ble_device_id: String?,
+  ) -> T): Query<T> = SelectMeasurementsForImageQuery(image_uuid) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getDouble(4),
+      cursor.getString(5),
+      cursor.getString(6),
+      cursor.getString(7)!!,
+      cursor.getString(8)
+    )
+  }
+
+  public fun selectMeasurementsForImage(image_uuid: String): Query<Measurement_annotations> = selectMeasurementsForImage(image_uuid, ::Measurement_annotations)
+
   /**
    * @return The number of rows updated.
    */
@@ -2365,6 +2740,49 @@ public class SteleDatabaseQueries(
           bindString(parameterIndex++, uuid)
         }.await()
     notifyQueries(936_712_534) { emit ->
+      emit("blocks")
+      emit("blocks_fts")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun updateBlockFull(
+    page_uuid: String,
+    parent_uuid: String?,
+    left_uuid: String?,
+    content: String,
+    level: Long,
+    position: Long,
+    updated_at: Long,
+    properties: String?,
+    content_hash: String?,
+    block_type: String,
+    uuid: String,
+  ): Long {
+    val result = driver.execute(1_055_306_450, """
+        |UPDATE blocks SET
+        |    page_uuid = ?, parent_uuid = ?, left_uuid = ?, content = ?,
+        |    level = ?, position = ?, updated_at = ?, properties = ?,
+        |    version = version + 1, content_hash = ?, block_type = ?
+        |WHERE uuid = ?
+        """.trimMargin(), 11) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, page_uuid)
+          bindString(parameterIndex++, parent_uuid)
+          bindString(parameterIndex++, left_uuid)
+          bindString(parameterIndex++, content)
+          bindLong(parameterIndex++, level)
+          bindLong(parameterIndex++, position)
+          bindLong(parameterIndex++, updated_at)
+          bindString(parameterIndex++, properties)
+          bindString(parameterIndex++, content_hash)
+          bindString(parameterIndex++, block_type)
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(1_055_306_450) { emit ->
       emit("blocks")
       emit("blocks_fts")
     }
@@ -3044,6 +3462,21 @@ public class SteleDatabaseQueries(
   /**
    * @return The number of rows updated.
    */
+  public suspend fun setPageBacklinkCount(backlink_count: Long, name: String): Long {
+    val result = driver.execute(1_739_125_790, """UPDATE pages SET backlink_count = ? WHERE name = ?""", 2) {
+          var parameterIndex = 0
+          bindLong(parameterIndex++, backlink_count)
+          bindString(parameterIndex++, name)
+        }.await()
+    notifyQueries(1_739_125_790) { emit ->
+      emit("pages")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
   public suspend fun upsertMetadata(key: String, value_: String): Long {
     val result = driver.execute(421_270_719, """INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)""", 2) {
           var parameterIndex = 0
@@ -3551,6 +3984,244 @@ public class SteleDatabaseQueries(
   /**
    * @return The number of rows updated.
    */
+  public suspend fun insertImageAnnotation(
+    uuid: String,
+    block_uuid: String,
+    page_uuid: String,
+    graph_path: String,
+    file_path: String,
+    thumbnail_path: String?,
+    source: String,
+    source_uri: String?,
+    captured_at_ms: Long?,
+    imported_at_ms: Long,
+    calibration_method: String,
+    pixels_per_meter: Double,
+    calibration_confidence_pct: Long,
+    unit: String,
+    tags: String,
+    lat_lng: String?,
+    altitude_m: Double?,
+    bearing_deg: Double?,
+    pitch_deg: Double?,
+    roll_deg: Double?,
+    focal_length_mm: Double?,
+    focal_length_35mm_eq: Double?,
+    camera_make: String?,
+    camera_model: String?,
+  ): Long {
+    val result = driver.execute(390_467_728, """
+        |INSERT OR REPLACE INTO image_annotations (
+        |    uuid, block_uuid, page_uuid, graph_path, file_path, thumbnail_path,
+        |    source, source_uri, captured_at_ms, imported_at_ms,
+        |    calibration_method, pixels_per_meter, calibration_confidence_pct,
+        |    unit, tags, lat_lng, altitude_m, bearing_deg, pitch_deg, roll_deg,
+        |    focal_length_mm, focal_length_35mm_eq, camera_make, camera_model
+        |) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimMargin(), 24) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, uuid)
+          bindString(parameterIndex++, block_uuid)
+          bindString(parameterIndex++, page_uuid)
+          bindString(parameterIndex++, graph_path)
+          bindString(parameterIndex++, file_path)
+          bindString(parameterIndex++, thumbnail_path)
+          bindString(parameterIndex++, source)
+          bindString(parameterIndex++, source_uri)
+          bindLong(parameterIndex++, captured_at_ms)
+          bindLong(parameterIndex++, imported_at_ms)
+          bindString(parameterIndex++, calibration_method)
+          bindDouble(parameterIndex++, pixels_per_meter)
+          bindLong(parameterIndex++, calibration_confidence_pct)
+          bindString(parameterIndex++, unit)
+          bindString(parameterIndex++, tags)
+          bindString(parameterIndex++, lat_lng)
+          bindDouble(parameterIndex++, altitude_m)
+          bindDouble(parameterIndex++, bearing_deg)
+          bindDouble(parameterIndex++, pitch_deg)
+          bindDouble(parameterIndex++, roll_deg)
+          bindDouble(parameterIndex++, focal_length_mm)
+          bindDouble(parameterIndex++, focal_length_35mm_eq)
+          bindString(parameterIndex++, camera_make)
+          bindString(parameterIndex++, camera_model)
+        }.await()
+    notifyQueries(390_467_728) { emit ->
+      emit("image_annotations")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun updateImageAnnotation(
+    block_uuid: String,
+    page_uuid: String,
+    graph_path: String,
+    file_path: String,
+    thumbnail_path: String?,
+    source: String,
+    source_uri: String?,
+    captured_at_ms: Long?,
+    imported_at_ms: Long,
+    calibration_method: String,
+    pixels_per_meter: Double,
+    calibration_confidence_pct: Long,
+    unit: String,
+    tags: String,
+    lat_lng: String?,
+    altitude_m: Double?,
+    bearing_deg: Double?,
+    pitch_deg: Double?,
+    roll_deg: Double?,
+    focal_length_mm: Double?,
+    focal_length_35mm_eq: Double?,
+    camera_make: String?,
+    camera_model: String?,
+    uuid: String,
+  ): Long {
+    val result = driver.execute(-935_741_312, """
+        |UPDATE image_annotations SET
+        |    block_uuid = ?,
+        |    page_uuid = ?,
+        |    graph_path = ?,
+        |    file_path = ?,
+        |    thumbnail_path = ?,
+        |    source = ?,
+        |    source_uri = ?,
+        |    captured_at_ms = ?,
+        |    imported_at_ms = ?,
+        |    calibration_method = ?,
+        |    pixels_per_meter = ?,
+        |    calibration_confidence_pct = ?,
+        |    unit = ?,
+        |    tags = ?,
+        |    lat_lng = ?,
+        |    altitude_m = ?,
+        |    bearing_deg = ?,
+        |    pitch_deg = ?,
+        |    roll_deg = ?,
+        |    focal_length_mm = ?,
+        |    focal_length_35mm_eq = ?,
+        |    camera_make = ?,
+        |    camera_model = ?
+        |WHERE uuid = ?
+        """.trimMargin(), 24) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, block_uuid)
+          bindString(parameterIndex++, page_uuid)
+          bindString(parameterIndex++, graph_path)
+          bindString(parameterIndex++, file_path)
+          bindString(parameterIndex++, thumbnail_path)
+          bindString(parameterIndex++, source)
+          bindString(parameterIndex++, source_uri)
+          bindLong(parameterIndex++, captured_at_ms)
+          bindLong(parameterIndex++, imported_at_ms)
+          bindString(parameterIndex++, calibration_method)
+          bindDouble(parameterIndex++, pixels_per_meter)
+          bindLong(parameterIndex++, calibration_confidence_pct)
+          bindString(parameterIndex++, unit)
+          bindString(parameterIndex++, tags)
+          bindString(parameterIndex++, lat_lng)
+          bindDouble(parameterIndex++, altitude_m)
+          bindDouble(parameterIndex++, bearing_deg)
+          bindDouble(parameterIndex++, pitch_deg)
+          bindDouble(parameterIndex++, roll_deg)
+          bindDouble(parameterIndex++, focal_length_mm)
+          bindDouble(parameterIndex++, focal_length_35mm_eq)
+          bindString(parameterIndex++, camera_make)
+          bindString(parameterIndex++, camera_model)
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(-935_741_312) { emit ->
+      emit("image_annotations")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteImageAnnotation(uuid: String): Long {
+    val result = driver.execute(2_109_197_150, """DELETE FROM image_annotations WHERE uuid = ?""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(2_109_197_150) { emit ->
+      emit("image_annotations")
+      emit("measurement_annotations")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun insertMeasurementAnnotation(
+    uuid: String,
+    image_uuid: String,
+    annotation_type: String,
+    normalized_points: String,
+    value_meters: Double?,
+    value_display: String?,
+    label: String?,
+    color_hex: String,
+    ble_device_id: String?,
+  ): Long {
+    val result = driver.execute(-368_694_991, """
+        |INSERT OR REPLACE INTO measurement_annotations (
+        |    uuid, image_uuid, annotation_type, normalized_points,
+        |    value_meters, value_display, label, color_hex, ble_device_id
+        |) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimMargin(), 9) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, uuid)
+          bindString(parameterIndex++, image_uuid)
+          bindString(parameterIndex++, annotation_type)
+          bindString(parameterIndex++, normalized_points)
+          bindDouble(parameterIndex++, value_meters)
+          bindString(parameterIndex++, value_display)
+          bindString(parameterIndex++, label)
+          bindString(parameterIndex++, color_hex)
+          bindString(parameterIndex++, ble_device_id)
+        }.await()
+    notifyQueries(-368_694_991) { emit ->
+      emit("measurement_annotations")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteMeasurementsForImage(image_uuid: String): Long {
+    val result = driver.execute(-2_064_403_595, """DELETE FROM measurement_annotations WHERE image_uuid = ?""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, image_uuid)
+        }.await()
+    notifyQueries(-2_064_403_595) { emit ->
+      emit("measurement_annotations")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteMeasurementAnnotation(uuid: String): Long {
+    val result = driver.execute(-804_777_601, """DELETE FROM measurement_annotations WHERE uuid = ?""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(-804_777_601) { emit ->
+      emit("measurement_annotations")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
   public suspend fun pragmaWalCheckpointTruncate(): Long {
     val result = driver.execute(-158_994_413, """PRAGMA wal_checkpoint(TRUNCATE)""", 0).await()
     return result
@@ -3969,6 +4640,31 @@ public class SteleDatabaseQueries(
     override fun toString(): String = "SteleDatabase.sq:selectBlocksHashByPageUuid"
   }
 
+  private inner class SelectBlocksByUuidsQuery<out T : Any>(
+    public val uuid: Collection<String>,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("blocks", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("blocks", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> {
+      val uuidIndexes = createArguments(count = uuid.size)
+      return driver.executeQuery(null, """SELECT blocks.id, blocks.uuid, blocks.page_uuid, blocks.parent_uuid, blocks.left_uuid, blocks.content, blocks.level, blocks.position, blocks.created_at, blocks.updated_at, blocks.properties, blocks.version, blocks.content_hash, blocks.block_type FROM blocks WHERE uuid IN $uuidIndexes""", mapper, uuid.size) {
+            var parameterIndex = 0
+            uuid.forEach { uuid_ ->
+              bindString(parameterIndex++, uuid_)
+            }
+          }
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectBlocksByUuids"
+  }
+
   private inner class SelectBlocksByContentHashQuery<out T : Any>(
     public val content_hash: String?,
     mapper: (SqlCursor) -> T,
@@ -4117,6 +4813,78 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectAllPagesPaginated"
+  }
+
+  private inner class SelectUnloadedPagesPaginatedQuery<out T : Any>(
+    public val `value`: Long,
+    public val value_: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("pages", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("pages", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_551_624_324, """SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count FROM pages WHERE is_content_loaded = 0 ORDER BY uuid LIMIT ? OFFSET ?""", mapper, 2) {
+      var parameterIndex = 0
+      bindLong(parameterIndex++, value)
+      bindLong(parameterIndex++, value_)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectUnloadedPagesPaginated"
+  }
+
+  private inner class SelectPagesByNamesQuery<out T : Any>(
+    public val name: Collection<String>,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("pages", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("pages", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> {
+      val nameIndexes = createArguments(count = name.size)
+      return driver.executeQuery(null, """SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count FROM pages WHERE name IN $nameIndexes""", mapper, name.size) {
+            var parameterIndex = 0
+            name.forEach { name_ ->
+              bindString(parameterIndex++, name_)
+            }
+          }
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectPagesByNames"
+  }
+
+  private inner class SelectJournalPagesByDatesQuery<out T : Any>(
+    public val journal_date: Collection<String?>,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("pages", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("pages", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> {
+      val journal_dateIndexes = createArguments(count = journal_date.size)
+      return driver.executeQuery(null, """SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count FROM pages WHERE is_journal = 1 AND journal_date IN $journal_dateIndexes""", mapper, journal_date.size) {
+            var parameterIndex = 0
+            journal_date.forEach { journal_date_ ->
+              bindString(parameterIndex++, journal_date_)
+            }
+          }
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectJournalPagesByDates"
   }
 
   private inner class SelectPagesByNamespaceQuery<out T : Any>(
@@ -5036,6 +5804,26 @@ public class SteleDatabaseQueries(
     override fun toString(): String = "SteleDatabase.sq:selectBacklinkCountsForPages"
   }
 
+  private inner class SelectPageBacklinkCountQuery<out T : Any>(
+    public val name: String,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("pages", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("pages", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_616_094_686, """SELECT backlink_count FROM pages WHERE name = ?""", mapper, 1) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, name)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectPageBacklinkCount"
+  }
+
   private inner class SelectMetadataQuery<out T : Any>(
     public val key: String,
     mapper: (SqlCursor) -> T,
@@ -5344,5 +6132,85 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectGitConfig"
+  }
+
+  private inner class SelectImageAnnotationByUuidQuery<out T : Any>(
+    public val uuid: String,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("image_annotations", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("image_annotations", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-575_052_033, """SELECT image_annotations.uuid, image_annotations.block_uuid, image_annotations.page_uuid, image_annotations.graph_path, image_annotations.file_path, image_annotations.thumbnail_path, image_annotations.source, image_annotations.source_uri, image_annotations.captured_at_ms, image_annotations.imported_at_ms, image_annotations.calibration_method, image_annotations.pixels_per_meter, image_annotations.calibration_confidence_pct, image_annotations.unit, image_annotations.tags, image_annotations.lat_lng, image_annotations.altitude_m, image_annotations.bearing_deg, image_annotations.pitch_deg, image_annotations.roll_deg, image_annotations.focal_length_mm, image_annotations.focal_length_35mm_eq, image_annotations.camera_make, image_annotations.camera_model FROM image_annotations WHERE uuid = ?""", mapper, 1) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, uuid)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectImageAnnotationByUuid"
+  }
+
+  private inner class SelectImageAnnotationsByPageQuery<out T : Any>(
+    public val page_uuid: String,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("image_annotations", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("image_annotations", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_651_202_740, """SELECT image_annotations.uuid, image_annotations.block_uuid, image_annotations.page_uuid, image_annotations.graph_path, image_annotations.file_path, image_annotations.thumbnail_path, image_annotations.source, image_annotations.source_uri, image_annotations.captured_at_ms, image_annotations.imported_at_ms, image_annotations.calibration_method, image_annotations.pixels_per_meter, image_annotations.calibration_confidence_pct, image_annotations.unit, image_annotations.tags, image_annotations.lat_lng, image_annotations.altitude_m, image_annotations.bearing_deg, image_annotations.pitch_deg, image_annotations.roll_deg, image_annotations.focal_length_mm, image_annotations.focal_length_35mm_eq, image_annotations.camera_make, image_annotations.camera_model FROM image_annotations WHERE page_uuid = ? ORDER BY imported_at_ms DESC""", mapper, 1) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, page_uuid)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectImageAnnotationsByPage"
+  }
+
+  private inner class SelectImageAnnotationsByTagQuery<out T : Any>(
+    public val `value`: String,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("image_annotations", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("image_annotations", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(778_023_229, """SELECT image_annotations.uuid, image_annotations.block_uuid, image_annotations.page_uuid, image_annotations.graph_path, image_annotations.file_path, image_annotations.thumbnail_path, image_annotations.source, image_annotations.source_uri, image_annotations.captured_at_ms, image_annotations.imported_at_ms, image_annotations.calibration_method, image_annotations.pixels_per_meter, image_annotations.calibration_confidence_pct, image_annotations.unit, image_annotations.tags, image_annotations.lat_lng, image_annotations.altitude_m, image_annotations.bearing_deg, image_annotations.pitch_deg, image_annotations.roll_deg, image_annotations.focal_length_mm, image_annotations.focal_length_35mm_eq, image_annotations.camera_make, image_annotations.camera_model FROM image_annotations WHERE tags LIKE '%"' || ? || '"%' ORDER BY imported_at_ms DESC""", mapper, 1) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, value)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectImageAnnotationsByTag"
+  }
+
+  private inner class SelectMeasurementsForImageQuery<out T : Any>(
+    public val image_uuid: String,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("measurement_annotations", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("measurement_annotations", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_858_375_750, """SELECT measurement_annotations.uuid, measurement_annotations.image_uuid, measurement_annotations.annotation_type, measurement_annotations.normalized_points, measurement_annotations.value_meters, measurement_annotations.value_display, measurement_annotations.label, measurement_annotations.color_hex, measurement_annotations.ble_device_id FROM measurement_annotations WHERE image_uuid = ? ORDER BY rowid""", mapper, 1) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, image_uuid)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectMeasurementsForImage"
   }
 }
