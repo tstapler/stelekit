@@ -63,6 +63,19 @@ class GraphWriter(
      * external-change detection.
      */
     private val onClearPendingWrite: (suspend (filePath: String) -> Unit)? = null,
+    /**
+     * Called before each write with the file path and current on-disk content.
+     * Returns true if the write should be blocked because the file was externally changed
+     * since it was last written by the app. Null disables the check (all writes proceed).
+     * Only applies to plaintext (.md) files; encrypted files use the modTime sentinel guard.
+     */
+    private val checkPreWriteConflict: (suspend (filePath: String, diskContent: String) -> Boolean)? = null,
+    /**
+     * Called when [checkPreWriteConflict] returns true. Receives [filePath], the content
+     * that was about to be written ([pendingContent]), and the current on-disk content
+     * ([diskContent]). The write has already been aborted when this is called.
+     */
+    private val onPreWriteConflict: (suspend (filePath: String, pendingContent: String, diskContent: String) -> Unit)? = null,
 ) : GraphWriterPort {
     /**
      * Backing field for the CryptoLayer used to encrypt files in paranoid mode.
@@ -161,6 +174,17 @@ class GraphWriter(
                 saveImmediately(request)
             }
             pendingByPage[page.uuid] = job to request
+        }
+    }
+
+    /** Returns true if a debounced save is queued for [pageUuid] but has not yet fired. */
+    suspend fun hasPendingForPage(pageUuid: PageUuid): Boolean =
+        pendingMutex.withLock { pendingByPage.containsKey(pageUuid) }
+
+    /** Cancels the pending debounced save for [pageUuid] without writing to disk. */
+    suspend fun cancelPendingForPage(pageUuid: PageUuid) {
+        pendingMutex.withLock {
+            pendingByPage.remove(pageUuid)?.first?.cancel()
         }
     }
 
@@ -371,6 +395,19 @@ class GraphWriter(
 
             val content = buildMarkdown(page, blocks)
 
+            // Pre-write conflict check: abort if the on-disk content changed since we last
+            // wrote it. Reuses the content already read for the large-deletion safety check
+            // (no extra disk read). Skipped for encrypted files (.md.stek) — those rely on
+            // the modTime sentinel guard in FileRegistry.
+            if (checkPreWriteConflict != null && oldContentForSafetyCheck != null
+                && !filePath.endsWith(".md.stek")) {
+                if (checkPreWriteConflict.invoke(filePath, oldContentForSafetyCheck)) {
+                    logger.warn("Pre-write hash mismatch for '${page.name}' — external change detected, write aborted")
+                    onPreWriteConflict?.invoke(filePath, content, oldContentForSafetyCheck)
+                    return@withContext false
+                }
+            }
+
             // Run the saga — transact() throws on failure; runCatching logs and swallows.
             // The saga { } builder annotates the block with @SagaDSLMarker so inner saga()
             // calls resolve correctly via SagaScope. .transact() executes the pipeline.
@@ -572,6 +609,8 @@ class GraphWriter(
             graphPath: String = "",
             onPreWrite: (suspend (String) -> Unit)? = null,
             onClearPendingWrite: (suspend (String) -> Unit)? = null,
+            checkPreWriteConflict: (suspend (String, String) -> Boolean)? = null,
+            onPreWriteConflict: (suspend (String, String, String) -> Unit)? = null,
         ): Resource<GraphWriter> = resource {
             val writer = GraphWriter(
                 fileSystem = fileSystem,
@@ -583,6 +622,8 @@ class GraphWriter(
                 graphPath = graphPath,
                 onPreWrite = onPreWrite,
                 onClearPendingWrite = onClearPendingWrite,
+                checkPreWriteConflict = checkPreWriteConflict,
+                onPreWriteConflict = onPreWriteConflict,
             )
             onRelease {
                 try { writer.flush() } catch (_: Exception) { /* best-effort flush */ }

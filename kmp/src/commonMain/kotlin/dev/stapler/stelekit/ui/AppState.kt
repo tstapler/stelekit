@@ -119,6 +119,7 @@ data class AppState(
     val gitSetupInitialStep: Int = 1,
     val gitSetupOpenForClone: Boolean = false,
     val conflictResolutionVisible: Boolean = false,
+    val journalMergeReviewVisible: Boolean = false,
     // Export in-flight: true while an exportPage/exportSelectedBlocks coroutine is running
     val isExporting: Boolean = false,
     // Share dialog state

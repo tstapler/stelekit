@@ -16,7 +16,7 @@ sealed class SyncState {
     /** Emitted when sync requires credentials but the vault is locked. */
     data object CredentialVaultLocked : SyncState()
     data class ConflictPending(val conflicts: List<ConflictFile>) : SyncState()
-    data class JournalMergeReady(val proposal: JournalMergeProposal) : SyncState()
+    data class JournalMergeReady(val graphId: String, val proposal: JournalMergeProposal) : SyncState()
     data class Error(val error: DomainError.GitError) : SyncState()
     data class CredentialExpired(val graphId: String) : SyncState()
     data class Success(

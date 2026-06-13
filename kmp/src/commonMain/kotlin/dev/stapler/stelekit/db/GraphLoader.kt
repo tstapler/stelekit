@@ -328,6 +328,15 @@ class GraphLoader(
     }
 
     /**
+     * Emits a synthetic external-file-change event for [filePath] with [content] as the
+     * on-disk version. Called by the pre-write conflict check to surface a conflict
+     * immediately when GraphWriter detects a hash mismatch before writing.
+     */
+    fun emitExternalFileChange(filePath: String, content: String) {
+        fileWatcher.emitSyntheticChange(filePath, content)
+    }
+
+    /**
      * Emitted when the file watcher detects an external modification to a file.
      * Consumers (e.g. StelekitViewModel) can collect this flow and decide whether to
      * treat the change as a conflict.  If the event's [suppress] callback is invoked

@@ -12,10 +12,7 @@ fun parseArgs(args: Array<String>): SyncArgs {
     var i = 0
     while (i < args.size) {
         when (args[i]) {
-            "--help" -> {
-                println(USAGE)
-                kotlin.system.exitProcess(0)
-            }
+            "--help" -> throw ArgParseException(USAGE, 0)
             "--graph" -> {
                 if (i + 1 >= args.size) throw ArgParseException("--graph requires a path argument", 5)
                 graphPath = args[++i]
@@ -31,6 +28,9 @@ fun parseArgs(args: Array<String>): SyncArgs {
 
     if (commitOnly && fetchOnly) {
         throw ArgParseException("--commit-only and --fetch-only are mutually exclusive", 5)
+    }
+    if (dryRun && (commitOnly || fetchOnly)) {
+        throw ArgParseException("--dry-run cannot be combined with --commit-only or --fetch-only", 5)
     }
 
     return SyncArgs(graphPath, commitOnly, fetchOnly, dryRun, jsonOutput)

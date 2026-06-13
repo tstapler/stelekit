@@ -4,7 +4,9 @@ import arrow.core.Either
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.buildCommitMessage
 import dev.stapler.stelekit.git.CredentialStore
+import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.JvmGitRepository
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -12,13 +14,17 @@ import dev.stapler.stelekit.platform.PlatformSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.system.exitProcess
+
+// Thrown instead of exitProcess so that try/finally in runSync always calls graphManager.shutdown().
+private class SyncExitException(val code: Int) : Exception()
 
 fun main(args: Array<String>) {
     val rootJob = Job()
     Runtime.getRuntime().addShutdownHook(Thread {
         rootJob.cancel()
-        runBlocking { rootJob.join() }
+        runBlocking { withTimeoutOrNull(5_000) { rootJob.join() } }
     })
     runBlocking(rootJob) {
         try {
@@ -33,7 +39,7 @@ suspend fun runSync(args: Array<String>) {
     val syncArgs = try {
         parseArgs(args)
     } catch (e: ArgParseException) {
-        System.err.println(e.message)
+        if (e.exitCode == 0) println(e.message) else System.err.println(e.message)
         exitProcess(e.exitCode)
     }
 
@@ -41,18 +47,45 @@ suspend fun runSync(args: Array<String>) {
     val fileSystem = PlatformFileSystem()
     val settings = PlatformSettings()
 
-    val graphPath = syncArgs.graphPath
+    val rawGraphPath = syncArgs.graphPath
         ?: settings.getString("lastGraphPath", "").takeIf { it.isNotEmpty() }
         ?: run {
             output.error("No graph path specified and no last opened graph found. Use --graph <path>.")
             exitProcess(4)
         }
 
+    // Canonicalize to prevent path traversal (e.g. "../../etc") and resolve symlinks.
+    val graphFile = java.io.File(rawGraphPath).canonicalFile
+    if (!graphFile.isDirectory) {
+        output.error("Graph path does not exist or is not a directory: ${graphFile.path}")
+        exitProcess(4)
+    }
+    val graphPath = graphFile.path
+
     output.info("Syncing graph at: $graphPath")
 
     val credentialStore = CredentialStore()
-    val gitRepository = JvmGitRepository(credentialStore)
+    val gitRepository: GitRepository = JvmGitRepository(credentialStore)
     val graphManager = GraphManager(settings, DriverFactory(), fileSystem)
+
+    var exitCode = 0
+    try {
+        runSyncWithManager(syncArgs, graphManager, gitRepository, output, graphPath)
+    } catch (e: SyncExitException) {
+        exitCode = e.code
+    } finally {
+        graphManager.shutdown()
+    }
+    if (exitCode != 0) exitProcess(exitCode)
+}
+
+private suspend fun runSyncWithManager(
+    syncArgs: SyncArgs,
+    graphManager: GraphManager,
+    gitRepository: GitRepository,
+    output: SyncOutput,
+    graphPath: String,
+) {
     val graphId = graphManager.addGraph(graphPath)
     graphManager.switchGraph(graphId)
     graphManager.awaitPendingMigration()
@@ -60,14 +93,14 @@ suspend fun runSync(args: Array<String>) {
     val gitConfigRepo = graphManager.createGitConfigRepository()
     if (gitConfigRepo == null) {
         output.error("Could not open database for graph. Ensure the graph is valid.")
-        exitProcess(5)
+        throw SyncExitException(5)
     }
 
     val configResult = gitConfigRepo.getConfig(graphId)
     val config = when (configResult) {
         is Either.Left -> {
             output.error("Failed to load git config: ${configResult.value.message}")
-            exitProcess(5)
+            throw SyncExitException(5)
         }
         is Either.Right -> configResult.value
     }
@@ -75,18 +108,14 @@ suspend fun runSync(args: Array<String>) {
     if (config == null) {
         output.error("No git sync config found for this graph. Set up sync in the app first.")
         output.result(SyncResult(graph = graphPath, branch = "", localCommits = 0, remoteCommits = 0, status = "no_config"))
-        exitProcess(4)
+        throw SyncExitException(4)
     }
 
-    // Env var token override for CI/headless usage
-    val envToken = System.getenv("STELEKIT_GIT_TOKEN")
-    if (envToken != null && config.httpsTokenKey != null) {
-        credentialStore.store(config.httpsTokenKey, envToken)
-    }
+    // STELEKIT_GIT_TOKEN is handled transparently by JvmCredentialStore.retrieve() as a fallback
+    // when no stored credential is found — no explicit store() call needed here.
 
     if (syncArgs.dryRun) {
         runDryRun(gitRepository, config, output, graphPath)
-        graphManager.shutdown()
         return
     }
 
@@ -95,11 +124,10 @@ suspend fun runSync(args: Array<String>) {
         syncArgs.fetchOnly -> runFetchOnly(gitRepository, config, output, graphPath)
         else -> runFullSync(gitRepository, config, output, graphPath)
     }
-    graphManager.shutdown()
 }
 
 private suspend fun runDryRun(
-    gitRepository: JvmGitRepository,
+    gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
     graphPath: String,
@@ -112,7 +140,7 @@ private suspend fun runDryRun(
 }
 
 private suspend fun runCommitOnly(
-    gitRepository: JvmGitRepository,
+    gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
     graphPath: String,
@@ -120,8 +148,14 @@ private suspend fun runCommitOnly(
     output.info("Committing local changes...")
     val statusResult = gitRepository.status(config)
     if ((statusResult as? Either.Right)?.value?.hasLocalChanges == true) {
-        gitRepository.stageSubdir(config)
-        gitRepository.commit(config, "SteleKit: ${java.time.LocalDate.now()}")
+        gitRepository.stageSubdir(config).onLeft { err ->
+            output.error("Failed to stage changes: ${err.message}")
+            throw SyncExitException(5)
+        }
+        gitRepository.commit(config, buildCommitMessage(config)).onLeft { err ->
+            output.error("Failed to commit: ${err.message}")
+            throw SyncExitException(5)
+        }
         output.info("Committed local changes")
         output.result(SyncResult(graph = graphPath, branch = config.remoteBranch, localCommits = 1, remoteCommits = 0, status = "success"))
     } else {
@@ -131,7 +165,7 @@ private suspend fun runCommitOnly(
 }
 
 private suspend fun runFetchOnly(
-    gitRepository: JvmGitRepository,
+    gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
     graphPath: String,
@@ -148,7 +182,7 @@ private suspend fun runFetchOnly(
 }
 
 private suspend fun runFullSync(
-    gitRepository: JvmGitRepository,
+    gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
     graphPath: String,
@@ -160,14 +194,20 @@ private suspend fun runFullSync(
 }
 
 private suspend fun commitLocalChanges(
-    gitRepository: JvmGitRepository,
+    gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
 ): Int {
     val statusResult = gitRepository.status(config)
     return if ((statusResult as? Either.Right)?.value?.hasLocalChanges == true) {
-        gitRepository.stageSubdir(config)
-        gitRepository.commit(config, "SteleKit: ${java.time.LocalDate.now()}")
+        gitRepository.stageSubdir(config).onLeft { err ->
+            output.error("Failed to stage changes: ${err.message}")
+            throw SyncExitException(5)
+        }
+        gitRepository.commit(config, buildCommitMessage(config)).onLeft { err ->
+            output.error("Failed to commit: ${err.message}")
+            throw SyncExitException(5)
+        }
         output.info("Committed local changes")
         1
     } else {
@@ -176,7 +216,7 @@ private suspend fun commitLocalChanges(
 }
 
 private suspend fun fetchAndMerge(
-    gitRepository: JvmGitRepository,
+    gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
     graphPath: String,
@@ -198,7 +238,7 @@ private suspend fun fetchAndMerge(
 }
 
 private suspend fun mergeRemoteChanges(
-    gitRepository: JvmGitRepository,
+    gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
     graphPath: String,
@@ -213,7 +253,7 @@ private suspend fun mergeRemoteChanges(
                 output.error("Merge conflicts detected")
                 mr.conflicts.forEach { output.error("Conflict: ${it.filePath}") }
                 output.result(SyncResult(graph = graphPath, branch = config.remoteBranch, localCommits = localCommits, remoteCommits = 0, conflicts = mr.conflicts.map { it.filePath }, status = "conflicts"))
-                exitProcess(1)
+                throw SyncExitException(1)
             }
             remoteCommitCount
         }
@@ -221,7 +261,7 @@ private suspend fun mergeRemoteChanges(
 }
 
 private suspend fun pushChanges(
-    gitRepository: JvmGitRepository,
+    gitRepository: GitRepository,
     config: GitConfig,
     output: SyncOutput,
     graphPath: String,
@@ -251,5 +291,5 @@ private fun handleGitError(
     }
     output.error(err.message)
     output.result(SyncResult(graph = graphPath, branch = branch, localCommits = 0, remoteCommits = 0, status = status))
-    exitProcess(exitCode)
+    throw SyncExitException(exitCode)
 }

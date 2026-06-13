@@ -198,11 +198,15 @@ class StelekitViewModel(
         .stateIn(scope, SharingStarted.Eagerly, SyncState.Idle)
 
     private fun observeSyncState() {
-        // Auto-show conflict resolution screen when ConflictPending is emitted
         scope.launch {
             syncState.collect { state ->
-                if (state is SyncState.ConflictPending) {
-                    _uiState.update { it.copy(conflictResolutionVisible = true) }
+                when (state) {
+                    is SyncState.ConflictPending -> _uiState.update { it.copy(conflictResolutionVisible = true) }
+                    is SyncState.JournalMergeReady -> _uiState.update { it.copy(journalMergeReviewVisible = true) }
+                    // Do NOT auto-dismiss journalMergeReviewVisible here — dismissal is handled
+                    // explicitly by abortJournalMerge() and acceptJournalMerge(). Auto-dismissal
+                    // races with fetchOnly background calls that emit Fetching/Pushing states.
+                    else -> Unit
                 }
             }
         }
@@ -247,6 +251,46 @@ class StelekitViewModel(
     /** Dismisses the conflict resolution screen. */
     fun dismissConflictResolution() {
         _uiState.update { it.copy(conflictResolutionVisible = false) }
+    }
+
+    /** Dismisses the journal merge review screen without applying the merge. */
+    fun dismissJournalMergeReview() {
+        _uiState.update { it.copy(journalMergeReviewVisible = false) }
+    }
+
+    /**
+     * Aborts the in-progress git merge and dismisses the review screen.
+     * Called when the user dismisses or falls back to manual resolution.
+     */
+    fun abortJournalMerge() {
+        val state = syncState.value as? SyncState.JournalMergeReady ?: run {
+            _uiState.update { it.copy(journalMergeReviewVisible = false) }
+            return
+        }
+        _uiState.update { it.copy(journalMergeReviewVisible = false) }
+        scope.launch {
+            // Re-validate: syncState may have advanced (e.g. auto-completed) between capture and execution
+            if (syncState.value !is SyncState.JournalMergeReady) return@launch
+            activeGitSyncService.value?.abortActiveMerge(state.graphId)
+        }
+    }
+
+    /**
+     * Applies the user-approved merged content for a journal conflict: writes to disk,
+     * marks resolved, commits, reloads, and pushes.
+     */
+    fun acceptJournalMerge(mergedContent: String) {
+        val state = syncState.value as? SyncState.JournalMergeReady ?: return
+        _uiState.update { it.copy(journalMergeReviewVisible = false) }
+        scope.launch {
+            // Re-validate: syncState may have advanced between capture and execution
+            if (syncState.value !is SyncState.JournalMergeReady) return@launch
+            activeGitSyncService.value?.applyJournalMerge(
+                graphId = state.graphId,
+                filePath = state.proposal.filePath,
+                mergedContent = mergedContent,
+            )
+        }
     }
 
     /** Dismisses the git auto-detection banner for the given graph. */

@@ -105,6 +105,14 @@ actual class CredentialStore actual constructor() : dev.stapler.stelekit.git.Cre
     private fun saveProperties(props: Properties) {
         try {
             storageFile.outputStream().use { props.store(it, "SteleKit Credentials") }
+            try {
+                NioFiles.setPosixFilePermissions(
+                    storageFile.toPath(),
+                    setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
+                )
+            } catch (_: UnsupportedOperationException) {
+                // Non-POSIX filesystem (Windows) — default permissions apply
+            }
         } catch (e: Exception) {
             logger.warn("Failed to save credentials to ${storageFile.path}: ${e.message}")
         }

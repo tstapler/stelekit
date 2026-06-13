@@ -647,13 +647,17 @@ class BlockStateManager(
     /**
      * Returns true if a debounced disk write is pending for [pageUuid].
      *
-     * Used by [observeExternalFileChanges] to extend conflict protection into the
-     * window between DB-save confirmation (dirty cleared) and the disk write
-     * actually firing (~300ms later). Without this check, an external file change
-     * arriving in that window silently overwrites local content with no dialog.
+     * Covers two sequential windows:
+     * 1. BlockStateManager's own 300ms debounce (diskWriteDebounce is pending).
+     * 2. GraphWriter's 500ms debounce (graphWriter.hasPendingForPage is true) — the
+     *    BlockStateManager entry is already gone but the write hasn't landed on disk.
+     *
+     * Both windows must be covered so an external change arriving in either cannot
+     * silently overwrite local content.
      */
     suspend fun hasPendingDiskWrite(pageUuid: String): Boolean =
-        diskWriteDebounce.hasPending("disk-$pageUuid")
+        diskWriteDebounce.hasPending("disk-$pageUuid") ||
+        (graphWriter?.hasPendingForPage(PageUuid(pageUuid)) == true)
 
     /**
      * Returns true if the [DatabaseWriteActor] has pending writes (structural ops in queue
@@ -669,11 +673,12 @@ class BlockStateManager(
     /**
      * Cancel any pending debounced disk write for [pageUuid] without executing it.
      *
-     * Called when a conflict dialog is shown, so the pending auto-save cannot
-     * overwrite the disk file that the dialog is offering to restore.
+     * Cancels both the BlockStateManager debounce AND any queued GraphWriter job so
+     * neither window can overwrite the disk content after a conflict dialog is shown.
      */
     suspend fun cancelPendingDiskSave(pageUuid: String) {
         diskWriteDebounce.cancel("disk-$pageUuid")
+        graphWriter?.cancelPendingForPage(PageUuid(pageUuid))
     }
 
     /**

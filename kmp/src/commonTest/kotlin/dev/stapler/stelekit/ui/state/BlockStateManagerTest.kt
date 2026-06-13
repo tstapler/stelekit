@@ -516,7 +516,10 @@ class BlockStateManagerTest {
     }
 
     @Test
-    fun hasPendingDiskWrite_returns_false_after_debounce_fires() = runTest {
+    fun hasPendingDiskWrite_returns_true_in_graphWriter_window_after_bsm_debounce_fires() = runTest {
+        // After the BSM 300ms debounce fires it calls graphWriter.queueSave, which starts its
+        // own 500ms debounce. hasPendingDiskWrite must stay true for that entire second window
+        // so an external change arriving then still shows the conflict dialog.
         val blockRepo = InMemoryBlockRepository()
         val pageRepo = InMemoryPageRepository()
         val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
@@ -539,14 +542,20 @@ class BlockStateManagerTest {
 
         manager.updateBlockContent(BlockUuid("b1"), "edited", 1)
         advanceTimeBy(10)
-        assertTrue(manager.hasPendingDiskWrite(pageUuid), "Should be pending before delay")
+        assertTrue(manager.hasPendingDiskWrite(pageUuid), "Should be pending before BSM debounce")
 
-        // Advance past the debounce delay (DebounceManager uses 300ms for BSM)
+        // Advance past BSM debounce (300ms) but stay inside GraphWriter window (500ms more)
         advanceTimeBy(400)
+
+        assertTrue(manager.hasPendingDiskWrite(pageUuid),
+            "Must still be pending in GraphWriter window (BSM fired, GraphWriter hasn't yet)")
+
+        // Advance past GraphWriter debounce too
+        advanceTimeBy(600)
         advanceUntilIdle()
 
         assertFalse(manager.hasPendingDiskWrite(pageUuid),
-            "Must not be pending after debounce fires")
+            "Must not be pending after both debounces have fired")
     }
 
     @Test
@@ -646,6 +655,56 @@ class BlockStateManagerTest {
         assertFalse(manager.hasPendingDiskWrite(pageUuid), "Cancelled page must not be pending")
         assertTrue(manager.hasPendingDiskWrite(otherPageUuid),
             "Unrelated page's write must still be pending")
+    }
+
+    @Test
+    fun cancelPendingDiskSave_in_graphWriter_window_prevents_stale_write() = runTest {
+        // Regression test for the "GraphWriter window" gap:
+        // BSM debounce fires at T+300ms and calls graphWriter.queueSave() with the user's blocks.
+        // An external change arriving in the subsequent 500ms graphWriter window would have been
+        // auto-reloaded into the DB, but then graphWriter would fire at T+800ms and overwrite
+        // with the stale pre-reload content. cancelPendingDiskSave must also cancel the
+        // graphWriter job to prevent this.
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val trackingFs = TrackingFileSystem()
+        val writer = GraphWriter(trackingFs)
+        writer.startAutoSave(scope)
+        val manager = BlockStateManager(
+            blockRepository = blockRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            graphWriter = writer,
+            pageRepository = pageRepo,
+            graphPathProvider = { "/graph" }
+        )
+
+        pageRepo.savePage(createPageWithFilePath("/graph/pages/test-page.md"))
+        blockRepo.saveBlock(createBlock("b1", content = "original"))
+        manager.observePage(PageUuid(pageUuid))
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.updateBlockContent(BlockUuid("b1"), "edited", 1)
+
+        // Advance past BSM debounce — graphWriter now has the pending write
+        advanceTimeBy(400)
+
+        assertTrue(manager.hasPendingDiskWrite(pageUuid),
+            "GraphWriter window: must still be pending after BSM debounce fires")
+
+        // Simulate conflict dialog showing: cancel
+        manager.cancelPendingDiskSave(pageUuid)
+        assertFalse(manager.hasPendingDiskWrite(pageUuid),
+            "Must not be pending after cancel in GraphWriter window")
+
+        // Advance past the GraphWriter debounce — write must not fire
+        advanceTimeBy(600)
+        advanceUntilIdle()
+
+        assertTrue(trackingFs.writtenPaths.isEmpty(),
+            "GraphWriter must not write after cancelPendingDiskSave called in GraphWriter window")
     }
 
     // ---- insertLinkAtCursor — overrideCursorIndex ----

@@ -29,6 +29,7 @@ import dev.stapler.stelekit.platform.google.DriveUploader
 import dev.stapler.stelekit.platform.google.GoogleAuthManager
 import dev.stapler.stelekit.ui.screens.git.ConflictResolutionScreen
 import dev.stapler.stelekit.ui.screens.git.GitSetupScreen
+import dev.stapler.stelekit.ui.screens.git.JournalMergeReviewScreen
 import dev.stapler.stelekit.vault.VaultError
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
@@ -193,6 +194,19 @@ internal fun GraphDialogLayer(
             } else null,
             onDismiss = { viewModel.dismissConflictResolution() },
         )
+    }
+
+    if (appState.journalMergeReviewVisible) {
+        val liveSyncState by viewModel.syncState.collectAsState()
+        val proposal = (liveSyncState as? SyncState.JournalMergeReady)?.proposal
+        if (proposal != null) {
+            JournalMergeReviewScreen(
+                proposal = proposal,
+                onAccept = { mergedContent -> viewModel.acceptJournalMerge(mergedContent) },
+                onFallbackToManual = { viewModel.abortJournalMerge() },
+                onDismiss = { viewModel.abortJournalMerge() },
+            )
+        }
     }
 
     appState.diskConflict?.let { conflict ->
