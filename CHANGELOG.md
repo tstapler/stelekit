@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.41.2](https://github.com/tstapler/stelekit/compare/v0.41.1...v0.41.2) (2026-06-13)
+
+
+### Bug Fixes
+
+* **ci:** add xvfb-run to release safety gate jvmTest ([69d456e](https://github.com/tstapler/stelekit/commit/69d456e03cd8748752bf7312757816d33a07bb49))
+* **git:** use kotlin.concurrent.Volatile in commonMain ([8add86e](https://github.com/tstapler/stelekit/commit/8add86e0f6b2add0e69ecf87f2a0130d2fcab33b))
+
 ## [0.41.1](https://github.com/tstapler/stelekit/compare/v0.41.0...v0.41.1) (2026-06-13)
 
 
