@@ -68,7 +68,7 @@ class GitSyncService(
     }
     private val scope = CoroutineScope(SupervisorJob() + PlatformDispatcher.IO + exceptionHandler)
 
-    @Volatile private var periodicSyncJob: Job? = null
+    @kotlin.concurrent.Volatile private var periodicSyncJob: Job? = null
 
     /**
      * Full sync sequence:
