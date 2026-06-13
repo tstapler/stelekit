@@ -386,6 +386,49 @@ object MigrationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_pages_unloaded ON pages(uuid) WHERE is_content_loaded = 0"
             )
         ),
+        Migration(
+            name = "asset_index_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS asset_index (
+                    uuid TEXT NOT NULL PRIMARY KEY,
+                    file_path TEXT NOT NULL,
+                    relative_path TEXT NOT NULL,
+                    media_type TEXT NOT NULL,
+                    subfolder TEXT NOT NULL DEFAULT 'files',
+                    tags TEXT NOT NULL DEFAULT '[]',
+                    auto_labels TEXT NOT NULL DEFAULT '[]',
+                    ocr_text TEXT,
+                    cloud_description TEXT,
+                    page_uuids TEXT NOT NULL DEFAULT '[]',
+                    size_bytes INTEGER NOT NULL DEFAULT 0,
+                    imported_at_ms INTEGER NOT NULL,
+                    ml_processed INTEGER NOT NULL DEFAULT 0,
+                    ml_attempted_at INTEGER,
+                    ml_failed INTEGER NOT NULL DEFAULT 0,
+                    content_hash TEXT,
+                    is_orphan INTEGER NOT NULL DEFAULT 0,
+                    ml_tags_source TEXT NOT NULL DEFAULT 'NONE'
+                )
+                """
+            )
+        ),
+        Migration(
+            name = "pending_asset_moves_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS pending_asset_moves (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    asset_uuid TEXT NOT NULL,
+                    old_file_path TEXT NOT NULL,
+                    new_file_path TEXT NOT NULL,
+                    old_relative_path TEXT NOT NULL,
+                    new_relative_path TEXT NOT NULL,
+                    created_at_ms INTEGER NOT NULL
+                )
+                """
+            )
+        ),
     )
 
     /**

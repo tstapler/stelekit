@@ -1087,3 +1087,99 @@ DELETE FROM measurement_annotations WHERE image_uuid = ?;
 
 deleteMeasurementAnnotation:
 DELETE FROM measurement_annotations WHERE uuid = ?;
+
+-- asset_index table: queryable metadata store for all graph assets
+CREATE TABLE IF NOT EXISTS asset_index (
+    uuid TEXT NOT NULL PRIMARY KEY,
+    file_path TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    media_type TEXT NOT NULL,
+    subfolder TEXT NOT NULL DEFAULT 'files',
+    tags TEXT NOT NULL DEFAULT '[]',
+    auto_labels TEXT NOT NULL DEFAULT '[]',
+    ocr_text TEXT,
+    cloud_description TEXT,
+    page_uuids TEXT NOT NULL DEFAULT '[]',
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    imported_at_ms INTEGER NOT NULL,
+    ml_processed INTEGER NOT NULL DEFAULT 0,
+    ml_attempted_at INTEGER,
+    ml_failed INTEGER NOT NULL DEFAULT 0,
+    content_hash TEXT,
+    is_orphan INTEGER NOT NULL DEFAULT 0,
+    ml_tags_source TEXT NOT NULL DEFAULT 'NONE'
+);
+
+insertAsset:
+INSERT INTO asset_index(uuid, file_path, relative_path, media_type, subfolder, tags, auto_labels, ocr_text, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_failed, content_hash, is_orphan, ml_tags_source)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, 'NONE');
+
+selectAssetByUuid:
+SELECT * FROM asset_index WHERE uuid = ?;
+
+selectAssets:
+SELECT * FROM asset_index ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
+
+selectAssetsByMediaType:
+SELECT * FROM asset_index WHERE media_type = ? ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
+
+searchAssets:
+SELECT * FROM asset_index WHERE (file_path LIKE :query OR tags LIKE :query OR auto_labels LIKE :query OR ocr_text LIKE :query) ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
+
+selectUnprocessedAssets:
+SELECT * FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0 ORDER BY imported_at_ms ASC LIMIT :limit OFFSET :offset;
+
+countUnprocessedAssets:
+SELECT COUNT(*) FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0;
+
+countAssets:
+SELECT COUNT(*) FROM asset_index;
+
+updateAssetFilePath:
+UPDATE asset_index SET file_path = :filePath, relative_path = :relativePath WHERE uuid = :uuid;
+
+updateAssetTags:
+UPDATE asset_index SET tags = :tags WHERE uuid = :uuid;
+
+updateAssetAutoLabels:
+UPDATE asset_index SET auto_labels = :autoLabels, ml_tags_source = :mlTagsSource WHERE uuid = :uuid;
+
+updateAssetOcrText:
+UPDATE asset_index SET ocr_text = :ocrText WHERE uuid = :uuid;
+
+updateAssetCloudDescription:
+UPDATE asset_index SET cloud_description = :cloudDescription, ml_tags_source = :mlTagsSource WHERE uuid = :uuid;
+
+markAssetMlProcessed:
+UPDATE asset_index SET ml_processed = 1, ml_attempted_at = :attemptedAt WHERE uuid = :uuid;
+
+markAssetMlFailed:
+UPDATE asset_index SET ml_failed = 1, ml_attempted_at = :attemptedAt WHERE uuid = :uuid;
+
+updateAssetPageUuids:
+UPDATE asset_index SET page_uuids = :pageUuids WHERE uuid = :uuid;
+
+deleteAsset:
+DELETE FROM asset_index WHERE uuid = :uuid;
+
+-- pending_asset_moves WAL table: holds in-flight moves for crash recovery
+-- This table is expected to hold <= a handful of rows at any time -- unbounded reads are safe.
+CREATE TABLE IF NOT EXISTS pending_asset_moves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_uuid TEXT NOT NULL,
+    old_file_path TEXT NOT NULL,
+    new_file_path TEXT NOT NULL,
+    old_relative_path TEXT NOT NULL,
+    new_relative_path TEXT NOT NULL,
+    created_at_ms INTEGER NOT NULL
+);
+
+insertPendingMove:
+INSERT INTO pending_asset_moves(asset_uuid, old_file_path, new_file_path, old_relative_path, new_relative_path, created_at_ms)
+VALUES (?, ?, ?, ?, ?, ?);
+
+deletePendingMove:
+DELETE FROM pending_asset_moves WHERE id = ?;
+
+selectAllPendingMoves:
+SELECT * FROM pending_asset_moves;

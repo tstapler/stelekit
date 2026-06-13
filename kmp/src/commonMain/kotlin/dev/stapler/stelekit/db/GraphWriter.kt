@@ -22,7 +22,9 @@ import dev.stapler.stelekit.vault.CryptoLayer
 import dev.stapler.stelekit.vault.VaultError
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 
 /**
  * Handles writing page and block changes back to markdown files.
@@ -570,6 +572,66 @@ class GraphWriter(
         }
 
         writeBlocks(null)
+    }
+
+    /**
+     * Scans all .md files under [graphRoot]/pages/ and [graphRoot]/journals/ for occurrences
+     * of [oldRelativePath] in image/link references and rewrites them to [newRelativePath].
+     *
+     * Patterns replaced:
+     *  - `![alt](oldRelativePath)` → `![alt](newRelativePath)` (image embed)
+     *  - `[oldRelativePath]` → `[newRelativePath]` (bare link)
+     *
+     * Up to 4 concurrent file rewrites (matching BacklinkRenamer's semaphore pattern).
+     * Errors are logged but not propagated — this is a best-effort rewrite.
+     */
+    suspend fun rewriteAssetReference(
+        oldRelativePath: String,
+        newRelativePath: String,
+        graphRoot: String,
+    ) {
+        val semaphore = Semaphore(4)
+        val dirs = listOf("$graphRoot/pages", "$graphRoot/journals")
+        coroutineScope {
+            for (dir in dirs) {
+                if (!fileSystem.directoryExists(dir)) continue
+                val files = try { fileSystem.listFiles(dir) } catch (_: Exception) { emptyList() }
+                for (file in files) {
+                    if (!file.endsWith(".md")) continue
+                    val filePath = "$dir/$file"
+                    async {
+                        semaphore.withPermit {
+                            rewriteAssetReferenceInFile(filePath, oldRelativePath, newRelativePath)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun rewriteAssetReferenceInFile(
+        filePath: String,
+        oldRelativePath: String,
+        newRelativePath: String,
+    ) {
+        try {
+            val content = withContext(PlatformDispatcher.IO) { fileSystem.readFile(filePath) } ?: return
+            if (!content.contains(oldRelativePath)) return
+            val escaped = Regex.escape(oldRelativePath)
+            val updated = content
+                .replace(Regex("!\\[([^\\]]*)\\]\\($escaped\\)")) { match ->
+                    "![${match.groupValues[1]}]($newRelativePath)"
+                }
+                .replace(Regex("\\[$escaped\\]")) { "[$newRelativePath]" }
+            if (updated == content) return
+            onPreWrite?.invoke(filePath)
+            withContext(PlatformDispatcher.IO) { fileSystem.writeFile(filePath, updated) }
+            onFileWritten?.invoke(filePath)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error("rewriteAssetReferenceInFile failed for $filePath: ${e.message}")
+        }
     }
 
     private fun getPageFilePath(page: Page, graphPath: String, layer: CryptoLayer? = cryptoLayer): String {

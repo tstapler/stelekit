@@ -245,6 +245,17 @@ internal fun ScreenRouter(
                 )
             }
 
+            is Screen.AssetBrowser -> {
+                NavigationTracingEffect("AssetBrowser")
+                val assetBrowserViewModel = remember {
+                    dev.stapler.stelekit.ui.assets.AssetBrowserViewModel(repos.assetRepository)
+                }
+                dev.stapler.stelekit.ui.assets.AssetBrowserScreen(
+                    viewModel = assetBrowserViewModel,
+                    onNavigateBack = { viewModel.goBack() },
+                )
+            }
+
             is Screen.AnnotationEditor -> {
                 NavigationTracingEffect("AnnotationEditor")
                 val imageAnnotationUuid = currentScreen.imageAnnotationUuid
