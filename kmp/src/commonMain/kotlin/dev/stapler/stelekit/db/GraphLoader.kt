@@ -233,7 +233,7 @@ class GraphLoader(
         val spanId: String = genId()
         private val startMs: Long = Clock.System.now().toEpochMilliseconds()
         @OptIn(DirectRepositoryWrite::class)
-        suspend fun finish(statusCode: String = "OK", vararg attrs: Pair<String, String>) {
+        fun finish(statusCode: String = "OK", vararg attrs: Pair<String, String>) {
             val endMs = Clock.System.now().toEpochMilliseconds()
             val allAttrs = mapOf(*attrs) + ("session.id" to dev.stapler.stelekit.performance.AppSession.id)
             val serialized = SerializedSpan(
@@ -246,9 +246,15 @@ class GraphLoader(
             // waiting for the actor queue. The actor path below persists to the DB.
             writeActor.ringBuffer?.record(serialized)
             if (spanRepository != null) {
-                writeActor.execute(DatabaseWriteActor.Priority.LOW) {
-                    spanRepository.insertSpan(serialized)
-                    Unit.right()
+                // Fire-and-forget: suspending here inflates parent span duration by the
+                // queue wait time of every child's finish() call, making spans look 10–60×
+                // slower than reality. parallelScope outlives graph close so spans are
+                // persisted even if the caller returns before the actor drains.
+                parallelScope.launch {
+                    writeActor.execute(DatabaseWriteActor.Priority.LOW) {
+                        spanRepository.insertSpan(serialized)
+                        Unit.right()
+                    }
                 }
             }
         }
