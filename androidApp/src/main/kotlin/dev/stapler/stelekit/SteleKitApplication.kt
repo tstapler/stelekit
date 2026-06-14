@@ -10,6 +10,7 @@ import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.SteleKitContext
 import dev.stapler.stelekit.platform.WriteBehindQueue
 import dev.stapler.stelekit.platform.measurement.MeasurementDeviceRegistry
+import dev.stapler.stelekit.app.BuildConfig
 import dev.stapler.stelekit.performance.BuildInfo
 import dev.stapler.stelekit.platform.measurement.ble.KableBleScanner
 import dev.stapler.stelekit.platform.sensor.AndroidCameraProvider

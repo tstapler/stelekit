@@ -49,6 +49,9 @@ sealed class Screen {
     /** Full-screen gallery of annotated images. */
     data object Gallery : Screen()
 
+    /** Asset browser for viewing and managing all graph assets. */
+    data object AssetBrowser : Screen()
+
     /**
      * Annotation editor for a single image annotation.
      *

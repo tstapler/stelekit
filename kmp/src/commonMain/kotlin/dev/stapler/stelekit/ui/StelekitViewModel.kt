@@ -958,6 +958,7 @@ class StelekitViewModel(
                     is Screen.LibraryStats -> "Opened Library Stats"
                     is Screen.VaultUnlock -> "Vault locked"
                     is Screen.Gallery -> "Opened Gallery"
+                    is Screen.AssetBrowser -> "Opened Asset Browser"
                     is Screen.AnnotationEditor -> "Opened Annotation Editor"
                 }
             )

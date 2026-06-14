@@ -141,7 +141,8 @@ class PerfExporter(
                 if (num != null) {
                     numeric.getOrPut(k) { mutableListOf() }.add(num)
                 } else {
-                    strings.getOrPut(k) { mutableMapOf() }.merge(v, 1, Int::plus)
+                    val m = strings.getOrPut(k) { mutableMapOf() }
+                    m[v] = (m[v] ?: 0) + 1
                 }
             }
         }
