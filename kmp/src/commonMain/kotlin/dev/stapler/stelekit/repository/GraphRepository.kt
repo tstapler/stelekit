@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.repository
 
 import arrow.core.Either
+import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
@@ -86,6 +87,19 @@ interface BlockRepository {
     suspend fun cacheEvictPage(pageUuid: String) {}
 
     /**
+     * Batch-fetch blocks by UUID list. Used by op-log pre-read to avoid N+1 per-block lookups.
+     * Default impl returns empty (op-log treats all as inserts in non-SQL backends).
+     */
+    suspend fun getBlocksByUuids(uuids: List<String>): Either<DomainError, List<Block>> =
+        emptyList<Block>().right()
+
+    /**
+     * Fold WAL frames into the main DB file. Call after bulk imports to prevent WAL bloat
+     * from slowing subsequent reads. No-op by default (non-SQLite backends).
+     */
+    suspend fun walCheckpoint() {}
+
+    /**
      * Save a new or updated block
      */
     @DirectRepositoryWrite
@@ -96,6 +110,17 @@ interface BlockRepository {
      */
     @DirectRepositoryWrite
     suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit>
+
+    /**
+     * Diff-aware bulk save: INSERTs [toInsert] and UPDATEs [toUpdate] via separate SQL paths.
+     * UPDATE fires blocks_au (scoped to content changes) instead of the INSERT OR REPLACE
+     * double-trigger (blocks_ad + blocks_ai), halving FTS5 work for updated blocks.
+     * Both lists are wrapped with FTS5 automerge=0 / merge pass to prevent compounding segment
+     * merges during large page saves. Default impl delegates to saveBlocks for compatibility.
+     */
+    @DirectRepositoryWrite
+    suspend fun saveBlocksDiff(toInsert: List<Block>, toUpdate: List<Block>): Either<DomainError, Unit> =
+        saveBlocks(toInsert + toUpdate)
 
     /**
      * Update only the content of a block. Does NOT touch structural fields

@@ -37,6 +37,7 @@ class RepositoryFactoryImpl(
 ) : RepositoryFactory {
 
     private var activeDriver: app.cash.sqldelight.db.SqlDriver? = null
+    private var wrappedDriver: app.cash.sqldelight.db.SqlDriver? = null
 
     // Set by createRepositorySet before repositories are instantiated so constructors receive
     // the live perf objects. Fields are written once before first use — not thread-safe by design.
@@ -51,6 +52,7 @@ class RepositoryFactoryImpl(
         val effectiveDriver = if (tracingRingBuffer != null || queryStatsCollector != null) {
             TimingDriverWrapper(driver, tracingRingBuffer, queryStatsCollector)
         } else driver
+        wrappedDriver = effectiveDriver
         SteleDatabase(effectiveDriver)
     }
 
@@ -65,7 +67,8 @@ class RepositoryFactoryImpl(
                 DatascriptBlockRepository()
             }
             GraphBackend.SQLDELIGHT -> getOrCreateInstance("block_sqldelight") {
-                SqlDelightBlockRepository(database)
+                val db = database // ensure wrappedDriver is populated
+                SqlDelightBlockRepository(db, wrappedDriver!!)
             }
             else -> throw NotImplementedError("Backend $backend not implemented")
         }

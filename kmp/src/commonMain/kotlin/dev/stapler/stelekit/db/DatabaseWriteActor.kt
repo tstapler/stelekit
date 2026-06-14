@@ -87,6 +87,13 @@ class DatabaseWriteActor(
             override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
         ) : WriteRequest()
 
+        class SaveBlocksDiff(
+            val toInsert: List<Block>,
+            val toUpdate: List<Block>,
+            override val priority: Priority = Priority.HIGH,
+            override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
+        ) : WriteRequest()
+
         class DeleteBlocksForPage(
             val pageUuid: String,
             override val priority: Priority = Priority.HIGH,
@@ -202,6 +209,7 @@ class DatabaseWriteActor(
                 request.deferred.complete(result)
             }
             is WriteRequest.SaveBlocks -> processSaveBlocks(request)
+            is WriteRequest.SaveBlocksDiff -> processSaveBlocksDiff(request)
             is WriteRequest.Execute -> {
                 val waitMs = HistogramWriter.epochMs() - request.enqueueMs
                 if (waitMs > 10L) {
@@ -291,24 +299,76 @@ class DatabaseWriteActor(
         }
     }
 
+    private suspend fun processSaveBlocksDiff(first: WriteRequest.SaveBlocksDiff) {
+        val sourceChannel = channelFor(first.priority)
+        val batch = mutableListOf(first)
+        while (true) {
+            if (first.priority == Priority.LOW) {
+                val urgent = highPriority.tryReceive().getOrNull()
+                if (urgent != null) {
+                    flushDiffBatch(batch)
+                    processRequest(urgent)
+                    return
+                }
+            }
+            val next = sourceChannel.tryReceive().getOrNull() ?: break
+            if (next is WriteRequest.SaveBlocksDiff) {
+                batch.add(next)
+            } else {
+                flushDiffBatch(batch)
+                processRequest(next)
+                return
+            }
+        }
+        flushDiffBatch(batch)
+    }
+
+    private suspend fun flushDiffBatch(batch: List<WriteRequest.SaveBlocksDiff>) {
+        val allInserts = batch.flatMap { it.toInsert }
+        val allUpdates = batch.flatMap { it.toUpdate }
+        val existingByUuid = loadExistingBlocks(allInserts + allUpdates)
+        val batchResult = blockRepository.saveBlocksDiff(allInserts, allUpdates)
+        if (batchResult.isRight()) {
+            logSaveBlocks(allInserts + allUpdates, existingByUuid)
+            batch.forEach {
+                onWriteSuccess?.invoke(it)
+                it.deferred.complete(Unit.right())
+            }
+        } else if (batch.size > 1) {
+            logger.warn(
+                "Combined diff batch failed (${batchResult.leftOrNull()?.message}), retrying ${batch.size} requests individually"
+            )
+            batch.forEach { req ->
+                val reqExisting = loadExistingBlocks(req.toInsert + req.toUpdate)
+                val reqResult = blockRepository.saveBlocksDiff(req.toInsert, req.toUpdate)
+                if (reqResult.isRight()) {
+                    logSaveBlocks(req.toInsert + req.toUpdate, reqExisting)
+                    onWriteSuccess?.invoke(req)
+                }
+                req.deferred.complete(reqResult)
+            }
+        } else {
+            batch[0].deferred.complete(batchResult)
+        }
+    }
+
     /**
      * Load existing blocks by UUID for INSERT vs UPDATE classification.
-     * Returns a map of uuid -> existing Block (only for blocks that already exist).
+     * Uses a single batch query instead of N per-block Flow collections to avoid the N+1
+     * overhead that previously caused each block to create/destroy a SQLDelight listener.
      */
     private suspend fun loadExistingBlocks(blocks: List<Block>): Map<String, Block> {
         if (opLogger == null || blocks.isEmpty()) return emptyMap()
-        val result = mutableMapOf<String, Block>()
-        for (block in blocks) {
-            try {
-                val existing = blockRepository.getBlockByUuid(block.uuid).first().getOrNull()
-                if (existing != null) result[block.uuid] = existing
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                // Non-fatal: if lookup fails we skip logging for this block
-            }
+        return try {
+            blockRepository.getBlocksByUuids(blocks.map { it.uuid })
+                .getOrNull()
+                .orEmpty()
+                .associateBy { it.uuid }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyMap()
         }
-        return result
     }
 
     /**
@@ -342,6 +402,17 @@ class DatabaseWriteActor(
 
     suspend fun saveBlocks(blocks: List<Block>, priority: Priority = Priority.HIGH): Either<DomainError, Unit> {
         val req = WriteRequest.SaveBlocks(blocks, priority)
+        channelFor(priority).send(req)
+        return req.deferred.await()
+    }
+
+    suspend fun saveBlocksDiff(
+        toInsert: List<Block>,
+        toUpdate: List<Block>,
+        priority: Priority = Priority.HIGH,
+    ): Either<DomainError, Unit> {
+        if (toInsert.isEmpty() && toUpdate.isEmpty()) return Unit.right()
+        val req = WriteRequest.SaveBlocksDiff(toInsert, toUpdate, priority)
         channelFor(priority).send(req)
         return req.deferred.await()
     }

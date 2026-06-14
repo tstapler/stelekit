@@ -435,6 +435,7 @@ class GraphLoader(
                         logger.info("Warm reconcile complete. Duration: $totalDuration")
                         histogramWriter?.record("graph_load", totalDuration.inWholeMilliseconds)
                         warmSpan.finish("OK", "duration.ms" to totalDuration.inWholeMilliseconds.toString())
+                        blockRepository.walCheckpoint()
                         onFullyLoaded()
                         onBulkImportComplete?.invoke()
                         startWatching(graphPath)
@@ -1360,11 +1361,11 @@ class GraphLoader(
                         logger.warn("deleteBlock failed for $uuid in $filePath: ${e.message}")
                     }
                 }
-                val blocksToWrite = diff.toInsert + diff.toUpdate
-                if (blocksToWrite.isNotEmpty()) {
+                if (diff.toInsert.isNotEmpty() || diff.toUpdate.isNotEmpty()) {
+                    val blocksToWrite = diff.toInsert + diff.toUpdate
                     val saveBlocksSpan = Span("db.saveBlocks", traceId, parentSpanId)
-                    writeActor.saveBlocks(blocksToWrite, priority).onLeft { e ->
-                        logger.warn("saveBlocks failed for $filePath (${blocksToWrite.size} blocks): ${e.message}")
+                    writeActor.saveBlocksDiff(diff.toInsert, diff.toUpdate, priority).onLeft { e ->
+                        logger.warn("saveBlocksDiff failed for $filePath (${blocksToWrite.size} blocks): ${e.message}")
                         _writeErrors.tryEmit(WriteError(filePath, blocksToWrite.size, e))
                     }
                     saveBlocksSpan.finish("OK", "block.count" to blocksToWrite.size.toString())
