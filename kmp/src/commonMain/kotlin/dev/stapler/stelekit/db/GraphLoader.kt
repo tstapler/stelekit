@@ -294,7 +294,13 @@ class GraphLoader(
         fileSystem = fileSystem,
         fileRegistry = fileRegistry,
         readFile = ::readFileDecrypted,
-        onReloadFile = { filePath, content -> parseAndSavePage(FilePath(filePath), content, dev.stapler.stelekit.parsing.ParseMode.FULL) },
+        onReloadFile = { filePath, content ->
+            // forceReload=true: the watcher already confirmed the file changed and read the
+            // current content. Re-querying getLastModifiedTime inside lookupExistingPageAndCheckFreshness
+            // is unreliable on Android — some SAF providers cache the old mod time even after
+            // an external write, causing the freshness guard to incorrectly skip the reload.
+            parseAndSavePage(FilePath(filePath), content, dev.stapler.stelekit.parsing.ParseMode.FULL, forceReload = true)
+        },
         pollIntervalMs = watcherPollIntervalMs,
         // Suspend lambda: called directly from checkDirectoryForChanges (already suspend) to
         // guarantee dirty flag is set before onReloadFile is called — no ordering race possible.
