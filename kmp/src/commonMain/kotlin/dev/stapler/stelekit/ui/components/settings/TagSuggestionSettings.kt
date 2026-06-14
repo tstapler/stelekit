@@ -26,11 +26,12 @@ import dev.stapler.stelekit.tags.TagSettings
 fun TagSuggestionSettings(
     tagSettings: TagSettings,
     hasLlmKey: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     var enabled by remember { mutableStateOf(tagSettings.isEnabled()) }
     var llmTierEnabled by remember { mutableStateOf(tagSettings.isLlmTierEnabled()) }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = modifier.fillMaxWidth()) {
         Text(
             text = "Auto-Tag Suggestions",
             style = MaterialTheme.typography.titleMedium,

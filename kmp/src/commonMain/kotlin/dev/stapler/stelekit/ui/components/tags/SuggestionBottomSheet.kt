@@ -29,6 +29,7 @@ fun SuggestionBottomSheet(
     state: TagSuggestionState,
     onAcceptTag: (blockUuid: String, term: String) -> Unit,
     onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val isVisible = state is TagSuggestionState.Ready || state is TagSuggestionState.Loading
     if (!isVisible) return
@@ -38,6 +39,7 @@ fun SuggestionBottomSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
+        modifier = modifier,
     ) {
         Column(
             modifier = Modifier
