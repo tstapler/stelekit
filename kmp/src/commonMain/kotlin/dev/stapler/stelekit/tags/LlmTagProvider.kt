@@ -41,10 +41,10 @@ class LlmTagProvider(
                     ).left()
                 }
             }
-        } catch (e: CancellationException) {
-            throw e
         } catch (e: TimeoutCancellationException) {
             DomainError.NetworkError.Timeout("LLM tag suggestion timed out after ${timeoutSeconds}s").left()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             DomainError.NetworkError.RequestFailed(e.message ?: "LLM request failed").left()
         }
