@@ -439,7 +439,13 @@ fun PageView(
             SuggestionBottomSheet(
                 state = tagSuggestionState,
                 onAcceptTag = { uuid, term ->
-                    blockStateManager.appendToBlock(BlockUuid(uuid), " [[$term]]")
+                    // When page-scope was triggered, uuid is the page uuid (not a block uuid).
+                    // Find the actual target block: use the block matching uuid, or fall back to first block.
+                    val targetBlockUuid = blocks.firstOrNull { it.uuid.value == uuid }?.uuid
+                        ?: blocks.firstOrNull()?.uuid
+                    targetBlockUuid?.let {
+                        blockStateManager.appendToBlock(it, " [[$term]]")
+                    }
                 },
                 onDismiss = { tagSuggestionViewModel.dismiss() },
             )

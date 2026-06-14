@@ -24,6 +24,9 @@ class TagSuggestionEngine(
         const val AUTO_APPLY_THRESHOLD = 0.95f
     }
 
+    /** True when an LLM provider is configured; false when suggestions are local-only. */
+    val hasLlmProvider: Boolean get() = llmTagProvider != null
+
     /**
      * Synchronous local scan. Uses the current AhoCorasickMatcher snapshot (null = no suggestions).
      * All results are confidence=1.0 and autoApplied=true — exact page name matches require no threshold.

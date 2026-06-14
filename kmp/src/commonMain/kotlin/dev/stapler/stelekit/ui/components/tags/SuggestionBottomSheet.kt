@@ -73,8 +73,7 @@ fun SuggestionBottomSheet(
                 }
                 is TagSuggestionState.Ready -> {
                     val allSuggestions = state.localSuggestions + state.llmSuggestions
-                    val isLlmLoading = state.llmSuggestions.isEmpty() && state.llmError == null
-                        && state.localSuggestions.isNotEmpty()
+                    val isLlmLoading = state.llmPending
 
                     TagChipRow(
                         suggestions = allSuggestions,

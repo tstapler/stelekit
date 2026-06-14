@@ -18,6 +18,10 @@ class LlmTagProvider(
     companion object {
         private const val MAX_BLOCK_CHARS = 500
         private const val MAX_VOCABULARY_SIZE = 200
+        private const val CONFIDENCE_MAX = 0.85f
+        private const val CONFIDENCE_DECAY = 0.02f
+        private const val CONFIDENCE_MIN = 0.50f
+        private val WORD_SPLIT = Regex("\\W+")
     }
 
     suspend fun suggestTags(
@@ -52,10 +56,10 @@ class LlmTagProvider(
 
     /** Keep only vocabulary names that share at least one token with the block text. */
     private fun tokenOverlapFilter(blockText: String, vocabulary: List<String>): List<String> {
-        val blockTokens = blockText.lowercase().split(Regex("\\W+")).filter { it.isNotBlank() }.toSet()
+        val blockTokens = blockText.lowercase().split(WORD_SPLIT).filter { it.isNotBlank() }.toSet()
         if (blockTokens.isEmpty()) return vocabulary
         return vocabulary.filter { name ->
-            name.lowercase().split(Regex("\\W+")).filter { it.isNotBlank() }.any { it in blockTokens }
+            name.lowercase().split(WORD_SPLIT).filter { it.isNotBlank() }.any { it in blockTokens }
         }
     }
 
@@ -82,8 +86,8 @@ $tagList
             val cleaned = line.trim().removePrefix("- ").trim()
             if (cleaned.isBlank()) return@forEachIndexed
             val canonical = vocabLower[cleaned.lowercase()] ?: return@forEachIndexed
-            // Positional confidence decay: 0.85 at position 0, decrement 0.02 per position
-            val confidence = (0.85f - index * 0.02f).coerceIn(0.5f, 0.85f)
+            // Positional confidence decay: CONFIDENCE_MAX at position 0, decrement CONFIDENCE_DECAY per position
+            val confidence = (CONFIDENCE_MAX - index * CONFIDENCE_DECAY).coerceIn(CONFIDENCE_MIN, CONFIDENCE_MAX)
             results += TagSuggestion(
                 term = canonical,
                 confidence = confidence,

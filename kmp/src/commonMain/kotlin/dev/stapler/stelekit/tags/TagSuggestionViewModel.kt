@@ -44,6 +44,7 @@ class TagSuggestionViewModel(
                 blockUuid = blockUuid,
                 localSuggestions = localSuggestions,
                 llmSuggestions = emptyList(),
+                llmPending = engine.hasLlmProvider,
             )
 
             // Tier 2: LLM suggestions — async, may be empty if no provider
@@ -51,14 +52,14 @@ class TagSuggestionViewModel(
                 ifLeft = { err ->
                     _state.update { current ->
                         if (current is TagSuggestionState.Ready && current.blockUuid == blockUuid) {
-                            current.copy(llmError = err.message)
+                            current.copy(llmError = err.message, llmPending = false)
                         } else current
                     }
                 },
                 ifRight = { llmSuggestions ->
                     _state.update { current ->
                         if (current is TagSuggestionState.Ready && current.blockUuid == blockUuid) {
-                            current.copy(llmSuggestions = llmSuggestions)
+                            current.copy(llmSuggestions = llmSuggestions, llmPending = false)
                         } else current
                     }
                 }

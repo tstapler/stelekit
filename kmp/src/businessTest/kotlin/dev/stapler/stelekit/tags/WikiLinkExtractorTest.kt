@@ -50,4 +50,16 @@ class WikiLinkExtractorTest {
         val result = WikiLinkExtractor.extractPageNames("See [[Kotlin]] and [[Python]] both")
         assertEquals(setOf("Kotlin", "Python"), result)
     }
+
+    @Test
+    fun `extracts page name from alias syntax`() {
+        val result = WikiLinkExtractor.extractPageNames("See [[Kotlin|programming language]]")
+        assertEquals(setOf("Kotlin"), result)
+    }
+
+    @Test
+    fun `handles empty brackets`() {
+        val result = WikiLinkExtractor.extractPageNames("[[]]")
+        assertTrue(result.isEmpty())
+    }
 }

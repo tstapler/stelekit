@@ -8,6 +8,7 @@ sealed interface TagSuggestionState {
         val localSuggestions: List<TagSuggestion>,
         val llmSuggestions: List<TagSuggestion>,
         val llmError: String? = null,
+        val llmPending: Boolean = false,
     ) : TagSuggestionState
     data class Error(val message: String) : TagSuggestionState
 }
