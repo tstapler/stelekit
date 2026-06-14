@@ -361,6 +361,15 @@ class RepositoryFactoryImpl(
                 if (drained.isNotEmpty()) withContext(PlatformDispatcher.IO) {
                     dev.stapler.stelekit.performance.SpanArchiver.archive(drained)
                 }
+                // Auto-feed every drained span into the histogram so operations are discovered
+                // without maintaining a hardcoded KNOWN_OPERATIONS list.
+                if (histogramWriter != null) {
+                    drained.forEach { span ->
+                        if (span.name != "slo.violation") {
+                            histogramWriter.record(span.name, span.durationMs, span.startEpochMs)
+                        }
+                    }
+                }
                 val drainBlock: suspend () -> Either<DomainError, Unit> = {
                     drained.forEach { span -> spanRepository.insertSpan(span) }
                     spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)
