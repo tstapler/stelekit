@@ -41,7 +41,7 @@ kt_android_library(
 
 android_local_test(
     name = "android_unit_tests",
-    manifest = "//androidApp:src/main/AndroidManifest.xml",
+    manifest = "//androidApp:BazelAndroidManifest.xml",
     deps = [
         ":android_unit_test_lib",
         "@maven//:org_robolectric_robolectric",
