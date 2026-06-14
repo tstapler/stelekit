@@ -28,9 +28,12 @@ bazel_dep(name = "rules_android", version = "0.7.1")
 bazel_dep(name = "rules_jvm_external", version = "6.9")
 bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "rules_java", version = "9.3.0")
-# robolectric: not published to BCR; used only via Maven artifacts.
-# The @robolectric//bazel:android-all shorthand is unavailable without a BCR entry;
-# android_local_test targets declare org.robolectric:android-all directly instead.
+# rules_robolectric is available in BCR and provides @rules_robolectric//bazel:android-all
+# which carries the robolectric-deps.properties file needed by android_local_test at runtime.
+# Version 4.16.1 matches our org.robolectric:robolectric:4.16 Maven artifact.
+# rules_android 0.7.1 depends on rules_robolectric 4.14.1.2; we declare 4.16.1 so Bzlmod
+# selects the higher version, compatible with our Maven 4.16 Robolectric test runner.
+bazel_dep(name = "rules_robolectric", version = "4.16.1")
 
 ###############################################################################
 # Android SDK

@@ -45,6 +45,9 @@ android_local_test(
     name = "android_unit_tests",
     manifest = "//androidApp:BazelAndroidManifest.xml",
     test_class = "dev.stapler.stelekit.AllAndroidUnitTests",
+    # android-all provides robolectric-deps.properties in the test's runfiles so that
+    # android_local_test can find the Android SDK JARs when running offline (-Drobolectric.offline=true).
+    data = ["@rules_robolectric//bazel:android-all"],
     deps = [
         ":android_unit_test_lib",
         "@maven//:org_robolectric_robolectric",
