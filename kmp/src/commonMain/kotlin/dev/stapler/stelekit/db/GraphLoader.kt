@@ -233,7 +233,7 @@ class GraphLoader(
         val spanId: String = genId()
         private val startMs: Long = Clock.System.now().toEpochMilliseconds()
         @OptIn(DirectRepositoryWrite::class)
-        suspend fun finish(statusCode: String = "OK", vararg attrs: Pair<String, String>) {
+        fun finish(statusCode: String = "OK", vararg attrs: Pair<String, String>) {
             val endMs = Clock.System.now().toEpochMilliseconds()
             val allAttrs = mapOf(*attrs) + ("session.id" to dev.stapler.stelekit.performance.AppSession.id)
             val serialized = SerializedSpan(
@@ -246,9 +246,15 @@ class GraphLoader(
             // waiting for the actor queue. The actor path below persists to the DB.
             writeActor.ringBuffer?.record(serialized)
             if (spanRepository != null) {
-                writeActor.execute(DatabaseWriteActor.Priority.LOW) {
-                    spanRepository.insertSpan(serialized)
-                    Unit.right()
+                // Fire-and-forget: suspending here inflates parent span duration by the
+                // queue wait time of every child's finish() call, making spans look 10–60×
+                // slower than reality. parallelScope outlives graph close so spans are
+                // persisted even if the caller returns before the actor drains.
+                parallelScope.launch {
+                    writeActor.execute(DatabaseWriteActor.Priority.LOW) {
+                        spanRepository.insertSpan(serialized)
+                        Unit.right()
+                    }
                 }
             }
         }
@@ -842,11 +848,15 @@ class GraphLoader(
             // Reached when the page needs (re-)loading: dirty-set hit, missing blocks, or
             // content-hash mismatch (iOS/WASM).
             fileSystem.invalidateShadow(filePath)
+            val fileReadTraceId = genId()
+            val fileReadSpan = Span("file.read", fileReadTraceId, "")
             val content = readFileDecrypted(filePath)
             if (content == null) {
+                fileReadSpan.finish("ERROR", "file.path" to filePath.redactPath())
                 logger.warn("Failed to read file: $filePath")
                 return
             }
+            fileReadSpan.finish("OK", "file.path" to filePath.redactPath(), "content.bytes" to content.length.toString())
 
             parseAndSavePage(FilePath(filePath), content, ParseMode.FULL, forceReload = forceReload)
         } finally {
@@ -1337,7 +1347,12 @@ class GraphLoader(
             val fileModTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
             val getBlocksSpan = Span("db.getBlocks", traceId, parentSpanId)
             val blocks = blockRepository.getBlocksForPage(existingPage.uuid).first().getOrNull() ?: emptyList()
-            getBlocksSpan.finish("OK", "block.count" to blocks.size.toString())
+            getBlocksSpan.finish(
+                "OK",
+                "block.count" to blocks.size.toString(),
+                "page.name" to name.redactPath(),
+                "page.is_journal" to isJournal.toString(),
+            )
             val allBlocksLoaded = blocks.isNotEmpty() && blocks.all { it.isLoaded }
             val pageIsUpToDate = !forceReload && fileModTime != 0L &&
                 existingPage.updatedAt.toEpochMilliseconds() >= fileModTime

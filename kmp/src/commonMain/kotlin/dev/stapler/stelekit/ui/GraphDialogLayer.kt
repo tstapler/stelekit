@@ -28,6 +28,7 @@ import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.google.DriveUploader
 import dev.stapler.stelekit.platform.google.GoogleAuthManager
 import dev.stapler.stelekit.ui.screens.git.ConflictResolutionScreen
+import dev.stapler.stelekit.git.GitHubDeviceFlowClient
 import dev.stapler.stelekit.ui.screens.git.GitSetupScreen
 import dev.stapler.stelekit.ui.screens.git.JournalMergeReviewScreen
 import dev.stapler.stelekit.vault.VaultError
@@ -148,24 +149,31 @@ internal fun GraphDialogLayer(
         onDisconnectGoogle = onDisconnectGoogle,
     )
 
-    val canShowGitSetup = appState.gitSetupVisible &&
-        gitSyncService != null && gitRepository != null && gitConfigRepository != null
-    if (canShowGitSetup) {
-        GitSetupScreen(
-            graphId = activeGraphId ?: "",
-            gitRepository = gitRepository,
-            gitConfigRepository = gitConfigRepository,
-            gitSyncService = gitSyncService,
-            fileSystem = fileSystem,
-            onDismiss = { viewModel.dismissGitSetup() },
-            onSave = { viewModel.dismissGitSetup() },
-            onCloneAndAdd = onCloneAndAdd,
-            graphPath = graphPath,
-            onCloneComplete = onCloneComplete,
-            initialStep = appState.gitSetupInitialStep,
-            initialUseExistingClone = !appState.gitSetupOpenForClone,
-            existingConfig = null,
-        )
+    // key(gitSetupVisible) resets composition — and the remember inside — each time the dialog
+    // opens, giving GitSetupScreen a fresh HttpClient. GitSetupScreen.DisposableEffect closes
+    // the client on dismiss, so we never hand a closed client back in on second open.
+    key(appState.gitSetupVisible) {
+        val canShowGitSetup = appState.gitSetupVisible &&
+            gitSyncService != null && gitRepository != null && gitConfigRepository != null
+        if (canShowGitSetup) {
+            val deviceFlowClient = remember { GitHubDeviceFlowClient.withDefaultClient() }
+            GitSetupScreen(
+                graphId = activeGraphId ?: "",
+                gitRepository = gitRepository,
+                gitConfigRepository = gitConfigRepository,
+                gitSyncService = gitSyncService,
+                fileSystem = fileSystem,
+                onDismiss = { viewModel.dismissGitSetup() },
+                onSave = { viewModel.dismissGitSetup() },
+                onCloneAndAdd = onCloneAndAdd,
+                graphPath = graphPath,
+                onCloneComplete = onCloneComplete,
+                initialStep = appState.gitSetupInitialStep,
+                initialUseExistingClone = !appState.gitSetupOpenForClone,
+                existingConfig = null,
+                deviceFlowClient = deviceFlowClient,
+            )
+        }
     }
 
     if (appState.conflictResolutionVisible) {

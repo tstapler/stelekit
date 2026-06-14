@@ -46,23 +46,28 @@ import kotlin.coroutines.resumeWithException
  * A snapshot of [SensorModule.motionSensorProvider.sensorDataFlow] is captured at shutter
  * time and attached to the returned [PlatformImageFile.sensorData].
  */
-class AndroidCameraProvider(private val context: Context) : CameraProvider {
+class AndroidCameraProvider(
+    private val context: Context,
+    private val requestPermission: (suspend () -> Boolean)? = null,
+) : CameraProvider {
 
     override val isAvailable: Boolean = true
 
     /**
      * Captures a single JPEG photo using CameraX [ImageCapture].
      *
-     * Returns [DomainError.SensorError.PermissionDenied] if CAMERA permission is missing.
+     * Returns [DomainError.SensorError.PermissionDenied] if CAMERA permission is missing and
+     * the user denies the runtime prompt (or no [requestPermission] callback was supplied).
      * Returns [DomainError.SensorError.CaptureFailed] for any capture or I/O error.
      */
     @Suppress("TooGenericExceptionCaught")
     override suspend fun capturePhoto(): Either<DomainError.SensorError, PlatformImageFile> {
-        // 1. Permission gate
+        // 1. Permission gate — request at runtime if needed
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
             != PackageManager.PERMISSION_GRANTED
         ) {
-            return DomainError.SensorError.PermissionDenied("camera").left()
+            val granted = requestPermission?.invoke() ?: false
+            if (!granted) return DomainError.SensorError.PermissionDenied("camera").left()
         }
 
         return try {
