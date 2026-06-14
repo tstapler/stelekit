@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.0](https://github.com/tstapler/stelekit/compare/v0.43.0...v0.44.0) (2026-06-14)
+
+
+### Features
+
+* **perf:** FTS5 automerge control, diff-aware saves, batch N+1 fix, WAL checkpoint ([#156](https://github.com/tstapler/stelekit/issues/156)) ([7bd8ebe](https://github.com/tstapler/stelekit/commit/7bd8ebe57872895b69a7e9da8c836fc79aa02c47))
+
 ## [0.43.0](https://github.com/tstapler/stelekit/compare/v0.42.0...v0.43.0) (2026-06-14)
 
 
