@@ -11,6 +11,18 @@ Developer commands:
 See CLAUDE.md for the full Gradle → Bazel command equivalence table.
 """
 
+load("@rules_android//rules:rules.bzl", "android_library")
+
+# ── Android KMP resources ─────────────────────────────────────────────────────
+# res/ lives in the kmp/ Bazel package (no BUILD in src/androidMain/), so the
+# android_library that exposes R must be defined here.
+android_library(
+    name = "kmp_android_resources",
+    resource_files = glob(["src/androidMain/res/**"]),
+    custom_package = "dev.stapler.stelekit",
+    visibility = ["//kmp/src/androidMain/kotlin:__pkg__"],
+)
+
 # ── JVM / Desktop ─────────────────────────────────────────────────────────────
 
 alias(

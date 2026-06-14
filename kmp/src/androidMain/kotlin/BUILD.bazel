@@ -30,6 +30,10 @@ kt_android_library(
     ],
     custom_package = "dev.stapler.stelekit",
     deps = [
+        # Android string resources (R.string.no_graph_*) — defined in kmp/ package
+        # because kmp/src/androidMain/res/ has no own BUILD file.
+        "//kmp:kmp_android_resources",
+
         # SQLDelight (from commonMain)
         "//kmp/src/generated/sqldelight:sqldelight_generated_jvm",
         "@maven//:app_cash_sqldelight_runtime_jvm",
