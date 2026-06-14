@@ -530,7 +530,6 @@ class GraphLoader(
                         logger.info("Warm reconcile complete. Duration: $totalDuration")
                         histogramWriter?.record("graph_load", totalDuration.inWholeMilliseconds)
                         warmSpan.finish("OK", "duration.ms" to totalDuration.inWholeMilliseconds.toString())
-                        blockRepository.walCheckpoint()
                         onFullyLoaded()
                         onBulkImportComplete?.invoke()
                         startWatching(graphPath)
