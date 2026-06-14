@@ -14,4 +14,6 @@ public data class Spans(
   public val duration_ms: Long,
   public val attributes_json: String,
   public val status_code: String,
+  public val app_version: String,
+  public val commit_hash: String,
 )

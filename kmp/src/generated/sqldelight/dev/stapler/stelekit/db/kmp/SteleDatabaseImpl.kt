@@ -173,7 +173,9 @@ private class SteleDatabaseImpl(
           |    end_epoch_ms INTEGER NOT NULL,
           |    duration_ms INTEGER NOT NULL,
           |    attributes_json TEXT NOT NULL DEFAULT '{}',
-          |    status_code TEXT NOT NULL DEFAULT 'OK'
+          |    status_code TEXT NOT NULL DEFAULT 'OK',
+          |    app_version TEXT NOT NULL DEFAULT '',
+          |    commit_hash TEXT NOT NULL DEFAULT ''
           |)
           """.trimMargin(), 0).await()
       driver.execute(null, """
@@ -317,6 +319,7 @@ private class SteleDatabaseImpl(
       driver.execute(null, "CREATE INDEX idx_operations_entity ON operations(entity_uuid)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS spans_start_epoch_ms_idx ON spans(start_epoch_ms DESC)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS spans_trace_id_idx ON spans(trace_id)", 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_spans_version_name_duration ON spans(app_version, name, duration_ms DESC)", 0).await()
       driver.execute(null, """
           |CREATE INDEX IF NOT EXISTS idx_query_stats_version_ms
           |    ON query_stats(app_version, total_ms DESC)

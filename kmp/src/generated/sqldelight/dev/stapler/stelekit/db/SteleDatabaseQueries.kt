@@ -2210,6 +2210,8 @@ public class SteleDatabaseQueries(
     duration_ms: Long,
     attributes_json: String,
     status_code: String,
+    app_version: String,
+    commit_hash: String,
   ) -> T): Query<T> = SelectRecentSpansQuery(value) { cursor ->
     mapper(
       cursor.getLong(0)!!,
@@ -2221,11 +2223,58 @@ public class SteleDatabaseQueries(
       cursor.getLong(6)!!,
       cursor.getLong(7)!!,
       cursor.getString(8)!!,
-      cursor.getString(9)!!
+      cursor.getString(9)!!,
+      cursor.getString(10)!!,
+      cursor.getString(11)!!
     )
   }
 
   public fun selectRecentSpans(value_: Long): Query<Spans> = selectRecentSpans(value_, ::Spans)
+
+  public fun <T : Any> selectSlowSpansByVersionAndName(
+    app_version: String,
+    name: String,
+    `value`: Long,
+    mapper: (
+      id: Long,
+      trace_id: String,
+      span_id: String,
+      parent_span_id: String,
+      name: String,
+      start_epoch_ms: Long,
+      end_epoch_ms: Long,
+      duration_ms: Long,
+      attributes_json: String,
+      status_code: String,
+      app_version: String,
+      commit_hash: String,
+    ) -> T,
+  ): Query<T> = SelectSlowSpansByVersionAndNameQuery(app_version, name, value) { cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getLong(5)!!,
+      cursor.getLong(6)!!,
+      cursor.getLong(7)!!,
+      cursor.getString(8)!!,
+      cursor.getString(9)!!,
+      cursor.getString(10)!!,
+      cursor.getString(11)!!
+    )
+  }
+
+  public fun selectSlowSpansByVersionAndName(
+    app_version: String,
+    name: String,
+    value_: Long,
+  ): Query<Spans> = selectSlowSpansByVersionAndName(app_version, name, value_, ::Spans)
+
+  public fun selectDistinctVersionsWithSpans(): Query<String> = Query(799_650_447, arrayOf("spans"), driver, "SteleDatabase.sq", "selectDistinctVersionsWithSpans", "SELECT DISTINCT app_version FROM spans WHERE app_version != '' ORDER BY app_version DESC") { cursor ->
+    cursor.getString(0)!!
+  }
 
   public fun <T : Any> selectQueryStatsByVersion(app_version: String, mapper: (
     app_version: String,
@@ -3759,11 +3808,13 @@ public class SteleDatabaseQueries(
     duration_ms: Long,
     attributes_json: String,
     status_code: String,
+    app_version: String,
+    commit_hash: String,
   ): Long {
     val result = driver.execute(-1_038_766_748, """
-        |INSERT INTO spans (trace_id, span_id, parent_span_id, name, start_epoch_ms, end_epoch_ms, duration_ms, attributes_json, status_code)
-        |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """.trimMargin(), 9) {
+        |INSERT INTO spans (trace_id, span_id, parent_span_id, name, start_epoch_ms, end_epoch_ms, duration_ms, attributes_json, status_code, app_version, commit_hash)
+        |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimMargin(), 11) {
           var parameterIndex = 0
           bindString(parameterIndex++, trace_id)
           bindString(parameterIndex++, span_id)
@@ -3774,6 +3825,8 @@ public class SteleDatabaseQueries(
           bindLong(parameterIndex++, duration_ms)
           bindString(parameterIndex++, attributes_json)
           bindString(parameterIndex++, status_code)
+          bindString(parameterIndex++, app_version)
+          bindString(parameterIndex++, commit_hash)
         }.await()
     notifyQueries(-1_038_766_748) { emit ->
       emit("spans")
@@ -6042,12 +6095,36 @@ public class SteleDatabaseQueries(
       driver.removeListener("spans", listener = listener)
     }
 
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(681_519_953, """SELECT spans.id, spans.trace_id, spans.span_id, spans.parent_span_id, spans.name, spans.start_epoch_ms, spans.end_epoch_ms, spans.duration_ms, spans.attributes_json, spans.status_code FROM spans ORDER BY start_epoch_ms DESC LIMIT ?""", mapper, 1) {
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(681_519_953, """SELECT spans.id, spans.trace_id, spans.span_id, spans.parent_span_id, spans.name, spans.start_epoch_ms, spans.end_epoch_ms, spans.duration_ms, spans.attributes_json, spans.status_code, spans.app_version, spans.commit_hash FROM spans ORDER BY start_epoch_ms DESC LIMIT ?""", mapper, 1) {
       var parameterIndex = 0
       bindLong(parameterIndex++, value)
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectRecentSpans"
+  }
+
+  private inner class SelectSlowSpansByVersionAndNameQuery<out T : Any>(
+    public val app_version: String,
+    public val name: String,
+    public val `value`: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("spans", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("spans", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(629_842_828, """SELECT spans.id, spans.trace_id, spans.span_id, spans.parent_span_id, spans.name, spans.start_epoch_ms, spans.end_epoch_ms, spans.duration_ms, spans.attributes_json, spans.status_code, spans.app_version, spans.commit_hash FROM spans WHERE app_version = ? AND name = ? ORDER BY duration_ms DESC LIMIT ?""", mapper, 3) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, app_version)
+      bindString(parameterIndex++, name)
+      bindLong(parameterIndex++, value)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectSlowSpansByVersionAndName"
   }
 
   private inner class SelectQueryStatsByVersionQuery<out T : Any>(
