@@ -21,6 +21,7 @@ data class SessionSummary(
 data class PerfExportReport(
     val exportedAt: Long,
     val appVersion: String,
+    val commitHash: String,
     val platform: String,
     val session: SessionSummary,
     val spans: List<SerializedSpan>,

@@ -8,6 +8,10 @@ plugins {
 }
 
 val appVersionStr = (findProperty("appVersion") as? String ?: "0.1.0").removePrefix("v")
+val gitCommitHash = providers.exec {
+    commandLine("git", "rev-parse", "--short=8", "HEAD")
+    isIgnoreExitValue = true
+}.standardOutput.asText.getOrElse("unknown").trim().ifEmpty { "unknown" }
 val versionParts = appVersionStr.split(".")
 val vMajor = versionParts.getOrNull(0)?.toIntOrNull() ?: 0
 val vMinor = versionParts.getOrNull(1)?.toIntOrNull() ?: 0
@@ -28,6 +32,7 @@ android {
         versionCode = computedVersionCode
         versionName = appVersionStr
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        resValue("string", "git_commit_hash", gitCommitHash)
     }
 
     signingConfigs {

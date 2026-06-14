@@ -14,7 +14,7 @@ kt_jvm_library(
     name = "common_test_fixtures",
     srcs = ["dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt"],
     deps = [
-        "//kmp/src/commonMain/kotlin:kmp_lib",
+        "//kmp/src/jvmMain/kotlin:jvm_main_lib",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
     ],
     visibility = ["//kmp/src:__subpackages__"],

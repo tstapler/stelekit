@@ -10,6 +10,8 @@ Developer command: bazel build //androidApp:android_app
 
 load("@rules_android//rules:rules.bzl", "android_binary")
 
+exports_files(["src/main/AndroidManifest.xml"])
+
 android_binary(
     name = "android_app",
     manifest = "src/main/AndroidManifest.xml",
