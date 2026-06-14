@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.41.3](https://github.com/tstapler/stelekit/compare/v0.41.2...v0.41.3) (2026-06-13)
+
+
+### Bug Fixes
+
+* **android:** request camera permission at capture time and enable GitHub OAuth device flow ([adb6238](https://github.com/tstapler/stelekit/commit/adb6238652a56f5495a86bfcfa3cd373006651ce))
+
+## [0.41.2](https://github.com/tstapler/stelekit/compare/v0.41.1...v0.41.2) (2026-06-13)
+
+
+### Bug Fixes
+
+* **ci:** add xvfb-run to release safety gate jvmTest ([69d456e](https://github.com/tstapler/stelekit/commit/69d456e03cd8748752bf7312757816d33a07bb49))
+* **git:** use kotlin.concurrent.Volatile in commonMain ([8add86e](https://github.com/tstapler/stelekit/commit/8add86e0f6b2add0e69ecf87f2a0130d2fcab33b))
+
+## [0.41.1](https://github.com/tstapler/stelekit/compare/v0.41.0...v0.41.1) (2026-06-13)
+
+
+### Bug Fixes
+
+* **git-smart-sync:** address code review findings — safety, correctness, and test coverage ([5086e0f](https://github.com/tstapler/stelekit/commit/5086e0fda0bd5d8e654ef4a908620d0410550e96))
+
 ## [0.41.0](https://github.com/tstapler/stelekit/compare/v0.40.4...v0.41.0) (2026-06-12)
 
 

@@ -83,6 +83,7 @@ class PerfExporter(
             PerfExportReport(
                 exportedAt = nowMs,
                 appVersion = appVersion,
+                commitHash = BuildInfo.commitHash,
                 platform = platform,
                 session = session,
                 spans = spans,
