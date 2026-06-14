@@ -13,16 +13,20 @@ import dev.stapler.stelekit.domain.TopicEnricher
 import dev.stapler.stelekit.domain.TopicSuggestion
 import dev.stapler.stelekit.domain.UrlFetcher
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.Validation
-import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.db.GraphWriterPort
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -82,7 +86,7 @@ fun interface PageSaver {
     suspend fun save(page: Page, blocks: List<Block>, graphPath: String)
 
     companion object {
-        fun from(writer: GraphWriter): PageSaver = PageSaver { page, blocks, path ->
+        fun from(writer: GraphWriterPort): PageSaver = PageSaver { page, blocks, path ->
             writer.savePage(page, blocks, path)
         }
     }
@@ -96,13 +100,12 @@ fun interface PageDeleter {
     suspend fun delete(page: Page): Boolean
 
     companion object {
-        fun from(writer: GraphWriter): PageDeleter = PageDeleter { page -> writer.deletePage(page) }
+        fun from(writer: GraphWriterPort): PageDeleter = PageDeleter { page -> writer.deletePage(page) }
         val NoOp: PageDeleter = PageDeleter { _ -> false }
     }
 }
 
 class ImportViewModel(
-    private val coroutineScope: CoroutineScope,
     private val pageRepository: PageRepository,
     private val pageSaver: PageSaver,
     private val graphPath: String,
@@ -112,23 +115,35 @@ class ImportViewModel(
     private val pageDeleter: PageDeleter = PageDeleter.NoOp,
     /** Dispatcher used for CPU-bound scan work. Override in tests to avoid real threads. */
     private val scanDispatcher: CoroutineDispatcher = Dispatchers.Default,
-) {
     /**
-     * Secondary constructor that accepts a [GraphWriter] for production use.
+     * Override scope for tests — allows injecting an [UnconfinedTestDispatcher] scope so
+     * virtual-time tests can advance coroutine time. Production code should use the default
+     * (null), which makes the ViewModel own its scope internally.
+     */
+    coroutineScope: CoroutineScope? = null,
+) {
+    // Owns its own lifecycle — callers must not pass rememberCoroutineScope() which is
+    // cancelled when the composable leaves composition. Close via close() in a DisposableEffect.
+    // In tests, an explicitly-supplied coroutineScope is used instead of the owned scope.
+    private val ownedScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope: CoroutineScope = coroutineScope ?: ownedScope
+
+    fun close() { ownedScope.cancel() }
+
+    /**
+     * Secondary constructor that accepts a [GraphWriterPort] for production use.
      *
      * [pageDeleter] is always wired from [graphWriter] here so stub-page undo works
      * in production (addresses the PageDeleter-not-exposed bug noted in the plan).
      */
     constructor(
-        coroutineScope: CoroutineScope,
         pageRepository: PageRepository,
-        graphWriter: GraphWriter,
+        graphWriter: GraphWriterPort,
         graphPath: String,
         urlFetcher: UrlFetcher,
         matcherFlow: StateFlow<AhoCorasickMatcher?>,
         topicEnricher: TopicEnricher = NoOpTopicEnricher(),
     ) : this(
-        coroutineScope = coroutineScope,
         pageRepository = pageRepository,
         pageSaver = PageSaver.from(graphWriter),
         graphPath = graphPath,
@@ -145,7 +160,7 @@ class ImportViewModel(
 
     init {
         // When the matcher becomes available and rawText is non-blank, re-run the scan
-        coroutineScope.launch {
+        scope.launch {
             matcherFlow.collect { matcher ->
                 if (matcher != null && _state.value.rawText.isNotBlank()) {
                     runScan(_state.value.rawText, matcher)
@@ -166,7 +181,7 @@ class ImportViewModel(
 
         _state.update { it.copy(isScanning = true) }
 
-        scanJob = coroutineScope.launch {
+        scanJob = scope.launch {
             delay(300)
             val matcher = matcherFlow.value
             if (matcher == null) {
@@ -178,8 +193,9 @@ class ImportViewModel(
     }
 
     private suspend fun runScan(text: String, matcher: AhoCorasickMatcher) {
-        // Get existing page names so suggestions don't duplicate known pages
-        val existingNames = pageRepository.getAllPages()
+        // Get existing page names so suggestions don't duplicate known pages.
+        // Names-only projection — never materialize full Page objects for the whole graph.
+        val existingNames = pageRepository.getPageNameEntries()
             .first()
             .getOrNull()
             ?.map { it.name }
@@ -224,7 +240,7 @@ class ImportViewModel(
         // Coroutine 2: async Claude enrichment (fire-and-forget, never blocks review UI)
         if (topicEnricher !is NoOpTopicEnricher) {
             val textHash = text.hashCode()
-            coroutineScope.launch {
+            scope.launch {
                 try {
                     withTimeout(8_000) {
                         val enriched = topicEnricher.enhance(text, _state.value.topicSuggestions)
@@ -321,7 +337,7 @@ class ImportViewModel(
     }
 
     fun onUndoStubCreation() {
-        coroutineScope.launch {
+        scope.launch {
             _state.value.undoBuffer.forEach { page -> pageDeleter.delete(page) }
             _state.update { state ->
                 state.copy(
@@ -361,9 +377,10 @@ class ImportViewModel(
             return
         }
 
-        // URL deduplication: reject if another page was already imported from this URL
+        // URL deduplication: reject if another page was already imported from this URL.
+        // One-shot bounded-batch snapshot (the source-URL property has no SQL index).
         if (currentState.activeTab == ImportTab.URL && currentState.urlInput.isNotBlank()) {
-            val allPages = pageRepository.getAllPages().first().getOrNull()
+            val allPages = pageRepository.getAllPagesSnapshot().getOrNull()
             val duplicatePage = allPages?.firstOrNull { it.properties["source"] == currentState.urlInput }
             if (duplicatePage != null) {
                 _state.update { it.copy(pageNameError = "A page from this URL already exists: '${duplicatePage.name}'") }
@@ -388,7 +405,7 @@ class ImportViewModel(
             val existingStub = pageRepository.getPageByName(suggestion.term).first().getOrNull()
             if (existingStub == null) {
                 val stubPage = Page(
-                    uuid = UuidGenerator.generateV7(),
+                    uuid = PageUuid(UuidGenerator.generateV7()),
                     name = suggestion.term,
                     createdAt = now,
                     updatedAt = now,
@@ -410,8 +427,8 @@ class ImportViewModel(
         val blocks = if (htmlBlocks != null) {
             htmlBlocks.mapIndexed { index, rawBlock ->
                 Block(
-                    uuid = UuidGenerator.generateV7(),
-                    pageUuid = pageUuid,
+                    uuid = BlockUuid(UuidGenerator.generateV7()),
+                    pageUuid = PageUuid(pageUuid),
                     content = rawBlock.content.trim(),
                     level = rawBlock.level,
                     position = index,
@@ -426,8 +443,8 @@ class ImportViewModel(
                 .filter { it.isNotBlank() }
                 .mapIndexed { index, paragraph ->
                     Block(
-                        uuid = UuidGenerator.generateV7(),
-                        pageUuid = pageUuid,
+                        uuid = BlockUuid(UuidGenerator.generateV7()),
+                        pageUuid = PageUuid(pageUuid),
                         content = paragraph.trim(),
                         level = 0,
                         position = index,
@@ -446,7 +463,7 @@ class ImportViewModel(
         }
 
         val page = Page(
-            uuid = pageUuid,
+            uuid = PageUuid(pageUuid),
             name = normalizedName,
             createdAt = now,
             updatedAt = now,

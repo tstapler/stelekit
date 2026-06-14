@@ -19,6 +19,7 @@ import arrow.core.Either
 import dev.stapler.stelekit.performance.getDeviceInfo
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.ui.i18n.Language
+import dev.stapler.stelekit.tags.TagSettings
 import dev.stapler.stelekit.vault.VaultError
 import dev.stapler.stelekit.voice.VoiceSettings
 
@@ -52,6 +53,11 @@ fun SettingsDialog(
     onRemoveKeyslot: (suspend (Int) -> Either<VaultError, Unit>)? = null,
     onLockVault: (() -> Unit)? = null,
     onListActiveSlots: (suspend () -> List<Int>)? = null,
+    // Audiobook Notes settings (Android Auto feature; null hides the category on non-Android platforms)
+    audiobookNotesSettingsContent: (@Composable () -> Unit)? = null,
+    // Tag Suggestions settings
+    tagSettings: TagSettings? = null,
+    hasLlmKey: Boolean = false,
 ) {
     if (visible) {
         Dialog(
@@ -80,12 +86,23 @@ fun SettingsDialog(
                         Text(
                             "Settings",
                             style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        SettingsCategory.entries.forEach { category ->
+                        val visibleCategories = remember(onConnectGoogle, audiobookNotesSettingsContent, tagSettings) {
+                            SettingsCategory.entries.filter { category ->
+                                when (category) {
+                                    SettingsCategory.GOOGLE_ACCOUNT -> onConnectGoogle != null
+                                    SettingsCategory.AUDIOBOOK_NOTES -> audiobookNotesSettingsContent != null
+                                    SettingsCategory.TAG_SUGGESTIONS -> tagSettings != null
+                                    else -> true
+                                }
+                            }
+                        }
+                        visibleCategories.forEach { category ->
                             CategoryItem(
                                 category = category,
                                 isSelected = selectedCategory == category,
@@ -152,6 +169,7 @@ fun SettingsDialog(
                                         deviceLlmAvailable = deviceLlmAvailable,
                                     )
                                 }
+                                SettingsCategory.AUDIOBOOK_NOTES -> audiobookNotesSettingsContent?.invoke()
                                 SettingsCategory.GOOGLE_ACCOUNT -> GoogleAccountSettings(
                                     isAuthenticated = isGoogleAuthenticated,
                                     connectedEmail = googleConnectedEmail,
@@ -169,6 +187,12 @@ fun SettingsDialog(
                                     onLockVault = onLockVault,
                                     onListActiveSlots = onListActiveSlots,
                                 )
+                                SettingsCategory.TAG_SUGGESTIONS -> if (tagSettings != null) {
+                                    TagSuggestionSettings(
+                                        tagSettings = tagSettings,
+                                        hasLlmKey = hasLlmKey,
+                                    )
+                                }
                             }
                         }
                     }
@@ -216,6 +240,8 @@ enum class SettingsCategory(val label: String, val icon: ImageVector) {
     PLUGINS("Plugins", Icons.Default.Extension),
     ADVANCED("Advanced", Icons.Default.Build),
     VOICE("Voice Capture", Icons.Default.Mic),
+    TAG_SUGGESTIONS("Tag Suggestions", Icons.Default.Label),
+    AUDIOBOOK_NOTES("Audiobook Notes", Icons.Default.Book),
     GOOGLE_ACCOUNT("Google Account", Icons.Default.Cloud),
     VAULT("Vault", Icons.Default.Lock),
 }

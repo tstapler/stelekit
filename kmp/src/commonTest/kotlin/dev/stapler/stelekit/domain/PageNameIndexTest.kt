@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.domain
 
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -26,7 +27,7 @@ class PageNameIndexTest {
         name: String,
         isJournal: Boolean = false
     ) = Page(
-        uuid = uuid,
+        uuid = PageUuid(uuid),
         name = name,
         createdAt = now(),
         updatedAt = now(),

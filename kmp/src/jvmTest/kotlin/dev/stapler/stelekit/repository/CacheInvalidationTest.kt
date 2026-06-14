@@ -6,7 +6,9 @@ import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.testing.BlockHoundTestBase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -43,15 +45,15 @@ class CacheInvalidationTest : BlockHoundTestBase() {
     private fun now() = Clock.System.now()
 
     private fun page(uuid: String, name: String) = Page(
-        uuid = uuid,
+        uuid = PageUuid(uuid),
         name = name,
         createdAt = now(),
         updatedAt = now()
     )
 
     private fun block(uuid: String, pageUuid: String, content: String = "", position: Int = 0) = Block(
-        uuid = uuid,
-        pageUuid = pageUuid,
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid(pageUuid),
         content = content,
         position = position,
         createdAt = now(),
@@ -77,8 +79,8 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         blockRepo.saveBlock(block(rootB, pageBUuid, content = "root B"))
 
         // Populate hierarchy cache for both pages
-        val hierarchyA1 = blockRepo.getBlockHierarchy(rootA).first().getOrNull()!!
-        val hierarchyB1 = blockRepo.getBlockHierarchy(rootB).first().getOrNull()!!
+        val hierarchyA1 = blockRepo.getBlockHierarchy(BlockUuid(rootA)).first().getOrNull()!!
+        val hierarchyB1 = blockRepo.getBlockHierarchy(BlockUuid(rootB)).first().getOrNull()!!
         assertEquals(1, hierarchyA1.size, "page A should start with 1 block in hierarchy")
         assertEquals(1, hierarchyB1.size, "page B should start with 1 block in hierarchy")
 
@@ -90,12 +92,12 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         blockRepo.evictHierarchyForPage(pageAUuid)
 
         // Page A: cache miss → fresh DB traversal → child is visible
-        val hierarchyA2 = blockRepo.getBlockHierarchy(rootA).first().getOrNull()!!
+        val hierarchyA2 = blockRepo.getBlockHierarchy(BlockUuid(rootA)).first().getOrNull()!!
         assertEquals(2, hierarchyA2.size,
             "after targeted eviction, page A hierarchy must include the newly-added child block")
 
         // Page B: cache HIT → stale data → child is NOT yet visible
-        val hierarchyB2 = blockRepo.getBlockHierarchy(rootB).first().getOrNull()!!
+        val hierarchyB2 = blockRepo.getBlockHierarchy(BlockUuid(rootB)).first().getOrNull()!!
         assertEquals(1, hierarchyB2.size,
             "page B hierarchy must remain cached (stale) after evicting only page A")
     }
@@ -124,8 +126,8 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         blockRepo.saveBlock(block(siblingUuid, pageUuid, content = "sibling", position = 1))
 
         // Warm up block cache by reading both blocks
-        val target1 = blockRepo.getBlockByUuid(targetUuid).first().getOrNull()
-        val sibling1 = blockRepo.getBlockByUuid(siblingUuid).first().getOrNull()
+        val target1 = blockRepo.getBlockByUuid(BlockUuid(targetUuid)).first().getOrNull()
+        val sibling1 = blockRepo.getBlockByUuid(BlockUuid(siblingUuid)).first().getOrNull()
         assertNotNull(target1)
         assertNotNull(sibling1)
 
@@ -136,13 +138,13 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         blockRepo.evictBlock(targetUuid)
 
         // Target block fetch post-eviction must return the updated content from DB
-        val target2 = blockRepo.getBlockByUuid(targetUuid).first().getOrNull()
+        val target2 = blockRepo.getBlockByUuid(BlockUuid(targetUuid)).first().getOrNull()
         assertNotNull(target2)
         assertEquals("updated target", target2.content,
             "after evictBlock, the next read must reflect the latest DB version")
 
         // Sibling is unaffected — still readable
-        val sibling2 = blockRepo.getBlockByUuid(siblingUuid).first().getOrNull()
+        val sibling2 = blockRepo.getBlockByUuid(BlockUuid(siblingUuid)).first().getOrNull()
         assertNotNull(sibling2, "sibling block must still be accessible after evicting a different block")
         assertEquals("sibling", sibling2.content)
     }
@@ -161,21 +163,21 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         blockRepo.saveBlock(block(rootUuid, pageUuid, content = "root"))
 
         // Populate hierarchy cache
-        val h1 = blockRepo.getBlockHierarchy(rootUuid).first().getOrNull()!!
+        val h1 = blockRepo.getBlockHierarchy(BlockUuid(rootUuid)).first().getOrNull()!!
         assertEquals(1, h1.size)
 
         // Add a child (saveBlock does not evict hierarchy cache)
         blockRepo.saveBlock(block("child-clear", pageUuid, content = "child").copy(parentUuid = rootUuid))
 
         // Stale cache: child is not visible yet
-        val h2Stale = blockRepo.getBlockHierarchy(rootUuid).first().getOrNull()!!
+        val h2Stale = blockRepo.getBlockHierarchy(BlockUuid(rootUuid)).first().getOrNull()!!
         assertEquals(1, h2Stale.size, "hierarchy should return stale cached result before cacheEvictAll")
 
         // Nuke all caches
         blockRepo.cacheEvictAll()
 
         // Fresh read: child is now visible
-        val h3Fresh = blockRepo.getBlockHierarchy(rootUuid).first().getOrNull()!!
+        val h3Fresh = blockRepo.getBlockHierarchy(BlockUuid(rootUuid)).first().getOrNull()!!
         assertEquals(2, h3Fresh.size,
             "after cacheEvictAll, hierarchy must include the newly-added child block")
     }
@@ -204,7 +206,7 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         blockRepo.saveBlock(block("child-actor", pageUuid).copy(parentUuid = "parent-actor"))
 
         // Warm blockCache for "parent-actor" by traversing child's ancestor chain.
-        blockRepo.getBlockAncestors("child-actor").first()
+        blockRepo.getBlockAncestors(BlockUuid("child-actor")).first()
         blockRepo.cacheStats() // drain initial counters
 
         // Introduce a second child that hasn't had its ancestors fetched yet.
@@ -227,7 +229,7 @@ class CacheInvalidationTest : BlockHoundTestBase() {
 
         // Fetch ancestors for child-actor-2: must traverse blockCache for "parent-actor".
         // Since the actor evicted it, this must be a blockCache miss.
-        blockRepo.getBlockAncestors("child-actor-2").first()
+        blockRepo.getBlockAncestors(BlockUuid("child-actor-2")).first()
         val stats = blockRepo.cacheStats()
         assertEquals(1, stats["block"]!!.misses,
             "parent-actor must miss blockCache after actor eviction via onWriteSuccess")
@@ -259,17 +261,17 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         blockRepo.saveBlock(block("root-del-b", pageBUuid))
 
         // Warm hierarchy cache for both pages
-        val h1 = blockRepo.getBlockHierarchy("root-del-a").first().getOrNull()!!
-        val h2 = blockRepo.getBlockHierarchy("root-del-b").first().getOrNull()!!
+        val h1 = blockRepo.getBlockHierarchy(BlockUuid("root-del-a")).first().getOrNull()!!
+        val h2 = blockRepo.getBlockHierarchy(BlockUuid("root-del-b")).first().getOrNull()!!
         assertEquals(1, h1.size)
         assertEquals(1, h2.size)
         blockRepo.cacheStats() // drain
 
         // Delete page A's blocks through the actor — triggers evictHierarchyForPage(pageAUuid)
-        actor.deleteBlocksForPage(pageAUuid)
+        actor.deleteBlocksForPage(PageUuid(pageAUuid))
 
         // Page A: cache evicted → fresh read → empty (blocks deleted)
-        val h1After = blockRepo.getBlockHierarchy("root-del-a").first().getOrNull()
+        val h1After = blockRepo.getBlockHierarchy(BlockUuid("root-del-a")).first().getOrNull()
         assertTrue(h1After.isNullOrEmpty(), "page A hierarchy must be empty after deleteBlocksForPage")
 
         // Page B: cache untouched — sibling page stays warm
@@ -300,20 +302,20 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         }
 
         // Warm hierarchy cache for all three pages
-        pages.forEach { uuid -> blockRepo.getBlockHierarchy("root-$uuid").first() }
+        pages.forEach { uuid -> blockRepo.getBlockHierarchy(BlockUuid("root-$uuid")).first() }
         blockRepo.cacheStats() // drain
 
         // Delete blocks for pages 1 and 2 through the actor
-        actor.deleteBlocksForPages(pages.take(2))
+        actor.deleteBlocksForPages(pages.take(2).map { PageUuid(it) })
 
         // Pages 1 and 2: evicted → fresh read returns empty
-        val h1 = blockRepo.getBlockHierarchy("root-${pages[0]}").first().getOrNull()
-        val h2 = blockRepo.getBlockHierarchy("root-${pages[1]}").first().getOrNull()
+        val h1 = blockRepo.getBlockHierarchy(BlockUuid("root-${pages[0]}")).first().getOrNull()
+        val h2 = blockRepo.getBlockHierarchy(BlockUuid("root-${pages[1]}")).first().getOrNull()
         assertTrue(h1.isNullOrEmpty(), "page 1 hierarchy must be empty after batch delete")
         assertTrue(h2.isNullOrEmpty(), "page 2 hierarchy must be empty after batch delete")
 
         // Page 3: cache hit — was not in the deletion batch
-        blockRepo.getBlockHierarchy("root-${pages[2]}").first()
+        blockRepo.getBlockHierarchy(BlockUuid("root-${pages[2]}")).first()
         val stats = blockRepo.cacheStats()
         assertEquals(1, stats["hierarchy"]!!.hits, "page 3 hierarchy must still be cached after partial batch delete")
 

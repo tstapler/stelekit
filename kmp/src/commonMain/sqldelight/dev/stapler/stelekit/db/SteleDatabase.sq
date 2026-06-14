@@ -238,6 +238,13 @@ UPDATE blocks SET position = ? WHERE uuid = ?;
 updateBlockContent:
 UPDATE blocks SET content = ?, updated_at = ?, version = version + 1, content_hash = ? WHERE uuid = ?;
 
+updateBlockFull:
+UPDATE blocks SET
+    page_uuid = ?, parent_uuid = ?, left_uuid = ?, content = ?,
+    level = ?, position = ?, updated_at = ?, properties = ?,
+    version = version + 1, content_hash = ?, block_type = ?
+WHERE uuid = ?;
+
 updateBlockLevelOnly:
 UPDATE blocks SET level = ? WHERE uuid = ?;
 
@@ -313,14 +320,38 @@ SELECT COUNT(*) FROM pages WHERE uuid = ?;
 existsPageByName:
 SELECT COUNT(*) FROM pages WHERE name = ?;
 
-selectAllPages:
-SELECT * FROM pages ORDER BY name;
-
+-- NOTE: there is intentionally no unpaginated `SELECT * FROM pages` (or unpaginated
+-- unloaded-pages) query. Standing collectors of unbounded queries re-materialize the
+-- entire table per write burst and OOM Android on 8 000+ page graphs. Whole-graph
+-- consumers use PageRepository.getAllPagesSnapshot() (bounded batches over
+-- selectAllPagesPaginated) or the selectPageNameEntries projection.
 selectAllPagesPaginated:
 SELECT * FROM pages ORDER BY name LIMIT ? OFFSET ?;
 
-selectUnloadedPages:
-SELECT * FROM pages WHERE is_content_loaded = 0;
+-- Bounded batch for background indexing. ORDER BY uuid gives a stable drain order so a
+-- caller can advance OFFSET past permanently-failing rows without re-fetching them forever.
+selectUnloadedPagesPaginated:
+SELECT * FROM pages WHERE is_content_loaded = 0 ORDER BY uuid LIMIT ? OFFSET ?;
+
+countUnloadedPages:
+SELECT COUNT(*) FROM pages WHERE is_content_loaded = 0;
+
+-- Names-only projection for the page-name suggestion index: no properties/file_path/etc.
+-- materialization, so a standing observer stays cheap even on 8 000+ page graphs.
+selectPageNameEntries:
+SELECT name, is_journal FROM pages;
+
+-- Per-chunk existence lookups for graph reconcile (bounded IN list, caller chunks ≤500
+-- to stay under SQLITE_MAX_VARIABLE_NUMBER=999 on Android API < 30).
+-- name is COLLATE NOCASE so matching is case-insensitive.
+selectPagesByNames:
+SELECT * FROM pages WHERE name IN ?;
+
+selectJournalPagesByDates:
+SELECT * FROM pages WHERE is_journal = 1 AND journal_date IN ?;
+
+selectFavoritePages:
+SELECT * FROM pages WHERE is_favorite = 1 ORDER BY name;
 
 selectPagesByNamespace:
 SELECT * FROM pages WHERE namespace = ? ORDER BY name LIMIT ? OFFSET ?;
@@ -685,6 +716,15 @@ UPDATE pages SET backlink_count = (
     WHERE blocks.content LIKE '%[[' || pages.name || ']]%'
 ) WHERE pages.name = ?;
 
+-- Set backlink count directly (O(1) via idx_pages_name).
+-- Used by rename: caller computes the new count arithmetically instead of scanning all blocks.
+setPageBacklinkCount:
+UPDATE pages SET backlink_count = ? WHERE name = ?;
+
+-- Read backlink count for a single page (O(1) via idx_pages_name).
+selectPageBacklinkCount:
+SELECT backlink_count FROM pages WHERE name = ?;
+
 -- Metadata table for schema versioning and graph-level facts
 CREATE TABLE metadata (
     key TEXT NOT NULL PRIMARY KEY,
@@ -814,18 +854,31 @@ CREATE TABLE IF NOT EXISTS spans (
     end_epoch_ms INTEGER NOT NULL,
     duration_ms INTEGER NOT NULL,
     attributes_json TEXT NOT NULL DEFAULT '{}',
-    status_code TEXT NOT NULL DEFAULT 'OK'
+    status_code TEXT NOT NULL DEFAULT 'OK',
+    app_version TEXT NOT NULL DEFAULT '',
+    commit_hash TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS spans_start_epoch_ms_idx ON spans(start_epoch_ms DESC);
 CREATE INDEX IF NOT EXISTS spans_trace_id_idx ON spans(trace_id);
+-- Covers regression queries: WHERE app_version = ? AND name = ? ORDER BY duration_ms DESC
+CREATE INDEX IF NOT EXISTS idx_spans_version_name_duration ON spans(app_version, name, duration_ms DESC);
 
 insertSpan:
-INSERT INTO spans (trace_id, span_id, parent_span_id, name, start_epoch_ms, end_epoch_ms, duration_ms, attributes_json, status_code)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO spans (trace_id, span_id, parent_span_id, name, start_epoch_ms, end_epoch_ms, duration_ms, attributes_json, status_code, app_version, commit_hash)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectRecentSpans:
 SELECT * FROM spans ORDER BY start_epoch_ms DESC LIMIT ?;
+
+-- Regression comparison: fetch the slowest N spans for a given operation and version.
+-- Use to confirm a fix reduced duration across builds.
+selectSlowSpansByVersionAndName:
+SELECT * FROM spans WHERE app_version = ? AND name = ? ORDER BY duration_ms DESC LIMIT ?;
+
+-- Enumerate versions present in the spans table (newest first).
+selectDistinctVersionsWithSpans:
+SELECT DISTINCT app_version FROM spans WHERE app_version != '' ORDER BY app_version DESC;
 
 deleteSpansOlderThan:
 DELETE FROM spans WHERE end_epoch_ms < ?;
@@ -1054,3 +1107,110 @@ DELETE FROM measurement_annotations WHERE image_uuid = ?;
 
 deleteMeasurementAnnotation:
 DELETE FROM measurement_annotations WHERE uuid = ?;
+
+-- asset_index table: queryable metadata store for all graph assets
+CREATE TABLE IF NOT EXISTS asset_index (
+    uuid TEXT NOT NULL PRIMARY KEY,
+    file_path TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    media_type TEXT NOT NULL,
+    subfolder TEXT NOT NULL DEFAULT 'files',
+    tags TEXT NOT NULL DEFAULT '[]',
+    auto_labels TEXT NOT NULL DEFAULT '[]',
+    ocr_text TEXT,
+    cloud_description TEXT,
+    page_uuids TEXT NOT NULL DEFAULT '[]',
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    imported_at_ms INTEGER NOT NULL,
+    ml_processed INTEGER NOT NULL DEFAULT 0,
+    ml_attempted_at INTEGER,
+    ml_failed INTEGER NOT NULL DEFAULT 0,
+    content_hash TEXT,
+    is_orphan INTEGER NOT NULL DEFAULT 0,
+    ml_tags_source TEXT NOT NULL DEFAULT 'NONE'
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_file_path_unique ON asset_index(file_path);
+CREATE INDEX IF NOT EXISTS idx_asset_unprocessed ON asset_index(ml_processed, ml_failed, imported_at_ms);
+CREATE INDEX IF NOT EXISTS idx_asset_media_type ON asset_index(media_type);
+
+insertAsset:
+INSERT INTO asset_index(uuid, file_path, relative_path, media_type, subfolder, tags, auto_labels, ocr_text, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_failed, content_hash, is_orphan, ml_tags_source)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, 'NONE');
+
+insertAssetOrIgnore:
+INSERT OR IGNORE INTO asset_index(uuid, file_path, relative_path, media_type, subfolder, tags, auto_labels, ocr_text, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_failed, content_hash, is_orphan, ml_tags_source)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, 'NONE');
+
+selectAssetByUuid:
+SELECT * FROM asset_index WHERE uuid = ?;
+
+selectAssets:
+SELECT * FROM asset_index ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
+
+selectAssetsByMediaType:
+SELECT * FROM asset_index WHERE media_type = ? ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
+
+searchAssets:
+SELECT * FROM asset_index WHERE (file_path LIKE :query ESCAPE '\' OR tags LIKE :query ESCAPE '\' OR auto_labels LIKE :query ESCAPE '\' OR ocr_text LIKE :query ESCAPE '\') ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
+
+selectUnprocessedAssets:
+SELECT * FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0 ORDER BY imported_at_ms ASC LIMIT :limit OFFSET :offset;
+
+countUnprocessedAssets:
+SELECT COUNT(*) FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0;
+
+countAssets:
+SELECT COUNT(*) FROM asset_index;
+
+updateAssetFilePath:
+UPDATE asset_index SET file_path = :filePath, relative_path = :relativePath WHERE uuid = :uuid;
+
+updateAssetTags:
+UPDATE asset_index SET tags = :tags WHERE uuid = :uuid;
+
+updateAssetAutoLabels:
+UPDATE asset_index SET auto_labels = :autoLabels, ml_tags_source = :mlTagsSource WHERE uuid = :uuid;
+
+updateAssetOcrText:
+UPDATE asset_index SET ocr_text = :ocrText WHERE uuid = :uuid;
+
+updateAssetCloudDescription:
+UPDATE asset_index SET cloud_description = :cloudDescription, ml_tags_source = :mlTagsSource WHERE uuid = :uuid;
+
+markAssetMlProcessed:
+UPDATE asset_index SET ml_processed = 1, ml_attempted_at = :attemptedAt WHERE uuid = :uuid;
+
+markAssetMlFailed:
+UPDATE asset_index SET ml_failed = 1, ml_attempted_at = :attemptedAt WHERE uuid = :uuid;
+
+updateAssetPageUuids:
+UPDATE asset_index SET page_uuids = :pageUuids WHERE uuid = :uuid;
+
+deleteAsset:
+DELETE FROM asset_index WHERE uuid = :uuid;
+
+-- pending_asset_moves WAL table: holds in-flight moves for crash recovery
+-- This table is expected to hold <= a handful of rows at any time -- unbounded reads are safe.
+CREATE TABLE IF NOT EXISTS pending_asset_moves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_uuid TEXT NOT NULL,
+    old_file_path TEXT NOT NULL,
+    new_file_path TEXT NOT NULL,
+    old_relative_path TEXT NOT NULL,
+    new_relative_path TEXT NOT NULL,
+    created_at_ms INTEGER NOT NULL
+);
+
+insertPendingMove:
+INSERT INTO pending_asset_moves(asset_uuid, old_file_path, new_file_path, old_relative_path, new_relative_path, created_at_ms)
+VALUES (?, ?, ?, ?, ?, ?);
+
+deletePendingMove:
+DELETE FROM pending_asset_moves WHERE id = ?;
+
+selectAllPendingMoves:
+SELECT * FROM pending_asset_moves;
+
+selectLastInsertRowId:
+SELECT last_insert_rowid();

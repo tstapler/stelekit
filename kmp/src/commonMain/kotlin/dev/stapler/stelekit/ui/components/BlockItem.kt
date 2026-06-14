@@ -89,6 +89,8 @@ internal fun BlockItem(
     onArchiveUrl: ((url: String, blockUuid: String) -> Unit)? = null,
     /** Called when user taps an image_annotation block thumbnail; receives the image annotation UUID. */
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
+    /** Called when the user requests tag suggestions for this block via context menu. */
+    onRequestTagSuggestions: ((blockUuid: String, content: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -299,7 +301,7 @@ internal fun BlockItem(
                 isSelected = isSelected,
                 isInSelectionMode = isInSelectionMode,
                 onToggleSelect = onToggleSelect,
-                blockUuid = block.uuid,
+                blockUuid = block.uuid.value,
                 onDragStart = onDragStart,
                 onDrag = onDrag,
                 onDragEnd = onDragEnd,
@@ -321,7 +323,7 @@ internal fun BlockItem(
                     isEditing = isEditing,
                     hasFocused = hasFocused,
                     onHasFocusedChange = { hasFocused = it },
-                    blockUuid = block.uuid,
+                    blockUuid = block.uuid.value,
                     autocompleteState = autocompleteState,
                     onAutocompleteStateChange = { autocompleteState = it },
                     searchResults = filteredResults,
@@ -423,7 +425,7 @@ internal fun BlockItem(
                                 onSuggestionRightClick = { canonicalName, contentStart, contentEnd ->
                                     contextMenuState = SuggestionState(canonicalName, contentStart, contentEnd, block.content)
                                 },
-                                onUrlRightClick = onArchiveUrl?.let { archive -> { url -> archive(url, block.uuid) } },
+                                onUrlRightClick = onArchiveUrl?.let { archive -> { url -> archive(url, block.uuid.value) } },
                             )
                         }
                     }
@@ -495,8 +497,28 @@ internal fun BlockItem(
             )
         }
 
+        // Render "Suggest tags" dropdown (shown when onRequestTagSuggestions is wired)
+        if (onRequestTagSuggestions != null) {
+            var tagMenuExpanded by remember { mutableStateOf(false) }
+            Box {
+                DropdownMenu(
+                    expanded = tagMenuExpanded,
+                    onDismissRequest = { tagMenuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Suggest tags") },
+                        onClick = {
+                            tagMenuExpanded = false
+                            onRequestTagSuggestions(block.uuid.value, block.content)
+                        },
+                    )
+                }
+            }
+        }
+
         // Render Autocomplete Menu
-        if (autocompleteState != null && searchResults.isNotEmpty()) {
+        val capturedAutocompleteState = autocompleteState
+        if (capturedAutocompleteState != null && searchResults.isNotEmpty()) {
             AutocompleteMenu(
                 items = filteredResults,
                 selectedIndex = selectedIndex,
@@ -506,7 +528,7 @@ internal fun BlockItem(
                         selectedIndex = filteredResults.indexOf(item).coerceAtLeast(0),
                         textFieldValue = textFieldValue,
                         onTextFieldValueChange = { textFieldValue = it; onSelectionChange?.invoke(IntRange(it.selection.min, it.selection.max)) },
-                        autocompleteState = autocompleteState!!,
+                        autocompleteState = capturedAutocompleteState,
                         onAutocompleteStateChange = { autocompleteState = it },
                         onLocalVersionIncrement = { ++localVersion },
                         onContentChange = onContentChange,

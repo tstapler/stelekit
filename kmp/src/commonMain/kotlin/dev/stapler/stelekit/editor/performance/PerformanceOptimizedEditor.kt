@@ -19,6 +19,8 @@ import dev.stapler.stelekit.editor.text.ITextOperations
 import dev.stapler.stelekit.editor.text.TextRange
 import dev.stapler.stelekit.editor.components.RichTextEditor
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.ui.components.asLazyKey
+import dev.stapler.stelekit.ui.components.typedItemsIndexed
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
@@ -75,9 +77,9 @@ fun PerformanceOptimizedEditor(
         contentPadding = PaddingValues(vertical = 8.dp)
     ) {
         // Performance: Use itemsIndexed for efficient key-based recomposition
-        itemsIndexed(
+        typedItemsIndexed(
             items = editorStateValue.blocks,
-            key = { _, block: Block -> block.uuid }
+            key = { _, block -> block.uuid.asLazyKey() }
         ) { index, block ->
             // Performance: Only render visible blocks
             if (index >= firstVisibleIndex - 5 && index <= firstVisibleIndex + 20) {
@@ -86,7 +88,7 @@ fun PerformanceOptimizedEditor(
                     textOperations = textOperations,
                     blockOperations = blockOperations,
                     onFocus = { 
-                        onBlockFocus(block.uuid)
+                        onBlockFocus(block.uuid.value)
                         // Performance: Track focus for optimization
                         scope.launch {
                             // Preload adjacent blocks for better performance
@@ -124,8 +126,8 @@ private fun PerformanceOptimizedBlockEditor(
     val scope = rememberCoroutineScope()
     
     // Performance: Memoize text state to avoid unnecessary recompositions
-    val textStateFlow = remember(block.uuid) {
-        textOperations.getTextState(block.uuid)
+    val textStateFlow = remember(block.uuid.value) {
+        textOperations.getTextState(block.uuid.value)
     }
     val textState by textStateFlow.collectAsState()
     
@@ -149,7 +151,7 @@ private fun PerformanceOptimizedBlockEditor(
                 scope.launch {
                     // Performance: Batch update to reduce repository calls
                     textOperations.replaceText(
-                        block.uuid,
+                        block.uuid.value,
                         TextRange(0, textState.content.length),
                         newContent
                     )
@@ -326,7 +328,7 @@ private suspend fun preloadAdjacentBlocks(
         val block = blocks.getOrNull(index)
         if (block != null) {
             // Preload text states for better scrolling performance
-            textOperations.getTextState(block.uuid)
+            textOperations.getTextState(block.uuid.value)
         }
     }
 }

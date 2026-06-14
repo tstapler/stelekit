@@ -17,6 +17,6 @@ fun PDFViewer(uri: String) {
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center
     ) {
-        Text("PDF Viewer Placeholder: $uri")
+        Text("PDF Viewer Placeholder: $uri", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

@@ -3,7 +3,9 @@ package dev.stapler.stelekit.ui
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.ui.fixtures.InMemorySettings
 import dev.stapler.stelekit.repository.InMemorySearchRepository
@@ -39,7 +41,7 @@ class DiskConflictResolutionTest {
     private val testFilePath = "/tmp/test-graph/pages/ConflictPage.md"
 
     private val testPage = Page(
-        uuid = testPageUuid,
+        uuid = PageUuid(testPageUuid),
         name = "ConflictPage",
         filePath = testFilePath,
         createdAt = now,
@@ -47,8 +49,8 @@ class DiskConflictResolutionTest {
     )
 
     private val testBlock = Block(
-        uuid = testBlockUuid,
-        pageUuid = testPageUuid,
+        uuid = BlockUuid(testBlockUuid),
+        pageUuid = PageUuid(testPageUuid),
         content = "Original content",
         level = 0,
         position = 0,
@@ -77,15 +79,17 @@ class DiskConflictResolutionTest {
             graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" }
         )
         return StelekitViewModel(
-            PlatformFileSystem(),
-            pageRepo,
-            blockRepo,
-            searchRepo,
-            graphLoader,
-            graphWriter,
-            InMemorySettings(),
-            scope,
-            blockStateManager = bsm
+            StelekitViewModelDependencies(
+                fileSystem = PlatformFileSystem(),
+                pageRepository = pageRepo,
+                blockRepository = blockRepo,
+                searchRepository = searchRepo,
+                graphLoader = graphLoader,
+                graphWriter = graphWriter,
+                platformSettings = InMemorySettings(),
+                scope = scope,
+                blockStateManager = bsm,
+            )
         ).also { viewModelRef = it }
     }
 
@@ -112,7 +116,7 @@ class DiskConflictResolutionTest {
         vm.requestEditBlock(testBlockUuid)
 
         // Verify the block has original content
-        val blockBefore = blockRepo.getBlockByUuid(testBlockUuid).first().getOrNull()
+        val blockBefore = blockRepo.getBlockByUuid(BlockUuid(testBlockUuid)).first().getOrNull()
         assertNotNull(blockBefore)
         assertEquals("Original content", blockBefore.content)
     }
@@ -162,7 +166,7 @@ class DiskConflictResolutionTest {
         vm.requestEditBlock(testBlockUuid)
 
         // Verify block is accessible in the repository
-        val block = blockRepo.getBlockByUuid(testBlockUuid).first().getOrNull()
+        val block = blockRepo.getBlockByUuid(BlockUuid(testBlockUuid)).first().getOrNull()
         assertNotNull(block)
         assertEquals("Original content", block.content)
     }

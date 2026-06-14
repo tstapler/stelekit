@@ -28,11 +28,11 @@ import platform.Security.kSecReturnData
 import platform.Security.kSecValueData
 
 @OptIn(ExperimentalForeignApi::class)
-actual class CredentialStore actual constructor() {
+actual class CredentialStore actual constructor() : dev.stapler.stelekit.git.CredentialAccess {
 
     private val service = "dev.stapler.stelekit.credentials"
 
-    actual fun store(key: String, value: String) {
+    actual override fun store(key: String, value: String) {
         val valueBytes = value.encodeToByteArray()
         val valueData = valueBytes.usePinned { pinned ->
             NSData.dataWithBytes(pinned.addressOf(0), valueBytes.size.toULong())
@@ -49,7 +49,7 @@ actual class CredentialStore actual constructor() {
         SecItemAdd(addQuery as platform.CoreFoundation.CFDictionaryRef, null)
     }
 
-    actual fun retrieve(key: String): String? = memScoped {
+    actual override fun retrieve(key: String): String? = memScoped {
         val query = NSMutableDictionary(dictionary = baseQuery(key))
         @Suppress("UNCHECKED_CAST")
         query[kSecReturnData as Any] = true
@@ -65,7 +65,7 @@ actual class CredentialStore actual constructor() {
         NSString.create(data, NSUTF8StringEncoding) as? String
     }
 
-    actual fun delete(key: String) {
+    actual override fun delete(key: String) {
         @Suppress("UNCHECKED_CAST")
         SecItemDelete(baseQuery(key) as platform.CoreFoundation.CFDictionaryRef)
     }

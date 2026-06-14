@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.repository
 
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.StelekitViewModel
 import dev.stapler.stelekit.ui.screens.SearchResultItem
 import kotlinx.coroutines.flow.first
@@ -26,7 +27,7 @@ class AliasSupportTest {
     fun `test resolve page by alias`() = runTest {
         val now = Clock.System.now()
         val page = Page(
-            uuid = "00000000-0000-0000-0000-000000000001",
+            uuid = PageUuid("00000000-0000-0000-0000-000000000001"),
             name = "Logseq",
             createdAt = now,
             updatedAt = now,
@@ -37,24 +38,24 @@ class AliasSupportTest {
         // Resolve by primary name
         val match1 = pageRepository.getPageByName("Logseq").first().getOrNull()
         assertNotNull(match1)
-        assertEquals("00000000-0000-0000-0000-000000000001", match1.uuid)
+        assertEquals(PageUuid("00000000-0000-0000-0000-000000000001"), match1.uuid)
         
         // Resolve by first alias
         val match2 = pageRepository.getPageByName("KMP").first().getOrNull()
         assertNotNull(match2)
-        assertEquals("00000000-0000-0000-0000-000000000001", match2.uuid)
+        assertEquals(PageUuid("00000000-0000-0000-0000-000000000001"), match2.uuid)
         
         // Resolve by second alias (case insensitive)
         val match3 = pageRepository.getPageByName("desktop").first().getOrNull()
         assertNotNull(match3)
-        assertEquals("00000000-0000-0000-0000-000000000001", match3.uuid)
+        assertEquals(PageUuid("00000000-0000-0000-0000-000000000001"), match3.uuid)
     }
     
     @Test
     fun `test search pages by alias`() = runTest {
         val now = Clock.System.now()
         val page = Page(
-            uuid = "00000000-0000-0000-0000-000000000001",
+            uuid = PageUuid("00000000-0000-0000-0000-000000000001"),
             name = "Logseq",
             createdAt = now,
             updatedAt = now,
@@ -65,6 +66,6 @@ class AliasSupportTest {
         // Search by alias
         val results = searchRepository.searchPagesByTitle("KMP", 10).first().getOrNull()
         assertNotNull(results)
-        assertTrue(results.any { it.uuid == "00000000-0000-0000-0000-000000000001" })
+        assertTrue(results.any { it.uuid == PageUuid("00000000-0000-0000-0000-000000000001") })
     }
 }

@@ -200,7 +200,7 @@ class SearchViewModel(
                         val items = mutableListOf<SearchResultItem>()
 
                         // Build a page name map from all pages in the result for block breadcrumbs
-                        val pageNameMap: Map<String, String> = searchResult.pages.associate { it.uuid to it.name }
+                        val pageNameMap: Map<String, String> = searchResult.pages.associate { it.uuid.value to it.name }
 
                         // Pages section — prefer searchedPages (with snippets) if available
                         val pagedItems = if (searchResult.searchedPages.isNotEmpty()) {
@@ -234,14 +234,14 @@ class SearchViewModel(
                                 SearchResultItem.BlockItem(
                                     block = sb.block,
                                     snippet = sb.snippet,
-                                    breadcrumb = pageNameMap[sb.block.pageUuid]
+                                    breadcrumb = pageNameMap[sb.block.pageUuid.value]
                                 )
                             }
                         } else {
                             searchResult.blocks.map { block ->
                                 SearchResultItem.BlockItem(
                                     block = block,
-                                    breadcrumb = pageNameMap[block.pageUuid]
+                                    breadcrumb = pageNameMap[block.pageUuid.value]
                                 )
                             }
                         }
@@ -303,11 +303,11 @@ class SearchViewModel(
             delay(150)
             val preview: PreviewPanelContent = when (val item = list[index]) {
                 is SearchResultItem.PageItem -> PreviewPanelContent.PagePreview(
-                    pageUuid = item.page.uuid,
+                    pageUuid = item.page.uuid.value,
                     pageTitle = item.page.name
                 )
                 is SearchResultItem.BlockItem -> PreviewPanelContent.BlockPreview(
-                    blockUuid = item.block.uuid,
+                    blockUuid = item.block.uuid.value,
                     pageTitle = item.breadcrumb ?: "Unknown",
                     blockSnippet = item.block.content.take(200)
                 )

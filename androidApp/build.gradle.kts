@@ -8,6 +8,10 @@ plugins {
 }
 
 val appVersionStr = (findProperty("appVersion") as? String ?: "0.1.0").removePrefix("v")
+val gitCommitHash = providers.exec {
+    commandLine("git", "rev-parse", "--short=8", "HEAD")
+    isIgnoreExitValue = true
+}.standardOutput.asText.getOrElse("unknown").trim().ifEmpty { "unknown" }
 val versionParts = appVersionStr.split(".")
 val vMajor = versionParts.getOrNull(0)?.toIntOrNull() ?: 0
 val vMinor = versionParts.getOrNull(1)?.toIntOrNull() ?: 0
@@ -28,6 +32,7 @@ android {
         versionCode = computedVersionCode
         versionName = appVersionStr
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "GIT_COMMIT_HASH", "\"$gitCommitHash\"")
     }
 
     signingConfigs {
@@ -74,6 +79,13 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+    lint {
+        // LogDetector causes an OOM (Metaspace) when analyzing AndroidLogSink.kt —
+        // this is a known lint tooling bug triggered by certain Kotlin when-expressions.
+        disable += setOf("LogConditional", "LongLogTag", "LogTagMismatch")
     }
 
     compileOptions {
@@ -99,7 +111,13 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.glance:glance-material3:1.1.1")
+    implementation("androidx.car.app:app:1.7.0")
 
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("androidx.car.app:app-testing:1.7.0")
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    testImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.10.6")

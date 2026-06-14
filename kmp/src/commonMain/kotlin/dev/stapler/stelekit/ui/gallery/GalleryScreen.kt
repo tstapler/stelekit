@@ -10,9 +10,12 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import dev.stapler.stelekit.ui.components.typedGridItems
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -47,10 +50,12 @@ fun GalleryScreen(
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit,
     onNavigateToPage: (pageUuid: String) -> Unit,
     modifier: Modifier = Modifier,
+    onImportImage: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsState()
 
-    Column(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize()) {
         // Header row: title + sort button
         Row(
             modifier = Modifier
@@ -111,13 +116,11 @@ fun GalleryScreen(
                 }
             }
             state.images.isEmpty() -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "No annotated images yet",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                GalleryEmptyState(
+                    onCapturePhoto = onImportImage,
+                    onImportPhoto = null, // photo picker wiring is future work
+                    modifier = Modifier.fillMaxSize(),
+                )
             }
             else -> {
                 LazyVerticalGrid(
@@ -127,7 +130,7 @@ fun GalleryScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    items(state.images, key = { it.uuid }) { image ->
+                    typedGridItems(state.images, key = { it.uuid }) { image ->
                         GalleryCard(
                             image = image,
                             onTap = { onOpenAnnotationEditor(image.uuid) },
@@ -138,6 +141,21 @@ fun GalleryScreen(
             }
         }
     }
+
+    if (onImportImage != null && state.images.isNotEmpty()) {
+        FloatingActionButton(
+            onClick = onImportImage,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.AddAPhoto,
+                contentDescription = "Capture image for annotation",
+            )
+        }
+    }
+    } // Box
 }
 
 // ── Gallery card ──────────────────────────────────────────────────────────────
@@ -173,6 +191,32 @@ private fun GalleryCard(
                     .aspectRatio(1f)
                     .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)),
             )
+
+            // Show uncalibrated indicator if calibration method is NONE
+            if (image.calibration.method == CalibrationMethod.NONE) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.size(12.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "Tap to calibrate",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                }
+            }
 
             // Metadata section
             Column(

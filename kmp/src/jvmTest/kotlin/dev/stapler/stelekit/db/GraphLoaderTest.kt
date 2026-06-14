@@ -1,7 +1,8 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
-import dev.stapler.stelekit.repository.DatascriptBlockRepository
+import dev.stapler.stelekit.repository.DatalogBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -63,12 +64,12 @@ class GraphLoaderTest {
         try {
             val fileSystem = PlatformFileSystem()
             val pageRepository = InMemoryPageRepository()
-            val blockRepository = DatascriptBlockRepository()
+            val blockRepository = DatalogBlockRepository()
             val graphLoader = GraphLoader(fileSystem, pageRepository, blockRepository)
 
             graphLoader.loadGraph(graphDir.absolutePath) {}
 
-            val pages = pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+            val pages = pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()
             assertTrue(pages.isNotEmpty(), "No pages loaded")
 
             // Verify the fixture pages were loaded (name matching is case-insensitive in loader)
@@ -90,7 +91,7 @@ class GraphLoaderTest {
         try {
             val fileSystem = PlatformFileSystem()
             val pageRepository = InMemoryPageRepository()
-            val blockRepository = DatascriptBlockRepository()
+            val blockRepository = DatalogBlockRepository()
             val graphLoader = GraphLoader(fileSystem, pageRepository, blockRepository)
 
             var phase1Complete = false
@@ -107,7 +108,7 @@ class GraphLoaderTest {
             assertTrue(phase1Complete, "Phase 1 should be complete")
             assertTrue(fullyLoaded, "Graph should be fully loaded")
 
-            val pages = pageRepository.getAllPages().first().getOrNull() ?: emptyList()
+            val pages = pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()
             assertTrue(pages.isNotEmpty(), "Pages should be loaded")
 
             val contentsPage = pages.firstOrNull { it.name.lowercase().contains("contents") }
@@ -121,7 +122,7 @@ class GraphLoaderTest {
             assertEquals(false, firstBlock.isLoaded, "Block should be a stub initially")
 
             // Loading the full page promotes stubs to real blocks
-            graphLoader.loadFullPage(contentsPage.uuid)
+            graphLoader.loadFullPage(contentsPage.uuid.value)
 
             val reloadedBlocks = blockRepository.getBlocksForPage(contentsPage.uuid).first().getOrNull() ?: emptyList()
             assertTrue(reloadedBlocks.isNotEmpty(), "Blocks should still be present after full load")

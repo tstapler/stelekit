@@ -1,0 +1,132 @@
+{
+  "timestamp": "2026-05-27 14:46:03 UTC",
+  "gitSha": "4e1d292",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 9,
+  "phase2Ms": 3,
+  "phase3Ms": 14,
+  "totalMs": 25,
+  "jankBaselineP50Ms": 2,
+  "jankBaselineP95Ms": 30,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.03,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 138,
+      "pct": 68.7
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 7,
+      "pct": 3.5
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 5,
+      "pct": 2.5
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 3,
+      "pct": 1.5
+    },
+    {
+      "frame": "jdk.internal.org.objectweb.asm.SymbolTable$Entry_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.lang.Class_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "long[]_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "java.util.ArrayList$Itr_[k]",
+      "samples": 2,
+      "pct": 1.0
+    },
+    {
+      "frame": "kotlin.Pair_[k]",
+      "samples": 2,
+      "pct": 1.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/x86_64-linux-gnu/libc.so.6",
+      "samples": 2100,
+      "pct": 99.4
+    },
+    {
+      "frame": "__libc_pwrite",
+      "samples": 3,
+      "pct": 0.1
+    },
+    {
+      "frame": "java/lang/invoke/InvokerBytecodeGenerator.resolveInvokerMember_[0]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "__xstat64",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ClassVerifier::generate_code_data",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "InstanceKlass::find_method_index",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/invoke/DirectMethodHandle$Holder.newInvokeSpecial_[1]",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "java_lang_ClassLoader::non_reflection_class_loader",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "ClassFileParser::parse_linenumber_table",
+      "samples": 1,
+      "pct": 0.0
+    },
+    {
+      "frame": "pthread_cond_signal",
+      "samples": 1,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 1,
+      "totalMs": 1
+    }
+  ]
+}

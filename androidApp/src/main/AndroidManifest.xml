@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -7,11 +8,21 @@
          access for orders-of-magnitude lower write latency. Play Store policy explicitly
          permits productivity file-editing apps. SAF remains the fallback if not granted. -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!-- CAMERA: required for CameraX image capture via AndroidCameraProvider.
+         Without this declaration, ContextCompat.checkSelfPermission always returns DENIED.
+         android:required="false" prevents Play Store filtering for camera-less devices;
+         the toolbar button is already hidden when SensorModule.cameraProvider.isAvailable is false. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- SAF (Storage Access Framework) grants are given at runtime via ACTION_OPEN_DOCUMENT_TREE
          and stored as persistable URI permissions — no manifest storage permissions needed. -->
 
+    <!-- largeHeap: graph import/reconcile holds parse buffers plus the page-name suggestion
+         trie in memory at once; on 8 000+ page graphs the default per-app heap (192-256 MB
+         on most devices) is too tight and OutOfMemoryError kills startup. -->
     <application
         android:name="dev.stapler.stelekit.SteleKitApplication"
+        android:largeHeap="true"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -30,6 +41,12 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter android:label="OAuth Callback">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.stelekit.app" android:path="/oauth2redirect" />
             </intent-filter>
         </activity>
 
@@ -72,7 +89,7 @@
             </intent-filter>
         </service>
 
-        <!-- Task 3.2: Home screen widget -->
+        <!-- Task 3.2: Home screen widget — text capture -->
         <receiver
             android:name="dev.stapler.stelekit.widget.CaptureWidgetReceiver"
             android:exported="true">
@@ -83,6 +100,66 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/capture_widget_info" />
         </receiver>
+
+        <!-- Voice-capture overlay launched from voice widget -->
+        <activity
+            android:name="dev.stapler.stelekit.VoiceCaptureActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:excludeFromRecents="true"
+            android:windowSoftInputMode="stateHidden|adjustResize"
+            android:theme="@style/Theme.SteleKit.Translucent" />
+
+        <!-- Home screen widget — voice capture -->
+        <receiver
+            android:name="dev.stapler.stelekit.widget.VoiceWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/voice_widget_info" />
+        </receiver>
+
+        <!-- FileProvider for sharing exported note files via Intent.ACTION_SEND.
+             Authority must match the string used in AndroidShareProvider.saveToFile(). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true"
+            tools:replace="android:authorities">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_provider_paths"
+                tools:replace="android:resource" />
+        </provider>
+
+        <!-- Android Auto Car App Service -->
+        <service
+            android:name="dev.stapler.stelekit.auto.SteleKitCarAppService"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+                <category android:name="androidx.car.app.category.IOT" />
+            </intent-filter>
+            <meta-data
+                android:name="androidx.car.app.minCarApiLevel"
+                android:value="1" />
+        </service>
+
+        <!-- Required for MediaSessionManager.getActiveSessions() cross-app access -->
+        <service
+            android:name="dev.stapler.stelekit.auto.SteleKitNotificationListenerService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
     </application>
 </manifest>

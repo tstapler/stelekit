@@ -78,7 +78,6 @@ class DesktopScreenshotTest {
                     content = {
                         JournalsView(
                             viewModel = viewModel,
-                            blockRepository = blockRepo,
                             isDebugMode = false,
                             onLinkClick = {},
                         )
@@ -128,7 +127,6 @@ class DesktopScreenshotTest {
                     content = {
                         JournalsView(
                             viewModel = viewModel,
-                            blockRepository = blockRepo,
                             isDebugMode = false,
                             onLinkClick = {},
                         )

@@ -6,6 +6,7 @@ import dev.stapler.stelekit.db.sidecar.ImageSidecarManager
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSource
 import dev.stapler.stelekit.platform.sensor.PlatformImageFile
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryImageAnnotationRepository
@@ -118,9 +119,9 @@ class ImageImportServiceIntegrationTest {
         val annotation = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, pageUuid)
             .requireSuccess()
 
-        val blocks = blockRepo.getBlocksForPage(pageUuid).first().getOrNull()
+        val blocks = blockRepo.getBlocksForPage(PageUuid(pageUuid)).first().getOrNull()
         assertNotNull(blocks)
-        val imageBlock = blocks.find { it.uuid == annotation.blockUuid }
+        val imageBlock = blocks.find { it.uuid.value == annotation.blockUuid }
         assertNotNull(imageBlock, "image_annotation block not found for page $pageUuid")
         assertEquals("image_annotation", imageBlock.blockType)
         assertTrue(imageBlock.content.contains("assets/images/"))

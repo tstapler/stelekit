@@ -47,6 +47,8 @@ interface FileSystem {
      */
     suspend fun pickSaveFileAsync(suggestedName: String, mimeType: String = "application/json"): String? = null
 
+    suspend fun pickFileAsync(): String? = null
+
     /**
      * Read raw bytes from a file. Used by paranoid-mode decryption to read STEK-format files.
      * Platforms that support paranoid mode must override this with true byte-level IO.
@@ -97,9 +99,21 @@ interface FileSystem {
     fun invalidateShadow(path: String) { /* no-op */ }
 
     /**
-     * Syncs the shadow copy for [graphPath] from SAF using batch mtime queries.
-     * No-op on non-SAF file systems. Should run concurrently with Phase 2 metadata loading
-     * so Phase 3 reads can use the shadow instead of SAF Binder IPC.
+     * Invalidates shadow entries that are stale relative to SAF using a single batch
+     * mtime query per directory — no SAF file content is read.
+     *
+     * After this call, stale shadow files are deleted so [readFile] falls through to
+     * SAF for those files and returns fresh content. Fresh shadow files are untouched.
+     *
+     * No-op on non-SAF file systems. Must complete before any parsing reads in
+     * [GraphLoader.loadJournalsImmediate] and [GraphLoader.loadDirectory].
+     */
+    suspend fun invalidateStaleShadow(graphPath: String) { /* no-op */ }
+
+    /**
+     * Syncs the shadow copy for [graphPath] from SAF using batch mtime queries,
+     * reading and caching stale file content. Slower than [invalidateStaleShadow]
+     * but warms the cache for subsequent reads. No-op on non-SAF file systems.
      */
     suspend fun syncShadow(graphPath: String) { /* no-op */ }
 }

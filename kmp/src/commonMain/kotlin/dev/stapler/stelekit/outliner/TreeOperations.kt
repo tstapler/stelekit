@@ -33,9 +33,9 @@ object TreeOperations {
         // It becomes the last child of the new parent
         updates.add(
             block.copy(
-                parentUuid = newParent.uuid,
+                parentUuid = newParent.uuid.value,
                 level = newParent.level + 1,
-                leftUuid = lastChildOfNewParent?.uuid // If null, it becomes the first child
+                leftUuid = lastChildOfNewParent?.uuid?.value // If null, it becomes the first child
             )
         )
 
@@ -44,7 +44,7 @@ object TreeOperations {
         if (nextSibling != null) {
             updates.add(
                 nextSibling.copy(
-                    leftUuid = newParent.uuid // newParent was the block's left sibling
+                    leftUuid = newParent.uuid.value // newParent was the block's left sibling
                 )
             )
         }
@@ -83,7 +83,7 @@ object TreeOperations {
             block.copy(
                 parentUuid = parent.parentUuid,
                 level = parent.level,
-                leftUuid = parent.uuid
+                leftUuid = parent.uuid.value
             )
         )
 
@@ -91,7 +91,7 @@ object TreeOperations {
         if (nextSibling != null) {
             updates.add(
                 nextSibling.copy(
-                    leftUuid = prevSibling?.uuid // Points to whatever was before the block (or null if block was first)
+                    leftUuid = prevSibling?.uuid?.value // Points to whatever was before the block (or null if block was first)
                 )
             )
         }
@@ -100,11 +100,11 @@ object TreeOperations {
         // We need to update the block that currently follows the parent
         val parentIndex = parentSiblings.indexOfFirst { it.uuid == parent.uuid }
         val parentNextSibling = parentSiblings.getOrNull(parentIndex + 1)
-        
+
         if (parentNextSibling != null) {
             updates.add(
                 parentNextSibling.copy(
-                    leftUuid = block.uuid // Now points to the outdented block
+                    leftUuid = block.uuid.value // Now points to the outdented block
                 )
             )
         }
@@ -136,14 +136,14 @@ object TreeOperations {
         
         // Previous sibling (A) now follows current block (B)
         updates.add(prevSibling.copy(
-            leftUuid = block.uuid,
+            leftUuid = block.uuid.value,
             position = block.position
         ))
-        
+
         // If there was a next sibling (C) following B, it now follows A
         if (nextSibling != null) {
             updates.add(nextSibling.copy(
-                leftUuid = prevSibling.uuid
+                leftUuid = prevSibling.uuid.value
             ))
         }
         
@@ -167,20 +167,20 @@ object TreeOperations {
 
         // Current block (A) now follows next sibling (B)
         updates.add(block.copy(
-            leftUuid = nextSibling.uuid,
+            leftUuid = nextSibling.uuid.value,
             position = nextSibling.position
         ))
-        
+
         // Next sibling (B) takes current block's (A) leftUuid and position
         updates.add(nextSibling.copy(
             leftUuid = block.leftUuid,
             position = block.position
         ))
-        
+
         // If there was a block (C) following B, it now follows A
         if (afterNextSibling != null) {
             updates.add(afterNextSibling.copy(
-                leftUuid = block.uuid
+                leftUuid = block.uuid.value
             ))
         }
         
@@ -196,7 +196,7 @@ object TreeOperations {
         childrenProvider: (String) -> List<Block>
     ): List<Block> {
         val updatedBlock = block.copy(level = newLevel)
-        val children = childrenProvider(block.uuid)
+        val children = childrenProvider(block.uuid.value)
         
         val updatedChildren = children.flatMap { child ->
             updateLevels(child, newLevel + 1, childrenProvider)
@@ -215,7 +215,7 @@ object TreeOperations {
                 leftUuid = currentLeftUuid,
                 position = index
             )
-            currentLeftUuid = updated.uuid
+            currentLeftUuid = updated.uuid.value
             updated
         }
     }

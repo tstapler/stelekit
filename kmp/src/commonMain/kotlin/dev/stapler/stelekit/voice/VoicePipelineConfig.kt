@@ -56,4 +56,10 @@ class VoicePipelineConfig(
 ) {
     /** Amplitude flow for waveform animation: prefers directSpeechProvider, falls back to audioRecorder. */
     val effectiveAmplitudeFlow get() = directSpeechProvider?.amplitudeFlow ?: audioRecorder.amplitudeFlow
+
+    fun close() {
+        (sttProvider as? WhisperSpeechToTextProvider)?.close()
+        (llmProvider as? ClaudeLlmFormatterProvider)?.close()
+        (llmProvider as? OpenAiLlmFormatterProvider)?.close()
+    }
 }

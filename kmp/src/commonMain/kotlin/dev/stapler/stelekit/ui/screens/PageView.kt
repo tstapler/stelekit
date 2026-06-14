@@ -3,8 +3,11 @@ package dev.stapler.stelekit.ui.screens
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.*
@@ -27,7 +30,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.db.DatabaseWriteActor
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.performance.NavigationTracingEffect
@@ -36,14 +41,19 @@ import dev.stapler.stelekit.ui.state.BlockStateManager
 import dev.stapler.stelekit.ui.StelekitViewModel
 import androidx.compose.runtime.CompositionLocalProvider
 import dev.stapler.stelekit.ui.components.BlockList
+import dev.stapler.stelekit.ui.components.EditorCapabilities
+import dev.stapler.stelekit.ui.components.EditorToolbar
 import dev.stapler.stelekit.ui.components.LocalGraphRootPath
+import dev.stapler.stelekit.ui.components.parseMarkdownWithStyling
 import dev.stapler.stelekit.ui.components.pageDropTarget
-import dev.stapler.stelekit.ui.components.MobileBlockToolbar
 import dev.stapler.stelekit.ui.components.ReferencesPanel
-import dev.stapler.stelekit.ui.components.SearchDialog
 import dev.stapler.stelekit.ui.components.SuggestionItem
 import dev.stapler.stelekit.ui.components.SuggestionNavigatorPanel
 import dev.stapler.stelekit.ui.i18n.t
+import dev.stapler.stelekit.tags.TagSuggestionViewModel
+import dev.stapler.stelekit.tags.TagSuggestionState
+import dev.stapler.stelekit.tags.WikiLinkExtractor
+import dev.stapler.stelekit.ui.components.tags.SuggestionBottomSheet
 
 /**
  * Page view screen.
@@ -64,28 +74,10 @@ fun PageView(
     writeActor: DatabaseWriteActor? = null,
     isDebugMode: Boolean = false,
     isLeftHanded: Boolean = false,
-    /**
-     * Platform-provided callback to open a file picker and attach an image.
-     * Supply a non-null lambda from the platform-specific screen wrapper
-     * (e.g. JvmMediaAttachmentService on desktop, rememberAndroidMediaAttachmentService on Android).
-     * When null, the attach-image toolbar button is hidden.
-     *
-     * The lambda receives the currently-editing block UUID (or null if no block is focused).
-     * It is responsible for:
-     *   1. Opening the platform file picker.
-     *   2. Copying the file to `<graphRoot>/assets/`.
-     *   3. Calling blockStateManager.insertTextAtCursor(blockUuid, "![altText](relativePath)")
-     *      on the editing block if one is active.
-     */
-    onAttachImage: ((editingBlockUuid: String?) -> Unit)? = null,
-    /**
-     * Platform-provided callback invoked when files are drag-and-dropped onto the page area.
-     * The list contains opaque file handles (typed as [Any] to stay platform-agnostic in
-     * commonMain; on JVM they are [java.io.File] instances).
-     * When null, drop events are ignored.
-     */
-    onFileDrop: ((List<Any>) -> Unit)? = null,
-    onPasteImage: ((editingBlockUuid: String?) -> Boolean)? = null,
+    capabilities: EditorCapabilities = EditorCapabilities(),
+    onReloadFromDisk: (() -> Unit)? = null,
+    isExporting: Boolean = false,
+    tagSuggestionViewModel: TagSuggestionViewModel? = null,
 ) {
     NavigationTracingEffect("PageView/${page.name}")
     val focusManager = LocalFocusManager.current
@@ -106,21 +98,17 @@ fun PageView(
     val loadingPageUuids by blockStateManager.loadingPageUuids.collectAsState()
     val suggestionMatcher by viewModel.suggestionMatcher.collectAsState()
 
+    val tagSuggestionState by tagSuggestionViewModel?.state?.collectAsState()
+        ?: remember { mutableStateOf(TagSuggestionState.Idle) }
+
     // Navigator panel state — empty list means closed
     var navigatorSuggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
     var navigatorIndex by remember { mutableStateOf(0) }
 
-    // Link picker state
-    var showLinkPicker by remember { mutableStateOf(false) }
-    var linkPickerBlockUuid by remember { mutableStateOf<String?>(null) }
-    var linkPickerCursorIndex by remember { mutableStateOf<Int?>(null) }
-    var linkPickerSelectionRange by remember { mutableStateOf<IntRange?>(null) }
-    var linkPickerInitialQuery by remember { mutableStateOf<String?>(null) }
-
-    val blocks = allBlocks[page.uuid] ?: emptyList()
+    val blocks = allBlocks[page.uuid.value] ?: emptyList()
 
     // Start observing this page's blocks on enter, stop on leave
-    DisposableEffect(page.uuid) {
+    DisposableEffect(page.uuid.value) {
         blockStateManager.observePage(page.uuid, page.isContentLoaded)
         onDispose {
             blockStateManager.unobservePage(page.uuid)
@@ -135,11 +123,11 @@ fun PageView(
     CompositionLocalProvider(LocalGraphRootPath provides currentGraphPath.ifEmpty { null }) {
 
     Box(modifier = Modifier.fillMaxSize().imePadding()
-        .let { m -> if (onPasteImage != null) m.onPreviewKeyEvent { event ->
+        .let { m -> if (capabilities.onPasteImage != null) m.onPreviewKeyEvent { event ->
             event.type == KeyEventType.KeyDown &&
             (event.isCtrlPressed || event.isMetaPressed) &&
             event.key == Key.V &&
-            onPasteImage(editingBlockUuid)
+            capabilities.onPasteImage.invoke(editingBlockUuid)
         } else m }
         .onKeyEvent { event ->
         if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
@@ -171,7 +159,7 @@ fun PageView(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 24.dp)
-                .let { m -> if (onFileDrop != null) m.pageDropTarget(onFileDrop) else m }
+                .let { m -> if (capabilities.onFileDrop != null) m.pageDropTarget(capabilities.onFileDrop) else m }
                 .pointerInput(Unit) {
                     detectTapGestures(onTap = {
                         focusManager.clearFocus()
@@ -186,12 +174,25 @@ fun PageView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = page.name,
+                    val pageTitleLinkColor = MaterialTheme.colorScheme.primary
+                    val pageTitleTextColor = MaterialTheme.colorScheme.onBackground
+                    val annotatedPageTitle = remember(page.name, pageTitleLinkColor, pageTitleTextColor) {
+                        parseMarkdownWithStyling(page.name, linkColor = pageTitleLinkColor, textColor = pageTitleTextColor)
+                    }
+                    BasicText(
+                        text = annotatedPageTitle,
                         style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.weight(1f)
                     )
+                    if (onReloadFromDisk != null) {
+                        IconButton(onClick = onReloadFromDisk) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Reload from disk",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                     IconButton(onClick = { viewModel.showRenameDialog(page) }) {
                         Icon(
                             imageVector = Icons.Default.Edit,
@@ -205,6 +206,60 @@ fun PageView(
                             contentDescription = if (page.isFavorite) "Unfavorite" else "Favorite",
                             tint = if (page.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                    var exportMenuExpanded by remember { mutableStateOf(false) }
+                    Box {
+                        IconButton(
+                            onClick = { exportMenuExpanded = true },
+                            enabled = !isExporting
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Export page",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = exportMenuExpanded,
+                            onDismissRequest = { exportMenuExpanded = false }
+                        ) {
+                            listOf(
+                                "markdown" to "Copy as Markdown",
+                                "plain-text" to "Copy as Plain Text",
+                                "html" to "Copy as HTML",
+                                "json" to "Copy as JSON"
+                            ).forEach { (formatId, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    enabled = !isExporting,
+                                    onClick = {
+                                        exportMenuExpanded = false
+                                        viewModel.exportPage(formatId)
+                                    }
+                                )
+                            }
+                            if (tagSuggestionViewModel != null) {
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Suggest tags for page") },
+                                    onClick = {
+                                        exportMenuExpanded = false
+                                        val pageContent = blocks
+                                            .take(20)
+                                            .joinToString("\n") { it.content }
+                                            .take(500)
+                                        val alreadyLinked = WikiLinkExtractor.extractPageNames(
+                                            blocks.joinToString("\n") { it.content }
+                                        )
+                                        tagSuggestionViewModel.requestSuggestions(
+                                            blockUuid = page.uuid.value,
+                                            blockContent = pageContent,
+                                            alreadyLinkedTerms = alreadyLinked,
+                                        )
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -224,7 +279,7 @@ fun PageView(
             // Blocks content
             item {
                 if (blocks.isEmpty()) {
-                    if (!page.isContentLoaded || page.uuid in loadingPageUuids) {
+                    if (!page.isContentLoaded || page.uuid.value in loadingPageUuids) {
                         Box(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
                             contentAlignment = Alignment.Center
@@ -252,34 +307,34 @@ fun PageView(
                     BlockList(
                         blocks = sortedBlocks,
                         isDebugMode = isDebugMode,
-                        editingBlockUuid = editingBlockUuid,
+                        editingBlockUuid = editingBlockUuid?.value,
                         editingCursorIndex = editingCursorIndex,
                         collapsedBlocks = collapsedBlockUuids,
                         selectedBlockUuids = selectedBlockUuids,
                         isInSelectionMode = isInSelectionMode,
-                        onToggleSelect = { uuid -> blockStateManager.toggleBlockSelection(uuid) },
-                        onEnterSelectionMode = { uuid -> blockStateManager.enterSelectionMode(uuid) },
-                        onShiftClick = { uuid -> blockStateManager.extendSelectionTo(uuid) },
+                        onToggleSelect = { uuid -> blockStateManager.toggleBlockSelection(BlockUuid(uuid)) },
+                        onEnterSelectionMode = { uuid -> blockStateManager.enterSelectionMode(BlockUuid(uuid)) },
+                        onShiftClick = { uuid -> blockStateManager.extendSelectionTo(BlockUuid(uuid)) },
                         onShiftArrowUp = { blockStateManager.extendSelectionByOne(up = true) },
                         onShiftArrowDown = { blockStateManager.extendSelectionByOne(up = false) },
-                        onStartEditing = { uuid -> blockStateManager.requestEditBlock(uuid) },
-                        onStopEditing = { blockUuid -> blockStateManager.stopEditingBlock(blockUuid) },
+                        onStartEditing = { uuid -> blockStateManager.requestEditBlock(BlockUuid(uuid)) },
+                        onStopEditing = { blockUuid -> blockStateManager.stopEditingBlock(BlockUuid(blockUuid)) },
                         onContentChange = { blockUuid, newContent, version ->
-                            blockStateManager.updateBlockContent(blockUuid, newContent, version)
+                            blockStateManager.updateBlockContent(BlockUuid(blockUuid), newContent, version)
                         },
                         onLinkClick = onLinkClick,
-                        onNewBlock = { uuid -> blockStateManager.addNewBlock(uuid) },
-                        onSplitBlock = { uuid, pos -> blockStateManager.splitBlock(uuid, pos) },
-                        onMergeBlock = { uuid -> blockStateManager.mergeBlock(uuid) },
-                        onIndent = { blockUuid -> blockStateManager.indentBlock(blockUuid) },
-                        onOutdent = { blockUuid -> blockStateManager.outdentBlock(blockUuid) },
-                        onMoveUp = { blockUuid -> blockStateManager.moveBlockUp(blockUuid) },
-                        onMoveDown = { blockUuid -> blockStateManager.moveBlockDown(blockUuid) },
-                        onLoadContent = { pageUuid -> blockStateManager.loadPageContent(pageUuid) },
-                        onBackspace = { blockUuid -> blockStateManager.handleBackspace(blockUuid) },
-                        onToggleCollapse = { blockUuid -> blockStateManager.toggleBlockCollapse(blockUuid) },
-                        onFocusUp = { blockUuid -> blockStateManager.focusPreviousBlock(blockUuid) },
-                        onFocusDown = { blockUuid -> blockStateManager.focusNextBlock(blockUuid) },
+                        onNewBlock = { uuid -> blockStateManager.addNewBlock(BlockUuid(uuid)) },
+                        onSplitBlock = { uuid, pos -> blockStateManager.splitBlock(BlockUuid(uuid), pos) },
+                        onMergeBlock = { uuid -> blockStateManager.mergeBlock(BlockUuid(uuid)) },
+                        onIndent = { blockUuid -> blockStateManager.indentBlock(BlockUuid(blockUuid)) },
+                        onOutdent = { blockUuid -> blockStateManager.outdentBlock(BlockUuid(blockUuid)) },
+                        onMoveUp = { blockUuid -> blockStateManager.moveBlockUp(BlockUuid(blockUuid)) },
+                        onMoveDown = { blockUuid -> blockStateManager.moveBlockDown(BlockUuid(blockUuid)) },
+                        onLoadContent = { pageUuid -> blockStateManager.loadPageContent(PageUuid(pageUuid)) },
+                        onBackspace = { blockUuid -> blockStateManager.handleBackspace(BlockUuid(blockUuid)) },
+                        onToggleCollapse = { blockUuid -> blockStateManager.toggleBlockCollapse(BlockUuid(blockUuid)) },
+                        onFocusUp = { blockUuid -> blockStateManager.focusPreviousBlock(BlockUuid(blockUuid)) },
+                        onFocusDown = { blockUuid -> blockStateManager.focusNextBlock(BlockUuid(blockUuid)) },
                         onResolveContent = { uuid -> viewModel.getBlockContent(uuid) },
                         onSearchPages = { query -> viewModel.searchPages(query) },
                         formatEvents = blockStateManager.formatEvents,
@@ -289,17 +344,28 @@ fun PageView(
                             navigatorIndex = 0
                         },
                         onMoveSelectedBlocks = { newParentUuid, insertAfterUuid ->
-                            blockStateManager.moveSelectedBlocks(newParentUuid, insertAfterUuid)
+                            blockStateManager.moveSelectedBlocks(
+                                newParentUuid?.let { BlockUuid(it) },
+                                insertAfterUuid?.let { BlockUuid(it) }
+                            )
                         },
-                        onAutoSelectForDrag = { uuid -> blockStateManager.enterSelectionMode(uuid) },
+                        onAutoSelectForDrag = { uuid -> blockStateManager.enterSelectionMode(BlockUuid(uuid)) },
                         onBlockSelectionChange = { blockUuid, range ->
                             blockStateManager.updateEditingSelection(
-                                if (blockUuid == editingBlockUuid) range else null
+                                if (blockUuid == editingBlockUuid?.value) range else null
                             )
                         },
                         onOpenAnnotationEditor = { uuid ->
-                            viewModel.navigateToAnnotationEditor(uuid, page.uuid)
+                            viewModel.navigateToAnnotationEditor(uuid, page.uuid.value)
                         },
+                        onRequestTagSuggestions = if (tagSuggestionViewModel != null) { blockUuid, content ->
+                            val alreadyLinked = WikiLinkExtractor.extractPageNames(content)
+                            tagSuggestionViewModel.requestSuggestions(
+                                blockUuid = blockUuid,
+                                blockContent = content,
+                                alreadyLinkedTerms = alreadyLinked,
+                            )
+                        } else null,
                     )
 
                     Box(
@@ -334,14 +400,14 @@ fun PageView(
                 currentIndex = navigatorIndex,
                 onLink = {
                     val item = navigatorSuggestions[navigatorIndex]
-                    val block = blocks.find { it.uuid == item.blockUuid }
+                    val block = blocks.find { it.uuid.value == item.blockUuid }
                     if (block != null) {
                         val safeEnd = item.contentEnd.coerceAtMost(block.content.length)
                         val safeStart = item.contentStart.coerceIn(0, safeEnd)
                         val newContent = block.content.substring(0, safeStart) +
                             "[[${item.canonicalName}]]" +
                             block.content.substring(safeEnd)
-                        blockStateManager.updateBlockContent(item.blockUuid, newContent, block.version)
+                        blockStateManager.updateBlockContent(BlockUuid(item.blockUuid), newContent, block.version)
                     }
                     val updated = navigatorSuggestions.toMutableList().also { it.removeAt(navigatorIndex) }
                     navigatorSuggestions = updated
@@ -359,72 +425,31 @@ fun PageView(
             )
         }
 
-        // Link picker dialog
-        if (showLinkPicker && searchViewModel != null) {
-            SearchDialog(
-                visible = true,
-                onDismiss = { showLinkPicker = false },
-                onNavigateToPage = { /* not used in link picker mode */ },
-                onNavigateToBlock = { /* not used in link picker mode */ },
-                onCreatePage = { pageName ->
-                    linkPickerBlockUuid?.let { blockUuid ->
-                        blockStateManager.acceptLinkPickerResult(blockUuid, pageName, linkPickerSelectionRange, linkPickerCursorIndex)
-                    }
-                    showLinkPicker = false
-                },
-                viewModel = searchViewModel,
-                initialQuery = linkPickerInitialQuery ?: "",
-                onPageSelected = { pageName ->
-                    linkPickerBlockUuid?.let { blockUuid ->
-                        blockStateManager.acceptLinkPickerResult(blockUuid, pageName, linkPickerSelectionRange, linkPickerCursorIndex)
-                    }
-                    showLinkPicker = false
-                }
-            )
-        }
-
-        MobileBlockToolbar(
-            editingBlockId = editingBlockUuid,
-            onIndent = { blockUuid -> blockStateManager.indentBlock(blockUuid) },
-            onOutdent = { blockUuid -> blockStateManager.outdentBlock(blockUuid) },
-            onMoveUp = { blockUuid -> blockStateManager.moveBlockUp(blockUuid) },
-            onMoveDown = { blockUuid -> blockStateManager.moveBlockDown(blockUuid) },
-            onAddBlock = { blockUuid -> blockStateManager.addNewBlock(blockUuid) },
-            onUndo = { blockStateManager.undo() },
-            onRedo = { blockStateManager.redo() },
-            onFormat = { action -> blockStateManager.requestFormat(action) },
-            onAttachImage = if (onAttachImage != null) {
-                { onAttachImage(editingBlockUuid) }
-            } else null,
-            onLinkPicker = if (searchViewModel != null) {
-                {
-                    val curBlockUuid = editingBlockUuid
-                    // Read selection directly from StateFlow — avoids root-scope recomposition
-                    val sel = blockStateManager.editingSelectionRange.value
-                    linkPickerBlockUuid = curBlockUuid
-                    // editingCursorIndex is only set via requestEditBlock; fall back to
-                    // selection start so cursor-move link insertion lands at the caret
-                    linkPickerCursorIndex = editingCursorIndex ?: sel?.first
-                    linkPickerSelectionRange = sel
-                    linkPickerInitialQuery = if (sel != null && sel.first < sel.last && curBlockUuid != null) {
-                        val block = allBlocks.values.flatten().find { it.uuid == curBlockUuid }
-                        block?.content?.substring(
-                            sel.first.coerceAtMost(block.content.length),
-                            sel.last.coerceAtMost(block.content.length)
-                        )
-                    } else null
-                    showLinkPicker = true
-                }
-            } else null,
-            isInSelectionMode = isInSelectionMode,
-            selectedCount = selectedBlockUuids.size,
-            onDeleteSelected = { blockStateManager.deleteSelectedBlocks() },
-            onClearSelection = { blockStateManager.clearSelection() },
+        EditorToolbar(
+            blockStateManager = blockStateManager,
+            capabilities = capabilities,
+            searchViewModel = searchViewModel,
             isLeftHanded = isLeftHanded,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .onSizeChanged { toolbarHeight = it.height }
+                .onSizeChanged { toolbarHeight = it.height },
         )
+
+        if (tagSuggestionViewModel != null) {
+            SuggestionBottomSheet(
+                state = tagSuggestionState,
+                onAcceptTag = { uuid, term ->
+                    // When page-scope was triggered, uuid is the page uuid (not a block uuid).
+                    // Find the actual target block: use the block matching uuid, or fall back to first block.
+                    val targetBlockUuid = blocks.firstOrNull { it.uuid.value == uuid }?.uuid
+                        ?: blocks.firstOrNull()?.uuid
+                    targetBlockUuid?.let {
+                        blockStateManager.appendToBlock(it, " [[$term]]")
+                    }
+                },
+                onDismiss = { tagSuggestionViewModel.dismiss() },
+            )
+        }
     }
 
     } // CompositionLocalProvider(LocalGraphRootPath)

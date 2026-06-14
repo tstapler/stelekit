@@ -2,7 +2,9 @@ package dev.stapler.stelekit.benchmark
 
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SqlDelightBlockRepository
 import dev.stapler.stelekit.repository.SqlDelightPageRepository
@@ -49,7 +51,7 @@ object SyntheticGraphDbBuilder {
             val word1 = WORD_LIST[i % WORD_LIST.size]
             val word2 = WORD_LIST[(i + 7) % WORD_LIST.size]
             Page(
-                uuid = generateUuid(i),
+                uuid = PageUuid(generateUuid(i)),
                 name = "$word1 $word2 page $i",
                 namespace = null,
                 filePath = null,
@@ -69,7 +71,7 @@ object SyntheticGraphDbBuilder {
                 val word2 = WORD_LIST[(blockIdx + 3) % WORD_LIST.size]
                 val word3 = WORD_LIST[(blockIdx + 11) % WORD_LIST.size]
                 Block(
-                    uuid = generateUuid(pageCount + blockIdx),
+                    uuid = BlockUuid(generateUuid(pageCount + blockIdx)),
                     pageUuid = page.uuid,
                     parentUuid = null,
                     leftUuid = null,

@@ -7,6 +7,8 @@ import dev.stapler.stelekit.db.sidecar.ImageSidecarManager
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSensorData
 import dev.stapler.stelekit.model.ImageSource
@@ -15,7 +17,7 @@ import dev.stapler.stelekit.model.MeasurementUnit
 import dev.stapler.stelekit.model.NormalizedPoint
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.sensor.PlatformImageFile
-import dev.stapler.stelekit.repository.BlockRepository
+import dev.stapler.stelekit.repository.BlockWriteRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.ImageAnnotationRepository
 import dev.stapler.stelekit.repository.JournalService
@@ -43,7 +45,7 @@ import kotlin.time.Clock
 class ImageImportService(
     private val fileSystem: FileSystem,
     private val imageAnnotationRepository: ImageAnnotationRepository? = null,
-    private val blockRepository: BlockRepository? = null,
+    private val blockRepository: BlockWriteRepository? = null,
     private val sidecarManager: ImageSidecarManager? = null,
     private val journalService: JournalService? = null,
     private val writeActor: DatabaseWriteActor? = null,
@@ -168,8 +170,8 @@ class ImageImportService(
             "unit" to annotation.unit.name.lowercase(),
         )
         val block = Block(
-            uuid = blockUuid,
-            pageUuid = pageUuid,
+            uuid = BlockUuid(blockUuid),
+            pageUuid = PageUuid(pageUuid),
             content = blockContent,
             position = 0,
             createdAt = now,

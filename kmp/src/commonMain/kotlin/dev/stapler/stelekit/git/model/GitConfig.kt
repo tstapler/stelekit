@@ -16,11 +16,13 @@ data class GitConfig(
     val sshKeyPath: String? = null,
     val sshKeyPassphraseKey: String? = null,
     val httpsTokenKey: String? = null,
+    val oauthTokenKey: String? = null,
     val pollIntervalMinutes: Int = 5,
     val autoCommit: Boolean = true,
     val commitMessageTemplate: String = "SteleKit: {date}",
+    val llmApiKeyRef: String? = null,
 )
 
 val GitConfig.wikiRoot: String get() = if (wikiSubdir.isEmpty()) repoRoot else "$repoRoot/$wikiSubdir"
 
-enum class GitAuthType { NONE, SSH_KEY, HTTPS_TOKEN }
+enum class GitAuthType { NONE, SSH_KEY, HTTPS_TOKEN, GITHUB_OAUTH }

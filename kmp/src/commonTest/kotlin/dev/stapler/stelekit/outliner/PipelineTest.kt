@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.outliner
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import kotlin.time.Clock
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -13,8 +15,8 @@ class PipelineTest {
     @Test
     fun testExtractReferences() {
         val block = Block(
-            uuid = "00000000-0000-0000-0000-000000000001",
-            pageUuid = "page-1",
+            uuid = BlockUuid("00000000-0000-0000-0000-000000000001"),
+            pageUuid = PageUuid("page-1"),
             content = "This is a [[page]] with a ((00000000-0000-0000-0000-000000000002)) reference and a #tag",
             position = 0,
             createdAt = Clock.System.now(),
@@ -36,8 +38,8 @@ class PipelineTest {
     @Test
     fun testProcessBlock() {
         val block = Block(
-            uuid = "00000000-0000-0000-0000-000000000001",
-            pageUuid = "page-1",
+            uuid = BlockUuid("00000000-0000-0000-0000-000000000001"),
+            pageUuid = PageUuid("page-1"),
             content = """
                 title:: My Block
                 tags:: tag1, tag2
@@ -59,8 +61,8 @@ class PipelineTest {
     @Test
     fun testReferenceExtractionWithProperties() {
         val block = Block(
-            uuid = "00000000-0000-0000-0000-000000000001",
-            pageUuid = "page-1",
+            uuid = BlockUuid("00000000-0000-0000-0000-000000000001"),
+            pageUuid = PageUuid("page-1"),
             content = """
                 tags:: [[work]], #urgent
                 

@@ -51,10 +51,20 @@ object Validation {
         }
         return validated
     }
+
+    fun validateUuid(uuid: PageUuid): PageUuid {
+        validateString(uuid.value, 36)
+        return uuid
+    }
+
+    fun validateUuid(uuid: BlockUuid): BlockUuid {
+        validateString(uuid.value, 36)
+        return uuid
+    }
 }
 
 data class Page(
-    val uuid: String,
+    val uuid: PageUuid,
     val name: String,
     val namespace: String? = null,
     val filePath: String? = null,
@@ -87,8 +97,8 @@ private val validBlockTypes = setOf(
 )
 
 data class Block(
-    val uuid: String,
-    val pageUuid: String,
+    val uuid: BlockUuid,
+    val pageUuid: PageUuid,
     val parentUuid: String? = null,
     val leftUuid: String? = null,
     val content: String,

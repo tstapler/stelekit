@@ -13,6 +13,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
@@ -21,7 +22,9 @@ import dev.stapler.stelekit.vault.CryptoLayer
 import dev.stapler.stelekit.vault.VaultError
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 
 /**
  * Handles writing page and block changes back to markdown files.
@@ -46,11 +49,46 @@ class GraphWriter(
     @Deprecated("Use writeActor instead", level = DeprecationLevel.WARNING)
     private val pageRepository: PageRepository? = null,
     private val sidecarManager: SidecarManager? = null,
-    /** When non-null, all file writes are encrypted via paranoid-mode before hitting disk. */
-    @Volatile var cryptoLayer: CryptoLayer? = null,
+    /** Initial CryptoLayer value — use [setCryptoLayer] to change at runtime. */
+    initialCryptoLayer: CryptoLayer? = null,
     /** Graph root path — required to compute graph-root-relative AAD paths for encryption. */
     @Volatile var graphPath: String = "",
-) {
+    /**
+     * Called immediately before writing a file to disk. Allows the caller to pre-mark the
+     * file as a pending own-write in [FileRegistry] so the watcher never sees our write as
+     * an external change. Must be paired with [onClearPendingWrite] for saga compensation.
+     */
+    private val onPreWrite: (suspend (filePath: String) -> Unit)? = null,
+    /**
+     * Called in saga compensation when a file write fails. Must clear the pending-write
+     * sentinel set by [onPreWrite] so the file is not permanently suppressed from
+     * external-change detection.
+     */
+    private val onClearPendingWrite: (suspend (filePath: String) -> Unit)? = null,
+    /**
+     * Called before each write with the file path and current on-disk content.
+     * Returns true if the write should be blocked because the file was externally changed
+     * since it was last written by the app. Null disables the check (all writes proceed).
+     * Only applies to plaintext (.md) files; encrypted files use the modTime sentinel guard.
+     */
+    private val checkPreWriteConflict: (suspend (filePath: String, diskContent: String) -> Boolean)? = null,
+    /**
+     * Called when [checkPreWriteConflict] returns true. Receives [filePath], the content
+     * that was about to be written ([pendingContent]), and the current on-disk content
+     * ([diskContent]). The write has already been aborted when this is called.
+     */
+    private val onPreWriteConflict: (suspend (filePath: String, pendingContent: String, diskContent: String) -> Unit)? = null,
+) : GraphWriterPort {
+    /**
+     * Backing field for the CryptoLayer used to encrypt files in paranoid mode.
+     * Volatile so changes published by [setCryptoLayer] are visible across coroutine threads.
+     */
+    @Volatile private var cryptoLayer: CryptoLayer? = initialCryptoLayer
+
+    override fun setCryptoLayer(layer: CryptoLayer?) { cryptoLayer = layer }
+
+    override fun closeAndClearCryptoLayer() { cryptoLayer?.close(); cryptoLayer = null }
+
     private val logger = Logger("GraphWriter")
     private val saveMutex = Mutex()
 
@@ -61,26 +99,37 @@ class GraphWriter(
     )
 
     // Per-page debounce: pageUuid → pending Job + latest request
-    private val pendingByPage = mutableMapOf<String, Pair<Job, SaveRequest>>()
+    private val pendingByPage = mutableMapOf<PageUuid, Pair<Job, SaveRequest>>()
     private val pendingMutex = Mutex()
+    // Owned internal scope — callers must not inject a rememberCoroutineScope().
+    private val ownedScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var scope: CoroutineScope? = null
-    private val debounceMs: Long = 500L
+    private var debounceMs: Long = 500L
 
     // Safety check: if more than this many blocks are deleted, require confirmation
     private val largeDeletionThreshold = 50
 
     /**
-     * Start the auto-save processor.
+     * Start the auto-save processor. Uses the writer's owned internal scope.
      * Call this once when the application starts.
      */
-    fun startAutoSave(scope: CoroutineScope, debounceMs: Long = this.debounceMs) {
+    override fun startAutoSave(debounceMs: Long) {
+        this.debounceMs = debounceMs
+        this.scope = ownedScope
+    }
+
+    /**
+     * Start the auto-save processor with an externally-supplied scope.
+     * Intended for tests only — production code should use [startAutoSave] without args.
+     */
+    fun startAutoSave(scope: CoroutineScope, _debounceMs: Long = 500L) {
         this.scope = scope
     }
 
     /**
      * Flush all pending saves to disk immediately (e.g. on app pause/shutdown).
      */
-    suspend fun flush() {
+    override suspend fun flush() {
         val pending = pendingMutex.withLock {
             val snapshot = pendingByPage.values.map { (job, req) -> job to req }
             pendingByPage.values.forEach { (job, _) -> job.cancel() }
@@ -103,10 +152,13 @@ class GraphWriter(
     }
 
     /**
-     * Stop the auto-save processor and flush remaining saves.
+     * Permanently stops the auto-save processor and cancels the owned scope.
+     * This is a terminal shutdown — do not call startAutoSave() after this.
+     * Intended to be called once during graph teardown.
      */
-    fun stopAutoSave() {
+    override fun stopAutoSave() {
         scope = null
+        ownedScope.cancel()
     }
 
     /**
@@ -127,10 +179,21 @@ class GraphWriter(
         }
     }
 
+    /** Returns true if a debounced save is queued for [pageUuid] but has not yet fired. */
+    suspend fun hasPendingForPage(pageUuid: PageUuid): Boolean =
+        pendingMutex.withLock { pendingByPage.containsKey(pageUuid) }
+
+    /** Cancels the pending debounced save for [pageUuid] without writing to disk. */
+    suspend fun cancelPendingForPage(pageUuid: PageUuid) {
+        pendingMutex.withLock {
+            pendingByPage.remove(pageUuid)?.first?.cancel()
+        }
+    }
+
     /**
      * Immediately save a page (bypasses debouncing).
      */
-    suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String) {
+    override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String) {
         savePageInternal(page, blocks, graphPath)
     }
 
@@ -139,7 +202,7 @@ class GraphWriter(
      * Calculates the new file path based on the new name and moves the file.
      * Returns true if successful, false otherwise.
      */
-    suspend fun renamePage(page: Page, newName: String, graphPath: String): Boolean = saveMutex.withLock {
+    override suspend fun renamePage(page: Page, newName: String, graphPath: String): Boolean = saveMutex.withLock {
         // IO boundary: all fileSystem calls must run on PlatformDispatcher.IO on Android.
         withContext(PlatformDispatcher.IO) {
         val oldPath = page.filePath
@@ -227,7 +290,7 @@ class GraphWriter(
     /**
      * Delete a page file.
      */
-    suspend fun deletePage(page: Page): Boolean = saveMutex.withLock {
+    override suspend fun deletePage(page: Page): Boolean = saveMutex.withLock {
         // IO boundary: all fileSystem calls must run on PlatformDispatcher.IO on Android.
         withContext(PlatformDispatcher.IO) {
         val path = page.filePath
@@ -334,12 +397,45 @@ class GraphWriter(
 
             val content = buildMarkdown(page, blocks)
 
+            // Pre-write conflict check: abort if the on-disk content changed since we last
+            // wrote it. Reuses the content already read for the large-deletion safety check
+            // (no extra disk read). Skipped for encrypted files (.md.stek) — those rely on
+            // the modTime sentinel guard in FileRegistry.
+            if (checkPreWriteConflict != null && oldContentForSafetyCheck != null
+                && !filePath.endsWith(".md.stek")) {
+                if (checkPreWriteConflict.invoke(filePath, oldContentForSafetyCheck)) {
+                    logger.warn("Pre-write hash mismatch for '${page.name}' — external change detected, write aborted")
+                    onPreWriteConflict?.invoke(filePath, content, oldContentForSafetyCheck)
+                    return@withContext false
+                }
+            }
+
             // Run the saga — transact() throws on failure; runCatching logs and swallows.
             // The saga { } builder annotates the block with @SagaDSLMarker so inner saga()
             // calls resolve correctly via SagaScope. .transact() executes the pipeline.
             var succeeded = false
             runCatching {
                 saga {
+                    // Step 0: pre-mark pending write to close the watcher race window.
+                    // Must be called before the file write so detectChanges never sees the
+                    // new mtime without knowing we wrote it. Compensation clears the sentinel
+                    // so the file is not permanently suppressed if the write fails.
+                    saga(
+                        action = { onPreWrite?.invoke(filePath) },
+                        compensation = { _ ->
+                            try {
+                                // Clear the sentinel so subsequent external edits are still detected.
+                                // Without this, a failed write leaves Long.MAX_VALUE in modTimes
+                                // and the file is never detected as externally changed again.
+                                onClearPendingWrite?.invoke(filePath)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                logger.error("Saga compensation: failed to clear pending write for $filePath", e)
+                            }
+                        }
+                    )
+
                     // Step 1: write markdown file — rollback restores previous content
                     val cryptoLayerNow = capturedCryptoLayer
                     // Compensation data — shadow-first for plaintext (zero IPC when warm).
@@ -471,11 +567,71 @@ class GraphWriter(
                     }
                 }
 
-                writeBlocks(block.uuid)
+                writeBlocks(block.uuid.value)
             }
         }
 
         writeBlocks(null)
+    }
+
+    /**
+     * Scans all .md files under [graphRoot]/pages/ and [graphRoot]/journals/ for occurrences
+     * of [oldRelativePath] in image/link references and rewrites them to [newRelativePath].
+     *
+     * Patterns replaced:
+     *  - `![alt](oldRelativePath)` → `![alt](newRelativePath)` (image embed)
+     *  - `[oldRelativePath]` → `[newRelativePath]` (bare link)
+     *
+     * Up to 4 concurrent file rewrites (matching BacklinkRenamer's semaphore pattern).
+     * Errors are logged but not propagated — this is a best-effort rewrite.
+     */
+    suspend fun rewriteAssetReference(
+        oldRelativePath: String,
+        newRelativePath: String,
+        graphRoot: String,
+    ) {
+        val semaphore = Semaphore(4)
+        val dirs = listOf("$graphRoot/pages", "$graphRoot/journals")
+        coroutineScope {
+            for (dir in dirs) {
+                if (!fileSystem.directoryExists(dir)) continue
+                val files = try { fileSystem.listFiles(dir) } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
+                for (file in files) {
+                    if (!file.endsWith(".md")) continue
+                    val filePath = "$dir/$file"
+                    async {
+                        semaphore.withPermit {
+                            rewriteAssetReferenceInFile(filePath, oldRelativePath, newRelativePath)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun rewriteAssetReferenceInFile(
+        filePath: String,
+        oldRelativePath: String,
+        newRelativePath: String,
+    ) {
+        try {
+            val content = withContext(PlatformDispatcher.IO) { fileSystem.readFile(filePath) } ?: return
+            if (!content.contains(oldRelativePath)) return
+            val escaped = Regex.escape(oldRelativePath)
+            val updated = content
+                .replace(Regex("!\\[([^\\]]*)\\]\\($escaped\\)")) { match ->
+                    "![${match.groupValues[1]}]($newRelativePath)"
+                }
+                .replace(Regex("\\[$escaped\\]")) { "[$newRelativePath]" }
+            if (updated == content) return
+            onPreWrite?.invoke(filePath)
+            withContext(PlatformDispatcher.IO) { fileSystem.writeFile(filePath, updated) }
+            onFileWritten?.invoke(filePath)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error("rewriteAssetReferenceInFile failed for $filePath: ${e.message}")
+        }
     }
 
     private fun getPageFilePath(page: Page, graphPath: String, layer: CryptoLayer? = cryptoLayer): String {
@@ -513,6 +669,10 @@ class GraphWriter(
             sidecarManager: SidecarManager? = null,
             cryptoLayer: CryptoLayer? = null,
             graphPath: String = "",
+            onPreWrite: (suspend (String) -> Unit)? = null,
+            onClearPendingWrite: (suspend (String) -> Unit)? = null,
+            checkPreWriteConflict: (suspend (String, String) -> Boolean)? = null,
+            onPreWriteConflict: (suspend (String, String, String) -> Unit)? = null,
         ): Resource<GraphWriter> = resource {
             val writer = GraphWriter(
                 fileSystem = fileSystem,
@@ -520,8 +680,12 @@ class GraphWriter(
                 onFileWritten = onFileWritten,
                 pageRepository = pageRepository,
                 sidecarManager = sidecarManager,
-                cryptoLayer = cryptoLayer,
+                initialCryptoLayer = cryptoLayer,
                 graphPath = graphPath,
+                onPreWrite = onPreWrite,
+                onClearPendingWrite = onClearPendingWrite,
+                checkPreWriteConflict = checkPreWriteConflict,
+                onPreWriteConflict = onPreWriteConflict,
             )
             onRelease {
                 try { writer.flush() } catch (_: Exception) { /* best-effort flush */ }

@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.db
 
+import arrow.core.flatMap
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
@@ -20,7 +22,7 @@ data class RenamePreview(
     val oldName: String,
     val newName: String,
     val affectedBlockCount: Int,
-    val affectedPageUuids: List<String>
+    val affectedPageUuids: List<PageUuid>
 )
 
 /**
@@ -53,7 +55,7 @@ internal fun replaceHashtag(content: String, oldName: String, newName: String): 
     var result = content.replace("#[[${oldName}]]", "#[[${newName}]]")
     // Replace simple form with word-boundary anchor (avoid partial matches)
     val simpleRegex = Regex("#${Regex.escape(oldName)}(?=[\\s,\\.!?;\"\\[\\]]|$)")
-    result = result.replace(simpleRegex, "#${newName}")
+    result = result.replace(simpleRegex) { "#${newName}" }
     return result
 }
 
@@ -67,11 +69,10 @@ internal fun replaceHashtag(content: String, oldName: String, newName: String): 
  * 4. Move the page file on disk via GraphWriter
  * 5. Rewrite affected pages' disk files with updated block content (up to 4 concurrent writes)
  */
-@OptIn(DirectRepositoryWrite::class)
 class BacklinkRenamer(
     private val pageRepository: PageRepository,
     private val blockRepository: BlockRepository,
-    private val graphWriter: GraphWriter,
+    private val graphWriter: GraphWriterPort,
     private val writeActor: DatabaseWriteActor
 ) {
     private val logger = Logger("BacklinkRenamer")
@@ -108,27 +109,22 @@ class BacklinkRenamer(
      * Executes the rename: updates the DB, rewrites block content, moves the file,
      * and rewrites all affected pages' disk files.
      */
+    @OptIn(DirectRepositoryWrite::class)
     suspend fun execute(page: Page, newName: String, graphPath: String): RenameResult {
         return try {
             // 1. Snapshot affected blocks BEFORE any rename so we use the old name in queries.
             val affectedBlocks = affectedBlocksForRename(page.name)
             val affectedPageUuids = affectedBlocks.map { it.pageUuid }.distinct()
 
-            // 2. Rename the page row in the DB.
-            writeActor.execute { pageRepository.renamePage(page.uuid, newName) }
-                .onLeft { e -> throw RuntimeException(e.message) }
-
-            // 3. Rewrite block content in DB: [[OldName]] → [[NewName]] (aliases included)
-            //    and #OldName / #[[OldName]] → #NewName / #[[NewName]].
-            val contentErrors = mutableListOf<String>()
-            affectedBlocks.forEach { block ->
-                val updated = replaceHashtag(replaceWikilink(block.content, page.name, newName), page.name, newName)
-                val result = writeActor.execute { blockRepository.updateBlockContentOnly(block.uuid, updated) }
-                if (result.isLeft()) contentErrors.add(block.uuid)
+            // 2+3. Rename page row and batch-update block content in a single actor call
+            //      so no competing writes can interleave between the two DB steps.
+            val updates = affectedBlocks.map { block ->
+                block.uuid to replaceHashtag(replaceWikilink(block.content, page.name, newName), page.name, newName)
             }
-            if (contentErrors.isNotEmpty()) {
-                logger.warn("Failed to update content for ${contentErrors.size} blocks during rename '${page.name}' → '$newName': $contentErrors")
-            }
+            writeActor.execute {
+                pageRepository.renamePage(page.uuid, newName)
+                    .flatMap { blockRepository.updateBlockContentsForRename(updates, page.name, newName) }
+            }.onLeft { e -> throw RuntimeException(e.message) }
 
             // 4. Move the page file on disk (old path → new path).
             val moved = graphWriter.renamePage(page, newName, graphPath)
@@ -160,7 +156,7 @@ class BacklinkRenamer(
      * For the page that was renamed, passes `filePath = null` so [GraphWriter] recalculates
      * the file path from the new name rather than using the now-stale stored path.
      */
-    private suspend fun rewritePageFile(pageUuid: String, renamedPageUuid: String, graphPath: String) {
+    private suspend fun rewritePageFile(pageUuid: PageUuid, renamedPageUuid: PageUuid, graphPath: String) {
         val page = pageRepository.getPageByUuid(pageUuid).first().getOrNull() ?: run {
             logger.error("Page not found for backlink file rewrite: $pageUuid")
             return

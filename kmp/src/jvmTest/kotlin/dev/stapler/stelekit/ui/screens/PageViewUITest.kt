@@ -10,6 +10,7 @@ import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.ui.fixtures.InMemorySettings
 import dev.stapler.stelekit.repository.InMemorySearchRepository
 import dev.stapler.stelekit.ui.StelekitViewModel
+import dev.stapler.stelekit.ui.StelekitViewModelDependencies
 import dev.stapler.stelekit.ui.fixtures.FakeFileSystem
 import dev.stapler.stelekit.ui.fixtures.PopulatedFakeBlockRepository
 import dev.stapler.stelekit.ui.fixtures.PopulatedFakePageRepository
@@ -51,15 +52,17 @@ class PageViewUITest {
         var viewModelRef: StelekitViewModel? = null
         val bsm = makeBlockStateManager(pageRepo, blockRepo, graphLoader, scope) { viewModelRef }
         return StelekitViewModel(
-            fileSystem = platformFileSystem,
-            pageRepository = pageRepo,
-            blockRepository = blockRepo,
-            searchRepository = searchRepo,
-            graphLoader = graphLoader,
-            graphWriter = graphWriter,
-            platformSettings = InMemorySettings(),
-            scope = scope,
-            blockStateManager = bsm
+            StelekitViewModelDependencies(
+                fileSystem = platformFileSystem,
+                pageRepository = pageRepo,
+                blockRepository = blockRepo,
+                searchRepository = searchRepo,
+                graphLoader = graphLoader,
+                graphWriter = graphWriter,
+                platformSettings = InMemorySettings(),
+                scope = scope,
+                blockStateManager = bsm,
+            )
         ).also { viewModelRef = it }
     }
 
@@ -107,15 +110,17 @@ class PageViewUITest {
         var viewModelRef2: StelekitViewModel? = null
         val bsm2 = makeBlockStateManager(pageRepo, emptyBlockRepo, graphLoader, scope) { viewModelRef2 }
         val viewModel = StelekitViewModel(
-            fileSystem = platformFileSystem,
-            pageRepository = pageRepo,
-            blockRepository = emptyBlockRepo,
-            searchRepository = searchRepo,
-            graphLoader = graphLoader,
-            graphWriter = graphWriter,
-            platformSettings = InMemorySettings(),
-            scope = scope,
-            blockStateManager = bsm2
+            StelekitViewModelDependencies(
+                fileSystem = platformFileSystem,
+                pageRepository = pageRepo,
+                blockRepository = emptyBlockRepo,
+                searchRepository = searchRepo,
+                graphLoader = graphLoader,
+                graphWriter = graphWriter,
+                platformSettings = InMemorySettings(),
+                scope = scope,
+                blockStateManager = bsm2,
+            )
         ).also { viewModelRef2 = it }
 
         val blockStateManager = BlockStateManager(emptyBlockRepo, graphLoader, scope)

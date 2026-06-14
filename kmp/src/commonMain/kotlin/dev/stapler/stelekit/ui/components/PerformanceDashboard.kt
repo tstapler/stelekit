@@ -28,14 +28,20 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.stapler.stelekit.performance.HistogramWriter
 import dev.stapler.stelekit.performance.PerfExporter
 import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.PerformanceMonitor
+import dev.stapler.stelekit.performance.QueryPlanRepository
+import dev.stapler.stelekit.performance.QueryPlanRow
+import dev.stapler.stelekit.performance.QueryStat
+import dev.stapler.stelekit.performance.QueryStatsCollector
+import dev.stapler.stelekit.performance.QueryStatsRepository
 import dev.stapler.stelekit.performance.RingBufferSpanExporter
 import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.performance.SpanRepository
 import dev.stapler.stelekit.performance.TraceEvent
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.delay
@@ -45,14 +51,19 @@ import kotlinx.coroutines.CancellationException
 
 @Composable
 fun PerformanceDashboard(
-    histogramWriter: HistogramWriter? = null,
     ringBuffer: RingBufferSpanExporter? = null,
     spanRepository: SpanRepository? = null,
     perfExporter: PerfExporter? = null,
+    queryPlanRepository: QueryPlanRepository? = null,
+    queryStatsCollector: QueryStatsCollector? = null,
+    queryStatsRepository: QueryStatsRepository? = null,
+    perfSpans: StateFlow<List<SerializedSpan>> = MutableStateFlow(emptyList()),
+    perfHistograms: StateFlow<Map<String, PercentileSummary>> = MutableStateFlow(emptyMap()),
+    perfQueryStats: StateFlow<List<QueryStat>> = MutableStateFlow(emptyList()),
     modifier: Modifier = Modifier,
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Histograms", "Spans", "Traces")
+    val tabs = listOf("Histograms", "Spans", "Traces", "Plans", "SQL Stats")
 
     Column(
         modifier = modifier
@@ -70,29 +81,26 @@ fun PerformanceDashboard(
         }
 
         when (selectedTab) {
-            0 -> HistogramsTab(histogramWriter)
-            1 -> SpansTab(spanRepository, ringBuffer, perfExporter)
+            0 -> HistogramsTab(perfHistograms)
+            1 -> SpansTab(spanRepository, ringBuffer, perfExporter, perfSpans)
             2 -> TracesTab()
+            3 -> QueryPlansTab(queryPlanRepository, queryStatsCollector)
+            4 -> QueryStatsTab(queryStatsRepository, perfQueryStats)
         }
     }
 }
 
 @Composable
-private fun HistogramsTab(histogramWriter: HistogramWriter?) {
-    val operations = listOf("frame_duration", "graph_load", "navigation", "search")
+private fun HistogramsTab(histogramSummaries: StateFlow<Map<String, PercentileSummary>>) {
+    // Data is pre-collected by a background poller in GraphContent (App.kt) — no polling here.
+    val summaries by histogramSummaries.collectAsState()
+    val operations = remember(summaries) { summaries.keys.sorted() }
 
-    val summaries by produceState<Map<String, PercentileSummary>>(emptyMap(), histogramWriter) {
-        while (true) {
-            if (histogramWriter != null) {
-                val result = withContext(PlatformDispatcher.DB) {
-                    operations
-                        .mapNotNull { op -> histogramWriter.queryPercentiles(op)?.let { op to it } }
-                        .toMap()
-                }
-                value = result
-            }
-            delay(2000)
+    if (operations.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No samples recorded yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        return
     }
 
     LazyColumn(
@@ -158,20 +166,22 @@ private fun SpansTab(
     spanRepository: SpanRepository?,
     ringBuffer: RingBufferSpanExporter?,
     perfExporter: PerfExporter? = null,
+    perfSpans: StateFlow<List<SerializedSpan>> = MutableStateFlow(emptyList()),
 ) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // SQLite-persisted spans merged with in-flight ring buffer spans.
-    // The ring buffer holds spans from the last 0–5s that haven't been drained to SQLite yet,
-    // so without this merge those recent spans are invisible when navigating back to this page.
-    val sqliteSpans by (spanRepository?.getRecentSpans(500) ?: kotlinx.coroutines.flow.flowOf(emptyList<SerializedSpan>()))
-        .collectAsState(emptyList())
+    // Data is pre-collected by GraphContent (App.kt) — subscribe to the pre-populated
+    // StateFlow so the tab shows data immediately without a blank flash.
+    // The ring buffer merge below adds spans from the last 0–5s not yet drained to SQLite.
+    val sqliteSpans by perfSpans.collectAsState()
 
     val currentSqliteSpans = rememberUpdatedState(sqliteSpans)
-    val liveSpans by produceState(sqliteSpans, ringBuffer, spanRepository) {
+    val liveSpans by produceState(sqliteSpans, ringBuffer, perfSpans) {
         if (ringBuffer == null) {
-            value = currentSqliteSpans.value
+            // No ring buffer — collect from the upstream StateFlow so we stay reactive
+            // rather than exiting and showing a frozen snapshot.
+            perfSpans.collect { value = it }
             return@produceState
         }
         while (true) {
@@ -804,5 +814,279 @@ private fun getDurationColor(duration: Long): Color {
         duration > 1000 -> scheme.error
         duration > 100 -> scheme.secondary
         else -> scheme.primary
+    }
+}
+
+@Composable
+private fun QueryPlansTab(
+    queryPlanRepository: QueryPlanRepository?,
+    queryStatsCollector: QueryStatsCollector?,
+) {
+    if (queryPlanRepository == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("Query plan repository not available", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+
+    var plans by remember { mutableStateOf<Map<String, List<QueryPlanRow>>>(emptyMap()) }
+    var loading by remember { mutableStateOf(false) }
+    var selectedKey by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    fun loadPlans() {
+        scope.launch {
+            loading = true
+            val samples = withContext(PlatformDispatcher.DB) {
+                queryStatsCollector?.getSqlSamples() ?: emptyMap()
+            }
+            plans = withContext(PlatformDispatcher.DB) {
+                queryPlanRepository.explainAll(samples)
+            }
+            loading = false
+            if (selectedKey == null && plans.isNotEmpty()) selectedKey = plans.keys.first()
+        }
+    }
+
+    LaunchedEffect(Unit) { loadPlans() }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Query Plans (${plans.size})", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            if (loading) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
+            IconButton(onClick = { loadPlans() }) {
+                Text("↺", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        HorizontalDivider()
+
+        if (plans.isEmpty() && !loading) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("No queries captured yet — use the app then refresh", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            return@Column
+        }
+
+        Row(Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier.weight(0.4f).fillMaxHeight(),
+                contentPadding = PaddingValues(vertical = 4.dp)
+            ) {
+                items(plans.keys.sorted()) { key ->
+                    val rows = plans[key] ?: emptyList()
+                    val hasScan = rows.any { it.detail.startsWith("SCAN ") && !it.detail.contains("USING") }
+                    val bg = if (selectedKey == key) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().clickable { selectedKey = key }.padding(horizontal = 4.dp, vertical = 2.dp),
+                        color = bg,
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(Modifier.size(8.dp).background(if (hasScan) Color.Red else Color(0xFF4CAF50), MaterialTheme.shapes.small))
+                            Text(key, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+            }
+            VerticalDivider()
+            val key = selectedKey
+            if (key != null) {
+                val rows = plans[key] ?: emptyList()
+                LazyColumn(
+                    modifier = Modifier.weight(0.6f).fillMaxHeight(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    item {
+                        Text(key, style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(bottom = 8.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    items(rows) { row ->
+                        PlanRowItem(row)
+                    }
+                    if (rows.isEmpty()) {
+                        item { Text("No plan available", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall) }
+                    }
+                }
+            } else {
+                Box(Modifier.weight(0.6f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                    Text("Select a query", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlanRowItem(row: QueryPlanRow) {
+    val detail = row.detail
+    val isScan = detail.startsWith("SCAN ") && !detail.contains("USING")
+    val isSearch = detail.startsWith("SEARCH ")
+    val color = when {
+        isScan -> MaterialTheme.colorScheme.error
+        isSearch && detail.contains("USING") -> Color(0xFF4CAF50)
+        isSearch -> Color(0xFFFF9800)
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = (row.parentId * 16).dp.coerceAtMost(64.dp)),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(6.dp).background(color, MaterialTheme.shapes.small))
+        Text(detail, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace,
+            color = color, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun QueryStatsTab(
+    queryStatsRepository: QueryStatsRepository?,
+    preloadedStats: StateFlow<List<QueryStat>> = MutableStateFlow(emptyList()),
+) {
+    if (queryStatsRepository == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("Query stats repository not available", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+
+    var sortByTotalMs by remember { mutableStateOf(true) }
+
+    // For the default sort (by total ms), collect from the pre-populated upstream StateFlow
+    // that GraphContent polls every 5s — no duplicate polling needed here.
+    // When the user toggles to "by calls", re-query once and update; the upstream poller
+    // only tracks "by total ms" so the alternative sort needs its own one-shot fetch.
+    val preloaded by preloadedStats.collectAsState()
+    var callsStats by remember { mutableStateOf<List<QueryStat>>(emptyList()) }
+    LaunchedEffect(sortByTotalMs) {
+        if (!sortByTotalMs) {
+            callsStats = withContext(PlatformDispatcher.DB) {
+                val version = queryStatsRepository.getAllVersions().firstOrNull() ?: ""
+                queryStatsRepository.getTopByCalls(version, 50)
+            }
+        }
+    }
+    val stats = if (sortByTotalMs) preloaded else callsStats
+
+    Column(Modifier.fillMaxSize()) {
+        // Sort toggle chips
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Sort:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            FilterChip(
+                selected = sortByTotalMs,
+                onClick = { sortByTotalMs = true },
+                label = { Text("By Total ms", style = MaterialTheme.typography.labelSmall) },
+            )
+            FilterChip(
+                selected = !sortByTotalMs,
+                onClick = { sortByTotalMs = false },
+                label = { Text("By Calls", style = MaterialTheme.typography.labelSmall) },
+            )
+        }
+        HorizontalDivider()
+
+        if (stats.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    "No query stats yet — stats flush every 30s",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            return@Column
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+        ) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("Table", modifier = Modifier.weight(1.5f), style = MaterialTheme.typography.labelSmall)
+                    Text("Op", modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall)
+                    Text("Calls", modifier = Modifier.weight(0.7f), style = MaterialTheme.typography.labelSmall)
+                    Text("Errors", modifier = Modifier.weight(0.5f), style = MaterialTheme.typography.labelSmall)
+                    Text("Mean", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall)
+                    Text("p95", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall)
+                    Text("p99", modifier = Modifier.weight(0.6f), style = MaterialTheme.typography.labelSmall)
+                }
+                HorizontalDivider()
+            }
+            items(stats) { stat ->
+                val p95 = stat.estimatePercentile(0.95)
+                val p99 = stat.estimatePercentile(0.99)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stat.tableName,
+                        modifier = Modifier.weight(1.5f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        stat.operation,
+                        modifier = Modifier.weight(0.7f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "${stat.calls}",
+                        modifier = Modifier.weight(0.7f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    Text(
+                        "${stat.errors}",
+                        modifier = Modifier.weight(0.5f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    Text(
+                        "${stat.meanMs}ms",
+                        modifier = Modifier.weight(0.6f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    Text(
+                        "${p95}ms",
+                        modifier = Modifier.weight(0.6f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    Text(
+                        text = "${p99}ms",
+                        modifier = Modifier.weight(0.6f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = p99Color(p99),
+                    )
+                }
+            }
+        }
     }
 }

@@ -96,6 +96,24 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
         queries.updateBlockContent(content, updated_at, content_hash, uuid)
 
     @DirectSqlWrite
+    suspend fun updateBlockFull(
+        page_uuid: String,
+        parent_uuid: String?,
+        left_uuid: String?,
+        content: String,
+        level: Long,
+        position: Long,
+        updated_at: Long,
+        properties: String?,
+        content_hash: String?,
+        block_type: String,
+        uuid: String,
+    ): Long = queries.updateBlockFull(
+        page_uuid, parent_uuid, left_uuid, content, level, position,
+        updated_at, properties, content_hash, block_type, uuid,
+    )
+
+    @DirectSqlWrite
     suspend fun updateBlockLevelOnly(level: Long, uuid: String): Long =
         queries.updateBlockLevelOnly(level, uuid)
 
@@ -340,7 +358,9 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
         duration_ms: Long,
         attributes_json: String,
         status_code: String,
-    ): Long = queries.insertSpan(trace_id, span_id, parent_span_id, name, start_epoch_ms, end_epoch_ms, duration_ms, attributes_json, status_code)
+        app_version: String,
+        commit_hash: String,
+    ): Long = queries.insertSpan(trace_id, span_id, parent_span_id, name, start_epoch_ms, end_epoch_ms, duration_ms, attributes_json, status_code, app_version, commit_hash)
 
     @DirectSqlWrite
     suspend fun deleteSpansOlderThan(end_epoch_ms: Long): Long =
@@ -421,6 +441,10 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     @DirectSqlWrite
     suspend fun recomputeBacklinkCountForPage(name: String): Long =
         queries.recomputeBacklinkCountForPage(name)
+
+    @DirectSqlWrite
+    suspend fun setPageBacklinkCount(name: String, count: Long): Long =
+        queries.setPageBacklinkCount(count, name)
 
     // ── Git config writes ─────────────────────────────────────────────────────
 
@@ -547,4 +571,103 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     @DirectSqlWrite
     suspend fun deleteMeasurementAnnotation(uuid: String): Long =
         queries.deleteMeasurementAnnotation(uuid)
+
+    // ── Asset index writes ────────────────────────────────────────────────────
+
+    @DirectSqlWrite
+    suspend fun insertAsset(
+        uuid: String,
+        file_path: String,
+        relative_path: String,
+        media_type: String,
+        subfolder: String,
+        tags: String,
+        auto_labels: String,
+        ocr_text: String?,
+        cloud_description: String?,
+        page_uuids: String,
+        size_bytes: Long,
+        imported_at_ms: Long,
+        content_hash: String?,
+    ): Long = queries.insertAsset(
+        uuid, file_path, relative_path, media_type, subfolder, tags, auto_labels,
+        ocr_text, cloud_description, page_uuids, size_bytes, imported_at_ms, content_hash,
+    )
+
+    @DirectSqlWrite
+    suspend fun updateAssetFilePath(filePath: String, relativePath: String, uuid: String): Long =
+        queries.updateAssetFilePath(filePath, relativePath, uuid)
+
+    @DirectSqlWrite
+    suspend fun updateAssetTags(tags: String, uuid: String): Long =
+        queries.updateAssetTags(tags, uuid)
+
+    @DirectSqlWrite
+    suspend fun updateAssetAutoLabels(autoLabels: String, mlTagsSource: String, uuid: String): Long =
+        queries.updateAssetAutoLabels(autoLabels, mlTagsSource, uuid)
+
+    @DirectSqlWrite
+    suspend fun updateAssetOcrText(ocrText: String?, uuid: String): Long =
+        queries.updateAssetOcrText(ocrText, uuid)
+
+    @DirectSqlWrite
+    suspend fun updateAssetCloudDescription(cloudDescription: String?, mlTagsSource: String, uuid: String): Long =
+        queries.updateAssetCloudDescription(cloudDescription, mlTagsSource, uuid)
+
+    @DirectSqlWrite
+    suspend fun markAssetMlProcessed(attemptedAt: Long, uuid: String): Long =
+        queries.markAssetMlProcessed(attemptedAt, uuid)
+
+    @DirectSqlWrite
+    suspend fun markAssetMlFailed(attemptedAt: Long, uuid: String): Long =
+        queries.markAssetMlFailed(attemptedAt, uuid)
+
+    @DirectSqlWrite
+    suspend fun updateAssetPageUuids(pageUuids: String, uuid: String): Long =
+        queries.updateAssetPageUuids(pageUuids, uuid)
+
+    @DirectSqlWrite
+    suspend fun deleteAsset(uuid: String): Long =
+        queries.deleteAsset(uuid)
+
+    // ── Pending asset move writes (WAL) ───────────────────────────────────────
+
+    @DirectSqlWrite
+    suspend fun insertPendingMove(
+        asset_uuid: String,
+        old_file_path: String,
+        new_file_path: String,
+        old_relative_path: String,
+        new_relative_path: String,
+        created_at_ms: Long,
+    ): Long = queries.insertPendingMove(
+        asset_uuid, old_file_path, new_file_path, old_relative_path, new_relative_path, created_at_ms,
+    )
+
+    @DirectSqlWrite
+    suspend fun deletePendingMove(id: Long): Long =
+        queries.deletePendingMove(id)
+
+    // SELECT — not a write, no @DirectSqlWrite needed
+    fun lastInsertRowId(): Long = queries.selectLastInsertRowId().executeAsOne()
+
+    @DirectSqlWrite
+    suspend fun insertAssetOrIgnore(
+        uuid: String,
+        file_path: String,
+        relative_path: String,
+        media_type: String,
+        subfolder: String,
+        tags: String,
+        auto_labels: String,
+        ocr_text: String?,
+        cloud_description: String?,
+        page_uuids: String,
+        size_bytes: Long,
+        imported_at_ms: Long,
+        content_hash: String?,
+    ): Long = queries.insertAssetOrIgnore(
+        uuid, file_path, relative_path, media_type, subfolder, tags, auto_labels,
+        ocr_text, cloud_description, page_uuids, size_bytes, imported_at_ms, content_hash,
+    )
 }

@@ -10,6 +10,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Validation
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import dev.stapler.stelekit.platform.PlatformFileSystem
@@ -432,13 +433,13 @@ class PersistenceManager(
             
             // Get current block from repository for conflict detection
             val currentBlock = blockRepository.getBlockByUuid(block.uuid).first().getOrNull()
-            val saveState = blockSaveStates[block.uuid]
-            
+            val saveState = blockSaveStates[block.uuid.value]
+
             // Detect conflicts
             val conflicts = if (_config.value.enableConflictResolution) {
                 conflictDetector.detectBlockConflicts(
                     BlockChange(
-                        blockUuid = block.uuid,
+                        blockUuid = block.uuid.value,
                         type = ChangeType.CONTENT,
                         timestamp = Clock.System.now(),
                         oldContent = currentBlock?.content,
@@ -454,7 +455,7 @@ class PersistenceManager(
             if (conflicts.isNotEmpty()) {
                 val result = PersistenceResult.failure(
                     "saveBlock",
-                    block.uuid,
+                    block.uuid.value,
                     "Conflicts detected: ${conflicts.size}",
                     duration = Clock.System.now().toEpochMilliseconds() - startTime
                 )
@@ -469,8 +470,8 @@ class PersistenceManager(
             
             if (saveResult.isRight()) {
                 // Update save state
-                blockSaveStates[block.uuid] = BlockSaveState(
-                    blockUuid = block.uuid,
+                blockSaveStates[block.uuid.value] = BlockSaveState(
+                    blockUuid = block.uuid.value,
                     lastKnownContent = block.content,
                     lastSavedAt = Clock.System.now(),
                     saveAttempts = saveState?.saveAttempts?.plus(1) ?: 1,
@@ -480,7 +481,7 @@ class PersistenceManager(
                 
                 val result = PersistenceResult.success(
                     "saveBlock",
-                    block.uuid,
+                    block.uuid.value,
                     "Block saved successfully",
                     duration = Clock.System.now().toEpochMilliseconds() - startTime
                 )
@@ -491,7 +492,7 @@ class PersistenceManager(
             } else {
                 val result = PersistenceResult.failure(
                     "saveBlock",
-                    block.uuid,
+                    block.uuid.value,
                     "Repository save failed",
                     saveState?.saveAttempts ?: 0,
                     Clock.System.now().toEpochMilliseconds() - startTime
@@ -507,12 +508,12 @@ class PersistenceManager(
         } catch (e: Exception) {
             val result = PersistenceResult.failure(
                 "saveBlock",
-                block.uuid,
+                block.uuid.value,
                 "Exception: ${e.message}",
                 0,
                 Clock.System.now().toEpochMilliseconds() - (Clock.System.now().epochSeconds * 1000)
             )
-            
+
             failedOperations.add(result)
             addRecentResult(result)
             result.right()
@@ -552,7 +553,7 @@ class PersistenceManager(
             }
             
             // Delete from repository
-            val deleteResult = blockRepository.deleteBlock(blockUuid, true)
+            val deleteResult = blockRepository.deleteBlock(BlockUuid(blockUuid), true)
             
             val result = if (deleteResult.isRight()) {
                 PersistenceResult.success(
@@ -646,7 +647,7 @@ class PersistenceManager(
                     "saveBlock" -> {
                         // Retry block save
                         operation.blockUuid?.let { uuid ->
-                            val block = blockRepository.getBlockByUuid(uuid).first().getOrNull()
+                            val block = blockRepository.getBlockByUuid(BlockUuid(uuid)).first().getOrNull()
                             if (block != null) {
                                 saveBlock(block)
                             }
@@ -849,7 +850,7 @@ class PersistenceManager(
         
         for ((blockUuid, blockChanges) in changesByBlock) {
             // Get current block
-            val currentBlock = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+            val currentBlock = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull()
             
             if (currentBlock == null) {
                 // Block doesn't exist, check if it's a creation

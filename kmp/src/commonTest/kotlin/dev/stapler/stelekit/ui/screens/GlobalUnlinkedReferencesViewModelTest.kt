@@ -2,7 +2,9 @@ package dev.stapler.stelekit.ui.screens
 
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlinx.coroutines.flow.first
@@ -24,15 +26,15 @@ class GlobalUnlinkedReferencesViewModelTest {
     private fun now() = Clock.System.now()
 
     private fun makePage(uuid: String, name: String): Page = Page(
-        uuid = uuid,
+        uuid = PageUuid(uuid),
         name = name,
         createdAt = now(),
         updatedAt = now(),
     )
 
     private fun makeBlock(uuid: String, pageUuid: String, content: String, position: Int = 0): Block = Block(
-        uuid = uuid,
-        pageUuid = pageUuid,
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid(pageUuid),
         content = content,
         position = position,
         createdAt = now(),

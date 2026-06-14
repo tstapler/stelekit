@@ -10,6 +10,7 @@ import dev.stapler.stelekit.cache.RepoCacheConfig
 import dev.stapler.stelekit.cache.RequestCoalescer
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
@@ -29,6 +30,11 @@ class SqlDelightPageRepository(
     private val database: SteleDatabase,
     private val cacheWrites: Boolean = true,
 ) : PageRepository {
+
+    private companion object {
+        // Safe IN-clause size: SQLITE_MAX_VARIABLE_NUMBER is 999 on Android API < 30.
+        const val IN_CLAUSE_CHUNK_SIZE = 500
+    }
 
     private val queries = database.steleDatabaseQueries
 
@@ -50,17 +56,17 @@ class SqlDelightPageRepository(
     private val byUuidCoalescer = RequestCoalescer<String, Page?>()
     private val byNameCoalescer = RequestCoalescer<String, Page?>()
 
-    override fun getPageByUuid(uuid: String): Flow<Either<DomainError, Page?>> = flow {
-        val cached = pageByUuidCache.get(uuid)
+    override fun getPageByUuid(uuid: PageUuid): Flow<Either<DomainError, Page?>> = flow {
+        val cached = pageByUuidCache.get(uuid.value)
         if (cached != null) {
             emit(cached.right())
             return@flow
         }
-        val page = byUuidCoalescer.execute(uuid) {
-            queries.selectPageByUuid(uuid).executeAsOneOrNull()?.toModel()
+        val page = byUuidCoalescer.execute(uuid.value) {
+            queries.selectPageByUuid(uuid.value).executeAsOneOrNull()?.toModel()
         }
         if (page != null) {
-            pageByUuidCache.put(page.uuid, page)
+            pageByUuidCache.put(page.uuid.value, page)
             pageByNameCache.put(page.name.lowercase(), page)
         }
         emit(page.right())
@@ -77,65 +83,109 @@ class SqlDelightPageRepository(
         }
         if (page != null) {
             pageByNameCache.put(name.lowercase(), page)
-            pageByUuidCache.put(page.uuid, page)
+            pageByUuidCache.put(page.uuid.value, page)
         }
         emit(page.right())
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>> = 
+    override fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>> =
         queries.selectPagesByNamespaceUnpaginated(namespace)
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { list -> list.map { it.toModel() }.right() }
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
-    override fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> = 
+    override fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectAllPagesPaginated(limit.toLong(), offset.toLong())
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { list -> list.map { it.toModel() }.right() }
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
-    override fun searchPages(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> = 
+    override fun searchPages(query: String, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectPagesByNameLikePaginated("%$query%", limit.toLong(), offset.toLong())
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { list -> list.map { it.toModel() }.right() }
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
-    override fun getAllPages(): Flow<Either<DomainError, List<Page>>> =
-        queries.selectAllPages()
+    override fun getFavoritePages(): Flow<Either<DomainError, List<Page>>> =
+        queries.selectFavoritePages()
             .asFlow()
-            .conflate()  // drop intermediate invalidations during bulk import to avoid O(N²) full-table scans
+            .conflate()  // drop intermediate invalidations during bulk import — this flow has a standing UI collector
             .mapToList(PlatformDispatcher.DB)
             .map { list -> list.map { it.toModel() }.right() }
+            .catchDbError()
 
     override fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectJournalPages(limit.toLong(), offset.toLong())
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { list -> list.map { it.toModel() }.right() }
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun getJournalPageByDate(date: kotlinx.datetime.LocalDate): Flow<Either<DomainError, Page?>> =
         queries.selectJournalPageByDate(date.toString())
-            .asFlow()
-            .mapToOneOrNull(PlatformDispatcher.DB)
-            .map { it?.toModel().right() }
+            .asDbFlowOrNull(PlatformDispatcher.DB) { it.toModel() }
 
-    override fun getRecentPages(limit: Int): Flow<Either<DomainError, List<Page>>> = 
+    override fun getRecentPages(limit: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectRecentlyUpdatedPages(limit.toLong())
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { list -> list.map { it.toModel() }.right() }
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
-    override fun getUnloadedPages(): Flow<Either<DomainError, List<Page>>> = 
-        queries.selectUnloadedPages()
+    override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        queries.selectUnloadedPagesPaginated(limit.toLong(), offset.toLong())
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+
+    override suspend fun countUnloadedPages(): Either<DomainError, Long> = withContext(PlatformDispatcher.DB) {
+        try {
+            queries.countUnloadedPages().executeAsOne().right()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+        }
+    }
+
+    override fun getPageNameEntries(): Flow<Either<DomainError, List<PageNameEntry>>> =
+        queries.selectPageNameEntries()
             .asFlow()
+            .conflate()  // drop intermediate invalidations during bulk import — standing observer (PageNameIndex)
             .mapToList(PlatformDispatcher.DB)
-            .map { list -> list.map { it.toModel() }.right() }
+            .map { rows -> rows.map { PageNameEntry(it.name, it.is_journal == 1L) }.right() }
+            .catchDbError()
+
+    override suspend fun getPagesByNames(names: Collection<String>): Either<DomainError, List<Page>> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                // Wrap all chunks in a single read transaction for snapshot isolation —
+                // without it, a write between chunks could make the result set inconsistent.
+                // Chunk the IN list: SQLITE_MAX_VARIABLE_NUMBER is 999 on Android API < 30.
+                var result: List<Page> = emptyList()
+                queries.transaction {
+                    result = names.chunked(IN_CLAUSE_CHUNK_SIZE).flatMap { chunk ->
+                        queries.selectPagesByNames(chunk).executeAsList().map { it.toModel() }
+                    }
+                }
+                result.right()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    override suspend fun getJournalPagesByDates(
+        dates: Collection<kotlinx.datetime.LocalDate>,
+    ): Either<DomainError, List<Page>> = withContext(PlatformDispatcher.DB) {
+        try {
+            var result: List<Page> = emptyList()
+            queries.transaction {
+                result = dates.chunked(IN_CLAUSE_CHUNK_SIZE).flatMap { chunk ->
+                    queries.selectJournalPagesByDates(chunk.map { it.toString() })
+                        .executeAsList().map { it.toModel() }
+                }
+            }
+            result.right()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+        }
+    }
 
     override suspend fun savePage(page: Page): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             upsertPage(page)
             if (cacheWrites) {
-                pageByUuidCache.put(page.uuid, page)
+                pageByUuidCache.put(page.uuid.value, page)
                 pageByNameCache.put(page.name.lowercase(), page)
             }
             Unit.right()
@@ -165,7 +215,7 @@ class SqlDelightPageRepository(
 
     private suspend fun upsertPage(page: Page) {
         queries.insertPage(
-            uuid = page.uuid,
+            uuid = page.uuid.value,
             name = page.name,
             namespace = page.namespace,
             file_path = page.filePath,
@@ -188,16 +238,16 @@ class SqlDelightPageRepository(
             is_journal = if (page.isJournal) 1L else 0L,
             journal_date = page.journalDate?.toString(),
             is_content_loaded = if (page.isContentLoaded) 1L else 0L,
-            uuid = page.uuid
+            uuid = page.uuid.value
         )
     }
 
-    override suspend fun toggleFavorite(pageUuid: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun toggleFavorite(pageUuid: PageUuid): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            val page = queries.selectPageByUuid(pageUuid).executeAsOneOrNull()
+            val page = queries.selectPageByUuid(pageUuid.value).executeAsOneOrNull()
             if (page != null) {
                 val newFavorite = if (page.is_favorite == 1L) 0L else 1L
-                queries.updatePageFavorite(newFavorite, pageUuid)
+                queries.updatePageFavorite(newFavorite, pageUuid.value)
             }
             Unit.right()
         } catch (e: CancellationException) {
@@ -207,12 +257,12 @@ class SqlDelightPageRepository(
         }
     }
 
-    override suspend fun renamePage(pageUuid: String, newName: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun renamePage(pageUuid: PageUuid, newName: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            val old = pageByUuidCache.get(pageUuid)
+            val old = pageByUuidCache.get(pageUuid.value)
             if (old != null) pageByNameCache.remove(old.name.lowercase())
-            queries.updatePageName(newName, pageUuid)
-            pageByUuidCache.remove(pageUuid)
+            queries.updatePageName(newName, pageUuid.value)
+            pageByUuidCache.remove(pageUuid.value)
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -221,12 +271,12 @@ class SqlDelightPageRepository(
         }
     }
 
-    override suspend fun deletePage(pageUuid: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+    override suspend fun deletePage(pageUuid: PageUuid): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            val old = pageByUuidCache.get(pageUuid)
+            val old = pageByUuidCache.get(pageUuid.value)
             if (old != null) pageByNameCache.remove(old.name.lowercase())
-            queries.deletePageByUuid(pageUuid)
-            pageByUuidCache.remove(pageUuid)
+            queries.deletePageByUuid(pageUuid.value)
+            pageByUuidCache.remove(pageUuid.value)
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -259,7 +309,7 @@ class SqlDelightPageRepository(
 
     private fun dev.stapler.stelekit.db.Pages.toModel(): Page {
         return Page(
-            uuid = this.uuid,
+            uuid = PageUuid(this.uuid),
             name = this.name,
             namespace = this.namespace,
             filePath = this.file_path,
@@ -280,7 +330,7 @@ class SqlDelightPageRepository(
     // generates SelectJournalPages with journal_date: String instead of String?.
     private fun dev.stapler.stelekit.db.SelectJournalPages.toModel(): Page {
         return Page(
-            uuid = this.uuid,
+            uuid = PageUuid(this.uuid),
             name = this.name,
             namespace = this.namespace,
             filePath = this.file_path,
@@ -297,3 +347,4 @@ class SqlDelightPageRepository(
         )
     }
 }
+

@@ -23,6 +23,7 @@ import dev.stapler.stelekit.ui.theme.setSystemDarkTheme
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.error.JvmErrorTracker
+import dev.stapler.stelekit.performance.BuildInfo
 import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.OtelProvider
 import dev.stapler.stelekit.performance.OtelExporterConfig
@@ -38,6 +39,8 @@ fun main() {
 
     // Desktop builds are always developer builds
     DebugBuildConfig.isDebugBuild = true
+    BuildInfo.commitHash = System.getProperty("app.commit", "unknown")
+    BuildInfo.appVersion = System.getProperty("app.version", "dev")
 
     // Initialize OpenTelemetry SDK early so instrumented code can emit spans
     OtelProvider.initialize(OtelExporterConfig(enableStdout = false, enableRingBuffer = true))

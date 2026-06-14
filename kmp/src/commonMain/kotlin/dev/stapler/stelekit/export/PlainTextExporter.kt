@@ -13,10 +13,15 @@ class PlainTextExporter : PageExporter {
     override fun export(page: Page, blocks: List<Block>, resolvedRefs: Map<String, String>): String {
         val sortedBlocks = BlockSorter.sort(blocks)
         return buildString {
-            // Page title with underline
-            append(page.name)
+            // Page title with underline: use journal date (ISO format) for journal pages
+            val title = if (page.isJournal && page.journalDate != null) {
+                page.journalDate.toString()
+            } else {
+                page.name
+            }
+            append(title)
             append("\n")
-            append("=".repeat(page.name.length))
+            append("=".repeat(title.length))
             append("\n\n")
 
             // Block tree

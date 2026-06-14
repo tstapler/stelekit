@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.util
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import kotlin.time.Clock
 
 object TestUtils {
@@ -17,8 +19,8 @@ object TestUtils {
     ): Block {
         val now = Clock.System.now()
         return Block(
-            uuid = uuid,
-            pageUuid = pageUuid,
+            uuid = BlockUuid(uuid),
+            pageUuid = PageUuid(pageUuid),
             parentUuid = parentUuid,
             leftUuid = null,
             content = content,

@@ -2,7 +2,9 @@ package dev.stapler.stelekit.repository
 
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -19,7 +21,7 @@ class ExactTitleMatchTest {
     private fun fakePage(uuid: String, name: String): Page {
         val now = Clock.System.now()
         return Page(
-            uuid = uuid,
+            uuid = PageUuid(uuid),
             name = name,
             namespace = null,
             filePath = null,
@@ -33,8 +35,8 @@ class ExactTitleMatchTest {
         val now = Clock.System.now()
         return RankedSearchHit.BlockHit(
             block = dev.stapler.stelekit.model.Block(
-                uuid = "block-$pageUuid",
-                pageUuid = pageUuid,
+                uuid = BlockUuid("block-$pageUuid"),
+                pageUuid = PageUuid(pageUuid),
                 content = "some content",
                 level = 0,
                 position = 0,

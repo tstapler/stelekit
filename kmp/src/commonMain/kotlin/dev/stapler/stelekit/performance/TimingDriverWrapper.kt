@@ -46,7 +46,7 @@ class TimingDriverWrapper(
         if (ctx == null && statsCollector == null) return delegate.execute(identifier, sql, parameters, binders)
         val (operation, table) = parseSqlCached(identifier, sql)
         if (table in excludedTables) return delegate.execute(identifier, sql, parameters, binders)
-        return timed(ctx, "sql.$operation", operation, table) { delegate.execute(identifier, sql, parameters, binders) }
+        return timed(ctx, "sql.$operation", operation, table, sql) { delegate.execute(identifier, sql, parameters, binders) }
     }
 
     override fun <R> executeQuery(
@@ -60,10 +60,10 @@ class TimingDriverWrapper(
         if (ctx == null && statsCollector == null) return delegate.executeQuery(identifier, sql, mapper, parameters, binders)
         val (_, table) = parseSqlCached(identifier, sql)
         if (table in excludedTables) return delegate.executeQuery(identifier, sql, mapper, parameters, binders)
-        return timed(ctx, "sql.select", "select", table) { delegate.executeQuery(identifier, sql, mapper, parameters, binders) }
+        return timed(ctx, "sql.select", "select", table, sql) { delegate.executeQuery(identifier, sql, mapper, parameters, binders) }
     }
 
-    private inline fun <T> timed(ctx: ActiveSpanContext?, spanName: String, operation: String, table: String, block: () -> T): T {
+    private inline fun <T> timed(ctx: ActiveSpanContext?, spanName: String, operation: String, table: String, sql: String, block: () -> T): T {
         val startMs = HistogramWriter.epochMs()
         var isError = false
         return try {
@@ -77,7 +77,7 @@ class TimingDriverWrapper(
             if (ctx != null && ringBuffer != null) recordSpan(ctx, spanName, table, startMs, "ERROR", e.message)
             throw e
         } finally {
-            statsCollector?.record(table, operation, HistogramWriter.epochMs() - startMs, isError)
+            statsCollector?.record(table, operation, HistogramWriter.epochMs() - startMs, isError, sql)
         }
     }
 
@@ -92,7 +92,7 @@ class TimingDriverWrapper(
         val endMs = HistogramWriter.epochMs()
         val attrs = buildMap {
             put("db.table", table)
-            put("session.id", AppSession.id)
+            putAll(AppSession.autoAttributes())
             if (errorMsg != null) put("error.message", errorMsg)
         }
         ringBuffer!!.record(

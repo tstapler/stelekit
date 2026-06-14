@@ -2,6 +2,7 @@ package dev.stapler.stelekit
 
 import android.Manifest
 import android.content.ComponentCallbacks2
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -36,8 +37,12 @@ import dev.stapler.stelekit.voice.AndroidSpeechRecognizerProvider
 import dev.stapler.stelekit.voice.MlKitLlmFormatterProvider
 import dev.stapler.stelekit.voice.VoiceSettings
 import dev.stapler.stelekit.voice.buildVoicePipeline
+import dev.stapler.stelekit.platform.google.AndroidGoogleAuthManager
+import dev.stapler.stelekit.platform.sensor.AndroidCameraProvider
+import dev.stapler.stelekit.platform.sensor.SensorModule
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
+import java.io.File
 
 class MainActivity : ComponentActivity() {
 
@@ -45,7 +50,9 @@ class MainActivity : ComponentActivity() {
     private var onMemoryPressureHandler: (() -> Unit)? = null
     private var pendingFolderPick: CompletableDeferred<String?>? = null
     private var pendingMicPermission: CompletableDeferred<Boolean>? = null
+    private var pendingCameraPermission: CompletableDeferred<Boolean>? = null
     private var pendingSaveFile: CompletableDeferred<String?>? = null
+    private var pendingFilePick: CompletableDeferred<String?>? = null
 
     private val micPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -54,11 +61,48 @@ class MainActivity : ComponentActivity() {
         pendingMicPermission = null
     }
 
+    private val cameraPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        pendingCameraPermission?.complete(granted)
+        pendingCameraPermission = null
+    }
+
     private val saveFileLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri: Uri? ->
         pendingSaveFile?.complete(uri?.toString())
         pendingSaveFile = null
+    }
+
+    private val filePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) {
+            pendingFilePick?.complete(null)
+            pendingFilePick = null
+            return@registerForActivityResult
+        }
+        try {
+            val sshKeysDir = getDir("ssh_keys", Context.MODE_PRIVATE)
+            sshKeysDir.mkdirs()
+            val displayName = contentResolver.query(
+                uri,
+                arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+                null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            } ?: uri.lastPathSegment ?: "ssh_key"
+            val destFile = File(sshKeysDir, displayName)
+            contentResolver.openInputStream(uri)?.use { input ->
+                destFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            pendingFilePick?.complete(destFile.absolutePath)
+        } catch (e: Exception) {
+            Log.e(TAG, "filePickerLauncher: failed to copy SSH key file", e)
+            pendingFilePick?.complete(null)
+        }
+        pendingFilePick = null
     }
 
     private val folderPickerLauncher = registerForActivityResult(
@@ -124,6 +168,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Re-wire camera provider with this Activity's runtime permission launcher.
+        // SteleKitApplication sets a no-callback provider at process start; the callback
+        // requires a registered launcher which is only available after Activity.onCreate().
+        SensorModule.cameraProvider = AndroidCameraProvider(
+            context = applicationContext,
+            requestPermission = ::requestCameraPermission,
+        )
+
         // Upgrade the Application's shared fileSystem with the folder-picker callback.
         // SteleKitApplication already called init(applicationContext, null) — we add the
         // picker so the main UI can launch ACTION_OPEN_DOCUMENT_TREE.
@@ -140,6 +192,12 @@ class MainActivity : ComponentActivity() {
             val deferred = CompletableDeferred<String?>()
             pendingSaveFile = deferred
             runOnUiThread { saveFileLauncher.launch(suggestedName) }
+            deferred.await()
+        }
+        fileSystem.initFilePicker {
+            val deferred = CompletableDeferred<String?>()
+            pendingFilePick = deferred
+            runOnUiThread { filePickerLauncher.launch(arrayOf("*/*")) }
             deferred.await()
         }
 
@@ -162,6 +220,12 @@ class MainActivity : ComponentActivity() {
                         val deferred = CompletableDeferred<String?>()
                         pendingSaveFile = deferred
                         runOnUiThread { saveFileLauncher.launch(suggestedName) }
+                        deferred.await()
+                    }
+                    initFilePicker {
+                        val deferred = CompletableDeferred<String?>()
+                        pendingFilePick = deferred
+                        runOnUiThread { filePickerLauncher.launch(arrayOf("*/*")) }
                         deferred.await()
                     }
                 }
@@ -231,6 +295,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Handle OAuth 2.0 deep-link callback: com.stelekit.app:/oauth2redirect?code=...
+        val data = intent.data
+        if (data?.scheme == "com.stelekit.app" && data.path == "/oauth2redirect") {
+            val code = data.getQueryParameter("code") ?: return
+            val state = data.getQueryParameter("state")
+            // Validate CSRF state nonce before accepting the code.
+            // An empty or mismatched state rejects the callback silently.
+            if (state.isNullOrBlank() || state != AndroidGoogleAuthManager.pendingOAuthState) return
+            AndroidGoogleAuthManager.pendingOAuthState = null
+            // Emit (state, code) pair so authenticate() can filter by its own nonce,
+            // discarding any stale codes from a prior auth session still in the buffer.
+            AndroidGoogleAuthManager.oauthCodeFlow.tryEmit(state to code)
+        }
+    }
+
     override fun onStop() {
         super.onStop()
         // Flush any pending write-behind pages to SAF before the process may be killed.
@@ -267,6 +348,16 @@ class MainActivity : ComponentActivity() {
         val deferred = CompletableDeferred<Boolean>()
         pendingMicPermission = deferred
         runOnUiThread { micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }
+        return deferred.await()
+    }
+
+    private suspend fun requestCameraPermission(): Boolean {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED
+        ) return true
+        val deferred = CompletableDeferred<Boolean>()
+        pendingCameraPermission = deferred
+        runOnUiThread { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }
         return deferred.await()
     }
 

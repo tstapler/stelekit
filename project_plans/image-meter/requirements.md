@@ -143,8 +143,17 @@ Tyler currently uses ImageMeter (third-party Android app) to photograph construc
 
 ## Success Criteria
 
+| Criterion | Metric | Target |
+|---|---|---|
+| End-to-end workflow speed | Time from photo capture to annotated block with calibration | ≤ 60 seconds for a returning user |
+| Calibration accuracy | Measurement error on a 2.4m reference object (door frame) with BLE laser | ≤ 5mm (±0.2%) |
+| Gallery adoption | % of image blocks in a graph that have ≥ 1 measurement annotation after 30 days of use | ≥ 50% |
+| BLE pairing success | % of first-time BLE connection attempts that succeed without retry (Leica DISTO D2) | ≥ 90% |
+| Annotation persistence | Image annotations present after app restart (SQLDelight + sidecar round-trip) | 100% |
+| Performance | Annotation canvas frame rate on Snapdragon 695 (mid-range Android) | ≥ 30 fps sustained |
+
+### Qualitative acceptance (unchanged)
 1. Tyler can replace his ImageMeter workflow end-to-end using SteleKit on Android
-2. A photo taken on-site becomes an annotated, measurement-tagged page block within 60 seconds
-3. Measurements from a Leica DISTO (BLE) appear as annotations without manual typing
-4. Images are queryable by tag in the SteleKit gallery and findable via block back-links
-5. Annotated images can be exported to Google Drive as image + JSON in one tap
+2. Measurements from a Leica DISTO (BLE) appear as annotations without manual typing
+3. Images are queryable by tag in the SteleKit gallery and findable via block back-links
+4. Annotated images can be exported to Google Drive as image + JSON in one tap

@@ -6,7 +6,9 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.SearchRepository
 import dev.stapler.stelekit.repository.SearchRequest
@@ -32,21 +34,21 @@ class SearchViewModelTest {
             return flowOf(emptyList<Page>().right())
         }
 
-        override fun findBlocksReferencing(blockUuid: String): Flow<Either<DomainError, List<Block>>> {
+        override fun findBlocksReferencing(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> {
             return flowOf(emptyList<Block>().right())
         }
 
         override fun searchWithFilters(searchRequest: SearchRequest): Flow<Either<DomainError, SearchResult>> {
             if (searchRequest.query == "test") {
                 val page = Page(
-                    uuid = "uuid-1",
+                    uuid = PageUuid("uuid-1"),
                     name = "Test Page",
                     createdAt = Clock.System.now(),
                     updatedAt = Clock.System.now()
                 )
                 val block = Block(
-                    uuid = "uuid-2",
-                    pageUuid = "uuid-1",
+                    uuid = BlockUuid("uuid-2"),
+                    pageUuid = PageUuid("uuid-1"),
                     content = "This is a test block",
                     position = 0,
                     createdAt = Clock.System.now(),
@@ -58,7 +60,7 @@ class SearchViewModelTest {
         }
 
         @DirectRepositoryWrite
-        override suspend fun recordPageVisit(pageUuid: String): Either<DomainError, Unit> = Unit.right()
+        override suspend fun recordPageVisit(pageUuid: PageUuid): Either<DomainError, Unit> = Unit.right()
 
         @DirectRepositoryWrite
         override suspend fun rebuildFts(): Either<DomainError, Unit> = Unit.right()

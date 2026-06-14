@@ -144,7 +144,7 @@ class AndroidAudioRecorder(
                 // Feed PCM to encoder
                 val inputIdx = mediaCodec.dequeueInputBuffer(CODEC_TIMEOUT_US)
                 if (inputIdx >= 0) {
-                    val inputBuf = mediaCodec.getInputBuffer(inputIdx)!!
+                    val inputBuf = mediaCodec.getInputBuffer(inputIdx) ?: continue
                     inputBuf.clear()
                     inputBuf.put(pcmBuffer, 0, bytesRead)
                     presentationTimeUs += (bytesRead.toLong() * 1_000_000L) / (SAMPLE_RATE * 2L)
@@ -268,10 +268,12 @@ class AndroidAudioRecorder(
                     }
                 }
                 idx >= 0 -> {
-                    val buf = codec.getOutputBuffer(idx)!!
-                    val isConfig = info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
-                    if (!isConfig && muxerStarted && trackIndex >= 0 && info.size > 0) {
-                        muxer.writeSampleData(trackIndex, buf, info)
+                    val buf = codec.getOutputBuffer(idx)
+                    if (buf != null) {
+                        val isConfig = info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
+                        if (!isConfig && muxerStarted && trackIndex >= 0 && info.size > 0) {
+                            muxer.writeSampleData(trackIndex, buf, info)
+                        }
                     }
                     codec.releaseOutputBuffer(idx, false)
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break

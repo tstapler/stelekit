@@ -8,7 +8,7 @@ import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
 
 object PageOptics {
-    val uuid: Lens<Page, String> = Lens(get = { it.uuid }, set = { p, v -> p.copy(uuid = v) })
+    val uuid: Lens<Page, PageUuid> = Lens(get = { it.uuid }, set = { p, v -> p.copy(uuid = v) })
     val name: Lens<Page, String> = Lens(get = { it.name }, set = { p, v -> p.copy(name = v) })
     val namespace: Lens<Page, String?> = Lens(get = { it.namespace }, set = { p, v -> p.copy(namespace = v) })
     val filePath: Lens<Page, String?> = Lens(get = { it.filePath }, set = { p, v -> p.copy(filePath = v) })
@@ -23,8 +23,8 @@ object PageOptics {
 }
 
 object BlockOptics {
-    val uuid: Lens<Block, String> = Lens(get = { it.uuid }, set = { b, v -> b.copy(uuid = v) })
-    val pageUuid: Lens<Block, String> = Lens(get = { it.pageUuid }, set = { b, v -> b.copy(pageUuid = v) })
+    val uuid: Lens<Block, BlockUuid> = Lens(get = { it.uuid }, set = { b, v -> b.copy(uuid = v) })
+    val pageUuid: Lens<Block, PageUuid> = Lens(get = { it.pageUuid }, set = { b, v -> b.copy(pageUuid = v) })
     val parentUuid: Lens<Block, String?> = Lens(get = { it.parentUuid }, set = { b, v -> b.copy(parentUuid = v) })
     val leftUuid: Lens<Block, String?> = Lens(get = { it.leftUuid }, set = { b, v -> b.copy(leftUuid = v) })
     val content: Lens<Block, String> = Lens(get = { it.content }, set = { b, v -> b.copy(content = v) })

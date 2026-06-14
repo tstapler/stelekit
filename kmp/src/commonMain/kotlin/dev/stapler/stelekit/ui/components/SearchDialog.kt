@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.*
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
@@ -127,7 +128,7 @@ fun SearchDialog(
                                     if (onPageSelected != null) {
                                         onPageSelected(item.page.name)
                                     } else {
-                                        onNavigateToPage(item.page.uuid)
+                                        onNavigateToPage(item.page.uuid.value)
                                     }
                                     onDismiss()
                                 }
@@ -135,12 +136,12 @@ fun SearchDialog(
                                     if (onPageSelected != null) {
                                         onPageSelected(item.page.name)
                                     } else {
-                                        onNavigateToPage(item.page.uuid)
+                                        onNavigateToPage(item.page.uuid.value)
                                     }
                                     onDismiss()
                                 }
                                 is SearchResultItem.BlockItem -> {
-                                    onNavigateToBlock(item.block.uuid)
+                                    onNavigateToBlock(item.block.uuid.value)
                                     onDismiss()
                                 }
                                 is SearchResultItem.CreatePageItem -> {
@@ -156,6 +157,9 @@ fun SearchDialog(
                         onDismiss()
                         true
                     }
+                    // Consume Space so it doesn't propagate to the backdrop clickable and dismiss the dialog.
+                    // The TextField's text input system already handles adding the space character independently.
+                    Key.Spacebar -> true
                     else -> false
                 }
             } else false
@@ -238,7 +242,7 @@ fun SearchDialog(
                                         if (onPageSelected != null) {
                                             onPageSelected(page.page.name)
                                         } else {
-                                            onNavigateToPage(page.page.uuid)
+                                            onNavigateToPage(page.page.uuid.value)
                                         }
                                         onDismiss()
                                     }
@@ -287,7 +291,7 @@ fun SearchDialog(
                                                             if (onPageSelected != null) {
                                                                 onPageSelected(item.page.name)
                                                             } else {
-                                                                onNavigateToPage(item.page.uuid)
+                                                                onNavigateToPage(item.page.uuid.value)
                                                             }
                                                             onDismiss()
                                                         }
@@ -302,7 +306,7 @@ fun SearchDialog(
                                                             if (onPageSelected != null) {
                                                                 onPageSelected(item.page.name)
                                                             } else {
-                                                                onNavigateToPage(item.page.uuid)
+                                                                onNavigateToPage(item.page.uuid.value)
                                                             }
                                                             onDismiss()
                                                         }
@@ -316,7 +320,7 @@ fun SearchDialog(
                                                         snippet = item.snippet,
                                                         isSelected = index == selectedIndex,
                                                         onClick = {
-                                                            onNavigateToBlock(item.block.uuid)
+                                                            onNavigateToBlock(item.block.uuid.value)
                                                             onDismiss()
                                                         }
                                                     )
@@ -518,12 +522,17 @@ fun SearchResultRow(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                val searchTitleLinkColor = MaterialTheme.colorScheme.primary
+                val searchTitleTextColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                val annotatedTitle = remember(title, isSelected, searchTitleLinkColor, searchTitleTextColor) {
+                    parseMarkdownWithStyling(title, linkColor = searchTitleLinkColor, textColor = searchTitleTextColor)
+                }
+                BasicText(
+                    text = annotatedTitle,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal
+                    ),
                     maxLines = 1,
-                    fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
                     modifier = Modifier.weight(1f)
                 )
                 if (relativeDate != null) {

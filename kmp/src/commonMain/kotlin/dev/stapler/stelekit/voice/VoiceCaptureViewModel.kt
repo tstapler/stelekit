@@ -3,6 +3,7 @@
 package dev.stapler.stelekit.voice
 
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.JournalService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
+import kotlinx.coroutines.CancellationException
+import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
@@ -25,9 +28,9 @@ class VoiceCaptureViewModel(
     private val currentOpenPageUuid: () -> String? = { null },
     // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
     // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
-    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val tagSuggestionEngine: dev.stapler.stelekit.tags.TagSuggestionEngine? = null,
 ) {
-    private val scope = scope
     private val logger = Logger("VoiceCaptureViewModel")
     private val _state = MutableStateFlow<VoiceCaptureState>(VoiceCaptureState.Idle)
     val state: StateFlow<VoiceCaptureState> = _state.asStateFlow()
@@ -86,7 +89,8 @@ class VoiceCaptureViewModel(
                 }
                 TranscriptResult.Failure.PermissionDenied -> {
                     _state.value = VoiceCaptureState.Error(
-                        PipelineStage.RECORDING, "Microphone permission denied"
+                        PipelineStage.RECORDING, "Microphone permission denied",
+                        VoiceErrorKind.PERMISSION_DENIED,
                     )
                 }
                 is TranscriptResult.Success -> processTranscript(transcriptResult.text.trim())
@@ -102,7 +106,8 @@ class VoiceCaptureViewModel(
             file = result
             if (result.isEmpty) {
                 _state.value = VoiceCaptureState.Error(
-                    PipelineStage.RECORDING, "Microphone permission denied"
+                    PipelineStage.RECORDING, "Microphone permission denied",
+                    VoiceErrorKind.PERMISSION_DENIED,
                 )
                 return null
             }
@@ -134,52 +139,80 @@ class VoiceCaptureViewModel(
         }
 
         val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
-        val timeLabel = "${now.hour.toString().padStart(2, '0')}:${now.minute.toString().padStart(2, '0')}:${now.second.toString().padStart(2, '0')}"
-        val dateLabel = "${now.year}-${now.monthNumber.toString().padStart(2, '0')}-${now.dayOfMonth.toString().padStart(2, '0')}"
+        val timeLabel = now.toTimeLabel()
+        val dateLabel = now.toDateLabel()
         val pageTitle = "Voice Note $dateLabel $timeLabel"
 
         val targetPageUuid = currentOpenPageUuid()
-
-        val wordCount = rawTranscript.split(Regex("\\s+")).count { it.isNotBlank() }
+        val targetPageName: String? = try {
+            if (targetPageUuid != null) journalService.getPageNameByUuid(PageUuid(targetPageUuid)) else null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("Could not resolve page name for UUID $targetPageUuid: ${e.message}")
+            null
+        }
+        val wordCount = LlmProviderSupport.wordCount(rawTranscript)
         val useTranscriptPage = wordCount >= pipeline.transcriptPageWordThreshold
 
-        val inlineBlock = if (useTranscriptPage) {
-            val sourcePage: String = if (targetPageUuid != null) {
-                journalService.getPageNameByUuid(targetPageUuid) ?: dateLabel.replace('-', '_')
-            } else {
-                dateLabel.replace('-', '_')
-            }
-
-            val transcriptPageContent = buildTranscriptPageContent(
+        val transcriptPageContent = if (useTranscriptPage) {
+            val sourcePage = targetPageName ?: dateLabel.replace('-', '_')
+            buildTranscriptPageContent(
                 sourcePage = sourcePage,
                 formattedText = if (llmProducedOutput) formattedText else null,
                 rawTranscript = rawTranscript,
                 includeRawTranscript = pipeline.includeRawTranscript,
             )
-            journalService.createTranscriptPage(pageTitle, transcriptPageContent)
+        } else null
 
-            buildVoiceNoteBlock(
-                pageTitle = pageTitle,
-                timeLabel = timeLabel,
-                formattedText = formattedText,
-            )
+        val inlineBlock = if (useTranscriptPage) {
+            buildVoiceNoteBlock(pageTitle = pageTitle, timeLabel = timeLabel, formattedText = formattedText)
         } else {
             buildVoiceNoteBlockInline(timeLabel = timeLabel, formattedText = formattedText)
         }
 
-        if (targetPageUuid != null) {
-            journalService.appendToPage(targetPageUuid, inlineBlock)
-        } else {
-            journalService.appendToToday(inlineBlock)
+        try {
+            if (transcriptPageContent != null) {
+                journalService.createTranscriptPage(pageTitle, transcriptPageContent)
+            }
+            if (targetPageUuid != null) {
+                journalService.appendToPage(PageUuid(targetPageUuid), inlineBlock)
+            } else {
+                journalService.appendToToday(inlineBlock)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error("Journal write failed: ${e.message}")
+            _state.value = VoiceCaptureState.Error(PipelineStage.JOURNAL, "Failed to save note")
+            return
         }
+
+        val suggestions = if (tagSuggestionEngine != null) {
+            try {
+                val local = tagSuggestionEngine.directMatch(formattedText)
+                val llm = tagSuggestionEngine.llmSuggest(formattedText)
+                    .getOrNull() ?: emptyList()
+                (local + llm).distinctBy { it.term.lowercase() }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn("Tag suggestion after voice capture failed: ${e.message}")
+                emptyList()
+            }
+        } else emptyList()
 
         _state.value = VoiceCaptureState.Done(
             insertedText = formattedText,
             isLikelyTruncated = isLikelyTruncated,
+            transcriptPageTitle = if (useTranscriptPage) pageTitle else null,
+            savedToPageName = targetPageName,
+            suggestedTags = suggestions,
         )
     }
 
     fun close() {
+        pipeline.close()
         scope.cancel()
     }
 }
@@ -223,3 +256,9 @@ internal fun buildTranscriptPageContent(
         }
     }
 }
+
+internal fun LocalDateTime.toTimeLabel(): String =
+    "${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:${second.toString().padStart(2, '0')}"
+
+internal fun LocalDateTime.toDateLabel(): String =
+    "${year}-${monthNumber.toString().padStart(2, '0')}-${dayOfMonth.toString().padStart(2, '0')}"

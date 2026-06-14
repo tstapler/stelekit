@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.migration
 
 import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.RepositorySet
 import kotlinx.coroutines.flow.first
 
@@ -25,7 +26,8 @@ class PostMigrationFlusher(private val graphWriter: GraphWriter) {
      */
     suspend fun flush(repoSet: RepositorySet, touchedPageUuids: Set<String>, graphPath: String) {
         // Deduplicate is automatic since touchedPageUuids is a Set.
-        for (pageUuid in touchedPageUuids) {
+        for (pageUuidStr in touchedPageUuids) {
+            val pageUuid = PageUuid(pageUuidStr)
             val page = repoSet.pageRepository.getPageByUuid(pageUuid)
                 .first().getOrNull() ?: continue
             val blocks = repoSet.blockRepository.getBlocksForPage(pageUuid)

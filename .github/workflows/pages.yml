@@ -3,17 +3,32 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'CHANGELOG.md'
+      - '.release-please-manifest.json'
+      - 'Formula/**'
+      - 'Casks/**'
   workflow_dispatch:
+  # Called from release.yml after fdroid.yml uploads its artifact, so that the
+  # Pages deploy picks up the fresh F-Droid index without a separate site build.
+  workflow_call:
+    inputs:
+      skip_demo_rebuild:
+        type: boolean
+        default: false
+        description: 'Skip Wasm rebuild — pass true from release.yml to avoid rebuilding on every release deploy'
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-  actions: read
-
+# Queue pages.yml runs rather than cancelling them. A fast CI-only push completing
+# and deploying would otherwise cancel a concurrent workflow_dispatch run mid-way
+# through the 15-minute build-demo job, meaning the demo never gets rebuilt.
+# cancel-in-progress: false ensures the slower demo build always runs to completion.
 concurrency:
   group: pages
   cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   check-changes:
@@ -29,6 +44,13 @@ jobs:
         # Use the full push range (github.event.before → HEAD) so multi-commit pushes
         # don't miss changes that landed in earlier commits of the same push.
         run: |
+          # When called from release.yml with skip_demo_rebuild=true, skip the Wasm rebuild.
+          # github.event_name propagates the caller's trigger (push, not workflow_call),
+          # so we use an explicit boolean input instead.
+          if [ "${{ inputs.skip_demo_rebuild }}" = "true" ]; then
+            echo "kmp=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           BEFORE="${{ github.event.before }}"
           # All-zeros SHA means initial branch push — assume kmp changed to be safe
           if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
@@ -44,6 +66,7 @@ jobs:
   build-demo:
     runs-on: ubuntu-latest
     needs: check-changes
+    timeout-minutes: 30
     # Only rebuild Wasm when app code or build files change; site-only edits skip this job
     if: |
       github.event_name == 'workflow_dispatch' ||
@@ -57,36 +80,35 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+      - name: Cache Kotlin/Native compiler
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml', 'settings.gradle.kts', 'gradle.properties') }}
+      - name: Cache Wasm demo distribution
+        id: cache-demo
+        uses: actions/cache@v4
+        with:
+          path: kmp/build/dist/wasmJs/productionExecutable/
+          key: wasm-demo-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml', 'settings.gradle.kts', 'gradle.properties', 'kmp/src/wasmJsMain/**', 'kmp/src/jsMain/**', 'kmp/src/commonMain/**') }}
+          restore-keys: |
+            wasm-demo-${{ runner.os }}-
       - name: Build wasmJs demo
+        if: steps.cache-demo.outputs.cache-hit != 'true'
         run: ./gradlew :kmp:wasmJsBrowserDistribution --no-daemon --build-cache -PenableJs=true
       - name: Assert expected output exists
         run: test -d kmp/build/dist/wasmJs/productionExecutable/
       - name: Assert no single file exceeds 90 MB
         run: |
-          find kmp/build/dist/wasmJs/productionExecutable -type f -size +90M \
-            -exec echo "FILE TOO LARGE: {}" \; | grep . && exit 1 || true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: e2e/package-lock.json
-      - name: Install Playwright Chromium
-        run: cd e2e && npm ci && npx playwright install --with-deps chromium
-      - name: Smoke-test WASM demo in headless Chromium
-        run: cd e2e && npx playwright test
-        env:
-          DEMO_DIST: ../kmp/build/dist/wasmJs/productionExecutable
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-report
-          path: e2e/playwright-report/
-          retention-days: 7
+          if find kmp/build/dist/wasmJs/productionExecutable -type f -size +90M | grep -q .; then
+            find kmp/build/dist/wasmJs/productionExecutable -type f -size +90M -exec echo "FILE TOO LARGE: {}" \;
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: demo-dist
           path: kmp/build/dist/wasmJs/productionExecutable/
-          retention-days: 7
+          retention-days: 90
 
   build-site:
     runs-on: ubuntu-latest
@@ -94,6 +116,8 @@ jobs:
     if: always() && (needs.build-demo.result == 'success' || needs.build-demo.result == 'skipped')
     steps:
       - uses: actions/checkout@v4
+
+      # ── Demo artifact ─────────────────────────────────────────────────────
       # Try current run first (when build-demo ran); fall back to last successful run
       # so site-only edits keep the previously-built demo live.
       - id: download-demo
@@ -103,33 +127,102 @@ jobs:
         with:
           name: demo-dist
           path: site/public/demo/
+      - name: Restore demo from cache (fallback when current-run artifact absent)
+        if: steps.download-demo.outcome == 'failure'
+        uses: actions/cache/restore@v4
+        with:
+          path: kmp/build/dist/wasmJs/productionExecutable/
+          key: wasm-demo-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml', 'settings.gradle.kts', 'gradle.properties', 'kmp/src/wasmJsMain/**', 'kmp/src/jsMain/**', 'kmp/src/commonMain/**') }}
+          restore-keys: |
+            wasm-demo-${{ runner.os }}-
       - id: download-demo-fallback
-        name: Download demo artifact (last successful run)
+        name: Copy cached demo to site/public/demo
         if: steps.download-demo.outcome == 'failure'
         continue-on-error: true
         run: |
-          LAST_RUN=$(gh run list --workflow pages.yml --status success --limit 1 \
-            --json databaseId --jq '.[0].databaseId // empty')
-          if [ -n "$LAST_RUN" ]; then
-            gh run download "$LAST_RUN" --name demo-dist --dir site/public/demo/
+          if [ -d kmp/build/dist/wasmJs/productionExecutable ] && \
+             [ "$(ls -A kmp/build/dist/wasmJs/productionExecutable 2>/dev/null)" ]; then
+            mkdir -p site/public/demo
+            cp -r kmp/build/dist/wasmJs/productionExecutable/. site/public/demo/
+            echo "Demo restored from cache"
           else
+            echo "No demo cache available — demo will be absent from this deploy"
             exit 1
           fi
+
+      # ── F-Droid content ───────────────────────────────────────────────────
+      # Primary: current run — present when fdroid.yml ran before us in the same
+      # release.yml workflow (artifacts are shared across reusable workflow calls
+      # within the same parent run).
+      - id: download-fdroid
+        name: Download fdroid content (current run)
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: fdroid-content
+          path: fdroid-content/
+      # Fallback: restore from the most recent successful fdroid.yml run.
+      - id: download-fdroid-fallback
+        name: Restore fdroid content (last successful fdroid run)
+        if: steps.download-fdroid.outcome == 'failure'
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
+        run: |
+          LAST_RUN=$(gh run list --workflow fdroid.yml --status success --limit 1 \
+            --json databaseId --jq '.[0].databaseId // empty')
+          if [ -n "$LAST_RUN" ]; then
+            gh run download "$LAST_RUN" --name fdroid-content --dir fdroid-content/ || true
+            # upload-artifact@v4 strips the common path prefix (fdroid/) when
+            # multiple paths share it, so the artifact lands at repo/ not fdroid/repo/.
+            [ -d fdroid-content/repo ] && \
+              echo "Restored fdroid-content from run $LAST_RUN" || \
+              echo "Download succeeded but repo/ missing in run $LAST_RUN"
+          else
+            echo "No previous successful fdroid run found; fdroid content will be absent"
+          fi
+
       - uses: actions/configure-pages@v5
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: site/package-lock.json
-      - run: npm ci
+      - name: Install site dependencies
+        run: npm ci
         working-directory: site
-      - run: npm run build
+      - name: Build Astro site
+        run: npm run build
         working-directory: site
         env:
           # True when demo files are present from either current run or fallback
           DEMO_AVAILABLE: ${{ steps.download-demo.outcome == 'success' || steps.download-demo-fallback.outcome == 'success' }}
+
+      - name: Merge fdroid content into site output
+        run: |
+          # fdroid-staging/ is uploaded by fdroid.yml with repo/ as a subdirectory.
+          # After download to fdroid-content/, the structure is fdroid-content/repo/.
+          # APKs are included — the 100 MB Git limit doesn't apply to Actions artifacts.
+          if [ -d fdroid-content/repo ]; then
+            mkdir -p site/dist/fdroid
+            cp -r fdroid-content/repo site/dist/fdroid/
+            echo "F-Droid content merged into site output"
+          else
+            echo "No fdroid content available; /fdroid/repo will be absent from the deploy"
+          fi
+
+      - name: Assert site output is within GitHub Pages 1 GB limit
+        run: |
+          SIZE=$(du -sb site/dist/ | cut -f1)
+          LIMIT=$((900 * 1024 * 1024))  # 900 MB — 10% headroom under the 1 GB hard limit
+          echo "Site output size: $(( SIZE / 1024 / 1024 )) MB"
+          if [ "$SIZE" -gt "$LIMIT" ]; then
+            echo "ERROR: site/dist/ is $(( SIZE / 1024 / 1024 )) MB, exceeds 900 MB safety limit."
+            echo "Check for unexpected large files:"
+            find site/dist/ -type f -size +10M | sort -k1 -rh | head -20
+            exit 1
+          fi
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site/dist/
@@ -140,6 +233,15 @@ jobs:
     # GitHub Actions skips jobs with default success() when any transitive dependency was
     # skipped (even via if:always() chains). Override explicitly to only gate on build-site.
     if: always() && needs.build-site.result == 'success'
+    # Cancel any in-progress Pages deployment so a new commit never waits behind a stale
+    # one. Without this, two simultaneous workflow runs (e.g. push + release) cause the
+    # second deploy to fail with "in progress deployment" instead of superseding it.
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: true
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

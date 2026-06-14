@@ -44,4 +44,14 @@ class SteleKitAssetMapperTest {
         val result = SteleKitAssetMapper("/home/user/graph").map("../assets/..\\secret", options)
         assertNull(result)
     }
+
+    @Test fun `trims trailing slash from graph root to avoid double-slash URI`() {
+        val result = SteleKitAssetMapper("/home/user/graph/").map("../assets/photo.jpg", options)
+        assertEquals("file:///home/user/graph/assets/photo.jpg", result?.toString())
+    }
+
+    @Test fun `trims multiple trailing slashes`() {
+        val result = SteleKitAssetMapper("/home/user/graph///").map("../assets/photo.jpg", options)
+        assertEquals("file:///home/user/graph/assets/photo.jpg", result?.toString())
+    }
 }

@@ -8,6 +8,8 @@ SteleKit is a Kotlin Multiplatform (KMP) migration of Logseq — a Markdown-base
 
 ## Build & Run Commands
 
+**Always use `./gradlew`, never the system `gradle` command.** The wrapper pins Gradle 9.5.0; the system install is 9.3.1 and cannot share daemons with wrapper builds — using it silently doubles the daemon count and memory footprint.
+
 ```bash
 # Run desktop app
 ./gradlew run
@@ -32,10 +34,21 @@ SteleKit is a Kotlin Multiplatform (KMP) migration of Logseq — a Markdown-base
 
 # Run all CI checks locally (detekt + jvmTest + Android unit tests + assembleDebug)
 ./gradlew ciCheck
-# If xvfb-run is installed (headless Linux / SSH), it is used automatically:
-# command -v xvfb-run >/dev/null && xvfb-run --auto-servernum ./gradlew ciCheck || ./gradlew ciCheck
+# UI/screenshot tests require a display. Use the appropriate wrapper for your environment:
+#   Wayland (native display available):   ./gradlew ciCheck                  # display is already set
+#   X11 (DISPLAY set):                    ./gradlew ciCheck                  # display is already set
+#   Headless Linux / SSH (no display):    xvfb-run --auto-servernum ./gradlew ciCheck
+# Automatic detection (try Wayland/X11 first, fall back to xvfb-run):
+# [ -n "$WAYLAND_DISPLAY" ] || [ -n "$DISPLAY" ] && ./gradlew ciCheck || xvfb-run --auto-servernum ./gradlew ciCheck
 # README sync is not covered by ciCheck — run separately:
 # bash scripts/generate-readme.sh && git diff --exit-code README.md
+
+# Lint all GitHub Actions workflow files (mirrors the workflow-lint CI job)
+# Install once: curl -sSfL https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz | tar -xz -C ~/.local/bin actionlint
+actionlint -color
+
+# Security audit all workflow files (uses uvx — no persistent install required)
+uvx 'zizmor==1.25.2' .
 
 # Run benchmark locally — mirrors CI, generates flamegraph PNGs (requires async-profiler + librsvg)
 ./scripts/benchmark-local.sh                        # synthetic graph only
@@ -130,6 +143,14 @@ Rules:
 
 SQLDelight 2.3.2 generates type-safe Kotlin from `.sq` files in `kmp/src/commonMain/sqldelight/`. Schema in `SteleDatabase.sq`.
 
+#### Adding a new table — mandatory migration rule
+
+**Every `CREATE TABLE IF NOT EXISTS <name>` added to `SteleDatabase.sq` must also appear in `MigrationRunner.all` (`db/MigrationRunner.kt`).**
+
+Why: `DriverFactory.createDriver()` calls `SteleDatabase.Schema.create(driver)` first, but on any existing database that call fails immediately (its first `CREATE TABLE pages` has no `IF NOT EXISTS`), the exception is swallowed, and all subsequent DDL is silently skipped. `MigrationRunner.applyAll()` is the only mechanism that creates new tables on existing user databases.
+
+`MigrationRunnerSchemaSyncTest` (businessTest) enforces this automatically — it reads `SteleDatabase.sq`, extracts all `IF NOT EXISTS` table names, and asserts each appears in `MigrationRunner.all`. It will fail at CI time if you forget.
+
 #### Write enforcement — `@DirectSqlWrite`
 
 **Never call mutating methods (`insert*`, `update*`, `delete*`, `upsert*`, `transaction`) directly on `SteleDatabaseQueries`.** All writes are gated behind `@DirectSqlWrite` on `RestrictedDatabaseQueries` (`db/RestrictedDatabaseQueries.kt`).
@@ -156,30 +177,49 @@ The database layer uses `PlatformDispatcher.DB` for all SQL work and `DatabaseWr
 
 #### Read pattern — use in every `SqlDelight*Repository`
 
-```kotlin
-// Generated query → reactive Flow
-override fun getPageByUuid(uuid: String): Flow<Result<Page?>> =
-    queries.selectPageByUuid(uuid)
-        .asFlow()
-        .mapToOneOrNull(PlatformDispatcher.DB)      // ← always DB, never IO
-        .map { success(it?.toModel()) }
+**Prefer `asDbFlowList` / `asDbFlowOrNull` (defined in `repository/DbFlowExtensions.kt`).** These combine `asFlow() + mapToList/mapToOneOrNull + map + catchDbError()` into one call, so the closed-DB guard is structurally impossible to forget:
 
-// Custom flow with raw SQL calls
-override fun getBlockHierarchy(rootUuid: String): Flow<Result<List<BlockWithDepth>>> = flow {
-    // Synchronous SQL here — flowOn switches the whole upstream to DB dispatcher
-    emit(success(queries.selectBlockByUuid(rootUuid)?.let { ... } ?: emptyList()))
+```kotlin
+// ✓ Preferred — list query, guard built in
+override fun getPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+    queries.selectAllPagesPaginated(limit.toLong(), offset.toLong())
+        .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+
+// ✓ Preferred — single-or-null query, guard built in
+override fun getPageByUuid(uuid: PageUuid): Flow<Either<DomainError, Page?>> =
+    queries.selectPageByUuid(uuid.value)
+        .asDbFlowOrNull(PlatformDispatcher.DB) { it.toModel() }
+
+// ✓ Manual chain required when mid-chain operators (e.g. conflate) are needed
+override fun getAllPages(): Flow<Either<DomainError, List<Page>>> =
+    queries.selectAllPages()
+        .asFlow()
+        .conflate()                                 // ← prevents O(N²) scans on bulk import
+        .mapToList(PlatformDispatcher.DB)
+        .map { list -> list.map { it.toModel() }.right() }
+        .catchDbError()                             // ← must always terminate manual chains
+
+// ✓ Custom flow with raw SQL calls (property parsing, hierarchy traversal, etc.)
+override fun getBlockHierarchy(rootUuid: BlockUuid): Flow<Either<DomainError, List<BlockWithDepth>>> = flow {
+    try {
+        // Synchronous SQL here — flowOn switches the whole upstream to DB dispatcher
+        emit(queries.selectBlockByUuid(rootUuid.value).executeAsOneOrNull()
+            ?.let { buildHierarchy(it) }.right())
+    } catch (e: CancellationException) { throw e }
+    catch (e: Exception) { emit(DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()) }
 }.flowOn(PlatformDispatcher.DB)                     // ← always at the end of the chain
 ```
 
 #### Write pattern — use in every `SqlDelight*Repository`
 
 ```kotlin
-override suspend fun savePage(page: Page): Result<Unit> = withContext(PlatformDispatcher.DB) {
+override suspend fun savePage(page: Page): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
     try {
         queries.transaction { queries.insertPage(...); queries.updatePage(...) }
-        success(Unit)
-    } catch (e: Exception) {
-        Result.failure(e)
+        Unit.right()
+    } catch (e: CancellationException) { throw e }
+    catch (e: Exception) {
+        DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
     }
 }
 ```
@@ -243,6 +283,60 @@ class SomeManager(...) {
 val manager = remember { SomeManager() }
 ```
 
+### Uncaught coroutine Throwables kill the process on Android — guard long-lived scopes
+
+An uncaught `Throwable` (notably `OutOfMemoryError`) escaping any coroutine reaches the platform default uncaught-exception handler. **On Android that handler kills the process ("app keeps stopping"); on desktop JVM it only prints** — so this class of crash never reproduces on desktop. Under heap pressure the OOM is thrown in whichever coroutine allocates next, not necessarily the one doing the heavy work, so per-call-site `catch(Throwable)` is not sufficient.
+
+Rules:
+- Every long-lived `CoroutineScope` that hosts user-path collectors or fire-and-forget launches must attach a `CoroutineExceptionHandler` (see `StelekitViewModel.scope`, `GraphLoader.parallelScope`). Surface errors as `fatalError` UI state where possible.
+- Standing `collect { }` bodies and `stateIn` upstream chains on such scopes are the unguarded vectors — a repository flow's `catchDbError()` does not protect them.
+- Regression tests: `StelekitViewModelCrashReproductionTest`, `PageNameIndexResilienceTest`, `LargeGraphWarmStartCrashTest` (8 030-page warm start with a recording default uncaught-exception handler).
+
+### Graph-scale reads must be paginated, projected, or chunked — never O(graph)
+
+Every DB write invalidates SQLDelight queries on the written table, so a standing collector of an unbounded query re-materializes its **entire result set per write burst**. During graph import/reconcile on an 8 000+ page graph this causes GC thrash (UI hang) and `OutOfMemoryError` (crash) on Android. **`PageRepository` therefore has no `getAllPages()` / unbounded `getUnloadedPages()` at all — the absence is compile-time enforced.** Do not add unbounded reads back to any repository interface.
+
+Patterns, by consumer type:
+- **Standing UI observers** (sidebar, etc.): bounded queries only — `getFavoritePages()` (`WHERE is_favorite = 1`), `getPages(limit, offset)`, `getPageByUuid` point lookups.
+- **Standing whole-graph observers** (e.g. `PageNameIndex`): use a **projection** (`getPageNameEntries()` — name + is_journal only), plus `conflate()` + `distinctUntilChanged()` + debounce as backpressure, plus `Throwable` guards.
+- **Bulk reconcile** (`GraphLoader.loadDirectory`): per-chunk `IN`-clause lookups — `getPagesByNames(chunk)` / `getJournalPagesByDates(chunk)` — never a full-table preload. `IN` lists chunked ≤500 (`SQLITE_MAX_VARIABLE_NUMBER` = 999 on Android API < 30).
+- **Background indexing** (`GraphLoader.indexRemainingPages`): drain loop over `getUnloadedPages(limit, offset)` (`INDEX_BATCH_SIZE` = 100); offset advances past permanently-failing rows via an attempted-UUID set so the loop is guaranteed to terminate; `countUnloadedPages()` provides the O(1) progress denominator.
+- **Whole-graph one-shots** (export, migration tooling, benchmarks, tests): `getAllPagesSnapshot()` — a suspend interface method that pages through `getPages(limit, offset)` in bounded batches (never a single unbounded query, never a reactive flow).
+- Do not pin full-table snapshots in fields (the former `cachedAllPages` pattern is forbidden).
+
+Regression tests: `LargeGraphWarmStartCrashTest` (asserts ≤100-row batches across a full 8 030-page warm start), `GraphLoaderIndexBatchingTest` (bounded drain + termination with permanently-failing pages), `QueryPlanAuditTest` (audits query plans for the bounded query set).
+
+### Android Application.onCreate — catch Throwable, not Exception
+
+`Application.onCreate()` must use `catch (e: Throwable)`, not `catch (e: Exception)`. Native library loading failures (`UnsatisfiedLinkError`, `NoClassDefFoundError`) are `Error` subclasses, not `Exception`. Catching only `Exception` lets them propagate uncaught and crash the app at startup before the UI is shown. See `SteleKitApplication.kt`.
+
+### Repository Flow resilience — use `asDbFlowList` / `asDbFlowOrNull`, never raw `asFlow()`
+
+When `GraphManager.shutdown()` or `switchGraph()` closes the database, any Compose `LaunchedEffect` still collecting a repository `Flow` will hit `IllegalStateException` on the closed driver and crash the main thread.
+
+**The guard:** `catchDbError()` converts this to `Either.Left(DomainError.ReadFailed)` so the UI degrades gracefully instead of crashing.
+
+**The enforcement:** `catchDbError()` is defined once in `repository/DbFlowExtensions.kt` (not copy-pasted per file). The preferred way to apply it is through the typed helpers that build it in automatically:
+
+```kotlin
+// ✓ Guard is structural — you cannot get asDbFlowList without catchDbError
+queries.selectAllPages().asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+
+// ✓ For manual chains that need mid-chain operators — guard must be explicit
+queries.selectAllPages().asFlow().conflate().mapToList(DB).map { ... }.catchDbError()
+
+// ✗ Raw asFlow() chain without catchDbError — will crash on DB close
+queries.selectAllPages().asFlow().mapToList(DB).map { ... }
+```
+
+`flow { try/catch }` blocks that call `executeAsList()` / `executeAsOneOrNull()` directly already handle the exception inline — they do not need `catchDbError()`.
+
+Regression tests: `UpgradeResilienceTest` (TC-UPGRADE-001 exercises every `Flow`-backed read across all repositories against a closed DB — any future method missing the guard will fail here), `RepositoryFlowResilienceTest`, `GraphManagerDatabaseLifecycleTest`.
+
+### GitHub Actions — `workflow_call` propagates caller's `event_name`
+
+When a workflow is called via `workflow_call`, `github.event_name` inside the called workflow reflects the **caller's** triggering event (e.g. `push`), not `workflow_call`. A job `if:` condition checking `github.event_name == 'workflow_call'` will always be false when called from a push-triggered parent. Remove the job-level `if:` entirely and rely on the workflow-level `on:` triggers instead.
+
 ## Testing Infrastructure
 
 See `kmp/TESTING_README.md` for the full testing guide. Test source sets:
@@ -263,5 +357,6 @@ See `kmp/TESTING_README.md` for the full testing guide. Test source sets:
 | `kmp/src/commonMain/.../db/GraphWriter.kt` | File export and conflict detection |
 | `kmp/src/commonMain/.../model/Models.kt` | Page, Block, Property data classes with built-in validation |
 | `kmp/src/commonMain/.../repository/RepositoryFactory.kt` | Backend abstraction |
+| `kmp/src/commonMain/.../repository/DbFlowExtensions.kt` | `catchDbError`, `asDbFlowList`, `asDbFlowOrNull` — shared closed-DB guard helpers |
 | `kmp/src/jvmMain/.../desktop/Main.kt` | Desktop entry point |
 | `kmp/src/commonMain/sqldelight/.../SteleDatabase.sq` | SQLDelight schema |

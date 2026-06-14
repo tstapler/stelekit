@@ -45,6 +45,9 @@ class DomainErrorTest {
             DomainError.SensorError.PermissionDenied("camera"),
             DomainError.SensorError.HardwareUnavailable("lidar"),
             DomainError.SensorError.CaptureFailed("capture failed"),
+            DomainError.ExportError.SerializationFailed("serialization failed"),
+            DomainError.ExportError.ClipboardFailed("clipboard failed"),
+            DomainError.ExportError.ShareFailed("share failed"),
         )
         for (err in errors) {
             // exhaustive when — compile error if any branch is missing
@@ -81,6 +84,7 @@ class DomainErrorTest {
                 is DomainError.GitError.NotSupported -> err.message
                 DomainError.GitError.Offline -> err.message
                 DomainError.GitError.EditingInProgress -> err.message
+                is DomainError.GitError.CredentialExpired -> err.message
                 is DomainError.AttachmentError.CopyFailed -> err.message
                 is DomainError.AttachmentError.PickerFailed -> err.message
                 is DomainError.AttachmentError.AssetsDirectoryFailed -> err.message
@@ -89,6 +93,9 @@ class DomainErrorTest {
                 is DomainError.SensorError.CaptureFailed -> err.message
                 is DomainError.BleError.ConnectionFailed -> err.message
                 is DomainError.BleError.Gatt133 -> err.message
+                is DomainError.ExportError.ClipboardFailed -> err.message
+                is DomainError.ExportError.SerializationFailed -> err.message
+                is DomainError.ExportError.ShareFailed -> err.message
             }
             assert(msg.isNotEmpty()) { "Expected non-empty message for $err" }
         }
@@ -150,6 +157,9 @@ class DomainErrorTest {
             DomainError.SensorError.CaptureFailed("capture"),
             DomainError.BleError.ConnectionFailed("ble connect"),
             DomainError.BleError.Gatt133(3, "gatt error"),
+            DomainError.ExportError.ClipboardFailed("clipboard failed"),
+            DomainError.ExportError.SerializationFailed("serialization failed"),
+            DomainError.ExportError.ShareFailed("share failed"),
         )
         for (err in errors) {
             assert(err.toUiMessage().isNotEmpty()) { "Expected non-empty UI message for $err" }

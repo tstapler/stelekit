@@ -15,6 +15,8 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.performance.PerformanceMonitor
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.i18n.Language
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.util.UuidGenerator
@@ -395,7 +397,7 @@ class EditorViewModel(
             try {
                 showLoading(t("editor.loading.block"))
                 
-                val blockResult = blockRepository.getBlockByUuid(blockUuid).first()
+                val blockResult = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first()
                 blockResult.getOrNull()?.let { block ->
                     // Set block content using text operations
                     val focusedBlockId = _editorState.value.metadata["blockUuid"]
@@ -406,23 +408,23 @@ class EditorViewModel(
                     } else {
                         // If no block was focused, we are loading a new one.
                     }
-                    
-                    updateEditorState { 
+
+                    updateEditorState {
                         it
                             .withDocumentInfo(
                                 filePath = null,
-                                title = "Block: ${block.uuid.take(8)}",
+                                title = "Block: ${block.uuid.value.take(8)}",
                                 lastModifiedAt = block.updatedAt
                             )
-                            .withMetadata("blockUuid", block.uuid)
+                            .withMetadata("blockUuid", block.uuid.value)
                             .withUnsavedChanges(false)
                     }
-                    
+
                     // Now populate content
-                    val currentContent = currentTextOperations.getText(block.uuid).getOrNull() ?: ""
+                    val currentContent = currentTextOperations.getText(block.uuid.value).getOrNull() ?: ""
                     if (currentContent != block.content) {
-                         currentTextOperations.deleteText(block.uuid, TextRange(0, currentContent.length))
-                         currentTextOperations.insertText(block.uuid, block.content)
+                         currentTextOperations.deleteText(block.uuid.value, TextRange(0, currentContent.length))
+                         currentTextOperations.insertText(block.uuid.value, block.content)
                     }
 
                     logger.debug("Loaded block: $blockUuid")
@@ -453,7 +455,7 @@ class EditorViewModel(
                     showLoading(t("editor.saving.block"))
                     
                     val content = currentTextOperations.getText(blockUuid).getOrNull() ?: ""
-                    val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+                    val block = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull()
                     
                     if (block != null) {
                         val updatedBlock = block.copy(
@@ -504,8 +506,8 @@ class EditorViewModel(
                 val newUuid = UuidGenerator.generateV7()
                 val now = Clock.System.now()
                 val newBlock = Block(
-                    uuid = newUuid,
-                    pageUuid = pageUuid,
+                    uuid = BlockUuid(newUuid),
+                    pageUuid = PageUuid(pageUuid),
                     content = content,
                     position = 0,
                     createdAt = now,
@@ -519,10 +521,10 @@ class EditorViewModel(
                         it
                             .withDocumentInfo(
                                 filePath = null,
-                                title = "Block: ${newBlock.uuid.take(8)}",
+                                title = "Block: ${newBlock.uuid.value.take(8)}",
                                 lastModifiedAt = newBlock.updatedAt
                             )
-                            .withMetadata("blockUuid", newBlock.uuid)
+                            .withMetadata("blockUuid", newBlock.uuid.value)
                             .withUnsavedChanges(false)
                     }
                     logger.debug("Created new block: ${newBlock.uuid}")
@@ -604,7 +606,7 @@ class EditorViewModel(
                 val blockUuid = currentState.metadata["blockUuid"]
                 if (blockUuid != null) {
                     val content = currentTextOperations.getText(blockUuid).getOrNull() ?: ""
-                    val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+                    val block = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull()
                     
                     if (block != null) {
                         val updatedBlock = block.copy(

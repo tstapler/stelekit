@@ -3,7 +3,10 @@ package dev.stapler.stelekit.benchmark
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageName
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
@@ -22,6 +25,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import java.nio.file.Files
 import kotlin.test.Test
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.measureTime
@@ -81,15 +85,15 @@ class GraphLoadTimingTest {
         Files.createTempDirectory(prefix).toFile().also { it.deleteOnExit() }
 
     private fun syntheticPage() = Page(
-        uuid      = "jank-journal-page",
+        uuid      = PageUuid("jank-journal-page"),
         name      = "jank journal",
         createdAt = Clock.System.now(),
         updatedAt = Clock.System.now(),
         isJournal = true,
     )
 
-    private fun syntheticBlock(pageUuid: String, index: Int) = Block(
-        uuid      = "jank-block-${index.toString().padStart(6, '0')}",
+    private fun syntheticBlock(pageUuid: PageUuid, index: Int) = Block(
+        uuid      = BlockUuid("jank-block-${index.toString().padStart(6, '0')}"),
         pageUuid  = pageUuid,
         content   = "Simulated journal entry $index — typing while graph loads",
         level     = 0,
@@ -344,7 +348,7 @@ class GraphLoadTimingTest {
             val pageRepo  = InMemoryPageRepository()
             val blockRepo = InMemoryBlockRepository()
             loadAndTime(dir.absolutePath, GraphLoader(fileSystem, pageRepo, blockRepo), "synthetic / in-memory") {
-                pageRepo.getAllPages().first().getOrNull()?.size ?: 0
+                pageRepo.getAllPagesSnapshot().getOrNull()?.size ?: 0
             }
             Unit
         } finally {
@@ -365,7 +369,7 @@ class GraphLoadTimingTest {
             val loader  = GraphLoader(fileSystem, repoSet.pageRepository, repoSet.blockRepository,
                                       externalWriteActor = repoSet.writeActor, histogramWriter = repoSet.histogramWriter)
             val result = loadAndTime(dir.absolutePath, loader, "synthetic / SQLite") {
-                repoSet.pageRepository.getAllPages().first().getOrNull()?.size ?: 0
+                repoSet.pageRepository.getAllPagesSnapshot().getOrNull()?.size ?: 0
             }
             assertTrue(result.totalMs < 60_000L,
                 "SQLite synthetic load took ${result.totalMs}ms — catastrophic regression detected (> 60s)")
@@ -418,6 +422,7 @@ class GraphLoadTimingTest {
             println("[real graph] SKIPPED — set -DSTELEKIT_GRAPH_PATH=/your/graph to run")
             return@runBlocking
         }
+        val tempDir = BenchmarkGraphUtils.copyGraphToTempDir(graphPath, "stelekit-real-bench")
         val dbFile = Files.createTempFile("stelekit-real-bench", ".db").toFile().also { it.deleteOnExit() }
         val scope  = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
@@ -425,13 +430,14 @@ class GraphLoadTimingTest {
             val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope)
             val loader  = GraphLoader(fileSystem, repoSet.pageRepository, repoSet.blockRepository,
                                       externalWriteActor = repoSet.writeActor, histogramWriter = repoSet.histogramWriter)
-            loadAndTime(graphPath, loader, "real graph / SQLite") {
-                repoSet.pageRepository.getAllPages().first().getOrNull()?.size ?: 0
+            loadAndTime(tempDir.absolutePath, loader, "real graph / SQLite") {
+                repoSet.pageRepository.getAllPagesSnapshot().getOrNull()?.size ?: 0
             }.also { }
             factory.close()
         } finally {
             scope.cancel()
             dbFile.delete()
+            tempDir.deleteRecursively()
         }
     }
 
@@ -498,6 +504,82 @@ class GraphLoadTimingTest {
     }
 
     /**
+     * Regression guard: navigating to a large page (150 blocks) must complete in < 2 s
+     * even when the database already contains thousands of blocks.
+     *
+     * This catches a class of regressions where selectBlocksByPageUuid degrades into a
+     * full table scan on a populated database (observed in production: p99 = 203 seconds
+     * on Android v0.33.0 without the idx_blocks_page_uuid_position composite index).
+     *
+     * The test also validates that blocks:select p99 stays below 200 ms.
+     */
+    @Test
+    fun `large page navigation is fast with populated database`() = runBlocking {
+        // Use a fixed config large enough to reproduce the production regression (> 5 000 blocks).
+        // NOT syntheticConfig() — this test must always seed a realistic dataset regardless of
+        // the STELEKIT_BENCH_CONFIG system property so the regression guard is never weakened.
+        val cfg = SyntheticGraphGenerator.Config(pageCount = 500, journalCount = 50, linkDensity = 0.3f)
+        // PlatformFileSystem.validatePath requires paths within user.home. Use a subdirectory of
+        // the home dir rather than /tmp so GraphLoader's directoryExists check doesn't reject it.
+        val dir = java.io.File(System.getProperty("user.home"), ".stelekit-test-large-page-${System.nanoTime()}")
+            .also { it.mkdirs() }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            SyntheticGraphGenerator(cfg).generate(dir)
+            val factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite:${File(dir, "largepage.db").absolutePath}")
+            val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope)
+            val loader  = GraphLoader(fileSystem, repoSet.pageRepository, repoSet.blockRepository,
+                                      externalWriteActor = repoSet.writeActor, histogramWriter = repoSet.histogramWriter)
+            loader.loadGraphProgressive(
+                graphPath             = dir.absolutePath,
+                immediateJournalCount = 10,
+                onProgress            = {},
+                onPhase1Complete      = {},
+                onFullyLoaded         = {},
+            )
+            loader.indexRemainingPages {}
+
+            // Write a dense page with 150 blocks to the pages/ directory
+            val densePageContent = buildString {
+                repeat(150) { i -> appendLine("- Dense block content number $i with [[some link]] and more text") }
+            }
+            val pagesDir = File(dir, "pages").also { it.mkdirs() }
+            File(pagesDir, "Dense Page.md").writeText(densePageContent)
+
+            // Measure navigation — this is the hot path that was broken in v0.33.0
+            val loadMs = measureTime {
+                loader.loadPageByName(PageName("Dense Page"))
+            }.inWholeMilliseconds
+
+            println("\n[large-page] Navigation to 150-block page: ${loadMs}ms")
+            assertTrue(loadMs < 2_000,
+                "Large-page navigation took ${loadMs}ms — regression detected " +
+                "(index idx_blocks_page_uuid_position may be missing; expected < 2000ms)")
+
+            // Flush and assert blocks:select p99. If the query stats repository is wired,
+            // the stat MUST be present — silently passing when stats aren't flushed masks
+            // the regression guard.
+            repoSet.queryStatsCollector?.drainNow()
+            if (repoSet.queryStatsRepository != null) {
+                val blocksSelectStat = repoSet.queryStatsRepository
+                    .getTopByTotalMs("unknown", 50)
+                    .find { it.tableName == "blocks" && it.operation == "select" }
+                assertNotNull(blocksSelectStat,
+                    "blocks:select stat must be present when queryStatsRepository is wired")
+                val p99 = blocksSelectStat.estimatePercentile(0.99)
+                println("[large-page] blocks:select p99=${p99}ms (calls=${blocksSelectStat.calls})")
+                assertTrue(p99 < 200,
+                    "blocks:select p99=${p99}ms exceeds 200ms — likely missing composite index " +
+                    "idx_blocks_page_uuid_position (production impact: p99 was 203 seconds on Android)")
+            }
+            factory.close()
+        } finally {
+            scope.cancel()
+            dir.deleteRecursively()
+        }
+    }
+
+    /**
      * Same jank simulation against the user's real graph library.
      * Requires: -DSTELEKIT_GRAPH_PATH=/path/to/your/graph
      *
@@ -512,6 +594,7 @@ class GraphLoadTimingTest {
             return@runBlocking
         }
 
+        val tempDir = BenchmarkGraphUtils.copyGraphToTempDir(graphPath, "stelekit-jank-real")
         val dbFile = Files.createTempFile("stelekit-jank-real", ".db").toFile().also { it.deleteOnExit() }
         val scope  = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
@@ -524,12 +607,13 @@ class GraphLoadTimingTest {
             val loader  = GraphLoader(fileSystem, repoSet.pageRepository, repoSet.blockRepository,
                                       externalWriteActor = actor, histogramWriter = repoSet.histogramWriter)
 
-            val results = runWriteLatencyBenchmark(graphPath, actor, loader, "real graph")
+            val results = runWriteLatencyBenchmark(tempDir.absolutePath, actor, loader, "real graph")
             printWriteLatencyReport("real graph", results)
             factory.close()
         } finally {
             scope.cancel()
             dbFile.delete()
+            tempDir.deleteRecursively()
         }
     }
 }

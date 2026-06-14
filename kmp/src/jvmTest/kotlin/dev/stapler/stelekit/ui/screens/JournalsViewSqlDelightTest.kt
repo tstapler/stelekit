@@ -8,6 +8,7 @@ import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.JournalService
 import dev.stapler.stelekit.repository.SqlDelightBlockRepository
 import dev.stapler.stelekit.repository.SqlDelightPageRepository
@@ -41,7 +42,7 @@ class JournalsViewSqlDelightTest {
             val now = Clock.System.now()
             pageRepo.savePage(
                 Page(
-                    uuid = "00000000-0000-0000-0000-000000000001",
+                    uuid = PageUuid("00000000-0000-0000-0000-000000000001"),
                     name = "2026_03_14",
                     createdAt = now,
                     updatedAt = now,
@@ -59,7 +60,6 @@ class JournalsViewSqlDelightTest {
             MaterialTheme {
                 JournalsView(
                     viewModel = viewModel,
-                    blockRepository = blockRepo,
                     isDebugMode = false,
                     onLinkClick = {},
                 )

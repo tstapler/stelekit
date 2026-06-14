@@ -36,6 +36,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import arrow.atomic.Atomic
+import arrow.atomic.AtomicBoolean
+import arrow.atomic.getAndUpdate
+import arrow.atomic.value
 import kotlin.math.sqrt
 
 /**
@@ -124,6 +128,12 @@ sealed interface DepthModelUiState {
     data object Failed : DepthModelUiState
 }
 
+/** Records the calibration state before a user-initiated change, enabling single-level undo. */
+data class CalibrationSnapshot(
+    val calibration: Calibration,
+    val annotations: List<MeasurementAnnotation>,
+)
+
 /**
  * ViewModel for the image annotation editor screen.
  *
@@ -134,7 +144,6 @@ sealed interface DepthModelUiState {
  * Call [close] when the editor is permanently dismissed (e.g. on back navigation after
  * the composable leaves composition permanently) to cancel in-flight DB writes cleanly.
  */
-@OptIn(DirectRepositoryWrite::class)
 class AnnotationEditorViewModel(
     private val measurementRepository: MeasurementAnnotationRepository,
     /** Optional — required for tag persistence. When null, tag changes update state only. */
@@ -189,6 +198,19 @@ class AnnotationEditorViewModel(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val logger = Logger("AnnotationEditorViewModel")
 
+    /**
+     * Set to true on the first call to [initialize] to prevent a second call from
+     * re-issuing the one-shot repository load.
+     */
+    private val initialized = AtomicBoolean(false)
+
+    /**
+     * Set to true the first time any user action mutates [committedAnnotations] (commit or delete).
+     * The initial-load coroutine in [initialize] uses this to bail out if the user has already
+     * interacted — preventing stale repository results from overwriting optimistic UI state.
+     */
+    private val hasBeenMutated = AtomicBoolean(false)
+
     // ── Depth estimation coordinator ──────────────────────────────────────────
     private val depthCoordinator = DepthEstimationCoordinator(
         depthEstimator = monocularDepthEstimator,
@@ -226,6 +248,17 @@ class AnnotationEditorViewModel(
 
     // redoStack holds states available for redo after an undo.
     private val redoStack = ArrayDeque<AnnotationEditorState>(maxHistory)
+
+    // Single-entry calibration undo history. Written from Dispatchers.Default (updateCalibration)
+    // and read from the main thread (undoCalibration), so an Atomic reference is used for
+    // thread safety without introducing JVM-only types (CopyOnWriteArrayList is JVM-only).
+    private val calibrationHistory = Atomic<CalibrationSnapshot?>(null)
+
+    private val _canUndoCalibration = MutableStateFlow(false)
+    val canUndoCalibration: StateFlow<Boolean> = _canUndoCalibration.asStateFlow()
+
+    private val _calibrationChangeMessage = MutableStateFlow<String?>(null)
+    val calibrationChangeMessage: StateFlow<String?> = _calibrationChangeMessage.asStateFlow()
 
     private val _canUndo = MutableStateFlow(false)
     val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
@@ -273,21 +306,25 @@ class AnnotationEditorViewModel(
      * Call once after construction with the target image.
      */
     fun initialize(imageAnnotation: ImageAnnotation) {
+        // Guard: only run the repository load once per ViewModel instance. Calling initialize()
+        // a second time updates the calibration/image state but must not overwrite annotations
+        // that the user has already added or deleted in this session.
+        val firstCall = initialized.compareAndSet(false, true)
         _state.update { it.copy(imageAnnotation = imageAnnotation, calibration = imageAnnotation.calibration) }
+        if (!firstCall) return
         // Load persisted annotations once at startup. After that, committedAnnotations is managed
         // exclusively by optimistic local updates (commitAnnotation, undo, redo, deleteAnnotation).
         // A continuous collect would race with optimistic updates and corrupt undo/redo history.
         scope.launch {
             val result = measurementRepository.getMeasurementsForImage(imageAnnotation.uuid).first()
             result.onRight { list ->
+                // Guard against TOCTOU: check hasBeenMutated inside _state.update so that the
+                // check and the write are part of the same CAS operation. If commitAnnotation
+                // wins the race and sets hasBeenMutated=true before our CAS succeeds, the
+                // MutableStateFlow CAS loop retries the lambda and we see true on retry.
                 _state.update { currentSt ->
-                    // Only apply the initial load if no annotations have been added yet
-                    // (guards against calling initialize() multiple times).
-                    if (currentSt.committedAnnotations.isEmpty()) {
-                        currentSt.copy(committedAnnotations = list)
-                    } else {
-                        currentSt
-                    }
+                    if (!hasBeenMutated.value) currentSt.copy(committedAnnotations = list)
+                    else currentSt
                 }
             }
         }
@@ -445,11 +482,23 @@ class AnnotationEditorViewModel(
      * The [calibration] in the current state is used for unit conversion. If calibration
      * is absent (NONE), [valueMeters] is stored as null and the display shows pixel counts.
      */
+    @OptIn(DirectRepositoryWrite::class)
     private fun commitAnnotation(
         points: List<NormalizedPoint>,
         tool: AnnotationTool,
         explicitLabel: String? = null,
     ) {
+        // Guard: DISTANCE/GRID_REF lines shorter than 1% of image width are likely accidental taps
+        if ((tool == AnnotationTool.DISTANCE || tool == AnnotationTool.GRID_REF) && points.size >= 2) {
+            val dx = points[1].x - points[0].x
+            val dy = points[1].y - points[0].y
+            val normalizedLength = kotlin.math.sqrt(dx * dx + dy * dy)
+            if (normalizedLength < 0.005) {
+                _state.update { it.copy(inProgressPoints = emptyList()) }
+                return
+            }
+        }
+
         // GRID_REF: show the calibration dialog instead of committing a measurement annotation.
         if (tool == AnnotationTool.GRID_REF) {
             val displayUnit = _state.value.imageAnnotation?.unit ?: MeasurementUnit.METERS
@@ -485,6 +534,7 @@ class AnnotationEditorViewModel(
 
         val before = st
         pushUndo(before)
+        hasBeenMutated.value = true
 
         // Story 9.6: Fire haptic feedback on annotation commit. The callback is injected
         // at construction time; on Android the composable caller wires LocalHapticFeedback
@@ -522,8 +572,19 @@ class AnnotationEditorViewModel(
      * This is critical: if calibration changes (e.g. user marks a reference object),
      * all existing annotations must be recalculated or they display stale values.
      */
+    @OptIn(DirectRepositoryWrite::class)
     fun updateCalibration(newCalibration: Calibration) {
         val st = _state.value
+
+        // Push current state to calibration history for undo (single-entry — keeps most recent only)
+        if (st.calibration != null && st.calibration.method != CalibrationMethod.NONE) {
+            calibrationHistory.value = CalibrationSnapshot(
+                calibration = st.calibration,
+                annotations = st.committedAnnotations,
+            )
+            _canUndoCalibration.value = true
+        }
+
         val displayUnit = st.imageAnnotation?.unit ?: MeasurementUnit.METERS
 
         val rederived = st.committedAnnotations.map { annotation ->
@@ -545,6 +606,37 @@ class AnnotationEditorViewModel(
                 logger.error("Failed to persist re-derived measurements: ${err.message}")
             }
         }
+
+        val count = _state.value.committedAnnotations.size
+        if (count > 0) {
+            _calibrationChangeMessage.value = "Scale updated — $count measurement${if (count == 1) "" else "s"} recalculated"
+        }
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
+    fun undoCalibration() {
+        val snapshot = calibrationHistory.getAndUpdate { null } ?: return
+        _canUndoCalibration.value = false
+        _state.update { it.copy(
+            calibration = snapshot.calibration,
+            committedAnnotations = snapshot.annotations,
+        )}
+        _calibrationChangeMessage.value = "Scale restored"
+        scope.launch {
+            val imageUuid = _state.value.imageAnnotation?.uuid ?: return@launch
+            measurementRepository.saveMeasurements(imageUuid, snapshot.annotations).onLeft { err ->
+                logger.error("Failed to restore measurements: ${err.message}")
+            }
+        }
+    }
+
+    fun clearCalibrationMessage() {
+        _calibrationChangeMessage.value = null
+    }
+
+    fun isCalibrated(): Boolean {
+        val cal = _state.value.calibration
+        return cal != null && cal.method != CalibrationMethod.NONE && cal.pixelsPerMeter > 0.0
     }
 
     // ── Selection and deletion ────────────────────────────────────────────────
@@ -566,9 +658,11 @@ class AnnotationEditorViewModel(
     }
 
     /** Delete an annotation by UUID. */
+    @OptIn(DirectRepositoryWrite::class)
     fun deleteAnnotation(uuid: String) {
         val before = _state.value
         pushUndo(before)
+        hasBeenMutated.value = true
 
         _state.update { currentSt ->
             currentSt.copy(
@@ -688,14 +782,14 @@ class AnnotationEditorViewModel(
     // ── External measurement device (Story 5.7) ──────────────────────────────
 
     /** Currently active external measurement device (BLE laser, keyboard, USB). */
-    private var activeDevice: ExternalMeasurementDevice? = null
+    private val _activeDevice = Atomic<ExternalMeasurementDevice?>(null)
 
     /**
      * Connection state of the active device, or DISCONNECTED when no device is set.
      * Sourced directly from the device's [ExternalMeasurementDevice.connectionState].
      */
     val deviceConnectionState: StateFlow<DeviceConnectionState>
-        get() = activeDevice?.connectionState ?: _noDeviceConnectionState
+        get() = _activeDevice.value?.connectionState ?: _noDeviceConnectionState
 
     private val _noDeviceConnectionState =
         MutableStateFlow(DeviceConnectionState.DISCONNECTED)
@@ -711,7 +805,7 @@ class AnnotationEditorViewModel(
      * (disconnection is the caller's responsibility).
      */
     fun setActiveDevice(device: ExternalMeasurementDevice) {
-        activeDevice = device
+        _activeDevice.value = device
     }
 
     /**
@@ -730,7 +824,7 @@ class AnnotationEditorViewModel(
      * - The device emits no readings within the collection window (caller cancels the scope).
      */
     fun injectMeasurementFromDevice() {
-        val device = activeDevice ?: return
+        val device = _activeDevice.value ?: return
         val st = _state.value
 
         // Find the most recently committed DISTANCE annotation.
@@ -822,7 +916,6 @@ class AnnotationEditorViewModel(
      */
     fun close() {
         depthCoordinator.close()
-        scope.launch { /* drain */ }.cancel()
         scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
     }
 }
@@ -876,5 +969,6 @@ internal fun parseGridRefLengthToMeters(text: String, unit: MeasurementUnit): Do
         MeasurementUnit.MILLIMETERS -> value / 1000.0
         MeasurementUnit.FEET -> value * 0.3048
         MeasurementUnit.INCHES -> value * 0.0254
+        MeasurementUnit.FEET_INCHES -> value * 0.3048
     }
 }

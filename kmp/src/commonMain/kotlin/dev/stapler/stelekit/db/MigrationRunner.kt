@@ -227,6 +227,227 @@ object MigrationRunner {
                 """
             )
         ),
+        Migration(
+            name = "covering_indexes_page_blocks",
+            statements = listOf(
+                // Eliminates filesort for selectBlocksByPageUuidUnpaginated (called every page open).
+                // SQLite delivers rows in (page_uuid, position) order — no in-memory sort needed.
+                // Also benefits countBlocksByPageUuid (index-only scan, no table fetch).
+                "CREATE INDEX IF NOT EXISTS idx_blocks_page_position ON blocks(page_uuid, position)",
+                // Eliminates filesort for selectBlocksByParentUuidOrdered, selectBlockChildren,
+                // selectLastChild — all child-listing queries fired during tree expand/indent/move.
+                "CREATE INDEX IF NOT EXISTS idx_blocks_parent_position ON blocks(parent_uuid, position)",
+                // True covering index for selectBlocksHashByPageUuid: SELECT uuid, content_hash
+                // FROM blocks WHERE page_uuid = ? — zero table lookups, sequential index leaf scan.
+                // Replaces 500 random B-tree reads per save on large pages with one index scan.
+                "CREATE INDEX IF NOT EXISTS idx_blocks_page_hash ON blocks(page_uuid, uuid, content_hash)"
+            )
+        ),
+        Migration(
+            name = "drop_subsumed_blocks_single_column_indexes",
+            statements = listOf(
+                // idx_blocks_page_uuid(page_uuid) is fully subsumed by idx_blocks_page_position(page_uuid, position).
+                // idx_blocks_parent_uuid(parent_uuid) is fully subsumed by idx_blocks_parent_position(parent_uuid, position).
+                // Both composites handle all queries the single-column indexes served, with equal or better performance.
+                // Dropping them eliminates redundant write overhead on every blocks INSERT/UPDATE/DELETE.
+                "DROP INDEX IF EXISTS idx_blocks_page_uuid",
+                "DROP INDEX IF EXISTS idx_blocks_parent_uuid"
+            )
+        ),
+        Migration(
+            name = "query_stats_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS query_stats (
+                    app_version TEXT NOT NULL,
+                    table_name  TEXT NOT NULL,
+                    operation   TEXT NOT NULL,
+                    calls       INTEGER NOT NULL DEFAULT 0,
+                    errors      INTEGER NOT NULL DEFAULT 0,
+                    total_ms    INTEGER NOT NULL DEFAULT 0,
+                    min_ms      INTEGER NOT NULL DEFAULT 9999999,
+                    max_ms      INTEGER NOT NULL DEFAULT 0,
+                    b1          INTEGER NOT NULL DEFAULT 0,
+                    b5          INTEGER NOT NULL DEFAULT 0,
+                    b16         INTEGER NOT NULL DEFAULT 0,
+                    b50         INTEGER NOT NULL DEFAULT 0,
+                    b100        INTEGER NOT NULL DEFAULT 0,
+                    b500        INTEGER NOT NULL DEFAULT 0,
+                    b_inf       INTEGER NOT NULL DEFAULT 0,
+                    first_seen  INTEGER NOT NULL,
+                    last_seen   INTEGER NOT NULL,
+                    PRIMARY KEY (app_version, table_name, operation)
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_query_stats_version_ms ON query_stats(app_version, total_ms DESC)"
+            )
+        ),
+        Migration(
+            name = "perf_histogram_and_debug_flags",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS perf_histogram_buckets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    operation_name TEXT NOT NULL,
+                    bucket_ms INTEGER NOT NULL,
+                    count INTEGER NOT NULL DEFAULT 0,
+                    recorded_at INTEGER NOT NULL
+                )
+                """,
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_perf_hist_op_bucket ON perf_histogram_buckets(operation_name, bucket_ms)",
+                """
+                CREATE TABLE IF NOT EXISTS debug_flags (
+                    key TEXT NOT NULL PRIMARY KEY,
+                    value INTEGER NOT NULL DEFAULT 0,
+                    updated_at INTEGER NOT NULL
+                )
+                """
+            )
+        ),
+        Migration(
+            name = "git_config_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS git_config (
+                    graph_id                TEXT NOT NULL PRIMARY KEY,
+                    repo_root               TEXT NOT NULL,
+                    wiki_subdir             TEXT NOT NULL DEFAULT '',
+                    remote_name             TEXT NOT NULL DEFAULT 'origin',
+                    remote_branch           TEXT NOT NULL DEFAULT 'main',
+                    auth_type               TEXT NOT NULL DEFAULT 'NONE',
+                    ssh_key_path            TEXT,
+                    ssh_key_passphrase_key  TEXT,
+                    https_token_key         TEXT,
+                    poll_interval_minutes   INTEGER NOT NULL DEFAULT 5,
+                    auto_commit             INTEGER NOT NULL DEFAULT 1,
+                    commit_message_template TEXT NOT NULL DEFAULT 'SteleKit: {date}'
+                )
+                """
+            )
+        ),
+        Migration(
+            name = "image_and_measurement_annotations",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS image_annotations (
+                    uuid                       TEXT NOT NULL PRIMARY KEY,
+                    block_uuid                 TEXT NOT NULL,
+                    page_uuid                  TEXT NOT NULL,
+                    graph_path                 TEXT NOT NULL,
+                    file_path                  TEXT NOT NULL,
+                    thumbnail_path             TEXT,
+                    source                     TEXT NOT NULL DEFAULT 'FILE',
+                    source_uri                 TEXT,
+                    captured_at_ms             INTEGER,
+                    imported_at_ms             INTEGER NOT NULL DEFAULT 0,
+                    calibration_method         TEXT NOT NULL DEFAULT 'NONE',
+                    pixels_per_meter           REAL NOT NULL DEFAULT 0.0,
+                    calibration_confidence_pct INTEGER NOT NULL DEFAULT 0,
+                    unit                       TEXT NOT NULL DEFAULT 'METERS',
+                    tags                       TEXT NOT NULL DEFAULT '[]',
+                    lat_lng                    TEXT,
+                    altitude_m                 REAL,
+                    bearing_deg                REAL,
+                    pitch_deg                  REAL,
+                    roll_deg                   REAL,
+                    focal_length_mm            REAL,
+                    focal_length_35mm_eq       REAL,
+                    camera_make                TEXT,
+                    camera_model               TEXT
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_image_annotations_block_uuid ON image_annotations(block_uuid)",
+                "CREATE INDEX IF NOT EXISTS idx_image_annotations_page_uuid ON image_annotations(page_uuid)",
+                "CREATE INDEX IF NOT EXISTS idx_image_annotations_graph_path ON image_annotations(graph_path)",
+                """
+                CREATE TABLE IF NOT EXISTS measurement_annotations (
+                    uuid              TEXT NOT NULL PRIMARY KEY,
+                    image_uuid        TEXT NOT NULL,
+                    annotation_type   TEXT NOT NULL,
+                    normalized_points TEXT NOT NULL DEFAULT '[]',
+                    value_meters      REAL,
+                    value_display     TEXT,
+                    label             TEXT,
+                    color_hex         TEXT NOT NULL DEFAULT '#FF0000',
+                    ble_device_id     TEXT,
+                    FOREIGN KEY (image_uuid) REFERENCES image_annotations(uuid) ON DELETE CASCADE
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_measurement_annotations_image_uuid ON measurement_annotations(image_uuid)"
+            )
+        ),
+        Migration(
+            name = "pages_unloaded_partial_index",
+            statements = listOf(
+                // Partial index covering only unloaded pages (is_content_loaded = 0).
+                // Makes selectUnloadedPagesPaginated and countUnloadedPages O(unloaded) instead
+                // of O(total) — on a large graph where most pages are loaded the index is small
+                // and both the drain-loop OFFSET scan and the COUNT(*) become index-only ops.
+                "CREATE INDEX IF NOT EXISTS idx_pages_unloaded ON pages(uuid) WHERE is_content_loaded = 0"
+            )
+        ),
+        Migration(
+            name = "asset_index_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS asset_index (
+                    uuid TEXT NOT NULL PRIMARY KEY,
+                    file_path TEXT NOT NULL,
+                    relative_path TEXT NOT NULL,
+                    media_type TEXT NOT NULL,
+                    subfolder TEXT NOT NULL DEFAULT 'files',
+                    tags TEXT NOT NULL DEFAULT '[]',
+                    auto_labels TEXT NOT NULL DEFAULT '[]',
+                    ocr_text TEXT,
+                    cloud_description TEXT,
+                    page_uuids TEXT NOT NULL DEFAULT '[]',
+                    size_bytes INTEGER NOT NULL DEFAULT 0,
+                    imported_at_ms INTEGER NOT NULL,
+                    ml_processed INTEGER NOT NULL DEFAULT 0,
+                    ml_attempted_at INTEGER,
+                    ml_failed INTEGER NOT NULL DEFAULT 0,
+                    content_hash TEXT,
+                    is_orphan INTEGER NOT NULL DEFAULT 0,
+                    ml_tags_source TEXT NOT NULL DEFAULT 'NONE'
+                )
+                """
+            )
+        ),
+        Migration(
+            name = "pending_asset_moves_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS pending_asset_moves (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    asset_uuid TEXT NOT NULL,
+                    old_file_path TEXT NOT NULL,
+                    new_file_path TEXT NOT NULL,
+                    old_relative_path TEXT NOT NULL,
+                    new_relative_path TEXT NOT NULL,
+                    created_at_ms INTEGER NOT NULL
+                )
+                """
+            )
+        ),
+        Migration(
+            name = "asset_index_indexes",
+            statements = listOf(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_file_path_unique ON asset_index(file_path)",
+                "CREATE INDEX IF NOT EXISTS idx_asset_unprocessed ON asset_index(ml_processed, ml_failed, imported_at_ms)",
+                "CREATE INDEX IF NOT EXISTS idx_asset_media_type ON asset_index(media_type)"
+            )
+        ),
+        Migration(
+            name = "spans_version_columns",
+            statements = listOf(
+                // Dedicated columns for app_version and commit_hash enable fast regression
+                // queries (WHERE app_version = ? AND name = ? ORDER BY duration_ms DESC)
+                // without JSON path extraction on attributes_json.
+                "ALTER TABLE spans ADD COLUMN app_version TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE spans ADD COLUMN commit_hash TEXT NOT NULL DEFAULT ''",
+                "CREATE INDEX IF NOT EXISTS idx_spans_version_name_duration ON spans(app_version, name, duration_ms DESC)",
+            )
+        ),
     )
 
     /**

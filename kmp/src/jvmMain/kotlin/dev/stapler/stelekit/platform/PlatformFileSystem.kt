@@ -56,15 +56,67 @@ actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), File
         // showOpenDialog creates a nested AWT event loop (WaitDispatchSupport.enter) which
         // corrupts coroutine continuation state. Fix: move to IO, schedule dialog on the
         // real AWT EDT via invokeLater, block only the IO thread on the result.
+        if (java.awt.GraphicsEnvironment.isHeadless()) return null
         return withContext(Dispatchers.IO) {
-            val future = CompletableFuture<String?>()
-            SwingUtilities.invokeLater {
-                val chooser = JFileChooser()
-                chooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
-                val result = chooser.showOpenDialog(null)
-                future.complete(if (result == JFileChooser.APPROVE_OPTION) chooser.selectedFile.absolutePath else null)
+            val isMacOS = System.getProperty("os.name", "").lowercase().contains("mac")
+            if (isMacOS) {
+                val future = CompletableFuture<String?>()
+                SwingUtilities.invokeLater {
+                    System.setProperty("apple.awt.fileDialogForDirectories", "true")
+                    try {
+                        val dialog = java.awt.FileDialog(null as java.awt.Frame?, "Select Repository Directory", java.awt.FileDialog.LOAD)
+                        dialog.isVisible = true
+                        val dir = dialog.directory
+                        val file = dialog.file
+                        future.complete(if (dir != null && file != null) "$dir$file" else null)
+                    } finally {
+                        System.clearProperty("apple.awt.fileDialogForDirectories")
+                    }
+                }
+                future.get()?.also { registerGraphRoot(it) }
+            } else {
+                val future = CompletableFuture<String?>()
+                SwingUtilities.invokeLater {
+                    val chooser = JFileChooser()
+                    chooser.fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+                    val result = chooser.showOpenDialog(null)
+                    future.complete(if (result == JFileChooser.APPROVE_OPTION) chooser.selectedFile.absolutePath else null)
+                }
+                future.get()?.also { registerGraphRoot(it) }
             }
-            future.get()?.also { registerGraphRoot(it) }
+        }
+    }
+
+    override suspend fun pickFileAsync(): String? {
+        if (java.awt.GraphicsEnvironment.isHeadless()) return null
+        return withContext(Dispatchers.IO) {
+            val isMacOS = System.getProperty("os.name", "").lowercase().contains("mac")
+            if (isMacOS) {
+                val future = CompletableFuture<String?>()
+                SwingUtilities.invokeLater {
+                    val dialog = java.awt.FileDialog(null as java.awt.Frame?, "Select SSH Key File", java.awt.FileDialog.LOAD)
+                    dialog.isVisible = true
+                    val dir = dialog.directory
+                    val file = dialog.file
+                    future.complete(if (dir != null && file != null) "$dir$file" else null)
+                }
+                future.get()
+            } else {
+                val future = CompletableFuture<String?>()
+                SwingUtilities.invokeLater {
+                    val chooser = JFileChooser().apply {
+                        fileSelectionMode = JFileChooser.FILES_ONLY
+                        dialogTitle = "Select SSH Key File"
+                        isMultiSelectionEnabled = false
+                    }
+                    future.complete(
+                        if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION)
+                            chooser.selectedFile.absolutePath
+                        else null
+                    )
+                }
+                future.get()
+            }
         }
     }
 

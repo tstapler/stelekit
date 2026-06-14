@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.clipboard
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -12,8 +14,8 @@ class BlockClipboardTest {
     private val now = Clock.System.now()
 
     private fun makeBlock(uuid: String, content: String = "content"): Block = Block(
-        uuid = uuid,
-        pageUuid = "page-1",
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid("page-1"),
         content = content,
         level = 0,
         position = 0,

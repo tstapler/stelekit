@@ -3,16 +3,26 @@ package dev.stapler.stelekit.ui
 import dev.stapler.stelekit.db.BacklinkRenamer
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphLoader
-import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.db.GraphLoaderPort
+import dev.stapler.stelekit.db.GraphWriterPort
 import dev.stapler.stelekit.vault.VaultManager
 import dev.stapler.stelekit.db.RenameResult
 import dev.stapler.stelekit.db.UndoManager
+import arrow.core.Either
+import arrow.core.left
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.error.DomainError.ExportError
 import dev.stapler.stelekit.export.ClipboardProvider
 import dev.stapler.stelekit.export.ExportService
+import dev.stapler.stelekit.platform.google.GoogleAuthManager
 import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.NotificationType
+import dev.stapler.stelekit.model.PageName
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.model.Block
@@ -35,10 +45,12 @@ import dev.stapler.stelekit.domain.PageNameIndex
 import dev.stapler.stelekit.ui.screens.SearchResultItem
 import dev.stapler.stelekit.ui.state.BlockStateManager
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlin.time.Clock
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -48,14 +60,25 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.plus
+import kotlinx.datetime.toLocalDateTime
 
 sealed class IndexingState {
     object Idle : IndexingState()
@@ -71,36 +94,61 @@ sealed class IndexingState {
  * and not concurrent with the parallel graph loading that causes SQLITE_BUSY. The opt-in is
  * intentional; new writes should prefer going through [writeActor] where possible.
  */
-@OptIn(DirectRepositoryWrite::class)
 class StelekitViewModel(
-    private val fileSystem: FileSystem,
-    private val pageRepository: PageRepository,
-    private val blockRepository: BlockRepository,
-    private val searchRepository: SearchRepository,
-    private val graphLoader: GraphLoader,
-    private val graphWriter: GraphWriter,
-    private val platformSettings: Settings,
+    deps: StelekitViewModelDependencies,
+) {
+    private val fileSystem: FileSystem = deps.fileSystem
+    private val pageRepository: PageRepository = deps.pageRepository
+    private val blockRepository: BlockRepository = deps.blockRepository
+    private val searchRepository: SearchRepository = deps.searchRepository
+    private val graphLoader: GraphLoaderPort = deps.graphLoader
+    private val graphWriter: GraphWriterPort = deps.graphWriter
+    private val platformSettings: Settings = deps.platformSettings
+    private val notificationManager: NotificationManager? = deps.notificationManager
+    private val journalService: JournalService =
+        deps.journalService ?: JournalService(deps.pageRepository, deps.blockRepository)
+    private val blockStateManager: BlockStateManager? = deps.blockStateManager
+    private val writeActor: DatabaseWriteActor? = deps.writeActor
+    private val undoManager: UndoManager? = deps.undoManager
+    private val exportService: ExportService? = deps.exportService
+    private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = deps.histogramWriter
+    private val bugReportBuilder: dev.stapler.stelekit.performance.BugReportBuilder? = deps.bugReportBuilder
+    private val debugFlagRepository: dev.stapler.stelekit.performance.DebugFlagRepository? = deps.debugFlagRepository
+    private val activeGitSyncService: StateFlow<GitSyncService?> = deps.activeGitSyncService
+    private val activeGraphIdProvider: () -> String? = deps.activeGraphIdProvider
+    private val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = deps.onDismissGitDetection
+    private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(deps.ringBuffer)
     // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
     // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
-    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
-    private val notificationManager: NotificationManager? = null,
-    private val journalService: JournalService = JournalService(pageRepository, blockRepository),
-    private val blockStateManager: BlockStateManager? = null,
-    private val writeActor: DatabaseWriteActor? = null,
-    private val undoManager: UndoManager? = null,
-    private val exportService: ExportService? = null,
-    private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
-    private val bugReportBuilder: dev.stapler.stelekit.performance.BugReportBuilder? = null,
-    private val debugFlagRepository: dev.stapler.stelekit.performance.DebugFlagRepository? = null,
-    ringBuffer: dev.stapler.stelekit.performance.RingBufferSpanExporter? = null,
-    // Optional git sync service — wired when git is configured for the active graph.
-    // Uses a StateFlow<GitSyncService?> so the ViewModel can switch services on graph change.
-    private val activeGitSyncService: StateFlow<GitSyncService?> = MutableStateFlow(null),
-    private val activeGraphIdProvider: () -> String? = { null },
-) {
-    private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(ringBuffer)
-    private val scope = scope
+    //
+    // The CoroutineExceptionHandler is the last line of defense for every coroutine launched on
+    // this scope (standing collectors, fire-and-forget launches, stateIn upstreams). Without it,
+    // an OutOfMemoryError — which under heap pressure is thrown in whichever coroutine allocates
+    // next, not necessarily the one doing the heavy work — reaches the platform default handler.
+    // On Android that kills the process ("SteleKit keeps stopping"); on desktop it merely prints,
+    // which is why large-graph crashes reproduced only on Android. Surface as fatalError instead
+    // so the user gets the recoverable error screen.
+    private val scope = CoroutineScope(
+        deps.scope.coroutineContext + CoroutineExceptionHandler { _, e ->
+            if (e !is CancellationException) {
+                logger.error("Uncaught Throwable in ViewModel coroutine — ${e::class.simpleName}: ${e.message}")
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        fatalError = "${e::class.simpleName ?: "UnknownError"}: ${sanitizeErrorMessage(e.message)}"
+                    )
+                }
+            }
+        }
+    )
+    private val recentMutex = Mutex()
     private val logger = Logger("StelekitViewModel")
+
+    private fun sanitizeErrorMessage(message: String?): String =
+        message
+            ?.replace(Regex("/[^\\s,;:]+"), "<path>")
+            ?.replace(Regex("[A-Za-z]:\\\\[^\\s,;:]*"), "<path>")
+            ?.take(200) ?: "unknown"
 
     /**
      * Platform-provided callback that opens the image picker and attaches the selected image
@@ -150,11 +198,15 @@ class StelekitViewModel(
         .stateIn(scope, SharingStarted.Eagerly, SyncState.Idle)
 
     private fun observeSyncState() {
-        // Auto-show conflict resolution screen when ConflictPending is emitted
         scope.launch {
             syncState.collect { state ->
-                if (state is SyncState.ConflictPending) {
-                    _uiState.update { it.copy(conflictResolutionVisible = true) }
+                when (state) {
+                    is SyncState.ConflictPending -> _uiState.update { it.copy(conflictResolutionVisible = true) }
+                    is SyncState.JournalMergeReady -> _uiState.update { it.copy(journalMergeReviewVisible = true) }
+                    // Do NOT auto-dismiss journalMergeReviewVisible here — dismissal is handled
+                    // explicitly by abortJournalMerge() and acceptJournalMerge(). Auto-dismissal
+                    // races with fetchOnly background calls that emit Fetching/Pushing states.
+                    else -> Unit
                 }
             }
         }
@@ -183,7 +235,17 @@ class StelekitViewModel(
 
     /** Dismisses the git setup wizard. */
     fun dismissGitSetup() {
-        _uiState.update { it.copy(gitSetupVisible = false) }
+        _uiState.update { it.copy(gitSetupVisible = false, gitSetupInitialStep = 1, gitSetupOpenForClone = false) }
+    }
+
+    /** Opens the git setup wizard pre-navigated to Step 3 (credentials). */
+    fun openGitSetupForCredentials() {
+        _uiState.update { it.copy(gitSetupVisible = true, gitSetupInitialStep = 3) }
+    }
+
+    /** Opens the git setup wizard in clone-from-URL mode (pre-selects clone, starts at step 2). */
+    fun openGitSetupForClone() {
+        _uiState.update { it.copy(gitSetupVisible = true, gitSetupInitialStep = 2, gitSetupOpenForClone = true) }
     }
 
     /** Dismisses the conflict resolution screen. */
@@ -191,13 +253,64 @@ class StelekitViewModel(
         _uiState.update { it.copy(conflictResolutionVisible = false) }
     }
 
+    /** Dismisses the journal merge review screen without applying the merge. */
+    fun dismissJournalMergeReview() {
+        _uiState.update { it.copy(journalMergeReviewVisible = false) }
+    }
+
+    /**
+     * Aborts the in-progress git merge and dismisses the review screen.
+     * Called when the user dismisses or falls back to manual resolution.
+     */
+    fun abortJournalMerge() {
+        val state = syncState.value as? SyncState.JournalMergeReady ?: run {
+            _uiState.update { it.copy(journalMergeReviewVisible = false) }
+            return
+        }
+        _uiState.update { it.copy(journalMergeReviewVisible = false) }
+        scope.launch {
+            // Re-validate: syncState may have advanced (e.g. auto-completed) between capture and execution
+            if (syncState.value !is SyncState.JournalMergeReady) return@launch
+            activeGitSyncService.value?.abortActiveMerge(state.graphId)
+        }
+    }
+
+    /**
+     * Applies the user-approved merged content for a journal conflict: writes to disk,
+     * marks resolved, commits, reloads, and pushes.
+     */
+    fun acceptJournalMerge(mergedContent: String) {
+        val state = syncState.value as? SyncState.JournalMergeReady ?: return
+        _uiState.update { it.copy(journalMergeReviewVisible = false) }
+        scope.launch {
+            // Re-validate: syncState may have advanced between capture and execution
+            if (syncState.value !is SyncState.JournalMergeReady) return@launch
+            activeGitSyncService.value?.applyJournalMerge(
+                graphId = state.graphId,
+                filePath = state.proposal.filePath,
+                mergedContent = mergedContent,
+            )
+        }
+    }
+
+    /** Dismisses the git auto-detection banner for the given graph. */
+    fun dismissGitDetection(graphId: String) {
+        scope.launch {
+            onDismissGitDetection?.invoke(graphId)
+        }
+    }
+
     // Track recent pages manually to avoid "recently loaded" issues
     private var recentPageUuids: MutableList<String> = mutableListOf()
 
     private val recentPagesKey: String
         get() = "recent_pages_${_uiState.value.currentGraphPath}"
-        
-    private var cachedAllPages: List<Page> = emptyList()
+
+    // Resolved Page objects for the recent-pages list, keyed by UUID and bounded by
+    // recentPageUuids (≤20 entries). Replaces the former cachedAllPages field, which
+    // pinned the entire pages table (8 000+ Page objects on large graphs) in memory
+    // for the lifetime of the ViewModel.
+    private val recentPagesByUuid = mutableMapOf<String, Page>()
 
     // Initialize command system
     private val commandManager = CommandManager.create(scope) { message, type, timeout ->
@@ -208,14 +321,15 @@ class StelekitViewModel(
     // Lazy so tests that don't exercise rename don't fail on a missing actor at construction time.
     private val backlinkRenamer by lazy {
         BacklinkRenamer(
-            pageRepository, blockRepository, graphWriter,
+            pageRepository, blockRepository,
+            graphWriter,
             requireNotNull(writeActor) { "writeActor is required for rename operations" }
         )
     }
 
 
     // Page-name suggestion index — drives highlight/link suggestion feature
-    private val pageNameIndex = PageNameIndex(pageRepository, scope)
+    val pageNameIndex = PageNameIndex(pageRepository, scope)
 
     /** Pre-built matcher for the current graph's page names. Null until pages are loaded. */
     val suggestionMatcher: StateFlow<AhoCorasickMatcher?> = pageNameIndex.matcher
@@ -234,7 +348,7 @@ class StelekitViewModel(
     val indexingProgress: StateFlow<IndexingState> = _indexingProgress.asStateFlow()
 
     init {
-        blockStateManager?.let { graphLoader.activePageUuids = it.activePageUuids }
+        blockStateManager?.let { graphLoader.setActivePageUuids(it.activePageUuids) }
 
         updateCommands()
         observeSyncState()
@@ -257,32 +371,55 @@ class StelekitViewModel(
     private fun observeSpecialPages() {
         scope.launch {
             // Load recents for the current graph before starting collection
-            recentPageUuids = platformSettings.getString(recentPagesKey, "")
-                .split(",")
-                .filter { it.isNotEmpty() }
-                .toMutableList()
+            recentMutex.withLock {
+                recentPageUuids = platformSettings.getString(recentPagesKey, "")
+                    .split(",")
+                    .filter { it.isNotEmpty() }
+                    .toMutableList()
+            }
+            refreshRecentPages()
 
-            // We still need to know which pages are favorites for the sidebar
-            // This is usually a small list
-            pageRepository.getAllPages().collect { result ->
-                val allPages = result.getOrNull() ?: emptyList()
-                cachedAllPages = allPages // Keep for UUID lookups
-
-                _uiState.update { state ->
-                    val recent = recentPageUuids.mapNotNull { uuid ->
-                        allPages.find { it.uuid == uuid }
-                    }.take(10)
-                    state.copy(
-                        favoritePages = allPages.filter { it.isFavorite },
-                        recentPages = recent
-                    )
-                }
+            // Favorites for the sidebar via the dedicated bounded query. Never collect
+            // getAllPages() from a standing observer: every DB write invalidates that query,
+            // so during graph import/reconcile the collector re-materializes the entire
+            // pages table over and over — on 8 000+ page graphs this causes GC thrash
+            // (UI hang) and eventually OutOfMemoryError on Android.
+            pageRepository.getFavoritePages().collect { result ->
+                val favorites = result.getOrNull() ?: emptyList()
+                _uiState.update { it.copy(favoritePages = favorites) }
             }
         }
-        
+
         // Initial load of regular pages and journals
         loadMoreRegularPages(reset = true)
         loadMoreJournalPages(reset = true)
+    }
+
+    /**
+     * Re-resolves [recentPageUuids] into Page objects via point lookups (≤10 indexed
+     * queries) and publishes them to the UI state. Cheap by construction — never scans
+     * the pages table.
+     *
+     * Snapshots the UUID list under [recentMutex], releases the lock, performs DB work
+     * outside the lock to avoid starving [addToRecent], then re-acquires to write results.
+     */
+    private suspend fun refreshRecentPages() {
+        val uuidsToResolve = recentMutex.withLock { recentPageUuids.take(10).toList() }
+
+        val resolved = uuidsToResolve.mapNotNull { uuid ->
+            val cached = recentMutex.withLock { recentPagesByUuid[uuid] }
+            cached ?: pageRepository.getPageByUuid(PageUuid(uuid)).first().getOrNull()
+                ?.also { page -> recentMutex.withLock { recentPagesByUuid[uuid] = page } }
+        }
+
+        recentMutex.withLock {
+            trimRecentPagesCache()
+        }
+        _uiState.update { it.copy(recentPages = resolved) }
+    }
+
+    private fun trimRecentPagesCache() {
+        recentPagesByUuid.keys.retainAll(recentPageUuids.toSet())
     }
 
     fun loadMoreRegularPages(reset: Boolean = false) {
@@ -319,32 +456,24 @@ class StelekitViewModel(
         }
     }
 
-    private fun updateUiStateWithPages(pages: List<Page>) {
-        // This is now handled by observers and loadMore functions
-    }
-
     private fun addToRecent(page: Page) {
-        // Remove if exists to move to top
-        recentPageUuids.remove(page.uuid)
-        recentPageUuids.add(0, page.uuid)
-        
-        // Keep max 20 items
-        if (recentPageUuids.size > 20) {
-            recentPageUuids.removeAt(recentPageUuids.lastIndex)
-        }
-        
-        // Save to settings
-        platformSettings.putString(recentPagesKey, recentPageUuids.joinToString(","))
-
-        // Update UI state
-        _uiState.update { state ->
-            val recent = recentPageUuids.mapNotNull { uuid ->
-                cachedAllPages.find { it.uuid == uuid }
-            }.take(10)
-            state.copy(recentPages = recent)
+        scope.launch {
+            recentMutex.withLock {
+                recentPageUuids.remove(page.uuid.value)
+                recentPageUuids.add(0, page.uuid.value)
+                if (recentPageUuids.size > 20) {
+                    recentPageUuids.removeAt(recentPageUuids.lastIndex)
+                }
+                platformSettings.putString(recentPagesKey, recentPageUuids.joinToString(","))
+                recentPagesByUuid[page.uuid.value] = page
+                trimRecentPagesCache()
+                val recent = recentPageUuids.mapNotNull { recentPagesByUuid[it] }.take(10)
+                _uiState.update { it.copy(recentPages = recent) }
+            }
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun triggerReindex() {
         val path = _uiState.value.currentGraphPath
         if (path.isEmpty()) return
@@ -369,15 +498,25 @@ class StelekitViewModel(
         logger.info("setGraphPath: '$path'")
         platformSettings.putString("lastGraphPath", path)
         _uiState.update { it.copy(currentGraphPath = path) }
-        recentPageUuids = platformSettings.getString(recentPagesKey, "")
-            .split(",").filter { it.isNotEmpty() }.toMutableList()
+        scope.launch {
+            recentMutex.withLock {
+                recentPageUuids = platformSettings.getString(recentPagesKey, "")
+                    .split(",").filter { it.isNotEmpty() }.toMutableList()
+                recentPagesByUuid.clear()
+            }
+            // refreshRecentPages() is deferred to onPhase1Complete inside loadGraph so that
+            // getPageByUuid lookups run after the new graph's DB is populated, not while
+            // loadGraph is mid-clear.
+        }
         loadGraph(path)
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun loadGraph(path: String) {
         // Set loading state synchronously so callers observe isFullyLoaded=false immediately,
         // eliminating the race where StateFlow.first{isFullyLoaded} catches the initial default.
-        _uiState.update { it.copy(isLoading = true, isFullyLoaded = false, statusMessage = "Loading graph from $path...") }
+        // fatalError is cleared so a stale error overlay never persists over a new successful load.
+        _uiState.update { it.copy(isLoading = true, isFullyLoaded = false, statusMessage = "Loading graph from $path...", fatalError = null) }
         _indexingProgress.value = IndexingState.Idle
         val job = scope.launch {
             try {
@@ -425,9 +564,15 @@ class StelekitViewModel(
                                 logger.info("Phase 1 complete - UI is now interactive")
                                 _uiState.update { it.copy(isLoading = false, statusMessage = "Ready") }
 
+                                // Resolve saved recents now that Phase 1 has populated the DB.
+                                // Running before loadGraph is finished would race with clear().
+                                scope.launch { refreshRecentPages() }
+
                                 // Ensure today's journal exists so it appears at the top of the
                                 // journals list. No navigation — the list updates reactively.
                                 scope.launch { journalService.ensureTodayJournal() }
+
+                                startMidnightBoundaryWatcher()
                             },
                             onFullyLoaded = {
                                 logger.info("Graph fully loaded")
@@ -448,8 +593,11 @@ class StelekitViewModel(
                                     } catch (e: kotlinx.coroutines.CancellationException) {
                                         _indexingProgress.value = IndexingState.Idle
                                         throw e
-                                    } catch (e: Exception) {
-                                        logger.error("Background indexing failed: ${e.message}")
+                                    } catch (e: Throwable) {
+                                        // Catch Throwable (not just Exception) so OutOfMemoryError
+                                        // during 8000+ page indexing doesn't crash via the default
+                                        // uncaught exception handler.
+                                        logger.error("Background indexing failed: ${e::class.simpleName}: ${e.message}")
                                         _indexingProgress.value = IndexingState.Idle
                                     }
                                 }
@@ -484,9 +632,24 @@ class StelekitViewModel(
                 _uiState.update { it.copy(isLoading = false) }
                 throw e
             } catch (e: Exception) {
+                val errorText = buildString {
+                    append(e::class.simpleName ?: e::class.qualifiedName ?: "UnknownError")
+                    e.message?.let { append(": ", sanitizeErrorMessage(it)) }
+                }
                 e.printStackTrace()
-                logger.error("Error loading graph", e)
-                _uiState.update { it.copy(isLoading = false, isFullyLoaded = true, statusMessage = "Error: ${e.message}") }
+                logger.error("Error loading graph: $errorText")
+                _uiState.update { it.copy(isLoading = false, isFullyLoaded = true, statusMessage = "Error: $errorText", fatalError = errorText) }
+            } catch (e: Throwable) {
+                // OutOfMemoryError, NoClassDefFoundError, and other JVM errors must not crash
+                // the app silently. Surface as a recoverable error state so the user sees
+                // a message instead of a black screen. fatalError is shown on the error
+                // report screen where the user can copy the full message for filing a bug.
+                val errorText = buildString {
+                    append(e::class.simpleName ?: e::class.qualifiedName ?: "UnknownError")
+                    e.message?.let { append(": ", sanitizeErrorMessage(it)) }
+                }
+                logger.error("Fatal error loading graph (Throwable): $errorText")
+                _uiState.update { it.copy(isLoading = false, isFullyLoaded = true, statusMessage = "Error: $errorText", fatalError = errorText) }
             }
         }
         // Guarantee isLoading resets if the job is cancelled before reaching its first
@@ -509,6 +672,17 @@ class StelekitViewModel(
         }
     }
 
+    fun reloadCurrentPageFromDisk() {
+        val currentScreen = _uiState.value.currentScreen
+        if (currentScreen is Screen.PageView) {
+            scope.launch {
+                graphLoader.loadFullPage(currentScreen.page.uuid.value, force = true)
+                refreshCurrentPage()
+            }
+        }
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
     fun toggleFavorite(page: Page) {
         scope.launch {
             pageRepository.toggleFavorite(page.uuid)
@@ -517,13 +691,15 @@ class StelekitViewModel(
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun toggleFavorite(pageUuid: String) {
         scope.launch {
-            pageRepository.toggleFavorite(pageUuid)
+            pageRepository.toggleFavorite(PageUuid(pageUuid))
             refreshCurrentPage()
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun clear() {
         scope.launch {
             pageRepository.clear()
@@ -531,33 +707,38 @@ class StelekitViewModel(
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun indentBlock(blockUuid: String) {
         scope.launch {
-            blockRepository.indentBlock(blockUuid)
+            blockRepository.indentBlock(BlockUuid(blockUuid))
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun outdentBlock(blockUuid: String) {
         scope.launch {
-            blockRepository.outdentBlock(blockUuid)
+            blockRepository.outdentBlock(BlockUuid(blockUuid))
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun moveBlockUp(blockUuid: String) {
         scope.launch {
-            blockRepository.moveBlockUp(blockUuid)
+            blockRepository.moveBlockUp(BlockUuid(blockUuid))
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun moveBlockDown(blockUuid: String) {
         scope.launch {
-            blockRepository.moveBlockDown(blockUuid)
+            blockRepository.moveBlockDown(BlockUuid(blockUuid))
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun moveBlock(blockUuid: String, newParentUuid: String?, newPosition: Int) {
         scope.launch {
-            blockRepository.moveBlock(blockUuid, newParentUuid, newPosition)
+            blockRepository.moveBlock(BlockUuid(blockUuid), newParentUuid?.let { BlockUuid(it) }, newPosition)
         }
     }
 
@@ -565,12 +746,13 @@ class StelekitViewModel(
         _uiState.update { it.copy(editingBlockId = blockUuid, editingCursorIndex = cursorIndex) }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun addNewBlock(currentBlockUuid: String) {
         scope.launch {
-            val currentBlockResult = blockRepository.getBlockByUuid(currentBlockUuid).first()
+            val currentBlockResult = blockRepository.getBlockByUuid(BlockUuid(currentBlockUuid)).first()
             val currentBlock = currentBlockResult.getOrNull() ?: return@launch
 
-            val siblingsResult = blockRepository.getBlockSiblings(currentBlockUuid).first()
+            val siblingsResult = blockRepository.getBlockSiblings(BlockUuid(currentBlockUuid)).first()
             val siblings = siblingsResult.getOrNull() ?: emptyList()
 
             val newPosition = currentBlock.position + 1
@@ -581,10 +763,10 @@ class StelekitViewModel(
 
             val now = kotlin.time.Clock.System.now()
             val newBlock = Block(
-                uuid = generateUuid(),
+                uuid = BlockUuid(generateUuid()),
                 pageUuid = currentBlock.pageUuid,
                 parentUuid = currentBlock.parentUuid,
-                leftUuid = currentBlock.uuid,
+                leftUuid = currentBlock.uuid.value,
                 content = "",
                 level = currentBlock.level,
                 position = newPosition,
@@ -596,17 +778,18 @@ class StelekitViewModel(
 
             val blocksToSave = updatedSiblings + newBlock
             blockRepository.saveBlocks(blocksToSave)
-            
-            requestEditBlock(newBlock.uuid)
+
+            requestEditBlock(newBlock.uuid.value)
         }
     }
 
     /**
      * Add a new block to the end of a page
      */
+    @OptIn(DirectRepositoryWrite::class)
     fun addBlockToPage(pageUuid: String) {
         scope.launch {
-            val pageResult = pageRepository.getPageByUuid(pageUuid).first()
+            val pageResult = pageRepository.getPageByUuid(PageUuid(pageUuid)).first()
             val page = pageResult.getOrNull() ?: return@launch
 
             val blocksResult = blockRepository.getBlocksForPage(page.uuid).first()
@@ -620,10 +803,10 @@ class StelekitViewModel(
             val now = kotlin.time.Clock.System.now()
             
             val newBlock = Block(
-                uuid = generateUuid(),
+                uuid = BlockUuid(generateUuid()),
                 pageUuid = page.uuid,
                 parentUuid = null,
-                leftUuid = lastBlock?.uuid,
+                leftUuid = lastBlock?.uuid?.value,
                 content = "",
                 level = 0,
                 position = newPosition,
@@ -634,21 +817,23 @@ class StelekitViewModel(
             )
 
             blockRepository.saveBlock(newBlock)
-            requestEditBlock(newBlock.uuid)
+            requestEditBlock(newBlock.uuid.value)
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun splitBlock(blockUuid: String, cursorPosition: Int) {
         scope.launch {
-            blockRepository.splitBlock(blockUuid, cursorPosition).onRight { newBlock ->
-                requestEditBlock(newBlock.uuid)
+            blockRepository.splitBlock(BlockUuid(blockUuid), cursorPosition).onRight { newBlock ->
+                requestEditBlock(newBlock.uuid.value)
             }
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun mergeBlock(blockUuid: String) {
         scope.launch {
-            val currentBlockResult = blockRepository.getBlockByUuid(blockUuid).first()
+            val currentBlockResult = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first()
             val currentBlock = currentBlockResult.getOrNull() ?: return@launch
 
             // Get ALL siblings including current block
@@ -662,16 +847,18 @@ class StelekitViewModel(
 
             if (currentIndex > 0) {
                 val prevBlock = siblings[currentIndex - 1]
-                blockRepository.mergeBlocks(prevBlock.uuid, blockUuid, "").onRight {
-                    requestEditBlock(prevBlock.uuid, prevBlock.content.length)
+                blockRepository.mergeBlocks(prevBlock.uuid, BlockUuid(blockUuid), "").onRight {
+                    requestEditBlock(prevBlock.uuid.value, prevBlock.content.length)
                 }
             }
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun handleBackspace(blockUuid: String) {
         scope.launch {
-            val currentBlockResult = blockRepository.getBlockByUuid(blockUuid).first()
+            val blockUuidTyped = BlockUuid(blockUuid)
+            val currentBlockResult = blockRepository.getBlockByUuid(blockUuidTyped).first()
             val currentBlock = currentBlockResult.getOrNull() ?: return@launch
 
             val pageBlocksResult = blockRepository.getBlocksForPage(currentBlock.pageUuid).first()
@@ -684,60 +871,65 @@ class StelekitViewModel(
 
             if (currentIndex > 0) {
                 val previousBlock = siblings[currentIndex - 1]
-                blockRepository.deleteBlock(blockUuid)
-                requestEditBlock(previousBlock.uuid, previousBlock.content.length)
+                blockRepository.deleteBlock(blockUuidTyped)
+                requestEditBlock(previousBlock.uuid.value, previousBlock.content.length)
             } else if (currentBlock.parentUuid != null) {
-                val parent = allBlocks.find { it.uuid == currentBlock.parentUuid }
-                blockRepository.deleteBlock(blockUuid)
+                val parent = allBlocks.find { it.uuid.value == currentBlock.parentUuid }
+                blockRepository.deleteBlock(blockUuidTyped)
                 if (parent != null) {
-                    requestEditBlock(parent.uuid, parent.content.length)
+                    requestEditBlock(parent.uuid.value, parent.content.length)
                 }
             } else if (siblings.size > 1) {
                 val nextBlock = siblings[1]
-                blockRepository.deleteBlock(blockUuid)
-                requestEditBlock(nextBlock.uuid, 0)
+                blockRepository.deleteBlock(blockUuidTyped)
+                requestEditBlock(nextBlock.uuid.value, 0)
             }
         }
     }
 
     fun focusPreviousBlock(blockUuid: String) {
         scope.launch {
-            val currentBlockResult = blockRepository.getBlockByUuid(blockUuid).first()
+            val currentBlockResult = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first()
             val currentBlock = currentBlockResult.getOrNull() ?: return@launch
 
             val pageBlocksResult = blockRepository.getBlocksForPage(currentBlock.pageUuid).first()
             val allBlocks = pageBlocksResult.getOrNull() ?: return@launch
             val sortedBlocks = dev.stapler.stelekit.outliner.BlockSorter.sort(allBlocks)
 
-            val currentIndex = sortedBlocks.indexOfFirst { it.uuid == blockUuid }
+            val currentIndex = sortedBlocks.indexOfFirst { it.uuid.value == blockUuid }
 
             if (currentIndex > 0) {
                 val prevBlock = sortedBlocks[currentIndex - 1]
-                requestEditBlock(prevBlock.uuid, prevBlock.content.length)
+                requestEditBlock(prevBlock.uuid.value, prevBlock.content.length)
             }
         }
     }
 
     fun focusNextBlock(blockUuid: String) {
         scope.launch {
-            val currentBlockResult = blockRepository.getBlockByUuid(blockUuid).first()
+            val currentBlockResult = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first()
             val currentBlock = currentBlockResult.getOrNull() ?: return@launch
 
             val pageBlocksResult = blockRepository.getBlocksForPage(currentBlock.pageUuid).first()
             val allBlocks = pageBlocksResult.getOrNull() ?: return@launch
             val sortedBlocks = dev.stapler.stelekit.outliner.BlockSorter.sort(allBlocks)
 
-            val currentIndex = sortedBlocks.indexOfFirst { it.uuid == blockUuid }
+            val currentIndex = sortedBlocks.indexOfFirst { it.uuid.value == blockUuid }
 
             if (currentIndex != -1 && currentIndex < sortedBlocks.size - 1) {
                 val nextBlock = sortedBlocks[currentIndex + 1]
-                requestEditBlock(nextBlock.uuid, 0)
+                requestEditBlock(nextBlock.uuid.value, 0)
             }
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     fun navigateTo(screen: Screen, addToHistory: Boolean = true) {
         val navStart = kotlin.time.Clock.System.now().toEpochMilliseconds()
+        // addToRecent must run outside the update lambda — it has side effects (launches a
+        // coroutine, calls platformSettings) and calls _uiState.update itself, which would
+        // create a nested update.
+        if (screen is Screen.PageView) addToRecent(screen.page)
         _uiState.update { state ->
             val newHistory = if (addToHistory) {
                 // Trim any forward history and add new screen
@@ -754,10 +946,7 @@ class StelekitViewModel(
                 navigationHistory = newHistory,
                 historyIndex = newIndex,
                 statusMessage = when(screen) {
-                    is Screen.PageView -> {
-                        addToRecent(screen.page)
-                        "Opened page: ${screen.page.name}"
-                    }
+                    is Screen.PageView -> "Opened page: ${screen.page.name}"
                     is Screen.Journals -> "Opened Journals"
                     is Screen.Flashcards -> "Opened Flashcards"
                     is Screen.AllPages -> "Opened All Pages"
@@ -769,6 +958,7 @@ class StelekitViewModel(
                     is Screen.LibraryStats -> "Opened Library Stats"
                     is Screen.VaultUnlock -> "Vault locked"
                     is Screen.Gallery -> "Opened Gallery"
+                    is Screen.AssetBrowser -> "Opened Asset Browser"
                     is Screen.AnnotationEditor -> "Opened Annotation Editor"
                 }
             )
@@ -787,6 +977,11 @@ class StelekitViewModel(
         )
         if (screen is Screen.PageView) {
             refreshCurrentPage()
+            scope.launch {
+                // Re-read from disk on every navigation so stale in-memory copies are evicted.
+                // Uses the mtime guard internally so this is cheap when nothing changed.
+                graphLoader.loadFullPage(screen.page.uuid.value)
+            }
             // Fire-and-forget visit tracking — does not block navigation
             scope.launch {
                 searchRepository.recordPageVisit(screen.page.uuid)
@@ -863,7 +1058,7 @@ class StelekitViewModel(
             }
 
             // Page not in DB — check if it exists on disk and priority-load it
-            val loadedPage = graphLoader.loadPageByName(pageName)
+            val loadedPage = graphLoader.loadPageByName(PageName(pageName))
             if (loadedPage != null) {
                 navigateTo(Screen.PageView(loadedPage))
                 return@launch
@@ -881,7 +1076,7 @@ class StelekitViewModel(
     
     fun navigateToPageByUuid(pageUuid: String) {
         scope.launch {
-            val page = pageRepository.getPageByUuid(pageUuid).first().getOrNull()
+            val page = pageRepository.getPageByUuid(PageUuid(pageUuid)).first().getOrNull()
             if (page != null) {
                 navigateTo(Screen.PageView(page))
             } else {
@@ -907,9 +1102,9 @@ class StelekitViewModel(
 
     fun navigateToBlock(blockUuid: String) {
         scope.launch {
-            val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+            val block = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first().getOrNull()
             if (block != null) {
-                val page = cachedAllPages.find { it.uuid == block.pageUuid }
+                val page = pageRepository.getPageByUuid(block.pageUuid).first().getOrNull()
                 if (page != null) {
                     navigateTo(Screen.PageView(page))
                     // TODO: Scroll to block
@@ -922,13 +1117,14 @@ class StelekitViewModel(
      * Bulk delete pages by UUID. Deletes from database and removes disk files.
      * Refreshes the regular pages list after deletion.
      */
+    @OptIn(DirectRepositoryWrite::class)
     fun bulkDeletePages(uuids: List<String>) {
         scope.launch {
             uuids.forEach { uuid ->
                 try {
                     // Look up page to get file path before deleting
-                    val page = pageRepository.getPageByUuid(uuid).first().getOrNull()
-                    pageRepository.deletePage(uuid)
+                    val page = pageRepository.getPageByUuid(PageUuid(uuid)).first().getOrNull()
+                    pageRepository.deletePage(PageUuid(uuid))
                     // Remove from disk if file path is known
                     page?.filePath?.takeIf { it.isNotBlank() }?.let { path ->
                         fileSystem.deleteFile(path)
@@ -946,6 +1142,7 @@ class StelekitViewModel(
     /**
      * Create a new page with the given name
      */
+    @OptIn(DirectRepositoryWrite::class)
     private suspend fun createPage(pageName: String): Page? {
         return try {
             val now = kotlin.time.Clock.System.now()
@@ -955,7 +1152,7 @@ class StelekitViewModel(
             val isJournal = pageName.matches(Regex("^\\d{4}[-_]\\d{2}[-_]\\d{2}$"))
 
             val newPage = Page(
-                uuid = uuid,
+                uuid = PageUuid(uuid),
                 name = pageName,
                 namespace = null,
                 filePath = null, // Will be set when saving
@@ -992,7 +1189,7 @@ class StelekitViewModel(
      * Get the content of a block by its UUID
      */
     suspend fun getBlockContent(blockUuid: String): String? {
-        val blockResult = blockRepository.getBlockByUuid(blockUuid).first()
+        val blockResult = blockRepository.getBlockByUuid(BlockUuid(blockUuid)).first()
         return blockResult.getOrNull()?.content
     }
 
@@ -1001,7 +1198,7 @@ class StelekitViewModel(
      * from GraphLoader to detect editing conflicts.
      */
     fun startAutoSave() {
-        graphWriter.startAutoSave(scope)
+        graphWriter.startAutoSave()
         observeExternalFileChanges()
         observeWriteErrors()
         logger.info("Auto-save started")
@@ -1040,7 +1237,7 @@ class StelekitViewModel(
                 // Evict only this page's hierarchy cache so unrelated pages stay warm.
                 blockStateManager?.cacheEvictPage(currentPage.uuid)
 
-                // Three-tier protection:
+                // Four-tier protection:
                 // 1. Actively editing a block right now.
                 // 2. Page has dirty blocks (locally-modified, DB save confirmed but not yet
                 //    written to disk within the ~300ms debounce window).
@@ -1048,19 +1245,23 @@ class StelekitViewModel(
                 //    confirmation, but the file hasn't landed on disk yet. Without this tier
                 //    an external change arriving in that 300ms window bypasses the dialog and
                 //    silently overwrites local content.
+                // 4. A structural op (split/merge/delete) is in the actor queue but has not
+                //    yet committed to the DB. Without this tier an external change arriving
+                //    in the actor-queue window silently races with the structural op.
                 val dirtyUuids = blockStateManager?.dirtyBlockUuids ?: emptySet()
                 val pageHasDirtyBlocks = blockStateManager
-                    ?.blocks?.value?.get(currentPage.uuid)
-                    ?.any { it.uuid in dirtyUuids }
+                    ?.blocks?.value?.get(currentPage.uuid.value)
+                    ?.any { it.uuid.value in dirtyUuids }
                     ?: false
-                val hasPendingDiskWrite = blockStateManager?.hasPendingDiskWrite(currentPage.uuid) ?: false
-                val shouldProtect = editingBlockUuid != null || pageHasDirtyBlocks || hasPendingDiskWrite
+                val hasPendingDiskWrite = blockStateManager?.hasPendingDiskWrite(currentPage.uuid.value) ?: false
+                val hasActorPending = blockStateManager?.hasActorPendingWrites ?: false
+                val shouldProtect = editingBlockUuid != null || pageHasDirtyBlocks || hasPendingDiskWrite || hasActorPending
                 if (!shouldProtect) return@collect
 
                 // Cancel the pending disk write so auto-save cannot overwrite the disk file
                 // while the conflict dialog is open. If the user picks "Keep Local", we
                 // re-queue the write explicitly in keepLocalChanges().
-                blockStateManager?.cancelPendingDiskSave(currentPage.uuid)
+                blockStateManager?.cancelPendingDiskSave(currentPage.uuid.value)
 
                 // Suppress GraphLoader's automatic re-import — we handle it via the dialog
                 event.suppress()
@@ -1069,21 +1270,21 @@ class StelekitViewModel(
                 // dirty block on the page if the user has clicked away.
                 val conflictBlockUuid = editingBlockUuid
                     ?: dirtyUuids.firstOrNull { uuid ->
-                        blockStateManager?.blocks?.value?.get(currentPage.uuid)
-                            ?.any { it.uuid == uuid } == true
+                        blockStateManager?.blocks?.value?.get(currentPage.uuid.value)
+                            ?.any { it.uuid.value == uuid } == true
                     }
                     ?: return@collect
 
                 // Read the latest local content from BlockStateManager's optimistic state
                 val localContent = blockStateManager
-                    ?.blocks?.value?.get(currentPage.uuid)
-                    ?.find { it.uuid == conflictBlockUuid }?.content
-                    ?: blockRepository.getBlockByUuid(conflictBlockUuid).first().getOrNull()?.content
+                    ?.blocks?.value?.get(currentPage.uuid.value)
+                    ?.find { it.uuid.value == conflictBlockUuid }?.content
+                    ?: blockRepository.getBlockByUuid(BlockUuid(conflictBlockUuid)).first().getOrNull()?.content
                     ?: ""
 
                 _uiState.update { it.copy(
                     diskConflict = DiskConflict(
-                        pageUuid = currentPage.uuid,
+                        pageUuid = currentPage.uuid.value,
                         pageName = currentPage.name,
                         filePath = event.filePath,
                         editingBlockUuid = conflictBlockUuid,
@@ -1117,6 +1318,10 @@ class StelekitViewModel(
         _uiState.update { it.copy(indexingError = null) }
     }
 
+    fun clearFatalError() {
+        _uiState.update { it.copy(fatalError = null) }
+    }
+
     fun retryIndexing() {
         _uiState.update { it.copy(indexingError = null) }
         scope.launch {
@@ -1142,7 +1347,7 @@ class StelekitViewModel(
         _uiState.update { it.copy(diskConflict = null) }
         // Re-queue a save for the current page so local content overwrites the disk file
         val currentPage = (uiState.value.currentScreen as? Screen.PageView)?.page ?: return
-        blockStateManager?.queuePageSave(currentPage.uuid)
+        blockStateManager?.queuePageSave(currentPage.uuid.value)
     }
 
     /**
@@ -1153,7 +1358,7 @@ class StelekitViewModel(
         val conflict = _uiState.value.diskConflict ?: return
         _uiState.update { it.copy(diskConflict = null) }
         scope.launch {
-            graphLoader.parseAndSavePage(conflict.filePath, conflict.diskContent, dev.stapler.stelekit.parsing.ParseMode.FULL)
+            graphLoader.parseAndSavePage(FilePath(conflict.filePath), conflict.diskContent, dev.stapler.stelekit.parsing.ParseMode.FULL)
             // Flush the accepted disk content back to disk immediately. Without this,
             // any auto-save that ran during the dialog would have written local content
             // to disk, leaving disk/DB out of sync after we update the DB here.
@@ -1175,6 +1380,7 @@ class StelekitViewModel(
      * The conflict dialog is dismissed and the block enters edit mode so the user
      * can resolve the markers immediately.
      */
+    @OptIn(DirectRepositoryWrite::class)
     fun manualResolve() {
         val conflict = _uiState.value.diskConflict ?: return
         if (conflict.editingBlockUuid.isBlank()) {
@@ -1194,10 +1400,11 @@ class StelekitViewModel(
                 if (!conflict.diskContent.endsWith("\n")) appendLine()
                 append(">>>>>>> Disk")
             }
-            val blockResult = blockRepository.getBlockByUuid(conflict.editingBlockUuid).first()
+            val blockResult = blockRepository.getBlockByUuid(BlockUuid(conflict.editingBlockUuid ?: return@launch)).first()
             val block = blockResult.getOrNull() ?: return@launch
             val updatedBlock = block.copy(content = conflictContent, updatedAt = kotlin.time.Clock.System.now())
-            blockRepository.saveBlock(updatedBlock)
+            writeActor?.execute { blockRepository.saveBlock(updatedBlock) }
+                ?: blockRepository.saveBlock(updatedBlock)
             // Focus the block so the user can start editing immediately
             requestEditBlock(conflict.editingBlockUuid, 0)
         }
@@ -1207,6 +1414,7 @@ class StelekitViewModel(
      * Resolve disk conflict: preserve the user's content by appending it as a
      * new block on the page, then load the disk version.
      */
+    @OptIn(DirectRepositoryWrite::class)
     fun saveAsNewBlock() {
         val conflict = _uiState.value.diskConflict ?: return
         if (conflict.localContent.isBlank()) {
@@ -1217,18 +1425,19 @@ class StelekitViewModel(
         _uiState.update { it.copy(diskConflict = null) }
         scope.launch {
             // First reload from disk so the page structure is up-to-date
-            graphLoader.parseAndSavePage(conflict.filePath, conflict.diskContent, dev.stapler.stelekit.parsing.ParseMode.FULL)
+            graphLoader.parseAndSavePage(FilePath(conflict.filePath), conflict.diskContent, dev.stapler.stelekit.parsing.ParseMode.FULL)
             // Then append the user's content as a new block
             val now = kotlin.time.Clock.System.now()
             val newBlock = dev.stapler.stelekit.model.Block(
-                uuid = dev.stapler.stelekit.util.UuidGenerator.generateV7(),
-                pageUuid = conflict.pageUuid,
+                uuid = BlockUuid(dev.stapler.stelekit.util.UuidGenerator.generateV7()),
+                pageUuid = PageUuid(conflict.pageUuid),
                 content = conflict.localContent,
                 position = Int.MAX_VALUE,
                 createdAt = now,
                 updatedAt = now
             )
-            blockRepository.saveBlock(newBlock)
+            writeActor?.execute { blockRepository.saveBlock(newBlock) }
+                ?: blockRepository.saveBlock(newBlock)
             // Persist the new block to disk
             blockStateManager?.savePageNow(conflict.pageUuid)
         }
@@ -1267,6 +1476,232 @@ class StelekitViewModel(
         )}
     }
 
+    // ===== Share Dialog =====
+
+    /** Opens the share dialog. */
+    fun showShareDialog() {
+        _uiState.update { it.copy(shareDialogVisible = true) }
+    }
+
+    /** Closes the share dialog. */
+    fun hideShareDialog() {
+        _uiState.update { it.copy(shareDialogVisible = false) }
+    }
+
+    /** Updates the share format selection (persists across dialog invocations in the session). */
+    fun setShareFormat(format: String) {
+        _uiState.update { it.copy(shareFormat = format) }
+    }
+
+    /** Updates the share scope selection (persists across dialog invocations in the session). */
+    fun setShareScope(scope: ShareScope) {
+        _uiState.update { it.copy(shareScope = scope) }
+    }
+
+    /**
+     * Exports the current page as HTML and uploads it to Google Docs.
+     * Runs on the ViewModel's own scope (never rememberCoroutineScope — that scope
+     * is cancelled when the composable leaves composition).
+     * On success: opens the created document in the browser.
+     * On error: shows a snackbar notification.
+     */
+    /**
+     * Resolve export content for any [ShareScope].
+     *
+     * Routes to the appropriate ExportService method based on scope.
+     * Requires [journalFrom]/[journalTo] (non-null) when scope is [ShareScope.JournalRange].
+     */
+    suspend fun resolveExportContent(
+        shareScope: ShareScope,
+        page: Page,
+        allBlocks: List<Block>,
+        selectedUuids: Set<String>,
+        formatId: String,
+        journalFrom: LocalDate? = null,
+        journalTo: LocalDate? = null,
+    ): Either<DomainError, String> {
+        val svc = exportService
+            ?: return ExportError.SerializationFailed("Export service unavailable").left()
+        return when (shareScope) {
+            ShareScope.CurrentPage -> svc.exportToString(page, allBlocks, formatId)
+            ShareScope.SelectedBlocks -> svc.exportToString(
+                page,
+                svc.subtreeBlocks(allBlocks, selectedUuids),
+                formatId,
+            )
+            ShareScope.PageAndLinks -> svc.exportPageWithLinks(
+                page, allBlocks, formatId, pageRepository, blockRepository,
+            )
+            ShareScope.JournalRange -> {
+                val from = journalFrom
+                    ?: return ExportError.SerializationFailed("Start date not set for journal export").left()
+                val to = journalTo
+                    ?: return ExportError.SerializationFailed("End date not set for journal export").left()
+                svc.exportJournalRange(from, to, formatId, pageRepository, blockRepository)
+            }
+        }
+    }
+
+    /** Exports the resolved scope content to the clipboard. Errors surface via [notificationManager]. */
+    fun exportScopeToClipboard(
+        shareScope: ShareScope,
+        page: Page,
+        allBlocks: List<Block>,
+        selectedUuids: Set<String>,
+        formatId: String,
+        journalFrom: LocalDate? = null,
+        journalTo: LocalDate? = null,
+        onDone: () -> Unit = {},
+    ) {
+        val svc = exportService ?: return
+        scope.launch {
+            try {
+                when (shareScope) {
+                    ShareScope.CurrentPage ->
+                        svc.exportToClipboard(page, allBlocks, formatId)
+                    ShareScope.SelectedBlocks ->
+                        svc.exportToClipboard(
+                            page,
+                            svc.subtreeBlocks(allBlocks, selectedUuids),
+                            formatId,
+                        )
+                    else -> {
+                        val result = resolveExportContent(
+                            shareScope, page, allBlocks, selectedUuids, formatId,
+                            journalFrom, journalTo,
+                        )
+                        result.fold(
+                            ifLeft = { err ->
+                                withContext(Dispatchers.Main) {
+                                    notificationManager?.show(
+                                        "Export failed: ${err.message}",
+                                        NotificationType.ERROR,
+                                    )
+                                }
+                            },
+                            ifRight = { content ->
+                                if (formatId == "html") {
+                                    val plainResult = resolveExportContent(
+                                        shareScope, page, allBlocks, selectedUuids,
+                                        "plain-text", journalFrom, journalTo,
+                                    )
+                                    svc.clipboard.writeHtml(content, plainResult.getOrNull() ?: content)
+                                } else {
+                                    svc.clipboard.writeText(content)
+                                }
+                            },
+                        )
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    notificationManager?.show("Clipboard export failed: ${e.message}", NotificationType.ERROR)
+                }
+            } finally {
+                withContext(Dispatchers.Main) { onDone() }
+            }
+        }
+    }
+
+    /** Launches Google OAuth in the ViewModel scope, updates [AppState.shareIsGoogleAuthenticated] on completion. */
+    fun launchGoogleAuth(manager: GoogleAuthManager) {
+        scope.launch {
+            val result = manager.authenticate()
+            val authenticated = result.isRight()
+            val email = if (authenticated) manager.getConnectedEmail() else null
+            _uiState.update { it.copy(
+                shareIsGoogleAuthenticated = authenticated,
+                shareGoogleEmail = email,
+            ) }
+            if (!authenticated) {
+                withContext(Dispatchers.Main) {
+                    notificationManager?.show(
+                        "Google sign-in failed: ${result.fold({ it.message }, { "" })}",
+                        NotificationType.ERROR,
+                    )
+                }
+            }
+        }
+    }
+
+    /** Re-queries auth state from [manager] and syncs to [AppState]. Call when the dialog opens. */
+    fun refreshShareGoogleAuthState(manager: GoogleAuthManager) {
+        scope.launch {
+            val authenticated = manager.isAuthenticated()
+            val email = if (authenticated) manager.getConnectedEmail() else null
+            _uiState.update { it.copy(
+                shareIsGoogleAuthenticated = authenticated,
+                shareGoogleEmail = email,
+            ) }
+        }
+    }
+
+    /** Updates the journal date range used by the [ShareScope.JournalRange] export path. */
+    fun setShareJournalDateRange(from: LocalDate?, to: LocalDate?) {
+        _uiState.update { it.copy(shareJournalFromDate = from, shareJournalToDate = to) }
+    }
+
+    fun shareToGoogleDocs(
+        shareScope: ShareScope,
+        page: Page,
+        allBlocks: List<Block>,
+        selectedUuids: Set<String>,
+        driveClient: dev.stapler.stelekit.platform.google.DriveUploader,
+        journalFrom: LocalDate? = null,
+        journalTo: LocalDate? = null,
+    ) {
+        _uiState.update { it.copy(isExportingToDrive = true) }
+        scope.launch(Dispatchers.Default) {
+            try {
+                val htmlResult = resolveExportContent(
+                    shareScope, page, allBlocks, selectedUuids, "html", journalFrom, journalTo,
+                )
+                htmlResult.fold(
+                    ifLeft = { err ->
+                        withContext(Dispatchers.Main) {
+                            notificationManager?.show("Export failed: ${err.message}", NotificationType.ERROR)
+                        }
+                    },
+                    ifRight = { html ->
+                        val uploadResult = driveClient.uploadFile(
+                            fileName = page.name,
+                            mimeType = "application/vnd.google-apps.document",
+                            bytes = html.encodeToByteArray(),
+                            parentFolderId = null,
+                        )
+                        uploadResult.fold(
+                            ifLeft = { err ->
+                                withContext(Dispatchers.Main) {
+                                    notificationManager?.show(
+                                        "Google Docs upload failed: ${err.message}",
+                                        NotificationType.ERROR,
+                                    )
+                                }
+                            },
+                            ifRight = { fileId ->
+                                dev.stapler.stelekit.platform.openInBrowser(
+                                    "https://docs.google.com/document/d/$fileId/edit",
+                                )
+                            }
+                        )
+                    }
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    notificationManager?.show("Google Docs export failed: ${e.message}", NotificationType.ERROR)
+                }
+            } finally {
+                withContext(Dispatchers.Main + NonCancellable) {
+                    _uiState.update { it.copy(isExportingToDrive = false) }
+                }
+            }
+        }
+    }
+
     fun setThemeMode(mode: StelekitThemeMode) {
         _uiState.update { it.copy(themeMode = mode) }
         updateCommands()
@@ -1280,7 +1715,19 @@ class StelekitViewModel(
         platformSettings.putBoolean("onboardingCompleted", completed)
         _uiState.update { it.copy(onboardingCompleted = completed) }
     }
-    
+
+    fun setStatusMessage(message: String) {
+        _uiState.update { it.copy(statusMessage = message) }
+    }
+
+    private val _snackbarEvents = Channel<String>(Channel.BUFFERED)
+    val snackbarEvents: Flow<String> = _snackbarEvents.receiveAsFlow()
+
+    fun sendSnackbar(message: String) {
+        val result = _snackbarEvents.trySend(message)
+        if (!result.isSuccess) logger.warn("sendSnackbar: channel full, message dropped: $message")
+    }
+
     fun toggleDebugMode() {
         _uiState.update { state ->
             val newDebugMode = !state.isDebugMode
@@ -1354,8 +1801,8 @@ class StelekitViewModel(
      */
     suspend fun getAvailableCommands(): List<EditorCommand> {
         val context = CommandContext(
-            currentPageId = _uiState.value.currentPage?.uuid,
-            currentBlockId = _uiState.value.currentPage?.uuid // This would be updated by actual editor
+            currentPageId = _uiState.value.currentPage?.uuid?.value,
+            currentBlockId = _uiState.value.currentPage?.uuid?.value // This would be updated by actual editor
         )
         return commandManager.getAvailableCommands(context)
     }
@@ -1479,16 +1926,14 @@ class StelekitViewModel(
      * Launched on the ViewModel's own scope to avoid [ForgottenCoroutineScopeException]
      * when called from a lifecycle observer that may fire after composition teardown.
      */
-    fun flushAndLockVault(graphLoader: GraphLoader, graphWriter: GraphWriter, vaultManager: VaultManager) {
+    fun flushAndLockVault(graphLoader: GraphLoaderPort, graphWriter: GraphWriterPort, vaultManager: VaultManager) {
         scope.launch {
             blockStateManager?.flush()  // drain in-memory block edits before DEK is zeroed
             graphWriter.flush()
-            // close() zeroes the CryptoLayer's owned DEK copy before nulling the reference,
-            // so the copy is wiped independently of session.dek that vaultManager.lock() zeroes.
-            graphLoader.cryptoLayer?.close()
-            graphLoader.cryptoLayer = null
-            graphWriter.cryptoLayer?.close()
-            graphWriter.cryptoLayer = null
+            // closeAndClearCryptoLayer() zeroes the CryptoLayer's owned DEK copy before nulling
+            // the port's reference, independently of session.dek that vaultManager.lock() zeroes.
+            graphLoader.closeAndClearCryptoLayer()
+            graphWriter.closeAndClearCryptoLayer()
             vaultManager.lock()
         }
     }
@@ -1509,16 +1954,27 @@ class StelekitViewModel(
      */
     fun exportPage(formatId: String) {
         val page = _uiState.value.currentPage ?: return
-        val blocks = blockStateManager?.blocksForPage(page.uuid) ?: return
+        val blocks = blockStateManager?.blocksForPage(page.uuid.value) ?: return
         val sortedBlocks = BlockSorter.sort(blocks)
+        if (exportService == null) {
+            notificationManager?.show("Export unavailable", NotificationType.ERROR)
+            return
+        }
+        if (_uiState.value.isExporting) return
+        _uiState.update { it.copy(isExporting = true) }
         scope.launch(Dispatchers.Default) {
-            val service = exportService ?: return@launch
-            val result = service.exportToClipboard(page, sortedBlocks, formatId)
-            withContext(Dispatchers.Main) {
-                result.onRight {
-                    notificationManager?.show("Copied as ${formatDisplayName(formatId)}", NotificationType.SUCCESS)
-                }.onLeft { e ->
-                    notificationManager?.show("Export failed: ${e.message}", NotificationType.ERROR)
+            try {
+                val result = exportService.exportToClipboard(page, sortedBlocks, formatId)
+                withContext(Dispatchers.Main) {
+                    result.onRight {
+                        notificationManager?.show("Copied as ${formatDisplayName(formatId)}", NotificationType.SUCCESS)
+                    }.onLeft { e ->
+                        notificationManager?.show("Export failed: ${e.message}", NotificationType.ERROR)
+                    }
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    _uiState.update { it.copy(isExporting = false) }
                 }
             }
         }
@@ -1535,16 +1991,27 @@ class StelekitViewModel(
             exportPage(formatId)
             return
         }
-        val allBlocks = blockStateManager?.blocksForPage(page.uuid) ?: return
+        val allBlocks = blockStateManager?.blocksForPage(page.uuid.value) ?: return
+        if (exportService == null) {
+            notificationManager?.show("Export unavailable", NotificationType.ERROR)
+            return
+        }
+        if (_uiState.value.isExporting) return
+        _uiState.update { it.copy(isExporting = true) }
         scope.launch(Dispatchers.Default) {
-            val service = exportService ?: return@launch
-            val subtreeBlocks = service.subtreeBlocks(allBlocks, selectedUuids)
-            val result = service.exportToClipboard(page, subtreeBlocks, formatId)
-            withContext(Dispatchers.Main) {
-                result.onRight {
-                    notificationManager?.show("Copied as ${formatDisplayName(formatId)}", NotificationType.SUCCESS)
-                }.onLeft { e ->
-                    notificationManager?.show("Export failed: ${e.message}", NotificationType.ERROR)
+            try {
+                val subtreeBlocks = exportService.subtreeBlocks(allBlocks, selectedUuids)
+                val result = exportService.exportToClipboard(page, subtreeBlocks, formatId)
+                withContext(Dispatchers.Main) {
+                    result.onRight {
+                        notificationManager?.show("Copied as ${formatDisplayName(formatId)}", NotificationType.SUCCESS)
+                    }.onLeft { e ->
+                        notificationManager?.show("Export failed: ${e.message}", NotificationType.ERROR)
+                    }
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    _uiState.update { it.copy(isExporting = false) }
                 }
             }
         }
@@ -1614,5 +2081,46 @@ class StelekitViewModel(
                 }
             }
         }
+    }
+
+    private var midnightWatcherJob: kotlinx.coroutines.Job? = null
+    private var lastJournalDate: kotlinx.datetime.LocalDate? = null
+
+    internal fun millisUntilNextMidnight(clock: Clock = Clock.System): Long {
+        val tz = TimeZone.currentSystemDefault()
+        val now = clock.now()
+        val today = now.toLocalDateTime(tz).date
+        val tomorrowMidnight = today.plus(1, DateTimeUnit.DAY).atStartOfDayIn(tz)
+        return (tomorrowMidnight - now).inWholeMilliseconds.coerceAtLeast(MIN_MIDNIGHT_DELAY_MS)
+    }
+
+    internal fun startMidnightBoundaryWatcher(clock: Clock = Clock.System) {
+        midnightWatcherJob?.cancel()
+        midnightWatcherJob = scope.launch(CoroutineName("midnight-boundary-watcher")) {
+            // Seed lastJournalDate from startup before entering the loop, so the first
+            // midnight crossing skips if today's journal was already created at startup.
+            val tz = TimeZone.currentSystemDefault()
+            lastJournalDate = clock.now().toLocalDateTime(tz).date
+            while (isActive) {
+                val delayMs = millisUntilNextMidnight(clock)
+                logger.info("Next journal boundary check in ${delayMs / 1000}s")
+                delay(delayMs)
+                val today = clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+                if (today == lastJournalDate) continue
+                logger.info("Day boundary crossed — ensuring today's journal exists")
+                try {
+                    journalService.ensureTodayJournal()
+                    lastJournalDate = today
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.error("ensureTodayJournal failed at midnight boundary: ${e.message}")
+                }
+            }
+        }
+    }
+
+    companion object {
+        private const val MIN_MIDNIGHT_DELAY_MS = 1_000L
     }
 }

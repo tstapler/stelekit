@@ -1,11 +1,14 @@
 package dev.stapler.stelekit.domain
 
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.repository.PageRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
@@ -15,8 +18,9 @@ import kotlinx.coroutines.launch
 
 /**
  * Maintains a reactive index of page names for the page-term suggestion feature.
- * Listens to [PageRepository.getAllPages] and rebuilds the [AhoCorasickMatcher]
- * on a background thread whenever the page set changes.
+ * Listens to [PageRepository.getPageNameEntries] (a names-only projection — never
+ * full Page objects) and rebuilds the [AhoCorasickMatcher] on a background thread
+ * whenever the page set changes.
  *
  * Journal pages (date-named entries) are excluded by default to reduce noise from
  * date strings in block content inadvertently matching journal page names.
@@ -38,27 +42,63 @@ class PageNameIndex(
 ) {
     private val _entries = MutableStateFlow<List<AhoCorasickMatcher.TrieEntry>>(emptyList())
 
+    private val logger = Logger("PageNameIndex")
+
     /**
      * Pre-built matcher for the current page set. Rebuilt on a background thread
      * whenever the page list changes. Null until the first page list is received
      * or when the filtered page set is empty.
+     *
+     * The trie build allocates one node per distinct pattern character (8 000+ page graphs
+     * produce hundreds of thousands of nodes), so under memory pressure the construction
+     * itself can throw OutOfMemoryError. Degrade to a null matcher (suggestions off) instead
+     * of letting the Throwable escape the stateIn coroutine — uncaught, it kills the process
+     * on Android.
      */
+    /** Returns the canonical page names in the current matcher index snapshot. */
+    fun vocabularyNames(): List<String> = _entries.value.map { it.canonical }.distinct()
+
     val matcher: StateFlow<AhoCorasickMatcher?> = _entries
-        .map { entries -> if (entries.isEmpty()) null else AhoCorasickMatcher(entries) }
+        .map { entries ->
+            if (entries.isEmpty()) null else try {
+                AhoCorasickMatcher(entries)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                logger.error("Matcher build failed — suggestions disabled: ${e::class.simpleName}: ${e.message}")
+                null
+            }
+        }
         .flowOn(Dispatchers.Default)
         .stateIn(scope, SharingStarted.Eagerly, null)
 
     init {
         scope.launch {
-            pageRepository.getAllPages()
+            // Names-only projection: a standing observer must never materialize full Page
+            // objects for the whole graph (properties maps, file paths, timestamps) — on
+            // 8 000+ page graphs that re-allocation per write burst drove GC thrash and OOM
+            // on Android. (name, isJournal) pairs are all the matcher needs.
+            pageRepository.getPageNameEntries()
                 .distinctUntilChanged()
                 // Coalesce rapid bursts (e.g. graph load saving pages one by one) into a
                 // single rebuild. 500 ms matches the block-editor save debounce so a rename
                 // and its save settle before the matcher is rebuilt.
                 .debounce(rebuildDebounceMs)
+                // A Throwable from the upstream flow (e.g. OutOfMemoryError materializing a
+                // large page list) must not escape this collector: uncaught coroutine
+                // Throwables kill the process on Android. Keep the last good entries.
+                .catch { e ->
+                    logger.error("Page flow failed — keeping last matcher: ${e::class.simpleName}: ${e.message}")
+                }
                 .collect { result ->
                     result.getOrNull()?.let { pages ->
-                        _entries.value = buildEntries(pages.map { it.name to it.isJournal })
+                        try {
+                            _entries.value = buildEntries(pages.map { it.name to it.isJournal })
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Throwable) {
+                            logger.error("Entry rebuild failed — keeping last matcher: ${e::class.simpleName}: ${e.message}")
+                        }
                     }
                 }
         }

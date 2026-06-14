@@ -11,6 +11,8 @@ actual class DeviceInfo actual constructor(
     actual val appVersion: String
 )
 
+actual fun heapSummary(): String = "heap:n/a"
+
 actual fun getDeviceInfo(): DeviceInfo = DeviceInfo(
     platform = "Browser (wasmJs)",
     osVersion = "unknown",

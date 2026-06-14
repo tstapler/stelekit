@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.util.roundTo
 import kotlinx.serialization.Serializable
 
 /**
@@ -26,14 +27,31 @@ enum class MeasurementUnit {
     MILLIMETERS,
     FEET,
     INCHES,
+    /**
+     * US construction format: feet and inches with fractional inches to the nearest 1/16".
+     * Example: 1.6256 m → "5' 4 1/4\"" (5 feet, 4.25 inches).
+     */
+    FEET_INCHES,
     ;
 
+    /** Short symbol shown on measurement labels and in export data. */
     fun symbol(): String = when (this) {
         METERS -> "m"
         CENTIMETERS -> "cm"
         MILLIMETERS -> "mm"
         FEET -> "ft"
         INCHES -> "in"
+        FEET_INCHES -> "ft-in"
+    }
+
+    /** Human-readable name for UI pickers (e.g. unit dropdown). */
+    fun displayName(): String = when (this) {
+        METERS -> "Meters (m)"
+        CENTIMETERS -> "Centimeters (cm)"
+        MILLIMETERS -> "Millimeters (mm)"
+        FEET -> "Feet (ft)"
+        INCHES -> "Inches (in)"
+        FEET_INCHES -> "Feet & Inches (ft-in)"
     }
 }
 
@@ -99,27 +117,99 @@ data class MeasurementAnnotation(
 
 // ── Unit conversion helpers ───────────────────────────────────────────────────
 
+private const val METERS_TO_FEET = 3.280839895
+private const val METERS_TO_INCHES = 39.3700787402
+
 /**
  * Convert [meters] to the display value in [unit].
  *
  * Returns the raw numeric value — format/round at the call site.
+ * For [MeasurementUnit.FEET_INCHES] returns raw feet; use [formatFeetInches] for display.
  */
 fun metersToDisplay(meters: Double, unit: MeasurementUnit): Double = when (unit) {
     MeasurementUnit.METERS -> meters
     MeasurementUnit.CENTIMETERS -> meters * 100.0
     MeasurementUnit.MILLIMETERS -> meters * 1000.0
-    MeasurementUnit.FEET -> meters * 3.280839895
-    MeasurementUnit.INCHES -> meters * 39.3700787402
+    MeasurementUnit.FEET -> meters * METERS_TO_FEET
+    MeasurementUnit.INCHES -> meters * METERS_TO_INCHES
+    MeasurementUnit.FEET_INCHES -> meters * METERS_TO_FEET
 }
 
 /**
- * Format [meters] as a human-readable string with the given [unit] symbol.
+ * Format [meters] as a human-readable string in the given [unit].
  *
- * Example: `metersToDisplayString(1.5, MeasurementUnit.MILLIMETERS)` → `"1500.0 mm"`
+ * For [MeasurementUnit.FEET_INCHES], produces US construction format with fractional
+ * inches to the nearest 1/16": e.g. `1.6256 m` → `"5' 4 1/4\""`.
+ *
+ * For [MeasurementUnit.INCHES], produces fractional display to the nearest 1/16":
+ * e.g. `0.3175 m` → `"12 1/2\""`.
+ *
+ * All other units round to 3 significant decimal places.
  */
 fun metersToDisplayString(meters: Double, unit: MeasurementUnit): String {
-    val value = metersToDisplay(meters, unit)
-    return "${value} ${unit.symbol()}"
+    if (meters.isNaN() || meters.isInfinite()) return "—"
+    return when (unit) {
+        MeasurementUnit.FEET_INCHES -> formatFeetInches(meters)
+        MeasurementUnit.INCHES -> formatFractionalInches(meters * METERS_TO_INCHES)
+        else -> {
+            val value = metersToDisplay(meters, unit)
+            "${value.roundTo(3)} ${unit.symbol()}"
+        }
+    }
+}
+
+/**
+ * Format [meters] as `N' [M][F]"` where N = whole feet, M = whole inches, F = fractional inches.
+ *
+ * Fractional inches are rounded to the nearest 1/16" and displayed as a reduced fraction
+ * (e.g. `4/16` → `1/4`). Zero fractions are omitted. When remaining inches are exactly zero
+ * the `"` suffix is still emitted for consistent units: `"6' 0\""`.
+ *
+ * Rounding is applied to the total inches BEFORE splitting into feet and remaining inches,
+ * so that a value like 5'11 15/16" + 1/16" correctly carries to 6'0" instead of 5'12".
+ *
+ * Examples:
+ * - 1.63195 m → `"5' 4 1/4\""`  (5 ft + 4.25 in)
+ * - 1.8288 m  → `"6' 0\""`       (exactly 6 feet)
+ * - 0.3175 m  → `"1' 1/2\""`     (1 ft + 0.5 in; zero whole inches omitted)
+ */
+internal fun formatFeetInches(meters: Double): String {
+    val totalInches = meters * METERS_TO_INCHES
+    // Round to nearest 1/16" FIRST, then split into feet and remaining inches
+    val totalSixteenths = kotlin.math.round(totalInches * 16.0).toLong()
+    val wholeFeet = totalSixteenths / (12L * 16L)
+    val remainingSixteenths = totalSixteenths % (12L * 16L)
+    val wholeInches = remainingSixteenths / 16L
+    val fracSixteenths = remainingSixteenths % 16L
+    return if (fracSixteenths == 0L) {
+        "${wholeFeet}' ${wholeInches}\""
+    } else {
+        fun gcd(a: Long, b: Long): Long = if (b == 0L) a else gcd(b, a % b)
+        val g = gcd(fracSixteenths, 16L)
+        val num = fracSixteenths / g
+        val den = 16L / g
+        if (wholeInches == 0L) "${wholeFeet}' $num/$den\"" else "${wholeFeet}' $wholeInches $num/$den\""
+    }
+}
+
+/**
+ * Format [inches] as whole inches plus a reduced fraction to the nearest 1/16".
+ *
+ * Examples: `4.25` → `"4 1/4\""`, `12.0` → `"12\""`, `0.0625` → `"1/16\""`, `0.9375` → `"15/16\""`.
+ */
+internal fun formatFractionalInches(inches: Double): String {
+    fun gcd(a: Long, b: Long): Long = if (b == 0L) a else gcd(b, a % b)
+    val sixteenths = kotlin.math.round(inches * 16.0).toLong()
+    val wholeInches = sixteenths / 16L
+    val fracSixteenths = sixteenths % 16L
+    return if (fracSixteenths == 0L) {
+        "$wholeInches\""
+    } else {
+        val g = gcd(fracSixteenths, 16L)
+        val num = fracSixteenths / g
+        val den = 16L / g
+        if (wholeInches == 0L) "$num/$den\"" else "$wholeInches $num/$den\""
+    }
 }
 
 /**

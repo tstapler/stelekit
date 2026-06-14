@@ -89,6 +89,9 @@ kotlin {
 
                 // Ksoup — HTML parsing for URL import feature
                 implementation("com.fleeksoft.ksoup:ksoup:0.2.6")
+
+                // Okio — cross-platform file I/O for asset management
+                implementation("com.squareup.okio:okio:3.17.0")
             }
         }
 
@@ -105,6 +108,8 @@ kotlin {
                 implementation(kotlin("test"))
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
+                // Okio FakeFileSystem — in-memory file system for asset tests
+                implementation("com.squareup.okio:okio-fakefilesystem:3.17.0")
             }
         }
 
@@ -130,6 +135,12 @@ kotlin {
 
                 // BouncyCastle — Argon2id KDF + HKDF-SHA256 for paranoid-mode vault
                 implementation("org.bouncycastle:bcprov-jdk18on:1.80")
+
+                // PDFBox — PDF text extraction for asset OCR pipeline
+                implementation("org.apache.pdfbox:pdfbox:3.0.4")
+
+                // ONNX Runtime — on-device ML inference for image auto-labeling
+                implementation("com.microsoft.onnxruntime:onnxruntime:1.26.0")
 
                 // Graph databases for performance evaluation
                 // implementation("com.kuzudb:kuzu-jdbc:0.7.0")
@@ -198,6 +209,15 @@ kotlin {
 
                 // ExifInterface — EXIF orientation correction for camera-captured images
                 implementation("androidx.exifinterface:exifinterface:1.3.7")
+
+                // PDFBox Android — PDF text extraction for asset OCR pipeline (Android)
+                implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
+                // ML Kit Image Labeling — on-device image auto-labeling
+                implementation("com.google.mlkit:image-labeling:17.0.9")
+
+                // ML Kit Text Recognition — on-device OCR for image assets
+                implementation("com.google.mlkit:text-recognition:16.0.1")
 
                 // ARCore Depth API — optional AR depth sensing (Story 8.5)
                 // required=false in AndroidManifest so the app installs on non-AR devices.
@@ -334,6 +354,7 @@ composeCompiler {
 if (project.findProperty("enableJs") == "true") {
     afterEvaluate {
         tasks.named("wasmJsBrowserDistribution") {
+            notCompatibleWithConfigurationCache("copies sqlite-wasm files using project.file() and project.copy() APIs")
             doLast {
                 val sqliteWasmSrc = file("${rootDir}/build/wasm/node_modules/@sqlite.org/sqlite-wasm/sqlite-wasm/jswasm")
                 val distDir = file("${projectDir}/build/dist/wasmJs/productionExecutable")
@@ -379,8 +400,54 @@ configurations.all {
     )
 }
 
+// Display resolution helpers — work on X11, Wayland, and Wayland+XWayland.
+// Needed when $DISPLAY / $WAYLAND_DISPLAY are not forwarded into the Gradle daemon
+// (common on Wayland desktops and in SSH sessions without X forwarding).
+
+// Reads the effective UID from /proc (Linux only); null elsewhere.
+fun linuxUid(): String? = try {
+    IoFile("/proc/self/status").readLines()
+        .firstOrNull { it.startsWith("Uid:") }
+        ?.split("\\s+".toRegex())?.getOrNull(1)
+} catch (_: Exception) { null }
+
+// XDG_RUNTIME_DIR: env var → /proc UID probe → null.
+fun resolvedXdgRuntimeDir(): String? =
+    System.getenv("XDG_RUNTIME_DIR")?.takeIf { IoFile(it).isDirectory }
+        ?: linuxUid()?.let { uid -> "/run/user/$uid".takeIf { IoFile(it).isDirectory } }
+
+// DISPLAY: env var → XWayland lock-file probe → null.
+fun resolvedDisplay(): String? {
+    System.getenv("DISPLAY")?.takeIf { it.isNotBlank() }?.let { return it }
+    val lockPattern = Regex("\\.X\\d+-lock")
+    val lockName = IoFile("/tmp").list()?.filter { lockPattern.matches(it) }?.minOrNull()
+        ?: return null
+    return ":${lockName.removePrefix(".X").removeSuffix("-lock")}"
+}
+
+// WAYLAND_DISPLAY: env var → probe wayland-0 socket in XDG_RUNTIME_DIR → null.
+fun resolvedWaylandDisplay(): String? {
+    System.getenv("WAYLAND_DISPLAY")?.takeIf { it.isNotBlank() }?.let { return it }
+    val runtimeDir = resolvedXdgRuntimeDir() ?: return null
+    return if (IoFile("$runtimeDir/wayland-0").exists()) "wayland-0" else null
+}
+
+// Apply all three to a Test task (call once per task, not per property).
+fun Test.configureDisplayEnv() {
+    resolvedDisplay()?.let { environment("DISPLAY", it) }
+    resolvedWaylandDisplay()?.let { environment("WAYLAND_DISPLAY", it) }
+    resolvedXdgRuntimeDir()?.let { environment("XDG_RUNTIME_DIR", it) }
+}
+
 // Configure JVM test task for Compose Desktop UI tests
 tasks.named<Test>("jvmTest") {
+    // Make the canonical SteleDatabase.sq path available so MigrationRunnerSchemaSyncTest
+    // can auto-derive the set of expected tables without a manually-maintained list.
+    systemProperty(
+        "stelekit.sq.file",
+        file("src/commonMain/sqldelight/dev/stapler/stelekit/db/SteleDatabase.sq").absolutePath
+    )
+
     // BlockHound is installed programmatically via BlockHoundTestBase.installBlockHound().
     // The -javaagent approach (reactor.blockhound:blockhound) crashes on Java 21+ due to
     // ByteBuddy 1.12 JVMTI incompatibility. ByteBuddy's self-attach is used instead.
@@ -389,6 +456,7 @@ tasks.named<Test>("jvmTest") {
         "--add-opens=java.base/java.lang=ALL-UNNAMED",
     )
     jvmArgs("-Djava.awt.headless=false")
+    configureDisplayEnv()
     // Enable software rendering for CI environments
     environment("LIBGL_ALWAYS_SOFTWARE", System.getenv("LIBGL_ALWAYS_SOFTWARE") ?: "")
     environment("GALLIUM_DRIVER", System.getenv("GALLIUM_DRIVER") ?: "")
@@ -424,11 +492,17 @@ tasks.register<Test>("jvmTestFast") {
     classpath = tasks.named<Test>("jvmTest").get().classpath
     testClassesDirs = tasks.named<Test>("jvmTest").get().testClassesDirs
 
+    systemProperty(
+        "stelekit.sq.file",
+        file("src/commonMain/sqldelight/dev/stapler/stelekit/db/SteleDatabase.sq").absolutePath
+    )
+
     jvmArgs(
         "-Djdk.attach.allowAttachSelf=true",
         "--add-opens=java.base/java.lang=ALL-UNNAMED",
     )
     jvmArgs("-Djava.awt.headless=false")
+    configureDisplayEnv()
     environment("LIBGL_ALWAYS_SOFTWARE", System.getenv("LIBGL_ALWAYS_SOFTWARE") ?: "")
     environment("GALLIUM_DRIVER", System.getenv("GALLIUM_DRIVER") ?: "")
 
@@ -459,18 +533,23 @@ tasks.register<Test>("jvmTestFast") {
 tasks.register<Test>("jvmTestProfile") {
     group = "verification"
     description = "Profile graph load TTI with JFR + async-profiler wall-clock. Usage: -PgraphPath=/your/graph"
+    // doLast references project.layout and captures rootProject — incompatible with config cache.
+    notCompatibleWithConfigurationCache("jvmTestProfile captures project reference for JFR/flamegraph processing")
 
     classpath = tasks.named<Test>("jvmTest").get().classpath
     testClassesDirs = tasks.named<Test>("jvmTest").get().testClassesDirs
 
-    val graphPath  = (project.findProperty("graphPath")  as? String).orEmpty()
+    val graphPath   = (project.findProperty("graphPath")   as? String).orEmpty()
     val benchConfig = (project.findProperty("benchConfig") as? String) ?: "XLARGE"
-    systemProperty("STELEKIT_GRAPH_PATH",    graphPath)
-    systemProperty("STELEKIT_BENCH_CONFIG",  benchConfig)
+    val safLatency  = (project.findProperty("safLatency")  as? String) ?: "false"
+    systemProperty("STELEKIT_GRAPH_PATH",       graphPath)
+    systemProperty("STELEKIT_BENCH_CONFIG",     benchConfig)
+    systemProperty("stelekit.benchmark.saf",    safLatency)
     systemProperty("benchmark.output.dir", layout.buildDirectory.dir("reports").get().asFile.absolutePath)
 
     filter {
         includeTestsMatching("dev.stapler.stelekit.benchmark.GraphLoadTimingTest")
+        includeTestsMatching("dev.stapler.stelekit.benchmark.UserSessionBenchmarkTest")
     }
 
     val jfrFile     = layout.buildDirectory.file("reports/graph-load.jfr").get().asFile
@@ -696,6 +775,7 @@ compose.desktop {
             val parts = rawVersion.split(".")
             packageVersion = if ((parts.firstOrNull()?.toIntOrNull() ?: 1) == 0)
                 "1.${parts.drop(1).joinToString(".")}" else rawVersion
+            jvmArgs("-Dapp.version=$rawVersion")
             modules("java.sql")
             macOS {
                 iconFile.set(project.file("src/jvmMain/resources/icons/icon.icns"))
@@ -714,6 +794,19 @@ compose.desktop {
 // Alias runApp to desktopRun for convenience
 tasks.register("runApp") {
     dependsOn("run")
+}
+
+// ── SteleKit headless sync CLI ───────────────────────────────────────────────
+// Run with: ./gradlew :kmp:runSync -Pargs="--graph /path/to/graph"
+tasks.register<JavaExec>("runSync") {
+    group = "application"
+    description = "Run the SteleKit headless sync CLI"
+    classpath = kotlin.jvm().compilations["main"].output.allOutputs +
+                kotlin.jvm().compilations["main"].runtimeDependencyFiles
+    mainClass.set("dev.stapler.stelekit.cli.SyncMainKt")
+    val argsStr = project.findProperty("args") as String? ?: ""
+    args = argsStr.split(" ").filter { it.isNotBlank() }
+    dependsOn("jvmJar")
 }
 
 // ── Detekt static analysis ──────────────────────────────────────────────────
@@ -776,9 +869,6 @@ afterEvaluate {
     // the JFR regardless of whether doLast ran.
     val latestJfrPointer = IoFile(profilesDir, "latest.jfr.path")
 
-    val jfrconvPath = listOf("jfrconv", "/opt/homebrew/bin/jfrconv", "/usr/local/bin/jfrconv")
-        .firstOrNull { cmd -> runCatching { ProcessBuilder("which", cmd).start().waitFor() == 0 }.getOrDefault(false) }
-
     val asyncProfilerLib = listOf(
         "/home/linuxbrew/.linuxbrew/lib/libasyncProfiler.so",
         "/usr/local/lib/libasyncProfiler.so",
@@ -793,7 +883,10 @@ afterEvaluate {
     val convertLastProfile = tasks.register("convertLastProfile") {
         group = "profiling"
         description = "Convert the most recent JFR profile to collapsed stacks. Runs automatically after :run."
+        notCompatibleWithConfigurationCache("runs external jfrconv process and uses project APIs at execution time")
         doLast {
+            val jfrconvPath = listOf("jfrconv", "/opt/homebrew/bin/jfrconv", "/usr/local/bin/jfrconv")
+                .firstOrNull { cmd -> runCatching { ProcessBuilder("which", cmd).start().waitFor() == 0 }.getOrDefault(false) }
             val jfr = latestJfrPointer.takeIf { it.exists() }
                 ?.readText()?.trim()?.let { IoFile(it) }
                 ?: (profilesDir.listFiles { f: IoFile -> f.extension == "jfr" }
@@ -843,6 +936,7 @@ afterEvaluate {
         ?: "dev"
 
     tasks.named<JavaExec>("run") {
+        notCompatibleWithConfigurationCache("uses project.findProperty at execution time")
         // finalizedBy runs convertLastProfile even if run fails or is cancelled (Ctrl+C).
         finalizedBy(convertLastProfile)
         systemProperty("app.version", resolvedAppVersion)
@@ -917,5 +1011,11 @@ android {
             // exclude it to prevent duplicate-resource merge failure in test APKs.
             excludes += "plugin.properties"
         }
+    }
+
+    lint {
+        // LogDetector causes an OOM (Metaspace) when analyzing AndroidLogSink.kt —
+        // this is a known lint tooling bug triggered by certain Kotlin when-expressions.
+        disable += setOf("LogConditional", "LongLogTag", "LogTagMismatch")
     }
 }

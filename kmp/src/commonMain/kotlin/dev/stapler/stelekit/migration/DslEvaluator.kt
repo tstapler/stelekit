@@ -5,6 +5,7 @@ package dev.stapler.stelekit.migration
 
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.RepositorySet
 import kotlinx.coroutines.flow.first
 
@@ -34,8 +35,8 @@ class DslEvaluator(private val repoSet: RepositorySet) {
     suspend fun evaluate(migration: Migration): List<BlockChange> {
         // Pre-fetch all pages and their blocks so the sync forBlocks/forPages methods
         // don't need to call runBlocking themselves.
-        val allPages = repoSet.pageRepository.getAllPages().first().getOrNull() ?: emptyList()
-        val blocksByPage: Map<String, List<Block>> = allPages.associate { page ->
+        val allPages = repoSet.pageRepository.getAllPagesSnapshot().getOrNull() ?: emptyList()
+        val blocksByPage: Map<PageUuid, List<Block>> = allPages.associate { page ->
             page.uuid to (repoSet.blockRepository.getBlocksForPage(page.uuid)
                 .first().getOrNull() ?: emptyList())
         }
@@ -50,7 +51,7 @@ class DslEvaluator(private val repoSet: RepositorySet) {
     private inner class MigrationScopeImpl(
         private val migration: Migration,
         private val allPages: List<Page>,
-        private val blocksByPage: Map<String, List<Block>>,
+        private val blocksByPage: Map<PageUuid, List<Block>>,
     ) : MigrationScope {
 
         val changes = mutableListOf<BlockChange>()
@@ -107,29 +108,29 @@ class DslEvaluator(private val repoSet: RepositorySet) {
         override fun setProperty(key: String, value: String) {
             // Idempotency: skip if the property already has the target value.
             if (block.properties[key] == value) return
-            changes.add(BlockChange.UpsertProperty(block.uuid, key, value))
+            changes.add(BlockChange.UpsertProperty(block.uuid.value, key, value))
         }
 
         override fun deleteProperty(key: String) {
             // Idempotency: skip if the property doesn't exist.
             if (!block.properties.containsKey(key)) return
-            changes.add(BlockChange.DeleteProperty(block.uuid, key))
+            changes.add(BlockChange.DeleteProperty(block.uuid.value, key))
         }
 
         override fun setContent(newContent: String) {
             // Idempotency: skip if content is already the target value.
             if (block.content == newContent) return
-            changes.add(BlockChange.SetContent(block.uuid, newContent))
+            changes.add(BlockChange.SetContent(block.uuid.value, newContent))
         }
 
         override fun deleteBlock() {
-            changes.add(BlockChange.DeleteBlock(block.uuid))
+            changes.add(BlockChange.DeleteBlock(block.uuid.value))
         }
     }
 
     private inner class PageScopeImpl(
         override val page: Page,
-        private val blocksByPage: Map<String, List<Block>>,
+        private val blocksByPage: Map<PageUuid, List<Block>>,
     ) : PageScope {
 
         val changes = mutableListOf<BlockChange>()
@@ -137,30 +138,30 @@ class DslEvaluator(private val repoSet: RepositorySet) {
         override fun setProperty(key: String, value: String) {
             // Idempotency: skip if the property already has the target value.
             if (page.properties[key] == value) return
-            changes.add(BlockChange.UpsertPageProperty(page.uuid, key, value))
+            changes.add(BlockChange.UpsertPageProperty(page.uuid.value, key, value))
         }
 
         override fun deleteProperty(key: String) {
             // Idempotency: skip if the property doesn't exist.
             if (!page.properties.containsKey(key)) return
-            changes.add(BlockChange.DeletePageProperty(page.uuid, key))
+            changes.add(BlockChange.DeletePageProperty(page.uuid.value, key))
         }
 
         override fun renamePage(newName: String) {
             // Idempotency: skip if the page already has the target name.
             if (page.name == newName) return
-            changes.add(BlockChange.RenamePage(page.uuid, page.name, newName))
+            changes.add(BlockChange.RenamePage(page.uuid.value, page.name, newName))
         }
 
         override fun deletePage() {
-            changes.add(BlockChange.DeletePage(page.uuid))
+            changes.add(BlockChange.DeletePage(page.uuid.value))
         }
 
         override fun mergeIntoPage(targetPageUuid: String) {
             val blocks = blocksByPage[page.uuid] ?: emptyList()
             // Offset root-level blocks past existing content in the target page to avoid
             // position collisions. Child blocks use sibling-relative positions so no offset needed.
-            val targetRootMax = blocksByPage[targetPageUuid]
+            val targetRootMax = blocksByPage[PageUuid(targetPageUuid)]
                 ?.filter { it.parentUuid == null }
                 ?.maxOfOrNull { it.position } ?: -1
             val rootOffset = targetRootMax + 1
@@ -168,18 +169,18 @@ class DslEvaluator(private val repoSet: RepositorySet) {
             for (block in blocks) {
                 if (block.content.isNotBlank()) {
                     val moved = if (block.parentUuid == null) {
-                        block.copy(pageUuid = targetPageUuid, position = block.position + rootOffset)
+                        block.copy(pageUuid = PageUuid(targetPageUuid), position = block.position + rootOffset)
                     } else {
-                        block.copy(pageUuid = targetPageUuid)
+                        block.copy(pageUuid = PageUuid(targetPageUuid))
                     }
                     // Upsert with the original UUID: preserves parentUuid/leftUuid chains
                     // and any block-ref wikilinks that point to this block's UUID.
                     changes.add(BlockChange.InsertBlock(moved))
                 } else {
-                    changes.add(BlockChange.DeleteBlock(block.uuid))
+                    changes.add(BlockChange.DeleteBlock(block.uuid.value))
                 }
             }
-            changes.add(BlockChange.DeletePage(page.uuid))
+            changes.add(BlockChange.DeletePage(page.uuid.value))
         }
     }
 }

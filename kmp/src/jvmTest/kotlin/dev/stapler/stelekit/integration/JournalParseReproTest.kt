@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.integration
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.ParsedBlock
 import dev.stapler.stelekit.parser.MarkdownParser
 import kotlinx.coroutines.runBlocking
@@ -95,8 +97,8 @@ class JournalParseReproTest {
 
                 try {
                     Block(
-                        uuid = blockUuid,
-                        pageUuid = fakePageUuid,
+                        uuid = BlockUuid(blockUuid),
+                        pageUuid = PageUuid(fakePageUuid),
                         parentUuid = parentUuid,
                         leftUuid = null,
                         content = parsedBlock.content,

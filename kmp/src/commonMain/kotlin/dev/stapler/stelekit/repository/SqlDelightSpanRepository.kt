@@ -3,13 +3,18 @@ package dev.stapler.stelekit.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import arrow.core.Either
+import arrow.core.left
+import arrow.core.right
 import dev.stapler.stelekit.db.DirectSqlWrite
 import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.performance.SpanRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
@@ -25,11 +30,9 @@ class SqlDelightSpanRepository(
     private val restricted = RestrictedDatabaseQueries(queries)
     private val json = Json { ignoreUnknownKeys = true }
 
-    override fun getRecentSpans(limit: Int): Flow<List<SerializedSpan>> =
+    override fun getRecentSpans(limit: Int): Flow<Either<DomainError, List<SerializedSpan>>> =
         queries.selectRecentSpans(limit.toLong())
-            .asFlow()
-            .mapToList(PlatformDispatcher.DB)
-            .map { rows -> rows.map { row -> row.toSerializedSpan() } }
+            .asDbFlowList(PlatformDispatcher.DB) { it.toSerializedSpan() }
 
     override suspend fun insertSpan(span: SerializedSpan) {
         val attributesJson = json.encodeToString(
@@ -48,6 +51,8 @@ class SqlDelightSpanRepository(
                 duration_ms = span.durationMs,
                 attributes_json = attributesJson,
                 status_code = span.statusCode,
+                app_version = span.attributes["app.version"] ?: "",
+                commit_hash = span.attributes["app.commit"] ?: "",
             )
         }
     }
@@ -97,3 +102,4 @@ class SqlDelightSpanRepository(
         )
     }
 }
+

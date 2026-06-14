@@ -125,6 +125,7 @@ private class InMemoryGoogleTokenStore : GoogleTokenStore {
     private var accessToken: String? = null
     private var refreshToken: String? = null
     private var expiresAt: Long? = null
+    private var email: String? = null
 
     override suspend fun saveTokens(accessToken: String, refreshToken: String, expiresAt: Long) {
         this.accessToken = accessToken
@@ -140,7 +141,10 @@ private class InMemoryGoogleTokenStore : GoogleTokenStore {
         accessToken = null
         refreshToken = null
         expiresAt = null
+        email = null
     }
 
     override suspend fun isAuthenticated(): Boolean = accessToken != null
+    override suspend fun saveEmail(email: String) { this.email = email }
+    override suspend fun getEmail(): String? = email
 }

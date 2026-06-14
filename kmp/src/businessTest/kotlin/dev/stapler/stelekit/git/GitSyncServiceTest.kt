@@ -1,0 +1,279 @@
+// Copyright (c) 2026 Tyler Stapler
+// SPDX-License-Identifier: Elastic-2.0
+
+package dev.stapler.stelekit.git
+
+import arrow.core.Either
+import arrow.core.right
+import dev.stapler.stelekit.db.GraphLoader
+import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.git.model.GitAuthType
+import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.NetworkMonitor
+import dev.stapler.stelekit.repository.InMemoryBlockRepository
+import dev.stapler.stelekit.repository.InMemoryPageRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.runTest
+import org.junit.Assume.assumeTrue
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+
+/**
+ * Unit tests for [GitSyncService] covering early-return scenarios that do not reach
+ * graphLoader or graphWriter calls.
+ *
+ * All tests use real [EditLock], [GraphLoader], and [GraphWriter] instances with stub
+ * dependencies; only [GitRepository] and [GitConfigRepository] are stubbed.
+ *
+ * Note on [NetworkMonitor]: it is an `expect class` (not an interface) and cannot be
+ * subclassed. Tests that require a specific network state use [assumeTrue] to skip
+ * when the precondition cannot be met in the current environment.
+ */
+class GitSyncServiceTest {
+
+    // ── Stub helpers ──────────────────────────────────────────────────────────
+
+    /** Minimal [FileSystem] stub — safe defaults for all methods. */
+    private open class StubFileSystem(
+        private val writeResult: Boolean = true,
+    ) : FileSystem {
+        override fun getDefaultGraphPath() = "/tmp"
+        override fun expandTilde(path: String) = path
+        override fun readFile(path: String): String? = null
+        override fun writeFile(path: String, content: String): Boolean = writeResult
+        override fun listFiles(path: String): List<String> = emptyList()
+        override fun listDirectories(path: String): List<String> = emptyList()
+        override fun fileExists(path: String) = false
+        override fun directoryExists(path: String) = true
+        override fun createDirectory(path: String) = true
+        override fun deleteFile(path: String) = true
+        override fun pickDirectory(): String? = null
+        override fun getLastModifiedTime(path: String): Long? = null
+        override fun startExternalChangeDetection(scope: CoroutineScope, onChange: () -> Unit) {}
+        override fun stopExternalChangeDetection() {}
+    }
+
+    /**
+     * [GitRepository] stub that throws [NotImplementedError] for any method not overridden.
+     * Each test overrides only the methods its scenario exercises.
+     */
+    private open class StubGitRepository : GitRepository {
+        override suspend fun isGitRepo(path: String): Boolean = error("not implemented in stub")
+        override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> = error("not implemented in stub")
+        override suspend fun clone(url: String, localPath: String, auth: GitAuth, onProgress: (String) -> Unit): Either<DomainError.GitError, Unit> = error("not implemented in stub")
+        override suspend fun fetch(config: GitConfig): Either<DomainError.GitError, FetchResult> = error("not implemented in stub")
+        override suspend fun status(config: GitConfig): Either<DomainError.GitError, GitStatus> = error("not implemented in stub")
+        override suspend fun stageSubdir(config: GitConfig): Either<DomainError.GitError, Unit> = error("not implemented in stub")
+        override suspend fun commit(config: GitConfig, message: String): Either<DomainError.GitError, String> = error("not implemented in stub")
+        override suspend fun merge(config: GitConfig): Either<DomainError.GitError, MergeResult> = error("not implemented in stub")
+        override suspend fun push(config: GitConfig): Either<DomainError.GitError, Unit> = error("not implemented in stub")
+        override suspend fun log(config: GitConfig, maxCount: Int): Either<DomainError.GitError, List<GitCommit>> = error("not implemented in stub")
+        override suspend fun abortMerge(config: GitConfig): Either<DomainError.GitError, Unit> = error("not implemented in stub")
+        override suspend fun checkoutFile(config: GitConfig, filePath: String, side: MergeSide): Either<DomainError.GitError, Unit> = error("not implemented in stub")
+        override suspend fun markResolved(config: GitConfig, filePath: String): Either<DomainError.GitError, Unit> = error("not implemented in stub")
+        override suspend fun hasDetachedHead(config: GitConfig): Boolean = false
+        override suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> = Unit.right()
+    }
+
+    /** [GitConfigRepository] that returns a fixed result for [getConfig]. */
+    private class StubConfigRepository(
+        private val configResult: Either<DomainError, GitConfig?>,
+    ) : GitConfigRepository {
+        override suspend fun getConfig(graphId: String): Either<DomainError, GitConfig?> = configResult
+        override suspend fun saveConfig(config: GitConfig): Either<DomainError, Unit> = Unit.right()
+        override suspend fun deleteConfig(graphId: String): Either<DomainError, Unit> = Unit.right()
+        override fun observeConfig(graphId: String): Flow<Either<DomainError, GitConfig?>> =
+            flowOf(configResult)
+    }
+
+    /** [CredentialAccess] stub that reports the vault as locked. */
+    private object LockedCredentialAccess : CredentialAccess {
+        override fun retrieve(key: String): String? = null
+        override fun store(key: String, value: String) {}
+        override fun delete(key: String) {}
+        override fun isAvailable(): Boolean = false
+    }
+
+    /** Minimal [GitConfig] for tests that need a valid config. */
+    private val sampleConfig = GitConfig(
+        graphId = "test-graph",
+        repoRoot = "/repo",
+        wikiSubdir = "",
+        authType = GitAuthType.NONE,
+    )
+
+    /** Builds a [GitSyncService] wired with the provided stubs and safe no-op defaults. */
+    private fun buildService(
+        gitRepository: GitRepository = StubGitRepository(),
+        configRepository: GitConfigRepository,
+        fileSystem: FileSystem = StubFileSystem(),
+        networkMonitor: NetworkMonitor = NetworkMonitor(),
+        credentialAccessProvider: (() -> CredentialAccess)? = null,
+    ): GitSyncService {
+        val stubFs = StubFileSystem()
+        val graphLoader = GraphLoader(
+            fileSystem = stubFs,
+            pageRepository = InMemoryPageRepository(),
+            blockRepository = InMemoryBlockRepository(),
+        )
+        val graphWriter = GraphWriter(fileSystem = fileSystem)
+        return GitSyncService(
+            gitRepository = gitRepository,
+            graphLoader = graphLoader,
+            graphWriter = graphWriter,
+            editLock = EditLock(),
+            configRepository = configRepository,
+            networkMonitor = networkMonitor,
+            fileSystem = fileSystem,
+            credentialAccessProvider = credentialAccessProvider,
+        )
+    }
+
+    // ── TC-1: sync() with no git config returns Success ───────────────────────
+
+    /**
+     * TC-1: When [GitConfigRepository.getConfig] returns null (no config for this graph),
+     * [GitSyncService.sync] must short-circuit immediately and return
+     * [Either.Right] wrapping a [SyncState.Success] with no commits made.
+     *
+     * Precondition: requires network connectivity (network check runs before config load).
+     */
+    @Test
+    fun `sync with no git config returns Right Success with zero commits`() = runTest {
+        assumeTrue(
+            "Skipped: requires network access for the initial NetworkMonitor.isOnline check",
+            NetworkMonitor().isOnline,
+        )
+
+        val service = buildService(
+            configRepository = StubConfigRepository(Either.Right(null)),
+        )
+
+        val result = service.sync("test-graph")
+
+        assertIs<Either.Right<*>>(result)
+        val success = result.value
+        assertIs<SyncState.Success>(success)
+        assertEquals(0, success.localCommitsMade, "no local commits when no config")
+        assertEquals(0, success.remoteCommitsMerged, "no remote commits when no config")
+        assertIs<SyncState.Success>(service.syncState.value)
+    }
+
+    // ── TC-2: sync() when offline emits SyncState.Error and returns Left(Offline) ──
+
+    /**
+     * TC-2: When [NetworkMonitor.isOnline] returns false, [GitSyncService.sync] must
+     * emit [SyncState.Error] with [DomainError.GitError.Offline] and return
+     * [Either.Left] wrapping the same error.
+     *
+     * Note: [NetworkMonitor] is an `expect class` (final, not mockable without bytecode tools).
+     * This test only runs in environments that are actually offline.
+     */
+    @Test
+    fun `sync when offline emits SyncState Error Offline and returns Left Offline`() = runTest {
+        assumeTrue(
+            "Skipped: requires offline environment — NetworkMonitor.isOnline was true",
+            !NetworkMonitor().isOnline,
+        )
+
+        val service = buildService(
+            configRepository = StubConfigRepository(Either.Right(null)),
+        )
+
+        val result = service.sync("test-graph")
+
+        assertIs<Either.Left<*>>(result)
+        assertEquals(DomainError.GitError.Offline, result.value)
+        val state = service.syncState.value
+        assertIs<SyncState.Error>(state)
+        assertEquals(DomainError.GitError.Offline, state.error)
+    }
+
+    // ── TC-3: sync() when vault is locked emits CredentialVaultLocked + Left(AuthFailed) ──
+
+    /**
+     * TC-3: When the [CredentialAccess] vault reports locked ([CredentialAccess.isAvailable]
+     * returns false), [GitSyncService.sync] must:
+     *   - emit [SyncState.CredentialVaultLocked]
+     *   - return [Either.Left] wrapping [DomainError.GitError.AuthFailed]
+     *
+     * Precondition: requires network connectivity so the vault check is reached.
+     */
+    @Test
+    fun `sync when vault is locked emits CredentialVaultLocked and returns Left AuthFailed`() = runTest {
+        assumeTrue(
+            "Skipped: requires network access for the initial NetworkMonitor.isOnline check",
+            NetworkMonitor().isOnline,
+        )
+
+        val service = buildService(
+            configRepository = StubConfigRepository(Either.Right(null)),
+            credentialAccessProvider = { LockedCredentialAccess },
+        )
+
+        val result = service.sync("test-graph")
+
+        assertIs<Either.Left<*>>(result)
+        assertIs<DomainError.GitError.AuthFailed>(result.value)
+        assertEquals(SyncState.CredentialVaultLocked, service.syncState.value)
+    }
+
+    // ── TC-4: applyJournalMerge() when file write fails returns Left(CommitFailed) ──
+
+    /**
+     * TC-4: When [FileSystem.writeFile] returns false, [GitSyncService.applyJournalMerge]
+     * must return [Either.Left] wrapping [DomainError.GitError.CommitFailed] without
+     * calling [GitRepository.commit].
+     *
+     * [GitRepository] is intentionally a strict stub — if [commit] is called the test
+     * will throw [NotImplementedError], surfacing the unexpected call.
+     */
+    @Test
+    fun `applyJournalMerge when write fails returns Left CommitFailed without committing`() = runTest {
+        val writeFails = StubFileSystem(writeResult = false)
+
+        val service = buildService(
+            configRepository = StubConfigRepository(Either.Right(sampleConfig)),
+            fileSystem = writeFails,
+        )
+
+        val result = service.applyJournalMerge(
+            graphId = "test-graph",
+            filePath = "/repo/journals/2026-06-12.md",
+            mergedContent = "- merged content",
+        )
+
+        assertIs<Either.Left<*>>(result)
+        val err = result.value
+        assertIs<DomainError.GitError.CommitFailed>(err)
+        assertTrue(err.message.isNotBlank(), "CommitFailed must carry a non-blank message")
+    }
+
+    // ── TC-5: abortActiveMerge() when no config returns Right(Unit) ───────────
+
+    /**
+     * TC-5: When [GitConfigRepository.getConfig] returns null, [GitSyncService.abortActiveMerge]
+     * must return [Either.Right] of [Unit] immediately without calling [GitRepository.abortMerge].
+     *
+     * [GitRepository] is intentionally a strict stub — any call to [abortMerge] will fail
+     * the test with [NotImplementedError].
+     */
+    @Test
+    fun `abortActiveMerge with no config is a no-op and returns Right Unit`() = runTest {
+        val service = buildService(
+            configRepository = StubConfigRepository(Either.Right(null)),
+        )
+
+        val result = service.abortActiveMerge("test-graph")
+
+        assertIs<Either.Right<*>>(result)
+        assertEquals(Unit, result.value)
+    }
+}
