@@ -339,7 +339,9 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
         duration_ms: Long,
         attributes_json: String,
         status_code: String,
-    ): Long = queries.insertSpan(trace_id, span_id, parent_span_id, name, start_epoch_ms, end_epoch_ms, duration_ms, attributes_json, status_code)
+        app_version: String,
+        commit_hash: String,
+    ): Long = queries.insertSpan(trace_id, span_id, parent_span_id, name, start_epoch_ms, end_epoch_ms, duration_ms, attributes_json, status_code, app_version, commit_hash)
 
     @DirectSqlWrite
     suspend fun deleteSpansOlderThan(end_epoch_ms: Long): Long =

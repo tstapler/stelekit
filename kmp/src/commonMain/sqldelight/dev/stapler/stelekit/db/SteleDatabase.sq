@@ -847,18 +847,31 @@ CREATE TABLE IF NOT EXISTS spans (
     end_epoch_ms INTEGER NOT NULL,
     duration_ms INTEGER NOT NULL,
     attributes_json TEXT NOT NULL DEFAULT '{}',
-    status_code TEXT NOT NULL DEFAULT 'OK'
+    status_code TEXT NOT NULL DEFAULT 'OK',
+    app_version TEXT NOT NULL DEFAULT '',
+    commit_hash TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS spans_start_epoch_ms_idx ON spans(start_epoch_ms DESC);
 CREATE INDEX IF NOT EXISTS spans_trace_id_idx ON spans(trace_id);
+-- Covers regression queries: WHERE app_version = ? AND name = ? ORDER BY duration_ms DESC
+CREATE INDEX IF NOT EXISTS idx_spans_version_name_duration ON spans(app_version, name, duration_ms DESC);
 
 insertSpan:
-INSERT INTO spans (trace_id, span_id, parent_span_id, name, start_epoch_ms, end_epoch_ms, duration_ms, attributes_json, status_code)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO spans (trace_id, span_id, parent_span_id, name, start_epoch_ms, end_epoch_ms, duration_ms, attributes_json, status_code, app_version, commit_hash)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectRecentSpans:
 SELECT * FROM spans ORDER BY start_epoch_ms DESC LIMIT ?;
+
+-- Regression comparison: fetch the slowest N spans for a given operation and version.
+-- Use to confirm a fix reduced duration across builds.
+selectSlowSpansByVersionAndName:
+SELECT * FROM spans WHERE app_version = ? AND name = ? ORDER BY duration_ms DESC LIMIT ?;
+
+-- Enumerate versions present in the spans table (newest first).
+selectDistinctVersionsWithSpans:
+SELECT DISTINCT app_version FROM spans WHERE app_version != '' ORDER BY app_version DESC;
 
 deleteSpansOlderThan:
 DELETE FROM spans WHERE end_epoch_ms < ?;

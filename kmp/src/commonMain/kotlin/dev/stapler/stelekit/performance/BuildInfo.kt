@@ -9,4 +9,7 @@ package dev.stapler.stelekit.performance
 object BuildInfo {
     @kotlin.concurrent.Volatile
     var commitHash: String = "unknown"
+
+    @kotlin.concurrent.Volatile
+    var appVersion: String = ""
 }

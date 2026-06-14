@@ -51,6 +51,8 @@ class SqlDelightSpanRepository(
                 duration_ms = span.durationMs,
                 attributes_json = attributesJson,
                 status_code = span.statusCode,
+                app_version = span.attributes["app.version"] ?: "",
+                commit_hash = span.attributes["app.commit"] ?: "",
             )
         }
     }

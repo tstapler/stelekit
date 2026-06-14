@@ -235,7 +235,7 @@ class GraphLoader(
         @OptIn(DirectRepositoryWrite::class)
         fun finish(statusCode: String = "OK", vararg attrs: Pair<String, String>) {
             val endMs = Clock.System.now().toEpochMilliseconds()
-            val allAttrs = mapOf(*attrs) + ("session.id" to dev.stapler.stelekit.performance.AppSession.id)
+            val allAttrs = mapOf(*attrs) + dev.stapler.stelekit.performance.AppSession.autoAttributes()
             val serialized = SerializedSpan(
                 name = name, startEpochMs = startMs, endEpochMs = endMs,
                 durationMs = endMs - startMs, attributes = allAttrs,

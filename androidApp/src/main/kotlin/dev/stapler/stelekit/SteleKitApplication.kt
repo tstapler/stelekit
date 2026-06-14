@@ -56,6 +56,7 @@ class SteleKitApplication : Application() {
         super.onCreate()
         try {
             BuildInfo.commitHash = BuildConfig.GIT_COMMIT_HASH
+            BuildInfo.appVersion = BuildConfig.VERSION_NAME
             SteleKitContext.init(this)
             DriverFactory.setContext(this)
             CredentialStore.init(this)
