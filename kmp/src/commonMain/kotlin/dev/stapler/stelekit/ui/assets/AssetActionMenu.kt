@@ -9,6 +9,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import dev.stapler.stelekit.asset.AssetEntry
 
 @Composable
@@ -17,10 +18,12 @@ fun AssetActionMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
     onAction: (AssetAction) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
+        modifier = modifier,
     ) {
         DropdownMenuItem(
             text = { Text("Open") },

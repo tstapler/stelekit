@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.asset
 
+import kotlin.jvm.JvmInline
+
 @JvmInline
 value class AssetUuid(val value: String)
 

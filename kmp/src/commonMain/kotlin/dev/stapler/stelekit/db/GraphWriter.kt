@@ -595,7 +595,7 @@ class GraphWriter(
         coroutineScope {
             for (dir in dirs) {
                 if (!fileSystem.directoryExists(dir)) continue
-                val files = try { fileSystem.listFiles(dir) } catch (_: Exception) { emptyList() }
+                val files = try { fileSystem.listFiles(dir) } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyList() }
                 for (file in files) {
                     if (!file.endsWith(".md")) continue
                     val filePath = "$dir/$file"

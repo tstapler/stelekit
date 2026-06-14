@@ -6,6 +6,7 @@ import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.repository.AssetRepository
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -35,6 +36,7 @@ class AssetPipelineService(
     private val attemptedUuids = mutableSetOf<String>()
     private var backfillJob: Job? = null
 
+    @OptIn(DirectRepositoryWrite::class)
     suspend fun processAsset(asset: AssetEntry, writeActor: DatabaseWriteActor?) {
         val alreadyAttempted = attemptedMutex.withLock { !attemptedUuids.add(asset.uuid.value) }
         if (alreadyAttempted) return

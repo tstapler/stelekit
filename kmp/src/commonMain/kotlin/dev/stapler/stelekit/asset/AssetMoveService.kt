@@ -11,6 +11,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.AssetRepository
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
@@ -54,6 +55,7 @@ class AssetMoveService(
 
     private val allowedSubfolders = setOf("images", "pdfs", "audio", "video", "documents", "files")
 
+    @OptIn(DirectRepositoryWrite::class)
     private suspend fun moveAssetInternal(
         asset: AssetEntry,
         newSubfolder: String,
@@ -161,6 +163,7 @@ class AssetMoveService(
         }
     }
 
+    @OptIn(DirectRepositoryWrite::class)
     private suspend fun replayMove(
         id: Long,
         assetUuid: String,
@@ -173,14 +176,14 @@ class AssetMoveService(
         graphWriter: GraphWriter,
         writeActor: DatabaseWriteActor?,
     ) {
-        val oldExists = try { fileSystem.fileExists(oldFilePath) } catch (_: Exception) { false }
-        val newExists = try { fileSystem.fileExists(newFilePath) } catch (_: Exception) { false }
+        val oldExists = try { fileSystem.fileExists(oldFilePath) } catch (e: CancellationException) { throw e } catch (_: Exception) { false }
+        val newExists = try { fileSystem.fileExists(newFilePath) } catch (e: CancellationException) { throw e } catch (_: Exception) { false }
 
         when {
             oldExists && !newExists -> {
                 // Incomplete move — complete it
-                try { fileSystem.renameFile(oldFilePath, newFilePath) } catch (_: Exception) {}
-                try { graphWriter.rewriteAssetReference(oldRelativePath, newRelativePath, graphRoot) } catch (_: Exception) {}
+                try { fileSystem.renameFile(oldFilePath, newFilePath) } catch (e: CancellationException) { throw e } catch (_: Exception) {}
+                try { graphWriter.rewriteAssetReference(oldRelativePath, newRelativePath, graphRoot) } catch (e: CancellationException) { throw e } catch (_: Exception) {}
                 val uuid = AssetUuid(assetUuid)
                 if (writeActor != null) {
                     writeActor.execute { assetRepository.updateFilePath(uuid, newFilePath, newRelativePath) }

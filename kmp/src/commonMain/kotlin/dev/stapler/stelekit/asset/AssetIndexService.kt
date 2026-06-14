@@ -6,6 +6,7 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.AssetRepository
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
@@ -27,6 +28,8 @@ class AssetIndexService(
             }
     )
 
+    @Suppress("UnusedParameter")
+    @OptIn(DirectRepositoryWrite::class)
     suspend fun registerAsset(
         filePath: String,
         graphRoot: String,
@@ -38,7 +41,7 @@ class AssetIndexService(
         val filename = filePath.substringAfterLast('/')
         val fileBytes = try {
             fileSystem.readFileBytes(filePath)
-        } catch (_: Exception) { null }
+        } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
         val bytes = fileBytes?.take(16)?.toByteArray() ?: ByteArray(0)
         val mime = mimeHint ?: MimeTypeDetector.detect(bytes, filename)
         val mediaType = AssetMediaType.fromMimeType(mime)

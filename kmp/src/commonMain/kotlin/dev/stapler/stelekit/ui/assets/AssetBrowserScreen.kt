@@ -84,7 +84,7 @@ fun AssetBrowserScreen(
 
             ScrollableFilterChipRow(
                 selectedFilter = uiState.selectedFilter,
-                onFilterSelected = { viewModel.setFilter(it) },
+                onFilterSelect = { viewModel.setFilter(it) },
                 onNewGroup = { showNewGroupDialog = true },
             )
 
@@ -155,7 +155,7 @@ fun AssetBrowserScreen(
 @Composable
 private fun ScrollableFilterChipRow(
     selectedFilter: AssetFilter,
-    onFilterSelected: (AssetFilter) -> Unit,
+    onFilterSelect: (AssetFilter) -> Unit,
     onNewGroup: () -> Unit,
 ) {
     val filters = AssetFilter.entries
@@ -169,7 +169,7 @@ private fun ScrollableFilterChipRow(
         filters.forEach { filter ->
             FilterChip(
                 selected = selectedFilter == filter,
-                onClick = { onFilterSelected(filter) },
+                onClick = { onFilterSelect(filter) },
                 label = { Text(filter.name.lowercase().replaceFirstChar { it.uppercaseChar() }) },
             )
         }

@@ -11,12 +11,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 
+@OptIn(DirectRepositoryWrite::class)
 class InMemoryAssetRepository : AssetRepository {
     private val store = MutableStateFlow<Map<String, AssetEntry>>(emptyMap())
 
     override fun getAssetByUuid(uuid: AssetUuid): Flow<Either<DomainError, AssetEntry?>> =
         store.map { it[uuid.value].right() }
 
+    @Suppress("InMemoryPagination")
     override fun getAssets(limit: Int, offset: Int): Flow<Either<DomainError, List<AssetEntry>>> =
         store.map { map ->
             map.values
@@ -26,6 +28,7 @@ class InMemoryAssetRepository : AssetRepository {
                 .right()
         }
 
+    @Suppress("InMemoryPagination")
     override fun getAssetsByMediaType(
         mediaType: AssetMediaType,
         limit: Int,
@@ -40,6 +43,7 @@ class InMemoryAssetRepository : AssetRepository {
                 .right()
         }
 
+    @Suppress("InMemoryPagination")
     override fun searchAssets(
         query: String,
         limit: Int,
@@ -60,6 +64,7 @@ class InMemoryAssetRepository : AssetRepository {
                 .right()
         }
 
+    @Suppress("InMemoryPagination")
     override fun getUnprocessedAssets(
         limit: Int,
         offset: Int,

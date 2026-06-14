@@ -36,9 +36,9 @@ import dev.stapler.stelekit.asset.AssetMediaType
 fun AssetItemCard(
     asset: AssetEntry,
     viewMode: ViewMode,
+    modifier: Modifier = Modifier,
     onLongPress: (() -> Unit)? = null,
     onAction: ((AssetAction) -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     when (viewMode) {
         ViewMode.GRID -> AssetGridItem(asset, modifier)
@@ -81,6 +81,7 @@ private fun AssetGridItem(asset: AssetEntry, modifier: Modifier = Modifier) {
                     .padding(2.dp)
                     .fillMaxWidth(),
                 style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

@@ -10,7 +10,9 @@ import com.google.mlkit.vision.label.ImageLabeling
 import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
 import dev.stapler.stelekit.error.DomainError
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class MlKitImageLabeler : ImageLabeler {
     private val labeler = ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS)
@@ -20,7 +22,11 @@ class MlKitImageLabeler : ImageLabeler {
             val bitmap = decodeAndResize(imageBytes, maxSize = 512)
                 ?: return emptyList<Label>().right()
             val inputImage = InputImage.fromBitmap(bitmap, 0)
-            val results = labeler.process(inputImage).await()
+            val results = suspendCancellableCoroutine { cont ->
+                labeler.process(inputImage)
+                    .addOnSuccessListener { cont.resume(it) }
+                    .addOnFailureListener { cont.resumeWithException(it) }
+            }
             bitmap.recycle()
             results.map { Label(it.text, it.confidence) }.right()
         } catch (e: CancellationException) {

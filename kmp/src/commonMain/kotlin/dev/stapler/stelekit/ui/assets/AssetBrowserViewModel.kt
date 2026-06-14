@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
  */
 class AssetBrowserViewModel(
     private val assetRepository: AssetRepository,
+    @Suppress("UnusedPrivateProperty")
     private val writeActor: DatabaseWriteActor? = null,
 ) : RememberObserver {
     private val logger = Logger("AssetBrowserViewModel")

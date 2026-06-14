@@ -4,6 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import kotlinx.coroutines.CancellationException
 
 /**
  * ONNX Runtime-based image labeler for JVM desktop.
@@ -18,7 +19,8 @@ class OnnxImageLabeler(private val modelFilePath: String?) : ImageLabeler {
         return try {
             // Full inference implementation deferred until model is bundled.
             noOp.labelImage(imageBytes)
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) { throw e }
+        catch (e: Throwable) {
             DomainError.DatabaseError.ReadFailed("OnnxImageLabeler failed: ${e.message}").left()
         }
     }
