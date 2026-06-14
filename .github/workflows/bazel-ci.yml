@@ -52,7 +52,8 @@ jobs:
       - name: Run JVM tests
         run: |
           xvfb-run --auto-servernum bazel test //kmp:jvm_tests \
-            --test_output=all
+            --test_output=all \
+            --sandbox_add_mount_pair=/tmp/.X11-unix
 
   # ── Android build ──────────────────────────────────────────────────────────
   bazel-android:
