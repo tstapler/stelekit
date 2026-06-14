@@ -52,7 +52,7 @@ kt_jvm_test(
         # Force software OpenGL for Compose Desktop tests on headless CI
         "LIBGL_ALWAYS_SOFTWARE": "1",
     },
-    env_inherit = ["DISPLAY"],
+    env_inherit = ["DISPLAY", "XAUTHORITY"],
     visibility = ["//visibility:public"],
     tags = [
         # Some tests open a Compose window — requires an X display on Linux CI

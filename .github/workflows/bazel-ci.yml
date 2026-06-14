@@ -53,7 +53,9 @@ jobs:
         run: |
           xvfb-run --auto-servernum bazel test //kmp:jvm_tests \
             --test_output=all \
-            --sandbox_add_mount_pair=/tmp/.X11-unix
+            --sandbox_add_mount_pair=/tmp/.X11-unix \
+            --test_env=DISPLAY \
+            --test_env=XAUTHORITY
 
   # ── Android build ──────────────────────────────────────────────────────────
   bazel-android:
