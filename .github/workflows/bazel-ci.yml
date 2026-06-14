@@ -124,7 +124,8 @@ jobs:
         run: |
           bazel test //kmp/src/androidUnitTest/kotlin:android_unit_tests \
             --config=android \
-            --test_output=summary
+            --test_output=all \
+            --experimental_ui_max_stdouterr_bytes=4194304
 
   # ── WASM/JS web build ─────────────────────────────────────────────────────
   # rules_kotlin does not yet support Kotlin/WASM natively (rules_kotlin#567).

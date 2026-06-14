@@ -20,6 +20,16 @@ kt_kotlinc_options(
     visibility = ["//visibility:public"],
 )
 
+# ── Kotlinc options for KMP Android targets ───────────────────────────────────
+# KMP source sets (commonMain + jvmCommonMain + androidMain) are compiled together
+# in one kt_android_library. Same requirements as JVM but Android-targeted.
+kt_kotlinc_options(
+    name = "kmp_android_kotlinc_opts",
+    x_multi_platform = True,
+    x_optin = ["kotlin.time.ExperimentalTime"],
+    visibility = ["//visibility:public"],
+)
+
 # ── Kotlin JVM toolchain ───────────────────────────────────────────────────────
 define_kt_toolchain(
     name = "kotlin_toolchain",
