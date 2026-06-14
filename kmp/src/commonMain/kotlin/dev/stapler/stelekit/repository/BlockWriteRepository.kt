@@ -48,6 +48,7 @@ interface BlockWriteRepository {
      * Fold WAL frames into the main DB file. Call after bulk imports to prevent WAL bloat
      * from slowing subsequent reads. No-op by default (non-SQLite backends).
      */
+    @DirectRepositoryWrite
     suspend fun walCheckpoint() {}
 
     /**
