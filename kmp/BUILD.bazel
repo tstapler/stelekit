@@ -18,6 +18,7 @@ load("@rules_android//rules:rules.bzl", "android_library")
 # android_library that exposes R must be defined here.
 android_library(
     name = "kmp_android_resources",
+    manifest = "src/androidMain/AndroidManifest.xml",
     resource_files = glob(["src/androidMain/res/**"]),
     custom_package = "dev.stapler.stelekit",
     visibility = ["//kmp/src/androidMain/kotlin:__pkg__"],
