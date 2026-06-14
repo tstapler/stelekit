@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.43.0](https://github.com/tstapler/stelekit/compare/v0.42.0...v0.43.0) (2026-06-14)
+
+
+### Features
+
+* **assets:** asset browser, typed subfolder routing, and ML pipeline ([#153](https://github.com/tstapler/stelekit/issues/153)) ([206fce7](https://github.com/tstapler/stelekit/commit/206fce763bd4836eee731539171d9010361922b5))
+* **tags:** two-tier auto-tag suggestion engine for blocks ([#154](https://github.com/tstapler/stelekit/issues/154)) ([94c7af1](https://github.com/tstapler/stelekit/commit/94c7af123734db2ee6beb3fe47291e07055a19d2))
+
+
+### Bug Fixes
+
+* **android:** detect external file changes when sync tool preserves older timestamps ([65a3a14](https://github.com/tstapler/stelekit/commit/65a3a1471feff45e784b3cdfc1bd6e74f82e88bf))
+
 ## [0.42.0](https://github.com/tstapler/stelekit/compare/v0.41.3...v0.42.0) (2026-06-14)
 
 
