@@ -55,6 +55,9 @@ class PageNameIndex(
      * of letting the Throwable escape the stateIn coroutine — uncaught, it kills the process
      * on Android.
      */
+    /** Returns the canonical page names in the current matcher index snapshot. */
+    fun vocabularyNames(): List<String> = _entries.value.map { it.canonical }.distinct()
+
     val matcher: StateFlow<AhoCorasickMatcher?> = _entries
         .map { entries ->
             if (entries.isEmpty()) null else try {

@@ -89,6 +89,8 @@ internal fun BlockItem(
     onArchiveUrl: ((url: String, blockUuid: String) -> Unit)? = null,
     /** Called when user taps an image_annotation block thumbnail; receives the image annotation UUID. */
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
+    /** Called when the user requests tag suggestions for this block via context menu. */
+    onRequestTagSuggestions: ((blockUuid: String, content: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -493,6 +495,25 @@ internal fun BlockItem(
                     onNavigateAllSuggestions?.invoke()
                 },
             )
+        }
+
+        // Render "Suggest tags" dropdown (shown when onRequestTagSuggestions is wired)
+        if (onRequestTagSuggestions != null) {
+            var tagMenuExpanded by remember { mutableStateOf(false) }
+            Box {
+                DropdownMenu(
+                    expanded = tagMenuExpanded,
+                    onDismissRequest = { tagMenuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Suggest tags") },
+                        onClick = {
+                            tagMenuExpanded = false
+                            onRequestTagSuggestions(block.uuid.value, block.content)
+                        },
+                    )
+                }
+            }
         }
 
         // Render Autocomplete Menu
