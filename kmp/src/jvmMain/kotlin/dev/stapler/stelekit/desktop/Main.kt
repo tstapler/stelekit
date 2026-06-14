@@ -40,6 +40,7 @@ fun main() {
     // Desktop builds are always developer builds
     DebugBuildConfig.isDebugBuild = true
     BuildInfo.commitHash = System.getProperty("app.commit", "unknown")
+    BuildInfo.appVersion = System.getProperty("app.version", "dev")
 
     // Initialize OpenTelemetry SDK early so instrumented code can emit spans
     OtelProvider.initialize(OtelExporterConfig(enableStdout = false, enableRingBuffer = true))
