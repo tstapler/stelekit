@@ -55,6 +55,7 @@ import dev.stapler.stelekit.ui.screens.LibraryStatsScreen
 import dev.stapler.stelekit.ui.screens.LibraryStatsViewModel
 import dev.stapler.stelekit.ui.screens.PageView
 import dev.stapler.stelekit.ui.screens.SearchViewModel
+import dev.stapler.stelekit.tags.TagSuggestionViewModel
 
 /**
  * Routes the current [Screen] to its composable. Owns screen transition animations.
@@ -84,6 +85,7 @@ internal fun ScreenRouter(
     perfSpans: StateFlow<List<SerializedSpan>> = MutableStateFlow(emptyList()),
     perfHistograms: StateFlow<Map<String, PercentileSummary>> = MutableStateFlow(emptyMap()),
     perfQueryStats: StateFlow<List<QueryStat>> = MutableStateFlow(emptyList()),
+    tagSuggestionViewModel: TagSuggestionViewModel? = null,
 ) {
     if (appState.fatalError != null) {
         FatalErrorScreen(
@@ -144,6 +146,7 @@ internal fun ScreenRouter(
                 capabilities = capabilities,
                 onReloadFromDisk = { viewModel.reloadCurrentPageFromDisk() },
                 isExporting = appState.isExporting,
+                tagSuggestionViewModel = tagSuggestionViewModel,
             )
             is Screen.Journals -> JournalsView(
                 viewModel = journalsViewModel,
@@ -155,6 +158,7 @@ internal fun ScreenRouter(
                 isLeftHanded = appState.isLeftHanded,
                 onOpenAnnotationEditor = { uuid -> viewModel.navigateToAnnotationEditor(uuid) },
                 capabilities = capabilities,
+                tagSuggestionViewModel = tagSuggestionViewModel,
             )
             is Screen.Flashcards -> {
                 NavigationTracingEffect("Flashcards")

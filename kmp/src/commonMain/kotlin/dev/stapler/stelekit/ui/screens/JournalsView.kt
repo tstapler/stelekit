@@ -17,6 +17,10 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
+import dev.stapler.stelekit.tags.TagSuggestionState
+import dev.stapler.stelekit.tags.TagSuggestionViewModel
+import dev.stapler.stelekit.tags.WikiLinkExtractor
+import dev.stapler.stelekit.ui.components.tags.SuggestionBottomSheet
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
@@ -49,6 +53,7 @@ fun JournalsView(
     isLeftHanded: Boolean = false,
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
     capabilities: EditorCapabilities = EditorCapabilities(),
+    tagSuggestionViewModel: TagSuggestionViewModel? = null,
     modifier: Modifier = Modifier
 ) {
     NavigationTracingEffect("Journals")
@@ -63,6 +68,8 @@ fun JournalsView(
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
     var toolbarHeight by remember { mutableStateOf(0) }
+    val tagSuggestionState by tagSuggestionViewModel?.state?.collectAsState()
+        ?: remember { mutableStateOf(TagSuggestionState.Idle) }
 
     if (isDebugMode) {
         val recomposeCount = remember { androidx.compose.runtime.mutableIntStateOf(0) }
@@ -171,6 +178,14 @@ fun JournalsView(
                         )
                     },
                     onOpenAnnotationEditor = onOpenAnnotationEditor,
+                    onRequestTagSuggestions = if (tagSuggestionViewModel != null) { blockUuid, content ->
+                        val alreadyLinked = WikiLinkExtractor.extractPageNames(content)
+                        tagSuggestionViewModel.requestSuggestions(
+                            blockUuid = blockUuid,
+                            blockContent = content,
+                            alreadyLinkedTerms = alreadyLinked,
+                        )
+                    } else null,
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -234,6 +249,18 @@ fun JournalsView(
                 .align(Alignment.BottomCenter)
                 .onSizeChanged { toolbarHeight = it.height },
         )
+
+        if (tagSuggestionViewModel != null) {
+            SuggestionBottomSheet(
+                state = tagSuggestionState,
+                onAcceptTag = { uuid, term ->
+                    viewModel.blockStateManager.appendToBlock(
+                        dev.stapler.stelekit.model.BlockUuid(uuid), " [[$term]]"
+                    )
+                },
+                onDismiss = { tagSuggestionViewModel.dismiss() },
+            )
+        }
     }
 }
 
@@ -279,6 +306,7 @@ private fun JournalEntry(
     onNavigateAllSuggestions: ((List<SuggestionItem>) -> Unit)? = null,
     onBlockSelectionChange: ((blockUuid: String, range: IntRange?) -> Unit)? = null,
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
+    onRequestTagSuggestions: ((blockUuid: String, content: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
@@ -356,6 +384,7 @@ private fun JournalEntry(
                 onNavigateAllSuggestions = onNavigateAllSuggestions,
                 onBlockSelectionChange = onBlockSelectionChange,
                 onOpenAnnotationEditor = onOpenAnnotationEditor,
+                onRequestTagSuggestions = onRequestTagSuggestions,
             )
 
             // Clickable area below blocks to append new block

@@ -470,6 +470,20 @@ class BlockStateManager(
     }
 
     /**
+     * Append [text] to the end of the block's current content.
+     * Safe to call from a non-editing context (no active cursor required).
+     * Internally delegates to insertTextAtCursor with overrideCursorIndex = block.content.length.
+     */
+    fun appendToBlock(blockUuid: BlockUuid, text: String) {
+        scope.launch {
+            val block = _blocks.value.values.flatten().firstOrNull { it.uuid == blockUuid }
+                ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+                ?: return@launch
+            insertTextAtCursor(blockUuid, text, overrideCursorIndex = block.content.length)
+        }
+    }
+
+    /**
      * Inserts [[pageName]] at the cursor position for the given block.
      *
      * [overrideCursorIndex] should be captured by the caller *before* any dialog opens
