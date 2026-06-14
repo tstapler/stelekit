@@ -258,6 +258,39 @@ private class SteleDatabaseImpl(
           |    FOREIGN KEY (image_uuid) REFERENCES image_annotations(uuid) ON DELETE CASCADE
           |)
           """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS asset_index (
+          |    uuid TEXT NOT NULL PRIMARY KEY,
+          |    file_path TEXT NOT NULL,
+          |    relative_path TEXT NOT NULL,
+          |    media_type TEXT NOT NULL,
+          |    subfolder TEXT NOT NULL DEFAULT 'files',
+          |    tags TEXT NOT NULL DEFAULT '[]',
+          |    auto_labels TEXT NOT NULL DEFAULT '[]',
+          |    ocr_text TEXT,
+          |    cloud_description TEXT,
+          |    page_uuids TEXT NOT NULL DEFAULT '[]',
+          |    size_bytes INTEGER NOT NULL DEFAULT 0,
+          |    imported_at_ms INTEGER NOT NULL,
+          |    ml_processed INTEGER NOT NULL DEFAULT 0,
+          |    ml_attempted_at INTEGER,
+          |    ml_failed INTEGER NOT NULL DEFAULT 0,
+          |    content_hash TEXT,
+          |    is_orphan INTEGER NOT NULL DEFAULT 0,
+          |    ml_tags_source TEXT NOT NULL DEFAULT 'NONE'
+          |)
+          """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE TABLE IF NOT EXISTS pending_asset_moves (
+          |    id INTEGER PRIMARY KEY AUTOINCREMENT,
+          |    asset_uuid TEXT NOT NULL,
+          |    old_file_path TEXT NOT NULL,
+          |    new_file_path TEXT NOT NULL,
+          |    old_relative_path TEXT NOT NULL,
+          |    new_relative_path TEXT NOT NULL,
+          |    created_at_ms INTEGER NOT NULL
+          |)
+          """.trimMargin(), 0).await()
       driver.execute(null, "CREATE INDEX idx_pages_uuid ON pages(uuid)", 0).await()
       driver.execute(null, "CREATE INDEX idx_pages_name ON pages(name)", 0).await()
       driver.execute(null, "CREATE INDEX idx_pages_namespace ON pages(namespace)", 0).await()
@@ -328,6 +361,9 @@ private class SteleDatabaseImpl(
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_image_annotations_page_uuid ON image_annotations(page_uuid)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_image_annotations_graph_path ON image_annotations(graph_path)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_measurement_annotations_image_uuid ON measurement_annotations(image_uuid)", 0).await()
+      driver.execute(null, "CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_file_path_unique ON asset_index(file_path)", 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_asset_unprocessed ON asset_index(ml_processed, ml_failed, imported_at_ms)", 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_asset_media_type ON asset_index(media_type)", 0).await()
       driver.execute(null, """
           |CREATE VIRTUAL TABLE blocks_fts USING fts5(
           |    content,

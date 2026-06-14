@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import app.cash.sqldelight.ExecutableQuery
 import app.cash.sqldelight.Query
 import app.cash.sqldelight.SuspendingTransacterImpl
 import app.cash.sqldelight.db.QueryResult
@@ -2696,6 +2697,286 @@ public class SteleDatabaseQueries(
 
   public fun selectMeasurementsForImage(image_uuid: String): Query<Measurement_annotations> = selectMeasurementsForImage(image_uuid, ::Measurement_annotations)
 
+  public fun <T : Any> selectAssetByUuid(uuid: String, mapper: (
+    uuid: String,
+    file_path: String,
+    relative_path: String,
+    media_type: String,
+    subfolder: String,
+    tags: String,
+    auto_labels: String,
+    ocr_text: String?,
+    cloud_description: String?,
+    page_uuids: String,
+    size_bytes: Long,
+    imported_at_ms: Long,
+    ml_processed: Long,
+    ml_attempted_at: Long?,
+    ml_failed: Long,
+    content_hash: String?,
+    is_orphan: Long,
+    ml_tags_source: String,
+  ) -> T): Query<T> = SelectAssetByUuidQuery(uuid) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getString(8),
+      cursor.getString(9)!!,
+      cursor.getLong(10)!!,
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getLong(13),
+      cursor.getLong(14)!!,
+      cursor.getString(15),
+      cursor.getLong(16)!!,
+      cursor.getString(17)!!
+    )
+  }
+
+  public fun selectAssetByUuid(uuid: String): Query<Asset_index> = selectAssetByUuid(uuid, ::Asset_index)
+
+  public fun <T : Any> selectAssets(
+    limit: Long,
+    offset: Long,
+    mapper: (
+      uuid: String,
+      file_path: String,
+      relative_path: String,
+      media_type: String,
+      subfolder: String,
+      tags: String,
+      auto_labels: String,
+      ocr_text: String?,
+      cloud_description: String?,
+      page_uuids: String,
+      size_bytes: Long,
+      imported_at_ms: Long,
+      ml_processed: Long,
+      ml_attempted_at: Long?,
+      ml_failed: Long,
+      content_hash: String?,
+      is_orphan: Long,
+      ml_tags_source: String,
+    ) -> T,
+  ): Query<T> = SelectAssetsQuery(limit, offset) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getString(8),
+      cursor.getString(9)!!,
+      cursor.getLong(10)!!,
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getLong(13),
+      cursor.getLong(14)!!,
+      cursor.getString(15),
+      cursor.getLong(16)!!,
+      cursor.getString(17)!!
+    )
+  }
+
+  public fun selectAssets(limit: Long, offset: Long): Query<Asset_index> = selectAssets(limit, offset, ::Asset_index)
+
+  public fun <T : Any> selectAssetsByMediaType(
+    media_type: String,
+    limit: Long,
+    offset: Long,
+    mapper: (
+      uuid: String,
+      file_path: String,
+      relative_path: String,
+      media_type: String,
+      subfolder: String,
+      tags: String,
+      auto_labels: String,
+      ocr_text: String?,
+      cloud_description: String?,
+      page_uuids: String,
+      size_bytes: Long,
+      imported_at_ms: Long,
+      ml_processed: Long,
+      ml_attempted_at: Long?,
+      ml_failed: Long,
+      content_hash: String?,
+      is_orphan: Long,
+      ml_tags_source: String,
+    ) -> T,
+  ): Query<T> = SelectAssetsByMediaTypeQuery(media_type, limit, offset) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getString(8),
+      cursor.getString(9)!!,
+      cursor.getLong(10)!!,
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getLong(13),
+      cursor.getLong(14)!!,
+      cursor.getString(15),
+      cursor.getLong(16)!!,
+      cursor.getString(17)!!
+    )
+  }
+
+  public fun selectAssetsByMediaType(
+    media_type: String,
+    limit: Long,
+    offset: Long,
+  ): Query<Asset_index> = selectAssetsByMediaType(media_type, limit, offset, ::Asset_index)
+
+  public fun <T : Any> searchAssets(
+    query: String,
+    limit: Long,
+    offset: Long,
+    mapper: (
+      uuid: String,
+      file_path: String,
+      relative_path: String,
+      media_type: String,
+      subfolder: String,
+      tags: String,
+      auto_labels: String,
+      ocr_text: String?,
+      cloud_description: String?,
+      page_uuids: String,
+      size_bytes: Long,
+      imported_at_ms: Long,
+      ml_processed: Long,
+      ml_attempted_at: Long?,
+      ml_failed: Long,
+      content_hash: String?,
+      is_orphan: Long,
+      ml_tags_source: String,
+    ) -> T,
+  ): Query<T> = SearchAssetsQuery(query, limit, offset) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getString(8),
+      cursor.getString(9)!!,
+      cursor.getLong(10)!!,
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getLong(13),
+      cursor.getLong(14)!!,
+      cursor.getString(15),
+      cursor.getLong(16)!!,
+      cursor.getString(17)!!
+    )
+  }
+
+  public fun searchAssets(
+    query: String,
+    limit: Long,
+    offset: Long,
+  ): Query<Asset_index> = searchAssets(query, limit, offset, ::Asset_index)
+
+  public fun <T : Any> selectUnprocessedAssets(
+    limit: Long,
+    offset: Long,
+    mapper: (
+      uuid: String,
+      file_path: String,
+      relative_path: String,
+      media_type: String,
+      subfolder: String,
+      tags: String,
+      auto_labels: String,
+      ocr_text: String?,
+      cloud_description: String?,
+      page_uuids: String,
+      size_bytes: Long,
+      imported_at_ms: Long,
+      ml_processed: Long,
+      ml_attempted_at: Long?,
+      ml_failed: Long,
+      content_hash: String?,
+      is_orphan: Long,
+      ml_tags_source: String,
+    ) -> T,
+  ): Query<T> = SelectUnprocessedAssetsQuery(limit, offset) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getString(8),
+      cursor.getString(9)!!,
+      cursor.getLong(10)!!,
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getLong(13),
+      cursor.getLong(14)!!,
+      cursor.getString(15),
+      cursor.getLong(16)!!,
+      cursor.getString(17)!!
+    )
+  }
+
+  public fun selectUnprocessedAssets(limit: Long, offset: Long): Query<Asset_index> = selectUnprocessedAssets(limit, offset, ::Asset_index)
+
+  public fun countUnprocessedAssets(): Query<Long> = Query(-1_728_676_438, arrayOf("asset_index"), driver, "SteleDatabase.sq", "countUnprocessedAssets", "SELECT COUNT(*) FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0") { cursor ->
+    cursor.getLong(0)!!
+  }
+
+  public fun countAssets(): Query<Long> = Query(-611_689_007, arrayOf("asset_index"), driver, "SteleDatabase.sq", "countAssets", "SELECT COUNT(*) FROM asset_index") { cursor ->
+    cursor.getLong(0)!!
+  }
+
+  public fun <T : Any> selectAllPendingMoves(mapper: (
+    id: Long,
+    asset_uuid: String,
+    old_file_path: String,
+    new_file_path: String,
+    old_relative_path: String,
+    new_relative_path: String,
+    created_at_ms: Long,
+  ) -> T): Query<T> = Query(-947_239_761, arrayOf("pending_asset_moves"), driver, "SteleDatabase.sq", "selectAllPendingMoves", "SELECT pending_asset_moves.id, pending_asset_moves.asset_uuid, pending_asset_moves.old_file_path, pending_asset_moves.new_file_path, pending_asset_moves.old_relative_path, pending_asset_moves.new_relative_path, pending_asset_moves.created_at_ms FROM pending_asset_moves") { cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getLong(6)!!
+    )
+  }
+
+  public fun selectAllPendingMoves(): Query<Pending_asset_moves> = selectAllPendingMoves(::Pending_asset_moves)
+
+  public fun selectLastInsertRowId(): ExecutableQuery<Long> = Query(998_850_025, driver, "SteleDatabase.sq", "selectLastInsertRowId", "SELECT last_insert_rowid()") { cursor ->
+    cursor.getLong(0)!!
+  }
+
   /**
    * @return The number of rows updated.
    */
@@ -4268,6 +4549,284 @@ public class SteleDatabaseQueries(
         }.await()
     notifyQueries(-804_777_601) { emit ->
       emit("measurement_annotations")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun insertAsset(
+    uuid: String,
+    file_path: String,
+    relative_path: String,
+    media_type: String,
+    subfolder: String,
+    tags: String,
+    auto_labels: String,
+    ocr_text: String?,
+    cloud_description: String?,
+    page_uuids: String,
+    size_bytes: Long,
+    imported_at_ms: Long,
+    content_hash: String?,
+  ): Long {
+    val result = driver.execute(2_141_452_310, """
+        |INSERT INTO asset_index(uuid, file_path, relative_path, media_type, subfolder, tags, auto_labels, ocr_text, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_failed, content_hash, is_orphan, ml_tags_source)
+        |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, 'NONE')
+        """.trimMargin(), 13) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, uuid)
+          bindString(parameterIndex++, file_path)
+          bindString(parameterIndex++, relative_path)
+          bindString(parameterIndex++, media_type)
+          bindString(parameterIndex++, subfolder)
+          bindString(parameterIndex++, tags)
+          bindString(parameterIndex++, auto_labels)
+          bindString(parameterIndex++, ocr_text)
+          bindString(parameterIndex++, cloud_description)
+          bindString(parameterIndex++, page_uuids)
+          bindLong(parameterIndex++, size_bytes)
+          bindLong(parameterIndex++, imported_at_ms)
+          bindString(parameterIndex++, content_hash)
+        }.await()
+    notifyQueries(2_141_452_310) { emit ->
+      emit("asset_index")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun insertAssetOrIgnore(
+    uuid: String,
+    file_path: String,
+    relative_path: String,
+    media_type: String,
+    subfolder: String,
+    tags: String,
+    auto_labels: String,
+    ocr_text: String?,
+    cloud_description: String?,
+    page_uuids: String,
+    size_bytes: Long,
+    imported_at_ms: Long,
+    content_hash: String?,
+  ): Long {
+    val result = driver.execute(1_434_560_459, """
+        |INSERT OR IGNORE INTO asset_index(uuid, file_path, relative_path, media_type, subfolder, tags, auto_labels, ocr_text, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_failed, content_hash, is_orphan, ml_tags_source)
+        |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, 'NONE')
+        """.trimMargin(), 13) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, uuid)
+          bindString(parameterIndex++, file_path)
+          bindString(parameterIndex++, relative_path)
+          bindString(parameterIndex++, media_type)
+          bindString(parameterIndex++, subfolder)
+          bindString(parameterIndex++, tags)
+          bindString(parameterIndex++, auto_labels)
+          bindString(parameterIndex++, ocr_text)
+          bindString(parameterIndex++, cloud_description)
+          bindString(parameterIndex++, page_uuids)
+          bindLong(parameterIndex++, size_bytes)
+          bindLong(parameterIndex++, imported_at_ms)
+          bindString(parameterIndex++, content_hash)
+        }.await()
+    notifyQueries(1_434_560_459) { emit ->
+      emit("asset_index")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun updateAssetFilePath(
+    filePath: String,
+    relativePath: String,
+    uuid: String,
+  ): Long {
+    val result = driver.execute(1_923_840_487, """UPDATE asset_index SET file_path = ?, relative_path = ? WHERE uuid = ?""", 3) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, filePath)
+          bindString(parameterIndex++, relativePath)
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(1_923_840_487) { emit ->
+      emit("asset_index")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun updateAssetTags(tags: String, uuid: String): Long {
+    val result = driver.execute(1_498_546_495, """UPDATE asset_index SET tags = ? WHERE uuid = ?""", 2) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, tags)
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(1_498_546_495) { emit ->
+      emit("asset_index")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun updateAssetAutoLabels(
+    autoLabels: String,
+    mlTagsSource: String,
+    uuid: String,
+  ): Long {
+    val result = driver.execute(-324_615_372, """UPDATE asset_index SET auto_labels = ?, ml_tags_source = ? WHERE uuid = ?""", 3) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, autoLabels)
+          bindString(parameterIndex++, mlTagsSource)
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(-324_615_372) { emit ->
+      emit("asset_index")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun updateAssetOcrText(ocrText: String?, uuid: String): Long {
+    val result = driver.execute(1_232_601_221, """UPDATE asset_index SET ocr_text = ? WHERE uuid = ?""", 2) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, ocrText)
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(1_232_601_221) { emit ->
+      emit("asset_index")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun updateAssetCloudDescription(
+    cloudDescription: String?,
+    mlTagsSource: String,
+    uuid: String,
+  ): Long {
+    val result = driver.execute(-280_162_643, """UPDATE asset_index SET cloud_description = ?, ml_tags_source = ? WHERE uuid = ?""", 3) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, cloudDescription)
+          bindString(parameterIndex++, mlTagsSource)
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(-280_162_643) { emit ->
+      emit("asset_index")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun markAssetMlProcessed(attemptedAt: Long?, uuid: String): Long {
+    val result = driver.execute(158_555_853, """UPDATE asset_index SET ml_processed = 1, ml_attempted_at = ? WHERE uuid = ?""", 2) {
+          var parameterIndex = 0
+          bindLong(parameterIndex++, attemptedAt)
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(158_555_853) { emit ->
+      emit("asset_index")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun markAssetMlFailed(attemptedAt: Long?, uuid: String): Long {
+    val result = driver.execute(83_642_654, """UPDATE asset_index SET ml_failed = 1, ml_attempted_at = ? WHERE uuid = ?""", 2) {
+          var parameterIndex = 0
+          bindLong(parameterIndex++, attemptedAt)
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(83_642_654) { emit ->
+      emit("asset_index")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun updateAssetPageUuids(pageUuids: String, uuid: String): Long {
+    val result = driver.execute(1_714_875_747, """UPDATE asset_index SET page_uuids = ? WHERE uuid = ?""", 2) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, pageUuids)
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(1_714_875_747) { emit ->
+      emit("asset_index")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteAsset(uuid: String): Long {
+    val result = driver.execute(1_122_778_212, """DELETE FROM asset_index WHERE uuid = ?""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(1_122_778_212) { emit ->
+      emit("asset_index")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun insertPendingMove(
+    asset_uuid: String,
+    old_file_path: String,
+    new_file_path: String,
+    old_relative_path: String,
+    new_relative_path: String,
+    created_at_ms: Long,
+  ): Long {
+    val result = driver.execute(442_412_718, """
+        |INSERT INTO pending_asset_moves(asset_uuid, old_file_path, new_file_path, old_relative_path, new_relative_path, created_at_ms)
+        |VALUES (?, ?, ?, ?, ?, ?)
+        """.trimMargin(), 6) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, asset_uuid)
+          bindString(parameterIndex++, old_file_path)
+          bindString(parameterIndex++, new_file_path)
+          bindString(parameterIndex++, old_relative_path)
+          bindString(parameterIndex++, new_relative_path)
+          bindLong(parameterIndex++, created_at_ms)
+        }.await()
+    notifyQueries(442_412_718) { emit ->
+      emit("pending_asset_moves")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deletePendingMove(id: Long): Long {
+    val result = driver.execute(-1_920_335_748, """DELETE FROM pending_asset_moves WHERE id = ?""", 1) {
+          var parameterIndex = 0
+          bindLong(parameterIndex++, id)
+        }.await()
+    notifyQueries(-1_920_335_748) { emit ->
+      emit("pending_asset_moves")
     }
     return result
   }
@@ -6289,5 +6848,120 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectMeasurementsForImage"
+  }
+
+  private inner class SelectAssetByUuidQuery<out T : Any>(
+    public val uuid: String,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-807_861_691, """SELECT asset_index.uuid, asset_index.file_path, asset_index.relative_path, asset_index.media_type, asset_index.subfolder, asset_index.tags, asset_index.auto_labels, asset_index.ocr_text, asset_index.cloud_description, asset_index.page_uuids, asset_index.size_bytes, asset_index.imported_at_ms, asset_index.ml_processed, asset_index.ml_attempted_at, asset_index.ml_failed, asset_index.content_hash, asset_index.is_orphan, asset_index.ml_tags_source FROM asset_index WHERE uuid = ?""", mapper, 1) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, uuid)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAssetByUuid"
+  }
+
+  private inner class SelectAssetsQuery<out T : Any>(
+    public val limit: Long,
+    public val offset: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_047_691_488, """SELECT asset_index.uuid, asset_index.file_path, asset_index.relative_path, asset_index.media_type, asset_index.subfolder, asset_index.tags, asset_index.auto_labels, asset_index.ocr_text, asset_index.cloud_description, asset_index.page_uuids, asset_index.size_bytes, asset_index.imported_at_ms, asset_index.ml_processed, asset_index.ml_attempted_at, asset_index.ml_failed, asset_index.content_hash, asset_index.is_orphan, asset_index.ml_tags_source FROM asset_index ORDER BY imported_at_ms DESC LIMIT ? OFFSET ?""", mapper, 2) {
+      var parameterIndex = 0
+      bindLong(parameterIndex++, limit)
+      bindLong(parameterIndex++, offset)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAssets"
+  }
+
+  private inner class SelectAssetsByMediaTypeQuery<out T : Any>(
+    public val media_type: String,
+    public val limit: Long,
+    public val offset: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_673_176_217, """SELECT asset_index.uuid, asset_index.file_path, asset_index.relative_path, asset_index.media_type, asset_index.subfolder, asset_index.tags, asset_index.auto_labels, asset_index.ocr_text, asset_index.cloud_description, asset_index.page_uuids, asset_index.size_bytes, asset_index.imported_at_ms, asset_index.ml_processed, asset_index.ml_attempted_at, asset_index.ml_failed, asset_index.content_hash, asset_index.is_orphan, asset_index.ml_tags_source FROM asset_index WHERE media_type = ? ORDER BY imported_at_ms DESC LIMIT ? OFFSET ?""", mapper, 3) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, media_type)
+      bindLong(parameterIndex++, limit)
+      bindLong(parameterIndex++, offset)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAssetsByMediaType"
+  }
+
+  private inner class SearchAssetsQuery<out T : Any>(
+    public val query: String,
+    public val limit: Long,
+    public val offset: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_326_743_244, """SELECT asset_index.uuid, asset_index.file_path, asset_index.relative_path, asset_index.media_type, asset_index.subfolder, asset_index.tags, asset_index.auto_labels, asset_index.ocr_text, asset_index.cloud_description, asset_index.page_uuids, asset_index.size_bytes, asset_index.imported_at_ms, asset_index.ml_processed, asset_index.ml_attempted_at, asset_index.ml_failed, asset_index.content_hash, asset_index.is_orphan, asset_index.ml_tags_source FROM asset_index WHERE (file_path LIKE ? ESCAPE '\' OR tags LIKE ? ESCAPE '\' OR auto_labels LIKE ? ESCAPE '\' OR ocr_text LIKE ? ESCAPE '\') ORDER BY imported_at_ms DESC LIMIT ? OFFSET ?""", mapper, 6) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, query)
+      bindString(parameterIndex++, query)
+      bindString(parameterIndex++, query)
+      bindString(parameterIndex++, query)
+      bindLong(parameterIndex++, limit)
+      bindLong(parameterIndex++, offset)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:searchAssets"
+  }
+
+  private inner class SelectUnprocessedAssetsQuery<out T : Any>(
+    public val limit: Long,
+    public val offset: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(691_455_227, """SELECT asset_index.uuid, asset_index.file_path, asset_index.relative_path, asset_index.media_type, asset_index.subfolder, asset_index.tags, asset_index.auto_labels, asset_index.ocr_text, asset_index.cloud_description, asset_index.page_uuids, asset_index.size_bytes, asset_index.imported_at_ms, asset_index.ml_processed, asset_index.ml_attempted_at, asset_index.ml_failed, asset_index.content_hash, asset_index.is_orphan, asset_index.ml_tags_source FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0 ORDER BY imported_at_ms ASC LIMIT ? OFFSET ?""", mapper, 2) {
+      var parameterIndex = 0
+      bindLong(parameterIndex++, limit)
+      bindLong(parameterIndex++, offset)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectUnprocessedAssets"
   }
 }

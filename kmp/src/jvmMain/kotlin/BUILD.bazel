@@ -96,6 +96,9 @@ kt_jvm_library(
         # BouncyCastle (from jvmMain)
         "@maven//:org_bouncycastle_bcprov_jdk18on",
 
+        # PDFBox — PDF text extraction for asset OCR pipeline (from jvmMain)
+        "@maven//:org_apache_pdfbox_pdfbox",
+
         # Kotlin stdlib
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
     ],

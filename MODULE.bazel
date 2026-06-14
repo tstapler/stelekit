@@ -221,6 +221,9 @@ maven.install(
         # ── BouncyCastle ──────────────────────────────────────────────────────
         "org.bouncycastle:bcprov-jdk18on:1.80",
 
+        # ── PDFBox — PDF text extraction for asset OCR pipeline (JVM only) ───
+        "org.apache.pdfbox:pdfbox:3.0.4",
+
         # ── JGit — one version per groupId:artifactId (rules_jvm_external constraint)
         # Desktop uses 7.x; Android also resolves to 7.x (version conflict
         # resolved to higher version). See CLAUDE.md note on version pinning.
