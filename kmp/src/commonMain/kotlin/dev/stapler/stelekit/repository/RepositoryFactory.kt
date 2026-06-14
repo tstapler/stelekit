@@ -84,6 +84,7 @@ class RepositoryFactoryImpl(
 ) : RepositoryFactory {
 
     private var activeDriver: app.cash.sqldelight.db.SqlDriver? = null
+    private var wrappedDriver: app.cash.sqldelight.db.SqlDriver? = null
 
     // Set by createRepositorySet before repositories are instantiated so constructors receive
     // the live perf objects. Fields are written once before first use — not thread-safe by design.
@@ -98,6 +99,7 @@ class RepositoryFactoryImpl(
         val effectiveDriver = if (tracingRingBuffer != null || queryStatsCollector != null) {
             TimingDriverWrapper(driver, tracingRingBuffer, queryStatsCollector)
         } else driver
+        wrappedDriver = effectiveDriver
         SteleDatabase(effectiveDriver)
     }
 
@@ -112,7 +114,11 @@ class RepositoryFactoryImpl(
                 DatalogBlockRepository()
             }
             GraphBackend.SQLDELIGHT -> getOrCreateInstance("block_sqldelight") {
-                SqlDelightBlockRepository(database)
+                val db = database // ensure wrappedDriver is populated
+                val driver = requireNotNull(wrappedDriver) {
+                    "wrappedDriver is null — database lazy initializer did not complete successfully"
+                }
+                SqlDelightBlockRepository(db, driver).also { it.ftsStartupHeal() }
             }
             else -> throw NotImplementedError("Backend $backend not implemented")
         }
@@ -336,6 +342,10 @@ class RepositoryFactoryImpl(
             when (request) {
                 is DatabaseWriteActor.WriteRequest.SaveBlocks ->
                     request.blocks.forEach { sqlBlockRepo.evictBlock(it.uuid.value) }
+                is DatabaseWriteActor.WriteRequest.SaveBlocksDiff -> {
+                    request.toInsert.forEach { sqlBlockRepo.evictBlock(it.uuid.value) }
+                    request.toUpdate.forEach { sqlBlockRepo.evictBlock(it.uuid.value) }
+                }
                 is DatabaseWriteActor.WriteRequest.DeleteBlocksForPage ->
                     sqlBlockRepo.evictHierarchyForPage(request.pageUuid.value)
                 is DatabaseWriteActor.WriteRequest.DeleteBlocksForPages ->

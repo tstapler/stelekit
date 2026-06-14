@@ -168,6 +168,9 @@ CREATE TABLE IF NOT EXISTS page_visits (
 selectBlockByUuid:
 SELECT * FROM blocks WHERE uuid = ?;
 
+selectBlocksByUuids:
+SELECT * FROM blocks WHERE uuid IN ?;
+
 existsBlockByUuid:
 SELECT COUNT(*) FROM blocks WHERE uuid = ?;
 
@@ -279,13 +282,17 @@ insertBlock:
 INSERT OR REPLACE INTO blocks (uuid, page_uuid, parent_uuid, left_uuid, content, level, position, created_at, updated_at, properties, version, content_hash, block_type)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+-- Used by saveBlocksDiff for toUpdate blocks: fires blocks_au (AFTER UPDATE OF content) instead
+-- of the double blocks_ad+blocks_ai pair that INSERT OR REPLACE triggers on existing rows.
+-- blocks_au only fires for content column changes, so structural-only diffs avoid FTS5 entirely.
+updateBlockForSave:
+UPDATE blocks
+SET page_uuid = ?, parent_uuid = ?, left_uuid = ?, content = ?, level = ?,
+    position = ?, updated_at = ?, properties = ?, version = ?, content_hash = ?, block_type = ?
+WHERE uuid = ?;
+
 selectBlocksHashByPageUuid:
 SELECT uuid, content_hash FROM blocks WHERE page_uuid = ?;
-
--- Batch lookup by UUID set — used by DatabaseWriteActor.loadExistingBlocks to replace N
--- individual selectBlockByUuid calls with one round-trip (eliminates N+1 IO dispatch).
-selectBlocksByUuids:
-SELECT * FROM blocks WHERE uuid IN ?;
 
 -- Deduplication queries
 selectBlocksByContentHash:

@@ -21,6 +21,7 @@ import kotlinx.benchmark.Mode
 import kotlinx.benchmark.OutputTimeUnit
 import kotlinx.benchmark.Setup
 import kotlinx.benchmark.State
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.runBlocking
 import org.openjdk.jmh.annotations.Level

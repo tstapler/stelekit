@@ -182,7 +182,7 @@ class SearchRepositoryIntegrationTests {
         assertTrue(generateUuid(11) in uuids, "Block with both terms should match")
         assertFalse(generateUuid(12) in uuids, "Block with neither term should not match")
         // block 3 has "2025" but not "tax" — AND semantics may exclude it (depends on porter stemming)
-        assertFalse(generateUuid(12) in uuids, "Block with only 'meeting' should not match '2025 tax'")
+        assertFalse(generateUuid(13) in uuids, "Block with only '2025' should not match")
     }
 
     @Test

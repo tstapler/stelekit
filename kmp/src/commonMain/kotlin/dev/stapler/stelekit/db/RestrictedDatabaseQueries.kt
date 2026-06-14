@@ -48,6 +48,25 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     )
 
     @DirectSqlWrite
+    suspend fun updateBlockForSave(
+        page_uuid: String,
+        parent_uuid: String?,
+        left_uuid: String?,
+        content: String,
+        level: Long,
+        position: Long,
+        updated_at: Long,
+        properties: String?,
+        version: Long,
+        content_hash: String?,
+        block_type: String,
+        uuid: String,
+    ): Long = queries.updateBlockForSave(
+        page_uuid, parent_uuid, left_uuid, content, level, position,
+        updated_at, properties, version, content_hash, block_type, uuid,
+    )
+
+    @DirectSqlWrite
     suspend fun updateBlockParent(parent_uuid: String?, uuid: String): Long =
         queries.updateBlockParent(parent_uuid, uuid)
 
