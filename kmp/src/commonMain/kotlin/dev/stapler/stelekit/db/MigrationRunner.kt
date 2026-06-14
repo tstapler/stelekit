@@ -386,6 +386,17 @@ object MigrationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_pages_unloaded ON pages(uuid) WHERE is_content_loaded = 0"
             )
         ),
+        Migration(
+            name = "spans_version_columns",
+            statements = listOf(
+                // Dedicated columns for app_version and commit_hash enable fast regression
+                // queries (WHERE app_version = ? AND name = ? ORDER BY duration_ms DESC)
+                // without JSON path extraction on attributes_json.
+                "ALTER TABLE spans ADD COLUMN app_version TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE spans ADD COLUMN commit_hash TEXT NOT NULL DEFAULT ''",
+                "CREATE INDEX IF NOT EXISTS idx_spans_version_name_duration ON spans(app_version, name, duration_ms DESC)",
+            )
+        ),
     )
 
     /**
