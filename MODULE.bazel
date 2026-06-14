@@ -333,6 +333,38 @@ maven.install(
 
         # ── MLKit (Android) ───────────────────────────────────────────────────
         "com.google.mlkit:genai-prompt:1.0.0-beta2",
+        "com.google.mlkit:image-labeling:17.0.9",
+        "com.google.mlkit:text-recognition:16.0.1",
+
+        # ── ARCore (Android) ─────────────────────────────────────────────────
+        "com.google.ar:core:1.46.0",
+
+        # ── CameraX (Android) ────────────────────────────────────────────────
+        "androidx.camera:camera-core:1.4.1",
+        "androidx.camera:camera-camera2:1.4.1",
+        "androidx.camera:camera-lifecycle:1.4.1",
+
+        # ── ONNX Runtime Android ──────────────────────────────────────────────
+        "com.microsoft.onnxruntime:onnxruntime-android:1.20.0",
+
+        # ── ExifInterface (Android) ───────────────────────────────────────────
+        "androidx.exifinterface:exifinterface:1.3.7",
+
+        # ── PDFBox Android ────────────────────────────────────────────────────
+        "com.tom-roush:pdfbox-android:2.0.27.0",
+
+        # ── Kable BLE (Android) ───────────────────────────────────────────────
+        "com.juul.kable:core-android:0.32.0",
+
+        # ── Okio (KMP — used by commonMain for cross-platform file I/O) ───────
+        "com.squareup.okio:okio-jvm:3.17.0",
+
+        # ── Compose material icons extended (Android) ─────────────────────────
+        # JVM (desktop) uses material-icons-extended-desktop:1.7.3 (already pinned above).
+        # Android compilation needs the Jetpack AAR. 1.10.5 doesn't exist on Google Maven;
+        # the latest Jetpack release is 1.7.8 — use that.
+        "androidx.compose.material:material-icons-extended:1.7.8",
+
 
         # ── Test dependencies ─────────────────────────────────────────────────
         "junit:junit:4.13.2",

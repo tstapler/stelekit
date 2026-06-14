@@ -104,6 +104,41 @@ kt_android_library(
         # MLKit on-device LLM (from androidMain)
         "@maven//:com_google_mlkit_genai_prompt",
 
+        # MLKit Image Labeling (from androidMain)
+        "@maven//:com_google_mlkit_image_labeling",
+
+        # MLKit Text Recognition (from androidMain)
+        "@maven//:com_google_mlkit_text_recognition",
+
+        # ARCore Depth API (from androidMain)
+        "@maven//:com_google_ar_core",
+
+        # CameraX (from androidMain)
+        "@maven//:androidx_camera_camera_core",
+        "@maven//:androidx_camera_camera_camera2",
+        "@maven//:androidx_camera_camera_lifecycle",
+
+        # Lifecycle process (required by CameraX camera-lifecycle; from androidMain)
+        "@maven//:androidx_lifecycle_lifecycle_process",
+
+        # ONNX Runtime Android (from androidMain)
+        "@maven//:com_microsoft_onnxruntime_onnxruntime_android",
+
+        # ExifInterface (from androidMain)
+        "@maven//:androidx_exifinterface_exifinterface",
+
+        # PDFBox Android (from androidMain)
+        "@maven//:com_tom_roush_pdfbox_android",
+
+        # Kable BLE Android (from androidMain)
+        "@maven//:com_juul_kable_core_android",
+
+        # Okio — cross-platform file I/O (from commonMain)
+        "@maven//:com_squareup_okio_okio_jvm",
+
+        # Compose material icons extended (Android — JVM uses -desktop variant)
+        "@maven//:androidx_compose_material_material_icons_extended",
+
         # Glance (from androidMain)
         "@maven//:androidx_glance_glance_appwidget",
         "@maven//:androidx_glance_glance_material3",
