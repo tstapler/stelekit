@@ -21,6 +21,9 @@ class PerfExporter(
 
     companion object {
         const val MAX_EXPORT_SPANS = 10_000
+        private const val MIN_REGRESSION_SAMPLES = 3
+        private const val MIN_REGRESSION_ABS_MS = 100L
+        private const val MIN_REGRESSION_PCT = 50
     }
 
     /** Default directory for exports (platform Downloads folder). */
@@ -62,7 +65,7 @@ class PerfExporter(
 
     private suspend fun buildReportContent(): String {
         val spans = spanRepository.getRecentSpans(limit = MAX_EXPORT_SPANS).first().getOrNull() ?: emptyList()
-        val histograms = HistogramWriter.KNOWN_OPERATIONS
+        val histograms = histogramWriter.queryAllOperations()
             .mapNotNull { op -> histogramWriter.queryPercentiles(op)?.let { op to it } }
             .toMap()
         val nowMs = HistogramWriter.epochMs()
@@ -79,6 +82,8 @@ class PerfExporter(
             sloViolations = sloViolations,
             p99ByOperation = histograms.mapValues { it.value.p99Ms },
         )
+        val spanStats = computeSpanStats(spans)
+        val regressions = detectRegressions(spanStats, appVersion)
         return json.encodeToString(
             PerfExportReport(
                 exportedAt = nowMs,
@@ -88,8 +93,107 @@ class PerfExporter(
                 session = session,
                 spans = spans,
                 histograms = histograms,
+                spanStats = spanStats,
+                regressions = regressions,
             )
         )
+    }
+
+    private fun computeSpanStats(spans: List<SerializedSpan>): Map<String, List<SpanOperationStats>> {
+        return spans
+            .groupBy { it.attributes["app.version"]?.takeIf { v -> v.isNotEmpty() } ?: "unknown" }
+            .mapValues { (version, vSpans) ->
+                vSpans.groupBy { it.name }
+                    .map { (operation, opSpans) ->
+                        val sorted = opSpans.map { it.durationMs }.sorted()
+                        val n = sorted.size
+                        fun pct(p: Double) = sorted[((n - 1) * p / 100.0).toInt()]
+                        val p95Threshold = pct(95.0)
+                        val slowSpans = opSpans.filter { it.durationMs >= p95Threshold }
+                        SpanOperationStats(
+                            operation = operation,
+                            appVersion = version,
+                            count = n,
+                            p50Ms = pct(50.0),
+                            p75Ms = pct(75.0),
+                            p95Ms = p95Threshold,
+                            p99Ms = pct(99.0),
+                            maxMs = sorted.last(),
+                            totalMs = sorted.sum(),
+                            errorCount = opSpans.count { it.statusCode == "ERROR" },
+                            slowCaseAttributes = buildSlowCaseAttributes(slowSpans),
+                        )
+                    }
+                    .sortedByDescending { it.totalMs }
+            }
+    }
+
+    private val ignoredAttrKeys = setOf("session.id", "app.version", "app.commit")
+
+    private fun buildSlowCaseAttributes(slowSpans: List<SerializedSpan>): Map<String, String> {
+        if (slowSpans.isEmpty()) return emptyMap()
+        val numeric = mutableMapOf<String, MutableList<Long>>()
+        val strings = mutableMapOf<String, MutableMap<String, Int>>()
+        for (span in slowSpans) {
+            for ((k, v) in span.attributes) {
+                if (k in ignoredAttrKeys) continue
+                val num = v.toLongOrNull()
+                if (num != null) {
+                    numeric.getOrPut(k) { mutableListOf() }.add(num)
+                } else {
+                    val m = strings.getOrPut(k) { mutableMapOf() }
+                    m[v] = (m[v] ?: 0) + 1
+                }
+            }
+        }
+        return buildMap {
+            numeric.forEach { (k, vals) -> put(k, "avg=${vals.sum() / vals.size}") }
+            strings.forEach { (k, counts) ->
+                val top = counts.maxByOrNull { it.value }
+                if (top != null) put(k, top.key)
+            }
+        }
+    }
+
+    private fun detectRegressions(
+        spanStats: Map<String, List<SpanOperationStats>>,
+        currentVersion: String,
+    ): List<RegressionAlert> {
+        val knownVersions = spanStats.keys
+            .filter { it != "unknown" && it.isNotEmpty() }
+            .sortedWith(Comparator { a, b -> compareSemver(a, b) })
+        val currentIdx = knownVersions.indexOf(currentVersion)
+        if (currentIdx <= 0) return emptyList()
+        val prevVersion = knownVersions[currentIdx - 1]
+        val curr = spanStats[currentVersion]?.associateBy { it.operation } ?: return emptyList()
+        val prev = spanStats[prevVersion]?.associateBy { it.operation } ?: return emptyList()
+        return curr.values.mapNotNull { currStats ->
+            val prevStats = prev[currStats.operation] ?: return@mapNotNull null
+            if (currStats.count < MIN_REGRESSION_SAMPLES || prevStats.count < MIN_REGRESSION_SAMPLES) return@mapNotNull null
+            val absDelta = currStats.p95Ms - prevStats.p95Ms
+            if (absDelta <= MIN_REGRESSION_ABS_MS) return@mapNotNull null
+            val changePct = if (prevStats.p95Ms > 0) (absDelta * 100 / prevStats.p95Ms).toInt() else 0
+            if (changePct <= MIN_REGRESSION_PCT) return@mapNotNull null
+            RegressionAlert(
+                operation = currStats.operation,
+                baselineVersion = prevVersion,
+                currentVersion = currentVersion,
+                metric = "p95",
+                baselineMs = prevStats.p95Ms,
+                currentMs = currStats.p95Ms,
+                changePercent = changePct,
+            )
+        }.sortedByDescending { it.changePercent }
+    }
+
+    private fun compareSemver(a: String, b: String): Int {
+        val pa = a.split(".").mapNotNull { it.toIntOrNull() }
+        val pb = b.split(".").mapNotNull { it.toIntOrNull() }
+        for (i in 0 until maxOf(pa.size, pb.size)) {
+            val diff = (pa.getOrElse(i) { 0 }) - (pb.getOrElse(i) { 0 })
+            if (diff != 0) return diff
+        }
+        return a.compareTo(b)
     }
 
     private fun formatTimestamp(epochMs: Long): String {

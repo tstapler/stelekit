@@ -71,6 +71,7 @@ data class RepositorySet(
     val queryPlanRepository: dev.stapler.stelekit.performance.QueryPlanRepository? = null,
     val imageAnnotationRepository: ImageAnnotationRepository = InMemoryImageAnnotationRepository(),
     val measurementAnnotationRepository: MeasurementAnnotationRepository = InMemoryMeasurementAnnotationRepository(),
+    val assetRepository: dev.stapler.stelekit.repository.AssetRepository = InMemoryAssetRepository(),
 )
 
 /**
@@ -323,6 +324,9 @@ class RepositoryFactoryImpl(
             measurementAnnotationRepository = if (backend == GraphBackend.SQLDELIGHT)
                 SqlDelightMeasurementAnnotationRepository(database)
             else InMemoryMeasurementAnnotationRepository(),
+            assetRepository = if (backend == GraphBackend.SQLDELIGHT)
+                SqlDelightAssetRepository(database)
+            else InMemoryAssetRepository(),
         )
     }
 
@@ -360,6 +364,15 @@ class RepositoryFactoryImpl(
                 val drained = ringBuffer.drain()
                 if (drained.isNotEmpty()) withContext(PlatformDispatcher.IO) {
                     dev.stapler.stelekit.performance.SpanArchiver.archive(drained)
+                }
+                // Auto-feed every drained span into the histogram so operations are discovered
+                // without maintaining a hardcoded KNOWN_OPERATIONS list.
+                if (histogramWriter != null) {
+                    drained.forEach { span ->
+                        if (span.name != "slo.violation") {
+                            histogramWriter.record(span.name, span.durationMs, span.startEpochMs)
+                        }
+                    }
                 }
                 val drainBlock: suspend () -> Either<DomainError, Unit> = {
                     drained.forEach { span -> spanRepository.insertSpan(span) }

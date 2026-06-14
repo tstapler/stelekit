@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.42.0](https://github.com/tstapler/stelekit/compare/v0.41.3...v0.42.0) (2026-06-14)
+
+
+### Features
+
+* **perf:** embed git commit hash in performance exports ([ca301a1](https://github.com/tstapler/stelekit/commit/ca301a1e4bec10b4af3ee5e52fe731697c2a6236))
+
+
+### Performance Improvements
+
+* auto-discover histogram operations from ring buffer; add slow-case span attributes ([f889392](https://github.com/tstapler/stelekit/commit/f8893920642597c034c891e3b07a59bb9bb17312))
+* fix Span.finish() inflating parent durations; add analyze-perf CLI ([626a617](https://github.com/tstapler/stelekit/commit/626a617ac4e6ebba7ce27ae83093d8b8d94875a0))
+* instrument file reads and SaveBlocks queue wait for bottleneck diagnosis ([7a5b842](https://github.com/tstapler/stelekit/commit/7a5b8420a4c20dd920b279e8213429d416336cf7))
+* tag every span with app.version + app.commit for regression tracking ([84426e3](https://github.com/tstapler/stelekit/commit/84426e3cb31dece23bf1d065e9b565248e2ba555))
+
 ## [0.41.3](https://github.com/tstapler/stelekit/compare/v0.41.2...v0.41.3) (2026-06-13)
 
 

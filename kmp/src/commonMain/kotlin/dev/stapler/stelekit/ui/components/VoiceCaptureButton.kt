@@ -35,6 +35,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.ui.components.tags.TagChipRow
 import dev.stapler.stelekit.voice.VoiceCaptureState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -58,6 +59,7 @@ fun VoiceCaptureButton(
     onDismissError: () -> Unit,
     onAutoReset: () -> Unit = {},
     amplitudeFlow: Flow<Float>? = null,
+    onAcceptTag: ((term: String) -> Unit)? = null,
 ) {
     when (state) {
         VoiceCaptureState.Idle -> {
@@ -122,11 +124,11 @@ fun VoiceCaptureButton(
                 delay(DONE_AUTO_RESET_MS)
                 onAutoReset()
             }
-            if (state.isLikelyTruncated) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (state.isLikelyTruncated) {
                     Surface(
                         shape = MaterialTheme.shapes.small,
                         color = MaterialTheme.colorScheme.tertiaryContainer,
@@ -147,16 +149,26 @@ fun VoiceCaptureButton(
                     ) {
                         Icon(Icons.Default.Warning, contentDescription = null)
                     }
+                } else {
+                    FloatingActionButton(
+                        onClick = onAutoReset,
+                        containerColor = ColorSuccess,
+                        modifier = Modifier.semantics {
+                            contentDescription = "Note saved. Tap to dismiss."
+                        },
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null)
+                    }
                 }
-            } else {
-                FloatingActionButton(
-                    onClick = onAutoReset,
-                    containerColor = ColorSuccess,
-                    modifier = Modifier.semantics {
-                        contentDescription = "Note saved. Tap to dismiss."
-                    },
-                ) {
-                    Icon(Icons.Default.Check, contentDescription = null)
+                // Show tag suggestions chip row if tags are available and callback is wired
+                if (state.suggestedTags.isNotEmpty() && onAcceptTag != null) {
+                    TagChipRow(
+                        suggestions = state.suggestedTags.filter { !it.autoApplied },
+                        isLlmLoading = false,
+                        llmError = null,
+                        onAccept = { suggestion -> onAcceptTag(suggestion.term) },
+                        onDismiss = { /* dismiss silently */ },
+                    )
                 }
             }
         }

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
@@ -147,6 +148,7 @@ fun LeftSidebar(
                 NavigationItem("All Pages", Icons.AutoMirrored.Filled.List, currentScreen is Screen.AllPages) { onNavigate(Screen.AllPages) }
                 NavigationItem("Library Stats", Icons.Default.BarChart, currentScreen is Screen.LibraryStats) { onNavigate(Screen.LibraryStats) }
                 NavigationItem("Gallery", Icons.Default.PhotoLibrary, currentScreen is Screen.Gallery) { onNavigate(Screen.Gallery) }
+                NavigationItem("Assets", Icons.Default.FolderOpen, currentScreen is Screen.AssetBrowser) { onNavigate(Screen.AssetBrowser) }
                 NavigationItem("Unlinked References", Icons.Default.Link, currentScreen is Screen.GlobalUnlinkedReferences) { onNavigate(Screen.GlobalUnlinkedReferences) }
                 NavigationItem("Notifications", Icons.Default.Notifications, currentScreen is Screen.Notifications) { onNavigate(Screen.Notifications) }
                 NavigationItem("Git Sync", Icons.Default.Sync, false) { onGitSetup() }

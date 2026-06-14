@@ -43,6 +43,7 @@ import dev.stapler.stelekit.ui.components.PlatformFrameTimeOverlay
 import dev.stapler.stelekit.ui.components.RenamePageDialog
 import dev.stapler.stelekit.ui.components.SearchDialog
 import dev.stapler.stelekit.ui.components.ShareDialog
+import dev.stapler.stelekit.tags.TagSettings
 import dev.stapler.stelekit.ui.components.settings.SettingsDialog
 import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.voice.VoiceSettings
@@ -95,6 +96,8 @@ internal fun GraphDialogLayer(
     currentPage: Page? = null,
     currentBlocks: List<Block> = emptyList(),
     selectedBlockUuids: Set<String> = emptySet(),
+    tagSettings: TagSettings? = null,
+    hasLlmKey: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -147,6 +150,8 @@ internal fun GraphDialogLayer(
         googleAuthError = googleAuthError,
         onConnectGoogle = onConnectGoogle,
         onDisconnectGoogle = onDisconnectGoogle,
+        tagSettings = tagSettings,
+        hasLlmKey = hasLlmKey,
     )
 
     // key(gitSetupVisible) resets composition — and the remember inside — each time the dialog

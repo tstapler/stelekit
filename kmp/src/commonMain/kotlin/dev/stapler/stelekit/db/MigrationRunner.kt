@@ -387,6 +387,57 @@ object MigrationRunner {
             )
         ),
         Migration(
+            name = "asset_index_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS asset_index (
+                    uuid TEXT NOT NULL PRIMARY KEY,
+                    file_path TEXT NOT NULL,
+                    relative_path TEXT NOT NULL,
+                    media_type TEXT NOT NULL,
+                    subfolder TEXT NOT NULL DEFAULT 'files',
+                    tags TEXT NOT NULL DEFAULT '[]',
+                    auto_labels TEXT NOT NULL DEFAULT '[]',
+                    ocr_text TEXT,
+                    cloud_description TEXT,
+                    page_uuids TEXT NOT NULL DEFAULT '[]',
+                    size_bytes INTEGER NOT NULL DEFAULT 0,
+                    imported_at_ms INTEGER NOT NULL,
+                    ml_processed INTEGER NOT NULL DEFAULT 0,
+                    ml_attempted_at INTEGER,
+                    ml_failed INTEGER NOT NULL DEFAULT 0,
+                    content_hash TEXT,
+                    is_orphan INTEGER NOT NULL DEFAULT 0,
+                    ml_tags_source TEXT NOT NULL DEFAULT 'NONE'
+                )
+                """
+            )
+        ),
+        Migration(
+            name = "pending_asset_moves_table",
+            statements = listOf(
+                """
+                CREATE TABLE IF NOT EXISTS pending_asset_moves (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    asset_uuid TEXT NOT NULL,
+                    old_file_path TEXT NOT NULL,
+                    new_file_path TEXT NOT NULL,
+                    old_relative_path TEXT NOT NULL,
+                    new_relative_path TEXT NOT NULL,
+                    created_at_ms INTEGER NOT NULL
+                )
+                """
+            )
+        ),
+        Migration(
+            name = "asset_index_indexes",
+            statements = listOf(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_file_path_unique ON asset_index(file_path)",
+                "CREATE INDEX IF NOT EXISTS idx_asset_unprocessed ON asset_index(ml_processed, ml_failed, imported_at_ms)",
+                "CREATE INDEX IF NOT EXISTS idx_asset_media_type ON asset_index(media_type)"
+            )
+        ),
+        Migration(
             name = "spans_version_columns",
             statements = listOf(
                 // Dedicated columns for app_version and commit_hash enable fast regression

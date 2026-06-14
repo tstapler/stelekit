@@ -144,8 +144,21 @@ class HistogramWriter(
         fun epochMs(): Long = Clock.System.now().toEpochMilliseconds()
 
         val KNOWN_OPERATIONS = listOf(
-            "frame_duration", "graph_load", "navigation", "search",
-            "editor_input", "sql.select", "sql.insert", "sql.update", "sql.delete"
+            // UI responsiveness
+            "frame_duration", "navigation", "search", "editor_input",
+            // Graph loading pipeline
+            "graph_load", "graph_load.phase1_journals", "graph_load.progressive",
+            "indexRemainingPages", "loadDirectory", "loadFullPage",
+            // Per-file parsing (the hot path for page navigation)
+            "parseAndSavePage", "parse.markdown", "parse.processBlocks", "diff",
+            // File I/O
+            "file.read",
+            // Database reads
+            "db.lookupPage", "db.getBlocks",
+            // Database writes
+            "db.savePage", "db.saveBlocks", "db.queue_wait",
+            // SQL driver (always-on via TimingDriverWrapper)
+            "sql.select", "sql.insert", "sql.update", "sql.delete",
         )
     }
 }

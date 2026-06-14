@@ -329,7 +329,7 @@ class StelekitViewModel(
 
 
     // Page-name suggestion index — drives highlight/link suggestion feature
-    private val pageNameIndex = PageNameIndex(pageRepository, scope)
+    val pageNameIndex = PageNameIndex(pageRepository, scope)
 
     /** Pre-built matcher for the current graph's page names. Null until pages are loaded. */
     val suggestionMatcher: StateFlow<AhoCorasickMatcher?> = pageNameIndex.matcher
@@ -958,6 +958,7 @@ class StelekitViewModel(
                     is Screen.LibraryStats -> "Opened Library Stats"
                     is Screen.VaultUnlock -> "Vault locked"
                     is Screen.Gallery -> "Opened Gallery"
+                    is Screen.AssetBrowser -> "Opened Asset Browser"
                     is Screen.AnnotationEditor -> "Opened Annotation Editor"
                 }
             )

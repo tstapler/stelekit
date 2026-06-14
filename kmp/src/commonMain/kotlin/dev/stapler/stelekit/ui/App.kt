@@ -98,6 +98,10 @@ import dev.stapler.stelekit.voice.VoiceCaptureState
 import dev.stapler.stelekit.voice.VoiceCaptureViewModel
 import dev.stapler.stelekit.voice.VoicePipelineConfig
 import dev.stapler.stelekit.voice.VoiceSettings
+import dev.stapler.stelekit.tags.LlmTagProvider
+import dev.stapler.stelekit.tags.TagSettings
+import dev.stapler.stelekit.tags.TagSuggestionEngine
+import dev.stapler.stelekit.tags.TagSuggestionViewModel
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import kotlin.math.roundToInt
@@ -964,11 +968,34 @@ private fun GraphContent(
     val journalsViewModel = remember {
         JournalsViewModel(repos.journalService, blockStateManager)
     }
-    val voiceCaptureViewModel = remember(voicePipeline) {
+
+    val tagSettings = remember(platformSettings) { TagSettings(platformSettings) }
+    val tagEngine = remember(viewModel.pageNameIndex, voiceSettings, tagSettings) {
+        if (!tagSettings.isEnabled()) null
+        else {
+            val llmProvider = if (tagSettings.isLlmTierEnabled() && voiceSettings != null) {
+                val llmFormatter = buildLlmFormatterForTags(voiceSettings)
+                if (llmFormatter != null) LlmTagProvider(llmFormatter) else null
+            } else null
+            TagSuggestionEngine(
+                pageNameIndex = viewModel.pageNameIndex,
+                llmTagProvider = llmProvider,
+            )
+        }
+    }
+    val tagSuggestionViewModel = remember(tagEngine) {
+        if (tagEngine != null) TagSuggestionViewModel(tagEngine) else null
+    }
+    DisposableEffect(tagSuggestionViewModel) {
+        onDispose { tagSuggestionViewModel?.close() }
+    }
+
+    val voiceCaptureViewModel = remember(voicePipeline, tagEngine) {
         VoiceCaptureViewModel(
             voicePipeline,
             repos.journalService,
             currentOpenPageUuid = { viewModel.uiState.value.currentPage?.uuid?.value },
+            tagSuggestionEngine = tagEngine,
         )
     }
     DisposableEffect(voiceCaptureViewModel) {
@@ -1384,6 +1411,7 @@ private fun GraphContent(
                                 perfSpans = perfSpans,
                                 perfHistograms = perfHistograms,
                                 perfQueryStats = perfQueryStats,
+                                tagSuggestionViewModel = tagSuggestionViewModel,
                             )
                             } // Box
                             } // Column
@@ -1486,6 +1514,8 @@ private fun GraphContent(
                         exportService = exportService,
                         driveClient = null, // DriveApiClient injected from platform entry point in a future phase
                         shareGoogleAuthManager = googleAuthManager,
+                        tagSettings = tagSettings,
+                        hasLlmKey = voiceSettings?.getAnthropicKey() != null || voiceSettings?.getOpenAiKey() != null,
                         currentPage = appState.currentPage,
                         currentBlocks = appState.currentPage?.let {
                             blockStateManager.blocksForPage(it.uuid.value)
@@ -1540,7 +1570,18 @@ private fun onGraphKeyEvent(
     }
 }
 
-
+/**
+ * Builds a [dev.stapler.stelekit.voice.LlmFormatterProvider] for tag suggestions,
+ * reusing the same Anthropic / OpenAI keys already stored in [VoiceSettings].
+ * Returns null when no key is configured.
+ */
+private fun buildLlmFormatterForTags(
+    voiceSettings: VoiceSettings,
+): dev.stapler.stelekit.voice.LlmFormatterProvider? =
+    voiceSettings.getAnthropicKey()
+        ?.let { dev.stapler.stelekit.voice.ClaudeLlmFormatterProvider.withDefaults(it) }
+        ?: voiceSettings.getOpenAiKey()
+            ?.let { dev.stapler.stelekit.voice.OpenAiLlmFormatterProvider.withDefaults(it) }
 
 /**
  * Status bar row — pure presentational composable. Receives only primitives;

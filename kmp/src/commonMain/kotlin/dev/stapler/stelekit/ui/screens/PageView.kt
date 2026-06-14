@@ -50,6 +50,10 @@ import dev.stapler.stelekit.ui.components.ReferencesPanel
 import dev.stapler.stelekit.ui.components.SuggestionItem
 import dev.stapler.stelekit.ui.components.SuggestionNavigatorPanel
 import dev.stapler.stelekit.ui.i18n.t
+import dev.stapler.stelekit.tags.TagSuggestionViewModel
+import dev.stapler.stelekit.tags.TagSuggestionState
+import dev.stapler.stelekit.tags.WikiLinkExtractor
+import dev.stapler.stelekit.ui.components.tags.SuggestionBottomSheet
 
 /**
  * Page view screen.
@@ -73,6 +77,7 @@ fun PageView(
     capabilities: EditorCapabilities = EditorCapabilities(),
     onReloadFromDisk: (() -> Unit)? = null,
     isExporting: Boolean = false,
+    tagSuggestionViewModel: TagSuggestionViewModel? = null,
 ) {
     NavigationTracingEffect("PageView/${page.name}")
     val focusManager = LocalFocusManager.current
@@ -92,6 +97,9 @@ fun PageView(
     val isInSelectionMode by blockStateManager.isInSelectionMode.collectAsState()
     val loadingPageUuids by blockStateManager.loadingPageUuids.collectAsState()
     val suggestionMatcher by viewModel.suggestionMatcher.collectAsState()
+
+    val tagSuggestionState by tagSuggestionViewModel?.state?.collectAsState()
+        ?: remember { mutableStateOf(TagSuggestionState.Idle) }
 
     // Navigator panel state — empty list means closed
     var navigatorSuggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
@@ -230,6 +238,27 @@ fun PageView(
                                     }
                                 )
                             }
+                            if (tagSuggestionViewModel != null) {
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Suggest tags for page") },
+                                    onClick = {
+                                        exportMenuExpanded = false
+                                        val pageContent = blocks
+                                            .take(20)
+                                            .joinToString("\n") { it.content }
+                                            .take(500)
+                                        val alreadyLinked = WikiLinkExtractor.extractPageNames(
+                                            blocks.joinToString("\n") { it.content }
+                                        )
+                                        tagSuggestionViewModel.requestSuggestions(
+                                            blockUuid = page.uuid.value,
+                                            blockContent = pageContent,
+                                            alreadyLinkedTerms = alreadyLinked,
+                                        )
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -329,6 +358,14 @@ fun PageView(
                         onOpenAnnotationEditor = { uuid ->
                             viewModel.navigateToAnnotationEditor(uuid, page.uuid.value)
                         },
+                        onRequestTagSuggestions = if (tagSuggestionViewModel != null) { blockUuid, content ->
+                            val alreadyLinked = WikiLinkExtractor.extractPageNames(content)
+                            tagSuggestionViewModel.requestSuggestions(
+                                blockUuid = blockUuid,
+                                blockContent = content,
+                                alreadyLinkedTerms = alreadyLinked,
+                            )
+                        } else null,
                     )
 
                     Box(
@@ -397,6 +434,22 @@ fun PageView(
                 .align(Alignment.BottomCenter)
                 .onSizeChanged { toolbarHeight = it.height },
         )
+
+        if (tagSuggestionViewModel != null) {
+            SuggestionBottomSheet(
+                state = tagSuggestionState,
+                onAcceptTag = { uuid, term ->
+                    // When page-scope was triggered, uuid is the page uuid (not a block uuid).
+                    // Find the actual target block: use the block matching uuid, or fall back to first block.
+                    val targetBlockUuid = blocks.firstOrNull { it.uuid.value == uuid }?.uuid
+                        ?: blocks.firstOrNull()?.uuid
+                    targetBlockUuid?.let {
+                        blockStateManager.appendToBlock(it, " [[$term]]")
+                    }
+                },
+                onDismiss = { tagSuggestionViewModel.dismiss() },
+            )
+        }
     }
 
     } // CompositionLocalProvider(LocalGraphRootPath)
