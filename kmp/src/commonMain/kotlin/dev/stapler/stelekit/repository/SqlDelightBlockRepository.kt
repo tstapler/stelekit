@@ -246,23 +246,7 @@ class SqlDelightBlockRepository(
             // source file on next startup to recover any missing blocks.
             blocks.chunked(WRITE_CHUNK_SIZE).forEach { chunk ->
                 queries.transaction {
-                    chunk.forEach { block ->
-                        queries.insertBlock(
-                            block.uuid,
-                            block.pageUuid,
-                            block.parentUuid,
-                            block.leftUuid,
-                            block.content,
-                            block.level.toLong(),
-                            block.position.toLong(),
-                            block.createdAt.toEpochMilliseconds(),
-                            block.updatedAt.toEpochMilliseconds(),
-                            block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
-                            block.version,
-                            block.contentHash ?: ContentHasher.sha256ForContent(block.content),
-                            block.blockType
-                        )
-                    }
+                    chunk.forEach { block -> insertBlockRow(block) }
                 }
             }
             ftsAutomergeDefault()
@@ -281,25 +265,17 @@ class SqlDelightBlockRepository(
         if (toInsert.isEmpty() && toUpdate.isEmpty()) return@withContext Unit.right()
         try {
             ftsAutomergeOff()
+            // toInsert contract: these UUIDs must be genuinely absent from the blocks table.
+            // INSERT OR REPLACE is used here (via insertBlock) — if a UUID already exists, it
+            // fires blocks_ad+blocks_ai (double FTS trigger) rather than blocks_au, negating the
+            // FTS optimization. This is safe because:
+            // 1. DatabaseWriteActor serializes all writes — no concurrent insert races from this actor.
+            // 2. The diff is computed from getBlocksForPage() immediately before dispatch, so
+            //    toInsert reflects the current DB state at diff-computation time.
+            // A future improvement: use INSERT OR IGNORE and fall back to UPDATE on affected rows.
             toInsert.chunked(WRITE_CHUNK_SIZE).forEach { chunk ->
                 queries.transaction {
-                    chunk.forEach { block ->
-                        queries.insertBlock(
-                            block.uuid,
-                            block.pageUuid,
-                            block.parentUuid,
-                            block.leftUuid,
-                            block.content,
-                            block.level.toLong(),
-                            block.position.toLong(),
-                            block.createdAt.toEpochMilliseconds(),
-                            block.updatedAt.toEpochMilliseconds(),
-                            block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
-                            block.version,
-                            block.contentHash ?: ContentHasher.sha256ForContent(block.content),
-                            block.blockType
-                        )
-                    }
+                    chunk.forEach { block -> insertBlockRow(block) }
                 }
             }
             // UPDATE instead of INSERT OR REPLACE so the blocks_au trigger fires (AFTER UPDATE OF
@@ -341,12 +317,35 @@ class SqlDelightBlockRepository(
     override suspend fun getBlocksByUuids(uuids: List<String>): Either<DomainError, List<Block>> = withContext(PlatformDispatcher.DB) {
         try {
             if (uuids.isEmpty()) return@withContext emptyList<Block>().right()
-            queries.selectBlocksByUuids(uuids).executeAsList().map { it.toBlockModel() }.right()
+            // SQLite SQLITE_LIMIT_VARIABLE_NUMBER = 999 on Android API < 30; chunk to stay safe.
+            val results = uuids.chunked(900).flatMap { chunk ->
+                queries.selectBlocksByUuids(chunk).executeAsList()
+            }.map { it.toBlockModel() }
+            results.right()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun insertBlockRow(block: Block) {
+        queries.insertBlock(
+            block.uuid,
+            block.pageUuid,
+            block.parentUuid,
+            block.leftUuid,
+            block.content,
+            block.level.toLong(),
+            block.position.toLong(),
+            block.createdAt.toEpochMilliseconds(),
+            block.updatedAt.toEpochMilliseconds(),
+            block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
+            block.version,
+            block.contentHash ?: ContentHasher.sha256ForContent(block.content),
+            block.blockType,
+        )
     }
 
     // FTS5 special-command INSERTs cannot be expressed in SQLDelight .sq files (the parser
@@ -357,6 +356,14 @@ class SqlDelightBlockRepository(
     private fun ftsAutomergeOff() = runCatching { driver?.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('automerge=0')", 0) }
     private fun ftsAutomergeDefault() = runCatching { driver?.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('automerge=8')", 0) }
     private fun ftsMerge() = runCatching { driver?.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('merge=-200')", 0) }
+
+    /** Called once at DB open to restore FTS5 automerge in case a prior session was killed
+     *  between ftsAutomergeOff() and ftsAutomergeDefault(). Setting automerge=8 when it is
+     *  already 8 is a no-op in SQLite FTS5. */
+    fun ftsStartupHeal() {
+        runCatching { driver?.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('automerge=8')", 0) }
+        runCatching { driver?.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('merge=-200')", 0) }
+    }
 
     override suspend fun walCheckpoint(): Unit = withContext(PlatformDispatcher.DB) {
         try {

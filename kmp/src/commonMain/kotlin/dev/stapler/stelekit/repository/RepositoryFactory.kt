@@ -68,7 +68,10 @@ class RepositoryFactoryImpl(
             }
             GraphBackend.SQLDELIGHT -> getOrCreateInstance("block_sqldelight") {
                 val db = database // ensure wrappedDriver is populated
-                SqlDelightBlockRepository(db, wrappedDriver!!)
+                val driver = requireNotNull(wrappedDriver) {
+                    "wrappedDriver is null — database lazy initializer did not complete successfully"
+                }
+                SqlDelightBlockRepository(db, driver).also { it.ftsStartupHeal() }
             }
             else -> throw NotImplementedError("Backend $backend not implemented")
         }
@@ -277,6 +280,10 @@ class RepositoryFactoryImpl(
             when (request) {
                 is DatabaseWriteActor.WriteRequest.SaveBlocks ->
                     request.blocks.forEach { sqlBlockRepo.evictBlock(it.uuid) }
+                is DatabaseWriteActor.WriteRequest.SaveBlocksDiff -> {
+                    request.toInsert.forEach { sqlBlockRepo.evictBlock(it.uuid) }
+                    request.toUpdate.forEach { sqlBlockRepo.evictBlock(it.uuid) }
+                }
                 is DatabaseWriteActor.WriteRequest.DeleteBlocksForPage ->
                     sqlBlockRepo.evictHierarchyForPage(request.pageUuid)
                 is DatabaseWriteActor.WriteRequest.DeleteBlocksForPages ->
