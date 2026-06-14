@@ -52,7 +52,7 @@ jobs:
       - name: Run JVM tests
         run: |
           xvfb-run --auto-servernum bazel test //kmp:jvm_tests \
-            --test_output=summary
+            --test_output=all
 
   # ── Android build ──────────────────────────────────────────────────────────
   bazel-android:
