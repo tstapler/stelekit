@@ -124,6 +124,9 @@ class DatabaseWriteActor(
     /** Set after construction once the ring buffer is available. Written once before first channel send. */
     @Volatile var ringBuffer: RingBufferSpanExporter? = null
 
+    /** Set after construction once the histogram writer is available. Written once before first use. */
+    @Volatile var histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
+
     private val highPriority = Channel<WriteRequest>(capacity = Channel.UNLIMITED)
     private val lowPriority = Channel<WriteRequest>(capacity = Channel.UNLIMITED)
 
@@ -248,6 +251,7 @@ class DatabaseWriteActor(
 
     private suspend fun processExecute(request: WriteRequest.Execute) {
         val waitMs = HistogramWriter.epochMs() - request.enqueueMs
+        histogramWriter?.record("db.write_queue_depth", _activeOps.value.toLong())
         if (waitMs > 10L) {
             recordQueueWaitSpan(request, waitMs)
         }
@@ -260,7 +264,10 @@ class DatabaseWriteActor(
             startEpochMs = request.enqueueMs,
             endEpochMs = request.enqueueMs + waitMs,
             durationMs = waitMs,
-            attributes = mapOf("priority" to request.priority.name) + AppSession.autoAttributes(),
+            attributes = mapOf(
+                "priority" to request.priority.name,
+                "queue.depth" to _activeOps.value.toString(),
+            ) + AppSession.autoAttributes(),
             statusCode = if (waitMs > 500L) "ERROR" else "OK",
             traceId = UuidGenerator.generateV7(),
             spanId = UuidGenerator.generateV7(),
@@ -340,6 +347,7 @@ class DatabaseWriteActor(
                 "priority" to batch[0].priority.name,
                 "request.type" to "SaveBlocks",
                 "batch.size" to batch.size.toString(),
+                "queue.depth" to _activeOps.value.toString(),
             ) + AppSession.autoAttributes(),
             statusCode = if (waitMs > 500L) "ERROR" else "OK",
             traceId = UuidGenerator.generateV7(),

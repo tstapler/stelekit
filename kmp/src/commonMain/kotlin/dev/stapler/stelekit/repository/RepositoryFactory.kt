@@ -246,6 +246,14 @@ class RepositoryFactoryImpl(
             dev.stapler.stelekit.performance.HistogramWriter(database, scope, actor)
         } else null
 
+        // Wire histogramWriter into actor and repositories for queue depth/wait tracking
+        if (histogramWriter != null) {
+            actor?.histogramWriter = histogramWriter
+            (blockRepo as? SqlDelightBlockRepository)?.histogramWriter = histogramWriter
+            (pageRepo as? SqlDelightPageRepository)?.histogramWriter = histogramWriter
+            (backgroundPageRepo as? SqlDelightPageRepository)?.histogramWriter = histogramWriter
+        }
+
         val debugFlagRepo = if (backend == GraphBackend.SQLDELIGHT) {
             dev.stapler.stelekit.performance.DebugFlagRepository(database)
         } else null

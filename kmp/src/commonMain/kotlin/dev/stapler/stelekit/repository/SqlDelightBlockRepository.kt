@@ -1,9 +1,12 @@
 package dev.stapler.stelekit.repository
 
+import arrow.atomic.AtomicInt
+import arrow.atomic.value
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import kotlin.concurrent.Volatile
 
 import dev.stapler.stelekit.cache.LruCache
 import dev.stapler.stelekit.cache.SteleLruCache
@@ -48,6 +51,10 @@ class SqlDelightBlockRepository(
 
     private val logger = Logger("SqlDelightBlockRepository")
     private val queries = database.steleDatabaseQueries
+
+    /** Set after construction by RepositoryFactory. */
+    @Volatile var histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
+    private val _pendingBlockReads = AtomicInt(0)
 
     private val cacheConfig = RepoCacheConfig.fromPlatform()
 
@@ -217,16 +224,17 @@ class SqlDelightBlockRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>> =
-        queries.selectBlocksByPageUuidUnpaginated(pageUuid.value)
+    override fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>> {
+        val depth = _pendingBlockReads.incrementAndGet()
+        return queries.selectBlocksByPageUuidUnpaginated(pageUuid.value)
             .asFlow()
+            .onStart { histogramWriter?.record("db.read_queue_depth", depth.toLong()) }
             .mapToList(PlatformDispatcher.DB)
             .conflate()
-            .map { list ->
-                val result: Either<DomainError, List<Block>> = list.map { it.toBlockModel() }.right()
-                result
-            }
+            .onCompletion { _pendingBlockReads.decrementAndGet() }
+            .map { list -> list.map { it.toBlockModel() }.right() }
             .catchDbError()
+    }
 
     override suspend fun getBlocksByUuids(uuids: List<BlockUuid>): Either<DomainError, List<Block>> =
         withContext(PlatformDispatcher.DB) {

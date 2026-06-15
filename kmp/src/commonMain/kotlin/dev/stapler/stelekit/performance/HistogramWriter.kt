@@ -190,6 +190,8 @@ class HistogramWriter(
             "db.lookupPage", "db.getBlocks",
             // Database writes
             "db.savePage", "db.saveBlocks", "db.queue_wait",
+            // Database read queue instrumentation
+            "db.read_queue_wait", "db.read_queue_depth", "db.write_queue_depth",
             // SQL driver (always-on via TimingDriverWrapper)
             "sql.select", "sql.insert", "sql.update", "sql.delete",
         )

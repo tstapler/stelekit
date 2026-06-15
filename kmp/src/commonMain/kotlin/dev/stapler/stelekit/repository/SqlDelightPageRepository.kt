@@ -1,9 +1,12 @@
 package dev.stapler.stelekit.repository
 
+import arrow.atomic.AtomicInt
+import arrow.atomic.value
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import kotlin.concurrent.Volatile
 
 import dev.stapler.stelekit.cache.LruCache
 import dev.stapler.stelekit.cache.RepoCacheConfig
@@ -56,37 +59,61 @@ class SqlDelightPageRepository(
     private val byUuidCoalescer = RequestCoalescer<String, Page?>()
     private val byNameCoalescer = RequestCoalescer<String, Page?>()
 
-    override fun getPageByUuid(uuid: PageUuid): Flow<Either<DomainError, Page?>> = flow {
-        val cached = pageByUuidCache.get(uuid.value)
-        if (cached != null) {
-            emit(cached.right())
-            return@flow
-        }
-        val page = byUuidCoalescer.execute(uuid.value) {
-            queries.selectPageByUuid(uuid.value).executeAsOneOrNull()?.toModel()
-        }
-        if (page != null) {
-            pageByUuidCache.put(page.uuid.value, page)
-            pageByNameCache.put(page.name.lowercase(), page)
-        }
-        emit(page.right())
-    }.flowOn(PlatformDispatcher.DB)
+    /** Set after construction by RepositoryFactory once the histogram writer is available. */
+    @Volatile var histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
+    private val _pendingReads = AtomicInt(0)
 
-    override fun getPageByName(name: String): Flow<Either<DomainError, Page?>> = flow {
-        val cached = pageByNameCache.get(name.lowercase())
-        if (cached != null) {
-            emit(cached.right())
-            return@flow
-        }
-        val page = byNameCoalescer.execute(name.lowercase()) {
-            queries.selectPageByName(name).executeAsOneOrNull()?.toModel()
-        }
-        if (page != null) {
-            pageByNameCache.put(name.lowercase(), page)
-            pageByUuidCache.put(page.uuid.value, page)
-        }
-        emit(page.right())
-    }.flowOn(PlatformDispatcher.DB)
+    override fun getPageByUuid(uuid: PageUuid): Flow<Either<DomainError, Page?>> {
+        val enqueueMs = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
+        val depth = _pendingReads.incrementAndGet()
+        return flow {
+            _pendingReads.decrementAndGet()
+            val waitMs = dev.stapler.stelekit.performance.HistogramWriter.epochMs() - enqueueMs
+            if (waitMs > 5L || depth > 1) {
+                histogramWriter?.record("db.read_queue_wait", waitMs)
+                histogramWriter?.record("db.read_queue_depth", depth.toLong())
+            }
+            val cached = pageByUuidCache.get(uuid.value)
+            if (cached != null) {
+                emit(cached.right())
+                return@flow
+            }
+            val page = byUuidCoalescer.execute(uuid.value) {
+                queries.selectPageByUuid(uuid.value).executeAsOneOrNull()?.toModel()
+            }
+            if (page != null) {
+                pageByUuidCache.put(page.uuid.value, page)
+                pageByNameCache.put(page.name.lowercase(), page)
+            }
+            emit(page.right())
+        }.flowOn(PlatformDispatcher.DB)
+    }
+
+    override fun getPageByName(name: String): Flow<Either<DomainError, Page?>> {
+        val enqueueMs = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
+        val depth = _pendingReads.incrementAndGet()
+        return flow {
+            _pendingReads.decrementAndGet()
+            val waitMs = dev.stapler.stelekit.performance.HistogramWriter.epochMs() - enqueueMs
+            if (waitMs > 5L || depth > 1) {
+                histogramWriter?.record("db.read_queue_wait", waitMs)
+                histogramWriter?.record("db.read_queue_depth", depth.toLong())
+            }
+            val cached = pageByNameCache.get(name.lowercase())
+            if (cached != null) {
+                emit(cached.right())
+                return@flow
+            }
+            val page = byNameCoalescer.execute(name.lowercase()) {
+                queries.selectPageByName(name).executeAsOneOrNull()?.toModel()
+            }
+            if (page != null) {
+                pageByNameCache.put(name.lowercase(), page)
+                pageByUuidCache.put(page.uuid.value, page)
+            }
+            emit(page.right())
+        }.flowOn(PlatformDispatcher.DB)
+    }
 
     override fun getPagesInNamespace(namespace: String): Flow<Either<DomainError, List<Page>>> =
         queries.selectPagesByNamespaceUnpaginated(namespace)
