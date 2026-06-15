@@ -1347,7 +1347,8 @@ class StelekitViewModel(
         _uiState.update { it.copy(diskConflict = null) }
         // Re-queue a save for the current page so local content overwrites the disk file
         val currentPage = (uiState.value.currentScreen as? Screen.PageView)?.page ?: return
-        blockStateManager?.queuePageSave(currentPage.uuid.value)
+        val bsm = blockStateManager ?: return
+        scope.launch { bsm.queuePageSave(currentPage.uuid.value) }
     }
 
     /**

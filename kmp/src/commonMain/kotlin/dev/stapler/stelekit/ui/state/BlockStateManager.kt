@@ -639,7 +639,7 @@ class BlockStateManager(
      * Queue a debounced disk write for a page. Uses the optimistic local state
      * (not DB) so the latest edits are always included.
      */
-    private fun queueDiskSave(pageUuid: String) {
+    private suspend fun queueDiskSave(pageUuid: String) {
         if (graphWriter == null || pageRepository == null) return
         val graphPath = graphPathProvider()
         if (graphPath.isEmpty()) return
@@ -656,7 +656,7 @@ class BlockStateManager(
      * Public: queue a debounced disk write for [pageUuid].
      * Used by StelekitViewModel for conflict resolution.
      */
-    fun queuePageSave(pageUuid: String) = queueDiskSave(pageUuid)
+    suspend fun queuePageSave(pageUuid: String) = queueDiskSave(pageUuid)
 
     /**
      * Returns true if a debounced disk write is pending for [pageUuid].

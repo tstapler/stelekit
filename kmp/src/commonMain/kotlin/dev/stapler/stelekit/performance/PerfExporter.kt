@@ -47,7 +47,7 @@ class PerfExporter(
         val pickedPath = fileSystem.pickSaveFileAsync(suggestedName, mimeType)
         return if (pickedPath != null) {
             val ok = if (isGzip) fileSystem.writeFileBytes(pickedPath, bytes)
-                     else fileSystem.writeFile(pickedPath, bytes.toString(Charsets.UTF_8))
+                     else fileSystem.writeFile(pickedPath, bytes.decodeToString())
             check(ok) { "Failed to write perf report to $pickedPath" }
             pickedPath
         } else {
@@ -68,7 +68,7 @@ class PerfExporter(
         val ext = if (isGzip) ".json.gz" else ".json"
         val path = "$dir/stelekit-perf-$timestamp$ext"
         val ok = if (isGzip) fileSystem.writeFileBytes(path, bytes)
-                 else fileSystem.writeFile(path, bytes.toString(Charsets.UTF_8))
+                 else fileSystem.writeFile(path, bytes.decodeToString())
         check(ok) { "Failed to write perf report to $path" }
         path
     }
@@ -76,7 +76,7 @@ class PerfExporter(
     /** Returns the report as (bytes, isGzip). Bytes are GZIP-compressed on JVM/Android. */
     private suspend fun buildReportBytes(): Pair<ByteArray, Boolean> {
         val content = buildReportJson()
-        val raw = content.toByteArray(Charsets.UTF_8)
+        val raw = content.encodeToByteArray()
         val compressed = gzipBytes(raw)
         return if (compressed != null) compressed to true else raw to false
     }
