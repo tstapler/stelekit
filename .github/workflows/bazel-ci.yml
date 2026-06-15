@@ -25,6 +25,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache bazel-cache-proxy binary
+        id: bcp-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/bazel-cache-proxy
+          key: bcp-${{ runner.os }}-cf9fafd
+
+      - name: Install bazel-cache-proxy
+        if: steps.bcp-cache.outputs.cache-hit != 'true'
+        run: cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev cf9fafd bazel-cache-proxy --locked
+
+      - name: Start bazel-cache-proxy (GHA backend)
+        run: |
+          printf '[backend]\ntype = "gha"\n' > /tmp/bcp.toml
+          ~/.cargo/bin/bazel-cache-proxy serve --config /tmp/bcp.toml &
+          sleep 2
+          curl -sf http://127.0.0.1:9090/healthz
+
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
@@ -47,11 +65,12 @@ jobs:
           mkdir -p /tmp/.X11-unix
 
       - name: Build JVM target
-        run: bazel build //kmp:desktop_app
+        run: bazel build //kmp:desktop_app --config=remote-cache
 
       - name: Run JVM tests
         run: |
           xvfb-run --auto-servernum bazel test //kmp:jvm_tests \
+            --config=remote-cache \
             --test_output=all \
             --sandbox_add_mount_pair=/tmp/.X11-unix \
             --test_env=DISPLAY \
@@ -78,6 +97,24 @@ jobs:
       - name: Install host tools required by aar_import
         run: sudo apt-get install -y --no-install-recommends unzip
 
+      - name: Cache bazel-cache-proxy binary
+        id: bcp-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/bazel-cache-proxy
+          key: bcp-${{ runner.os }}-cf9fafd
+
+      - name: Install bazel-cache-proxy
+        if: steps.bcp-cache.outputs.cache-hit != 'true'
+        run: cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev cf9fafd bazel-cache-proxy --locked
+
+      - name: Start bazel-cache-proxy (GHA backend)
+        run: |
+          printf '[backend]\ntype = "gha"\n' > /tmp/bcp.toml
+          ~/.cargo/bin/bazel-cache-proxy serve --config /tmp/bcp.toml &
+          sleep 2
+          curl -sf http://127.0.0.1:9090/healthz
+
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
@@ -88,7 +125,7 @@ jobs:
           cache-save: ${{ github.event_name != 'pull_request' }}
 
       - name: Build Android APK
-        run: bazel build //kmp:android_app --config=android
+        run: bazel build //kmp:android_app --config=android --config=remote-cache
 
   # ── Android unit tests ─────────────────────────────────────────────────────
   bazel-android-tests:
@@ -111,6 +148,24 @@ jobs:
       - name: Install host tools required by aar_import
         run: sudo apt-get install -y --no-install-recommends unzip
 
+      - name: Cache bazel-cache-proxy binary
+        id: bcp-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/bazel-cache-proxy
+          key: bcp-${{ runner.os }}-cf9fafd
+
+      - name: Install bazel-cache-proxy
+        if: steps.bcp-cache.outputs.cache-hit != 'true'
+        run: cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev cf9fafd bazel-cache-proxy --locked
+
+      - name: Start bazel-cache-proxy (GHA backend)
+        run: |
+          printf '[backend]\ntype = "gha"\n' > /tmp/bcp.toml
+          ~/.cargo/bin/bazel-cache-proxy serve --config /tmp/bcp.toml &
+          sleep 2
+          curl -sf http://127.0.0.1:9090/healthz
+
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
@@ -124,6 +179,7 @@ jobs:
         run: |
           bazel test //kmp/src/androidUnitTest/kotlin:android_unit_tests \
             --config=android \
+            --config=remote-cache \
             --test_output=all \
             --experimental_ui_max_stdouterr_bytes=4194304
 
@@ -159,6 +215,24 @@ jobs:
             gradle-web-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'settings.gradle.kts', 'gradle.properties') }}-
             gradle-web-${{ runner.os }}-
 
+      - name: Cache bazel-cache-proxy binary
+        id: bcp-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/bazel-cache-proxy
+          key: bcp-${{ runner.os }}-cf9fafd
+
+      - name: Install bazel-cache-proxy
+        if: steps.bcp-cache.outputs.cache-hit != 'true'
+        run: cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev cf9fafd bazel-cache-proxy --locked
+
+      - name: Start bazel-cache-proxy (GHA backend)
+        run: |
+          printf '[backend]\ntype = "gha"\n' > /tmp/bcp.toml
+          ~/.cargo/bin/bazel-cache-proxy serve --config /tmp/bcp.toml &
+          sleep 2
+          curl -sf http://127.0.0.1:9090/healthz
+
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
@@ -169,7 +243,7 @@ jobs:
           cache-save: ${{ github.event_name != 'pull_request' }}
 
       - name: Build web bundle
-        run: bazel build //kmp:web_app
+        run: bazel build //kmp:web_app --config=remote-cache
 
       - name: Upload web distribution artifact
         if: github.event_name == 'push'

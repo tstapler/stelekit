@@ -45,3 +45,12 @@ test --sandbox_add_mount_pair=/tmp/.X11-unix
 # Bazel caching in CI is handled entirely by bazel-contrib/setup-bazel@0.19.0
 # (disk-cache, repository-cache, external-cache inputs) which uses GitHub Actions
 # native cache — no third-party service required.  See .github/workflows/bazel-ci.yml.
+
+# ── Remote HTTP cache (bazel-cache-proxy) ─────────────────────────────────────
+# Enable with --config=remote-cache.  CI starts bazel-cache-proxy on port 9090
+# backed by the GHA cache API; all jobs on the same PR share the cache.
+# PRs write to their own scoped namespace so main's cache is never polluted.
+# Local use: start `bazel-cache-proxy serve` with a disk backend, then pass
+# --config=remote-cache to any bazel command.
+build:remote-cache --remote_cache=http://127.0.0.1:9090
+build:remote-cache --remote_upload_local_results
