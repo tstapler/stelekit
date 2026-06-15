@@ -11,7 +11,9 @@ import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.error.DomainError
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class QueryStat(
     val appVersion: String,
     val tableName: String,

@@ -16,6 +16,9 @@ class PerfExporter(
     private val fileSystem: FileSystem,
     private val appVersion: String,
     private val platform: String,
+    private val queryStatsRepository: QueryStatsRepository? = null,
+    private val queryStatsCollector: QueryStatsCollector? = null,
+    private val queryPlanRepository: QueryPlanRepository? = null,
 ) {
     private val json = Json { prettyPrint = false; encodeDefaults = true }
 
@@ -37,11 +40,15 @@ class PerfExporter(
      */
     suspend fun exportWithPicker(): String? {
         val timestamp = formatTimestamp(HistogramWriter.epochMs())
-        val suggestedName = "stelekit-perf-$timestamp.json"
-        val pickedPath = fileSystem.pickSaveFileAsync(suggestedName, "application/json")
+        val (bytes, isGzip) = withContext(PlatformDispatcher.IO) { buildReportBytes() }
+        val ext = if (isGzip) ".json.gz" else ".json"
+        val mimeType = if (isGzip) "application/gzip" else "application/json"
+        val suggestedName = "stelekit-perf-$timestamp$ext"
+        val pickedPath = fileSystem.pickSaveFileAsync(suggestedName, mimeType)
         return if (pickedPath != null) {
-            val content = withContext(PlatformDispatcher.IO) { buildReportContent() }
-            check(fileSystem.writeFile(pickedPath, content)) { "Failed to write perf report to $pickedPath" }
+            val ok = if (isGzip) fileSystem.writeFileBytes(pickedPath, bytes)
+                     else fileSystem.writeFile(pickedPath, bytes.toString(Charsets.UTF_8))
+            check(ok) { "Failed to write perf report to $pickedPath" }
             pickedPath
         } else {
             // Platform has no native picker; fall back to the default Downloads directory
@@ -50,24 +57,43 @@ class PerfExporter(
     }
 
     /**
-     * Exports all recent spans and histogram summaries to a JSON file.
+     * Exports all recent spans and histogram summaries to a (gzip-compressed) JSON file.
      * If [directory] is null the platform Downloads folder is used.
      * Returns the absolute file path on success.
      */
     suspend fun export(directory: String? = null): String = withContext(PlatformDispatcher.IO) {
-        val content = buildReportContent()
+        val (bytes, isGzip) = buildReportBytes()
         val timestamp = formatTimestamp(HistogramWriter.epochMs())
         val dir = directory?.takeIf { it.isNotBlank() } ?: fileSystem.getDownloadsPath()
-        val path = "$dir/stelekit-perf-$timestamp.json"
-        check(fileSystem.writeFile(path, content)) { "Failed to write perf report to $path" }
+        val ext = if (isGzip) ".json.gz" else ".json"
+        val path = "$dir/stelekit-perf-$timestamp$ext"
+        val ok = if (isGzip) fileSystem.writeFileBytes(path, bytes)
+                 else fileSystem.writeFile(path, bytes.toString(Charsets.UTF_8))
+        check(ok) { "Failed to write perf report to $path" }
         path
     }
 
-    private suspend fun buildReportContent(): String {
+    /** Returns the report as (bytes, isGzip). Bytes are GZIP-compressed on JVM/Android. */
+    private suspend fun buildReportBytes(): Pair<ByteArray, Boolean> {
+        val content = buildReportJson()
+        val raw = content.toByteArray(Charsets.UTF_8)
+        val compressed = gzipBytes(raw)
+        return if (compressed != null) compressed to true else raw to false
+    }
+
+    private suspend fun buildReportJson(): String {
+        queryStatsCollector?.drainNow()
         val spans = spanRepository.getRecentSpans(limit = MAX_EXPORT_SPANS).first().getOrNull() ?: emptyList()
-        val histograms = histogramWriter.queryAllOperations()
-            .mapNotNull { op -> histogramWriter.queryPercentiles(op)?.let { op to it } }
-            .toMap()
+        val histograms = withContext(PlatformDispatcher.DB) {
+            histogramWriter.queryAllPercentilesForExport()
+        }
+        val queryStats = withContext(PlatformDispatcher.DB) {
+            queryStatsRepository?.getTopByTotalMs(appVersion, 100) ?: emptyList()
+        }
+        val sqlSamples = queryStatsCollector?.getSqlSamples() ?: emptyMap()
+        val queryPlan = withContext(PlatformDispatcher.DB) {
+            queryPlanRepository?.explainAll(sqlSamples) ?: emptyMap()
+        }
         val nowMs = HistogramWriter.epochMs()
         val sloViolations = spans
             .filter { it.name == "slo.violation" && it.statusCode == "ERROR" }
@@ -95,6 +121,8 @@ class PerfExporter(
                 histograms = histograms,
                 spanStats = spanStats,
                 regressions = regressions,
+                queryStats = queryStats,
+                queryPlan = queryPlan,
             )
         )
     }

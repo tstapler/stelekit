@@ -62,4 +62,8 @@ data class PerfExportReport(
     val spanStats: Map<String, List<SpanOperationStats>> = emptyMap(),
     /** Operations whose p95 regressed materially vs the nearest prior version in [spanStats]. */
     val regressions: List<RegressionAlert> = emptyList(),
+    /** Top SQL query stats flushed from [QueryStatsCollector] at export time. */
+    val queryStats: List<QueryStat> = emptyList(),
+    /** EXPLAIN QUERY PLAN output keyed by "table:operation" from [QueryPlanRepository]. */
+    val queryPlan: Map<String, List<QueryPlanRow>> = emptyMap(),
 )

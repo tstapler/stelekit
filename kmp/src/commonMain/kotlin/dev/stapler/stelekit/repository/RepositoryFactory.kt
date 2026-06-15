@@ -258,6 +258,10 @@ class RepositoryFactoryImpl(
             dev.stapler.stelekit.performance.BugReportBuilder(ringBuffer, histogramWriter)
         } else null
 
+        val queryPlanRepoShared = if (backend == GraphBackend.SQLDELIGHT) {
+            activeDriver?.let { dev.stapler.stelekit.performance.QueryPlanRepository(it) }
+        } else null
+
         val perfExporter = if (spanRepository != null && histogramWriter != null && fileSystem != null) {
             dev.stapler.stelekit.performance.PerfExporter(
                 spanRepository = spanRepository,
@@ -265,6 +269,9 @@ class RepositoryFactoryImpl(
                 fileSystem = fileSystem,
                 appVersion = appVersion,
                 platform = platform,
+                queryStatsRepository = queryStatsRepo,
+                queryStatsCollector = collector,
+                queryPlanRepository = queryPlanRepoShared,
             )
         } else null
 
@@ -296,10 +303,7 @@ class RepositoryFactoryImpl(
 
         val walCallback: (suspend () -> Unit)? = sqlBlockRepo?.let { repo -> suspend { repo.walCheckpoint() } }
 
-        val queryPlanRepo = if (backend == GraphBackend.SQLDELIGHT) {
-            val rawDriver = activeDriver
-            if (rawDriver != null) dev.stapler.stelekit.performance.QueryPlanRepository(rawDriver) else null
-        } else null
+        val queryPlanRepo = queryPlanRepoShared
 
         return RepositorySet(
             blockRepository = blockRepo,

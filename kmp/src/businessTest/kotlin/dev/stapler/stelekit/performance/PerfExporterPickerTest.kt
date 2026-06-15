@@ -44,6 +44,7 @@ class PerfExporterPickerTest {
         private val writeFileFails: Boolean = false,
     ) : FileSystem {
         val written = mutableMapOf<String, String>()
+        val writtenBytes = mutableMapOf<String, ByteArray>()
 
         override fun getDefaultGraphPath() = "/graph"
         override fun expandTilde(path: String) = path
@@ -51,6 +52,11 @@ class PerfExporterPickerTest {
         override fun writeFile(path: String, content: String): Boolean {
             if (writeFileFails) return false
             written[path] = content
+            return true
+        }
+        override fun writeFileBytes(path: String, data: ByteArray): Boolean {
+            if (writeFileFails) return false
+            writtenBytes[path] = data
             return true
         }
         override fun listFiles(path: String) = emptyList<String>()
@@ -64,6 +70,14 @@ class PerfExporterPickerTest {
         override fun getDownloadsPath() = fakeDownloadsPath
         override suspend fun pickSaveFileAsync(suggestedName: String, mimeType: String) = pickResult
     }
+
+    private fun FakeFileSystem.decompress(path: String): String {
+        val bytes = writtenBytes[path] ?: return written[path] ?: error("Nothing written to $path")
+        return java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(bytes))
+            .bufferedReader(Charsets.UTF_8).readText()
+    }
+
+    private fun FakeFileSystem.wasWritten(path: String) = writtenBytes.containsKey(path) || written.containsKey(path)
 
     private fun realHistogramWriter(): HistogramWriter {
         val driver = DriverFactory().createDriver("jdbc:sqlite::memory:")
@@ -90,8 +104,7 @@ class PerfExporterPickerTest {
 
         val result = exporter.exportWithPicker()
 
-        assertTrue(fs.written.containsKey(pickedPath),
-            "File must be written to the picked path")
+        assertTrue(fs.wasWritten(pickedPath), "File must be written to the picked path")
         assertTrue(result == pickedPath, "Result must be the picked path")
     }
 
@@ -103,7 +116,7 @@ class PerfExporterPickerTest {
 
         exporter.exportWithPicker()
 
-        val json = fs.written[pickedPath] ?: error("Nothing written to $pickedPath")
+        val json = fs.decompress(pickedPath)
         assertTrue(json.contains("\"spans\""), "JSON must contain a spans field")
         assertTrue(json.contains("test.op"), "JSON must include the recorded span name")
         assertTrue(json.contains("\"platform\":\"jvm-test\""), "JSON must include the platform")
@@ -120,7 +133,7 @@ class PerfExporterPickerTest {
         assertNotNull(result, "Should return a path even when picker is unavailable")
         assertTrue(result!!.startsWith("/downloads/"),
             "Fallback path must be inside the Downloads directory; got: $result")
-        assertTrue(fs.written.containsKey(result), "File must be written to the fallback path")
+        assertTrue(fs.wasWritten(result), "File must be written to the fallback path")
     }
 
     @Test
@@ -131,7 +144,7 @@ class PerfExporterPickerTest {
         val result = exporter.export(directory = "/custom/dir")
 
         assertTrue(result.startsWith("/custom/dir/"), "Export path must use the provided directory")
-        assertTrue(fs.written.containsKey(result), "File must be written to the export path")
+        assertTrue(fs.wasWritten(result), "File must be written to the export path")
     }
 
     @Test
@@ -142,17 +155,17 @@ class PerfExporterPickerTest {
         val result = exporter.export(directory = null)
 
         assertTrue(result.startsWith("/downloads/"), "Null directory must fall back to Downloads")
-        assertTrue(fs.written.containsKey(result), "File must be written")
+        assertTrue(fs.wasWritten(result), "File must be written")
     }
 
     @Test
-    fun `exportWithPicker throws when writeFile returns false for the picked path`() = runBlocking {
+    fun `exportWithPicker throws when write returns false for the picked path`() = runBlocking {
         val pickedPath = "/chosen/report.json"
         val fs = FakeFileSystem(pickResult = pickedPath, writeFileFails = true)
         val exporter = makePerfExporter(fs)
 
         val threw = try { exporter.exportWithPicker(); false } catch (_: IllegalStateException) { true }
-        assertTrue(threw, "exportWithPicker must throw when writeFile returns false")
+        assertTrue(threw, "exportWithPicker must throw when write returns false")
     }
 
     @Test
