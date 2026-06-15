@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.45.0](https://github.com/tstapler/stelekit/compare/v0.44.0...v0.45.0) (2026-06-15)
+
+
+### Features
+
+* **perf:** gzip export, queryStats/queryPlan in report, perf indexes ([1812d96](https://github.com/tstapler/stelekit/commit/1812d96c5a0c552d58fc22a934b5b15040499e82))
+* **perf:** track DB read queue wait and queue depth ([19493e9](https://github.com/tstapler/stelekit/commit/19493e93f3f2fbcf9d5208ed8a03e64b58eb38df))
+
 ## [0.44.0](https://github.com/tstapler/stelekit/compare/v0.43.0...v0.44.0) (2026-06-14)
 
 
