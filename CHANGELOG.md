@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.47.2](https://github.com/tstapler/stelekit/compare/v0.47.1...v0.47.2) (2026-06-16)
+
+
+### Bug Fixes
+
+* **formula:** remove openjdk JVM swap on macOS to fix Empty installation error ([ed5398b](https://github.com/tstapler/stelekit/commit/ed5398bdac07069712ef20eef0c110fe446454c4))
+* **ui:** enforce non-null BlockUuid for onAttachImage callback ([1a5b853](https://github.com/tstapler/stelekit/commit/1a5b85370348653f317ddba09b934baf72db5e25))
+
+
+### Performance Improvements
+
+* **db:** fix SCAN blocks regression, 0-byte export, and reduce write overhead ([e52607f](https://github.com/tstapler/stelekit/commit/e52607f60a0f3bb40088540374040b3f2302451a))
+
 ## [0.47.1](https://github.com/tstapler/stelekit/compare/v0.47.0...v0.47.1) (2026-06-16)
 
 
