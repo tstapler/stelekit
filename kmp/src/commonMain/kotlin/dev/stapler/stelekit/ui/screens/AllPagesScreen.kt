@@ -37,8 +37,8 @@ fun AllPagesScreen(
     viewModel: AllPagesViewModel,
     onPageClick: (Page) -> Unit,
     onBulkDelete: (List<String>) -> Unit,
+    modifier: Modifier = Modifier,
     conflictFilePaths: Set<String> = emptySet(),
-    modifier: Modifier = Modifier
 ) {
     NavigationTracingEffect("AllPages")
     val pages by viewModel.pages.collectAsState()
@@ -288,8 +288,8 @@ private fun PageRowItem(
     onToggleSelection: () -> Unit,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
     hasConflict: Boolean = false,
-    modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier

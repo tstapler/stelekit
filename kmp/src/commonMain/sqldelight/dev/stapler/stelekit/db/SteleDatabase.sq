@@ -84,6 +84,10 @@ CREATE INDEX idx_plugin_data_entity ON plugin_data(entity_type, entity_uuid);
 CREATE INDEX idx_plugin_data_key ON plugin_data(key);
 CREATE INDEX idx_references_from ON block_references(from_block_uuid);
 CREATE INDEX idx_references_to ON block_references(to_block_uuid);
+CREATE INDEX idx_pages_journal ON pages(is_journal, journal_date DESC);
+CREATE INDEX idx_pages_updated_at ON pages(updated_at DESC);
+CREATE INDEX idx_pages_created_at ON pages(created_at DESC);
+CREATE INDEX idx_pages_favorite ON pages(name) WHERE is_favorite = 1;
 
 -- Migration Framework Changelog
 CREATE TABLE migration_changelog (
@@ -179,6 +183,9 @@ SELECT * FROM blocks ORDER BY uuid;
 
 selectAllBlocksPaginated:
 SELECT * FROM blocks ORDER BY uuid LIMIT ? OFFSET ?;
+
+selectAllBlocksPaginatedAfterUuid:
+SELECT * FROM blocks WHERE uuid > ? ORDER BY uuid LIMIT ?;
 
 selectBlockChildren:
 SELECT * FROM blocks WHERE parent_uuid = ? ORDER BY position LIMIT ? OFFSET ?;
@@ -701,19 +708,11 @@ SELECT COUNT(*) FROM blocks WHERE content LIKE '%[[' || :pageName || ']]%';
 
 -- Read precomputed backlink counts for a batch of pages — O(1) per page via UUID index.
 -- The backlink_count column is populated by the pages_backlink_count schema migration
--- and refreshed by recomputeAllBacklinkCounts when the FTS index is rebuilt.
+-- and refreshed by rebuildFts() via a Kotlin-side single-pass scan.
 selectBacklinkCountsForPages:
 SELECT name AS page_name, backlink_count
 FROM pages
 WHERE uuid IN ?;
-
--- Recompute all page backlink counts from block content in one pass.
--- Called alongside FTS rebuild (rebuildFts) so counts stay accurate after bulk imports.
-recomputeAllBacklinkCounts:
-UPDATE pages SET backlink_count = (
-    SELECT COUNT(*) FROM blocks
-    WHERE blocks.content LIKE '%[[' || pages.name || ']]%'
-);
 
 -- Recompute backlink count for a single page by name.
 -- Called incrementally after block writes that add/remove wikilinks.
@@ -1029,6 +1028,7 @@ CREATE TABLE IF NOT EXISTS image_annotations (
 CREATE INDEX IF NOT EXISTS idx_image_annotations_block_uuid ON image_annotations(block_uuid);
 CREATE INDEX IF NOT EXISTS idx_image_annotations_page_uuid ON image_annotations(page_uuid);
 CREATE INDEX IF NOT EXISTS idx_image_annotations_graph_path ON image_annotations(graph_path);
+CREATE INDEX IF NOT EXISTS idx_image_annotations_imported_at ON image_annotations(imported_at_ms DESC);
 
 -- Measurement annotations table: stores individual measurements drawn on an image.
 -- Cascade-deletes when the parent image_annotation is deleted.
@@ -1142,6 +1142,7 @@ CREATE TABLE IF NOT EXISTS asset_index (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_file_path_unique ON asset_index(file_path);
 CREATE INDEX IF NOT EXISTS idx_asset_unprocessed ON asset_index(ml_processed, ml_failed, imported_at_ms);
 CREATE INDEX IF NOT EXISTS idx_asset_media_type ON asset_index(media_type);
+CREATE INDEX IF NOT EXISTS idx_asset_imported_at ON asset_index(imported_at_ms DESC);
 
 insertAsset:
 INSERT INTO asset_index(uuid, file_path, relative_path, media_type, subfolder, tags, auto_labels, ocr_text, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_failed, content_hash, is_orphan, ml_tags_source)

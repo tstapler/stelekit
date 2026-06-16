@@ -67,24 +67,19 @@ class PerfExporter(
     suspend fun exportLogsWithPicker(): String? {
         val timestamp = formatTimestamp(HistogramWriter.epochMs())
         val suggestedName = "stelekit-logs-$timestamp.txt"
-        val pickedPath = fileSystem.pickSaveFileAsync(suggestedName, "text/plain")
+        val pickedPath = fileSystem.pickSaveFileAsync(suggestedName, "text/plain") ?: return null
         val content = buildLogsText()
-        return if (pickedPath != null) {
-            val ok = fileSystem.writeFile(pickedPath, content)
-            check(ok) { "Failed to write logs to $pickedPath" }
-            pickedPath
-        } else {
-            val dir = fileSystem.getDownloadsPath()
-            val path = "$dir/$suggestedName"
-            val ok = fileSystem.writeFile(path, content)
-            check(ok) { "Failed to write logs to $path" }
-            path
-        }
+        val ok = fileSystem.writeFile(pickedPath, content)
+        check(ok) { "Failed to write logs to $pickedPath" }
+        return pickedPath
     }
 
     private fun buildLogsText(): String {
         val logs = LogManager.logs.value
-        return logs.joinToString("\n") { entry ->
+        val header = "# SteleKit debug log export\n" +
+            "# WARNING: these logs may contain snippets of your note content.\n" +
+            "# Only share with trusted parties.\n"
+        return header + logs.joinToString("\n") { entry ->
             val ts = entry.timestamp.toString().substringAfter("T").substringBefore("Z").take(12)
             val throwableSuffix = entry.throwable?.let {
                 "\n  ${it::class.simpleName}: ${it.message}"

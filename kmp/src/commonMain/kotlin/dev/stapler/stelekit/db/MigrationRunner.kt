@@ -462,6 +462,33 @@ object MigrationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_spans_end_epoch_ms ON spans(end_epoch_ms)",
             )
         ),
+        Migration(
+            name = "pages_journal_temporal_favorite_indexes",
+            statements = listOf(
+                // Covers selectJournalPages, selectJournalPageByDate, selectJournalPagesByDates
+                "CREATE INDEX IF NOT EXISTS idx_pages_journal ON pages(is_journal, journal_date DESC)",
+                // Covers selectRecentlyUpdatedPages
+                "CREATE INDEX IF NOT EXISTS idx_pages_updated_at ON pages(updated_at DESC)",
+                // Covers selectRecentlyCreatedPages
+                "CREATE INDEX IF NOT EXISTS idx_pages_created_at ON pages(created_at DESC)",
+                // Covers selectFavoritePages
+                "CREATE INDEX IF NOT EXISTS idx_pages_favorite ON pages(name) WHERE is_favorite = 1",
+            )
+        ),
+        Migration(
+            name = "image_annotations_imported_at_index",
+            statements = listOf(
+                // Covers selectAllImageAnnotations ORDER BY imported_at_ms DESC
+                "CREATE INDEX IF NOT EXISTS idx_image_annotations_imported_at ON image_annotations(imported_at_ms DESC)",
+            )
+        ),
+        Migration(
+            name = "asset_index_imported_at_index",
+            statements = listOf(
+                // Covers selectAssets ORDER BY imported_at_ms DESC
+                "CREATE INDEX IF NOT EXISTS idx_asset_imported_at ON asset_index(imported_at_ms DESC)",
+            )
+        ),
     )
 
     /**

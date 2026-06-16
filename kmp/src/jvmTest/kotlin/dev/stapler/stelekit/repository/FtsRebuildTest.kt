@@ -6,6 +6,7 @@ import dev.stapler.stelekit.db.SteleDatabase
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -53,6 +54,34 @@ class FtsRebuildTest {
         assertTrue(searchResult.isRight(), "Search after FTS rebuild should succeed")
         val ranked = searchResult.getOrNull()?.ranked.orEmpty()
         assertTrue(ranked.isNotEmpty(), "Should find results after FTS rebuild")
+    }
+
+    // ── TC-BACKLINK-01: backlink counts are accurate after rebuildFts ─────────────
+
+    @Test
+    fun rebuildFts_computesCorrectBacklinkCounts() = runBlocking {
+        val driver = DriverFactory().createDriver("jdbc:sqlite::memory:")
+        val db = SteleDatabase(driver)
+        val queries = db.steleDatabaseQueries
+
+        // Insert two pages: "Alpha" and "Beta"
+        queries.insertPage("uuid-alpha", "Alpha", null, null, 0L, 0L, null, 1L, null, null, null, 1L)
+        queries.insertPage("uuid-beta", "Beta", null, null, 0L, 0L, null, 1L, null, null, null, 1L)
+        // Two blocks reference Alpha, one references Beta
+        queries.insertBlock("block-1", "uuid-alpha", null, null, "See [[Alpha]] for details", 0L, 0L, 0L, 0L, null, 1L, null, "paragraph")
+        queries.insertBlock("block-2", "uuid-alpha", null, null, "[[Alpha]] and [[Beta]] are linked", 0L, 1L, 0L, 0L, null, 1L, null, "paragraph")
+        queries.insertBlock("block-3", "uuid-beta", null, null, "No wikilinks here", 0L, 0L, 0L, 0L, null, 1L, null, "paragraph")
+
+        val repo = SqlDelightSearchRepository(db, driver = driver)
+        val result = repo.rebuildFts()
+        assertTrue(result.isRight(), "rebuildFts() should return Right(Unit)")
+
+        val alphaCounts = queries.selectBacklinkCountsForPages(listOf("uuid-alpha")).executeAsList()
+        val betaCounts = queries.selectBacklinkCountsForPages(listOf("uuid-beta")).executeAsList()
+        assertEquals(2L, alphaCounts.first { it.page_name == "Alpha" }.backlink_count,
+            "Alpha should have 2 backlinks")
+        assertEquals(1L, betaCounts.first { it.page_name == "Beta" }.backlink_count,
+            "Beta should have 1 backlink")
     }
 
     // ── integrityCheckFts with real driver ────────────────────────────────────
