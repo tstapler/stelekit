@@ -34,7 +34,9 @@ jobs:
 
       - name: Install bazel-cache-proxy
         if: steps.bcp-cache.outputs.cache-hit != 'true'
-        run: cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev cf9fafd bazel-cache-proxy --locked
+        run: |
+          sudo apt-get install -y --no-install-recommends protobuf-compiler
+          cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev cf9fafd bazel-cache-proxy --locked
 
       - name: Start bazel-cache-proxy (GHA backend)
         run: |
@@ -106,7 +108,9 @@ jobs:
 
       - name: Install bazel-cache-proxy
         if: steps.bcp-cache.outputs.cache-hit != 'true'
-        run: cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev cf9fafd bazel-cache-proxy --locked
+        run: |
+          sudo apt-get install -y --no-install-recommends protobuf-compiler
+          cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev cf9fafd bazel-cache-proxy --locked
 
       - name: Start bazel-cache-proxy (GHA backend)
         run: |
@@ -157,7 +161,9 @@ jobs:
 
       - name: Install bazel-cache-proxy
         if: steps.bcp-cache.outputs.cache-hit != 'true'
-        run: cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev cf9fafd bazel-cache-proxy --locked
+        run: |
+          sudo apt-get install -y --no-install-recommends protobuf-compiler
+          cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev cf9fafd bazel-cache-proxy --locked
 
       - name: Start bazel-cache-proxy (GHA backend)
         run: |
@@ -224,7 +230,9 @@ jobs:
 
       - name: Install bazel-cache-proxy
         if: steps.bcp-cache.outputs.cache-hit != 'true'
-        run: cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev cf9fafd bazel-cache-proxy --locked
+        run: |
+          sudo apt-get install -y --no-install-recommends protobuf-compiler
+          cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev cf9fafd bazel-cache-proxy --locked
 
       - name: Start bazel-cache-proxy (GHA backend)
         run: |
