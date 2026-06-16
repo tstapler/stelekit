@@ -701,8 +701,10 @@ class GraphLoader(
             // One controlled FTS merge pass after the full batch, not per-page-save.
             // saveBlocks intentionally skips ftsMerge to avoid reading a large index on every
             // navigation; bulk callers compact once here when all inserts are done.
+            @OptIn(DirectRepositoryWrite::class)
             writeActor.execute(DatabaseWriteActor.Priority.LOW) {
                 blockRepository.compactFtsIndex()
+                Unit.right()
             }
         } finally {
             backgroundIndexJob = null
