@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.47.1](https://github.com/tstapler/stelekit/compare/v0.47.0...v0.47.1) (2026-06-16)
+
+
+### Performance Improvements
+
+* **db:** eliminate O(N²) backlink recompute, add indexes, enforce query plan coverage ([81c0ef7](https://github.com/tstapler/stelekit/commit/81c0ef7d6dde6379296f5ca34b288b9ab06d20be))
+
 ## [0.47.0](https://github.com/tstapler/stelekit/compare/v0.46.0...v0.47.0) (2026-06-16)
 
 
