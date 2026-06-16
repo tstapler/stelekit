@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.47.0](https://github.com/tstapler/stelekit/compare/v0.46.0...v0.47.0) (2026-06-16)
+
+
+### Features
+
+* **all-pages:** amber warning icon on conflicted pages in AllPages screen ([921611c](https://github.com/tstapler/stelekit/commit/921611c3b995ee8bc2602f44c88fd4aaadf24252))
+* **perf:** export available on all tabs, logs export, fix picker latency, rename Traces→Events tab ([4f9b2c9](https://github.com/tstapler/stelekit/commit/4f9b2c90ba30acd62c837277b5a0ba7b9f763ab8))
+
 ## [0.46.0](https://github.com/tstapler/stelekit/compare/v0.45.0...v0.46.0) (2026-06-16)
 
 
