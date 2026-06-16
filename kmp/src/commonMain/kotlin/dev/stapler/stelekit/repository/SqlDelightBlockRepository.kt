@@ -292,7 +292,6 @@ class SqlDelightBlockRepository(
     override suspend fun saveBlocksDiff(toInsert: List<Block>, toUpdate: List<Block>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         if (toInsert.isEmpty() && toUpdate.isEmpty()) return@withContext Unit.right()
         try {
-            ftsAutomergeOff()
             // toInsert contract: these UUIDs must be genuinely absent from the blocks table.
             // INSERT OR REPLACE is used here (via insertBlock) — if a UUID already exists, it
             // fires blocks_ad+blocks_ai (double FTS trigger) rather than blocks_au, negating the
@@ -330,14 +329,10 @@ class SqlDelightBlockRepository(
                     }
                 }
             }
-            ftsAutomergeDefault()
-            ftsMerge()
             Unit.right()
         } catch (e: CancellationException) {
-            runCatching { ftsAutomergeDefault() }
             throw e
         } catch (e: Exception) {
-            runCatching { ftsAutomergeDefault() }
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }

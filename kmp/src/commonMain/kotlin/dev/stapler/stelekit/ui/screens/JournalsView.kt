@@ -4,9 +4,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -54,6 +57,7 @@ fun JournalsView(
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
     capabilities: EditorCapabilities = EditorCapabilities(),
     tagSuggestionViewModel: TagSuggestionViewModel? = null,
+    conflictFilePaths: Set<String> = emptySet(),
     modifier: Modifier = Modifier
 ) {
     NavigationTracingEffect("Journals")
@@ -128,6 +132,7 @@ fun JournalsView(
                     blocks = blockList,
                     isLoading = !page.isContentLoaded || page.uuid.value in loadingPageUuids,
                     isDebugMode = isDebugMode,
+                    hasConflict = page.filePath in conflictFilePaths,
                     editingBlockUuid = editingBlockUuid?.value,
                     editingCursorIndex = editingCursorIndex,
                     collapsedBlocks = collapsedBlockUuids,
@@ -273,6 +278,7 @@ private fun JournalEntry(
     blocks: List<Block>,
     isLoading: Boolean,
     isDebugMode: Boolean,
+    hasConflict: Boolean = false,
     editingBlockUuid: String?,
     editingCursorIndex: Int?,
     collapsedBlocks: Set<String>,
@@ -310,14 +316,27 @@ private fun JournalEntry(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
-        // Journal date header (formatted nicely)
-        Text(
-            text = formatJournalDate(page.name),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
+        // Journal date header with optional conflict indicator
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(bottom = 16.dp, top = 8.dp)
-        )
+        ) {
+            Text(
+                text = formatJournalDate(page.name),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            if (hasConflict) {
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = "Page modified on disk — tap to review",
+                    tint = Color(0xFFF59E0B),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
 
         // Blocks content
         if (blocks.isEmpty()) {
