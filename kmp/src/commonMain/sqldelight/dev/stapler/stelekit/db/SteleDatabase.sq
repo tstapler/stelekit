@@ -168,6 +168,9 @@ CREATE TABLE IF NOT EXISTS page_visits (
 selectBlockByUuid:
 SELECT * FROM blocks WHERE uuid = ?;
 
+selectBlocksByUuids:
+SELECT * FROM blocks WHERE uuid IN ?;
+
 existsBlockByUuid:
 SELECT COUNT(*) FROM blocks WHERE uuid = ?;
 
@@ -279,13 +282,17 @@ insertBlock:
 INSERT OR REPLACE INTO blocks (uuid, page_uuid, parent_uuid, left_uuid, content, level, position, created_at, updated_at, properties, version, content_hash, block_type)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+-- Used by saveBlocksDiff for toUpdate blocks: fires blocks_au (AFTER UPDATE OF content) instead
+-- of the double blocks_ad+blocks_ai pair that INSERT OR REPLACE triggers on existing rows.
+-- blocks_au only fires for content column changes, so structural-only diffs avoid FTS5 entirely.
+updateBlockForSave:
+UPDATE blocks
+SET page_uuid = ?, parent_uuid = ?, left_uuid = ?, content = ?, level = ?,
+    position = ?, updated_at = ?, properties = ?, version = ?, content_hash = ?, block_type = ?
+WHERE uuid = ?;
+
 selectBlocksHashByPageUuid:
 SELECT uuid, content_hash FROM blocks WHERE page_uuid = ?;
-
--- Batch lookup by UUID set — used by DatabaseWriteActor.loadExistingBlocks to replace N
--- individual selectBlockByUuid calls with one round-trip (eliminates N+1 IO dispatch).
-selectBlocksByUuids:
-SELECT * FROM blocks WHERE uuid IN ?;
 
 -- Deduplication queries
 selectBlocksByContentHash:
@@ -635,6 +642,9 @@ CREATE TABLE IF NOT EXISTS perf_histogram_buckets (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_perf_hist_op_bucket
     ON perf_histogram_buckets(operation_name, bucket_ms);
+-- Covers deleteOldHistogramRows WHERE recorded_at < ?
+CREATE INDEX IF NOT EXISTS idx_perf_hist_recorded_at
+    ON perf_histogram_buckets(recorded_at);
 
 CREATE TABLE IF NOT EXISTS debug_flags (
     key TEXT NOT NULL PRIMARY KEY,
@@ -658,6 +668,10 @@ SELECT bucket_ms, count FROM perf_histogram_buckets WHERE operation_name = ? ORD
 
 selectAllHistogramOperations:
 SELECT DISTINCT operation_name FROM perf_histogram_buckets ORDER BY operation_name;
+
+-- Batch export: all buckets for all operations in one round-trip (used by PerfExporter)
+selectAllHistogramBuckets:
+SELECT operation_name, bucket_ms, count FROM perf_histogram_buckets ORDER BY operation_name, bucket_ms;
 
 deleteOldHistogramRows:
 DELETE FROM perf_histogram_buckets WHERE recorded_at < ?;
@@ -856,6 +870,8 @@ CREATE INDEX IF NOT EXISTS spans_start_epoch_ms_idx ON spans(start_epoch_ms DESC
 CREATE INDEX IF NOT EXISTS spans_trace_id_idx ON spans(trace_id);
 -- Covers regression queries: WHERE app_version = ? AND name = ? ORDER BY duration_ms DESC
 CREATE INDEX IF NOT EXISTS idx_spans_version_name_duration ON spans(app_version, name, duration_ms DESC);
+-- Covers deleteSpansOlderThan WHERE end_epoch_ms < ?
+CREATE INDEX IF NOT EXISTS idx_spans_end_epoch_ms ON spans(end_epoch_ms);
 
 insertSpan:
 INSERT INTO spans (trace_id, span_id, parent_span_id, name, start_epoch_ms, end_epoch_ms, duration_ms, attributes_json, status_code, app_version, commit_hash)

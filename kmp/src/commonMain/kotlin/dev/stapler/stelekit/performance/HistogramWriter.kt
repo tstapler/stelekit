@@ -98,6 +98,39 @@ class HistogramWriter(
         database.steleDatabaseQueries.selectAllHistogramOperations().executeAsList()
 
     /**
+     * Returns all histogram percentiles in a single DB round-trip (vs. N+1 in
+     * [queryAllOperations] + [queryPercentiles]).  Used by [PerfExporter] to avoid
+     * O(operations) sequential queries during export.
+     */
+    fun queryAllPercentilesForExport(): Map<String, PercentileSummary> {
+        val rows = database.steleDatabaseQueries.selectAllHistogramBuckets().executeAsList()
+        if (rows.isEmpty()) return emptyMap()
+        return rows
+            .groupBy { it.operation_name }
+            .mapNotNull { (opName, opRows) ->
+                val totalCount = opRows.sumOf { it.count }
+                if (totalCount == 0L) return@mapNotNull null
+                fun percentileMs(pct: Double): Long {
+                    val target = (totalCount * pct).toLong().coerceAtLeast(1L)
+                    var cumulative = 0L
+                    for (row in opRows) {
+                        cumulative += row.count
+                        if (cumulative >= target) return row.bucket_ms
+                    }
+                    return opRows.last().bucket_ms
+                }
+                opName to PercentileSummary(
+                    operationName = opName,
+                    p50Ms = percentileMs(0.50),
+                    p95Ms = percentileMs(0.95),
+                    p99Ms = percentileMs(0.99),
+                    sampleCount = totalCount,
+                )
+            }
+            .toMap()
+    }
+
+    /**
      * Query approximate percentiles for [operationName] from the stored buckets.
      * Returns null if no data is available for the operation.
      */
@@ -157,6 +190,8 @@ class HistogramWriter(
             "db.lookupPage", "db.getBlocks",
             // Database writes
             "db.savePage", "db.saveBlocks", "db.queue_wait",
+            // Database read queue instrumentation
+            "db.read_queue_wait", "db.read_queue_depth", "db.write_queue_depth",
             // SQL driver (always-on via TimingDriverWrapper)
             "sql.select", "sql.insert", "sql.update", "sql.delete",
         )

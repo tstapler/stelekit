@@ -3,13 +3,14 @@
 SteleKit performance export analyzer.
 
 Usage:
-    python3 scripts/analyze-perf.py <export.json> [--session-only] [--top N]
+    python3 scripts/analyze-perf.py <export.json[.gz]> [--session-only] [--top N]
 
 Flags:
     --session-only   Only analyze spans from the current session (filter out ring-buffer
                      history from prior sessions).
     --top N          Show top N slow spans per operation (default: 10).
 """
+import gzip
 import json
 import sys
 import argparse
@@ -30,8 +31,12 @@ def short_path(path):
 
 
 def analyze(path, session_only=False, top_n=10):
-    with open(path) as f:
-        data = json.load(f)
+    if path.endswith(".gz"):
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            data = json.load(f)
+    else:
+        with open(path) as f:
+            data = json.load(f)
 
     all_spans = data["spans"]
     session = data["session"]
@@ -172,12 +177,56 @@ def analyze(path, session_only=False, top_n=10):
             kb = int(attrs.get("content.bytes", 0) or 0) // 1024
             print(f"  {s['durationMs']:>6}ms  {kb}KB  {fp}")
 
+    # --- SQL query stats ---
+    query_stats = data.get("queryStats", [])
+    if query_stats:
+        print()
+        print(f"=== SQL query stats (top {top_n} by total_ms) ===")
+        print(f"  {'table:op':<30} {'calls':>7} {'total_s':>8} {'mean_ms':>8} {'max_ms':>8} {'p95_ms':>8} {'errors':>7}")
+        print("  " + "-" * 76)
+        for qs in sorted(query_stats, key=lambda x: x.get("totalMs", 0), reverse=True)[:top_n]:
+            key = f"{qs.get('tableName', '?')}:{qs.get('operation', '?')}"
+            calls = qs.get("calls", 0)
+            total_s = qs.get("totalMs", 0) / 1000
+            mean = qs.get("totalMs", 0) // calls if calls else 0
+            max_ms = qs.get("maxMs", 0)
+            errors = qs.get("errors", 0)
+            # estimate p95 from buckets
+            buckets = [
+                (1, qs.get("b1", 0)), (5, qs.get("b5", 0)), (16, qs.get("b16", 0)),
+                (50, qs.get("b50", 0)), (100, qs.get("b100", 0)), (500, qs.get("b500", 0)),
+                (99999, qs.get("bInf", 0)),
+            ]
+            target = max(1, int(calls * 0.95))
+            cum, p95 = 0, 99999
+            for bound, cnt in buckets:
+                cum += cnt
+                if cum >= target:
+                    p95 = bound
+                    break
+            err_flag = " ERR" if errors > 0 else ""
+            print(f"  {key:<30} {calls:>7} {total_s:>8.1f} {mean:>8} {max_ms:>8} {p95:>8}{err_flag}")
+
+    # --- Query plans ---
+    query_plan = data.get("queryPlan", {})
+    if query_plan:
+        print()
+        print("=== Query plans ===")
+        for key, rows in sorted(query_plan.items()):
+            if not rows:
+                continue
+            print(f"  [{key}]")
+            for row in rows:
+                detail = row.get("detail", "")
+                flag = " ⚠ SCAN" if "SCAN" in detail and "INDEX" not in detail else ""
+                print(f"    {detail}{flag}")
+
     print()
 
 
 def main():
-    p = argparse.ArgumentParser(description="Analyze SteleKit perf export JSON")
-    p.add_argument("file", help="Path to stelekit-perf-*.json")
+    p = argparse.ArgumentParser(description="Analyze SteleKit perf export JSON or JSON.GZ")
+    p.add_argument("file", help="Path to stelekit-perf-*.json or stelekit-perf-*.json.gz")
     p.add_argument("--session-only", action="store_true",
                    help="Only include spans from the current session (exclude ring-buffer history)")
     p.add_argument("--top", type=int, default=10, metavar="N",

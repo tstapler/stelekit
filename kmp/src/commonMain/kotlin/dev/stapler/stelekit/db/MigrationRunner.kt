@@ -448,6 +448,20 @@ object MigrationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_spans_version_name_duration ON spans(app_version, name, duration_ms DESC)",
             )
         ),
+        Migration(
+            name = "perf_histogram_recorded_at_index",
+            statements = listOf(
+                // Covers deleteOldHistogramRows WHERE recorded_at < ? (previously a full table scan)
+                "CREATE INDEX IF NOT EXISTS idx_perf_hist_recorded_at ON perf_histogram_buckets(recorded_at)",
+            )
+        ),
+        Migration(
+            name = "spans_end_epoch_ms_index",
+            statements = listOf(
+                // Covers deleteSpansOlderThan WHERE end_epoch_ms < ? (previously a full table scan)
+                "CREATE INDEX IF NOT EXISTS idx_spans_end_epoch_ms ON spans(end_epoch_ms)",
+            )
+        ),
     )
 
     /**

@@ -3,7 +3,9 @@ package dev.stapler.stelekit.performance
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.Serializable
 
+@Serializable
 data class QueryPlanRow(val id: Int, val parentId: Int, val detail: String)
 
 class QueryPlanRepository(private val driver: SqlDriver) {

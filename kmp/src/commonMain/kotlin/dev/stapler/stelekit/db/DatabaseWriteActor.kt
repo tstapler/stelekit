@@ -94,6 +94,13 @@ class DatabaseWriteActor(
             val enqueueMs: Long = HistogramWriter.epochMs(),
         ) : WriteRequest()
 
+        class SaveBlocksDiff(
+            val toInsert: List<Block>,
+            val toUpdate: List<Block>,
+            override val priority: Priority = Priority.HIGH,
+            override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
+        ) : WriteRequest()
+
         class DeleteBlocksForPage(
             val pageUuid: PageUuid,
             override val priority: Priority = Priority.HIGH,
@@ -116,6 +123,9 @@ class DatabaseWriteActor(
 
     /** Set after construction once the ring buffer is available. Written once before first channel send. */
     @Volatile var ringBuffer: RingBufferSpanExporter? = null
+
+    /** Set after construction once the histogram writer is available. Written once before first use. */
+    @Volatile var histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
 
     private val highPriority = Channel<WriteRequest>(capacity = Channel.UNLIMITED)
     private val lowPriority = Channel<WriteRequest>(capacity = Channel.UNLIMITED)
@@ -218,6 +228,7 @@ class DatabaseWriteActor(
             is WriteRequest.DeleteBlocksForPage -> processDeleteBlocksForPage(request)
             is WriteRequest.DeleteBlocksForPages -> processDeleteBlocksForPages(request)
             is WriteRequest.SaveBlocks -> processSaveBlocks(request)
+            is WriteRequest.SaveBlocksDiff -> processSaveBlocksDiff(request)
             is WriteRequest.Execute -> processExecute(request)
         }
     }
@@ -240,6 +251,7 @@ class DatabaseWriteActor(
 
     private suspend fun processExecute(request: WriteRequest.Execute) {
         val waitMs = HistogramWriter.epochMs() - request.enqueueMs
+        histogramWriter?.record("db.write_queue_depth", _activeOps.value.toLong())
         if (waitMs > 10L) {
             recordQueueWaitSpan(request, waitMs)
         }
@@ -252,7 +264,10 @@ class DatabaseWriteActor(
             startEpochMs = request.enqueueMs,
             endEpochMs = request.enqueueMs + waitMs,
             durationMs = waitMs,
-            attributes = mapOf("priority" to request.priority.name) + AppSession.autoAttributes(),
+            attributes = mapOf(
+                "priority" to request.priority.name,
+                "queue.depth" to _activeOps.value.toString(),
+            ) + AppSession.autoAttributes(),
             statusCode = if (waitMs > 500L) "ERROR" else "OK",
             traceId = UuidGenerator.generateV7(),
             spanId = UuidGenerator.generateV7(),
@@ -332,6 +347,7 @@ class DatabaseWriteActor(
                 "priority" to batch[0].priority.name,
                 "request.type" to "SaveBlocks",
                 "batch.size" to batch.size.toString(),
+                "queue.depth" to _activeOps.value.toString(),
             ) + AppSession.autoAttributes(),
             statusCode = if (waitMs > 500L) "ERROR" else "OK",
             traceId = UuidGenerator.generateV7(),
@@ -379,6 +395,59 @@ class DatabaseWriteActor(
                 }
                 req.deferred.complete(reqResult)
             }
+        }
+    }
+
+    private suspend fun processSaveBlocksDiff(first: WriteRequest.SaveBlocksDiff) {
+        val sourceChannel = channelFor(first.priority)
+        val batch = mutableListOf(first)
+        while (true) {
+            if (first.priority == Priority.LOW) {
+                val urgent = highPriority.tryReceive().getOrNull()
+                if (urgent != null) {
+                    flushDiffBatch(batch)
+                    processRequest(urgent)
+                    return
+                }
+            }
+            val next = sourceChannel.tryReceive().getOrNull() ?: break
+            if (next is WriteRequest.SaveBlocksDiff) {
+                batch.add(next)
+            } else {
+                flushDiffBatch(batch)
+                processRequest(next)
+                return
+            }
+        }
+        flushDiffBatch(batch)
+    }
+
+    private suspend fun flushDiffBatch(batch: List<WriteRequest.SaveBlocksDiff>) {
+        val allInserts = batch.flatMap { it.toInsert }
+        val allUpdates = batch.flatMap { it.toUpdate }
+        val existingByUuid = loadExistingBlocks(allInserts + allUpdates)
+        val batchResult = blockRepository.saveBlocksDiff(allInserts, allUpdates)
+        if (batchResult.isRight()) {
+            logSaveBlocks(allInserts + allUpdates, existingByUuid)
+            batch.forEach {
+                onWriteSuccess?.invoke(it)
+                it.deferred.complete(Unit.right())
+            }
+        } else if (batch.size > 1) {
+            logger.warn(
+                "Combined diff batch failed (${batchResult.leftOrNull()?.message}), retrying ${batch.size} requests individually"
+            )
+            batch.forEach { req ->
+                val reqExisting = loadExistingBlocks(req.toInsert + req.toUpdate)
+                val reqResult = blockRepository.saveBlocksDiff(req.toInsert, req.toUpdate)
+                if (reqResult.isRight()) {
+                    logSaveBlocks(req.toInsert + req.toUpdate, reqExisting)
+                    onWriteSuccess?.invoke(req)
+                }
+                req.deferred.complete(reqResult)
+            }
+        } else {
+            batch[0].deferred.complete(batchResult)
         }
     }
 
@@ -433,6 +502,17 @@ class DatabaseWriteActor(
     suspend fun saveBlocks(blocks: List<Block>, priority: Priority = Priority.HIGH): Either<DomainError, Unit> {
         val req = WriteRequest.SaveBlocks(blocks, priority)
         return sendAndAwait(req)
+    }
+
+    suspend fun saveBlocksDiff(
+        toInsert: List<Block>,
+        toUpdate: List<Block>,
+        priority: Priority = Priority.HIGH,
+    ): Either<DomainError, Unit> {
+        if (toInsert.isEmpty() && toUpdate.isEmpty()) return Unit.right()
+        val req = WriteRequest.SaveBlocksDiff(toInsert, toUpdate, priority)
+        channelFor(priority).send(req)
+        return req.deferred.await()
     }
 
     suspend fun deleteBlocksForPage(pageUuid: PageUuid, priority: Priority = Priority.HIGH): Either<DomainError, Unit> {

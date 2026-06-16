@@ -1,13 +1,17 @@
 package dev.stapler.stelekit.repository
 
+import arrow.atomic.AtomicInt
+import arrow.atomic.value
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import kotlin.concurrent.Volatile
 
 import dev.stapler.stelekit.cache.LruCache
 import dev.stapler.stelekit.cache.SteleLruCache
 import dev.stapler.stelekit.cache.RepoCacheConfig
+import app.cash.sqldelight.db.SqlDriver
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
@@ -41,11 +45,16 @@ import kotlinx.datetime.toLocalDateTime
  */
 @OptIn(DirectRepositoryWrite::class)
 class SqlDelightBlockRepository(
-    private val database: SteleDatabase
+    private val database: SteleDatabase,
+    private val driver: SqlDriver? = null,
 ) : BlockRepository {
 
     private val logger = Logger("SqlDelightBlockRepository")
     private val queries = database.steleDatabaseQueries
+
+    /** Set after construction by RepositoryFactory. */
+    @Volatile var histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
+    private val _pendingBlockReads = AtomicInt(0)
 
     private val cacheConfig = RepoCacheConfig.fromPlatform()
 
@@ -216,16 +225,17 @@ class SqlDelightBlockRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>> =
-        queries.selectBlocksByPageUuidUnpaginated(pageUuid.value)
+    override fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>> {
+        val depth = _pendingBlockReads.incrementAndGet()
+        return queries.selectBlocksByPageUuidUnpaginated(pageUuid.value)
             .asFlow()
+            .onStart { histogramWriter?.record("db.read_queue_depth", depth.toLong()) }
             .mapToList(PlatformDispatcher.DB)
             .conflate()
-            .map { list ->
-                val result: Either<DomainError, List<Block>> = list.map { it.toBlockModel() }.right()
-                result
-            }
+            .onCompletion { _pendingBlockReads.decrementAndGet() }
+            .map { list -> list.map { it.toBlockModel() }.right() }
             .catchDbError()
+    }
 
     override suspend fun getBlocksByUuids(uuids: List<BlockUuid>): Either<DomainError, List<Block>> =
         withContext(PlatformDispatcher.DB) {
@@ -247,7 +257,13 @@ class SqlDelightBlockRepository(
         }
 
     override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+        if (blocks.isEmpty()) return@withContext Unit.right()
         try {
+            // Disable FTS5 automerge so individual inserts do not trigger mid-chunk segment
+            // merges. As the FTS5 index grows during a session, each automerge pass reads the
+            // entire index — making large page saves take minutes instead of milliseconds.
+            // A single controlled merge after all chunks completes the indexing in one pass.
+            ftsAutomergeOff()
             // Chunk into bounded transactions so the SQLite write lock is never held for more
             // than ~WRITE_CHUNK_SIZE rows. Without chunking, a 2000-block Phase-3 batch holds
             // the lock for several seconds on Android, blocking concurrent user edits.
@@ -258,30 +274,117 @@ class SqlDelightBlockRepository(
             // source file on next startup to recover any missing blocks.
             blocks.chunked(WRITE_CHUNK_SIZE).forEach { chunk ->
                 queries.transaction {
+                    chunk.forEach { block -> insertBlockRow(block) }
+                }
+            }
+            ftsAutomergeDefault()
+            ftsMerge()
+            Unit.right()
+        } catch (e: CancellationException) {
+            runCatching { ftsAutomergeDefault() }
+            throw e
+        } catch (e: Exception) {
+            runCatching { ftsAutomergeDefault() }
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+        }
+    }
+
+    override suspend fun saveBlocksDiff(toInsert: List<Block>, toUpdate: List<Block>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+        if (toInsert.isEmpty() && toUpdate.isEmpty()) return@withContext Unit.right()
+        try {
+            ftsAutomergeOff()
+            // toInsert contract: these UUIDs must be genuinely absent from the blocks table.
+            // INSERT OR REPLACE is used here (via insertBlock) — if a UUID already exists, it
+            // fires blocks_ad+blocks_ai (double FTS trigger) rather than blocks_au, negating the
+            // FTS optimization. This is safe because:
+            // 1. DatabaseWriteActor serializes all writes — no concurrent insert races from this actor.
+            // 2. The diff is computed from getBlocksForPage() immediately before dispatch, so
+            //    toInsert reflects the current DB state at diff-computation time.
+            // A future improvement: use INSERT OR IGNORE and fall back to UPDATE on affected rows.
+            toInsert.chunked(WRITE_CHUNK_SIZE).forEach { chunk ->
+                queries.transaction {
+                    chunk.forEach { block -> insertBlockRow(block) }
+                }
+            }
+            // UPDATE instead of INSERT OR REPLACE so the blocks_au trigger fires (AFTER UPDATE OF
+            // content) rather than blocks_ad+blocks_ai. blocks_au only fires when content is in the
+            // SET clause, and does not cascade-delete child blocks the way REPLACE's implicit
+            // DELETE step does.
+            toUpdate.chunked(WRITE_CHUNK_SIZE).forEach { chunk ->
+                queries.transaction {
                     chunk.forEach { block ->
-                        queries.insertBlock(
-                            block.uuid.value,
+                        queries.updateBlockForSave(
                             block.pageUuid.value,
                             block.parentUuid,
                             block.leftUuid,
                             block.content,
                             block.level.toLong(),
                             block.position.toLong(),
-                            block.createdAt.toEpochMilliseconds(),
                             block.updatedAt.toEpochMilliseconds(),
                             block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
                             block.version,
                             block.contentHash ?: ContentHasher.sha256ForContent(block.content),
-                            block.blockType
+                            block.blockType,
+                            block.uuid.value,
                         )
                     }
                 }
             }
+            ftsAutomergeDefault()
+            ftsMerge()
             Unit.right()
         } catch (e: CancellationException) {
+            runCatching { ftsAutomergeDefault() }
             throw e
         } catch (e: Exception) {
+            runCatching { ftsAutomergeDefault() }
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+        }
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun insertBlockRow(block: Block) {
+        queries.insertBlock(
+            block.uuid.value,
+            block.pageUuid.value,
+            block.parentUuid,
+            block.leftUuid,
+            block.content,
+            block.level.toLong(),
+            block.position.toLong(),
+            block.createdAt.toEpochMilliseconds(),
+            block.updatedAt.toEpochMilliseconds(),
+            block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
+            block.version,
+            block.contentHash ?: ContentHasher.sha256ForContent(block.content),
+            block.blockType,
+        )
+    }
+
+    // FTS5 special-command INSERTs cannot be expressed in SQLDelight .sq files (the parser
+    // rejects inserting into a virtual table's config pseudo-column). Execute via raw driver.
+    // driver is null only in unit tests that construct the repo directly without a driver arg.
+    // All three helpers are best-effort: an exception here must never abort saveBlocks —
+    // the worst outcome is that automerge isn't controlled (old behavior), not data loss.
+    private fun ftsAutomergeOff() = runCatching { driver?.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('automerge=0')", 0) }
+    private fun ftsAutomergeDefault() = runCatching { driver?.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('automerge=8')", 0) }
+    private fun ftsMerge() = runCatching { driver?.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('merge=-200')", 0) }
+
+    /** Called once at DB open to restore FTS5 automerge in case a prior session was killed
+     *  between ftsAutomergeOff() and ftsAutomergeDefault(). Setting automerge=8 when it is
+     *  already 8 is a no-op in SQLite FTS5. */
+    fun ftsStartupHeal() {
+        runCatching { driver?.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('automerge=8')", 0) }
+        runCatching { driver?.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('merge=-200')", 0) }
+    }
+
+    override suspend fun walCheckpoint(): Unit = withContext(PlatformDispatcher.DB) {
+        try {
+            queries.pragmaWalCheckpointTruncate()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Non-critical — WAL will be checkpointed automatically on next DB open
         }
     }
 
@@ -1118,6 +1221,7 @@ class SqlDelightBlockRepository(
             // Non-critical — WAL will be checkpointed automatically on next DB open
         }
     }
+
 
     suspend fun evictBlock(uuid: String) { blockCache.remove(uuid) }
 

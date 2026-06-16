@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.45.0](https://github.com/tstapler/stelekit/compare/v0.44.0...v0.45.0) (2026-06-15)
+
+
+### Features
+
+* **perf:** gzip export, queryStats/queryPlan in report, perf indexes ([1812d96](https://github.com/tstapler/stelekit/commit/1812d96c5a0c552d58fc22a934b5b15040499e82))
+* **perf:** track DB read queue wait and queue depth ([19493e9](https://github.com/tstapler/stelekit/commit/19493e93f3f2fbcf9d5208ed8a03e64b58eb38df))
+
+## [0.44.0](https://github.com/tstapler/stelekit/compare/v0.43.0...v0.44.0) (2026-06-14)
+
+
+### Features
+
+* **perf:** FTS5 automerge control, diff-aware saves, batch N+1 fix, WAL checkpoint ([#156](https://github.com/tstapler/stelekit/issues/156)) ([7bd8ebe](https://github.com/tstapler/stelekit/commit/7bd8ebe57872895b69a7e9da8c836fc79aa02c47))
+
+## [0.43.0](https://github.com/tstapler/stelekit/compare/v0.42.0...v0.43.0) (2026-06-14)
+
+
+### Features
+
+* **assets:** asset browser, typed subfolder routing, and ML pipeline ([#153](https://github.com/tstapler/stelekit/issues/153)) ([206fce7](https://github.com/tstapler/stelekit/commit/206fce763bd4836eee731539171d9010361922b5))
+* **tags:** two-tier auto-tag suggestion engine for blocks ([#154](https://github.com/tstapler/stelekit/issues/154)) ([94c7af1](https://github.com/tstapler/stelekit/commit/94c7af123734db2ee6beb3fe47291e07055a19d2))
+
+
+### Bug Fixes
+
+* **android:** detect external file changes when sync tool preserves older timestamps ([65a3a14](https://github.com/tstapler/stelekit/commit/65a3a1471feff45e784b3cdfc1bd6e74f82e88bf))
+
 ## [0.42.0](https://github.com/tstapler/stelekit/compare/v0.41.3...v0.42.0) (2026-06-14)
 
 
