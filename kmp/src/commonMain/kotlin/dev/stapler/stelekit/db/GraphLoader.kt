@@ -698,6 +698,12 @@ class GraphLoader(
                 }
             }
             logger.info("Background indexing complete.")
+            // One controlled FTS merge pass after the full batch, not per-page-save.
+            // saveBlocks intentionally skips ftsMerge to avoid reading a large index on every
+            // navigation; bulk callers compact once here when all inserts are done.
+            writeActor.execute(DatabaseWriteActor.Priority.LOW) {
+                blockRepository.compactFtsIndex()
+            }
         } finally {
             backgroundIndexJob = null
             PerformanceMonitor.endTrace("indexRemainingPages")
