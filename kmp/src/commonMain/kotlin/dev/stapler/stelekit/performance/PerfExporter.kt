@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.performance
 
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import dev.stapler.stelekit.logging.LogManager
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -37,15 +38,17 @@ class PerfExporter(
      * chosen location. Returns the path on success, or null if the user cancelled.
      * Falls back to [export] with the default Downloads directory on platforms that don't
      * support a native picker (iOS, WASM).
+     *
+     * The picker is shown immediately before building the report to avoid perceived lag.
+     * Platforms that have a native picker (Android/JVM) always support gzip, so the
+     * suggested filename uses `.json.gz` unconditionally.
      */
     suspend fun exportWithPicker(): String? {
         val timestamp = formatTimestamp(HistogramWriter.epochMs())
-        val (bytes, isGzip) = withContext(PlatformDispatcher.IO) { buildReportBytes() }
-        val ext = if (isGzip) ".json.gz" else ".json"
-        val mimeType = if (isGzip) "application/gzip" else "application/json"
-        val suggestedName = "stelekit-perf-$timestamp$ext"
-        val pickedPath = fileSystem.pickSaveFileAsync(suggestedName, mimeType)
+        val suggestedName = "stelekit-perf-$timestamp.json.gz"
+        val pickedPath = fileSystem.pickSaveFileAsync(suggestedName, "application/gzip")
         return if (pickedPath != null) {
+            val (bytes, isGzip) = withContext(PlatformDispatcher.IO) { buildReportBytes() }
             val ok = if (isGzip) fileSystem.writeFileBytes(pickedPath, bytes)
                      else fileSystem.writeFile(pickedPath, bytes.decodeToString())
             check(ok) { "Failed to write perf report to $pickedPath" }
@@ -53,6 +56,40 @@ class PerfExporter(
         } else {
             // Platform has no native picker; fall back to the default Downloads directory
             export(directory = null)
+        }
+    }
+
+    /**
+     * Opens the platform-native save-file picker and writes the in-memory log buffer
+     * (up to 1 000 most recent entries from [LogManager]) to a plain-text file.
+     * Returns the path on success, or null if the user cancelled.
+     */
+    suspend fun exportLogsWithPicker(): String? {
+        val timestamp = formatTimestamp(HistogramWriter.epochMs())
+        val suggestedName = "stelekit-logs-$timestamp.txt"
+        val pickedPath = fileSystem.pickSaveFileAsync(suggestedName, "text/plain")
+        val content = buildLogsText()
+        return if (pickedPath != null) {
+            val ok = fileSystem.writeFile(pickedPath, content)
+            check(ok) { "Failed to write logs to $pickedPath" }
+            pickedPath
+        } else {
+            val dir = fileSystem.getDownloadsPath()
+            val path = "$dir/$suggestedName"
+            val ok = fileSystem.writeFile(path, content)
+            check(ok) { "Failed to write logs to $path" }
+            path
+        }
+    }
+
+    private fun buildLogsText(): String {
+        val logs = LogManager.logs.value
+        return logs.joinToString("\n") { entry ->
+            val ts = entry.timestamp.toString().substringAfter("T").substringBefore("Z").take(12)
+            val throwableSuffix = entry.throwable?.let {
+                "\n  ${it::class.simpleName}: ${it.message}"
+            } ?: ""
+            "$ts [${entry.level}] ${entry.tag}: ${entry.message}$throwableSuffix"
         }
     }
 
