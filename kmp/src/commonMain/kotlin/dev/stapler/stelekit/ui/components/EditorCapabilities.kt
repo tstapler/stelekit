@@ -13,9 +13,11 @@ data class EditorCapabilities(
     /**
      * Opens a file picker, copies the chosen file to `<graphRoot>/assets/`, and inserts
      * `![alt](relativePath)` at the cursor of the supplied block UUID.
-     * Null hides the attach-image toolbar button.
+     * Null hides the attach-image toolbar button. Non-nullable parameter enforces that the
+     * toolbar may only fire this callback when a block is actively focused — calling it without
+     * a target block would silently orphan the copied asset with no insertion.
      */
-    val onAttachImage: ((editingBlockUuid: BlockUuid?) -> Unit)? = null,
+    val onAttachImage: ((editingBlockUuid: BlockUuid) -> Unit)? = null,
     /**
      * Handles files drag-and-dropped onto the page area. Each entry is a platform file handle
      * (opaque [Any] in commonMain; a [java.io.File] on JVM). Null disables drop handling.

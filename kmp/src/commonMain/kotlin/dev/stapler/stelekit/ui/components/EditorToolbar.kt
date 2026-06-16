@@ -71,7 +71,10 @@ fun EditorToolbar(
         onRedo = { blockStateManager.redo() },
         onFormat = { action -> blockStateManager.requestFormat(action) },
         onAttachImage = if (capabilities.onAttachImage != null) {
-            { capabilities.onAttachImage.invoke(editingBlockUuid) }
+            {
+                val uuid = editingBlockUuid
+                if (uuid != null) capabilities.onAttachImage.invoke(uuid)
+            }
         } else null,
         onCaptureImage = capabilities.onCaptureImage,
         onLinkPicker = if (searchViewModel != null) {
