@@ -91,6 +91,11 @@ class GraphWriter(
 
     private val logger = Logger("GraphWriter")
     private val saveMutex = Mutex()
+    // Tracks the disk-content hash of the most recently detected conflict per file.
+    // Cleared on a successful write so only the first save after an external change logs
+    // and emits onPreWriteConflict — queued saves for the same conflict are silently aborted.
+    // Safe without synchronization: all savePageBlocks calls are serialized by saveMutex.
+    private val activeConflicts = HashMap<String, Int>()
 
     data class SaveRequest(
         val page: Page,
@@ -404,8 +409,12 @@ class GraphWriter(
             if (checkPreWriteConflict != null && oldContentForSafetyCheck != null
                 && !filePath.endsWith(".md.stek")) {
                 if (checkPreWriteConflict.invoke(filePath, oldContentForSafetyCheck)) {
-                    logger.warn("Pre-write hash mismatch for '${page.name}' — external change detected, write aborted")
-                    onPreWriteConflict?.invoke(filePath, content, oldContentForSafetyCheck)
+                    val diskHash = oldContentForSafetyCheck.hashCode()
+                    if (activeConflicts[filePath] != diskHash) {
+                        activeConflicts[filePath] = diskHash
+                        logger.warn("Pre-write hash mismatch for '${page.name}' — external change detected, write aborted")
+                        onPreWriteConflict?.invoke(filePath, content, oldContentForSafetyCheck)
+                    }
                     return@withContext false
                 }
             }
@@ -531,6 +540,7 @@ class GraphWriter(
                     logger.debug("Saved page to: $filePath")
                 }.transact()
                 succeeded = true
+                activeConflicts.remove(filePath)
             }.onFailure { e ->
                 logger.error("Failed to write file: $filePath", e)
             }

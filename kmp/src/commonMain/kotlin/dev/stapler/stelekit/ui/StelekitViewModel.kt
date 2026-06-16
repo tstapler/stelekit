@@ -977,10 +977,14 @@ class StelekitViewModel(
         )
         if (screen is Screen.PageView) {
             refreshCurrentPage()
-            scope.launch {
-                // Re-read from disk on every navigation so stale in-memory copies are evicted.
-                // Uses the mtime guard internally so this is cheap when nothing changed.
-                graphLoader.loadFullPage(screen.page.uuid.value)
+            // Skip loadFullPage when a pending conflict exists — the DB has the user's edits
+            // and loading from disk would overwrite them before the conflict dialog appears.
+            if (!checkAndShowPendingConflict(screen)) {
+                scope.launch {
+                    // Re-read from disk on every navigation so stale in-memory copies are evicted.
+                    // Uses the mtime guard internally so this is cheap when nothing changed.
+                    graphLoader.loadFullPage(screen.page.uuid.value)
+                }
             }
             // Fire-and-forget visit tracking — does not block navigation
             scope.launch {
@@ -1008,6 +1012,7 @@ class StelekitViewModel(
             )
         }
         updateCommands()
+        checkAndShowPendingConflict(screen)
         return true
     }
 
@@ -1029,6 +1034,7 @@ class StelekitViewModel(
             )
         }
         updateCommands()
+        checkAndShowPendingConflict(screen)
         return true
     }
 
@@ -1231,8 +1237,27 @@ class StelekitViewModel(
                 val state = _uiState.value
                 val editingBlockUuid = state.editingBlockId
                 val currentPage = (state.currentScreen as? Screen.PageView)?.page
-                    ?: return@collect
-                if (currentPage.filePath != event.filePath) return@collect
+                if (currentPage == null || currentPage.filePath != event.filePath) {
+                    // User is not currently viewing this page. Suppress auto-reimport so the
+                    // DB keeps the user's edits, store the disk content, and notify via snackbar.
+                    val existing = state.pendingConflicts[event.filePath]
+                    event.suppress()
+                    if (existing == null || existing.diskContent != event.content) {
+                        val pageName = event.filePath
+                            .substringAfterLast('/').removeSuffix(".md").replace("_", " ")
+                        _uiState.update { it.copy(
+                            pendingConflicts = it.pendingConflicts + (event.filePath to PendingConflict(
+                                filePath = event.filePath,
+                                pageName = pageName,
+                                diskContent = event.content,
+                            ))
+                        )}
+                        if (existing == null) {
+                            sendSnackbar("\"$pageName\" was modified on disk — open it to review")
+                        }
+                    }
+                    return@collect
+                }
 
                 // Evict only this page's hierarchy cache so unrelated pages stay warm.
                 blockStateManager?.cacheEvictPage(currentPage.uuid)
@@ -1294,6 +1319,35 @@ class StelekitViewModel(
                 )}
             }
         }
+    }
+
+    /**
+     * If [screen] is a [Screen.PageView] with a stored [PendingConflict], removes it from
+     * state, builds a [DiskConflict] from current DB blocks, and shows the conflict dialog.
+     * Also skips the normal [GraphLoader.loadFullPage] call so the DB is not overwritten
+     * with the disk content before the user gets a chance to choose.
+     * Returns true if a pending conflict was found (caller should skip loadFullPage).
+     */
+    private fun checkAndShowPendingConflict(screen: Screen): Boolean {
+        if (screen !is Screen.PageView) return false
+        val filePath = screen.page.filePath ?: return false
+        val pending = _uiState.value.pendingConflicts[filePath] ?: return false
+        _uiState.update { it.copy(pendingConflicts = it.pendingConflicts - filePath) }
+        scope.launch {
+            val firstBlock = blockRepository.getBlocksForPage(screen.page.uuid)
+                .first().getOrNull()?.minByOrNull { it.position }
+            _uiState.update { state ->
+                state.copy(diskConflict = DiskConflict(
+                    pageUuid = screen.page.uuid.value,
+                    pageName = screen.page.name,
+                    filePath = filePath,
+                    editingBlockUuid = firstBlock?.uuid?.value ?: "",
+                    localContent = firstBlock?.content ?: "",
+                    diskContent = pending.diskContent,
+                ))
+            }
+        }
+        return true
     }
 
     /**
