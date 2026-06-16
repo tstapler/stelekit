@@ -159,6 +159,7 @@ internal fun ScreenRouter(
                 onOpenAnnotationEditor = { uuid -> viewModel.navigateToAnnotationEditor(uuid) },
                 capabilities = capabilities,
                 tagSuggestionViewModel = tagSuggestionViewModel,
+                conflictFilePaths = appState.pendingConflicts.keys.toSet(),
             )
             is Screen.Flashcards -> {
                 NavigationTracingEffect("Flashcards")
