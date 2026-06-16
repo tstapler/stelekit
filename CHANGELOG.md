@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.46.0](https://github.com/tstapler/stelekit/compare/v0.45.0...v0.46.0) (2026-06-16)
+
+
+### Features
+
+* **journals:** amber warning icon on journal entries with pending disk conflicts ([930143e](https://github.com/tstapler/stelekit/commit/930143e21afcc20eaac4effeb26e007543c1c7de))
+
+
+### Bug Fixes
+
+* background disk conflicts, FTS merge perf, trace export on Android ([a17122b](https://github.com/tstapler/stelekit/commit/a17122b650e0314a9c9dda468d1a3f41983661f9))
+
 ## [0.45.0](https://github.com/tstapler/stelekit/compare/v0.44.0...v0.45.0) (2026-06-15)
 
 
