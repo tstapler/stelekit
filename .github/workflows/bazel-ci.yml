@@ -30,13 +30,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cargo/bin/bazel-cache-proxy
-          key: bcp-${{ runner.os }}-cf9fafd
+          key: bcp-${{ runner.os }}-7806c5f
 
       - name: Install bazel-cache-proxy
         if: steps.bcp-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get install -y --no-install-recommends protobuf-compiler
-          cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev cf9fafd bazel-cache-proxy --locked
+          cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev 7806c5f bazel-cache-proxy --locked
 
       - name: Start bazel-cache-proxy (GHA backend)
         run: |
@@ -104,13 +104,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cargo/bin/bazel-cache-proxy
-          key: bcp-${{ runner.os }}-cf9fafd
+          key: bcp-${{ runner.os }}-7806c5f
 
       - name: Install bazel-cache-proxy
         if: steps.bcp-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get install -y --no-install-recommends protobuf-compiler
-          cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev cf9fafd bazel-cache-proxy --locked
+          cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev 7806c5f bazel-cache-proxy --locked
 
       - name: Start bazel-cache-proxy (GHA backend)
         run: |
@@ -157,13 +157,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cargo/bin/bazel-cache-proxy
-          key: bcp-${{ runner.os }}-cf9fafd
+          key: bcp-${{ runner.os }}-7806c5f
 
       - name: Install bazel-cache-proxy
         if: steps.bcp-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get install -y --no-install-recommends protobuf-compiler
-          cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev cf9fafd bazel-cache-proxy --locked
+          cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev 7806c5f bazel-cache-proxy --locked
 
       - name: Start bazel-cache-proxy (GHA backend)
         run: |
@@ -226,13 +226,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cargo/bin/bazel-cache-proxy
-          key: bcp-${{ runner.os }}-cf9fafd
+          key: bcp-${{ runner.os }}-7806c5f
 
       - name: Install bazel-cache-proxy
         if: steps.bcp-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get install -y --no-install-recommends protobuf-compiler
-          cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev cf9fafd bazel-cache-proxy --locked
+          cargo install --git https://github.com/tstapler/bazel-cache-proxy --rev 7806c5f bazel-cache-proxy --locked
 
       - name: Start bazel-cache-proxy (GHA backend)
         run: |
