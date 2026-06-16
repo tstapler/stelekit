@@ -347,12 +347,17 @@ private class SteleDatabaseImpl(
           |CREATE UNIQUE INDEX IF NOT EXISTS idx_perf_hist_op_bucket
           |    ON perf_histogram_buckets(operation_name, bucket_ms)
           """.trimMargin(), 0).await()
+      driver.execute(null, """
+          |CREATE INDEX IF NOT EXISTS idx_perf_hist_recorded_at
+          |    ON perf_histogram_buckets(recorded_at)
+          """.trimMargin(), 0).await()
       driver.execute(null, "CREATE INDEX idx_operations_session_seq ON operations(session_id, seq)", 0).await()
       driver.execute(null, "CREATE INDEX idx_operations_page ON operations(page_uuid)", 0).await()
       driver.execute(null, "CREATE INDEX idx_operations_entity ON operations(entity_uuid)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS spans_start_epoch_ms_idx ON spans(start_epoch_ms DESC)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS spans_trace_id_idx ON spans(trace_id)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_spans_version_name_duration ON spans(app_version, name, duration_ms DESC)", 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_spans_end_epoch_ms ON spans(end_epoch_ms)", 0).await()
       driver.execute(null, """
           |CREATE INDEX IF NOT EXISTS idx_query_stats_version_ms
           |    ON query_stats(app_version, total_ms DESC)

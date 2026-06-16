@@ -1211,18 +1211,6 @@ class SqlDelightBlockRepository(
         "ancestors" to ancestorsCache.snapshotAndReset(),
     )
 
-    /** Fold WAL frames into the main database file, shrinking the WAL to near-zero. */
-    suspend fun walCheckpoint(): Unit = withContext(PlatformDispatcher.DB) {
-        try {
-            queries.pragmaWalCheckpointTruncate()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            // Non-critical — WAL will be checkpointed automatically on next DB open
-        }
-    }
-
-
     suspend fun evictBlock(uuid: String) { blockCache.remove(uuid) }
 
     suspend fun evictHierarchyForPage(pageUuid: String) {

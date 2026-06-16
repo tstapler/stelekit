@@ -51,6 +51,42 @@ public class SteleDatabaseQueries(
 
   public fun selectBlockByUuid(uuid: String): Query<Blocks> = selectBlockByUuid(uuid, ::Blocks)
 
+  public fun <T : Any> selectBlocksByUuids(uuid: Collection<String>, mapper: (
+    id: Long,
+    uuid: String,
+    page_uuid: String,
+    parent_uuid: String?,
+    left_uuid: String?,
+    content: String,
+    level: Long,
+    position: Long,
+    created_at: Long,
+    updated_at: Long,
+    properties: String?,
+    version: Long,
+    content_hash: String?,
+    block_type: String,
+  ) -> T): Query<T> = SelectBlocksByUuidsQuery(uuid) { cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3),
+      cursor.getString(4),
+      cursor.getString(5)!!,
+      cursor.getLong(6)!!,
+      cursor.getLong(7)!!,
+      cursor.getLong(8)!!,
+      cursor.getLong(9)!!,
+      cursor.getString(10),
+      cursor.getLong(11)!!,
+      cursor.getString(12),
+      cursor.getString(13)!!
+    )
+  }
+
+  public fun selectBlocksByUuids(uuid: Collection<String>): Query<Blocks> = selectBlocksByUuids(uuid, ::Blocks)
+
   public fun existsBlockByUuid(uuid: String): Query<Long> = ExistsBlockByUuidQuery(uuid) { cursor ->
     cursor.getLong(0)!!
   }
@@ -632,42 +668,6 @@ public class SteleDatabaseQueries(
   }
 
   public fun selectBlocksHashByPageUuid(page_uuid: String): Query<SelectBlocksHashByPageUuid> = selectBlocksHashByPageUuid(page_uuid, ::SelectBlocksHashByPageUuid)
-
-  public fun <T : Any> selectBlocksByUuids(uuid: Collection<String>, mapper: (
-    id: Long,
-    uuid: String,
-    page_uuid: String,
-    parent_uuid: String?,
-    left_uuid: String?,
-    content: String,
-    level: Long,
-    position: Long,
-    created_at: Long,
-    updated_at: Long,
-    properties: String?,
-    version: Long,
-    content_hash: String?,
-    block_type: String,
-  ) -> T): Query<T> = SelectBlocksByUuidsQuery(uuid) { cursor ->
-    mapper(
-      cursor.getLong(0)!!,
-      cursor.getString(1)!!,
-      cursor.getString(2)!!,
-      cursor.getString(3),
-      cursor.getString(4),
-      cursor.getString(5)!!,
-      cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
-      cursor.getLong(8)!!,
-      cursor.getLong(9)!!,
-      cursor.getString(10),
-      cursor.getLong(11)!!,
-      cursor.getString(12),
-      cursor.getString(13)!!
-    )
-  }
-
-  public fun selectBlocksByUuids(uuid: Collection<String>): Query<Blocks> = selectBlocksByUuids(uuid, ::Blocks)
 
   public fun <T : Any> selectBlocksByContentHash(content_hash: String?, mapper: (
     id: Long,
@@ -1893,6 +1893,20 @@ public class SteleDatabaseQueries(
   public fun selectAllHistogramOperations(): Query<String> = Query(-11_535_700, arrayOf("perf_histogram_buckets"), driver, "SteleDatabase.sq", "selectAllHistogramOperations", "SELECT DISTINCT operation_name FROM perf_histogram_buckets ORDER BY operation_name") { cursor ->
     cursor.getString(0)!!
   }
+
+  public fun <T : Any> selectAllHistogramBuckets(mapper: (
+    operation_name: String,
+    bucket_ms: Long,
+    count: Long,
+  ) -> T): Query<T> = Query(592_431_369, arrayOf("perf_histogram_buckets"), driver, "SteleDatabase.sq", "selectAllHistogramBuckets", "SELECT operation_name, bucket_ms, count FROM perf_histogram_buckets ORDER BY operation_name, bucket_ms") { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getLong(1)!!,
+      cursor.getLong(2)!!
+    )
+  }
+
+  public fun selectAllHistogramBuckets(): Query<SelectAllHistogramBuckets> = selectAllHistogramBuckets(::SelectAllHistogramBuckets)
 
   public fun selectDebugFlag(key: String): Query<Long> = SelectDebugFlagQuery(key) { cursor ->
     cursor.getLong(0)!!
@@ -3287,6 +3301,50 @@ public class SteleDatabaseQueries(
           bindString(parameterIndex++, block_type)
         }.await()
     notifyQueries(2_142_163_379) { emit ->
+      emit("blocks")
+      emit("blocks_fts")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun updateBlockForSave(
+    page_uuid: String,
+    parent_uuid: String?,
+    left_uuid: String?,
+    content: String,
+    level: Long,
+    position: Long,
+    updated_at: Long,
+    properties: String?,
+    version: Long,
+    content_hash: String?,
+    block_type: String,
+    uuid: String,
+  ): Long {
+    val result = driver.execute(-693_036_349, """
+        |UPDATE blocks
+        |SET page_uuid = ?, parent_uuid = ?, left_uuid = ?, content = ?, level = ?,
+        |    position = ?, updated_at = ?, properties = ?, version = ?, content_hash = ?, block_type = ?
+        |WHERE uuid = ?
+        """.trimMargin(), 12) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, page_uuid)
+          bindString(parameterIndex++, parent_uuid)
+          bindString(parameterIndex++, left_uuid)
+          bindString(parameterIndex++, content)
+          bindLong(parameterIndex++, level)
+          bindLong(parameterIndex++, position)
+          bindLong(parameterIndex++, updated_at)
+          bindString(parameterIndex++, properties)
+          bindLong(parameterIndex++, version)
+          bindString(parameterIndex++, content_hash)
+          bindString(parameterIndex++, block_type)
+          bindString(parameterIndex++, uuid)
+        }.await()
+    notifyQueries(-693_036_349) { emit ->
       emit("blocks")
       emit("blocks_fts")
     }
@@ -4859,6 +4917,31 @@ public class SteleDatabaseQueries(
     override fun toString(): String = "SteleDatabase.sq:selectBlockByUuid"
   }
 
+  private inner class SelectBlocksByUuidsQuery<out T : Any>(
+    public val uuid: Collection<String>,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("blocks", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("blocks", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> {
+      val uuidIndexes = createArguments(count = uuid.size)
+      return driver.executeQuery(null, """SELECT blocks.id, blocks.uuid, blocks.page_uuid, blocks.parent_uuid, blocks.left_uuid, blocks.content, blocks.level, blocks.position, blocks.created_at, blocks.updated_at, blocks.properties, blocks.version, blocks.content_hash, blocks.block_type FROM blocks WHERE uuid IN $uuidIndexes""", mapper, uuid.size) {
+            var parameterIndex = 0
+            uuid.forEach { uuid_ ->
+              bindString(parameterIndex++, uuid_)
+            }
+          }
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectBlocksByUuids"
+  }
+
   private inner class ExistsBlockByUuidQuery<out T : Any>(
     public val uuid: String,
     mapper: (SqlCursor) -> T,
@@ -5250,31 +5333,6 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectBlocksHashByPageUuid"
-  }
-
-  private inner class SelectBlocksByUuidsQuery<out T : Any>(
-    public val uuid: Collection<String>,
-    mapper: (SqlCursor) -> T,
-  ) : Query<T>(mapper) {
-    override fun addListener(listener: Query.Listener) {
-      driver.addListener("blocks", listener = listener)
-    }
-
-    override fun removeListener(listener: Query.Listener) {
-      driver.removeListener("blocks", listener = listener)
-    }
-
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> {
-      val uuidIndexes = createArguments(count = uuid.size)
-      return driver.executeQuery(null, """SELECT blocks.id, blocks.uuid, blocks.page_uuid, blocks.parent_uuid, blocks.left_uuid, blocks.content, blocks.level, blocks.position, blocks.created_at, blocks.updated_at, blocks.properties, blocks.version, blocks.content_hash, blocks.block_type FROM blocks WHERE uuid IN $uuidIndexes""", mapper, uuid.size) {
-            var parameterIndex = 0
-            uuid.forEach { uuid_ ->
-              bindString(parameterIndex++, uuid_)
-            }
-          }
-    }
-
-    override fun toString(): String = "SteleDatabase.sq:selectBlocksByUuids"
   }
 
   private inner class SelectBlocksByContentHashQuery<out T : Any>(
