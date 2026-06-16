@@ -68,14 +68,11 @@ CREATE TABLE block_references (
     FOREIGN KEY (to_block_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_pages_uuid ON pages(uuid);
-CREATE INDEX idx_pages_name ON pages(name);
 CREATE INDEX idx_pages_namespace ON pages(namespace);
-CREATE INDEX idx_blocks_uuid ON blocks(uuid);
-CREATE INDEX idx_blocks_page_uuid ON blocks(page_uuid);
-CREATE INDEX idx_blocks_parent_uuid ON blocks(parent_uuid);
+CREATE INDEX idx_blocks_page_position ON blocks(page_uuid, position);
+CREATE INDEX idx_blocks_parent_position ON blocks(parent_uuid, position);
+CREATE INDEX idx_blocks_page_hash ON blocks(page_uuid, uuid, content_hash);
 CREATE INDEX idx_blocks_left_uuid ON blocks(left_uuid);
-CREATE INDEX idx_blocks_level ON blocks(level);
 CREATE INDEX idx_blocks_content_hash ON blocks(content_hash);
 CREATE INDEX idx_properties_block_uuid ON properties(block_uuid);
 CREATE INDEX idx_properties_key ON properties(key);

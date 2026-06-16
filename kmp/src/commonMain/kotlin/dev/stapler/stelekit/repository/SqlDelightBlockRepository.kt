@@ -1229,11 +1229,19 @@ class SqlDelightBlockRepository(
 
     override suspend fun deleteBlocksForPage(pageUuid: PageUuid): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
+            // Disable FTS5 automerge before bulk delete — mirrors saveBlocks. Without this,
+            // the N blocks_ad triggers can each trigger an automerge pass that scans the full
+            // FTS index, making large page clears take seconds instead of milliseconds.
+            ftsAutomergeOff()
             queries.deleteBlocksByPageUuid(pageUuid.value)
+            ftsAutomergeDefault()
+            ftsMerge()
             Unit.right()
         } catch (e: CancellationException) {
+            runCatching { ftsAutomergeDefault() }
             throw e
         } catch (e: Exception) {
+            runCatching { ftsAutomergeDefault() }
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
@@ -1241,11 +1249,16 @@ class SqlDelightBlockRepository(
     override suspend fun deleteBlocksForPages(pageUuids: List<PageUuid>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         if (pageUuids.isEmpty()) return@withContext Unit.right()
         try {
+            ftsAutomergeOff()
             queries.deleteBlocksByPageUuids(pageUuids.map { it.value })
+            ftsAutomergeDefault()
+            ftsMerge()
             Unit.right()
         } catch (e: CancellationException) {
+            runCatching { ftsAutomergeDefault() }
             throw e
         } catch (e: Exception) {
+            runCatching { ftsAutomergeDefault() }
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }

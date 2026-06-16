@@ -35,6 +35,8 @@ stelekit:
     active: true
     excludes: ['**/jvmMain/**', '**/jvmTest/**', '**/androidMain/**', '**/androidUnitTest/**',
                '**/iosMain/**', '**/buildSrc/**']
+  IndexWithoutAnalyze:
+    active: true
 
 # Compose Multiplatform rules (io.nlopez.compose.rules)
 Compose:

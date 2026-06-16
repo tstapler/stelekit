@@ -371,10 +371,11 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             return try {
                 val ctx = context ?: return false
                 val uri = Uri.parse(path)
-                ctx.contentResolver.openOutputStream(uri, "wt")?.use { stream ->
-                    stream.write(data)
-                    stream.flush()
-                }
+                // Return false (not true) when openOutputStream is null — the provider refused
+                // the write, and the file stays 0 B. Returning true here would let check(ok)
+                // pass and show a success snackbar while the export file is actually empty.
+                val stream = ctx.contentResolver.openOutputStream(uri, "wt") ?: return false
+                stream.use { it.write(data); it.flush() }
                 true
             } catch (e: SecurityException) { Log.w(TAG, "writeFileBytes: permission denied for $path", e); false }
             catch (e: Exception) { Log.w(TAG, "writeFileBytes: error writing to $path", e); false }
@@ -798,9 +799,10 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return try {
             val ctx = context ?: return false
             val uri = Uri.parse(uriString)
-            ctx.contentResolver.openOutputStream(uri, "wt")?.use { stream -> // "wt" = write-truncate
-                stream.bufferedWriter(Charsets.UTF_8).apply { write(content); flush() }
-            }
+            // "wt" = write-truncate. Return false when openOutputStream is null — the provider
+            // refused the write rather than returning a valid stream.
+            val stream = ctx.contentResolver.openOutputStream(uri, "wt") ?: return false
+            stream.use { it.bufferedWriter(Charsets.UTF_8).apply { write(content); flush() } }
             true
         } catch (e: SecurityException) { Log.w(TAG, "contentUriWriteFile: permission denied", e); false }
         catch (e: Exception) { Log.w(TAG, "contentUriWriteFile: error writing to $uriString", e); false }

@@ -69,7 +69,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private val saveFileLauncher = registerForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
+        // "*/*" lets the provider infer MIME type from the file extension. A fixed
+        // "application/json" prevents some Download providers from opening an output
+        // stream for .json.gz (binary) files, causing silent 0-byte exports.
+        ActivityResultContracts.CreateDocument("*/*")
     ) { uri: Uri? ->
         pendingSaveFile?.complete(uri?.toString())
         pendingSaveFile = null
@@ -188,7 +191,7 @@ class MainActivity : ComponentActivity() {
             runOnUiThread { folderPickerLauncher.launch(hintUri) }
             deferred.await()
         }
-        fileSystem.initSaveFilePicker { suggestedName, _ -> // mimeType fixed at "application/json" via CreateDocument constructor
+        fileSystem.initSaveFilePicker { suggestedName, _ -> // MIME type inferred from extension via CreateDocument("*/*")
             val deferred = CompletableDeferred<String?>()
             pendingSaveFile = deferred
             runOnUiThread { saveFileLauncher.launch(suggestedName) }

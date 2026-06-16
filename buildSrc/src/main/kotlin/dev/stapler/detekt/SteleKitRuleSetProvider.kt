@@ -22,6 +22,7 @@ class SteleKitRuleSetProvider : RuleSetProvider {
             UnthemedTextInBackgroundContainerRule(config),
             MustUseTypedLazyItemsRule(config),
             JvmOnlyApiInCommonMainRule(config),
+            IndexWithoutAnalyzeRule(config),
         ),
     )
 }
