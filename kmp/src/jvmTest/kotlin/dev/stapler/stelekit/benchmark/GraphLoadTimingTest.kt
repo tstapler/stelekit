@@ -552,9 +552,9 @@ class GraphLoadTimingTest {
             }.inWholeMilliseconds
 
             println("\n[large-page] Navigation to 150-block page: ${loadMs}ms")
-            assertTrue(loadMs < 5_000,
+            assertTrue(loadMs < 2_000,
                 "Large-page navigation took ${loadMs}ms — regression detected " +
-                "(index idx_blocks_page_uuid_position may be missing; expected < 5000ms)")
+                "(index idx_blocks_page_uuid_position may be missing; expected < 2000ms)")
 
             // Flush and assert blocks:select p99. If the query stats repository is wired,
             // the stat MUST be present — silently passing when stats aren't flushed masks
