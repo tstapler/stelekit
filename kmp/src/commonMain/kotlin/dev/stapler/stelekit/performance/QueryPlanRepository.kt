@@ -8,6 +8,12 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class QueryPlanRow(val id: Int, val parentId: Int, val detail: String)
 
+@Serializable
+data class QueryPlanEntry(
+    val sql: String,
+    val rows: List<QueryPlanRow>,
+)
+
 class QueryPlanRepository(private val driver: SqlDriver) {
 
     fun explain(sql: String): List<QueryPlanRow> {
@@ -37,7 +43,10 @@ class QueryPlanRepository(private val driver: SqlDriver) {
         }
     }
 
-    /** Explains all entries in [sqlSamples] (key = "table:operation", value = sample SQL). */
-    fun explainAll(sqlSamples: Map<String, String>): Map<String, List<QueryPlanRow>> =
-        sqlSamples.mapValues { (_, sql) -> explain(sql) }
+    /**
+     * Explains all entries in [sqlSamples] (key = "table:operation", value = sample SQL).
+     * Returns [QueryPlanEntry] so the UI and export can show the SQL alongside its plan.
+     */
+    fun explainAll(sqlSamples: Map<String, String>): Map<String, QueryPlanEntry> =
+        sqlSamples.mapValues { (_, sql) -> QueryPlanEntry(sql = sql, rows = explain(sql)) }
 }

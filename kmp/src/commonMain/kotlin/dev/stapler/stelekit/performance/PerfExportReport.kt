@@ -64,6 +64,6 @@ data class PerfExportReport(
     val regressions: List<RegressionAlert> = emptyList(),
     /** Top SQL query stats flushed from [QueryStatsCollector] at export time. */
     val queryStats: List<QueryStat> = emptyList(),
-    /** EXPLAIN QUERY PLAN output keyed by "table:operation" from [QueryPlanRepository]. */
-    val queryPlan: Map<String, List<QueryPlanRow>> = emptyMap(),
+    /** EXPLAIN QUERY PLAN output (with the triggering SQL) keyed by "table:operation". */
+    val queryPlan: Map<String, QueryPlanEntry> = emptyMap(),
 )

@@ -30,6 +30,9 @@ class QueryStatsCollector(
 
     private val lock = PlatformLock()
     private val accum = HashMap<String, Accum>()
+    // Permanent SQL sample per key — survives drainNow() clears so the Plans tab always
+    // has SQL to explain, even after the 30 s flush has reset the accumulator.
+    private val persistentSqlSamples = HashMap<String, String>()
 
     data class Accum(
         var calls: Long = 0,
@@ -60,7 +63,10 @@ class QueryStatsCollector(
         val key = "$table:$operation"
         lock.withLock {
             val a = accum.getOrPut(key) { Accum() }
-            if (sql != null && a.sampleSql == null) a.sampleSql = sql
+            if (sql != null) {
+                if (a.sampleSql == null) a.sampleSql = sql
+                if (!persistentSqlSamples.containsKey(key)) persistentSqlSamples[key] = sql
+            }
             a.calls++
             if (isError) a.errors++
             a.totalMs += durationMs
@@ -78,11 +84,13 @@ class QueryStatsCollector(
         }
     }
 
-    /** Returns a snapshot of one sample SQL string per key (table:operation). */
+    /**
+     * Returns a snapshot of one sample SQL string per key (table:operation).
+     * Drawn from the persistent sample map — survives 30 s drain cycles so the
+     * Plans tab always has SQL to explain regardless of when it is opened.
+     */
     fun getSqlSamples(): Map<String, String> = lock.withLock {
-        accum.entries
-            .mapNotNull { (key, a) -> a.sampleSql?.let { key to it } }
-            .toMap()
+        persistentSqlSamples.toMap()
     }
 
     /** Flush accumulated stats to the repository immediately, bypassing the periodic timer. */
