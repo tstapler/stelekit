@@ -137,7 +137,7 @@ class SafChangeDetector(
             Log.d(TAG, "handleFileEvent: dead-inode on ${dir.name} — scheduling re-arm")
             val key = dir.absolutePath
             rearmJobs[key]?.cancel()
-            rearmJobs[key] = activeScope?.launch(Dispatchers.IO) {
+            val rearmJob = activeScope?.launch(Dispatchers.IO) {
                 while (isActive && !stopped && !dir.isDirectory) {
                     delay(REARM_POLL_INTERVAL_MS)
                 }
@@ -149,7 +149,8 @@ class SafChangeDetector(
                     if (!stopped) mainHandler.post { onExternalChange() }
                     Log.d(TAG, "handleFileEvent: re-armed FileObserver for ${dir.name}")
                 }
-            } ?: run { rearmJobs.remove(key); null }
+            }
+            if (rearmJob != null) rearmJobs[key] = rearmJob else rearmJobs.remove(key)
         } else {
             mainHandler.post { onExternalChange() }
         }
