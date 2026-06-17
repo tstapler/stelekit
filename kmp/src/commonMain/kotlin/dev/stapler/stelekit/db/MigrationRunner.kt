@@ -59,6 +59,10 @@ object MigrationRunner {
                 """
             )
         ),
+        // @Suppress("IndexWithoutAnalyze"): idx_blocks_content_hash is a minor change-detection
+        // index; ANALYZE blocks further down in the list (analyze_blocks) refreshes statistics
+        // for all blocks indexes, including this one, before it matters at scale.
+        @Suppress("IndexWithoutAnalyze")
         Migration(
             name = "blocks_content_hash",
             statements = listOf(
@@ -244,6 +248,17 @@ object MigrationRunner {
             )
         ),
         Migration(
+            name = "analyze_blocks",
+            statements = listOf(
+                // Refresh SQLite statistics for the blocks table so the query planner uses
+                // idx_blocks_page_position, idx_blocks_parent_position, and idx_blocks_page_hash
+                // instead of falling back to a full heap scan (SCAN blocks) on large graphs.
+                // QueryPlanAuditTest calls ANALYZE before checking plans; without this migration
+                // production databases lack statistics and the optimizer picks SCAN blocks (~9 s).
+                "ANALYZE blocks",
+            )
+        ),
+        Migration(
             name = "drop_subsumed_blocks_single_column_indexes",
             statements = listOf(
                 // idx_blocks_page_uuid(page_uuid) is fully subsumed by idx_blocks_page_position(page_uuid, position).
@@ -376,6 +391,10 @@ object MigrationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_measurement_annotations_image_uuid ON measurement_annotations(image_uuid)"
             )
         ),
+        // @Suppress("IndexWithoutAnalyze"): idx_pages_unloaded is a small partial index
+        // (only unloaded pages qualify); analyze_pages further down refreshes statistics for
+        // all pages indexes, including this one, before the temporal/favorite indexes land.
+        @Suppress("IndexWithoutAnalyze")
         Migration(
             name = "pages_unloaded_partial_index",
             statements = listOf(
@@ -462,6 +481,62 @@ object MigrationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_spans_end_epoch_ms ON spans(end_epoch_ms)",
             )
         ),
+        Migration(
+            name = "pages_journal_temporal_favorite_indexes",
+            statements = listOf(
+                // Covers selectJournalPages, selectJournalPageByDate, selectJournalPagesByDates
+                "CREATE INDEX IF NOT EXISTS idx_pages_journal ON pages(is_journal, journal_date DESC)",
+                // Covers selectRecentlyUpdatedPages
+                "CREATE INDEX IF NOT EXISTS idx_pages_updated_at ON pages(updated_at DESC)",
+                // Covers selectRecentlyCreatedPages
+                "CREATE INDEX IF NOT EXISTS idx_pages_created_at ON pages(created_at DESC)",
+                // Covers selectFavoritePages
+                "CREATE INDEX IF NOT EXISTS idx_pages_favorite ON pages(name) WHERE is_favorite = 1",
+            )
+        ),
+        Migration(
+            name = "analyze_pages",
+            statements = listOf(
+                // Refresh SQLite statistics for the pages table so the query planner uses the
+                // temporal/favorite/journal composite indexes added above, as well as
+                // idx_pages_unloaded (from pages_unloaded_partial_index). Without ANALYZE the
+                // planner uses heuristics that can choose full heap scans on large graphs.
+                "ANALYZE pages",
+            )
+        ),
+        Migration(
+            name = "image_annotations_imported_at_index",
+            statements = listOf(
+                // Covers selectAllImageAnnotations ORDER BY imported_at_ms DESC
+                "CREATE INDEX IF NOT EXISTS idx_image_annotations_imported_at ON image_annotations(imported_at_ms DESC)",
+            )
+        ),
+        Migration(
+            name = "asset_index_imported_at_index",
+            statements = listOf(
+                // Covers selectAssets ORDER BY imported_at_ms DESC
+                "CREATE INDEX IF NOT EXISTS idx_asset_imported_at ON asset_index(imported_at_ms DESC)",
+            )
+        ),
+        Migration(
+            name = "drop_redundant_and_unused_indexes",
+            statements = listOf(
+                // idx_blocks_uuid duplicates the implicit index created by UNIQUE uuid constraint —
+                // SQLite creates an index for every UNIQUE constraint; the explicit one is dead weight.
+                "DROP INDEX IF EXISTS idx_blocks_uuid",
+                // idx_pages_uuid duplicates the implicit index created by the PRIMARY KEY uuid —
+                // same reason as above.
+                "DROP INDEX IF EXISTS idx_pages_uuid",
+                // idx_pages_name (BINARY collation) is shadowed by the UNIQUE COLLATE NOCASE constraint
+                // index SQLite creates for 'name TEXT NOT NULL UNIQUE COLLATE NOCASE'. Queries on the
+                // name column use NOCASE semantics, so the BINARY index is never selected by the planner.
+                "DROP INDEX IF EXISTS idx_pages_name",
+                // idx_blocks_level has no corresponding WHERE clause in any query — no query in
+                // SteleDatabase.sq or QueryPlanAuditTest filters on the level column alone.
+                // Every block INSERT/UPDATE/DELETE pays the cost of updating this index for nothing.
+                "DROP INDEX IF EXISTS idx_blocks_level",
+            )
+        ),
     )
 
     /**
@@ -475,7 +550,15 @@ object MigrationRunner {
      * (which would leave the schema in an indeterminate state). The correct fix is always
      * to add a new migration entry rather than edit an existing one.
      */
-    suspend fun applyAll(driver: SqlDriver) = applyAll(driver, all)
+    suspend fun applyAll(driver: SqlDriver) {
+        applyAll(driver, all)
+        // Ask SQLite to refresh statistics for any table where row counts have drifted
+        // significantly since the last ANALYZE. PRAGMA optimize is designed to be called
+        // on every database open — it runs targeted ANALYZE only when the planner would
+        // benefit (25%+ change in row count). On large graphs with stale statistics the
+        // planner otherwise falls back to full heap scans (~9 s/query on blocks).
+        driver.execute(null, "PRAGMA optimize", 0).await()
+    }
 
     internal suspend fun applyAll(driver: SqlDriver, migrations: List<Migration>) {
         // Bootstrap the tracking table — must succeed before anything else.

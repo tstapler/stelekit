@@ -436,9 +436,6 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     suspend fun pragmaWalCheckpointTruncate() = queries.pragmaWalCheckpointTruncate()
 
     @DirectSqlWrite
-    suspend fun recomputeAllBacklinkCounts(): Long = queries.recomputeAllBacklinkCounts()
-
-    @DirectSqlWrite
     suspend fun recomputeBacklinkCountForPage(name: String): Long =
         queries.recomputeBacklinkCountForPage(name)
 

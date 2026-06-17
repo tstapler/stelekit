@@ -12,6 +12,8 @@ import dev.stapler.stelekit.cache.LruCache
 import dev.stapler.stelekit.cache.SteleLruCache
 import dev.stapler.stelekit.cache.RepoCacheConfig
 import app.cash.sqldelight.db.SqlDriver
+import dev.stapler.stelekit.db.DirectSqlWrite
+import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
@@ -51,6 +53,11 @@ class SqlDelightBlockRepository(
 
     private val logger = Logger("SqlDelightBlockRepository")
     private val queries = database.steleDatabaseQueries
+    private val restricted = RestrictedDatabaseQueries(queries)
+
+    @OptIn(DirectSqlWrite::class)
+    private suspend fun recomputeBacklinkCount(name: String) =
+        restricted.recomputeBacklinkCountForPage(name)
 
     /** Set after construction by RepositoryFactory. */
     @Volatile var histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
@@ -80,9 +87,6 @@ class SqlDelightBlockRepository(
     private val hierarchyPageIndex = mutableMapOf<String, MutableSet<String>>()
 
     private val hierarchyTtlMs = 120_000L // 2 minutes
-
-    private fun extractWikilinks(content: String): Set<String> =
-        WIKILINK_REGEX.findAll(content).map { it.groupValues[1].trim() }.toHashSet()
 
     override fun getBlockByUuid(uuid: BlockUuid): Flow<Either<DomainError, Block?>> =
         queries.selectBlockByUuid(uuid.value)
@@ -436,7 +440,7 @@ class SqlDelightBlockRepository(
                 block.contentHash ?: ContentHasher.sha256ForContent(block.content),
                 block.blockType
             )
-            extractWikilinks(block.content).forEach { queries.recomputeBacklinkCountForPage(it) }
+            for (name in extractWikilinks(block.content)) recomputeBacklinkCount(name)
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -453,7 +457,7 @@ class SqlDelightBlockRepository(
                 queries.updateBlockContent(content, Clock.System.now().toEpochMilliseconds(), ContentHasher.sha256ForContent(content), blockUuid.value)
                 blockCache.remove(blockUuid.value)
                 val changedPages = extractWikilinks(oldContent) + extractWikilinks(content)
-                changedPages.forEach { queries.recomputeBacklinkCountForPage(it) }
+                for (name in changedPages) recomputeBacklinkCount(name)
                 Unit.right()
             } catch (e: CancellationException) {
                 throw e
@@ -475,11 +479,11 @@ class SqlDelightBlockRepository(
                     blockCache.remove(uuid.value)
                 }
                 // oldPageName: SET 0 — all its refs were just rewritten away, no scan needed.
-                // newPageName: recompute via LIKE scan — arithmetic read is unreliable because renamePage
-                // already renamed the row, so selectPageBacklinkCount(newName) would return OldName's stale count.
                 queries.setPageBacklinkCount(0L, oldPageName)
-                queries.recomputeBacklinkCountForPage(newPageName)
             }
+            // newPageName: recompute via LIKE scan outside the transaction — arithmetic read is
+            // unreliable because renamePage already renamed the row.
+            recomputeBacklinkCount(newPageName)
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -537,7 +541,7 @@ class SqlDelightBlockRepository(
                     }
                     queries.deleteBlockByUuid(block.uuid)
                 }
-                wikilinkPages.forEach { queries.recomputeBacklinkCountForPage(it) }
+                for (name in wikilinkPages) recomputeBacklinkCount(name)
             }
             Unit.right()
         } catch (e: CancellationException) {
@@ -594,8 +598,8 @@ class SqlDelightBlockRepository(
                         }
                     }
                 }
-                wikilinkPages.forEach { queries.recomputeBacklinkCountForPage(it) }
             }
+            for (name in wikilinkPages) recomputeBacklinkCount(name)
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -1233,11 +1237,19 @@ class SqlDelightBlockRepository(
 
     override suspend fun deleteBlocksForPage(pageUuid: PageUuid): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
+            // Disable FTS5 automerge before bulk delete — mirrors saveBlocks. Without this,
+            // the N blocks_ad triggers can each trigger an automerge pass that scans the full
+            // FTS index, making large page clears take seconds instead of milliseconds.
+            ftsAutomergeOff()
             queries.deleteBlocksByPageUuid(pageUuid.value)
+            ftsAutomergeDefault()
+            ftsMerge()
             Unit.right()
         } catch (e: CancellationException) {
+            runCatching { ftsAutomergeDefault() }
             throw e
         } catch (e: Exception) {
+            runCatching { ftsAutomergeDefault() }
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
@@ -1245,11 +1257,16 @@ class SqlDelightBlockRepository(
     override suspend fun deleteBlocksForPages(pageUuids: List<PageUuid>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         if (pageUuids.isEmpty()) return@withContext Unit.right()
         try {
+            ftsAutomergeOff()
             queries.deleteBlocksByPageUuids(pageUuids.map { it.value })
+            ftsAutomergeDefault()
+            ftsMerge()
             Unit.right()
         } catch (e: CancellationException) {
+            runCatching { ftsAutomergeDefault() }
             throw e
         } catch (e: Exception) {
+            runCatching { ftsAutomergeDefault() }
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
@@ -1269,8 +1286,6 @@ class SqlDelightBlockRepository(
     }
 
     companion object {
-        private val WIKILINK_REGEX = Regex("""\[\[([^\]]+)\]\]""")
-
         /**
          * Maximum blocks per SQLite transaction in [saveBlocks]. Limits write-lock hold time
          * to ~WRITE_CHUNK_SIZE * (insert_cost + FTS5_trigger_cost) per transaction.

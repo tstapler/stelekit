@@ -1306,9 +1306,7 @@ private fun GraphContent(
                                                         val safeAlt = attachment.displayName.replace("]", "\\]")
                                                         val safePath = attachment.relativePath.replace(")", "\\)")
                                                         val markdown = "![${safeAlt}](${safePath})"
-                                                        if (editingBlockUuid != null) {
-                                                            blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
-                                                        }
+                                                        blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
                                                     }
                                                 )
                                             }

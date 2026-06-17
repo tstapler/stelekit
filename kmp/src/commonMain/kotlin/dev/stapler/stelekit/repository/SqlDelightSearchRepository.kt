@@ -24,6 +24,7 @@ import dev.stapler.stelekit.search.FtsQueryBuilder
 import dev.stapler.stelekit.util.UuidGenerator
 import app.cash.sqldelight.db.SqlDriver
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -63,6 +64,7 @@ class SqlDelightSearchRepository(
     companion object {
         /** Page-title hits are multiplied by this factor before ranking against block hits. */
         const val PAGE_BOOST = 5.0
+        private const val BACKLINK_BATCH_SIZE = 500L
         /** Results on a page directly linked to/from the current page get this multiplier. */
         const val GRAPH_BOOST = 3.0
         /** Recency half-life in days: a result edited this many days ago gets half the recency bonus. */
@@ -530,27 +532,28 @@ class SqlDelightSearchRepository(
         }
 
     /**
-     * Rebuilds both FTS indexes using the FTS5 'rebuild' command.
-     * O(N) in row count; call from a non-blocking context.
+     * Rebuilds both FTS indexes using the FTS5 'rebuild' command and recomputes all backlink
+     * counts in a single O(pages + blocks) pass — no correlated subquery per page.
      * Requires [driver] to be passed at construction time; returns Right(Unit) if driver is absent.
      */
     override suspend fun rebuildFts(): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {
             try {
                 val sqlDriver = driver ?: return@withContext Unit.right()
+                // Read phase: single pass over all pages + blocks to accumulate counts.
+                // Done outside the write actor to keep the write lock duration short.
+                val counts = computeBacklinkCountsFromBlocks()
                 if (writeActor != null) {
                     writeActor.execute(priority = DatabaseWriteActor.Priority.LOW) {
                         sqlDriver.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('rebuild')", 0)
                         sqlDriver.execute(null, "INSERT INTO pages_fts(pages_fts) VALUES('rebuild')", 0)
-                        @OptIn(DirectSqlWrite::class)
-                        restricted.recomputeAllBacklinkCounts()
+                        applyBacklinkCounts(counts)
                         Unit.right()
                     }
                 } else {
                     sqlDriver.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('rebuild')", 0)
                     sqlDriver.execute(null, "INSERT INTO pages_fts(pages_fts) VALUES('rebuild')", 0)
-                    @OptIn(DirectSqlWrite::class)
-                    restricted.recomputeAllBacklinkCounts()
+                    applyBacklinkCounts(counts)
                     Unit.right()
                 }
             } catch (e: CancellationException) {
@@ -559,6 +562,49 @@ class SqlDelightSearchRepository(
                 DomainError.DatabaseError.WriteFailed("FTS rebuild failed: ${e.message ?: "unknown"}").left()
             }
         }
+
+    // Reads all page names then scans all blocks via keyset pagination, accumulating wikilink
+    // hit counts. Keyset (uuid > ?) avoids O(B²) OFFSET cost on large graphs.
+    // Yields between batches so long rebuilds don't starve other coroutines.
+    // TOCTOU note: the read phase runs outside the write actor to keep write-lock duration short.
+    // A write that lands between read and apply will make counts briefly stale — this is
+    // acceptable because rebuildFts is a background maintenance operation.
+    private suspend fun computeBacklinkCountsFromBlocks(): Map<String, Long> =
+        withContext(PlatformDispatcher.DB) {
+            val pageRows = queries.selectPageNameEntries().executeAsList()
+            val lowerToCanonical = pageRows.associate { it.name.lowercase() to it.name }
+            val counts = HashMap<String, Long>(lowerToCanonical.size)
+            lowerToCanonical.keys.forEach { counts[it] = 0L }
+            var lastUuid = ""
+            while (true) {
+                val batch = queries.selectAllBlocksPaginatedAfterUuid(lastUuid, BACKLINK_BATCH_SIZE).executeAsList()
+                if (batch.isEmpty()) break
+                for (block in batch) {
+                    for (link in extractWikilinks(block.content)) {
+                        val key = link.lowercase()
+                        if (counts.containsKey(key)) counts[key] = counts.getValue(key) + 1L
+                    }
+                }
+                lastUuid = batch.last().uuid
+                yield()
+            }
+            lowerToCanonical.entries.associate { (lower, canonical) -> canonical to (counts[lower] ?: 0L) }
+        }
+
+    // Writes backlink counts in chunked transactions on PlatformDispatcher.DB to limit
+    // write-lock hold time. Chunked to BACKLINK_BATCH_SIZE rows per transaction.
+    @OptIn(DirectSqlWrite::class)
+    private suspend fun applyBacklinkCounts(counts: Map<String, Long>) {
+        withContext(PlatformDispatcher.DB) {
+            for (chunk in counts.entries.chunked(BACKLINK_BATCH_SIZE.toInt())) {
+                restricted.transaction {
+                    for ((name, count) in chunk) {
+                        restricted.setPageBacklinkCount(name, count)
+                    }
+                }
+            }
+        }
+    }
 
     /**
      * Runs the FTS5 integrity check. Returns Right(Unit) if healthy.
