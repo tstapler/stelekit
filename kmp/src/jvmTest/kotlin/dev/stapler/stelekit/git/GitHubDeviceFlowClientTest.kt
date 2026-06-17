@@ -21,6 +21,7 @@ import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import java.io.IOException
+import dev.stapler.stelekit.ui.screens.git.OAuthDialogState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -282,5 +283,22 @@ class GitHubDeviceFlowClientTest {
         val username = client.fetchUsername("gho_bad_token")
 
         assertEquals(null, username)
+    }
+
+    // -------------------------------------------------------------------------
+    // OAuthDialogState.Polling — state model
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun `OAuthDialogState_Polling_carries_code_and_expiry_fields`() {
+        val state = OAuthDialogState.Polling(
+            userCode = "ABCD-1234",
+            verificationUri = "https://github.com/login/device",
+            expiresAt = 9_999_999L,
+        )
+        assertIs<OAuthDialogState.Polling>(state)
+        assertEquals("ABCD-1234", state.userCode)
+        assertEquals("https://github.com/login/device", state.verificationUri)
+        assertEquals(9_999_999L, state.expiresAt)
     }
 }

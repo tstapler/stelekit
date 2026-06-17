@@ -47,7 +47,11 @@ sealed class OAuthDialogState {
         val verificationUri: String,
         val expiresAt: Long,
     ) : OAuthDialogState()
-    data object Polling : OAuthDialogState()
+    data class Polling(
+        val userCode: String,
+        val verificationUri: String,
+        val expiresAt: Long,
+    ) : OAuthDialogState()
     data class Success(val username: String) : OAuthDialogState()
     data class Error(val message: String) : OAuthDialogState()
 }
@@ -113,19 +117,38 @@ fun GitHubOAuthDialog(
                     }
 
                     is OAuthDialogState.Polling -> {
+                        Text("Open github.com/login/device and enter this code:", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            text = state.userCode,
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        CountdownText(expiresAt = state.expiresAt)
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick = { onCopyCode(state.userCode) },
+                                modifier = Modifier.weight(1f),
+                            ) { Text("Copy code") }
+                            Button(
+                                onClick = { onOpenBrowser(state.verificationUri) },
+                                modifier = Modifier.weight(1f),
+                            ) { Text("Open GitHub") }
+                        }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                            Text("Waiting for GitHub authorization…")
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Text(
+                                "Waiting for authorization…",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        Text(
-                            "Once you approve in the browser, this screen will update automatically.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
 
                     is OAuthDialogState.Success -> {
