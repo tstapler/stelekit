@@ -707,5 +707,7 @@ jobs:
       force_demo_rebuild: true
     permissions:
       contents: read
+      pages: write
+      id-token: write
       actions: read
     secrets: inherit
