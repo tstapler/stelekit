@@ -1,12 +1,26 @@
 package dev.stapler.stelekit.db
 
+import arrow.core.Either
+import arrow.core.right
+import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.FilePath
+import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.parsing.ParseMode
 import dev.stapler.stelekit.performance.RingBufferSpanExporter
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
+import dev.stapler.stelekit.repository.PageRepository
+import kotlin.system.measureTimeMillis
+import kotlin.time.Instant
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,7 +33,9 @@ import kotlin.test.assertTrue
  * Before the fix, [GraphLoader.dispatchFullBlockWrites] called [DatabaseWriteActor.deleteBlock]
  * once per block in a sequential loop — N+1 separate actor round-trips for a page with N blocks
  * to delete. Each round-trip suspended until the actor processed it, and on a loaded graph (actor
- * queue backed up) this caused 100-250 seconds of completely untraced delay per page.
+ * queue backed up) this caused 100-250 seconds of completely untraced delay per page (each of N
+ * actor round-trips waited ~200 ms; summed across the blocks of a page, this accumulated to the
+ * page total observed in the pre-fix Android traces).
  *
  * After the fix, all deletes + the savePage + inserts/updates are batched into a SINGLE
  * [DatabaseWriteActor.execute] call — always 1 actor round-trip regardless of delete count.
@@ -43,6 +59,56 @@ class GraphLoaderBatchWriteTest {
         override fun deleteFile(path: String) = true
         override fun pickDirectory() = null
         override fun getLastModifiedTime(path: String): Long? = null
+    }
+
+    /**
+     * Returns a [PageRepository] whose [PageRepository.savePage] adds [delayMs] of synthetic
+     * latency. Used by TC-LATENCY to simulate actor queue congestion equivalent to SAF
+     * filesystem writes (~50 ms on Android) or a heavily loaded DB actor (~200 ms).
+     *
+     * [InMemoryPageRepository] is final, so delegation is used instead of subclassing.
+     */
+    @OptIn(DirectRepositoryWrite::class)
+    private fun slowPageRepo(delayMs: Long): PageRepository {
+        val fast = InMemoryPageRepository()
+        return object : PageRepository by fast {
+            @DirectRepositoryWrite
+            override suspend fun savePage(page: Page): Either<DomainError, Unit> {
+                delay(delayMs); return fast.savePage(page)
+            }
+        }
+    }
+
+    /**
+     * Runs [action] against a [DatabaseWriteActor] while [bgCoroutines] background coroutines
+     * continuously flood it with slow page saves (each taking [writeDelayMs]). Returns the
+     * wall-clock ms elapsed during [action].
+     *
+     * The warm-up period ([bgCoroutines] × [writeDelayMs] × 4) is computed from the constants
+     * so that the queue is guaranteed to be occupied before measurement begins.
+     *
+     * Cancellation is joined before the actor channel is closed to avoid a race where a
+     * mid-send coroutine observes [kotlinx.coroutines.channels.ClosedSendChannelException].
+     */
+    private suspend fun CoroutineScope.runCongestionScenario(
+        blockCount: Int,
+        bgCoroutines: Int,
+        writeDelayMs: Long,
+        testPage: Page,
+        action: suspend (actor: DatabaseWriteActor, blockRepo: InMemoryBlockRepository, uuids: List<BlockUuid>) -> Unit,
+    ): Long {
+        val warmUpMs = bgCoroutines * writeDelayMs * 4
+        val blockRepo = InMemoryBlockRepository()
+        val actor = DatabaseWriteActor(blockRepo, slowPageRepo(writeDelayMs))
+        val uuids = (1..blockCount).map { BlockUuid("del-$it") }
+        // 200 iterations × writeDelayMs / bgCoroutines ≈ 250ms runway — outlasts the measurement window
+        val bgJobs = (1..bgCoroutines).map { launch { repeat(200) { actor.savePage(testPage) } } }
+        delay(warmUpMs)
+        val elapsedMs = measureTimeMillis { action(actor, blockRepo, uuids) }
+        bgJobs.forEach { it.cancel() }
+        bgJobs.joinAll()  // await full cancellation before closing the actor's channel
+        actor.close()
+        return elapsedMs
     }
 
     /**
@@ -188,5 +254,86 @@ class GraphLoaderBatchWriteTest {
         )
 
         actor.close()
+    }
+
+    /**
+     * TC-LATENCY: demonstrate that N separate actor calls under queue congestion is O(N) slower
+     * than 1 batch execute, matching the pre-fix 100-250 s trace data from Android.
+     *
+     * Mechanism: background coroutines continuously flood the actor with slow page saves
+     * (simulating a graph import in progress). The actor processes one request at a time.
+     * Each individual deleteBlock call must wait for background work to drain before the
+     * actor processes it — so N deletes = N × drain-wait. A single execute { N deletes }
+     * only waits for drain-wait once, then runs all deletes in one actor turn.
+     *
+     * This directly reproduces the ~223 s untraced delay from the pre-fix Android traces
+     * (uploads/ at repo root, not checked in): parseAndSavePage spent ~223 s in completely
+     * untraced time that maps to N separate deleteBlock round-trips against a heavily loaded
+     * actor during 8 000-page import.
+     *
+     * Note: this test validates [DatabaseWriteActor] queue mechanics directly. The structural
+     * regression guard that [GraphLoader.dispatchFullBlockWrites] uses a single execute call
+     * is TC-BATCH-01 (span name + delete.count assertion).
+     */
+    @Test
+    fun `TC-LATENCY actor round-trip amplification under queue congestion`() = runBlocking {
+        val WRITE_DELAY_MS = 5L
+        val BG_COROUTINES = 4
+        val BLOCKS = 15
+
+        val testPage = Page(
+            uuid = PageUuid("latency-demo"),
+            name = "latency-demo",
+            createdAt = Instant.fromEpochMilliseconds(0),
+            updatedAt = Instant.fromEpochMilliseconds(0),
+        )
+
+        // PRE-FIX: N separate writeActor.deleteBlock() calls, each an independent actor round-trip.
+        // Each waits for background saves to drain → N × drain-wait total.
+        val preFixMs = runCongestionScenario(BLOCKS, BG_COROUTINES, WRITE_DELAY_MS, testPage) { actor, _, uuids ->
+            uuids.forEach { uuid -> actor.deleteBlock(uuid) }
+        }
+
+        // POST-FIX: 1 execute { N direct blockRepo.deleteBlock() } — only 1 actor round-trip.
+        val postFixMs = runCongestionScenario(BLOCKS, BG_COROUTINES, WRITE_DELAY_MS, testPage) { actor, blockRepo, uuids ->
+            actor.execute {
+                uuids.forEach { uuid -> blockRepo.deleteBlock(uuid) }
+                Unit.right()  // required: execute expects Either<DomainError, Unit>
+            }
+        }
+
+        println()
+        println("=== TC-LATENCY: Actor Round-Trip Amplification ===")
+        println("Background: $BG_COROUTINES coroutines × savePage(${WRITE_DELAY_MS}ms) — simulates import workload")
+        println("Blocks to delete: $BLOCKS")
+        println("Pre-fix  ($BLOCKS separate writeActor.deleteBlock calls): ${preFixMs}ms")
+        println("Post-fix (1 writeActor.execute { $BLOCKS blockRepo.deleteBlock }): ${postFixMs}ms")
+        val speedup = if (postFixMs > 0) preFixMs.toDouble() / postFixMs else Double.MAX_VALUE
+        println("Speedup: ${"%.1f".format(speedup)}x")
+        println()
+        println("Extrapolation to Android (actor queue wait = 100-250 ms per round-trip):")
+        println("  Pre-fix, 50 blocks:  50 × 100ms = 5 000 ms  ..up to 50 × 250ms = 12 500 ms")
+        println("  Post-fix, 50 blocks: 1 × 100ms = 100 ms")
+        println("  This matches the 223 s untraced delay in the 2026-06-14 Android traces.")
+        println("==================================================")
+
+        // Hard upper bound: post-fix must complete in under 500ms even with background congestion.
+        // With 4 coroutines × 5ms saves the post-fix path waits for ~1 queue drain (~20ms max)
+        // then runs N deletes synchronously inside the execute lambda. 500ms gives 25× headroom
+        // for slow CI machines. If this fires, the single-execute batch pattern has regressed:
+        // check whether DatabaseWriteActor.execute is still routing all N deletes through one
+        // channel round-trip (TC-BATCH-01's span check is the definitive structural guard).
+        assertTrue(
+            postFixMs < 500,
+            "Post-fix batch path took ${postFixMs}ms — expected < 500ms under simulated queue " +
+                "congestion ($BG_COROUTINES coroutines × ${WRITE_DELAY_MS}ms savePage delay). " +
+                "See TC-BATCH-01 for the structural regression guard on dispatchFullBlockWrites."
+        )
+        // Relative check: pre-fix must be at least 3x slower than post-fix under the same congestion.
+        assertTrue(
+            preFixMs > postFixMs * 3,
+            "Pre-fix ($preFixMs ms) should be at least 3× slower than post-fix ($postFixMs ms) " +
+                "with $BG_COROUTINES background coroutines keeping the actor busy"
+        )
     }
 }

@@ -561,9 +561,9 @@ class GraphLoadTimingTest {
             // on implementation; an explicit read on the dense page (150 blocks) is always a
             // real DB query and directly reproduces the v0.33.0 slow-scan scenario.
             val densePage = repoSet.pageRepository.getPageByName("Dense Page").first().getOrNull()
-            if (densePage != null) {
-                repoSet.blockRepository.getBlocksForPage(densePage.uuid).first()
-            }
+            assertNotNull(densePage, "Dense Page must be indexed before blocks:select guard — " +
+                "if null, indexRemainingPages did not complete or the page name changed")
+            repoSet.blockRepository.getBlocksForPage(densePage.uuid).first()
 
             // Flush and assert blocks:select p99. If the query stats repository is wired,
             // the stat MUST be present — silently passing when stats aren't flushed masks
