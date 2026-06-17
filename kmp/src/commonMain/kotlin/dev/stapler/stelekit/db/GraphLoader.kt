@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -201,7 +202,7 @@ class GraphLoader(
         unsavedPageFilePathsJob = null
         if (uuids != null) {
             unsavedPageFilePathsJob = parallelScope.launch {
-                uuids.collect { uuidSet ->
+                uuids.collectLatest { uuidSet ->
                     unsavedPageFilePaths = uuidSet.mapNotNull { uuid ->
                         pageRepository.getPageByUuid(PageUuid(uuid)).first().getOrNull()?.filePath?.let { FilePath(it) }
                     }.toSet()

@@ -161,10 +161,16 @@ class ShadowFlushActorTest {
         queue.enqueue(safPath)
 
         val flushedPaths = mutableListOf<String>()
-        val actor = ShadowFlushActor(fs, cache, queue, onFlushed = { flushedPaths.add(it) })
+        val preFlushPaths = mutableListOf<String>()
+        val actor = ShadowFlushActor(
+            fs, cache, queue,
+            onPreFlush = { preFlushPaths.add(it) },
+            onFlushed = { flushedPaths.add(it) },
+        )
         actor.flush()
 
         assertTrue(flushedPaths.isEmpty(), "onFlushed must NOT be called when shadow is missing")
+        assertTrue(preFlushPaths.isEmpty(), "onPreFlush must NOT be called when shadow is missing — sentinel would be stranded forever")
         assertTrue(queue.isEmpty(), "Queue must dequeue the entry even when shadow is missing (no retry)")
     }
 

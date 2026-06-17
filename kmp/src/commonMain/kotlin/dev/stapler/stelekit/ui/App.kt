@@ -536,8 +536,8 @@ private fun GraphContent(
             repos.writeActor,
             onFileWritten = graphLoader::markFileWrittenByUs,
             sidecarManager = sidecarManager,
-            onPreWrite = { filePath -> graphLoader.fileRegistry.preMarkPendingWrite(dev.stapler.stelekit.model.FilePath(filePath)) },
-            onClearPendingWrite = { filePath -> graphLoader.fileRegistry.clearPendingWrite(dev.stapler.stelekit.model.FilePath(filePath)) },
+            onPreWrite = { filePath -> graphLoader.preMarkFileWrite(filePath) },
+            onClearPendingWrite = { filePath -> graphLoader.clearFilePendingWrite(filePath) },
             checkPreWriteConflict = { filePath, diskContent ->
                 val lastKnown = graphLoader.fileRegistry.getContentHash(dev.stapler.stelekit.model.FilePath(filePath))
                 lastKnown != null && diskContent.hashCode() != lastKnown

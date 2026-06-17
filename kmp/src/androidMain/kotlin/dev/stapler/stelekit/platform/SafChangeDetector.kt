@@ -20,6 +20,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Detects external changes to a SAF-backed graph folder.
@@ -53,10 +54,17 @@ class SafChangeDetector(
     private var pollingJob: Job? = null
     private val fileObservers = Collections.synchronizedList(mutableListOf<FileObserver>())
     private var lifecycleObserver: DefaultLifecycleObserver? = null
-    private var activeScope: CoroutineScope? = null
+    @Volatile private var activeScope: CoroutineScope? = null
+    @Volatile private var stopped = false
+
+    /** Keyed by dir.absolutePath; cancels any prior re-arm job before launching a new one. */
+    private val rearmJobs = ConcurrentHashMap<String, Job>()
 
     companion object {
         private const val TAG = "SafChangeDetector"
+
+        // 2 s: short enough to catch sync-tool directory recreates within a reasonable window,
+        // long enough not to spin if the directory is transiently absent during an atomic rename.
         private const val REARM_POLL_INTERVAL_MS = 2_000L
     }
 
@@ -127,17 +135,21 @@ class SafChangeDetector(
             self.stopWatching()
             fileObservers.remove(self)
             Log.d(TAG, "handleFileEvent: dead-inode on ${dir.name} — scheduling re-arm")
-            activeScope?.launch(Dispatchers.IO) {
-                while (isActive && !dir.isDirectory) {
+            val key = dir.absolutePath
+            rearmJobs[key]?.cancel()
+            rearmJobs[key] = activeScope?.launch(Dispatchers.IO) {
+                while (isActive && !stopped && !dir.isDirectory) {
                     delay(REARM_POLL_INTERVAL_MS)
                 }
-                if (dir.isDirectory) {
-                    addObserverFor(dir, mask, mainHandler)
-                    // Directory is back — notify so missed changes are picked up.
-                    mainHandler.post { onExternalChange() }
+                rearmJobs.remove(key)
+                if (!stopped && dir.isDirectory) {
+                    synchronized(fileObservers) {
+                        if (!stopped) addObserverFor(dir, mask, mainHandler)
+                    }
+                    if (!stopped) mainHandler.post { onExternalChange() }
                     Log.d(TAG, "handleFileEvent: re-armed FileObserver for ${dir.name}")
                 }
-            }
+            } ?: run { rearmJobs.remove(key); null }
         } else {
             mainHandler.post { onExternalChange() }
         }
@@ -152,6 +164,9 @@ class SafChangeDetector(
         // file changes within subdirectories. SAF document IDs for ExternalStorageProvider
         // follow the pattern "{volumeId}:{relativePath}", so subdirectory doc IDs are
         // "$treeDocId/pages" and "$treeDocId/journals".
+        // Note: this assumes ExternalStorageProvider's "{volumeId}:{relativePath}" document ID format.
+        // Other SAF providers (Google Drive, OEM file managers) use opaque IDs; those providers
+        // degrade to the 30-second polling fallback for subdirectory change detection.
         val subdirDocIds = listOf("$treeDocId/pages", "$treeDocId/journals")
         for (docId in subdirDocIds) {
             val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
@@ -188,6 +203,9 @@ class SafChangeDetector(
     }
 
     fun stop() {
+        stopped = true
+        rearmJobs.values.forEach { it.cancel() }
+        rearmJobs.clear()
         activeScope = null
         synchronized(fileObservers) {
             fileObservers.forEach { it.stopWatching() }

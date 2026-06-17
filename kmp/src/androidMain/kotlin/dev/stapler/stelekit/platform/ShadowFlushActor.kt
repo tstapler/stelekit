@@ -42,6 +42,8 @@ internal class ShadowFlushActor(
 
     /** Flush a single page: read from shadow, write to SAF, dequeue on success. */
     private suspend fun flushPage(safPath: String) {
+        var writeStarted = false
+        var writeSucceeded = false
         try {
             val relativePath = safPath
                 .removePrefix("saf://")
@@ -61,9 +63,11 @@ internal class ShadowFlushActor(
             // path during the write window. Replaced by onFlushed on success; cleared by
             // onFlushFailed on failure to avoid permanently suppressing external-change detection.
             onPreFlush?.invoke(safPath)
+            writeStarted = true
 
             val ok = fileSystem.writeFile(safPath, content)
             if (ok) {
+                writeSucceeded = true
                 queue.dequeue(safPath)
                 // Stamp shadow mtime with the post-flush SAF mtime so the shadow is not
                 // incorrectly deleted by invalidateStale on the next startup. Without this,
@@ -83,11 +87,15 @@ internal class ShadowFlushActor(
                 Log.w(TAG, "flushPage: SAF write failed for $relativePath — will retry")
             }
         } catch (e: CancellationException) {
+            if (writeStarted && !writeSucceeded) {
+                try { onFlushFailed?.invoke(safPath) } catch (_: Exception) {}
+            }
             throw e
         } catch (e: Exception) {
+            if (writeStarted && !writeSucceeded) {
+                try { onFlushFailed?.invoke(safPath) } catch (_: Exception) {}
+            }
             Log.e(TAG, "flushPage: unexpected error for $safPath", e)
-            // Best-effort sentinel cleanup — if we pre-marked but then threw, clear the guard.
-            try { onFlushFailed?.invoke(safPath) } catch (_: Exception) {}
         }
     }
 }

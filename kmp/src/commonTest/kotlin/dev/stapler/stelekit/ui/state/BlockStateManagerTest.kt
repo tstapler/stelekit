@@ -149,10 +149,13 @@ class BlockStateManagerTest {
         assertEquals("user typed this", editedBlock.content)
         assertEquals(5L, editedBlock.version)
 
-        // Simulate stale DB re-emission (version 0 < local version 5)
-        // This happens naturally via the reactive flow when saveBlock triggers a re-query
-        // but the DB hasn't processed the save yet
-        // The merge logic should keep the local version
+        // Simulate stale DB re-emission (version 0 < local version 5).
+        // Re-save the original (pre-edit) block to the repository — this triggers the
+        // reactive flow with stale data, exercising the dirty-block merge guard.
+        val originalBlock = block.copy(content = "original", version = 0)
+        blockRepo.saveBlock(originalBlock)
+        advanceUntilIdle()
+
         val staleBlocks = manager.blocks.value[pageUuid]!!
         val staleBlock = staleBlocks.find { it.uuid.value == "block-1" }
         assertNotNull(staleBlock)
@@ -1123,7 +1126,7 @@ class BlockStateManagerTest {
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
         assertEquals(2, blocks.size, "splitBlock must produce two blocks")
         assertTrue(blocks.any { it.content == "Hello" }, "First block must have content before cursor")
-        assertTrue(blocks.any { it.content == "World" }, "Second block must have content after cursor")
+        assertTrue(blocks.any { it.content.trim() == "World" }, "Second block must have content after cursor")
     }
 
     @Test

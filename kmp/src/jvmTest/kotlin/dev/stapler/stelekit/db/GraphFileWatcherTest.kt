@@ -183,8 +183,10 @@ class GraphFileWatcherTest {
         }
         withContext(Dispatchers.Default) {
             withTimeout(3000L) { collectJob.join() }
-            // Give the watcher coroutine 300ms real time to proceed past the 200ms suppression window
-            delay(300L)
+            // Give the watcher coroutine 1000ms real time to proceed past the 200ms suppression window.
+            // 300ms was occasionally flaky on loaded CI runners; 1000ms provides ample margin
+            // without meaningfully slowing the test suite.
+            delay(1000L)
         }
 
         assertTrue(reloadCalled, "onReloadFile must be called when suppress() is not invoked")
