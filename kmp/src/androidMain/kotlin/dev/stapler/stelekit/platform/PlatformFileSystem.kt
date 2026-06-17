@@ -646,6 +646,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     }
 
     private var onFlushComplete: (suspend (String) -> Unit)? = null
+    private var onFlushPreWrite: (suspend (String) -> Unit)? = null
+    private var onFlushFailed: (suspend (String) -> Unit)? = null
 
     /**
      * Registers a callback invoked after each successful write-behind SAF flush.
@@ -653,8 +655,26 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
      * FileRegistry records the post-flush SAF mtime and suppresses the subsequent poll event
      * (critical for encrypted .md.stek files where the content-hash guard is disabled).
      */
-    fun setOnFlushComplete(callback: (suspend (String) -> Unit)?) {
+    override fun setOnFlushComplete(callback: (suspend (String) -> Unit)?) {
         onFlushComplete = callback
+    }
+
+    /**
+     * Registers a callback invoked before each write-behind SAF write begins.
+     * Used to call [dev.stapler.stelekit.db.GraphLoader.preMarkFileWrite] to set the
+     * Long.MAX_VALUE sentinel, closing the race window for encrypted .md.stek files.
+     */
+    override fun setOnFlushPreWrite(callback: (suspend (String) -> Unit)?) {
+        onFlushPreWrite = callback
+    }
+
+    /**
+     * Registers a callback invoked when a write-behind SAF write fails.
+     * Used to call [dev.stapler.stelekit.db.GraphLoader.clearFilePendingWrite] to remove
+     * the Long.MAX_VALUE sentinel so the file is not permanently suppressed.
+     */
+    override fun setOnFlushFailed(callback: (suspend (String) -> Unit)?) {
+        onFlushFailed = callback
     }
 
     override fun markDirty(path: String, content: String): Boolean {
@@ -669,7 +689,12 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     override suspend fun flushPendingWrites() {
         val queue = writeBehindQueue ?: return
         val cache = shadowCache ?: return
-        ShadowFlushActor(this, cache, queue, onFlushed = onFlushComplete).flush()
+        ShadowFlushActor(
+            this, cache, queue,
+            onPreFlush = onFlushPreWrite,
+            onFlushed = onFlushComplete,
+            onFlushFailed = onFlushFailed,
+        ).flush()
     }
 
     override suspend fun invalidateStaleShadow(graphPath: String) {

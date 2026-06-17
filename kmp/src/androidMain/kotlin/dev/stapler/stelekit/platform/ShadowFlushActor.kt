@@ -7,13 +7,16 @@ import kotlinx.coroutines.withContext
 
 /**
  * Drains the write-behind dirty queue to SAF in the background.
- * For each dirty page: reads content from shadow, writes to SAF via [fileSystem.writeFile],
- * dequeues on success, stamps the shadow mtime, and calls [onFlushed] so the FileRegistry
- * can record the post-flush SAF mtime and suppress the subsequent watcher poll event.
  *
- * [onFlushed] is required for encrypted graphs (.md.stek): those files skip the content-hash
- * guard in FileRegistry, so without the mtime update the watcher emits a spurious own-write
- * event after the flush completes and the SAF mtime advances.
+ * For each dirty page:
+ * 1. Calls [onPreFlush] — sets Long.MAX_VALUE sentinel in FileRegistry so any concurrent
+ *    detectChanges poll skips this path during the write window (closes the mtime race for
+ *    .md.stek encrypted files where the content-hash guard is disabled).
+ * 2. Writes content from shadow to SAF via [fileSystem.writeFile].
+ * 3. On success: dequeues, stamps shadow mtime, calls [onFlushed] so FileRegistry records
+ *    the post-flush SAF mtime and replaces the sentinel.
+ * 4. On failure: calls [onFlushFailed] to remove the sentinel so the file is not permanently
+ *    suppressed from external-change detection.
  *
  * Lifecycle: instantiate and call [flush] directly — no long-lived scope is created.
  */
@@ -21,7 +24,9 @@ internal class ShadowFlushActor(
     private val fileSystem: FileSystem,
     private val shadowCache: ShadowFileCache,
     private val queue: WriteBehindQueue,
+    private val onPreFlush: (suspend (safPath: String) -> Unit)? = null,
     private val onFlushed: (suspend (safPath: String) -> Unit)? = null,
+    private val onFlushFailed: (suspend (safPath: String) -> Unit)? = null,
 ) {
     companion object {
         private const val TAG = "ShadowFlushActor"
@@ -51,6 +56,12 @@ internal class ShadowFlushActor(
             val content = try { shadowFile.readText() } catch (e: Exception) {
                 Log.w(TAG, "flushPage: failed to read shadow for $relativePath", e); return
             }
+
+            // Pre-mark before the SAF write so any concurrent detectChanges poll skips this
+            // path during the write window. Replaced by onFlushed on success; cleared by
+            // onFlushFailed on failure to avoid permanently suppressing external-change detection.
+            onPreFlush?.invoke(safPath)
+
             val ok = fileSystem.writeFile(safPath, content)
             if (ok) {
                 queue.dequeue(safPath)
@@ -63,16 +74,20 @@ internal class ShadowFlushActor(
                 }
                 // Notify FileRegistry of the post-flush SAF mtime so the next poll cycle
                 // does not emit a spurious own-write event (critical for .md.stek files
-                // where the content-hash guard is disabled).
+                // where the content-hash guard is disabled). Also replaces the MAX_VALUE sentinel.
                 onFlushed?.invoke(safPath)
                 Log.d(TAG, "flushPage: flushed $relativePath to SAF")
             } else {
+                // Remove the sentinel so the file is not permanently suppressed.
+                onFlushFailed?.invoke(safPath)
                 Log.w(TAG, "flushPage: SAF write failed for $relativePath — will retry")
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "flushPage: unexpected error for $safPath", e)
+            // Best-effort sentinel cleanup — if we pre-marked but then threw, clear the guard.
+            try { onFlushFailed?.invoke(safPath) } catch (_: Exception) {}
         }
     }
 }

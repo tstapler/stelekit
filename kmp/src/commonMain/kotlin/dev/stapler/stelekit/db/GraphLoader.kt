@@ -367,6 +367,24 @@ class GraphLoader(
     }
 
     /**
+     * Called before a write-behind SAF flush begins. Sets the [Long.MAX_VALUE] sentinel in
+     * [FileRegistry] so that any concurrent [FileRegistry.detectChanges] poll skips this path
+     * during the write window. Paired with [clearFilePendingWrite] on failure or replaced by
+     * [markFileWrittenByUs] on success.
+     */
+    suspend fun preMarkFileWrite(filePath: String) {
+        fileRegistry.preMarkPendingWrite(FilePath(filePath))
+    }
+
+    /**
+     * Called when a write-behind SAF flush fails after [preMarkFileWrite] was called.
+     * Removes the [Long.MAX_VALUE] sentinel so the file is not permanently suppressed.
+     */
+    suspend fun clearFilePendingWrite(filePath: String) {
+        fileRegistry.clearPendingWrite(FilePath(filePath))
+    }
+
+    /**
      * Emits a synthetic external-file-change event for [filePath] with [content] as the
      * on-disk version. Called by the pre-write conflict check to surface a conflict
      * immediately when GraphWriter detects a hash mismatch before writing.

@@ -100,6 +100,23 @@ interface FileSystem {
      */
     fun setOnFlushComplete(callback: (suspend (String) -> Unit)?) {}
 
+    /**
+     * Registers a callback invoked immediately before each write-behind SAF write begins.
+     * Used to call [dev.stapler.stelekit.db.GraphLoader.preMarkFileWrite] so that FileRegistry
+     * sets the Long.MAX_VALUE sentinel, closing the race window where a concurrent
+     * detectChanges poll emits a spurious event between writeFile() and onFlushed().
+     * No-op on platforms without write-behind.
+     */
+    fun setOnFlushPreWrite(callback: (suspend (String) -> Unit)?) {}
+
+    /**
+     * Registers a callback invoked when a write-behind SAF write fails after [setOnFlushPreWrite].
+     * Used to call [dev.stapler.stelekit.db.GraphLoader.clearFilePendingWrite] to remove the
+     * Long.MAX_VALUE sentinel so the file is not permanently suppressed.
+     * No-op on platforms without write-behind.
+     */
+    fun setOnFlushFailed(callback: (suspend (String) -> Unit)?) {}
+
     /** Updates the shadow copy after a SAF write. No-op on non-SAF file systems. */
     fun updateShadow(path: String, content: String) { /* no-op */ }
 

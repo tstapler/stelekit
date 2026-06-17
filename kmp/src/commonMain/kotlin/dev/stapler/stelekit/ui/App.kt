@@ -519,10 +519,16 @@ private fun GraphContent(
             spanRepository = repos.spanRepository,
         ).also { it.onBulkImportComplete = repos.onBulkImportComplete }
     }
-    // Wire write-behind flush callback so FileRegistry.markWrittenByUs is called after
-    // each SAF flush — prevents spurious watcher events on encrypted (.md.stek) files
-    // where the content-hash guard is disabled.
-    remember(graphLoader) { fileSystem.setOnFlushComplete(graphLoader::markFileWrittenByUs) }
+    // Wire write-behind flush callbacks so FileRegistry correctly tracks SAF write windows.
+    // - onFlushPreWrite: sets Long.MAX_VALUE sentinel before write, closing the mtime race
+    //   window where a concurrent detectChanges poll emits a spurious event for .md.stek files.
+    // - onFlushComplete: replaces sentinel with post-flush mtime after successful write.
+    // - onFlushFailed: removes sentinel when write fails so the file is not permanently suppressed.
+    remember(graphLoader) {
+        fileSystem.setOnFlushPreWrite(graphLoader::preMarkFileWrite)
+        fileSystem.setOnFlushComplete(graphLoader::markFileWrittenByUs)
+        fileSystem.setOnFlushFailed(graphLoader::clearFilePendingWrite)
+    }
 
     val graphWriter = remember {
         GraphWriter(

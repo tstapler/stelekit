@@ -19,6 +19,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
+import java.util.Collections
 
 /**
  * Detects external changes to a SAF-backed graph folder.
@@ -28,6 +29,8 @@ import java.io.File
  *    [FileObserver] instances backed by inotify, one each for the `pages/` and
  *    `journals/` subdirectories — fires within milliseconds. FileObserver is not
  *    recursive, so watching the graph root alone misses file changes in subdirs.
+ *    On DELETE_SELF or MOVE_SELF (dead-inode events), the observer is torn down and
+ *    a 2-second poll re-arms a fresh observer when the directory reappears.
  * 2. Otherwise: ContentObserver registered on the children URIs of the `pages/` and
  *    `journals/` document nodes (not the tree root) + 30-second polling fallback for
  *    providers that don't deliver ContentObserver reliably. Registering on the root
@@ -44,17 +47,22 @@ class SafChangeDetector(
     private val onExternalChange: () -> Unit,
     private val realGraphPath: String? = null,
 ) {
-    private val contentObservers = mutableListOf<ContentObserver>()
+    // Synchronized lists: onEvent() callbacks arrive on kernel inotify threads;
+    // start() and stop() run on the main thread.
+    private val contentObservers = Collections.synchronizedList(mutableListOf<ContentObserver>())
     private var pollingJob: Job? = null
-    private val fileObservers = mutableListOf<FileObserver>()
+    private val fileObservers = Collections.synchronizedList(mutableListOf<FileObserver>())
     private var lifecycleObserver: DefaultLifecycleObserver? = null
+    private var activeScope: CoroutineScope? = null
 
     companion object {
         private const val TAG = "SafChangeDetector"
+        private const val REARM_POLL_INTERVAL_MS = 2_000L
     }
 
     @Suppress("MagicNumber")
     fun start(scope: CoroutineScope) {
+        activeScope = scope
         if (realGraphPath != null) {
             startFileObservers(realGraphPath)
         } else {
@@ -66,7 +74,8 @@ class SafChangeDetector(
     @Suppress("MagicNumber")
     private fun startFileObservers(graphPath: String) {
         val mask = FileObserver.CREATE or FileObserver.DELETE or FileObserver.MODIFY or
-            FileObserver.MOVED_FROM or FileObserver.MOVED_TO
+            FileObserver.MOVED_FROM or FileObserver.MOVED_TO or
+            FileObserver.DELETE_SELF or FileObserver.MOVE_SELF
         val mainHandler = Handler(Looper.getMainLooper())
 
         // Watch pages/ and journals/ explicitly — FileObserver wraps a single inotify
@@ -75,24 +84,63 @@ class SafChangeDetector(
             .filter { it.isDirectory }
 
         for (dir in dirsToWatch) {
-            val observer = if (Build.VERSION.SDK_INT >= 29) {
-                object : FileObserver(dir, mask) {
-                    override fun onEvent(event: Int, path: String?) {
-                        mainHandler.post { onExternalChange() }
-                    }
-                }
-            } else {
-                @Suppress("DEPRECATION")
-                object : FileObserver(dir.absolutePath, mask) {
-                    override fun onEvent(event: Int, path: String?) {
-                        mainHandler.post { onExternalChange() }
-                    }
-                }
-            }
-            observer.startWatching()
-            fileObservers.add(observer)
+            addObserverFor(dir, mask, mainHandler)
         }
         Log.d(TAG, "startFileObservers: watching ${dirsToWatch.size} subdirs under $graphPath")
+    }
+
+    /**
+     * Creates and starts a [FileObserver] for [dir], adding it to [fileObservers].
+     * On DELETE_SELF or MOVE_SELF, tears the observer down and schedules re-arm via [activeScope].
+     */
+    @Suppress("MagicNumber")
+    private fun addObserverFor(dir: File, mask: Int, mainHandler: Handler) {
+        val observer = if (Build.VERSION.SDK_INT >= 29) {
+            object : FileObserver(dir, mask) {
+                override fun onEvent(event: Int, path: String?) {
+                    handleFileEvent(event, dir, mask, mainHandler, this)
+                }
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            object : FileObserver(dir.absolutePath, mask) {
+                override fun onEvent(event: Int, path: String?) {
+                    handleFileEvent(event, dir, mask, mainHandler, this)
+                }
+            }
+        }
+        observer.startWatching()
+        fileObservers.add(observer)
+    }
+
+    private fun handleFileEvent(
+        event: Int,
+        dir: File,
+        mask: Int,
+        mainHandler: Handler,
+        self: FileObserver,
+    ) {
+        val deadInode = (event and FileObserver.DELETE_SELF != 0) or (event and FileObserver.MOVE_SELF != 0)
+        if (deadInode) {
+            // The watched directory inode is gone. The observer is now deaf.
+            // Tear it down and re-arm once the directory reappears.
+            self.stopWatching()
+            fileObservers.remove(self)
+            Log.d(TAG, "handleFileEvent: dead-inode on ${dir.name} — scheduling re-arm")
+            activeScope?.launch(Dispatchers.IO) {
+                while (isActive && !dir.isDirectory) {
+                    delay(REARM_POLL_INTERVAL_MS)
+                }
+                if (dir.isDirectory) {
+                    addObserverFor(dir, mask, mainHandler)
+                    // Directory is back — notify so missed changes are picked up.
+                    mainHandler.post { onExternalChange() }
+                    Log.d(TAG, "handleFileEvent: re-armed FileObserver for ${dir.name}")
+                }
+            }
+        } else {
+            mainHandler.post { onExternalChange() }
+        }
     }
 
     private fun startContentObserversAndPoller(scope: CoroutineScope) {
@@ -140,10 +188,15 @@ class SafChangeDetector(
     }
 
     fun stop() {
-        fileObservers.forEach { it.stopWatching() }
-        fileObservers.clear()
-        contentObservers.forEach { context.contentResolver.unregisterContentObserver(it) }
-        contentObservers.clear()
+        activeScope = null
+        synchronized(fileObservers) {
+            fileObservers.forEach { it.stopWatching() }
+            fileObservers.clear()
+        }
+        synchronized(contentObservers) {
+            contentObservers.forEach { context.contentResolver.unregisterContentObserver(it) }
+            contentObservers.clear()
+        }
         pollingJob?.cancel()
         pollingJob = null
         lifecycleObserver?.let { obs ->
