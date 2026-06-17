@@ -93,51 +93,23 @@ fun GitHubOAuthDialog(
                     }
 
                     is OAuthDialogState.ShowCode -> {
-                        Text("Open github.com/login/device and enter this code:", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            text = state.userCode,
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = MaterialTheme.colorScheme.primary,
+                        CodeDisplayContent(
+                            userCode = state.userCode,
+                            verificationUri = state.verificationUri,
+                            expiresAt = state.expiresAt,
+                            onCopyCode = onCopyCode,
+                            onOpenBrowser = onOpenBrowser,
                         )
-                        CountdownText(expiresAt = state.expiresAt)
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            OutlinedButton(
-                                onClick = { onCopyCode(state.userCode) },
-                                modifier = Modifier.weight(1f),
-                            ) { Text("Copy code") }
-                            Button(
-                                onClick = { onOpenBrowser(state.verificationUri) },
-                                modifier = Modifier.weight(1f),
-                            ) { Text("Open GitHub") }
-                        }
                     }
 
                     is OAuthDialogState.Polling -> {
-                        Text("Open github.com/login/device and enter this code:", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            text = state.userCode,
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = MaterialTheme.colorScheme.primary,
+                        CodeDisplayContent(
+                            userCode = state.userCode,
+                            verificationUri = state.verificationUri,
+                            expiresAt = state.expiresAt,
+                            onCopyCode = onCopyCode,
+                            onOpenBrowser = onOpenBrowser,
                         )
-                        CountdownText(expiresAt = state.expiresAt)
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            OutlinedButton(
-                                onClick = { onCopyCode(state.userCode) },
-                                modifier = Modifier.weight(1f),
-                            ) { Text("Copy code") }
-                            Button(
-                                onClick = { onOpenBrowser(state.verificationUri) },
-                                modifier = Modifier.weight(1f),
-                            ) { Text("Open GitHub") }
-                        }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -204,6 +176,37 @@ fun GitHubOAuthDialog(
             }
         },
     )
+}
+
+@Composable
+private fun CodeDisplayContent(
+    userCode: String,
+    verificationUri: String,
+    expiresAt: Long,
+    onCopyCode: (String) -> Unit,
+    onOpenBrowser: (String) -> Unit,
+) {
+    Text("Open github.com/login/device and enter this code:", style = MaterialTheme.typography.bodyMedium)
+    Text(
+        text = userCode,
+        style = MaterialTheme.typography.headlineMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    CountdownText(expiresAt = expiresAt)
+    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedButton(
+            onClick = { onCopyCode(userCode) },
+            modifier = Modifier.weight(1f),
+        ) { Text("Copy code") }
+        Button(
+            onClick = { onOpenBrowser(verificationUri) },
+            modifier = Modifier.weight(1f),
+        ) { Text("Open GitHub") }
+    }
 }
 
 @Composable
