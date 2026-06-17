@@ -349,6 +349,7 @@ class StelekitViewModel(
 
     init {
         blockStateManager?.let { graphLoader.setActivePageUuids(it.activePageUuids) }
+        blockStateManager?.let { graphLoader.setUnsavedPageUuids(it.dirtyPageUuids) }
 
         updateCommands()
         observeSyncState()

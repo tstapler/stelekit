@@ -519,6 +519,11 @@ private fun GraphContent(
             spanRepository = repos.spanRepository,
         ).also { it.onBulkImportComplete = repos.onBulkImportComplete }
     }
+    // Wire write-behind flush callback so FileRegistry.markWrittenByUs is called after
+    // each SAF flush — prevents spurious watcher events on encrypted (.md.stek) files
+    // where the content-hash guard is disabled.
+    remember(graphLoader) { fileSystem.setOnFlushComplete(graphLoader::markFileWrittenByUs) }
+
     val graphWriter = remember {
         GraphWriter(
             fileSystem,

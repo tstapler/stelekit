@@ -165,6 +165,17 @@ class GraphLoader(
     /** Job for the activePageFilePaths collector. Cancelled and replaced by each [setActivePageUuids] call. */
     private var activePageFilePathsJob: Job? = null
 
+    /**
+     * Derived set of file paths for pages with unsaved block edits. Populated from
+     * [setUnsavedPageUuids]. The watcher guards only this set from auto-reload — pages
+     * that are open but not being edited (e.g. the journals page being viewed) are excluded
+     * and will be reloaded when an external change arrives.
+     */
+    @Volatile private var unsavedPageFilePaths: Set<FilePath> = emptySet()
+
+    /** Job for the unsavedPageFilePaths collector. */
+    private var unsavedPageFilePathsJob: Job? = null
+
     override fun setActivePageUuids(uuids: StateFlow<Set<String>>?) {
         activePageUuids = uuids
         // Cancel any existing collector before starting a new one to prevent coroutine leaks
@@ -182,6 +193,22 @@ class GraphLoader(
             }
         } else {
             activePageFilePaths = emptySet()
+        }
+    }
+
+    override fun setUnsavedPageUuids(uuids: StateFlow<Set<String>>?) {
+        unsavedPageFilePathsJob?.cancel()
+        unsavedPageFilePathsJob = null
+        if (uuids != null) {
+            unsavedPageFilePathsJob = parallelScope.launch {
+                uuids.collect { uuidSet ->
+                    unsavedPageFilePaths = uuidSet.mapNotNull { uuid ->
+                        pageRepository.getPageByUuid(PageUuid(uuid)).first().getOrNull()?.filePath?.let { FilePath(it) }
+                    }.toSet()
+                }
+            }
+        } else {
+            unsavedPageFilePaths = emptySet()
         }
     }
 
@@ -305,9 +332,9 @@ class GraphLoader(
         // Suspend lambda: called directly from checkDirectoryForChanges (already suspend) to
         // guarantee dirty flag is set before onReloadFile is called — no ordering race possible.
         onDirtyFile = { filePath -> addDirty(FilePath(filePath)) },
-        // Lambda returning the current set of file paths for actively-edited pages.
-        // Resolved by GraphLoader (which has PageRepository access); watcher never imports it.
-        activePageFilePaths = { activePageFilePaths.map { it.value }.toSet() },
+        // Guard only pages with unsaved block edits — not all open pages. Open-but-unedited
+        // pages (e.g. the journals page being viewed) must still be reloaded on external change.
+        activePageFilePaths = { unsavedPageFilePaths.map { it.value }.toSet() },
     )
 
     // Tracks the in-flight background indexing job so it can be cancelled under memory pressure.

@@ -1,31 +1,28 @@
 package dev.stapler.stelekit.platform
 
 import android.util.Log
-import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withContext
 
 /**
  * Drains the write-behind dirty queue to SAF in the background.
  * For each dirty page: reads content from shadow, writes to SAF via [fileSystem.writeFile],
- * and dequeues on success. Failed flushes are retried on next [flush] call.
+ * dequeues on success, stamps the shadow mtime, and calls [onFlushed] so the FileRegistry
+ * can record the post-flush SAF mtime and suppress the subsequent watcher poll event.
  *
- * Lifecycle: call [flush] to drain immediately (e.g. on ProcessLifecycle.ON_STOP);
- * call [stop] to cancel background work.
+ * [onFlushed] is required for encrypted graphs (.md.stek): those files skip the content-hash
+ * guard in FileRegistry, so without the mtime update the watcher emits a spurious own-write
+ * event after the flush completes and the SAF mtime advances.
+ *
+ * Lifecycle: instantiate and call [flush] directly — no long-lived scope is created.
  */
 internal class ShadowFlushActor(
     private val fileSystem: FileSystem,
     private val shadowCache: ShadowFileCache,
     private val queue: WriteBehindQueue,
+    private val onFlushed: (suspend (safPath: String) -> Unit)? = null,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var flushJob: Job? = null
-
     companion object {
         private const val TAG = "ShadowFlushActor"
     }
@@ -39,7 +36,7 @@ internal class ShadowFlushActor(
     }
 
     /** Flush a single page: read from shadow, write to SAF, dequeue on success. */
-    private fun flushPage(safPath: String) {
+    private suspend fun flushPage(safPath: String) {
         try {
             val relativePath = safPath
                 .removePrefix("saf://")
@@ -64,6 +61,10 @@ internal class ShadowFlushActor(
                 fileSystem.getLastModifiedTime(safPath)?.let { mtime ->
                     shadowCache.stampMtime(relativePath, mtime)
                 }
+                // Notify FileRegistry of the post-flush SAF mtime so the next poll cycle
+                // does not emit a spurious own-write event (critical for .md.stek files
+                // where the content-hash guard is disabled).
+                onFlushed?.invoke(safPath)
                 Log.d(TAG, "flushPage: flushed $relativePath to SAF")
             } else {
                 Log.w(TAG, "flushPage: SAF write failed for $relativePath — will retry")
@@ -73,10 +74,5 @@ internal class ShadowFlushActor(
         } catch (e: Exception) {
             Log.e(TAG, "flushPage: unexpected error for $safPath", e)
         }
-    }
-
-    fun stop() {
-        flushJob?.cancel()
-        scope.cancel()
     }
 }

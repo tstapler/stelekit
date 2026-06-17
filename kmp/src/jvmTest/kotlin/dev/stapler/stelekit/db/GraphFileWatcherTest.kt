@@ -294,14 +294,15 @@ class GraphFileWatcherTest {
         watcher.close()
     }
 
-    // ─── TC-04: Active-page guard skips onReloadFile ──────────────────────────
+    // ─── TC-04: Unsaved-edits guard skips onReloadFile ───────────────────────
 
     /**
-     * TC-04: When a changed file is in activePageFilePaths, onReloadFile must NOT be called,
-     * but onDirtyFile MUST be called and externalFileChanges MUST be emitted.
+     * TC-04: When a changed file is in activePageFilePaths (pages with UNSAVED EDITS),
+     * onReloadFile must NOT be called, but onDirtyFile MUST be called and
+     * externalFileChanges MUST be emitted so the conflict dialog can fire.
      */
     @Test
-    fun `TC-04 checkDirectoryForChanges skips onReloadFile for actively edited pages`() = runTest {
+    fun `TC-04 checkDirectoryForChanges skips onReloadFile for pages with unsaved edits`() = runTest {
         val fileSystem = WatcherFakeFileSystem()
         val graphPath = "/graph"
         val filePath = "$graphPath/pages/active.md"
@@ -314,7 +315,7 @@ class GraphFileWatcherTest {
             fileSystem = fileSystem,
             onReloadFile = { _, _ -> reloadCount++ },
             onDirtyFile = { dirtyCount++ },
-            activePageFilePaths = { setOf(filePath) },
+            activePageFilePaths = { setOf(filePath) }, // simulates a page with dirty blocks
         )
         val watcher = fixture.watcher
 
@@ -327,20 +328,20 @@ class GraphFileWatcherTest {
         // Give the watcher time to fire (50ms poll) + suppression window (200ms)
         withContext(Dispatchers.Default) { delay(600L) }
 
-        assertEquals(0, reloadCount, "onReloadFile must NOT be called for an actively-edited page")
-        assertEquals(1, dirtyCount, "onDirtyFile MUST be called even for actively-edited pages")
+        assertEquals(0, reloadCount, "onReloadFile must NOT be called for a page with unsaved edits")
+        assertEquals(1, dirtyCount, "onDirtyFile MUST be called even for pages with unsaved edits")
 
         watcher.close()
     }
 
-    // ─── TC-05: externalFileChanges IS emitted for active pages ───────────────
+    // ─── TC-05: externalFileChanges IS emitted for dirty pages ───────────────
 
     /**
-     * TC-05: Even for actively-edited pages, the externalFileChanges SharedFlow must emit
+     * TC-05: Even for pages with unsaved edits, the externalFileChanges SharedFlow must emit
      * (conflict dialog must still fire). The onReloadFile skip happens AFTER the emit.
      */
     @Test
-    fun `TC-05 checkDirectoryForChanges emits externalFileChanges even for active pages`() = runTest {
+    fun `TC-05 checkDirectoryForChanges emits externalFileChanges even for pages with unsaved edits`() = runTest {
         val fileSystem = WatcherFakeFileSystem()
         val graphPath = "/graph"
         val filePath = "$graphPath/pages/active.md"
@@ -371,8 +372,82 @@ class GraphFileWatcherTest {
             delay(300L) // let suppression window pass
         }
 
-        assertEquals(1, eventCount, "externalFileChanges must be emitted for actively-edited pages (conflict dialog)")
-        assertEquals(0, reloadCount, "onReloadFile must NOT be called for an actively-edited page")
+        assertEquals(1, eventCount, "externalFileChanges must be emitted for pages with unsaved edits (conflict dialog)")
+        assertEquals(0, reloadCount, "onReloadFile must NOT be called for a page with unsaved edits")
+
+        watcher.close()
+    }
+
+    // ─── TC-06: Open-but-clean pages ARE reloaded (journals refresh) ──────────
+
+    /**
+     * TC-06: A page that is open (being viewed) but has NO unsaved edits must be auto-reloaded
+     * when an external change arrives. This is the critical path for journals-page live refresh:
+     * the journal page is open but not being edited, so it should pick up external changes
+     * on the next poll cycle without requiring the user to navigate away and back.
+     */
+    @Test
+    fun `TC-06 open page with no unsaved edits IS reloaded on external change`() = runTest {
+        val fileSystem = WatcherFakeFileSystem()
+        val graphPath = "/graph"
+        val journalFilePath = "$graphPath/journals/2024_01_15.md"
+        fileSystem.addFile(journalFilePath, "- Morning notes\n", 1000L)
+
+        var reloadCount = 0
+
+        val fixture = buildWatcher(
+            fileSystem = fileSystem,
+            onReloadFile = { _, _ -> reloadCount++ },
+            // activePageFilePaths = {} returns empty set — journal is open but has no dirty blocks
+            activePageFilePaths = { emptySet() },
+        )
+        val watcher = fixture.watcher
+
+        watcher.startWatching(graphPath)
+        fixture.registry.scanDirectory("$graphPath/journals")
+
+        // External tool writes to the journal while user is viewing it (no edits)
+        fileSystem.addFile(journalFilePath, "- Morning notes\n- Added externally\n", 2000L)
+
+        // Give the watcher time to fire (50ms poll) + suppression window (200ms)
+        withContext(Dispatchers.Default) { delay(600L) }
+
+        assertEquals(1, reloadCount, "Journal page with no unsaved edits must be reloaded on external change")
+
+        watcher.close()
+    }
+
+    /**
+     * TC-07: If a journal page has unsaved edits AND an external change arrives, the reload
+     * must be skipped (dirty flag + conflict dialog, same as pages/).
+     */
+    @Test
+    fun `TC-07 journal page with unsaved edits is NOT auto-reloaded on external change`() = runTest {
+        val fileSystem = WatcherFakeFileSystem()
+        val graphPath = "/graph"
+        val journalFilePath = "$graphPath/journals/2024_01_15.md"
+        fileSystem.addFile(journalFilePath, "- Morning notes\n", 1000L)
+
+        var reloadCount = 0
+        var dirtyCount = 0
+
+        val fixture = buildWatcher(
+            fileSystem = fileSystem,
+            onReloadFile = { _, _ -> reloadCount++ },
+            onDirtyFile = { dirtyCount++ },
+            activePageFilePaths = { setOf(journalFilePath) }, // user has typed something
+        )
+        val watcher = fixture.watcher
+
+        watcher.startWatching(graphPath)
+        fixture.registry.scanDirectory("$graphPath/journals")
+
+        fileSystem.addFile(journalFilePath, "- External addition\n", 2000L)
+
+        withContext(Dispatchers.Default) { delay(600L) }
+
+        assertEquals(0, reloadCount, "Journal with unsaved edits must not be auto-reloaded")
+        assertEquals(1, dirtyCount, "onDirtyFile must still fire so conflict resolution works")
 
         watcher.close()
     }

@@ -272,6 +272,7 @@ class StelekitViewModelLoadingTest {
      */
     private class ThrowingGraphLoader(private val throwable: Throwable) : GraphLoaderPort {
         override fun setActivePageUuids(uuids: StateFlow<Set<String>>?) = Unit
+        override fun setUnsavedPageUuids(uuids: StateFlow<Set<String>>?) = Unit
         override val externalFileChanges: SharedFlow<ExternalFileChange> = MutableSharedFlow()
         override val writeErrors: SharedFlow<WriteError> = MutableSharedFlow()
         override fun setCryptoLayer(layer: CryptoLayer?) = Unit
