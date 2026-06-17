@@ -26,10 +26,21 @@ internal val ANDROID_PRAGMAS: List<String> = listOf(
     // 64MB is conservative for mobile: covers typical graph sizes while leaving VA headroom
     // on 32-bit ARM devices and staying safe on 1-2GB RAM handsets.
     "PRAGMA mmap_size=67108864",
-    // PRAGMA optimize: selectively runs ANALYZE on tables/indexes whose statistics are
-    // significantly outdated. Ensures the query planner uses correct row-count estimates
-    // after large imports, without the cost of a full ANALYZE on every open.
-    // Safe no-op on tables that are already up-to-date.
+    // analysis_limit=400: limits ANALYZE sampling to 400 index rows (reservoir sample).
+    // Makes each ANALYZE call O(1) in table size — typically under 50 ms even on 50 000-row
+    // tables. Must come before the ANALYZE calls below.
+    // Called here (rawQuery) rather than driver.execute() because Requery throws for
+    // result-returning statements (PRAGMA analysis_limit returns the new value).
+    "PRAGMA analysis_limit=400",
+    // ANALYZE blocks/pages unconditionally so fresh installs get correct query-planner
+    // statistics on their second launch, after graph import has populated the table.
+    // Without this, analyze_blocks migration runs on an empty DB → sqlite_stat1 shows 0 rows →
+    // PRAGMA optimize permanently skips re-analysis → SCAN blocks (~1.5 s/query) forever.
+    // Fails silently on first install (tables don't exist yet) via the try-catch in onConfigure.
+    "ANALYZE blocks",
+    "ANALYZE pages",
+    // PRAGMA optimize: selectively runs ANALYZE on other tables whose statistics are
+    // significantly outdated. Ensures query-planner correctness for tables not covered above.
     "PRAGMA optimize",
 )
 

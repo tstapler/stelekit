@@ -552,11 +552,29 @@ object MigrationRunner {
      */
     suspend fun applyAll(driver: SqlDriver) {
         applyAll(driver, all)
-        // Ask SQLite to refresh statistics for any table where row counts have drifted
-        // significantly since the last ANALYZE. PRAGMA optimize is designed to be called
-        // on every database open — it runs targeted ANALYZE only when the planner would
-        // benefit (25%+ change in row count). On large graphs with stale statistics the
-        // planner otherwise falls back to full heap scans (~9 s/query on blocks).
+        // Run a fast sampled ANALYZE on every startup to keep query-planner statistics fresh.
+        //
+        // Why unconditional: PRAGMA optimize skips tables whose sqlite_stat1 row count is 0.
+        // On a fresh install the analyze_blocks migration runs before graph import, recording
+        // 0 rows; PRAGMA optimize then permanently ignores blocks and the planner falls back
+        // to SCAN blocks (~1.5 s/query) for the lifetime of the database.
+        //
+        // Why analysis_limit=400: limits sampling to 400 rows per index (reservoir sample),
+        // making each ANALYZE call O(1) in table size and typically under 50 ms on Android
+        // even for 50 000-row tables. The 400-sample statistics are accurate enough for the
+        // planner to always prefer the composite index over a heap scan.
+        // ANALYZE blocks and pages unconditionally so fresh installs get correct statistics
+        // on their second launch (after graph import). The analysis_limit=400 PRAGMA is set by
+        // DriverFactory per-platform before this runs (rawQuery on Android, driver.execute on JVM)
+        // so each ANALYZE reads at most 400 index rows — typically under 50 ms.
+        //
+        // NOTE: PRAGMA analysis_limit=400 is NOT called here because on Android the Requery
+        // driver throws when execSQL is called for result-returning statements. It is set in
+        // ANDROID_PRAGMAS via the rawQuery path instead, and in DriverFactory.jvm.kt via
+        // driver.execute() which silently discards the returned value in JDBC.
+        driver.execute(null, "ANALYZE blocks", 0).await()
+        driver.execute(null, "ANALYZE pages", 0).await()
+        // PRAGMA optimize is still useful for other tables we don't explicitly analyze above.
         driver.execute(null, "PRAGMA optimize", 0).await()
     }
 

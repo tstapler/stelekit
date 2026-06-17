@@ -84,7 +84,14 @@ actual class DriverFactory actual constructor() {
             log.warning("Schema creation: ${e.message}")
         }
 
-        runBlocking { MigrationRunner.applyAll(driver) }
+        runBlocking {
+            // Limit ANALYZE sampling to 400 rows per index so the unconditional ANALYZE calls
+            // in applyAll() complete in O(1) time regardless of table size (~50 ms vs ~2 s).
+            // On JVM, driver.execute() silently discards the returned value in JDBC — no
+            // Requery restriction applies here (unlike Android, which uses rawQuery in ANDROID_PRAGMAS).
+            driver.execute(null, "PRAGMA analysis_limit=400", 0).await()
+            MigrationRunner.applyAll(driver)
+        }
 
         return driver
     }
