@@ -291,14 +291,11 @@ private class SteleDatabaseImpl(
           |    created_at_ms INTEGER NOT NULL
           |)
           """.trimMargin(), 0).await()
-      driver.execute(null, "CREATE INDEX idx_pages_uuid ON pages(uuid)", 0).await()
-      driver.execute(null, "CREATE INDEX idx_pages_name ON pages(name)", 0).await()
       driver.execute(null, "CREATE INDEX idx_pages_namespace ON pages(namespace)", 0).await()
-      driver.execute(null, "CREATE INDEX idx_blocks_uuid ON blocks(uuid)", 0).await()
-      driver.execute(null, "CREATE INDEX idx_blocks_page_uuid ON blocks(page_uuid)", 0).await()
-      driver.execute(null, "CREATE INDEX idx_blocks_parent_uuid ON blocks(parent_uuid)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_blocks_page_position ON blocks(page_uuid, position)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_blocks_parent_position ON blocks(parent_uuid, position)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_blocks_page_hash ON blocks(page_uuid, uuid, content_hash)", 0).await()
       driver.execute(null, "CREATE INDEX idx_blocks_left_uuid ON blocks(left_uuid)", 0).await()
-      driver.execute(null, "CREATE INDEX idx_blocks_level ON blocks(level)", 0).await()
       driver.execute(null, "CREATE INDEX idx_blocks_content_hash ON blocks(content_hash)", 0).await()
       driver.execute(null, "CREATE INDEX idx_properties_block_uuid ON properties(block_uuid)", 0).await()
       driver.execute(null, "CREATE INDEX idx_properties_key ON properties(key)", 0).await()
@@ -307,6 +304,10 @@ private class SteleDatabaseImpl(
       driver.execute(null, "CREATE INDEX idx_plugin_data_key ON plugin_data(key)", 0).await()
       driver.execute(null, "CREATE INDEX idx_references_from ON block_references(from_block_uuid)", 0).await()
       driver.execute(null, "CREATE INDEX idx_references_to ON block_references(to_block_uuid)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_pages_journal ON pages(is_journal, journal_date DESC)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_pages_updated_at ON pages(updated_at DESC)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_pages_created_at ON pages(created_at DESC)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_pages_favorite ON pages(name) WHERE is_favorite = 1", 0).await()
       driver.execute(null, "CREATE INDEX idx_changelog_graph_status ON migration_changelog(graph_id, status)", 0).await()
       driver.execute(null, "CREATE INDEX idx_changelog_applied_at ON migration_changelog(graph_id, applied_at)", 0).await()
       driver.execute(null, """
@@ -365,10 +366,12 @@ private class SteleDatabaseImpl(
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_image_annotations_block_uuid ON image_annotations(block_uuid)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_image_annotations_page_uuid ON image_annotations(page_uuid)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_image_annotations_graph_path ON image_annotations(graph_path)", 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_image_annotations_imported_at ON image_annotations(imported_at_ms DESC)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_measurement_annotations_image_uuid ON measurement_annotations(image_uuid)", 0).await()
       driver.execute(null, "CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_file_path_unique ON asset_index(file_path)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_asset_unprocessed ON asset_index(ml_processed, ml_failed, imported_at_ms)", 0).await()
       driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_asset_media_type ON asset_index(media_type)", 0).await()
+      driver.execute(null, "CREATE INDEX IF NOT EXISTS idx_asset_imported_at ON asset_index(imported_at_ms DESC)", 0).await()
       driver.execute(null, """
           |CREATE VIRTUAL TABLE blocks_fts USING fts5(
           |    content,

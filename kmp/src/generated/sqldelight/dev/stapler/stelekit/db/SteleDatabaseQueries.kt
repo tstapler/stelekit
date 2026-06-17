@@ -167,6 +167,46 @@ public class SteleDatabaseQueries(
 
   public fun selectAllBlocksPaginated(value_: Long, value__: Long): Query<Blocks> = selectAllBlocksPaginated(value_, value__, ::Blocks)
 
+  public fun <T : Any> selectAllBlocksPaginatedAfterUuid(
+    uuid: String,
+    `value`: Long,
+    mapper: (
+      id: Long,
+      uuid: String,
+      page_uuid: String,
+      parent_uuid: String?,
+      left_uuid: String?,
+      content: String,
+      level: Long,
+      position: Long,
+      created_at: Long,
+      updated_at: Long,
+      properties: String?,
+      version: Long,
+      content_hash: String?,
+      block_type: String,
+    ) -> T,
+  ): Query<T> = SelectAllBlocksPaginatedAfterUuidQuery(uuid, value) { cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3),
+      cursor.getString(4),
+      cursor.getString(5)!!,
+      cursor.getLong(6)!!,
+      cursor.getLong(7)!!,
+      cursor.getLong(8)!!,
+      cursor.getLong(9)!!,
+      cursor.getString(10),
+      cursor.getLong(11)!!,
+      cursor.getString(12),
+      cursor.getString(13)!!
+    )
+  }
+
+  public fun selectAllBlocksPaginatedAfterUuid(uuid: String, value_: Long): Query<Blocks> = selectAllBlocksPaginatedAfterUuid(uuid, value_, ::Blocks)
+
   public fun <T : Any> selectBlockChildren(
     parent_uuid: String?,
     `value`: Long,
@@ -3815,22 +3855,6 @@ public class SteleDatabaseQueries(
   /**
    * @return The number of rows updated.
    */
-  public suspend fun recomputeAllBacklinkCounts(): Long {
-    val result = driver.execute(-625_326_717, """
-        |UPDATE pages SET backlink_count = (
-        |    SELECT COUNT(*) FROM blocks
-        |    WHERE blocks.content LIKE '%[[' || pages.name || ']]%'
-        |)
-        """.trimMargin(), 0).await()
-    notifyQueries(-625_326_717) { emit ->
-      emit("pages")
-    }
-    return result
-  }
-
-  /**
-   * @return The number of rows updated.
-   */
   public suspend fun recomputeBacklinkCountForPage(name: String): Long {
     val result = driver.execute(1_594_896_973, """
         |UPDATE pages SET backlink_count = (
@@ -4982,6 +5006,28 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectAllBlocksPaginated"
+  }
+
+  private inner class SelectAllBlocksPaginatedAfterUuidQuery<out T : Any>(
+    public val uuid: String,
+    public val `value`: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("blocks", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("blocks", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_119_311_148, """SELECT blocks.id, blocks.uuid, blocks.page_uuid, blocks.parent_uuid, blocks.left_uuid, blocks.content, blocks.level, blocks.position, blocks.created_at, blocks.updated_at, blocks.properties, blocks.version, blocks.content_hash, blocks.block_type FROM blocks WHERE uuid > ? ORDER BY uuid LIMIT ?""", mapper, 2) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, uuid)
+      bindLong(parameterIndex++, value)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAllBlocksPaginatedAfterUuid"
   }
 
   private inner class SelectBlockChildrenQuery<out T : Any>(
