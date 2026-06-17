@@ -519,14 +519,25 @@ private fun GraphContent(
             spanRepository = repos.spanRepository,
         ).also { it.onBulkImportComplete = repos.onBulkImportComplete }
     }
+    // Wire write-behind flush callbacks so FileRegistry correctly tracks SAF write windows.
+    // - onFlushPreWrite: sets Long.MAX_VALUE sentinel before write, closing the mtime race
+    //   window where a concurrent detectChanges poll emits a spurious event for .md.stek files.
+    // - onFlushComplete: replaces sentinel with post-flush mtime after successful write.
+    // - onFlushFailed: removes sentinel when write fails so the file is not permanently suppressed.
+    remember(graphLoader) {
+        fileSystem.setOnFlushPreWrite(graphLoader::preMarkFileWrite)
+        fileSystem.setOnFlushComplete(graphLoader::markFileWrittenByUs)
+        fileSystem.setOnFlushFailed(graphLoader::clearFilePendingWrite)
+    }
+
     val graphWriter = remember {
         GraphWriter(
             fileSystem,
             repos.writeActor,
             onFileWritten = graphLoader::markFileWrittenByUs,
             sidecarManager = sidecarManager,
-            onPreWrite = { filePath -> graphLoader.fileRegistry.preMarkPendingWrite(dev.stapler.stelekit.model.FilePath(filePath)) },
-            onClearPendingWrite = { filePath -> graphLoader.fileRegistry.clearPendingWrite(dev.stapler.stelekit.model.FilePath(filePath)) },
+            onPreWrite = { filePath -> graphLoader.preMarkFileWrite(filePath) },
+            onClearPendingWrite = { filePath -> graphLoader.clearFilePendingWrite(filePath) },
             checkPreWriteConflict = { filePath, diskContent ->
                 val lastKnown = graphLoader.fileRegistry.getContentHash(dev.stapler.stelekit.model.FilePath(filePath))
                 lastKnown != null && diskContent.hashCode() != lastKnown

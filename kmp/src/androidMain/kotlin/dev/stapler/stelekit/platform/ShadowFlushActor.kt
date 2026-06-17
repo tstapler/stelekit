@@ -1,31 +1,33 @@
 package dev.stapler.stelekit.platform
 
 import android.util.Log
-import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withContext
 
 /**
  * Drains the write-behind dirty queue to SAF in the background.
- * For each dirty page: reads content from shadow, writes to SAF via [fileSystem.writeFile],
- * and dequeues on success. Failed flushes are retried on next [flush] call.
  *
- * Lifecycle: call [flush] to drain immediately (e.g. on ProcessLifecycle.ON_STOP);
- * call [stop] to cancel background work.
+ * For each dirty page:
+ * 1. Calls [onPreFlush] — sets Long.MAX_VALUE sentinel in FileRegistry so any concurrent
+ *    detectChanges poll skips this path during the write window (closes the mtime race for
+ *    .md.stek encrypted files where the content-hash guard is disabled).
+ * 2. Writes content from shadow to SAF via [fileSystem.writeFile].
+ * 3. On success: dequeues, stamps shadow mtime, calls [onFlushed] so FileRegistry records
+ *    the post-flush SAF mtime and replaces the sentinel.
+ * 4. On failure: calls [onFlushFailed] to remove the sentinel so the file is not permanently
+ *    suppressed from external-change detection.
+ *
+ * Lifecycle: instantiate and call [flush] directly — no long-lived scope is created.
  */
 internal class ShadowFlushActor(
     private val fileSystem: FileSystem,
     private val shadowCache: ShadowFileCache,
     private val queue: WriteBehindQueue,
+    private val onPreFlush: (suspend (safPath: String) -> Unit)? = null,
+    private val onFlushed: (suspend (safPath: String) -> Unit)? = null,
+    private val onFlushFailed: (suspend (safPath: String) -> Unit)? = null,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var flushJob: Job? = null
-
     companion object {
         private const val TAG = "ShadowFlushActor"
     }
@@ -39,7 +41,9 @@ internal class ShadowFlushActor(
     }
 
     /** Flush a single page: read from shadow, write to SAF, dequeue on success. */
-    private fun flushPage(safPath: String) {
+    private suspend fun flushPage(safPath: String) {
+        var writeStarted = false
+        var writeSucceeded = false
         try {
             val relativePath = safPath
                 .removePrefix("saf://")
@@ -52,10 +56,19 @@ internal class ShadowFlushActor(
                 return
             }
             val content = try { shadowFile.readText() } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Log.w(TAG, "flushPage: failed to read shadow for $relativePath", e); return
             }
+
+            // Pre-mark before the SAF write so any concurrent detectChanges poll skips this
+            // path during the write window. Replaced by onFlushed on success; cleared by
+            // onFlushFailed on failure to avoid permanently suppressing external-change detection.
+            onPreFlush?.invoke(safPath)
+            writeStarted = true
+
             val ok = fileSystem.writeFile(safPath, content)
             if (ok) {
+                writeSucceeded = true
                 queue.dequeue(safPath)
                 // Stamp shadow mtime with the post-flush SAF mtime so the shadow is not
                 // incorrectly deleted by invalidateStale on the next startup. Without this,
@@ -64,19 +77,30 @@ internal class ShadowFlushActor(
                 fileSystem.getLastModifiedTime(safPath)?.let { mtime ->
                     shadowCache.stampMtime(relativePath, mtime)
                 }
+                // Notify FileRegistry of the post-flush SAF mtime so the next poll cycle
+                // does not emit a spurious own-write event (critical for .md.stek files
+                // where the content-hash guard is disabled). Also replaces the MAX_VALUE sentinel.
+                onFlushed?.invoke(safPath)
                 Log.d(TAG, "flushPage: flushed $relativePath to SAF")
             } else {
+                // Remove the sentinel so the file is not permanently suppressed.
+                onFlushFailed?.invoke(safPath)
                 Log.w(TAG, "flushPage: SAF write failed for $relativePath — will retry")
             }
         } catch (e: CancellationException) {
+            if (writeStarted && !writeSucceeded) {
+                try { onFlushFailed?.invoke(safPath) } catch (inner: Exception) {
+                    if (inner is CancellationException) throw inner
+                }
+            }
             throw e
         } catch (e: Exception) {
+            if (writeStarted && !writeSucceeded) {
+                try { onFlushFailed?.invoke(safPath) } catch (inner: Exception) {
+                    if (inner is CancellationException) throw inner
+                }
+            }
             Log.e(TAG, "flushPage: unexpected error for $safPath", e)
         }
-    }
-
-    fun stop() {
-        flushJob?.cancel()
-        scope.cancel()
     }
 }

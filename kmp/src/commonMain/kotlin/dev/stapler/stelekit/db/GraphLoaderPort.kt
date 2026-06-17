@@ -22,6 +22,13 @@ interface GraphLoaderPort {
     fun setActivePageUuids(uuids: StateFlow<Set<String>>?)
 
     /**
+     * Sets the flow of page UUIDs that have unsaved block edits. The file watcher skips
+     * auto-reload only for pages in this set — pages that are open but unedited (e.g. the
+     * journals page being viewed) are still reloaded when an external change is detected.
+     */
+    fun setUnsavedPageUuids(uuids: StateFlow<Set<String>>?)
+
+    /**
      * Emitted when the file watcher detects an external modification to a file.
      */
     val externalFileChanges: SharedFlow<ExternalFileChange>

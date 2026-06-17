@@ -22,10 +22,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -150,6 +153,23 @@ class BlockStateManager(
      *  MutableStateFlow<Map> provides thread-safe CAS updates from concurrent Default-dispatcher
      *  coroutines without requiring platform-specific atomics. */
     private val _dirtyBlocks = MutableStateFlow<Map<String, Long>>(emptyMap())
+
+    /**
+     * UUIDs of pages that have at least one block with unsaved local edits.
+     * Used by [dev.stapler.stelekit.db.GraphLoader] to protect only truly-dirty pages
+     * from auto-reload when an external file change is detected — open-but-unedited pages
+     * (e.g. the journals page being viewed) are reloaded normally so live updates appear.
+     */
+    val dirtyPageUuids: StateFlow<Set<String>> = combine(_dirtyBlocks, _blocks) { dirtyBlocks, blocks ->
+        if (dirtyBlocks.isEmpty()) emptySet()
+        else {
+            val dirtyBlockSet = dirtyBlocks.keys
+            blocks.entries
+                .filter { (_, blockList) -> blockList.any { it.uuid.value in dirtyBlockSet } }
+                .map { it.key }
+                .toSet()
+        }
+    }.stateIn(scope, SharingStarted.Eagerly, emptySet())
 
     /**
      * UUIDs of blocks that were inserted optimistically into [_blocks] but whose DB write is

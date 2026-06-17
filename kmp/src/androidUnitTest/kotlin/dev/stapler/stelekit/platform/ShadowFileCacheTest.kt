@@ -9,8 +9,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
@@ -116,5 +118,30 @@ class ShadowFileCacheTest {
     fun `graphIdFor truncates long IDs`() {
         val longId = "x".repeat(200)
         assertEquals(128, ShadowFileCache.graphIdFor(longId).length)
+    }
+
+    // ─── isFirstAccess (freshProcess moved to per-instance) ──────────────────
+
+    @Test
+    fun `isFirstAccess returns true on first call and false on subsequent calls`() {
+        // A fresh cache instance must return true on first access
+        assertTrue(cache.isFirstAccess(), "First call must return true")
+        // All subsequent calls must return false
+        assertFalse(cache.isFirstAccess(), "Second call must return false")
+        assertFalse(cache.isFirstAccess(), "Third call must return false")
+    }
+
+    @Test
+    fun `isFirstAccess is independent per cache instance (graph switch scenario)`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val graph1Cache = ShadowFileCache(context, "graph1-${System.nanoTime()}")
+        val graph2Cache = ShadowFileCache(context, "graph2-${System.nanoTime()}")
+
+        // Exhaust graph1's first-access flag
+        assertTrue(graph1Cache.isFirstAccess(), "graph1: first call must be true")
+        assertFalse(graph1Cache.isFirstAccess(), "graph1: second call must be false")
+
+        // graph2 must still see its own first-access as true
+        assertTrue(graph2Cache.isFirstAccess(), "graph2: must have its own independent first-access flag")
     }
 }
