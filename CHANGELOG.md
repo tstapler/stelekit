@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.1](https://github.com/tstapler/stelekit/compare/v0.48.0...v0.48.1) (2026-06-17)
+
+
+### Performance Improvements
+
+* **db:** batch actor writes, add telemetry spans, and enforce with lint ([637dd41](https://github.com/tstapler/stelekit/commit/637dd416a59061fcfc18dad064ba96d29065f2f3))
+
 ## [0.48.0](https://github.com/tstapler/stelekit/compare/v0.47.2...v0.48.0) (2026-06-17)
 
 
