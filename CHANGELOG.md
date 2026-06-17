@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.48.0](https://github.com/tstapler/stelekit/compare/v0.47.2...v0.48.0) (2026-06-17)
+
+
+### Features
+
+* **ci:** serve fdroid APKs via GitHub Releases redirect on Cloudflare Pages ([11da29b](https://github.com/tstapler/stelekit/commit/11da29b91b241ba7a25e0143c287d90029096b88))
+* **perf:** show triggering SQL in Query Plans tab; persist samples across drain cycles ([82771b7](https://github.com/tstapler/stelekit/commit/82771b7e893f72fbf1c31bae0b235a6c6e6c5a78))
+
+
+### Bug Fixes
+
+* **ci:** fix release workflow — build demo on release, reduce APK set, drop deprecations ([2f7dfbb](https://github.com/tstapler/stelekit/commit/2f7dfbb6f95b5277c7d4f4e8067b3353239de079))
+* **db:** add SchemaRunner start/complete log lines to db.MigrationRunner ([5918da3](https://github.com/tstapler/stelekit/commit/5918da31d29752b8b8d11d25213249d7ed74bfbb))
+
+
+### Performance Improvements
+
+* **db:** run ANALYZE blocks/pages unconditionally on every startup ([a81c0c1](https://github.com/tstapler/stelekit/commit/a81c0c1ac1ad48ee84d92addd9fe399941248c71))
+
 ## [0.47.2](https://github.com/tstapler/stelekit/compare/v0.47.1...v0.47.2) (2026-06-16)
 
 
