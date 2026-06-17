@@ -53,13 +53,21 @@ object Validation {
     }
 
     fun validateUuid(uuid: PageUuid): PageUuid {
-        validateString(uuid.value, 36)
+        validateUuidString(uuid.value)
         return uuid
     }
 
     fun validateUuid(uuid: BlockUuid): BlockUuid {
-        validateString(uuid.value, 36)
+        validateUuidString(uuid.value)
         return uuid
+    }
+
+    private fun validateUuidString(value: String) {
+        validateString(value, 36)
+        require(value.isNotBlank()) { "UUID cannot be blank" }
+        require(value.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' }) {
+            "Invalid UUID format: $value"
+        }
     }
 }
 

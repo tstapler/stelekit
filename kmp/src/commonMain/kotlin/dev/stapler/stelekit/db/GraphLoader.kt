@@ -1394,24 +1394,32 @@ class GraphLoader(
 
     /**
      * Handles the METADATA_ONLY write path: creates stub blocks and dispatches them to
-     * the write actor.
+     * the write actor in a single execute (savePage + deleteBlocksForPage + saveBlocks = 1 RT).
      */
+    @OptIn(DirectRepositoryWrite::class)
     private suspend fun saveMetadataOnlyBlocks(
         filePath: String,
-        pageUuid: PageUuid,
-        updatedAt: kotlin.time.Instant,
+        page: Page,
         rootBlocks: List<ParsedBlock>,
         priority: DatabaseWriteActor.Priority,
+        traceId: String,
+        parentSpanId: String,
     ) {
+        val pageUuid = page.uuid
         val stubs = mutableListOf<Block>()
-        createStubBlocks(rootBlocks, filePath, pageUuid, null, 0, updatedAt, stubs)
-        if (stubs.isNotEmpty()) {
-            writeActor.deleteBlocksForPage(pageUuid, priority)
-            writeActor.saveBlocks(stubs, priority).onLeft { e ->
-                logger.warn("saveBlocks (stubs) failed for $filePath (${stubs.size} blocks): ${e.message}")
-                _writeErrors.tryEmit(WriteError(filePath, stubs.size, e))
-            }
+        createStubBlocks(rootBlocks, filePath, pageUuid, null, 0, page.updatedAt, stubs)
+        val span = Span("db.saveMetadata", traceId, parentSpanId)
+        writeActor.execute(priority) {
+            val r = pageRepository.savePage(page)
+            if (r.isLeft()) return@execute r
+            blockRepository.deleteBlocksForPage(pageUuid)
+            if (stubs.isNotEmpty()) blockRepository.saveBlocks(stubs)
+            Unit.right()
+        }.onLeft { e ->
+            logger.warn("saveMetadata failed for $filePath (${stubs.size} stubs): ${e.message}")
+            _writeErrors.tryEmit(WriteError(filePath, stubs.size, e))
         }
+        span.finish("OK", "stub.count" to stubs.size.toString())
     }
 
     /**
@@ -1469,43 +1477,43 @@ class GraphLoader(
                     "to.insert" to diff.toInsert.size.toString(),
                     "to.delete" to diff.toDelete.size.toString()
                 )
-                // Deletions run before the composite write to avoid UNIQUE constraint violations
-                // (a block being re-inserted at a new position must be deleted first).
-                diff.toDelete.forEach { uuid ->
-                    writeActor.deleteBlock(uuid).onLeft { e ->
-                        logger.warn("deleteBlock failed for $uuid in $filePath: ${e.message}")
-                    }
-                }
                 val blocksToInsert = diff.toInsert
                 val blocksToUpdate = diff.toUpdate
+                // Single actor round-trip: deletes + savePage + inserts/updates.
+                // Batching eliminates N separate deleteBlock round-trips (was N+1 actor
+                // enqueues; now always 1). Deletions run before inserts inside the execute
+                // to avoid UNIQUE constraint violations on position reuse.
+                val writeBlocksSpan = Span("db.writeBlocks", traceId, parentSpanId)
+                val writeResult = writeActor.execute(priority) {
+                    diff.toDelete.forEach { uuid ->
+                        blockRepository.deleteBlock(uuid).onLeft { e ->
+                            logger.warn("deleteBlock failed for $uuid in $filePath: ${e.message}")
+                        }
+                    }
+                    val pageResult = pageRepository.savePage(page)
+                    if (pageResult.isLeft()) return@execute pageResult
+                    if (blocksToInsert.isNotEmpty()) {
+                        val r = blockRepository.saveBlocks(blocksToInsert)
+                        if (r.isLeft()) return@execute r
+                    }
+                    if (blocksToUpdate.isNotEmpty()) {
+                        val r = blockRepository.saveBlocksUpdate(blocksToUpdate)
+                        if (r.isLeft()) return@execute r
+                    }
+                    Unit.right()
+                }
+                writeResult.onLeft { e ->
+                    logger.warn("composite delete+savePage+saveBlocks failed for $filePath: ${e.message}")
+                    _writeErrors.tryEmit(WriteError(filePath, blocksToInsert.size + blocksToUpdate.size, e))
+                }
+                writeBlocksSpan.finish(
+                    "OK",
+                    "delete.count" to diff.toDelete.size.toString(),
+                    "insert.count" to blocksToInsert.size.toString(),
+                    "update.count" to blocksToUpdate.size.toString()
+                )
                 if (blocksToInsert.isNotEmpty() || blocksToUpdate.isNotEmpty()) {
-                    val saveBlocksSpan = Span("db.saveBlocks", traceId, parentSpanId)
-                    // Single actor.execute { } for savePage + saveBlocks — eliminates 2 await() suspensions
-                    val compositeResult = writeActor.execute(priority) {
-                        val pageResult = pageRepository.savePage(page)
-                        if (pageResult.isLeft()) return@execute pageResult
-                        if (blocksToInsert.isNotEmpty()) {
-                            val r = blockRepository.saveBlocks(blocksToInsert)
-                            if (r.isLeft()) return@execute r
-                        }
-                        if (blocksToUpdate.isNotEmpty()) {
-                            val r = blockRepository.saveBlocksUpdate(blocksToUpdate)
-                            if (r.isLeft()) return@execute r
-                        }
-                        Unit.right()
-                    }
-                    compositeResult.onLeft { e ->
-                        logger.warn("composite savePage+saveBlocks failed for $filePath: ${e.message}")
-                        _writeErrors.tryEmit(WriteError(filePath, blocksToInsert.size + blocksToUpdate.size, e))
-                    }
-                    saveBlocksSpan.finish("OK", "block.count" to (blocksToInsert.size + blocksToUpdate.size).toString())
                     (blockRepository as? dev.stapler.stelekit.repository.SqlDelightBlockRepository)?.evictHierarchyForPage(pageUuid.value)
-                } else {
-                    // No block changes — still need to save the page (e.g. metadata update)
-                    writeActor.savePage(page, priority).onLeft { e ->
-                        logger.warn("savePage (no blocks) failed for $filePath: ${e.message}")
-                        _writeErrors.tryEmit(WriteError(filePath, 0, e))
-                    }
                 }
             }
         }
@@ -1587,28 +1595,26 @@ class GraphLoader(
 
                 // For METADATA_ONLY, save page + lightweight stub blocks and return.
                 if (mode == ParseMode.METADATA_ONLY) {
-                    val savePageSpan = Span("db.savePage", traceId, rootSpan.spanId)
-                    val savePageResult = writeActor.savePage(page, priority)
-                    savePageSpan.finish()
-                    if (savePageResult.isLeft()) {
-                        val e = savePageResult.leftOrNull()!!
-                        logger.warn("savePage failed for $filePathStr — skipping block writes to prevent FK violation: ${e.message}")
-                        _writeErrors.tryEmit(WriteError(filePathStr, 0, e))
-                        return@withLock
-                    }
-                    saveMetadataOnlyBlocks(filePathStr, pageUuid, updatedAt, rootBlocks, priority)
+                    saveMetadataOnlyBlocks(filePathStr, page, rootBlocks, priority, traceId, rootSpan.spanId)
                     return@withLock
                 }
 
                 // FULL mode: fetch existing blocks (may already be cached from freshness check)
                 val existingBlocks = lookup.cachedBlocks
-                    ?: blockRepository.getBlocksForPage(pageUuid).first().getOrNull() ?: emptyList()
+                    ?: run {
+                        val uncachedBlocksSpan = Span("db.getBlocks", traceId, rootSpan.spanId)
+                        val blocks = blockRepository.getBlocksForPage(pageUuid).first().getOrNull() ?: emptyList()
+                        uncachedBlocksSpan.finish("OK", "block.count" to blocks.size.toString(), "cached" to "false")
+                        blocks
+                    }
                 val existingVersions = existingBlocks.associate { it.uuid to it.version }
                 val existingContent = existingBlocks.associate { it.uuid to it.content }
 
                 // Load sidecar for content-hash → UUID recovery (e.g. after a git pull that reordered blocks)
                 val pageSlug = FileUtils.sanitizeFileName(name)
+                val sidecarReadSpan = Span("sidecar.read", traceId, rootSpan.spanId)
                 val sidecarMap = sidecarManager?.read(pageSlug)
+                sidecarReadSpan.finish("OK", "has_sidecar" to (sidecarMap != null).toString())
 
                 val blocksToSave = mutableListOf<Block>()
                 val processBlocksSpan = Span("parse.processBlocks", traceId, rootSpan.spanId)
@@ -1632,10 +1638,12 @@ class GraphLoader(
                 )
 
                 // Update mod time in watcher cache so we don't re-trigger from our own write
+                val modTimeSpan = Span("file.updateModTime", traceId, rootSpan.spanId)
                 val updatedModTime = fileSystem.getLastModifiedTime(filePathStr) ?: 0L
                 if (updatedModTime != 0L) {
                     fileRegistry.updateModTime(filePathStr, updatedModTime)
                 }
+                modTimeSpan.finish("OK")
             } finally {
                 CurrentSpanContext.set(null)
                 rootSpan.finish("OK", "file.path" to filePathStr.redactPath())

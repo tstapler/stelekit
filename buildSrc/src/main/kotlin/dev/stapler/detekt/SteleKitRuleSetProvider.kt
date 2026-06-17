@@ -23,6 +23,7 @@ class SteleKitRuleSetProvider : RuleSetProvider {
             MustUseTypedLazyItemsRule(config),
             JvmOnlyApiInCommonMainRule(config),
             IndexWithoutAnalyzeRule(config),
+            ActorWriteInLoopRule(config),
         ),
     )
 }
