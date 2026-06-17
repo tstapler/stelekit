@@ -612,6 +612,13 @@ object MigrationRunner {
             parameters = 0
         ).await()
 
+        val pending = migrations.filter { appliedByName[it.name] == null }
+        logger.info(
+            "SchemaRunner: starting — ${pending.size} pending, " +
+            "${appliedByName.size} already applied, ${migrations.size} total"
+        )
+
+        var appliedCount = 0
         for (migration in migrations) {
             val recordedHash = appliedByName[migration.name]
 
@@ -688,7 +695,10 @@ object MigrationRunner {
                 bindString(0, migration.hash)
                 bindString(1, migration.name)
             }.await()
+            logger.info("SchemaRunner: applied '${migration.name}'")
+            appliedCount++
         }
+        logger.info("SchemaRunner: complete — applied=$appliedCount skipped=${migrations.size - appliedCount}")
     }
 
     /**
