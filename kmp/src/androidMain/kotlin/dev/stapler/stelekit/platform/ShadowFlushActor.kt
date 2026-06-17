@@ -56,6 +56,7 @@ internal class ShadowFlushActor(
                 return
             }
             val content = try { shadowFile.readText() } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Log.w(TAG, "flushPage: failed to read shadow for $relativePath", e); return
             }
 
@@ -88,12 +89,16 @@ internal class ShadowFlushActor(
             }
         } catch (e: CancellationException) {
             if (writeStarted && !writeSucceeded) {
-                try { onFlushFailed?.invoke(safPath) } catch (_: Exception) {}
+                try { onFlushFailed?.invoke(safPath) } catch (inner: Exception) {
+                    if (inner is CancellationException) throw inner
+                }
             }
             throw e
         } catch (e: Exception) {
             if (writeStarted && !writeSucceeded) {
-                try { onFlushFailed?.invoke(safPath) } catch (_: Exception) {}
+                try { onFlushFailed?.invoke(safPath) } catch (inner: Exception) {
+                    if (inner is CancellationException) throw inner
+                }
             }
             Log.e(TAG, "flushPage: unexpected error for $safPath", e)
         }
