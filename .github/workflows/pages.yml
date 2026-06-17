@@ -186,7 +186,6 @@ jobs:
             echo "No previous successful fdroid run found; fdroid content will be absent"
           fi
 
-      - uses: actions/configure-pages@v5
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -206,7 +205,7 @@ jobs:
         run: |
           # fdroid-staging/ is uploaded by fdroid.yml with repo/ as a subdirectory.
           # After download to fdroid-content/, the structure is fdroid-content/repo/.
-          # APKs are included — the 100 MB Git limit doesn't apply to Actions artifacts.
+          # APKs are NOT included — they redirect to GitHub Releases via a CF Pages Function.
           if [ -d fdroid-content/repo ]; then
             mkdir -p site/dist/fdroid
             cp -r fdroid-content/repo site/dist/fdroid/
@@ -215,21 +214,23 @@ jobs:
             echo "No fdroid content available; /fdroid/repo will be absent from the deploy"
           fi
 
-      - name: Assert site output is within GitHub Pages 1 GB limit
+      - name: Assert site output is within Cloudflare Pages limits
         run: |
           SIZE=$(du -sb site/dist/ | cut -f1)
-          LIMIT=$((900 * 1024 * 1024))  # 900 MB — 10% headroom under the 1 GB hard limit
+          LIMIT=$((600 * 1024 * 1024))  # 600 MB guard — expected ~450 MB (Wasm demo + metadata, no APKs)
           echo "Site output size: $(( SIZE / 1024 / 1024 )) MB"
           if [ "$SIZE" -gt "$LIMIT" ]; then
-            echo "ERROR: site/dist/ is $(( SIZE / 1024 / 1024 )) MB, exceeds 900 MB safety limit."
-            echo "Check for unexpected large files:"
+            echo "ERROR: site/dist/ is $(( SIZE / 1024 / 1024 )) MB, exceeds 600 MB safety limit."
+            echo "Check for unexpected large files (APKs should NOT be present — they redirect via CF Pages Function):"
             find site/dist/ -type f -size +10M | sort -k1 -rh | head -20
             exit 1
           fi
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
+          name: site-dist
           path: site/dist/
+          retention-days: 1
 
   deploy:
     runs-on: ubuntu-latest
@@ -237,18 +238,21 @@ jobs:
     # GitHub Actions skips jobs with default success() when any transitive dependency was
     # skipped (even via if:always() chains). Override explicitly to only gate on build-site.
     if: always() && needs.build-site.result == 'success'
-    # Cancel any in-progress Pages deployment so a new commit never waits behind a stale
-    # one. Without this, two simultaneous workflow runs (e.g. push + release) cause the
-    # second deploy to fail with "in progress deployment" instead of superseding it.
+    # Cancel any in-progress deployment so a new commit never waits behind a stale one.
     concurrency:
       group: pages-deploy
       cancel-in-progress: true
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: site-dist
+          path: site/dist/
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # functions/ at repo root contains the APK redirect Pages Function.
+          # Requires a Cloudflare Pages project named "stelekit" to exist.
+          command: pages deploy site/dist --project-name=stelekit --branch=main
