@@ -7,6 +7,7 @@ import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.DeviceCodeResponse
 import dev.stapler.stelekit.git.model.DeviceFlowPollState
+import dev.stapler.stelekit.ui.screens.git.OAuthDialogState
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -18,10 +19,9 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.ByteReadChannel
+import java.io.IOException
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
-import java.io.IOException
-import dev.stapler.stelekit.ui.screens.git.OAuthDialogState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -119,6 +119,66 @@ class GitHubDeviceFlowClientTest {
         assertEquals("gho_abc123", result.value)
         // No intermediate state changes expected on immediate success
         assertTrue(states.isEmpty())
+    }
+
+    @Test
+    fun `pollForToken_continuesPolling_onAuthorizationPending`() = runTest {
+        var callCount = 0
+        val engine = MockEngine { _ ->
+            callCount++
+            val body = when (callCount) {
+                1 -> """{"error":"authorization_pending"}"""
+                else -> """{"access_token":"gho_pending123","token_type":"bearer","scope":"repo"}"""
+            }
+            respond(content = ByteReadChannel(body), status = HttpStatusCode.OK, headers = jsonHeaders())
+        }
+        val client = GitHubDeviceFlowClient(buildClient(engine))
+        val states = mutableListOf<DeviceFlowPollState>()
+
+        val result = client.pollForToken(
+            deviceCode = "dev123",
+            expiresIn = 300,
+            initialInterval = 0,
+            onStateChange = { states.add(it) },
+        )
+
+        assertIs<Either.Right<String>>(result)
+        assertEquals("gho_pending123", result.value)
+        assertEquals(1, states.size)
+        assertIs<DeviceFlowPollState.Pending>(states.first())
+        assertEquals(2, callCount)
+    }
+
+    @Test
+    fun `pollForToken_retriesAndContinues_on5xxServerError`() = runTest {
+        var callCount = 0
+        val engine = MockEngine { _ ->
+            callCount++
+            if (callCount == 1) {
+                respond(content = ByteReadChannel(""), status = HttpStatusCode.InternalServerError, headers = jsonHeaders())
+            } else {
+                respond(
+                    content = ByteReadChannel("""{"access_token":"gho_srv","token_type":"bearer","scope":"repo"}"""),
+                    status = HttpStatusCode.OK,
+                    headers = jsonHeaders(),
+                )
+            }
+        }
+        val client = GitHubDeviceFlowClient(buildClient(engine))
+        val states = mutableListOf<DeviceFlowPollState>()
+
+        val result = client.pollForToken(
+            deviceCode = "dev123",
+            expiresIn = 300,
+            initialInterval = 0,
+            onStateChange = { states.add(it) },
+        )
+
+        assertIs<Either.Right<String>>(result)
+        assertEquals("gho_srv", result.value)
+        assertEquals(1, states.size)
+        assertIs<DeviceFlowPollState.ServerError>(states.first())
+        assertEquals(2, callCount)
     }
 
     @Test
