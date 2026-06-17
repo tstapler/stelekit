@@ -2,6 +2,7 @@ package dev.stapler.stelekit.db
 
 import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
@@ -487,83 +488,132 @@ class QueryPlanAuditTest {
     }
 
     /**
-     * Regression test for the analyze_blocks migration and PRAGMA optimize startup hook.
+     * Empirically proves the statistics-poisoning root cause behind the SCAN blocks regression.
      *
-     * Root cause: covering_indexes_page_blocks added composite indexes but never called ANALYZE.
-     * Without statistics, SQLite's default heuristics (1M assumed rows, 10 rows/index-entry) can
-     * cause it to choose a full heap scan over idx_blocks_page_position on large graphs, leading
-     * to ~9 s per blocks:select call. QueryPlanAuditTest.no_unexpected_full_table_scans called
-     * ANALYZE manually and therefore masked this gap in CI.
+     * Production failure chain (old code had no unconditional startup ANALYZE):
+     *   1. Fresh install (or upgrade where analyze_blocks migration was new):
+     *      `analyze_blocks` migration runs `ANALYZE blocks` on an EMPTY table.
+     *      SQLite writes NOTHING to sqlite_stat1 — ANALYZE on an empty table produces no rows.
+     *   2. User imports their graph: blocks grows to 50 000+ rows.
+     *   3. App restarts: MigrationRunner skips `analyze_blocks` (already applied/hash-matched).
+     *      No ANALYZE runs. No PRAGMA optimize (old code didn't call it either).
+     *   4. sqlite_stat1 still has no entry for blocks → query planner uses default heuristics →
+     *      on Android SQLite the planner chooses a full heap SCAN (~1.5 s/query).
      *
-     * This test verifies two things:
-     * 1. On a large unanalyzed blocks table, ANALYZE is necessary to get the correct plan.
-     * 2. After ANALYZE, the composite covering index is always chosen.
+     * This test uses raw JDBC (no DriverFactory, no migrations, no unconditional startup ANALYZE)
+     * to reproduce the exact pre-fix production state with hard assertions at every step.
      *
-     * If the analyze_blocks migration or PRAGMA optimize startup hook is removed, the main
-     * audit test would still pass (it calls ANALYZE manually), but production databases would
-     * regress. This test documents the regression and should surface changes to ANALYZE coverage.
+     * Hard assertions (deterministic across all SQLite versions):
+     *   - sqlite_stat1 has NO entry for blocks after ANALYZE on empty table.
+     *   - sqlite_stat1 still has NO entry for blocks after data is loaded (no ANALYZE ran).
+     *   - sqlite_stat1 gains correct entries only after explicit ANALYZE on the loaded table.
+     *   - EXPLAIN QUERY PLAN uses the composite index after ANALYZE.
+     *
+     * Soft observation (SQLite-version-dependent):
+     *   - Whether the absent statistics cause an actual SCAN depends on the SQLite version's
+     *     default heuristics. The JVM SQLite JDBC may use the index anyway; Android SQLite ~3.39
+     *     chose SCAN. The statistics state is the deterministic root cause regardless.
      */
     @Test
-    fun `large blocks table uses composite index after ANALYZE, may scan without it`() {
-        val driver = DriverFactory().createDriver("jdbc:sqlite::memory:")
-        val sqliteDriver = driver as PooledJdbcSqliteDriver
-        val conn = sqliteDriver.getConnection()
+    fun `analyze_blocks migration poisons statistics on fresh install - no stats means planner has no baseline`() {
+        // Use raw JDBC — bypasses DriverFactory's unconditional startup ANALYZE so we can
+        // reproduce the exact pre-fix production state at each step.
+        val conn = java.sql.DriverManager.getConnection("jdbc:sqlite::memory:")
         try {
-            conn.createStatement().use { seed ->
-                // 50 000 blocks across 1 000 pages — comparable to a large production graph.
-                // Insert AFTER schema+migration setup. Since migrations ran on an empty DB, the
-                // analyze_blocks migration's ANALYZE saw 0 rows; statistics are now stale.
-                // This reproduces the production state: index exists, data exists, no current stats.
-                repeat(1000) { i ->
-                    seed.execute(
-                        "INSERT OR IGNORE INTO pages(uuid,name,namespace,file_path,created_at,updated_at," +
-                        "properties,version,is_favorite,is_journal,journal_date,is_content_loaded,backlink_count) " +
-                        "VALUES('pp$i','LargePage $i',NULL,NULL,${i * 1000L},${i * 1000L + 500L},NULL,0,0,0,NULL,1,0)"
+            conn.createStatement().use { ddl ->
+                ddl.execute("""
+                    CREATE TABLE blocks (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        uuid        TEXT NOT NULL UNIQUE,
+                        page_uuid   TEXT NOT NULL,
+                        parent_uuid TEXT,
+                        position    INTEGER NOT NULL DEFAULT 0,
+                        content     TEXT
                     )
-                }
-                repeat(50_000) { i ->
-                    seed.execute(
-                        "INSERT OR IGNORE INTO blocks(uuid,page_uuid,parent_uuid,left_uuid,content," +
-                        "level,position,created_at,updated_at,properties,version,content_hash,block_type) " +
-                        "VALUES('bb$i','pp${i % 1000}',NULL,NULL,'content $i',0,${i % 50},${i * 100L},${i * 100L + 50L},NULL,0,'lhash$i','bullet')"
-                    )
-                }
-                // Do NOT call ANALYZE here — this is the unanalyzed production state.
+                """.trimIndent())
+                // The composite indexes that covering_indexes_page_blocks adds.
+                ddl.execute("CREATE INDEX idx_blocks_page_position   ON blocks(page_uuid, position)")
+                ddl.execute("CREATE INDEX idx_blocks_parent_position ON blocks(parent_uuid, position)")
             }
 
-            fun planLines(sql: String): List<String> =
-                conn.createStatement().use { stmt ->
-                    val rs = stmt.executeQuery("EXPLAIN QUERY PLAN $sql")
-                    buildList { while (rs.next()) add(rs.getString("detail") ?: "") }.also { rs.close() }
-                }
-
-            val criticalSql = "SELECT * FROM blocks WHERE page_uuid = 'pp0' ORDER BY position"
-
-            // Before ANALYZE: document whether the regression manifests. SQLite behaviour
-            // differs between versions and is not stable enough to assert here, but on
-            // versions where the default heuristics trigger a full scan this will print.
-            val planBefore = planLines(criticalSql)
-            val hadScanBefore = planBefore.any { it.startsWith("SCAN blocks") && !it.contains("USING") }
-            if (hadScanBefore) {
-                println("[QueryPlanAuditTest] Confirmed: SCAN blocks on 50k-row table without ANALYZE — regression reproduced on this SQLite version")
+            fun statRows(): Map<String, String> = conn.createStatement().use { s ->
+                try {
+                    val rs = s.executeQuery("SELECT idx, stat FROM sqlite_stat1 WHERE tbl = 'blocks'")
+                    buildMap { while (rs.next()) put(rs.getString("idx") ?: "", rs.getString("stat") ?: "") }
+                        .also { rs.close() }
+                } catch (_: Exception) { emptyMap() }
             }
 
-            // After ANALYZE: the composite index must be chosen on every SQLite version.
-            // This is what analyze_blocks migration and PRAGMA optimize guarantee for users.
+            fun planLines(sql: String): List<String> = conn.createStatement().use { s ->
+                val rs = s.executeQuery("EXPLAIN QUERY PLAN $sql")
+                buildList { while (rs.next()) add(rs.getString("detail") ?: "") }.also { rs.close() }
+            }
+
+            // ── Step 1: analyze_blocks migration — ANALYZE on empty table ─────────────────────
+            // This is what runs on a fresh install or when the migration is new.
             conn.createStatement().use { it.execute("ANALYZE blocks") }
 
-            val planAfter = planLines(criticalSql)
-            val usesIndexAfter = planAfter.any { it.contains("USING") }
-            if (!usesIndexAfter) {
-                fail(buildString {
-                    appendLine("After ANALYZE blocks, page_uuid lookup must use composite index — heap scan detected.")
-                    appendLine("  Before ANALYZE: $planBefore")
-                    append("  After  ANALYZE: $planAfter")
-                })
+            val statsAfterEmptyAnalyze = statRows()
+            // KEY FACT: ANALYZE on an empty table writes NOTHING to sqlite_stat1.
+            // There is no "0-row" entry — the table is simply absent from sqlite_stat1.
+            assertTrue(statsAfterEmptyAnalyze.isEmpty(),
+                "ANALYZE on an empty table must write nothing to sqlite_stat1. " +
+                "Got: $statsAfterEmptyAnalyze — if this has rows, this SQLite version changed " +
+                "behaviour and the root-cause analysis needs updating.")
+
+            // ── Step 2: Graph import — 50 000 blocks, no ANALYZE ─────────────────────────────
+            conn.autoCommit = false
+            conn.prepareStatement(
+                "INSERT INTO blocks(uuid,page_uuid,parent_uuid,position,content) VALUES(?,?,NULL,?,?)"
+            ).use { ps ->
+                repeat(50_000) { i ->
+                    ps.setString(1, "bb$i"); ps.setString(2, "pp${i % 1000}")
+                    ps.setInt(3, i % 50);   ps.setString(4, "content $i")
+                    ps.addBatch()
+                    if (i % 1000 == 999) ps.executeBatch()
+                }
+                ps.executeBatch()
             }
+            conn.commit()
+            conn.autoCommit = true
+
+            // ── Step 3: Subsequent startup — old code only ran migrations (already applied) ───
+            // Neither ANALYZE nor PRAGMA optimize was called by the old startup path.
+            // sqlite_stat1 is still empty for blocks.
+            val statsAfterDataLoad = statRows()
+            assertTrue(statsAfterDataLoad.isEmpty(),
+                "After graph import with no ANALYZE, sqlite_stat1 must still have no entry for " +
+                "blocks — this is the exact pre-fix state: 50 000 rows, zero statistics. " +
+                "Got: $statsAfterDataLoad")
+
+            // ── Soft observation: EXPLAIN QUERY PLAN without any statistics ───────────────────
+            // The planner's choice depends on the SQLite version's default cardinality heuristics.
+            // Android SQLite ~3.39 chose SCAN blocks (~1.5 s). JVM SQLite may use the index.
+            val criticalSql = "SELECT * FROM blocks WHERE page_uuid = 'pp0' ORDER BY position"
+            val planWithNoStats = planLines(criticalSql)
+            val isScan = planWithNoStats.any { it.startsWith("SCAN blocks") && !it.contains("USING") }
+            println(
+                "[BlocksScanRegression] Plan WITHOUT statistics on this SQLite version " +
+                "(${if (isScan) "SCAN — regression reproduced" else "index used — version avoids SCAN"}): $planWithNoStats"
+            )
+
+            // ── Step 4: Fix — ANALYZE blocks after data exists (unconditional startup ANALYZE) ─
+            conn.createStatement().use { it.execute("ANALYZE blocks") }
+
+            val statsAfterFix = statRows()
+            val estimatedRows = statsAfterFix.values
+                .mapNotNull { it.trim().split(" ").firstOrNull()?.toIntOrNull() }
+            assertTrue(estimatedRows.any { it > 10_000 },
+                "After ANALYZE with 50 000 rows, sqlite_stat1 must show an estimated row count " +
+                "> 10 000 for at least one blocks index. Got: $statsAfterFix")
+
+            // ── Hard assertion: fix produces the correct query plan ───────────────────────────
+            val planAfterFix = planLines(criticalSql)
+            assertTrue(planAfterFix.any { it.contains("USING") },
+                "After ANALYZE with real data, the page_uuid lookup must use the composite index. " +
+                "Heap scan still detected after fix. Plan: $planAfterFix")
         } finally {
-            sqliteDriver.closeConnection(conn)
-            driver.close()
+            conn.close()
         }
     }
 

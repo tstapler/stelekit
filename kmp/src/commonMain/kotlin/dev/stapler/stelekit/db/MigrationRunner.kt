@@ -554,10 +554,12 @@ object MigrationRunner {
         applyAll(driver, all)
         // Run a fast sampled ANALYZE on every startup to keep query-planner statistics fresh.
         //
-        // Why unconditional: PRAGMA optimize skips tables whose sqlite_stat1 row count is 0.
-        // On a fresh install the analyze_blocks migration runs before graph import, recording
-        // 0 rows; PRAGMA optimize then permanently ignores blocks and the planner falls back
-        // to SCAN blocks (~1.5 s/query) for the lifetime of the database.
+        // Why unconditional: ANALYZE on an empty table writes NOTHING to sqlite_stat1 — there
+        // is no "0-row" entry, simply no entry at all. On a fresh install the analyze_blocks
+        // migration runs before graph import, so sqlite_stat1 stays empty for blocks. On every
+        // subsequent startup the migration is already applied and skipped, and the old code had
+        // no further ANALYZE call, so the planner never received statistics. On Android SQLite
+        // the planner falls back to SCAN blocks (~1.5 s/query) when no stats exist.
         //
         // Why analysis_limit=400: limits sampling to 400 rows per index (reservoir sample),
         // making each ANALYZE call O(1) in table size and typically under 50 ms on Android
