@@ -18,7 +18,6 @@ internal val ANDROID_PRAGMAS: List<String> = listOf(
     "PRAGMA journal_mode=WAL",
     "PRAGMA synchronous=NORMAL",
     "PRAGMA busy_timeout=10000",
-    "PRAGMA wal_autocheckpoint=4000",
     "PRAGMA temp_store=MEMORY",
     "PRAGMA cache_size=-8000",
     // mmap_size=64MB: maps file pages into process address space, avoids read() syscall
@@ -26,6 +25,11 @@ internal val ANDROID_PRAGMAS: List<String> = listOf(
     // 64MB is conservative for mobile: covers typical graph sizes while leaving VA headroom
     // on 32-bit ARM devices and staying safe on 1-2GB RAM handsets.
     "PRAGMA mmap_size=67108864",
+    // wal_autocheckpoint=1000: trigger passive checkpoint every 1000 WAL pages (~4 MB).
+    // Smaller threshold keeps the WAL compact so readers don't scan many frames during
+    // concurrent writes. An explicit wal_checkpoint(TRUNCATE) is issued after bulk graph
+    // import via SqlDelightBlockRepository.walCheckpoint() / onBulkImportComplete.
+    "PRAGMA wal_autocheckpoint=1000",
     // analysis_limit=400: limits ANALYZE sampling to 400 index rows (reservoir sample).
     // Makes each ANALYZE call O(1) in table size — typically under 50 ms even on 50 000-row
     // tables. Must come before the ANALYZE calls below.

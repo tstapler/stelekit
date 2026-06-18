@@ -567,7 +567,7 @@ class GraphLoader(
                         // Failure is non-fatal: proceed with potentially stale shadow rather than
                         // aborting the reconcile entirely.
                         invalidateStaleShadowNonFatal(graphPath, "warm reconcile")
-                        loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
+                        loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress, DatabaseWriteActor.Priority.LOW)
                         coroutineScope {
                             launch { loadRemainingJournals(journalsDir, immediateJournalCount, onProgress) }
                             launch { loadDirectory(pagesDir, onProgress, ParseMode.METADATA_ONLY) }
@@ -954,7 +954,8 @@ class GraphLoader(
     private suspend fun loadJournalsImmediate(
         journalsDir: String,
         count: Int,
-        onProgress: (String) -> Unit
+        onProgress: (String) -> Unit,
+        priority: DatabaseWriteActor.Priority = DatabaseWriteActor.Priority.HIGH,
     ): Int {
         PerformanceMonitor.startTrace("loadJournalsImmediate")
         try {
@@ -969,7 +970,7 @@ class GraphLoader(
                 fileSystem.invalidateShadow(entry.filePath)
                 val content = readFileDecrypted(entry.filePath) ?: continue
                 try {
-                    parseAndSavePage(FilePath(entry.filePath), content, ParseMode.FULL)
+                    parseAndSavePage(FilePath(entry.filePath), content, ParseMode.FULL, priority)
                     loadedCount++
                 } catch (e: CancellationException) {
                     throw e
@@ -1004,7 +1005,7 @@ class GraphLoader(
                             fileSystem.invalidateShadow(entry.filePath)
                             val content = readFileDecrypted(entry.filePath) ?: return@count false
                             try {
-                                parseAndSavePage(FilePath(entry.filePath), content, ParseMode.METADATA_ONLY)
+                                parseAndSavePage(FilePath(entry.filePath), content, ParseMode.METADATA_ONLY, DatabaseWriteActor.Priority.LOW)
                                 true
                             } catch (e: CancellationException) {
                                 throw e
@@ -1454,18 +1455,21 @@ class GraphLoader(
         val pageUuid = page.uuid
         val stubs = mutableListOf<Block>()
         createStubBlocks(rootBlocks, filePath, pageUuid, null, 0, page.updatedAt, stubs)
-        val span = Span("db.saveMetadata", traceId, parentSpanId)
         writeActor.execute(priority) {
-            val r = pageRepository.savePage(page)
-            if (r.isLeft()) return@execute r
-            blockRepository.deleteBlocksForPage(pageUuid)
-            if (stubs.isNotEmpty()) blockRepository.saveBlocks(stubs)
-            Unit.right()
+            val span = Span("db.saveMetadata", traceId, parentSpanId)
+            val result = run {
+                val r = pageRepository.savePage(page)
+                if (r.isLeft()) return@run r
+                blockRepository.deleteBlocksForPage(pageUuid)
+                if (stubs.isNotEmpty()) blockRepository.saveBlocks(stubs)
+                Unit.right()
+            }
+            span.finish(if (result.isLeft()) "ERROR" else "OK", "stub.count" to stubs.size.toString())
+            result
         }.onLeft { e ->
             logger.warn("saveMetadata failed for $filePath (${stubs.size} stubs): ${e.message}")
             _writeErrors.tryEmit(WriteError(filePath, stubs.size, e))
         }
-        span.finish("OK", "stub.count" to stubs.size.toString())
     }
 
     /**
@@ -1529,35 +1533,40 @@ class GraphLoader(
                 // Batching eliminates N separate deleteBlock round-trips (was N+1 actor
                 // enqueues; now always 1). Deletions run before inserts inside the execute
                 // to avoid UNIQUE constraint violations on position reuse.
-                val writeBlocksSpan = Span("db.writeBlocks", traceId, parentSpanId)
+                // Span is created inside execute so it measures SQL execution time only,
+                // not actor queue wait — queue wait is recorded separately as db.queue_wait.
                 val writeResult = writeActor.execute(priority) {
-                    diff.toDelete.forEach { uuid ->
-                        blockRepository.deleteBlock(uuid).onLeft { e ->
-                            logger.warn("deleteBlock failed for $uuid in $filePath: ${e.message}")
+                    val writeBlocksSpan = Span("db.writeBlocks", traceId, parentSpanId)
+                    val result = run {
+                        diff.toDelete.forEach { uuid ->
+                            blockRepository.deleteBlock(uuid).onLeft { e ->
+                                logger.warn("deleteBlock failed for $uuid in $filePath: ${e.message}")
+                            }
                         }
+                        val pageResult = pageRepository.savePage(page)
+                        if (pageResult.isLeft()) return@run pageResult
+                        if (blocksToInsert.isNotEmpty()) {
+                            val r = blockRepository.saveBlocks(blocksToInsert)
+                            if (r.isLeft()) return@run r
+                        }
+                        if (blocksToUpdate.isNotEmpty()) {
+                            val r = blockRepository.saveBlocksUpdate(blocksToUpdate)
+                            if (r.isLeft()) return@run r
+                        }
+                        Unit.right()
                     }
-                    val pageResult = pageRepository.savePage(page)
-                    if (pageResult.isLeft()) return@execute pageResult
-                    if (blocksToInsert.isNotEmpty()) {
-                        val r = blockRepository.saveBlocks(blocksToInsert)
-                        if (r.isLeft()) return@execute r
-                    }
-                    if (blocksToUpdate.isNotEmpty()) {
-                        val r = blockRepository.saveBlocksUpdate(blocksToUpdate)
-                        if (r.isLeft()) return@execute r
-                    }
-                    Unit.right()
+                    writeBlocksSpan.finish(
+                        if (result.isLeft()) "ERROR" else "OK",
+                        "delete.count" to diff.toDelete.size.toString(),
+                        "insert.count" to blocksToInsert.size.toString(),
+                        "update.count" to blocksToUpdate.size.toString()
+                    )
+                    result
                 }
                 writeResult.onLeft { e ->
                     logger.warn("composite delete+savePage+saveBlocks failed for $filePath: ${e.message}")
                     _writeErrors.tryEmit(WriteError(filePath, blocksToInsert.size + blocksToUpdate.size, e))
                 }
-                writeBlocksSpan.finish(
-                    "OK",
-                    "delete.count" to diff.toDelete.size.toString(),
-                    "insert.count" to blocksToInsert.size.toString(),
-                    "update.count" to blocksToUpdate.size.toString()
-                )
                 if (blocksToInsert.isNotEmpty() || blocksToUpdate.isNotEmpty()) {
                     (blockRepository as? dev.stapler.stelekit.repository.SqlDelightBlockRepository)?.evictHierarchyForPage(pageUuid.value)
                 }
