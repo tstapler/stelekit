@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.49.2](https://github.com/tstapler/stelekit/compare/v0.49.1...v0.49.2) (2026-06-18)
+
+
+### Bug Fixes
+
+* **db:** eliminate SQLITE_BUSY_SNAPSHOT by using BEGIN IMMEDIATE for all JVM transactions ([e341140](https://github.com/tstapler/stelekit/commit/e3411409d01149d69026db2d2ed13637a889fb13))
+
+
+### Performance Improvements
+
+* **db:** move FTS merge from per-save to post-bulk-index ([ea67faa](https://github.com/tstapler/stelekit/commit/ea67faac97c99d7cb708f5e8ae2b58084613d444))
+
 ## [0.49.1](https://github.com/tstapler/stelekit/compare/v0.49.0...v0.49.1) (2026-06-18)
 
 
