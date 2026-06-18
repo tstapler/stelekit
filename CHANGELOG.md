@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.48.2](https://github.com/tstapler/stelekit/compare/v0.48.1...v0.48.2) (2026-06-18)
+
+
+### Bug Fixes
+
+* **git:** wire JvmGitRepository on desktop and keep OAuth code visible during polling ([#166](https://github.com/tstapler/stelekit/issues/166)) ([00df575](https://github.com/tstapler/stelekit/commit/00df5755bae06b88b7428fd3fc22740abbdb2f7d))
+* **watcher:** journals page live refresh + Android detection reliability ([#165](https://github.com/tstapler/stelekit/issues/165)) ([27bf06d](https://github.com/tstapler/stelekit/commit/27bf06d3a37eea47d186272a560e707877628891))
+
 ## [0.48.1](https://github.com/tstapler/stelekit/compare/v0.48.0...v0.48.1) (2026-06-17)
 
 
