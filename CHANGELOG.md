@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.48.3](https://github.com/tstapler/stelekit/compare/v0.48.2...v0.48.3) (2026-06-18)
+
+
+### Bug Fixes
+
+* **db:** correct PRAGMA optimize mask and call site per SQLite docs ([65ad04c](https://github.com/tstapler/stelekit/commit/65ad04cce8f57faada1e858e0ac62d2bffeb5d70))
+
+
+### Performance Improvements
+
+* **db:** fix write-actor priority flooding, span placement, and WAL autocheckpoint ([83cf1e8](https://github.com/tstapler/stelekit/commit/83cf1e8227149a297fe6637794b6b16652a11fb5))
+* **db:** reduce busy_timeout and Android cache_size per pragma audit ([85e1f3f](https://github.com/tstapler/stelekit/commit/85e1f3f419cc7325e5c214fa3f1b7be37eab308e))
+
 ## [0.48.2](https://github.com/tstapler/stelekit/compare/v0.48.1...v0.48.2) (2026-06-18)
 
 
