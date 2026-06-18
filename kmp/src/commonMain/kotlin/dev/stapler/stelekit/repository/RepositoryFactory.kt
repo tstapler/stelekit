@@ -2,6 +2,7 @@ package dev.stapler.stelekit.repository
 
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DriverFactory
+import dev.stapler.stelekit.db.pragmaOptimizeAndClose
 import dev.stapler.stelekit.db.OperationLogger
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.db.TelemetryDatabase
@@ -24,7 +25,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 
 enum class GraphBackend {
@@ -451,29 +451,10 @@ class RepositoryFactoryImpl(
     fun steleDatabase(): SteleDatabase = database
 
     override fun close() {
-        // Persist query-planner statistics for tables used this session before closing.
-        // SQLite docs prescribe PRAGMA optimize (default mask 0xfffe) at connection close for
-        // long-lived connections. close() is always called from a non-suspend context
-        // (GraphManager.switchGraph / shutdown), so runBlocking is safe here.
-        // Note: on Android, process kills bypass this call — the open-time optimize=0x10002
-        // handles the next cold start in that case.
-        try {
-            runBlocking { activeDriver?.execute(null, "PRAGMA optimize", 0)?.await() }
-        } catch (_: Exception) { }
-        // SQLDelight driver must be closed
-        try {
-            activeDriver?.close()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // Driver might not be initialized or already closed
-        }
-        try {
-            runBlocking { activeTelemetryDriver?.execute(null, "PRAGMA optimize", 0)?.await() }
-        } catch (_: Exception) { }
-        try {
-            activeTelemetryDriver?.close()
-        } catch (_: Exception) { }
+        // PRAGMA optimize + driver close per SQLite docs recommendation at connection close.
+        // Platform-specific: JVM/iOS use runBlocking; WASM/JS skips PRAGMA (in-memory only).
+        pragmaOptimizeAndClose(activeDriver)
+        pragmaOptimizeAndClose(activeTelemetryDriver)
         activeTelemetryDriver = null
         activeTelemetryDb = null
         instances.clear()
