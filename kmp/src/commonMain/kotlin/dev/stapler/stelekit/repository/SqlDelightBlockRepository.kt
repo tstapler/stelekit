@@ -281,7 +281,10 @@ class SqlDelightBlockRepository(
                 }
             }
             ftsAutomergeDefault()
-            ftsMerge()
+            // ftsMerge() is intentionally NOT called here. Calling merge=-200 on an already-large
+            // FTS index (e.g. after 500+ pages are indexed) adds hundreds of ms per navigation.
+            // Callers that do bulk indexing must invoke compactFtsIndex() once after the full
+            // batch is complete. Per-save compaction is handled by automerge=8.
             Unit.right()
         } catch (e: CancellationException) {
             runCatching { ftsAutomergeDefault() }
@@ -384,6 +387,10 @@ class SqlDelightBlockRepository(
         } catch (_: Exception) {
             // Non-critical — WAL will be checkpointed automatically on next DB open
         }
+    }
+
+    override suspend fun compactFtsIndex(): Unit = withContext(PlatformDispatcher.DB) {
+        ftsMerge()
     }
 
     override suspend fun saveBlocksUpdate(blocks: List<Block>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {

@@ -744,6 +744,7 @@ class GraphLoader(
                 }
             }
             logger.info("Background indexing complete.")
+            compactFtsAfterBulkIndex()
         } finally {
             backgroundIndexJob = null
             PerformanceMonitor.endTrace("indexRemainingPages")
@@ -761,6 +762,17 @@ class GraphLoader(
      * HIGH requests can still preempt between pages (after each Execute completes),
      * giving sub-page granularity rather than the old sub-chunk (10-page) granularity.
      */
+    // One controlled FTS merge pass after the full bulk-index batch, not per-page-save.
+    // saveBlocks intentionally skips ftsMerge to avoid reading a large index on every
+    // navigation; bulk callers compact once here when all inserts are done.
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun compactFtsAfterBulkIndex() {
+        writeActor.execute(DatabaseWriteActor.Priority.LOW) {
+            blockRepository.compactFtsIndex()
+            Unit.right()
+        }
+    }
+
     @OptIn(DirectRepositoryWrite::class)
     private suspend fun flushChunkWritesPreemptible(
         pagesToSave: List<Page>,
