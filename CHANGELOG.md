@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.49.1](https://github.com/tstapler/stelekit/compare/v0.49.0...v0.49.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **detekt:** suppress UnusedPrivateProperty on for-loop signal variable ([ed87003](https://github.com/tstapler/stelekit/commit/ed87003129acd2f4128e1ec31ba6e46c680f55c0))
+* **wasm:** extract pragmaOptimizeAndClose expect/actual; debounce QueryStatsCollector ([77c7bbe](https://github.com/tstapler/stelekit/commit/77c7bbe723aa43dd5e73b2e583a99ad14e343596))
+
+
+### Performance Improvements
+
+* **telemetry:** batch telemetry writes — drain channel, coalesce histograms, single-transaction spans ([8f85ed7](https://github.com/tstapler/stelekit/commit/8f85ed74c78454fc0e4a1f4a41df187d00e3c83e))
+
 ## [0.49.0](https://github.com/tstapler/stelekit/compare/v0.48.3...v0.49.0) (2026-06-18)
 
 
