@@ -105,7 +105,45 @@ actual class DriverFactory actual constructor() {
         "jdbc:sqlite:${getDatabaseDirectory()}/stelekit-graph-$graphId.db"
 
     actual fun getDatabaseDirectory(): String = jvmDatabaseDirectory()
+
+    actual fun createTelemetryDriver(graphId: String): SqlDriver {
+        val jdbcUrl = getTelemetryDatabaseUrl(graphId)
+        val path = jdbcUrl.substringAfter("jdbc:sqlite:")
+        val parentDir = java.io.File(path).parentFile
+        if (parentDir != null && !parentDir.exists() && !parentDir.mkdirs()) {
+            throw IOException("Failed to create telemetry database directory: ${parentDir.absolutePath}")
+        }
+        // Single connection: telemetry writes are serialized by HistogramWriter channel and
+        // drain loop. poolSize=1 means no WAL snapshot issues across connections.
+        val connectionProps = Properties().apply {
+            setProperty("journal_mode", "WAL")
+            setProperty("synchronous", "NORMAL")
+            setProperty("busy_timeout", "5000")
+            setProperty("cache_size", "-4096")
+            setProperty("temp_store", "2")
+            setProperty("wal_autocheckpoint", "1000")
+        }
+        val driver = PooledJdbcSqliteDriver(jdbcUrl, connectionProps, poolSize = 1)
+        try {
+            runBlocking { TelemetryDatabase.Schema.create(driver).await() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warning("Telemetry schema creation: ${e.message}")
+        }
+        runBlocking {
+            driver.execute(null, "PRAGMA optimize=0x10002", 0).await()
+            TelemetryMigrationRunner.applyAll(driver)
+        }
+        return driver
+    }
 }
 
 actual val defaultDatabaseUrl: String
     get() = "jdbc:sqlite:${jvmDatabaseDirectory()}/stelekit.db"
+
+actual fun createTelemetryDatabaseInMemory(): TelemetryDatabase {
+    val driver = PooledJdbcSqliteDriver("jdbc:sqlite::memory:", Properties(), poolSize = 1)
+    runBlocking { TelemetryDatabase.Schema.create(driver).await() }
+    return TelemetryDatabase(driver)
+}

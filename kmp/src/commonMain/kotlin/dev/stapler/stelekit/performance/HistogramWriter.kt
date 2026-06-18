@@ -8,8 +8,9 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DirectSqlWrite
-import dev.stapler.stelekit.db.RestrictedDatabaseQueries
-import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.db.RestrictedTelemetryQueries
+import dev.stapler.stelekit.db.TelemetryDatabase
+import kotlinx.coroutines.sync.Mutex
 import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -35,15 +36,15 @@ data class HistogramSample(
  * Bucket upper bounds (ms): 0, 16, 33, 50, 100, 500, 1000, 5000, 9999 (overflow).
  */
 class HistogramWriter(
-    private val database: SteleDatabase,
+    private val database: TelemetryDatabase,
     scope: CoroutineScope,
-    // Route writes through the actor so histogram inserts are serialized with all other
-    // DB writes. Without this, concurrent transaction() calls on Dispatchers.IO race with
-    // the actor's writes, causing SQLITE_BUSY when busy_timeout fires before a lock clears.
-    private val writeActor: DatabaseWriteActor? = null,
+    // writeActor unused — telemetry DB uses poolSize=1 so no WAL snapshot contention.
+    // Kept to avoid breaking callers that pass it; ignored internally.
+    @Suppress("UNUSED_PARAMETER") writeActor: DatabaseWriteActor? = null,
+    writeMutex: Mutex = Mutex(),
 ) {
     private val channel = Channel<HistogramSample>(capacity = Channel.BUFFERED)
-    private val restricted = RestrictedDatabaseQueries(database.steleDatabaseQueries)
+    private val restricted = RestrictedTelemetryQueries(database.telemetryQueries, writeMutex)
 
     init {
         scope.launch(PlatformDispatcher.DB) {
@@ -57,28 +58,20 @@ class HistogramWriter(
     private suspend fun processSample(sample: HistogramSample) {
         try {
             val bucket = classifyBucket(sample.durationMs)
-            val writeOp: suspend () -> Either<DomainError, Unit> = {
-                try {
-                    restricted.transaction {
-                        restricted.insertHistogramBucketIfAbsent(
-                            operation_name = sample.operationName,
-                            bucket_ms = bucket,
-                            recorded_at = sample.recordedAt
-                        )
-                        restricted.incrementHistogramBucketCount(
-                            recorded_at = sample.recordedAt,
-                            operation_name = sample.operationName,
-                            bucket_ms = bucket
-                        )
-                    }
-                    Unit.right()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            restricted.withWriteLock {
+                restricted.transaction {
+                    restricted.insertHistogramBucketIfAbsent(
+                        operation_name = sample.operationName,
+                        bucket_ms = bucket,
+                        recorded_at = sample.recordedAt
+                    )
+                    restricted.incrementHistogramBucketCount(
+                        recorded_at = sample.recordedAt,
+                        operation_name = sample.operationName,
+                        bucket_ms = bucket
+                    )
                 }
             }
-            if (writeActor != null) writeActor.execute(op = writeOp) else writeOp()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -95,7 +88,7 @@ class HistogramWriter(
 
     /** Returns all operation names that have at least one recorded sample. */
     fun queryAllOperations(): List<String> =
-        database.steleDatabaseQueries.selectAllHistogramOperations().executeAsList()
+        database.telemetryQueries.selectAllHistogramOperations().executeAsList()
 
     /**
      * Returns all histogram percentiles in a single DB round-trip (vs. N+1 in
@@ -103,7 +96,7 @@ class HistogramWriter(
      * O(operations) sequential queries during export.
      */
     fun queryAllPercentilesForExport(): Map<String, PercentileSummary> {
-        val rows = database.steleDatabaseQueries.selectAllHistogramBuckets().executeAsList()
+        val rows = database.telemetryQueries.selectAllHistogramBuckets().executeAsList()
         if (rows.isEmpty()) return emptyMap()
         return rows
             .groupBy { it.operation_name }
@@ -135,7 +128,7 @@ class HistogramWriter(
      * Returns null if no data is available for the operation.
      */
     fun queryPercentiles(operationName: String): PercentileSummary? {
-        val rows = database.steleDatabaseQueries.selectHistogramForOperation(operationName).executeAsList()
+        val rows = database.telemetryQueries.selectHistogramForOperation(operationName).executeAsList()
         if (rows.isEmpty()) return null
         val totalCount = rows.sumOf { it.count }
         if (totalCount == 0L) return null

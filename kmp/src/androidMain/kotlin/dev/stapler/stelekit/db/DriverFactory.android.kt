@@ -128,9 +128,38 @@ actual class DriverFactory actual constructor() {
         val context = staticContext ?: error("DriverFactory not initialized with a Context.")
         return context.filesDir.absolutePath
     }
+
+    actual fun createTelemetryDriver(graphId: String): SqlDriver {
+        val dbPath = getTelemetryDatabaseUrl(graphId).substringAfter("jdbc:sqlite:")
+        val context = staticContext ?: error("DriverFactory not initialized with a Context.")
+        if (dbPath.startsWith("/")) {
+            java.io.File(dbPath).parentFile?.mkdirs()
+        }
+        val schema = TelemetryDatabase.Schema.synchronous()
+        val driver = AndroidSqliteDriver(
+            schema = schema,
+            context = context,
+            name = dbPath,
+            factory = RequerySQLiteOpenHelperFactory(),
+            callback = object : AndroidSqliteDriver.Callback(schema) {
+                override fun onConfigure(db: SupportSQLiteDatabase) {
+                    super.onConfigure(db)
+                    ANDROID_PRAGMAS.forEach { pragma ->
+                        try { db.query(pragma).close() } catch (_: Exception) { }
+                    }
+                }
+            },
+        )
+        runBlocking { TelemetryMigrationRunner.applyAll(driver) }
+        return driver
+    }
 }
 
 actual val defaultDatabaseUrl: String
     get() {
         return "jdbc:sqlite:stelekit.db"
     }
+
+actual fun createTelemetryDatabaseInMemory(): TelemetryDatabase {
+    error("createTelemetryDatabaseInMemory is not supported on Android — use createTelemetryDriver for production use")
+}

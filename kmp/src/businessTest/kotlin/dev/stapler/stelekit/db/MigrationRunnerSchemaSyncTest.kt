@@ -110,7 +110,7 @@ class MigrationRunnerSchemaSyncTest {
             MigrationRunner.applyAll(driver)
 
             val existingTables = queryTableNames(driver)
-            val expectedFromMigrations: Set<String> = MigrationRunner.all
+            val createdByMigrations: Set<String> = MigrationRunner.all
                 .flatMap { it.statements }
                 .flatMap { sql ->
                     Regex(
@@ -119,6 +119,16 @@ class MigrationRunnerSchemaSyncTest {
                     ).findAll(sql).map { it.groupValues[1].lowercase() }
                 }
                 .toSet()
+            // Tables dropped by later migrations (e.g. telemetry tables moved to TelemetryDatabase)
+            // are not expected to exist after applyAll completes.
+            val droppedByMigrations: Set<String> = MigrationRunner.all
+                .flatMap { it.statements }
+                .flatMap { sql ->
+                    Regex("""DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(\w+)""", RegexOption.IGNORE_CASE)
+                        .findAll(sql).map { it.groupValues[1].lowercase() }
+                }
+                .toSet()
+            val expectedFromMigrations = createdByMigrations - droppedByMigrations
 
             val missing = expectedFromMigrations - existingTables
             assertTrue(missing.isEmpty(),

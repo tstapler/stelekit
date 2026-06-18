@@ -32,7 +32,7 @@ class QueryPlanAuditTest {
         // No WHERE clause — full traversal by design
         "selectAllBlocks", "selectAllBlocksPaginated", "countBlocks",
         "selectAllPagesPaginated", "countPages", "selectPageNameEntries",
-        "selectAllMetadata", "selectAllDebugFlags",
+        "selectAllMetadata",
         // content LIKE — no index on content; FTS handles production full-text search
         "selectBlocksWithContentLike", "selectBlocksWithContentLikePaginated",
         "countBlocksWithWikilink", "selectBlocksWithWikilink", "countLinkedReferencesForPage",
@@ -249,21 +249,9 @@ class QueryPlanAuditTest {
         AuditQuery("countLinkedReferencesForPage",
             "SELECT COUNT(*) FROM blocks WHERE content LIKE '%[[TestPage]]%'"),
 
-        // ── perf_histogram_buckets ───────────────────────────────────────────────────────────
-        AuditQuery("selectHistogramForOperation",
-            "SELECT bucket_ms, count FROM perf_histogram_buckets WHERE operation_name = 'x' ORDER BY bucket_ms"),
-        AuditQuery("selectAllHistogramOperations",
-            "SELECT DISTINCT operation_name FROM perf_histogram_buckets ORDER BY operation_name"),
-        AuditQuery("selectAllHistogramBuckets",
-            "SELECT operation_name, bucket_ms, count FROM perf_histogram_buckets ORDER BY operation_name, bucket_ms"),
-
-        // ── debug_flags ──────────────────────────────────────────────────────────────────────
-        AuditQuery("selectDebugFlag",
-            "SELECT value FROM debug_flags WHERE key = 'x'"),
-        AuditQuery("selectAllDebugFlags",
-            "SELECT key, value FROM debug_flags ORDER BY key"),
-
         // ── metadata ─────────────────────────────────────────────────────────────────────────
+        // NOTE: perf_histogram_buckets and debug_flags are in TelemetryDatabase (Telemetry.sq),
+        // not SteleDatabase — they are audited separately and intentionally absent here.
         AuditQuery("selectMetadata",
             "SELECT value FROM metadata WHERE key = 'x'"),
         AuditQuery("selectAllMetadata",
@@ -293,23 +281,8 @@ class QueryPlanAuditTest {
         AuditQuery("selectAllMigrationsForGraph",
             "SELECT * FROM migration_changelog WHERE graph_id = 'x' ORDER BY execution_order"),
 
-        // ── spans ────────────────────────────────────────────────────────────────────────────
-        AuditQuery("selectRecentSpans",
-            "SELECT * FROM spans ORDER BY start_epoch_ms DESC LIMIT 10"),
-        AuditQuery("selectSlowSpansByVersionAndName",
-            "SELECT * FROM spans WHERE app_version = '0.1.0' AND name = 'op_0' ORDER BY duration_ms DESC LIMIT 10"),
-        AuditQuery("selectDistinctVersionsWithSpans",
-            "SELECT DISTINCT app_version FROM spans WHERE app_version != '' ORDER BY app_version DESC"),
-
-        // ── query_stats ────────────────────────────────────────────────────────────────────────
-        AuditQuery("selectQueryStatsByVersion",
-            "SELECT * FROM query_stats WHERE app_version = 'x' ORDER BY total_ms DESC"),
-        AuditQuery("selectTopQueryStatsByTotalMs",
-            "SELECT * FROM query_stats WHERE app_version = 'x' ORDER BY total_ms DESC LIMIT 10"),
-        AuditQuery("selectTopQueryStatsByCalls",
-            "SELECT * FROM query_stats WHERE app_version = 'x' ORDER BY calls DESC LIMIT 10"),
-        AuditQuery("selectAllQueryStatVersions",
-            "SELECT DISTINCT app_version FROM query_stats ORDER BY app_version DESC"),
+        // NOTE: spans and query_stats are in TelemetryDatabase (Telemetry.sq), not SteleDatabase.
+        // Their query-plan audit lives with the telemetry test suite.
 
         // ── git_config ────────────────────────────────────────────────────────────────────────
         AuditQuery("selectGitConfig",
@@ -433,16 +406,6 @@ class QueryPlanAuditTest {
                         "page_uuids,size_bytes,imported_at_ms,ml_processed,ml_failed,ml_tags_source) " +
                         "VALUES('a$i','/assets/file$i.png','assets/file$i.png','image/png','files'," +
                         "'[]','[]','[]',1024,${i * 1000L},0,0,'NONE')"
-                    )
-                }
-                // ── spans — needed for selectSlowSpansByVersionAndName / selectDistinctVersions ──
-                repeat(50) { i ->
-                    seed.execute(
-                        "INSERT OR IGNORE INTO spans(" +
-                        "trace_id,span_id,parent_span_id,name,start_epoch_ms,end_epoch_ms," +
-                        "duration_ms,attributes_json,status_code,app_version,commit_hash) " +
-                        "VALUES('t$i','s$i','','op_${i % 5}',${i * 1000L},${i * 1000L + 100L}," +
-                        "100,'{}','OK','0.${i % 10}.0','abc123')"
                     )
                 }
                 // ── git_config — needed for selectGitConfig ───────────────────────────────────

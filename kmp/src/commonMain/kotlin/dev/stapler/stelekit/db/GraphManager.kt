@@ -381,7 +381,7 @@ class GraphManager(
                 preFlightJob?.await()
 
                 val dbUrl = driverFactory.getDatabaseUrl(id)
-                val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl)
+                val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl, graphId = id)
                 val deviceInfo = try {
                     dev.stapler.stelekit.performance.getDeviceInfo()
                 } catch (e: CancellationException) {

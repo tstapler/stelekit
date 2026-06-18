@@ -537,6 +537,18 @@ object MigrationRunner {
                 "DROP INDEX IF EXISTS idx_blocks_level",
             )
         ),
+        Migration(
+            name = "drop_telemetry_tables_from_content_db",
+            statements = listOf(
+                // Telemetry tables moved to stelekit-telemetry-{graphId}.db.
+                // Drop them from existing content databases to recover disk space and eliminate
+                // WAL contention between telemetry background writes and content writes.
+                "DROP TABLE IF EXISTS spans",
+                "DROP TABLE IF EXISTS query_stats",
+                "DROP TABLE IF EXISTS perf_histogram_buckets",
+                "DROP TABLE IF EXISTS debug_flags",
+            )
+        ),
     )
 
     /**

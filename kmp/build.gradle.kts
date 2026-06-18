@@ -980,6 +980,12 @@ sqldelight {
         create("SteleDatabase") {
             packageName.set("dev.stapler.stelekit.db")
             generateAsync.set(true)
+            srcDirs("src/commonMain/sqldelight")
+        }
+        create("TelemetryDatabase") {
+            packageName.set("dev.stapler.stelekit.db")
+            generateAsync.set(true)
+            srcDirs("src/commonMain/sqldelightTelemetry")
         }
     }
 }

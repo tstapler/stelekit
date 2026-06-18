@@ -1,27 +1,30 @@
 package dev.stapler.stelekit.performance
 
 import dev.stapler.stelekit.db.DirectSqlWrite
-import dev.stapler.stelekit.db.RestrictedDatabaseQueries
-import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.db.RestrictedTelemetryQueries
+import dev.stapler.stelekit.db.TelemetryDatabase
+import kotlinx.coroutines.sync.Mutex
 
 /**
  * CRUD operations over the [debug_flags] SQLDelight table.
  * All reads/writes are synchronous (called from Dispatchers.IO).
  */
-class DebugFlagRepository(private val database: SteleDatabase) {
-    private val restricted = RestrictedDatabaseQueries(database.steleDatabaseQueries)
+class DebugFlagRepository(private val database: TelemetryDatabase, writeMutex: Mutex = Mutex()) {
+    private val restricted = RestrictedTelemetryQueries(database.telemetryQueries, writeMutex)
 
     @OptIn(DirectSqlWrite::class)
     suspend fun setFlag(key: String, enabled: Boolean) {
-        restricted.upsertDebugFlag(
-            key = key,
-            value_ = if (enabled) 1L else 0L,
-            updated_at = HistogramWriter.epochMs()
-        )
+        restricted.withWriteLock {
+            restricted.upsertDebugFlag(
+                key = key,
+                value_ = if (enabled) 1L else 0L,
+                updated_at = HistogramWriter.epochMs()
+            )
+        }
     }
 
     fun getFlag(key: String, default: Boolean = false): Boolean {
-        val row = database.steleDatabaseQueries.selectDebugFlag(key).executeAsOneOrNull()
+        val row = database.telemetryQueries.selectDebugFlag(key).executeAsOneOrNull()
         return if (row != null) row != 0L else default
     }
 
