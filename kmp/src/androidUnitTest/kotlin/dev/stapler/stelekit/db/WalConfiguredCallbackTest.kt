@@ -17,7 +17,7 @@ class WalConfiguredCallbackTest {
             "PRAGMA mmap_size=67108864",
             "PRAGMA wal_autocheckpoint=1000",
             "PRAGMA temp_store=MEMORY",
-            "PRAGMA cache_size=-8000",
+            "PRAGMA cache_size=-5000",
             "PRAGMA optimize=0x10002",
         )
         required.forEach { pragma ->

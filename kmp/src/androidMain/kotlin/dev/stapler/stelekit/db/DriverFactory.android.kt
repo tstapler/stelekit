@@ -17,9 +17,16 @@ import kotlinx.coroutines.runBlocking
 internal val ANDROID_PRAGMAS: List<String> = listOf(
     "PRAGMA journal_mode=WAL",
     "PRAGMA synchronous=NORMAL",
-    "PRAGMA busy_timeout=10000",
+    // busy_timeout=5000: wait up to 5s for a WAL write lock before returning SQLITE_BUSY.
+    // With DatabaseWriteActor serializing all writes, SQLite-level lock contention is
+    // rare (only during WAL checkpoint); 5s is generous and surfaces real deadlocks faster
+    // than the previous 10s.
+    "PRAGMA busy_timeout=5000",
     "PRAGMA temp_store=MEMORY",
-    "PRAGMA cache_size=-8000",
+    // cache_size=-5000: 5 MB page cache. mmap_size=64MB already serves hot reads via OS
+    // virtual memory, so the cache primarily buffers WAL frames awaiting checkpoint.
+    // Reduced from 8 MB to recover ~3 MB heap on memory-constrained devices.
+    "PRAGMA cache_size=-5000",
     // mmap_size=64MB: maps file pages into process address space, avoids read() syscall
     // overhead on repeated reads. OS lazily maps only accessed pages — not pre-allocated.
     // 64MB is conservative for mobile: covers typical graph sizes while leaving VA headroom

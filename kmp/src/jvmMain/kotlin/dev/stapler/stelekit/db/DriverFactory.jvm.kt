@@ -47,7 +47,10 @@ actual class DriverFactory actual constructor() {
             setProperty("journal_mode", "WAL")
             setProperty("synchronous", "NORMAL")
             setProperty("foreign_keys", "true")
-            setProperty("busy_timeout", "30000")
+            // busy_timeout=10000: wait up to 10s for a WAL write lock before SQLITE_BUSY.
+            // With DatabaseWriteActor serializing all writes, contention is rare; 10s is
+            // generous for a pooled-reader scenario and surfaces real deadlocks faster than 30s.
+            setProperty("busy_timeout", "10000")
             // cache_size: negative = KiB; -32768 = 32 MB per connection.
             // 8 pool connections × 32 MB = 256 MB total page cache (JVM has more RAM headroom).
             setProperty("cache_size", "-32768")
