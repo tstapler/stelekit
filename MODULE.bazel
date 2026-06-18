@@ -2,3 +2,34 @@ module(
     name = "stelekit",
     version = "0.1",
 )
+
+bazel_dep(name = "rules_rust", version = "0.70.0")
+
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2021",
+    versions = ["1.85.0"],
+    # Cross-compilation targets shipped with the toolchain.
+    # Build for a specific target with:
+    #   bazel build //native/libsql:stelekit_libsql \
+    #     --platforms=@rules_rust//rust/platform:<triple>
+    extra_target_triples = [
+        "aarch64-apple-darwin",
+        "aarch64-linux-android",
+        "x86_64-apple-darwin",
+        "x86_64-linux-android",
+        "x86_64-pc-windows-msvc",
+        "x86_64-unknown-linux-gnu",
+    ],
+)
+use_repo(rust, "rust_toolchains")
+
+register_toolchains("@rust_toolchains//:all")
+
+crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+crate.from_cargo(
+    name = "crates",
+    cargo_lockfile = "//native/libsql:Cargo.lock",
+    manifests = ["//native/libsql:Cargo.toml"],
+)
+use_repo(crate, "crates")
