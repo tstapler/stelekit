@@ -60,7 +60,7 @@ class QueryStatsCollector(
 
     init {
         scope.launch(PlatformDispatcher.DB) {
-            for (signal in flushSignal) {
+            for (@Suppress("UNUSED_VARIABLE") signal in flushSignal) {
                 // Wait for activity to settle before writing — absorbs any signal that arrives
                 // during the quiet window so we don't immediately re-trigger.
                 delay(debounceMs)
