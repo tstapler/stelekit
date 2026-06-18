@@ -87,11 +87,11 @@ actual class DriverFactory actual constructor() {
         }
 
         runBlocking {
-            // Limit ANALYZE sampling to 400 rows per index so the unconditional ANALYZE calls
-            // in applyAll() complete in O(1) time regardless of table size (~50 ms vs ~2 s).
-            // On JVM, driver.execute() silently discards the returned value in JDBC — no
-            // Requery restriction applies here (unlike Android, which uses rawQuery in ANDROID_PRAGMAS).
-            driver.execute(null, "PRAGMA analysis_limit=400", 0).await()
+            // optimize=0x10002: prescribed by SQLite docs for long-lived connections.
+            // Mask 0x10002 = 0x10000 (check all tables) | 0x0002 (run ANALYZE if stats missing/stale).
+            // Handles fresh installs (empty sqlite_stat1) and warm starts with stale statistics.
+            // PRAGMA optimize (default mask) is called at close via RepositoryFactoryImpl.close().
+            driver.execute(null, "PRAGMA optimize=0x10002", 0).await()
             MigrationRunner.applyAll(driver)
         }
 

@@ -30,22 +30,16 @@ internal val ANDROID_PRAGMAS: List<String> = listOf(
     // concurrent writes. An explicit wal_checkpoint(TRUNCATE) is issued after bulk graph
     // import via SqlDelightBlockRepository.walCheckpoint() / onBulkImportComplete.
     "PRAGMA wal_autocheckpoint=1000",
-    // analysis_limit=400: limits ANALYZE sampling to 400 index rows (reservoir sample).
-    // Makes each ANALYZE call O(1) in table size — typically under 50 ms even on 50 000-row
-    // tables. Must come before the ANALYZE calls below.
-    // Called here (rawQuery) rather than driver.execute() because Requery throws for
-    // result-returning statements (PRAGMA analysis_limit returns the new value).
-    "PRAGMA analysis_limit=400",
-    // ANALYZE blocks/pages unconditionally so fresh installs get correct query-planner
-    // statistics on their second launch, after graph import has populated the table.
-    // Without this, analyze_blocks migration runs on an empty DB → sqlite_stat1 shows 0 rows →
-    // PRAGMA optimize permanently skips re-analysis → SCAN blocks (~1.5 s/query) forever.
-    // Fails silently on first install (tables don't exist yet) via the try-catch in onConfigure.
-    "ANALYZE blocks",
-    "ANALYZE pages",
-    // PRAGMA optimize: selectively runs ANALYZE on other tables whose statistics are
-    // significantly outdated. Ensures query-planner correctness for tables not covered above.
-    "PRAGMA optimize",
+    // optimize=0x10002: prescribed by SQLite docs for long-lived connections (DB open for
+    // the app lifetime). Mask 0x10002 = 0x10000 (check all tables, not just recently used)
+    // | 0x0002 (run ANALYZE if statistics are missing or stale).
+    // On first install, sqlite_stat1 is empty → optimize triggers ANALYZE automatically,
+    // avoiding the permanent SCAN plans that the old unconditional ANALYZE blocks/pages
+    // workaround was compensating for. On warm starts with fresh stats, optimize is a no-op.
+    // PRAGMA optimize (default mask 0xfffe) is called at close via RepositoryFactoryImpl.close()
+    // to persist stats for tables used during the session; process kills skip that call —
+    // the 0x10000 flag here covers the next open in that case.
+    "PRAGMA optimize=0x10002",
 )
 
 /**

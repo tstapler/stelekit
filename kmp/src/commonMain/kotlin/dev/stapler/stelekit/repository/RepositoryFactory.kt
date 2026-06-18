@@ -26,6 +26,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 
 enum class GraphBackend {
     SQLDELIGHT,
@@ -433,6 +434,15 @@ class RepositoryFactoryImpl(
     fun steleDatabase(): SteleDatabase = database
 
     override fun close() {
+        // Persist query-planner statistics for tables used this session before closing.
+        // SQLite docs prescribe PRAGMA optimize (default mask 0xfffe) at connection close for
+        // long-lived connections. close() is always called from a non-suspend context
+        // (GraphManager.switchGraph / shutdown), so runBlocking is safe here.
+        // Note: on Android, process kills bypass this call — the open-time optimize=0x10002
+        // handles the next cold start in that case.
+        try {
+            runBlocking { activeDriver?.execute(null, "PRAGMA optimize", 0)?.await() }
+        } catch (_: Exception) { }
         // SQLDelight driver must be closed
         try {
             activeDriver?.close()

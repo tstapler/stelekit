@@ -18,6 +18,7 @@ class WalConfiguredCallbackTest {
             "PRAGMA wal_autocheckpoint=1000",
             "PRAGMA temp_store=MEMORY",
             "PRAGMA cache_size=-8000",
+            "PRAGMA optimize=0x10002",
         )
         required.forEach { pragma ->
             assertTrue(
