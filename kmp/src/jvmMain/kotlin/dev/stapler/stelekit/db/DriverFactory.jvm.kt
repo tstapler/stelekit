@@ -47,6 +47,14 @@ actual class DriverFactory actual constructor() {
             setProperty("journal_mode", "WAL")
             setProperty("synchronous", "NORMAL")
             setProperty("foreign_keys", "true")
+            // transaction_mode=IMMEDIATE: force BEGIN IMMEDIATE instead of BEGIN DEFERRED.
+            // BEGIN DEFERRED acquires only a read lock at transaction start and upgrades to a
+            // write lock on the first write. In WAL mode, if another connection commits between
+            // the first read and the first write, the upgrade throws SQLITE_BUSY_SNAPSHOT —
+            // which bypasses busy_timeout entirely (no retry). BEGIN IMMEDIATE acquires the
+            // write lock upfront so no upgrade occurs. Since DatabaseWriteActor serializes
+            // writes, the write lock is never contended; this pragma is zero-cost in practice.
+            setProperty("transaction_mode", "IMMEDIATE")
             // busy_timeout=10000: wait up to 10s for a WAL write lock before SQLITE_BUSY.
             // With DatabaseWriteActor serializing all writes, contention is rare; 10s is
             // generous for a pooled-reader scenario and surfaces real deadlocks faster than 30s.
