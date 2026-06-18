@@ -498,9 +498,14 @@ private suspend fun startOAuthFlow(
         deviceCode = response.deviceCode,
         expiresIn = response.expiresIn,
         initialInterval = response.interval,
-        onStateChange = { pollState ->
-            // Once user has opened browser (we're polling), transition to Polling state
-            onDialogStateChange(OAuthDialogState.Polling)
+        onStateChange = { _ ->
+            onDialogStateChange(
+                OAuthDialogState.Polling(
+                    userCode = response.userCode,
+                    verificationUri = response.verificationUri,
+                    expiresAt = expiresAt,
+                )
+            )
         },
     )
 
