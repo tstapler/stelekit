@@ -186,26 +186,28 @@ private fun CodeDisplayContent(
     onCopyCode: (String) -> Unit,
     onOpenBrowser: (String) -> Unit,
 ) {
-    Text("Open github.com/login/device and enter this code:", style = MaterialTheme.typography.bodyMedium)
-    Text(
-        text = userCode,
-        style = MaterialTheme.typography.headlineMedium,
-        color = MaterialTheme.colorScheme.primary,
-    )
-    CountdownText(expiresAt = expiresAt)
-    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        OutlinedButton(
-            onClick = { onCopyCode(userCode) },
-            modifier = Modifier.weight(1f),
-        ) { Text("Copy code") }
-        Button(
-            onClick = { onOpenBrowser(verificationUri) },
-            modifier = Modifier.weight(1f),
-        ) { Text("Open GitHub") }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Open github.com/login/device and enter this code:", style = MaterialTheme.typography.bodyMedium)
+        Text(
+            text = userCode,
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        CountdownText(expiresAt = expiresAt)
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(
+                onClick = { onCopyCode(userCode) },
+                modifier = Modifier.weight(1f),
+            ) { Text("Copy code") }
+            Button(
+                onClick = { onOpenBrowser(verificationUri) },
+                modifier = Modifier.weight(1f),
+            ) { Text("Open GitHub") }
+        }
     }
 }
 
