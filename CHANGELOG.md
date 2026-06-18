@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.49.0](https://github.com/tstapler/stelekit/compare/v0.48.3...v0.49.0) (2026-06-18)
+
+
+### Features
+
+* **db:** split telemetry tables into dedicated TelemetryDatabase ([91de722](https://github.com/tstapler/stelekit/commit/91de722edb9486405868dfcc2c406b5cd68f5a64))
+
 ## [0.48.3](https://github.com/tstapler/stelekit/compare/v0.48.2...v0.48.3) (2026-06-18)
 
 
