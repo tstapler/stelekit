@@ -38,10 +38,16 @@ class DebugFlagRepository(private val database: TelemetryDatabase, writeMutex: M
     )
 
     suspend fun saveDebugMenuState(state: DebugMenuState) {
-        setFlag("frame_overlay", state.isFrameOverlayEnabled)
-        setFlag("otel_stdout", state.isOtelStdoutEnabled)
-        setFlag("jank_stats", state.isJankStatsEnabled)
-        setFlag("query_tracing", state.isQueryTracingEnabled)
-        setFlag("span_capture", state.isSpanCaptureEnabled)
+        val now = HistogramWriter.epochMs()
+        @OptIn(DirectSqlWrite::class)
+        restricted.withWriteLock {
+            restricted.transaction {
+                restricted.upsertDebugFlag("frame_overlay", if (state.isFrameOverlayEnabled) 1L else 0L, now)
+                restricted.upsertDebugFlag("otel_stdout", if (state.isOtelStdoutEnabled) 1L else 0L, now)
+                restricted.upsertDebugFlag("jank_stats", if (state.isJankStatsEnabled) 1L else 0L, now)
+                restricted.upsertDebugFlag("query_tracing", if (state.isQueryTracingEnabled) 1L else 0L, now)
+                restricted.upsertDebugFlag("span_capture", if (state.isSpanCaptureEnabled) 1L else 0L, now)
+            }
+        }
     }
 }

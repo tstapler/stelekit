@@ -41,6 +41,10 @@ class RestrictedTelemetryQueries(
         queries.incrementHistogramBucketCount(recorded_at, operation_name, bucket_ms)
 
     @DirectSqlWrite
+    suspend fun incrementHistogramBucketCountBy(delta: Long, recorded_at: Long, operation_name: String, bucket_ms: Long): Long =
+        queries.incrementHistogramBucketCountBy(delta, recorded_at, operation_name, bucket_ms)
+
+    @DirectSqlWrite
     suspend fun deleteOldHistogramRows(recorded_at: Long): Long =
         queries.deleteOldHistogramRows(recorded_at)
 

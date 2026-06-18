@@ -36,27 +36,34 @@ class SqlDelightSpanRepository(
         queries.selectRecentSpans(limit.toLong())
             .asDbFlowList(PlatformDispatcher.DB) { it.toSerializedSpan() }
 
-    override suspend fun insertSpan(span: SerializedSpan) {
-        val attributesJson = json.encodeToString(
-            MapSerializer(String.serializer(), String.serializer()),
-            span.attributes
-        )
+    override suspend fun insertSpan(span: SerializedSpan) = insertSpans(listOf(span))
+
+    override suspend fun insertSpans(spans: List<SerializedSpan>) {
+        if (spans.isEmpty()) return
         withContext(PlatformDispatcher.DB) {
             restricted.withWriteLock {
                 @OptIn(DirectSqlWrite::class)
-                restricted.insertSpan(
-                    trace_id = span.traceId,
-                    span_id = span.spanId,
-                    parent_span_id = span.parentSpanId,
-                    name = span.name,
-                    start_epoch_ms = span.startEpochMs,
-                    end_epoch_ms = span.endEpochMs,
-                    duration_ms = span.durationMs,
-                    attributes_json = attributesJson,
-                    status_code = span.statusCode,
-                    app_version = span.attributes["app.version"] ?: "",
-                    commit_hash = span.attributes["app.commit"] ?: "",
-                )
+                restricted.transaction {
+                    for (span in spans) {
+                        val attributesJson = json.encodeToString(
+                            MapSerializer(String.serializer(), String.serializer()),
+                            span.attributes
+                        )
+                        restricted.insertSpan(
+                            trace_id = span.traceId,
+                            span_id = span.spanId,
+                            parent_span_id = span.parentSpanId,
+                            name = span.name,
+                            start_epoch_ms = span.startEpochMs,
+                            end_epoch_ms = span.endEpochMs,
+                            duration_ms = span.durationMs,
+                            attributes_json = attributesJson,
+                            status_code = span.statusCode,
+                            app_version = span.attributes["app.version"] ?: "",
+                            commit_hash = span.attributes["app.commit"] ?: "",
+                        )
+                    }
+                }
             }
         }
     }

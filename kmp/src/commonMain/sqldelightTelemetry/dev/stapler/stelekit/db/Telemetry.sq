@@ -79,6 +79,11 @@ UPDATE perf_histogram_buckets
 SET count = count + 1, recorded_at = ?
 WHERE operation_name = ? AND bucket_ms = ?;
 
+incrementHistogramBucketCountBy:
+UPDATE perf_histogram_buckets
+SET count = count + ?, recorded_at = ?
+WHERE operation_name = ? AND bucket_ms = ?;
+
 selectHistogramForOperation:
 SELECT bucket_ms, count FROM perf_histogram_buckets WHERE operation_name = ? ORDER BY bucket_ms;
 

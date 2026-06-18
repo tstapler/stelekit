@@ -48,33 +48,57 @@ class HistogramWriter(
 
     init {
         scope.launch(PlatformDispatcher.DB) {
-            for (sample in channel) {
-                processSample(sample)
+            for (first in channel) {
+                // Drain all buffered samples before touching the DB — single transaction per burst.
+                val batch = mutableListOf(first)
+                var next = channel.tryReceive()
+                while (next.isSuccess) {
+                    batch.add(next.getOrThrow())
+                    next = channel.tryReceive()
+                }
+                processBatch(batch)
             }
         }
     }
 
     @OptIn(DirectSqlWrite::class)
-    private suspend fun processSample(sample: HistogramSample) {
-        try {
+    private suspend fun processBatch(samples: List<HistogramSample>) {
+        // Coalesce: accumulate counts per (operationName, bucket) before writing.
+        // Key: operationName to bucket_ms. Value: count to earliest recordedAt.
+        val coalesced = LinkedHashMap<Pair<String, Long>, Pair<Long, Long>>()
+        for (sample in samples) {
             val bucket = classifyBucket(sample.durationMs)
+            val key = sample.operationName to bucket
+            val existing = coalesced[key]
+            if (existing == null) {
+                coalesced[key] = 1L to sample.recordedAt
+            } else {
+                coalesced[key] = (existing.first + 1L) to minOf(existing.second, sample.recordedAt)
+            }
+        }
+        try {
             restricted.withWriteLock {
                 restricted.transaction {
-                    restricted.insertHistogramBucketIfAbsent(
-                        operation_name = sample.operationName,
-                        bucket_ms = bucket,
-                        recorded_at = sample.recordedAt
-                    )
-                    restricted.incrementHistogramBucketCount(
-                        recorded_at = sample.recordedAt,
-                        operation_name = sample.operationName,
-                        bucket_ms = bucket
-                    )
+                    for ((key, accum) in coalesced) {
+                        val (operationName, bucket) = key
+                        val (count, recordedAt) = accum
+                        restricted.insertHistogramBucketIfAbsent(
+                            operation_name = operationName,
+                            bucket_ms = bucket,
+                            recorded_at = recordedAt
+                        )
+                        restricted.incrementHistogramBucketCountBy(
+                            delta = count,
+                            recorded_at = recordedAt,
+                            operation_name = operationName,
+                            bucket_ms = bucket
+                        )
+                    }
                 }
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // A DB error must not kill the consumer coroutine — log and continue
         }
     }

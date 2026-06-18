@@ -32,6 +32,7 @@ class PerfExporterPickerTest {
 
         override fun getRecentSpans(limit: Int): Flow<Either<DomainError, List<SerializedSpan>>> = flowOf(spans.right())
         @DirectRepositoryWrite override suspend fun insertSpan(span: SerializedSpan) = Unit
+        @DirectRepositoryWrite override suspend fun insertSpans(spans: List<SerializedSpan>) = Unit
         @DirectRepositoryWrite override suspend fun deleteSpansOlderThan(cutoffEpochMs: Long) = Unit
         @DirectRepositoryWrite override suspend fun deleteExcessSpans(maxCount: Int) = Unit
         @DirectRepositoryWrite override suspend fun clear() = Unit

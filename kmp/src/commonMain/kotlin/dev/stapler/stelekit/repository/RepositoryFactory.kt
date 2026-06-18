@@ -421,7 +421,7 @@ class RepositoryFactoryImpl(
                 // content writes, so we call directly instead of routing through the write actor.
                 @OptIn(DirectRepositoryWrite::class)
                 run {
-                    drained.forEach { span -> spanRepository.insertSpan(span) }
+                    spanRepository.insertSpans(drained)
                     spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)
                     spanRepository.deleteExcessSpans(10_000)
                 }
