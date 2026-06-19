@@ -67,7 +67,7 @@ jobs:
           )
           echo "source_hash=$HASH" >> "$GITHUB_OUTPUT"
 
-          STORED=$(cat native/libsql/.inputs-hash 2>/dev/null | tr -d '[:space:]')
+          STORED=$(tr -d '[:space:]' < native/libsql/.inputs-hash 2>/dev/null)
 
           if [ "$HASH" = "$STORED" ]; then
             echo "needs_build=false" >> "$GITHUB_OUTPUT"
