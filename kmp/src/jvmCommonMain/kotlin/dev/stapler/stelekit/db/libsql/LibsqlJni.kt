@@ -1,29 +1,22 @@
 package dev.stapler.stelekit.db.libsql
 
-import java.io.File
-import java.io.FileOutputStream
-import java.util.logging.Logger
-
 /**
  * JNI declarations for the Rust `stelekit_libsql` cdylib.
- *
- * The native library is bundled as a classpath resource under
- * `native/<os>-<arch>/libstelekit_libsql.{so,dylib,dll}` and extracted to a temp
- * directory on first use.  The extraction is idempotent (same JVM process reuses the
- * previously extracted file).
  *
  * Function names follow the JNI mangling convention and map 1:1 to the `#[no_mangle]`
  * `pub extern "system" fn Java_dev_stapler_stelekit_db_libsql_LibsqlJni_*` functions in
  * `native/libsql/src/lib.rs`.
+ *
+ * Library loading is platform-specific ([loadLibsqlNativeLibrary]):
+ * - JVM desktop: extracted from classpath resource `native/<os-arch>/libstelekit_libsql.{so,dylib,dll}`
+ * - Android: loaded via [System.loadLibrary] from the APK's `jniLibs/<abi>/` directory
  */
 object LibsqlJni {
 
     const val SQLITE_BUSY_SNAPSHOT = 517
 
-    private val log = Logger.getLogger("LibsqlJni")
-
     init {
-        loadNativeLibrary()
+        loadLibsqlNativeLibrary()
     }
 
     // ── Database lifecycle ──────────────────────────────────────────────────
@@ -124,48 +117,4 @@ object LibsqlJni {
 
     /** Frees the cursor handle.  Must be called after all rows have been consumed. */
     @JvmStatic external fun closeCursor(handle: Long)
-
-    // ── Native library loading ──────────────────────────────────────────────
-
-    private fun loadNativeLibrary() {
-        val version = "0.1.0"
-        val libName = System.mapLibraryName("stelekit_libsql") // e.g. "libstelekit_libsql.so"
-        val ext = libName.substringAfterLast('.') // "so", "dylib", or "dll"
-        val os = System.getProperty("os.name").lowercase()
-        val arch = System.getProperty("os.arch").lowercase()
-        val resourceDir = when {
-            os.contains("linux") && arch.contains("amd64") -> "linux-x86_64"
-            os.contains("linux") && arch.contains("aarch64") -> "linux-aarch64"
-            os.contains("mac") && arch.contains("aarch64") -> "macos-aarch64"
-            os.contains("mac") -> "macos-x86_64"
-            os.contains("win") -> "windows-x86_64"
-            else -> error("Unsupported platform: os=$os arch=$arch")
-        }
-        val resourcePath = "/native/$resourceDir/$libName"
-        val stream = LibsqlJni::class.java.getResourceAsStream(resourcePath)
-            ?: error("Native library not bundled at $resourcePath. Trigger the 'Build Native Libraries' workflow or run: cd native/libsql && cargo build --release")
-        // Read bytes once — used for both the hash and the write.
-        val bytes = stream.use { it.readBytes() }
-        val crc = java.util.zip.CRC32().also { it.update(bytes) }
-        val hash = java.lang.Long.toHexString(crc.value).padStart(8, '0')
-        val tmpDir = File(
-            System.getProperty("org.sqlite.tmpdir") ?: System.getProperty("java.io.tmpdir"),
-            "stelekit-libsql",
-        )
-        tmpDir.mkdirs()
-        // Versioned + hash filename prevents stale-binary collisions across upgrades.
-        val versionedName = "libstelekit_libsql-$version-$hash.$ext"
-        val tmpLib = File(tmpDir, versionedName)
-        if (!tmpLib.exists()) {
-            FileOutputStream(tmpLib).use { it.write(bytes) }
-        }
-        try {
-            System.load(tmpLib.absolutePath)
-        } catch (e: UnsatisfiedLinkError) {
-            throw UnsatisfiedLinkError(
-                "Failed to load native library from $tmpLib (resource: $resourcePath): ${e.message}"
-            )
-        }
-        log.info("Loaded libsql JNI bridge from $tmpLib")
-    }
 }
