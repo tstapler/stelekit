@@ -112,7 +112,11 @@ class JvmLibsqlDriver(
             existing.nestingLevel++
             savepointLevel = existing.nestingLevel
             connHandle = existing.connHandle
-            LibsqlJni.executeRaw(connHandle, "SAVEPOINT sp_$savepointLevel")
+            val spResult = LibsqlJni.executeRaw(connHandle, "SAVEPOINT sp_$savepointLevel")
+            if (spResult < 0) {
+                val msg = LibsqlJni.connectionLastError(connHandle) ?: "SAVEPOINT failed"
+                throw RuntimeException("$msg (sp_$savepointLevel)")
+            }
         } else {
             // Top-level transaction — acquire a dedicated connection and BEGIN
             connHandle = pool.poll() ?: LibsqlJni.openConnection(dbHandle)
@@ -120,11 +124,10 @@ class JvmLibsqlDriver(
             val beginSql = if (isMvccActive) "BEGIN CONCURRENT" else "BEGIN IMMEDIATE"
             val beginResult = LibsqlJni.executeRaw(connHandle, beginSql)
             if (beginResult < 0) {
-                // BEGIN failed (e.g. SQLITE_BUSY when another writer holds the lock).
-                // Return the connection before throwing so it isn't lost.
-                if (!pool.offer(connHandle)) LibsqlJni.closeConnection(connHandle)
+                // Read error info before returning/closing the connection — use-after-free otherwise.
                 val errcode = LibsqlJni.connectionExtendedErrcode(connHandle)
                 val msg = LibsqlJni.connectionLastError(connHandle) ?: beginSql
+                if (!pool.offer(connHandle)) LibsqlJni.closeConnection(connHandle)
                 if (errcode == LibsqlJni.SQLITE_BUSY_SNAPSHOT) {
                     throw LibsqlBusySnapshotException("$beginSql failed: $msg")
                 }
@@ -152,7 +155,9 @@ class JvmLibsqlDriver(
                     if (successful) {
                         val result = LibsqlJni.executeRaw(connHandle, "COMMIT")
                         if (result < 0) {
+                            // Read error info before returning/closing the connection — use-after-free otherwise.
                             val errcode = LibsqlJni.connectionExtendedErrcode(connHandle)
+                            val commitErr = LibsqlJni.connectionLastError(connHandle)
                             LibsqlJni.executeRaw(connHandle, "ROLLBACK")
                             txState.remove()
                             if (!pool.offer(connHandle)) LibsqlJni.closeConnection(connHandle)
@@ -161,9 +166,7 @@ class JvmLibsqlDriver(
                                     "MVCC snapshot conflict at commit — rollback and retry"
                                 )
                             } else {
-                                throw RuntimeException(
-                                    "COMMIT failed (errcode=$errcode): ${LibsqlJni.connectionLastError(connHandle)}"
-                                )
+                                throw RuntimeException("COMMIT failed (errcode=$errcode): $commitErr")
                             }
                         }
                     } else {
@@ -192,11 +195,11 @@ class JvmLibsqlDriver(
             try {
                 binders?.invoke(JniPreparedStatement(stmt))
                 val changed = LibsqlJni.executeStatement(conn, stmt)
-                // Return last-insert-rowid for INSERTs (changed < 0 signals error, but we
-                // fall through so the caller gets the rowid instead of a negative value).
-                return QueryResult.Value(
-                    if (changed >= 0) changed else LibsqlJni.connectionLastInsertRowId(conn)
-                )
+                if (changed < 0) {
+                    val err = LibsqlJni.connectionLastError(conn) ?: "unknown error"
+                    throw RuntimeException("libsql execute failed: $err  sql=$sql")
+                }
+                return QueryResult.Value(changed)
             } finally {
                 LibsqlJni.finalizeStatement(stmt)
             }

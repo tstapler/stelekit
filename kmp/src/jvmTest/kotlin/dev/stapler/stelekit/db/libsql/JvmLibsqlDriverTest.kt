@@ -54,10 +54,10 @@ class JvmLibsqlDriverTest {
             "INSERT INTO pages (uuid, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
             4,
         ) {
-            bindString(1, "test-uuid-1")
-            bindString(2, "Test Page")
+            bindString(0, "test-uuid-1")
+            bindString(1, "Test Page")
+            bindLong(2, now)
             bindLong(3, now)
-            bindLong(4, now)
         }
 
         var foundUuid: String? = null
@@ -73,7 +73,7 @@ class JvmLibsqlDriverTest {
                 QueryResult.Value(Unit)
             },
             1,
-        ) { bindString(1, "test-uuid-1") }
+        ) { bindString(0, "test-uuid-1") }
 
         assertEquals("test-uuid-1", foundUuid, "Inserted page should be queryable by uuid")
         assertEquals("Test Page", foundName, "Page name should round-trip correctly")
@@ -91,10 +91,10 @@ class JvmLibsqlDriverTest {
                     "INSERT INTO pages (uuid, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
                     4,
                 ) {
-                    bindString(1, "tx-uuid-1")
-                    bindString(2, "Tx Page")
+                    bindString(0, "tx-uuid-1")
+                    bindString(1, "Tx Page")
+                    bindLong(2, now)
                     bindLong(3, now)
-                    bindLong(4, now)
                 }
             }
         }
@@ -108,7 +108,7 @@ class JvmLibsqlDriverTest {
                 QueryResult.Value(Unit)
             },
             1,
-        ) { bindString(1, "tx-uuid-1") }
+        ) { bindString(0, "tx-uuid-1") }
 
         assertEquals(1L, count, "Committed row must be visible after transaction ends")
     }
@@ -125,10 +125,10 @@ class JvmLibsqlDriverTest {
                     "INSERT INTO pages (uuid, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
                     4,
                 ) {
-                    bindString(1, "rollback-uuid")
-                    bindString(2, "Should Not Exist")
+                    bindString(0, "rollback-uuid")
+                    bindString(1, "Should Not Exist")
+                    bindLong(2, now)
                     bindLong(3, now)
-                    bindLong(4, now)
                 }
                 rollback()
             }
@@ -143,7 +143,7 @@ class JvmLibsqlDriverTest {
                 QueryResult.Value(Unit)
             },
             1,
-        ) { bindString(1, "rollback-uuid") }
+        ) { bindString(0, "rollback-uuid") }
 
         assertEquals(0L, count, "Rolled-back row must not appear in the database")
     }
@@ -173,10 +173,10 @@ class JvmLibsqlDriverTest {
                     "INSERT INTO pages (uuid, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
                     4,
                 ) {
-                    bindString(1, "outer-uuid")
-                    bindString(2, "Outer Page")
+                    bindString(0, "outer-uuid")
+                    bindString(1, "Outer Page")
+                    bindLong(2, now)
                     bindLong(3, now)
-                    bindLong(4, now)
                 }
                 db.transaction {
                     driver.execute(
@@ -184,10 +184,10 @@ class JvmLibsqlDriverTest {
                         "INSERT INTO pages (uuid, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
                         4,
                     ) {
-                        bindString(1, "inner-uuid")
-                        bindString(2, "Inner Page")
+                        bindString(0, "inner-uuid")
+                        bindString(1, "Inner Page")
+                        bindLong(2, now)
                         bindLong(3, now)
-                        bindLong(4, now)
                     }
                     rollback() // propagates — outer also rolls back
                 }
@@ -205,7 +205,7 @@ class JvmLibsqlDriverTest {
                 QueryResult.Value(Unit)
             },
             1,
-        ) { bindString(1, "outer-uuid") }
+        ) { bindString(0, "outer-uuid") }
 
         driver.executeQuery(
             null,
@@ -215,7 +215,7 @@ class JvmLibsqlDriverTest {
                 QueryResult.Value(Unit)
             },
             1,
-        ) { bindString(1, "inner-uuid") }
+        ) { bindString(0, "inner-uuid") }
 
         // Both are absent — rollback() inside a nested SQLDelight transaction
         // propagates to the outermost transaction boundary.
@@ -296,12 +296,12 @@ class JvmLibsqlDriverTest {
             null,
             "INSERT INTO pages (uuid, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
             4,
-        ) { bindString(1, "page-a"); bindString(2, "Page A"); bindLong(3, now); bindLong(4, now) }
+        ) { bindString(0, "page-a"); bindString(1, "Page A"); bindLong(2, now); bindLong(3, now) }
         driver.execute(
             null,
             "INSERT INTO pages (uuid, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
             4,
-        ) { bindString(1, "page-b"); bindString(2, "Page B"); bindLong(3, now); bindLong(4, now) }
+        ) { bindString(0, "page-b"); bindString(1, "Page B"); bindLong(2, now); bindLong(3, now) }
 
         val executor = Executors.newFixedThreadPool(2)
         val errors = mutableListOf<Throwable>()
@@ -312,7 +312,7 @@ class JvmLibsqlDriverTest {
                 runBlocking {
                     SteleDatabase(driver).transaction {
                         driver.execute(null, "UPDATE pages SET name = ? WHERE uuid = ?", 2) {
-                            bindString(1, "Page A Updated"); bindString(2, "page-a")
+                            bindString(0, "Page A Updated"); bindString(1, "page-a")
                         }
                     }
                 }
@@ -328,7 +328,7 @@ class JvmLibsqlDriverTest {
                 runBlocking {
                     SteleDatabase(driver).transaction {
                         driver.execute(null, "UPDATE pages SET name = ? WHERE uuid = ?", 2) {
-                            bindString(1, "Page B Updated"); bindString(2, "page-b")
+                            bindString(0, "Page B Updated"); bindString(1, "page-b")
                         }
                     }
                 }

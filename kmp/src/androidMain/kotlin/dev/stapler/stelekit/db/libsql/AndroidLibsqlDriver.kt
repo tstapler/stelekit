@@ -106,12 +106,26 @@ class AndroidLibsqlDriver(
             existing.nestingLevel++
             savepointLevel = existing.nestingLevel
             connHandle = existing.connHandle
-            LibsqlJni.executeRaw(connHandle, "SAVEPOINT sp_$savepointLevel")
+            val spResult = LibsqlJni.executeRaw(connHandle, "SAVEPOINT sp_$savepointLevel")
+            if (spResult < 0) {
+                val msg = LibsqlJni.connectionLastError(connHandle) ?: "SAVEPOINT failed"
+                throw RuntimeException("$msg (sp_$savepointLevel)")
+            }
         } else {
             connHandle = pool.poll() ?: LibsqlJni.openConnection(dbHandle)
             savepointLevel = 0
             val beginSql = if (isMvccActive) "BEGIN CONCURRENT" else "BEGIN IMMEDIATE"
-            LibsqlJni.executeRaw(connHandle, beginSql)
+            val beginResult = LibsqlJni.executeRaw(connHandle, beginSql)
+            if (beginResult < 0) {
+                // Read error info before returning/closing the connection — use-after-free otherwise.
+                val errcode = LibsqlJni.connectionExtendedErrcode(connHandle)
+                val msg = LibsqlJni.connectionLastError(connHandle) ?: beginSql
+                if (!pool.offer(connHandle)) LibsqlJni.closeConnection(connHandle)
+                if (errcode == LibsqlJni.SQLITE_BUSY_SNAPSHOT) {
+                    throw LibsqlBusySnapshotException("$beginSql failed: $msg")
+                }
+                throw RuntimeException("$beginSql failed (errcode=$errcode): $msg")
+            }
             txState.set(TxState(connHandle = connHandle))
         }
 
@@ -133,7 +147,9 @@ class AndroidLibsqlDriver(
                     if (successful) {
                         val result = LibsqlJni.executeRaw(connHandle, "COMMIT")
                         if (result < 0) {
+                            // Read error info before returning/closing the connection — use-after-free otherwise.
                             val errcode = LibsqlJni.connectionExtendedErrcode(connHandle)
+                            val commitErr = LibsqlJni.connectionLastError(connHandle)
                             LibsqlJni.executeRaw(connHandle, "ROLLBACK")
                             txState.remove()
                             if (!pool.offer(connHandle)) LibsqlJni.closeConnection(connHandle)
@@ -142,9 +158,7 @@ class AndroidLibsqlDriver(
                                     "MVCC snapshot conflict at commit — rollback and retry"
                                 )
                             } else {
-                                throw RuntimeException(
-                                    "COMMIT failed (errcode=$errcode): ${LibsqlJni.connectionLastError(connHandle)}"
-                                )
+                                throw RuntimeException("COMMIT failed (errcode=$errcode): $commitErr")
                             }
                         }
                     } else {
@@ -173,7 +187,11 @@ class AndroidLibsqlDriver(
             try {
                 binders?.invoke(JniStmt(stmt))
                 val changed = LibsqlJni.executeStatement(conn, stmt)
-                return QueryResult.Value(if (changed >= 0) changed else LibsqlJni.connectionLastInsertRowId(conn))
+                if (changed < 0) {
+                    val err = LibsqlJni.connectionLastError(conn) ?: "unknown error"
+                    throw RuntimeException("libsql execute failed: $err  sql=$sql")
+                }
+                return QueryResult.Value(changed)
             } finally {
                 LibsqlJni.finalizeStatement(stmt)
             }

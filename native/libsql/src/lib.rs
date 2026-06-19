@@ -86,12 +86,12 @@ struct ConnHandle {
     poisoned: AtomicBool,
 }
 
-/// Statement stores the SQL string and accumulated 1-based positional bindings.
+/// Statement stores the SQL string and accumulated positional bindings.
 /// Preparation happens lazily at execute/query time to avoid Rust lifetime
 /// conflicts between Connection and Statement.
 struct StmtHandle {
     sql: String,
-    /// (1-based index, value) — matches SQLDelight's SqlPreparedStatement convention.
+    /// (index, value) pairs — convention (0-based or 1-based) detected by build_params().
     bindings: Vec<(usize, Value)>,
 }
 
@@ -303,6 +303,23 @@ pub extern "system" fn Java_dev_stapler_stelekit_db_libsql_LibsqlJni_connectionL
 }
 
 // ---------------------------------------------------------------------------
+// Connection error helpers
+// ---------------------------------------------------------------------------
+
+/// Returns true for errors that indicate the connection itself is unrecoverable
+/// (database corruption, I/O errors, file-not-a-database).  Such connections are
+/// marked poisoned so the pool discards them instead of reusing them.
+fn is_fatal_connection_error(msg: &str) -> bool {
+    msg.contains("corrupt")
+        || msg.contains("malformed")
+        || msg.contains("SQLITE_CORRUPT")
+        || msg.contains("not a database")
+        || msg.contains("SQLITE_NOTADB")
+        || msg.contains("disk I/O error")
+        || msg.contains("SQLITE_IOERR")
+}
+
+// ---------------------------------------------------------------------------
 // Raw execute — no parameters (PRAGMA, BEGIN CONCURRENT, COMMIT, ROLLBACK, DDL)
 // ---------------------------------------------------------------------------
 
@@ -329,7 +346,11 @@ pub extern "system" fn Java_dev_stapler_stelekit_db_libsql_LibsqlJni_executeRaw<
             Ok(n) => n as jlong,
             Err(e) => {
                 let msg = e.to_string();
-                unsafe { (*conn_ptr).last_error = Some(msg) };
+                let ch = unsafe { &mut (*conn_ptr) };
+                if is_fatal_connection_error(&msg) {
+                    ch.poisoned.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+                ch.last_error = Some(msg);
                 -1i64 as jlong
             }
         }
@@ -470,7 +491,11 @@ pub extern "system" fn Java_dev_stapler_stelekit_db_libsql_LibsqlJni_executeStat
             Ok(n) => n as jlong,
             Err(e) => {
                 let msg = e.to_string();
-                unsafe { (*conn_ptr).last_error = Some(msg) };
+                let ch = unsafe { &mut (*conn_ptr) };
+                if is_fatal_connection_error(&msg) {
+                    ch.poisoned.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+                ch.last_error = Some(msg);
                 -1i64 as jlong
             }
         }
@@ -513,7 +538,11 @@ pub extern "system" fn Java_dev_stapler_stelekit_db_libsql_LibsqlJni_queryStatem
             Err(e) => {
                 let msg = e.to_string();
                 // SAFETY: block_on completed; no aliasing with the async block above.
-                unsafe { (*conn_ptr).last_error = Some(msg) };
+                let ch = unsafe { &mut (*conn_ptr) };
+                if is_fatal_connection_error(&msg) {
+                    ch.poisoned.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
+                ch.last_error = Some(msg);
                 -1i64 as jlong
             }
         }
