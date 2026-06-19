@@ -346,6 +346,7 @@ class MainActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
         ) return true
+        pendingCameraPermission?.let { return it.await() }
         val deferred = CompletableDeferred<Boolean>()
         pendingCameraPermission = deferred
         runOnUiThread { cameraPermLauncher.launch(Manifest.permission.CAMERA) }

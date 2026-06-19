@@ -1324,7 +1324,7 @@ private fun GraphContent(
                                                 if (requestCameraPermission != null) {
                                                     val granted = requestCameraPermission.invoke()
                                                     if (!granted) {
-                                                        viewModel.sendSnackbar("Camera access is needed to take photos")
+                                                        viewModel.sendSnackbar("Camera permission denied — enable it in Settings to take photos")
                                                         return@launch
                                                     }
                                                 }
@@ -1354,7 +1354,7 @@ private fun GraphContent(
                                             if (requestCameraPermission != null) {
                                                 val granted = requestCameraPermission.invoke()
                                                 if (!granted) {
-                                                    viewModel.sendSnackbar("Camera access is needed to take photos")
+                                                    viewModel.sendSnackbar("Camera permission denied — enable it in Settings to take photos")
                                                     return@launch
                                                 }
                                             }

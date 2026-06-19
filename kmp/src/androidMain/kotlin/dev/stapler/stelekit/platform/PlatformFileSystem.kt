@@ -365,7 +365,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                     ) ?: return false
                 }
             }
-            ctx.contentResolver.openOutputStream(docUri, "wt")?.use { stream ->
+            ctx.contentResolver.openOutputStream(docUri, "w")?.use { stream ->
                 stream.write(data)
             }
             knownExistingFiles.add(path)
@@ -849,7 +849,22 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     private fun legacyReadFileBytes(path: String): ByteArray? {
         return try {
-            val file = File(expandTilde(path))
+            val expandedPath = expandTilde(path)
+            val canonicalPath = File(expandedPath).canonicalPath
+            val homePath = File(homeDir).canonicalPath
+            val ctx = context
+            val allowedPrefixes = buildList {
+                add(homePath)
+                if (ctx != null) {
+                    add(ctx.cacheDir.canonicalPath)
+                    add(ctx.filesDir.canonicalPath)
+                    ctx.externalCacheDir?.canonicalPath?.let { add(it) }
+                }
+            }
+            require(allowedPrefixes.any { canonicalPath.startsWith(it) }) {
+                "Path must be within an allowed directory"
+            }
+            val file = File(canonicalPath)
             if (!file.exists() || !file.isFile) return null
             if (file.length() > maxFileSize) return null
             file.readBytes()
@@ -859,7 +874,9 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     private fun legacyWriteFileBytes(path: String, data: ByteArray): Boolean {
         return try {
-            val file = File(expandTilde(path))
+            val expandedPath = expandTilde(path)
+            val validatedPath = validateLegacyPath(expandedPath)
+            val file = File(validatedPath)
             val parentDir = file.parentFile
             if (parentDir != null && !parentDir.exists()) parentDir.mkdirs()
             file.writeBytes(data)
