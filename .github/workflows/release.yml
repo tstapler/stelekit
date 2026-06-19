@@ -368,7 +368,18 @@ jobs:
       - name: Package desktop distributable
         run: |
           APP_VERSION="${{ needs.resolve-version.outputs.version }}"
-          ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache \
+          ./gradlew :kmp:createDistributable --no-daemon --build-cache \
+            -PappVersion="${APP_VERSION#v}"
+
+      - name: Ad-hoc codesign app bundle
+        run: |
+          APP=$(find kmp/build/compose/binaries/main/app -name "*.app" -maxdepth 1 | head -1)
+          codesign --sign - --force --deep "$APP"
+
+      - name: Package DMG
+        run: |
+          APP_VERSION="${{ needs.resolve-version.outputs.version }}"
+          ./gradlew :kmp:packageDmg --no-daemon --build-cache \
             -PappVersion="${APP_VERSION#v}"
 
       - name: Rename distributable with version

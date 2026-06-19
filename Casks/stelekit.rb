@@ -21,8 +21,9 @@ cask "stelekit" do
   ]
 
   caveats <<~EOS
-    SteleKit is unsigned. If macOS Gatekeeper blocks the app on first launch,
-    right-click the app in Finder and choose "Open", or reinstall with:
+    SteleKit is ad-hoc signed but not notarized. If macOS Gatekeeper blocks
+    the app on first launch, right-click the app in Finder and choose "Open",
+    or reinstall without the quarantine flag:
       brew install --cask --no-quarantine tstapler/stelekit/stelekit
   EOS
 end
