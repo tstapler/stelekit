@@ -106,6 +106,12 @@ package-lock.json
 # --------------------
 .kotlin/
 *.swp
+
+# --------------------
+# Source package un-ignores
+# (overrides global ~/.gitignore patterns like 'tags' which match source dirs)
+# --------------------
+!kmp/src/**/tags/
 *.swo
 *~
 .DS_Store
@@ -163,3 +169,4 @@ fdroid/archive/
 *.bak
 *.tmp
 *.tempuploads/
+uploads/

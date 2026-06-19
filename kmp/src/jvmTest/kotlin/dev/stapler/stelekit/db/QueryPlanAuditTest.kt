@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.db
 
+import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
@@ -9,7 +11,9 @@ import kotlin.test.fail
  * heap scan (SCAN <table> with no USING clause — i.e. no index).
  *
  * How to maintain:
- *   - Added a new SELECT to SteleDatabase.sq? → add a matching AuditQuery below.
+ *   - Added a new SELECT to SteleDatabase.sq? → add a matching AuditQuery below AND run the
+ *     structural test (`all SELECT queries in SteleDatabase sq are covered by this audit`) to
+ *     confirm coverage. The structural test will fail CI automatically if you forget.
  *   - New query is an intentional full scan (analytics, LIKE-based search)? → add to ALLOWLIST.
  *   - New query should use an index but doesn't? → add the index first, then add the query.
  *
@@ -28,7 +32,7 @@ class QueryPlanAuditTest {
         // No WHERE clause — full traversal by design
         "selectAllBlocks", "selectAllBlocksPaginated", "countBlocks",
         "selectAllPagesPaginated", "countPages", "selectPageNameEntries",
-        "selectAllMetadata", "selectAllDebugFlags",
+        "selectAllMetadata",
         // content LIKE — no index on content; FTS handles production full-text search
         "selectBlocksWithContentLike", "selectBlocksWithContentLikePaginated",
         "countBlocksWithWikilink", "selectBlocksWithWikilink", "countLinkedReferencesForPage",
@@ -36,15 +40,19 @@ class QueryPlanAuditTest {
         "selectPagesByNameLike", "selectPagesByNameLikePaginated",
         // Aggregate / analytics scans — intentionally full-table
         "selectDuplicateBlockHashes", "selectMostConnectedBlocks", "selectOrphanedBlocks",
-        // pages columns without an index
-        "selectFavoritePages",          // is_favorite has no index; favorites are few by nature
-        "selectJournalPagesByDates",    // is_journal and journal_date have no dedicated index; reconcile call is bounded
-        "selectRecentlyUpdatedPages", // updated_at has no index on pages
-        "selectRecentlyCreatedPages", // created_at has no index on pages
-        "selectJournalPages",         // is_journal has no index
-        "selectJournalPageByDate",    // journal_date has no index
         // JOIN where one relation must be fully scanned
-        "selectAllBlocksWithPagePath", // blocks scanned, pages joined by uuid index
+        "selectAllBlocksWithPagePath",      // blocks scanned, pages joined by uuid index
+        // asset_index LIKE search — tags/auto_labels/ocr_text are unindexed text columns;
+        // FTS5 can cover content search but these fields need separate infrastructure
+        "searchAssets",
+        // COUNT with no WHERE — full traversal of the table
+        "countAssets",
+        // JSON-array tag search — LIKE on a JSON text column; no structural index possible
+        "selectImageAnnotationsByTag",
+        // pending_asset_moves is a crash-recovery WAL bounded to <= a handful of rows by design
+        "selectAllPendingMoves",
+        // SQLite reports "SCAN CONSTANT ROW" for rowid helpers with no FROM clause — not a real scan
+        "selectLastInsertRowId",
     )
 
     // ── All SELECT queries from SteleDatabase.sq, parameters replaced with literals ──────────
@@ -60,6 +68,8 @@ class QueryPlanAuditTest {
             "SELECT * FROM blocks ORDER BY uuid"),
         AuditQuery("selectAllBlocksPaginated",
             "SELECT * FROM blocks ORDER BY uuid LIMIT 10 OFFSET 0"),
+        AuditQuery("selectAllBlocksPaginatedAfterUuid",
+            "SELECT * FROM blocks WHERE uuid > 'x' ORDER BY uuid LIMIT 10"),
         AuditQuery("selectBlockChildren",
             "SELECT * FROM blocks WHERE parent_uuid = 'x' ORDER BY position LIMIT 10 OFFSET 0"),
         AuditQuery("countBlockChildren",
@@ -150,6 +160,20 @@ class QueryPlanAuditTest {
             "SELECT * FROM pages WHERE name LIKE '%test%' ORDER BY name LIMIT 10 OFFSET 0"),
         AuditQuery("selectPageBacklinkCount",
             "SELECT backlink_count FROM pages WHERE name = 'x'"),
+        AuditQuery("selectBacklinkCountsForPages",
+            "SELECT name AS page_name, backlink_count FROM pages WHERE uuid IN ('p0', 'p1')"),
+        AuditQuery("selectNeighbourPageUuids",
+            """SELECT DISTINCT to_b.page_uuid AS page_uuid
+               FROM block_references br
+               JOIN blocks from_b ON from_b.uuid = br.from_block_uuid
+               JOIN blocks to_b   ON to_b.uuid   = br.to_block_uuid
+               WHERE from_b.page_uuid = 'p0' AND to_b.page_uuid != 'p0'
+               UNION
+               SELECT DISTINCT from_b.page_uuid AS page_uuid
+               FROM block_references br
+               JOIN blocks from_b ON from_b.uuid = br.from_block_uuid
+               JOIN blocks to_b   ON to_b.uuid   = br.to_block_uuid
+               WHERE to_b.page_uuid = 'p0' AND from_b.page_uuid != 'p0'"""),
 
         // ── block_references ─────────────────────────────────────────────────────────────────
         AuditQuery("selectOutgoingReferences",
@@ -202,6 +226,20 @@ class QueryPlanAuditTest {
                highlight(pages_fts, 0, '<em>', '</em>') AS highlight
                FROM pages_fts pf JOIN pages p ON p.rowid = pf.rowid
                WHERE pages_fts MATCH 'test*' ORDER BY bm25(pages_fts) LIMIT 10"""),
+        AuditQuery("searchPagesByNameFtsInDateRange",
+            """SELECT p.uuid, p.name, p.namespace, p.file_path, p.created_at, p.updated_at,
+               p.properties, p.version, p.is_favorite, p.is_journal, p.journal_date, p.is_content_loaded,
+               highlight(pages_fts, 0, '<em>', '</em>') AS highlight, bm25(pages_fts) AS bm25_score
+               FROM pages_fts pf JOIN pages p ON p.rowid = pf.rowid
+               WHERE pages_fts MATCH 'test*' AND p.updated_at >= 0 AND p.updated_at <= 999999999
+               ORDER BY bm25(pages_fts) LIMIT 10"""),
+        AuditQuery("searchBlocksByContentFtsInDateRange",
+            """SELECT b.uuid, b.page_uuid, b.parent_uuid, b.left_uuid, b.content, b.level,
+               b.position, b.created_at, b.updated_at, b.properties, b.version,
+               highlight(blocks_fts, 0, '<em>', '</em>') AS highlight, bm25(blocks_fts) AS bm25_score
+               FROM blocks_fts bm JOIN blocks b ON b.id = bm.rowid
+               WHERE blocks_fts MATCH 'test*' AND b.updated_at >= 0 AND b.updated_at <= 999999999
+               ORDER BY bm25(blocks_fts) LIMIT 10 OFFSET 0"""),
 
         // ── wikilink LIKE queries ────────────────────────────────────────────────────────────
         AuditQuery("countBlocksWithWikilink",
@@ -211,19 +249,9 @@ class QueryPlanAuditTest {
         AuditQuery("countLinkedReferencesForPage",
             "SELECT COUNT(*) FROM blocks WHERE content LIKE '%[[TestPage]]%'"),
 
-        // ── perf_histogram_buckets ───────────────────────────────────────────────────────────
-        AuditQuery("selectHistogramForOperation",
-            "SELECT bucket_ms, count FROM perf_histogram_buckets WHERE operation_name = 'x' ORDER BY bucket_ms"),
-        AuditQuery("selectAllHistogramOperations",
-            "SELECT DISTINCT operation_name FROM perf_histogram_buckets ORDER BY operation_name"),
-
-        // ── debug_flags ──────────────────────────────────────────────────────────────────────
-        AuditQuery("selectDebugFlag",
-            "SELECT value FROM debug_flags WHERE key = 'x'"),
-        AuditQuery("selectAllDebugFlags",
-            "SELECT key, value FROM debug_flags ORDER BY key"),
-
         // ── metadata ─────────────────────────────────────────────────────────────────────────
+        // NOTE: perf_histogram_buckets and debug_flags are in TelemetryDatabase (Telemetry.sq),
+        // not SteleDatabase — they are audited separately and intentionally absent here.
         AuditQuery("selectMetadata",
             "SELECT value FROM metadata WHERE key = 'x'"),
         AuditQuery("selectAllMetadata",
@@ -253,19 +281,62 @@ class QueryPlanAuditTest {
         AuditQuery("selectAllMigrationsForGraph",
             "SELECT * FROM migration_changelog WHERE graph_id = 'x' ORDER BY execution_order"),
 
-        // ── spans ────────────────────────────────────────────────────────────────────────────
-        AuditQuery("selectRecentSpans",
-            "SELECT * FROM spans ORDER BY start_epoch_ms DESC LIMIT 10"),
+        // NOTE: spans and query_stats are in TelemetryDatabase (Telemetry.sq), not SteleDatabase.
+        // Their query-plan audit lives with the telemetry test suite.
 
-        // ── query_stats ────────────────────────────────────────────────────────────────────────
-        AuditQuery("selectQueryStatsByVersion",
-            "SELECT * FROM query_stats WHERE app_version = 'x' ORDER BY total_ms DESC"),
-        AuditQuery("selectTopQueryStatsByTotalMs",
-            "SELECT * FROM query_stats WHERE app_version = 'x' ORDER BY total_ms DESC LIMIT 10"),
-        AuditQuery("selectTopQueryStatsByCalls",
-            "SELECT * FROM query_stats WHERE app_version = 'x' ORDER BY calls DESC LIMIT 10"),
-        AuditQuery("selectAllQueryStatVersions",
-            "SELECT DISTINCT app_version FROM query_stats ORDER BY app_version DESC"),
+        // ── git_config ────────────────────────────────────────────────────────────────────────
+        AuditQuery("selectGitConfig",
+            "SELECT * FROM git_config WHERE graph_id = 'x'"),
+
+        // ── image_annotations ─────────────────────────────────────────────────────────────────
+        AuditQuery("selectAllImageAnnotations",
+            "SELECT * FROM image_annotations ORDER BY imported_at_ms DESC"),
+        AuditQuery("selectImageAnnotationByUuid",
+            "SELECT * FROM image_annotations WHERE uuid = 'ia0'"),
+        AuditQuery("selectImageAnnotationsByPage",
+            "SELECT * FROM image_annotations WHERE page_uuid = 'p0' ORDER BY imported_at_ms DESC"),
+        AuditQuery("selectImageAnnotationsByTag",
+            "SELECT * FROM image_annotations WHERE tags LIKE '%\"test\"%' ORDER BY imported_at_ms DESC"),
+
+        // ── measurement_annotations ───────────────────────────────────────────────────────────
+        AuditQuery("selectMeasurementsForImage",
+            "SELECT * FROM measurement_annotations WHERE image_uuid = 'ia0' ORDER BY rowid"),
+
+        // ── asset_index ────────────────────────────────────────────────────────────────────────
+        AuditQuery("selectAssetByUuid",
+            "SELECT * FROM asset_index WHERE uuid = 'a0'"),
+        AuditQuery("selectAssets",
+            "SELECT * FROM asset_index ORDER BY imported_at_ms DESC LIMIT 10 OFFSET 0"),
+        AuditQuery("selectAssetsByMediaType",
+            "SELECT * FROM asset_index WHERE media_type = 'image/png' ORDER BY imported_at_ms DESC LIMIT 10 OFFSET 0"),
+        AuditQuery("searchAssets",
+            "SELECT * FROM asset_index WHERE (file_path LIKE '%test%' OR tags LIKE '%test%' OR auto_labels LIKE '%test%' OR ocr_text LIKE '%test%') ORDER BY imported_at_ms DESC LIMIT 10 OFFSET 0"),
+        AuditQuery("selectUnprocessedAssets",
+            "SELECT * FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0 ORDER BY imported_at_ms ASC LIMIT 10 OFFSET 0"),
+        AuditQuery("countUnprocessedAssets",
+            "SELECT COUNT(*) FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0"),
+        AuditQuery("countAssets",
+            "SELECT COUNT(*) FROM asset_index"),
+
+        // ── page_visits ────────────────────────────────────────────────────────────────────────
+        AuditQuery("selectPageVisitsByUuids",
+            "SELECT page_uuid, last_visited_at, visit_count FROM page_visits WHERE page_uuid IN ('p0')"),
+        AuditQuery("selectPageVisitByUuid",
+            "SELECT page_uuid, last_visited_at, visit_count FROM page_visits WHERE page_uuid = 'p0'"),
+
+        // ── wikilink_references ────────────────────────────────────────────────────────────────
+        AuditQuery("selectWikilinkPageNamesForBlock",
+            "SELECT page_name FROM wikilink_references WHERE block_uuid = 'b0'"),
+        AuditQuery("selectWikilinkPageNamesForPage",
+            "SELECT DISTINCT page_name FROM wikilink_references WHERE block_uuid IN (SELECT uuid FROM blocks WHERE page_uuid = 'p0')"),
+
+        // ── pending_asset_moves ────────────────────────────────────────────────────────────────
+        AuditQuery("selectAllPendingMoves",
+            "SELECT * FROM pending_asset_moves"),
+
+        // ── built-in rowid helper — no FROM clause, no scan possible ──────────────────────
+        AuditQuery("selectLastInsertRowId",
+            "SELECT last_insert_rowid()"),
     )
 
     @Test
@@ -275,19 +346,15 @@ class QueryPlanAuditTest {
         val conn = sqliteDriver.getConnection()
         val failures = mutableListOf<String>()
         try {
-            // Seed rows and run ANALYZE so the query planner sees realistic statistics.
-            // An empty schema always uses indexes regardless of query shape; a populated
-            // schema with statistics mirrors the conditions that caused SCAN blocks in
-            // production (p99 = 203 seconds on Android with ~5 000+ blocks).
             conn.createStatement().use { seed ->
+                // ── pages: 1000 regular (varying timestamps), 200 unloaded, 50 journal, 10 favorite ──
                 repeat(1000) { i ->
                     seed.execute(
                         "INSERT OR IGNORE INTO pages(uuid,name,namespace,file_path,created_at,updated_at," +
                         "properties,version,is_favorite,is_journal,journal_date,is_content_loaded,backlink_count) " +
-                        "VALUES('p$i','Page $i',NULL,NULL,0,0,NULL,0,0,0,NULL,1,0)"
+                        "VALUES('p$i','Page $i',NULL,NULL,${i * 1000L},${i * 1000L + 500L},NULL,0,0,0,NULL,1,0)"
                     )
                 }
-                // Unloaded pages — populates the partial index so the planner can evaluate it
                 repeat(200) { i ->
                     seed.execute(
                         "INSERT OR IGNORE INTO pages(uuid,name,namespace,file_path,created_at,updated_at," +
@@ -295,13 +362,62 @@ class QueryPlanAuditTest {
                         "VALUES('u$i','Unloaded $i',NULL,NULL,0,0,NULL,0,0,0,NULL,0,0)"
                     )
                 }
+                // Journal pages — populate idx_pages_journal for realistic statistics
+                repeat(50) { i ->
+                    val date = "2024-${(i % 12 + 1).toString().padStart(2, '0')}-01"
+                    seed.execute(
+                        "INSERT OR IGNORE INTO pages(uuid,name,namespace,file_path,created_at,updated_at," +
+                        "properties,version,is_favorite,is_journal,journal_date,is_content_loaded,backlink_count) " +
+                        "VALUES('j$i','Journal $date',NULL,NULL,${i * 86400000L},${i * 86400000L},NULL,0,0,1,'$date',1,0)"
+                    )
+                }
+                // Favorite pages — populate idx_pages_favorite for realistic statistics
+                repeat(10) { i ->
+                    seed.execute(
+                        "INSERT OR IGNORE INTO pages(uuid,name,namespace,file_path,created_at,updated_at," +
+                        "properties,version,is_favorite,is_journal,journal_date,is_content_loaded,backlink_count) " +
+                        "VALUES('f$i','Favorite $i',NULL,NULL,0,0,NULL,0,1,0,NULL,1,0)"
+                    )
+                }
+                // ── blocks ────────────────────────────────────────────────────────────────────
                 repeat(5000) { i ->
                     seed.execute(
                         "INSERT OR IGNORE INTO blocks(uuid,page_uuid,parent_uuid,left_uuid,content," +
                         "level,position,created_at,updated_at,properties,version,content_hash,block_type) " +
-                        "VALUES('b$i','p${i % 1000}',NULL,NULL,'content $i',0,${i % 50},0,0,NULL,0,'hash$i','bullet')"
+                        "VALUES('b$i','p${i % 1000}',NULL,NULL,'content $i',0,${i % 50},${i * 100L},${i * 100L + 50L},NULL,0,'hash$i','bullet')"
                     )
                 }
+                // ── block_references — needed for selectNeighbourPageUuids ──────────────────
+                repeat(100) { i ->
+                    seed.execute(
+                        "INSERT OR IGNORE INTO block_references(from_block_uuid,to_block_uuid,created_at) " +
+                        "VALUES('b${i % 5000}','b${(i + 1) % 5000}',0)"
+                    )
+                }
+                // ── image_annotations ─────────────────────────────────────────────────────────
+                repeat(20) { i ->
+                    seed.execute(
+                        "INSERT OR IGNORE INTO image_annotations(" +
+                        "uuid,block_uuid,page_uuid,graph_path,file_path,source,imported_at_ms," +
+                        "calibration_method,pixels_per_meter,calibration_confidence_pct,unit,tags) " +
+                        "VALUES('ia$i','b${i % 5000}','p${i % 1000}','/graph','/img$i.jpg'," +
+                        "'FILE',${i * 1000L},'NONE',0.0,0,'METERS','[]')"
+                    )
+                }
+                // ── asset_index ───────────────────────────────────────────────────────────────
+                repeat(20) { i ->
+                    seed.execute(
+                        "INSERT OR IGNORE INTO asset_index(" +
+                        "uuid,file_path,relative_path,media_type,subfolder,tags,auto_labels," +
+                        "page_uuids,size_bytes,imported_at_ms,ml_processed,ml_failed,ml_tags_source) " +
+                        "VALUES('a$i','/assets/file$i.png','assets/file$i.png','image/png','files'," +
+                        "'[]','[]','[]',1024,${i * 1000L},0,0,'NONE')"
+                    )
+                }
+                // ── git_config — needed for selectGitConfig ───────────────────────────────────
+                seed.execute(
+                    "INSERT OR IGNORE INTO git_config(graph_id,repo_root) VALUES('g1','/repo')"
+                )
                 seed.execute("ANALYZE")
             }
             conn.createStatement().use { stmt ->
@@ -338,5 +454,210 @@ class QueryPlanAuditTest {
                 failures.forEach { appendLine(it) }
             })
         }
+    }
+
+    /**
+     * Empirically proves the statistics-poisoning root cause behind the SCAN blocks regression.
+     *
+     * Production failure chain (old code had no unconditional startup ANALYZE):
+     *   1. Fresh install (or upgrade where analyze_blocks migration was new):
+     *      `analyze_blocks` migration runs `ANALYZE blocks` on an EMPTY table.
+     *      SQLite writes NOTHING to sqlite_stat1 — ANALYZE on an empty table produces no rows.
+     *   2. User imports their graph: blocks grows to 50 000+ rows.
+     *   3. App restarts: MigrationRunner skips `analyze_blocks` (already applied/hash-matched).
+     *      No ANALYZE runs. No PRAGMA optimize (old code didn't call it either).
+     *   4. sqlite_stat1 still has no entry for blocks → query planner uses default heuristics →
+     *      on Android SQLite the planner chooses a full heap SCAN (~1.5 s/query).
+     *
+     * This test uses raw JDBC (no DriverFactory, no migrations, no unconditional startup ANALYZE)
+     * to reproduce the exact pre-fix production state with hard assertions at every step.
+     *
+     * Hard assertions (deterministic across all SQLite versions):
+     *   - sqlite_stat1 has NO entry for blocks after ANALYZE on empty table.
+     *   - sqlite_stat1 still has NO entry for blocks after data is loaded (no ANALYZE ran).
+     *   - sqlite_stat1 gains correct entries only after explicit ANALYZE on the loaded table.
+     *   - EXPLAIN QUERY PLAN uses the composite index after ANALYZE.
+     *
+     * Soft observation (SQLite-version-dependent):
+     *   - Whether the absent statistics cause an actual SCAN depends on the SQLite version's
+     *     default heuristics. The JVM SQLite JDBC may use the index anyway; Android SQLite ~3.39
+     *     chose SCAN. The statistics state is the deterministic root cause regardless.
+     */
+    @Test
+    fun `analyze_blocks migration poisons statistics on fresh install - no stats means planner has no baseline`() {
+        // Use raw JDBC — bypasses DriverFactory's unconditional startup ANALYZE so we can
+        // reproduce the exact pre-fix production state at each step.
+        val conn = java.sql.DriverManager.getConnection("jdbc:sqlite::memory:")
+        try {
+            conn.createStatement().use { ddl ->
+                ddl.execute("""
+                    CREATE TABLE blocks (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        uuid        TEXT NOT NULL UNIQUE,
+                        page_uuid   TEXT NOT NULL,
+                        parent_uuid TEXT,
+                        position    INTEGER NOT NULL DEFAULT 0,
+                        content     TEXT
+                    )
+                """.trimIndent())
+                // The composite indexes that covering_indexes_page_blocks adds.
+                ddl.execute("CREATE INDEX idx_blocks_page_position   ON blocks(page_uuid, position)")
+                ddl.execute("CREATE INDEX idx_blocks_parent_position ON blocks(parent_uuid, position)")
+            }
+
+            fun statRows(): Map<String, String> = conn.createStatement().use { s ->
+                try {
+                    val rs = s.executeQuery("SELECT idx, stat FROM sqlite_stat1 WHERE tbl = 'blocks'")
+                    buildMap { while (rs.next()) put(rs.getString("idx") ?: "", rs.getString("stat") ?: "") }
+                        .also { rs.close() }
+                } catch (_: Exception) { emptyMap() }
+            }
+
+            fun planLines(sql: String): List<String> = conn.createStatement().use { s ->
+                val rs = s.executeQuery("EXPLAIN QUERY PLAN $sql")
+                buildList { while (rs.next()) add(rs.getString("detail") ?: "") }.also { rs.close() }
+            }
+
+            // ── Step 1: analyze_blocks migration — ANALYZE on empty table ─────────────────────
+            // This is what runs on a fresh install or when the migration is new.
+            conn.createStatement().use { it.execute("ANALYZE blocks") }
+
+            val statsAfterEmptyAnalyze = statRows()
+            // KEY FACT: ANALYZE on an empty table writes NOTHING to sqlite_stat1.
+            // There is no "0-row" entry — the table is simply absent from sqlite_stat1.
+            assertTrue(statsAfterEmptyAnalyze.isEmpty(),
+                "ANALYZE on an empty table must write nothing to sqlite_stat1. " +
+                "Got: $statsAfterEmptyAnalyze — if this has rows, this SQLite version changed " +
+                "behaviour and the root-cause analysis needs updating.")
+
+            // ── Step 2: Graph import — 50 000 blocks, no ANALYZE ─────────────────────────────
+            conn.autoCommit = false
+            conn.prepareStatement(
+                "INSERT INTO blocks(uuid,page_uuid,parent_uuid,position,content) VALUES(?,?,NULL,?,?)"
+            ).use { ps ->
+                repeat(50_000) { i ->
+                    ps.setString(1, "bb$i"); ps.setString(2, "pp${i % 1000}")
+                    ps.setInt(3, i % 50);   ps.setString(4, "content $i")
+                    ps.addBatch()
+                    if (i % 1000 == 999) ps.executeBatch()
+                }
+                ps.executeBatch()
+            }
+            conn.commit()
+            conn.autoCommit = true
+
+            // ── Step 3: Subsequent startup — old code only ran migrations (already applied) ───
+            // Neither ANALYZE nor PRAGMA optimize was called by the old startup path.
+            // sqlite_stat1 is still empty for blocks.
+            val statsAfterDataLoad = statRows()
+            assertTrue(statsAfterDataLoad.isEmpty(),
+                "After graph import with no ANALYZE, sqlite_stat1 must still have no entry for " +
+                "blocks — this is the exact pre-fix state: 50 000 rows, zero statistics. " +
+                "Got: $statsAfterDataLoad")
+
+            // ── Soft observation: EXPLAIN QUERY PLAN without any statistics ───────────────────
+            // The planner's choice depends on the SQLite version's default cardinality heuristics.
+            // Android SQLite ~3.39 chose SCAN blocks (~1.5 s). JVM SQLite may use the index.
+            val criticalSql = "SELECT * FROM blocks WHERE page_uuid = 'pp0' ORDER BY position"
+            val planWithNoStats = planLines(criticalSql)
+            val isScan = planWithNoStats.any { it.startsWith("SCAN blocks") && !it.contains("USING") }
+            println(
+                "[BlocksScanRegression] Plan WITHOUT statistics on this SQLite version " +
+                "(${if (isScan) "SCAN — regression reproduced" else "index used — version avoids SCAN"}): $planWithNoStats"
+            )
+
+            // ── Step 4: Fix — ANALYZE blocks after data exists (unconditional startup ANALYZE) ─
+            conn.createStatement().use { it.execute("ANALYZE blocks") }
+
+            val statsAfterFix = statRows()
+            val estimatedRows = statsAfterFix.values
+                .mapNotNull { it.trim().split(" ").firstOrNull()?.toIntOrNull() }
+            assertTrue(estimatedRows.any { it > 10_000 },
+                "After ANALYZE with 50 000 rows, sqlite_stat1 must show an estimated row count " +
+                "> 10 000 for at least one blocks index. Got: $statsAfterFix")
+
+            // ── Hard assertion: fix produces the correct query plan ───────────────────────────
+            val planAfterFix = planLines(criticalSql)
+            assertTrue(planAfterFix.any { it.contains("USING") },
+                "After ANALYZE with real data, the page_uuid lookup must use the composite index. " +
+                "Heap scan still detected after fix. Plan: $planAfterFix")
+        } finally {
+            conn.close()
+        }
+    }
+
+    /**
+     * Structural check: [MigrationRunner.all] must contain an entry named "analyze_blocks"
+     * whose statement is "ANALYZE blocks". Removing or renaming this migration would leave
+     * existing production databases without statistics after upgrade, causing SCAN blocks
+     * on large graphs. The [large blocks table uses composite index after ANALYZE] test
+     * validates the behaviour; this test validates the migration is registered.
+     */
+    @Test
+    fun `MigrationRunner all contains analyze_blocks migration for blocks table`() {
+        val analyzeEntry = MigrationRunner.all.find { it.name == "analyze_blocks" }
+        if (analyzeEntry == null) {
+            fail(
+                "MigrationRunner.all does not contain an 'analyze_blocks' migration. " +
+                "Without it, existing production databases lack SQLite statistics after upgrade " +
+                "and the query planner falls back to full heap scans on the blocks table (~9 s/query)."
+            )
+        }
+        val hasAnalyzeStatement = analyzeEntry.statements.any { it.trim().uppercase().startsWith("ANALYZE") }
+        if (!hasAnalyzeStatement) {
+            fail(
+                "The analyze_blocks migration exists but contains no ANALYZE statement: ${analyzeEntry.statements}. " +
+                "Add 'ANALYZE blocks' (or 'ANALYZE') to its statements list."
+            )
+        }
+    }
+
+    /**
+     * Structural check: every named SELECT query in SteleDatabase.sq must have a corresponding
+     * [AuditQuery] entry in [QUERIES], and every [QUERIES] entry must still exist in the schema.
+     *
+     * This makes it impossible to add a new SELECT query without also auditing its query plan —
+     * the test fails at CI time if you forget. Runs only when the `stelekit.sq.file` system
+     * property is set (i.e. via Gradle — not in IDE run configurations that omit it; those are
+     * covered by the main scan test above).
+     */
+    @Test
+    fun `all SELECT queries in SteleDatabase sq are covered by this audit`() {
+        val sqFilePath = System.getProperty("stelekit.sq.file") ?: return
+        val sqContent = File(sqFilePath).readText()
+
+        // Named query format in SQLDelight: "queryName:\nSELECT ..."
+        // The regex matches a word followed by ':' at line start, then SELECT on the next line.
+        val selectNamesInSq: Set<String> = Regex(
+            """^(\w+):\s*\n\s*SELECT""",
+            setOf(RegexOption.MULTILINE, RegexOption.IGNORE_CASE)
+        ).findAll(sqContent).map { it.groupValues[1] }.toSet()
+
+        val queriedNames: Set<String> = QUERIES.map { it.name }.toSet()
+
+        val uncovered = selectNamesInSq - queriedNames
+        val orphaned = queriedNames - selectNamesInSq
+        val staleAllowlist = ALLOWLIST - queriedNames
+
+        val failures = mutableListOf<String>()
+        if (uncovered.isNotEmpty()) failures += buildString {
+            appendLine("${uncovered.size} SELECT quer(y/ies) in SteleDatabase.sq not covered by QUERIES:")
+            uncovered.sorted().forEach { appendLine("  $it") }
+            append(
+                "Add an AuditQuery entry to QUERIES (and to ALLOWLIST if a heap scan is " +
+                "expected/unavoidable — document why in the ALLOWLIST comment)."
+            )
+        }
+        if (orphaned.isNotEmpty()) failures += buildString {
+            appendLine("${orphaned.size} entr(y/ies) in QUERIES have no matching SELECT in SteleDatabase.sq (stale):")
+            orphaned.sorted().forEach { appendLine("  $it") }
+            append("Remove stale entries from QUERIES in QueryPlanAuditTest.kt.")
+        }
+        if (staleAllowlist.isNotEmpty()) failures += buildString {
+            appendLine("${staleAllowlist.size} ALLOWLIST entr(y/ies) not present in QUERIES:")
+            staleAllowlist.sorted().forEach { appendLine("  $it") }
+            append("Either add an AuditQuery entry to QUERIES or remove the name from ALLOWLIST.")
+        }
+        if (failures.isNotEmpty()) fail(failures.joinToString("\n\n"))
     }
 }

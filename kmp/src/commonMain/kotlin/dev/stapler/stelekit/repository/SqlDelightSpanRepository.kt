@@ -7,8 +7,8 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.db.DirectSqlWrite
-import dev.stapler.stelekit.db.RestrictedDatabaseQueries
-import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.db.RestrictedTelemetryQueries
+import dev.stapler.stelekit.db.TelemetryDatabase
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.performance.SerializedSpan
@@ -18,61 +18,80 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
 @OptIn(DirectRepositoryWrite::class)
 class SqlDelightSpanRepository(
-    private val database: SteleDatabase,
+    private val database: TelemetryDatabase,
+    writeMutex: Mutex = Mutex(),
 ) : SpanRepository {
-    private val queries = database.steleDatabaseQueries
-    private val restricted = RestrictedDatabaseQueries(queries)
+    private val queries = database.telemetryQueries
+    private val restricted = RestrictedTelemetryQueries(queries, writeMutex)
     private val json = Json { ignoreUnknownKeys = true }
 
     override fun getRecentSpans(limit: Int): Flow<Either<DomainError, List<SerializedSpan>>> =
         queries.selectRecentSpans(limit.toLong())
             .asDbFlowList(PlatformDispatcher.DB) { it.toSerializedSpan() }
 
-    override suspend fun insertSpan(span: SerializedSpan) {
-        val attributesJson = json.encodeToString(
-            MapSerializer(String.serializer(), String.serializer()),
-            span.attributes
-        )
+    override suspend fun insertSpan(span: SerializedSpan) = insertSpans(listOf(span))
+
+    override suspend fun insertSpans(spans: List<SerializedSpan>) {
+        if (spans.isEmpty()) return
         withContext(PlatformDispatcher.DB) {
-            @OptIn(DirectSqlWrite::class)
-            restricted.insertSpan(
-                trace_id = span.traceId,
-                span_id = span.spanId,
-                parent_span_id = span.parentSpanId,
-                name = span.name,
-                start_epoch_ms = span.startEpochMs,
-                end_epoch_ms = span.endEpochMs,
-                duration_ms = span.durationMs,
-                attributes_json = attributesJson,
-                status_code = span.statusCode,
-            )
+            restricted.withWriteLock {
+                @OptIn(DirectSqlWrite::class)
+                restricted.transaction {
+                    for (span in spans) {
+                        val attributesJson = json.encodeToString(
+                            MapSerializer(String.serializer(), String.serializer()),
+                            span.attributes
+                        )
+                        restricted.insertSpan(
+                            trace_id = span.traceId,
+                            span_id = span.spanId,
+                            parent_span_id = span.parentSpanId,
+                            name = span.name,
+                            start_epoch_ms = span.startEpochMs,
+                            end_epoch_ms = span.endEpochMs,
+                            duration_ms = span.durationMs,
+                            attributes_json = attributesJson,
+                            status_code = span.statusCode,
+                            app_version = span.attributes["app.version"] ?: "",
+                            commit_hash = span.attributes["app.commit"] ?: "",
+                        )
+                    }
+                }
+            }
         }
     }
 
     override suspend fun deleteSpansOlderThan(cutoffEpochMs: Long) {
         withContext(PlatformDispatcher.DB) {
-            @OptIn(DirectSqlWrite::class)
-            restricted.deleteSpansOlderThan(cutoffEpochMs)
+            restricted.withWriteLock {
+                @OptIn(DirectSqlWrite::class)
+                restricted.deleteSpansOlderThan(cutoffEpochMs)
+            }
         }
     }
 
     override suspend fun deleteExcessSpans(maxCount: Int) {
         withContext(PlatformDispatcher.DB) {
-            @OptIn(DirectSqlWrite::class)
-            restricted.deleteExcessSpans(maxCount.toLong())
+            restricted.withWriteLock {
+                @OptIn(DirectSqlWrite::class)
+                restricted.deleteExcessSpans(maxCount.toLong())
+            }
         }
     }
 
     override suspend fun clear() {
         withContext(PlatformDispatcher.DB) {
-            @OptIn(DirectSqlWrite::class)
-            restricted.deleteAllSpans()
+            restricted.withWriteLock {
+                @OptIn(DirectSqlWrite::class)
+                restricted.deleteAllSpans()
+            }
         }
     }
 

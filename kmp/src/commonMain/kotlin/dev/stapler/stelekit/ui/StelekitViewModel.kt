@@ -116,6 +116,7 @@ class StelekitViewModel(
     private val debugFlagRepository: dev.stapler.stelekit.performance.DebugFlagRepository? = deps.debugFlagRepository
     private val activeGitSyncService: StateFlow<GitSyncService?> = deps.activeGitSyncService
     private val activeGraphIdProvider: () -> String? = deps.activeGraphIdProvider
+    private val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = deps.onDismissGitDetection
     private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(deps.ringBuffer)
     // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
     // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
@@ -197,11 +198,15 @@ class StelekitViewModel(
         .stateIn(scope, SharingStarted.Eagerly, SyncState.Idle)
 
     private fun observeSyncState() {
-        // Auto-show conflict resolution screen when ConflictPending is emitted
         scope.launch {
             syncState.collect { state ->
-                if (state is SyncState.ConflictPending) {
-                    _uiState.update { it.copy(conflictResolutionVisible = true) }
+                when (state) {
+                    is SyncState.ConflictPending -> _uiState.update { it.copy(conflictResolutionVisible = true) }
+                    is SyncState.JournalMergeReady -> _uiState.update { it.copy(journalMergeReviewVisible = true) }
+                    // Do NOT auto-dismiss journalMergeReviewVisible here — dismissal is handled
+                    // explicitly by abortJournalMerge() and acceptJournalMerge(). Auto-dismissal
+                    // races with fetchOnly background calls that emit Fetching/Pushing states.
+                    else -> Unit
                 }
             }
         }
@@ -248,6 +253,53 @@ class StelekitViewModel(
         _uiState.update { it.copy(conflictResolutionVisible = false) }
     }
 
+    /** Dismisses the journal merge review screen without applying the merge. */
+    fun dismissJournalMergeReview() {
+        _uiState.update { it.copy(journalMergeReviewVisible = false) }
+    }
+
+    /**
+     * Aborts the in-progress git merge and dismisses the review screen.
+     * Called when the user dismisses or falls back to manual resolution.
+     */
+    fun abortJournalMerge() {
+        val state = syncState.value as? SyncState.JournalMergeReady ?: run {
+            _uiState.update { it.copy(journalMergeReviewVisible = false) }
+            return
+        }
+        _uiState.update { it.copy(journalMergeReviewVisible = false) }
+        scope.launch {
+            // Re-validate: syncState may have advanced (e.g. auto-completed) between capture and execution
+            if (syncState.value !is SyncState.JournalMergeReady) return@launch
+            activeGitSyncService.value?.abortActiveMerge(state.graphId)
+        }
+    }
+
+    /**
+     * Applies the user-approved merged content for a journal conflict: writes to disk,
+     * marks resolved, commits, reloads, and pushes.
+     */
+    fun acceptJournalMerge(mergedContent: String) {
+        val state = syncState.value as? SyncState.JournalMergeReady ?: return
+        _uiState.update { it.copy(journalMergeReviewVisible = false) }
+        scope.launch {
+            // Re-validate: syncState may have advanced between capture and execution
+            if (syncState.value !is SyncState.JournalMergeReady) return@launch
+            activeGitSyncService.value?.applyJournalMerge(
+                graphId = state.graphId,
+                filePath = state.proposal.filePath,
+                mergedContent = mergedContent,
+            )
+        }
+    }
+
+    /** Dismisses the git auto-detection banner for the given graph. */
+    fun dismissGitDetection(graphId: String) {
+        scope.launch {
+            onDismissGitDetection?.invoke(graphId)
+        }
+    }
+
     // Track recent pages manually to avoid "recently loaded" issues
     private var recentPageUuids: MutableList<String> = mutableListOf()
 
@@ -277,7 +329,7 @@ class StelekitViewModel(
 
 
     // Page-name suggestion index — drives highlight/link suggestion feature
-    private val pageNameIndex = PageNameIndex(pageRepository, scope)
+    val pageNameIndex = PageNameIndex(pageRepository, scope)
 
     /** Pre-built matcher for the current graph's page names. Null until pages are loaded. */
     val suggestionMatcher: StateFlow<AhoCorasickMatcher?> = pageNameIndex.matcher
@@ -297,6 +349,7 @@ class StelekitViewModel(
 
     init {
         blockStateManager?.let { graphLoader.setActivePageUuids(it.activePageUuids) }
+        blockStateManager?.let { graphLoader.setUnsavedPageUuids(it.dirtyPageUuids) }
 
         updateCommands()
         observeSyncState()
@@ -906,6 +959,7 @@ class StelekitViewModel(
                     is Screen.LibraryStats -> "Opened Library Stats"
                     is Screen.VaultUnlock -> "Vault locked"
                     is Screen.Gallery -> "Opened Gallery"
+                    is Screen.AssetBrowser -> "Opened Asset Browser"
                     is Screen.AnnotationEditor -> "Opened Annotation Editor"
                 }
             )
@@ -924,10 +978,14 @@ class StelekitViewModel(
         )
         if (screen is Screen.PageView) {
             refreshCurrentPage()
-            scope.launch {
-                // Re-read from disk on every navigation so stale in-memory copies are evicted.
-                // Uses the mtime guard internally so this is cheap when nothing changed.
-                graphLoader.loadFullPage(screen.page.uuid.value)
+            // Skip loadFullPage when a pending conflict exists — the DB has the user's edits
+            // and loading from disk would overwrite them before the conflict dialog appears.
+            if (!checkAndShowPendingConflict(screen)) {
+                scope.launch {
+                    // Re-read from disk on every navigation so stale in-memory copies are evicted.
+                    // Uses the mtime guard internally so this is cheap when nothing changed.
+                    graphLoader.loadFullPage(screen.page.uuid.value)
+                }
             }
             // Fire-and-forget visit tracking — does not block navigation
             scope.launch {
@@ -955,6 +1013,7 @@ class StelekitViewModel(
             )
         }
         updateCommands()
+        checkAndShowPendingConflict(screen)
         return true
     }
 
@@ -976,6 +1035,7 @@ class StelekitViewModel(
             )
         }
         updateCommands()
+        checkAndShowPendingConflict(screen)
         return true
     }
 
@@ -1178,8 +1238,27 @@ class StelekitViewModel(
                 val state = _uiState.value
                 val editingBlockUuid = state.editingBlockId
                 val currentPage = (state.currentScreen as? Screen.PageView)?.page
-                    ?: return@collect
-                if (currentPage.filePath != event.filePath) return@collect
+                if (currentPage == null || currentPage.filePath != event.filePath) {
+                    // User is not currently viewing this page. Suppress auto-reimport so the
+                    // DB keeps the user's edits, store the disk content, and notify via snackbar.
+                    val existing = state.pendingConflicts[event.filePath]
+                    event.suppress()
+                    if (existing == null || existing.diskContent != event.content) {
+                        val pageName = event.filePath
+                            .substringAfterLast('/').removeSuffix(".md").replace("_", " ")
+                        _uiState.update { it.copy(
+                            pendingConflicts = it.pendingConflicts + (event.filePath to PendingConflict(
+                                filePath = event.filePath,
+                                pageName = pageName,
+                                diskContent = event.content,
+                            ))
+                        )}
+                        if (existing == null) {
+                            sendSnackbar("\"$pageName\" was modified on disk — open it to review")
+                        }
+                    }
+                    return@collect
+                }
 
                 // Evict only this page's hierarchy cache so unrelated pages stay warm.
                 blockStateManager?.cacheEvictPage(currentPage.uuid)
@@ -1244,6 +1323,35 @@ class StelekitViewModel(
     }
 
     /**
+     * If [screen] is a [Screen.PageView] with a stored [PendingConflict], removes it from
+     * state, builds a [DiskConflict] from current DB blocks, and shows the conflict dialog.
+     * Also skips the normal [GraphLoader.loadFullPage] call so the DB is not overwritten
+     * with the disk content before the user gets a chance to choose.
+     * Returns true if a pending conflict was found (caller should skip loadFullPage).
+     */
+    private fun checkAndShowPendingConflict(screen: Screen): Boolean {
+        if (screen !is Screen.PageView) return false
+        val filePath = screen.page.filePath ?: return false
+        val pending = _uiState.value.pendingConflicts[filePath] ?: return false
+        _uiState.update { it.copy(pendingConflicts = it.pendingConflicts - filePath) }
+        scope.launch {
+            val firstBlock = blockRepository.getBlocksForPage(screen.page.uuid)
+                .first().getOrNull()?.minByOrNull { it.position }
+            _uiState.update { state ->
+                state.copy(diskConflict = DiskConflict(
+                    pageUuid = screen.page.uuid.value,
+                    pageName = screen.page.name,
+                    filePath = filePath,
+                    editingBlockUuid = firstBlock?.uuid?.value ?: "",
+                    localContent = firstBlock?.content ?: "",
+                    diskContent = pending.diskContent,
+                ))
+            }
+        }
+        return true
+    }
+
+    /**
      * Collects [GraphLoader.writeErrors] and surfaces a dismissable error banner in
      * the UI so the user can see that data failed to persist and trigger a retry.
      */
@@ -1294,7 +1402,8 @@ class StelekitViewModel(
         _uiState.update { it.copy(diskConflict = null) }
         // Re-queue a save for the current page so local content overwrites the disk file
         val currentPage = (uiState.value.currentScreen as? Screen.PageView)?.page ?: return
-        blockStateManager?.queuePageSave(currentPage.uuid.value)
+        val bsm = blockStateManager ?: return
+        scope.launch { bsm.queuePageSave(currentPage.uuid.value) }
     }
 
     /**

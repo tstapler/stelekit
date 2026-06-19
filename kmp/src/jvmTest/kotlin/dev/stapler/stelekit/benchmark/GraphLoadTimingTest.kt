@@ -556,6 +556,15 @@ class GraphLoadTimingTest {
                 "Large-page navigation took ${loadMs}ms — regression detected " +
                 "(index idx_blocks_page_uuid_position may be missing; expected < 2000ms)")
 
+            // Guarantee blocks:select is always recorded for the regression guard.
+            // indexRemainingPages may elide the DB fetch via freshness/isLoaded checks depending
+            // on implementation; an explicit read on the dense page (150 blocks) is always a
+            // real DB query and directly reproduces the v0.33.0 slow-scan scenario.
+            val densePage = repoSet.pageRepository.getPageByName("Dense Page").first().getOrNull()
+            assertNotNull(densePage, "Dense Page must be indexed before blocks:select guard — " +
+                "if null, indexRemainingPages did not complete or the page name changed")
+            repoSet.blockRepository.getBlocksForPage(densePage.uuid).first()
+
             // Flush and assert blocks:select p99. If the query stats repository is wired,
             // the stat MUST be present — silently passing when stats aren't flushed masks
             // the regression guard.

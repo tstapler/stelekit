@@ -143,6 +143,30 @@ class FileRegistry(private val fileSystem: FileSystem) {
                     contentHashes[filePathKey] = newHash
                     changedFiles.add(ChangedFile(FileEntry(fileName, filePath, modTime), content))
                 }
+            } else if (modTime < lastKnown && lastKnown != Long.MAX_VALUE && !isEncrypted) {
+                // The file's mod time went BACKWARD relative to what we last recorded.
+                // This happens when a sync tool (git, Syncthing, Logseq Sync) delivers a
+                // file that was originally modified on another device — the provider preserves
+                // the original timestamp rather than setting it to "now". The modTime > lastKnown
+                // guard above misses this case entirely, so we fall through to a content-hash
+                // check to determine whether the file actually changed.
+                //
+                // Only runs when we have a stored hash (populated by prior reads or markWrittenByUs).
+                // Files we have never hashed are skipped to avoid O(N) SAF reads per poll cycle.
+                val storedHash = contentHashes[filePathKey]
+                if (storedHash != null) {
+                    fileSystem.invalidateShadow(filePath)
+                    val content = fileSystem.readFile(filePath) ?: continue
+                    val newHash = content.hashCode()
+                    if (storedHash != newHash) {
+                        modTimes[filePathKey] = modTime
+                        contentHashes[filePathKey] = newHash
+                        changedFiles.add(ChangedFile(FileEntry(fileName, filePath, modTime), content))
+                    } else {
+                        // Same content, just an older timestamp (e.g. sync re-delivered unchanged file).
+                        modTimes[filePathKey] = modTime
+                    }
+                }
             }
         }
 

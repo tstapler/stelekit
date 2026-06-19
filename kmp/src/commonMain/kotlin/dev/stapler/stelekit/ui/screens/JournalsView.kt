@@ -4,9 +4,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -17,6 +20,10 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
+import dev.stapler.stelekit.tags.TagSuggestionState
+import dev.stapler.stelekit.tags.TagSuggestionViewModel
+import dev.stapler.stelekit.tags.WikiLinkExtractor
+import dev.stapler.stelekit.ui.components.tags.SuggestionBottomSheet
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
@@ -49,6 +56,8 @@ fun JournalsView(
     isLeftHanded: Boolean = false,
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
     capabilities: EditorCapabilities = EditorCapabilities(),
+    tagSuggestionViewModel: TagSuggestionViewModel? = null,
+    conflictFilePaths: Set<String> = emptySet(),
     modifier: Modifier = Modifier
 ) {
     NavigationTracingEffect("Journals")
@@ -63,6 +72,8 @@ fun JournalsView(
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
     var toolbarHeight by remember { mutableStateOf(0) }
+    val tagSuggestionState by tagSuggestionViewModel?.state?.collectAsState()
+        ?: remember { mutableStateOf(TagSuggestionState.Idle) }
 
     if (isDebugMode) {
         val recomposeCount = remember { androidx.compose.runtime.mutableIntStateOf(0) }
@@ -121,6 +132,8 @@ fun JournalsView(
                     blocks = blockList,
                     isLoading = !page.isContentLoaded || page.uuid.value in loadingPageUuids,
                     isDebugMode = isDebugMode,
+                    hasConflict = page.filePath in conflictFilePaths,
+                    onTitleClick = { onLinkClick(page.name) },
                     editingBlockUuid = editingBlockUuid?.value,
                     editingCursorIndex = editingCursorIndex,
                     collapsedBlocks = collapsedBlockUuids,
@@ -171,6 +184,14 @@ fun JournalsView(
                         )
                     },
                     onOpenAnnotationEditor = onOpenAnnotationEditor,
+                    onRequestTagSuggestions = if (tagSuggestionViewModel != null) { blockUuid, content ->
+                        val alreadyLinked = WikiLinkExtractor.extractPageNames(content)
+                        tagSuggestionViewModel.requestSuggestions(
+                            blockUuid = blockUuid,
+                            blockContent = content,
+                            alreadyLinkedTerms = alreadyLinked,
+                        )
+                    } else null,
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -234,6 +255,18 @@ fun JournalsView(
                 .align(Alignment.BottomCenter)
                 .onSizeChanged { toolbarHeight = it.height },
         )
+
+        if (tagSuggestionViewModel != null) {
+            SuggestionBottomSheet(
+                state = tagSuggestionState,
+                onAcceptTag = { uuid, term ->
+                    viewModel.blockStateManager.appendToBlock(
+                        dev.stapler.stelekit.model.BlockUuid(uuid), " [[$term]]"
+                    )
+                },
+                onDismiss = { tagSuggestionViewModel.dismiss() },
+            )
+        }
     }
 }
 
@@ -246,6 +279,8 @@ private fun JournalEntry(
     blocks: List<Block>,
     isLoading: Boolean,
     isDebugMode: Boolean,
+    hasConflict: Boolean = false,
+    onTitleClick: () -> Unit,
     editingBlockUuid: String?,
     editingCursorIndex: Int?,
     collapsedBlocks: Set<String>,
@@ -279,17 +314,33 @@ private fun JournalEntry(
     onNavigateAllSuggestions: ((List<SuggestionItem>) -> Unit)? = null,
     onBlockSelectionChange: ((blockUuid: String, range: IntRange?) -> Unit)? = null,
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
+    onRequestTagSuggestions: ((blockUuid: String, content: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
-        // Journal date header (formatted nicely)
-        Text(
-            text = formatJournalDate(page.name),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(bottom = 16.dp, top = 8.dp)
-        )
+        // Journal date header with optional conflict indicator
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .clickable { onTitleClick() }
+                .padding(bottom = 16.dp, top = 8.dp)
+        ) {
+            Text(
+                text = formatJournalDate(page.name),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            if (hasConflict) {
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = "Page modified on disk — tap to review",
+                    tint = Color(0xFFF59E0B),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
 
         // Blocks content
         if (blocks.isEmpty()) {
@@ -356,6 +407,7 @@ private fun JournalEntry(
                 onNavigateAllSuggestions = onNavigateAllSuggestions,
                 onBlockSelectionChange = onBlockSelectionChange,
                 onOpenAnnotationEditor = onOpenAnnotationEditor,
+                onRequestTagSuggestions = onRequestTagSuggestions,
             )
 
             // Clickable area below blocks to append new block

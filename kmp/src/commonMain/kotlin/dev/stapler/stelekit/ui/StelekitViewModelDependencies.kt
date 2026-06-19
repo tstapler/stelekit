@@ -73,4 +73,5 @@ data class StelekitViewModelDependencies(
     // ── Git sync ─────────────────────────────────────────────────────────────
     val activeGitSyncService: StateFlow<GitSyncService?> = MutableStateFlow(null),
     val activeGraphIdProvider: () -> String? = { null },
+    val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = null,
 )

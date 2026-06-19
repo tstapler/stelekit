@@ -81,6 +81,16 @@ class GraphFileWatcher(
     private val _externalFileChanges = MutableSharedFlow<ExternalFileChange>(extraBufferCapacity = 8)
     val externalFileChanges: SharedFlow<ExternalFileChange> = _externalFileChanges.asSharedFlow()
 
+    /**
+     * Emits a synthetic external-change event for [filePath] with [content] as the on-disk
+     * version. Used by the pre-write conflict check to surface a conflict immediately rather
+     * than waiting for the next 5-second watcher poll cycle.
+     */
+    fun emitSyntheticChange(filePath: String, content: String) {
+        val emitted = _externalFileChanges.tryEmit(ExternalFileChange(filePath, content) {})
+        if (!emitted) logger.warn("Synthetic change event dropped (buffer full): $filePath")
+    }
+
     // Mutex protecting gitMergeSuppressedFiles. The set is accessed concurrently by the
     // 5-second polling loop and native-change callbacks — on JVM, unsynchronized HashSet
     // mutation can corrupt the structure.

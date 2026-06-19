@@ -1,13 +1,19 @@
 package dev.stapler.stelekit.repository
 
+import arrow.atomic.AtomicInt
+import arrow.atomic.value
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import kotlin.concurrent.Volatile
 
 import dev.stapler.stelekit.cache.LruCache
 import dev.stapler.stelekit.cache.SteleLruCache
 import dev.stapler.stelekit.cache.RepoCacheConfig
+import app.cash.sqldelight.db.SqlDriver
+import dev.stapler.stelekit.db.DirectSqlWrite
+import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
@@ -41,11 +47,42 @@ import kotlinx.datetime.toLocalDateTime
  */
 @OptIn(DirectRepositoryWrite::class)
 class SqlDelightBlockRepository(
-    private val database: SteleDatabase
+    private val database: SteleDatabase,
+    private val driver: SqlDriver? = null,
 ) : BlockRepository {
 
     private val logger = Logger("SqlDelightBlockRepository")
     private val queries = database.steleDatabaseQueries
+    private val restricted = RestrictedDatabaseQueries(queries)
+
+    @OptIn(DirectSqlWrite::class)
+    private suspend fun recomputeBacklinkCount(name: String) =
+        restricted.recomputeBacklinkCountForPage(name)
+
+    @OptIn(DirectSqlWrite::class)
+    private suspend fun recomputeBacklinkCountFromIndex(name: String) =
+        restricted.recomputeBacklinkCountFromIndex(name)
+
+    /** Inserts all wikilink refs for [content] into wikilink_references for [blockUuid].
+     *  Caller is responsible for deleting stale refs first when updating existing content. */
+    @OptIn(DirectSqlWrite::class)
+    private suspend fun addWikilinkRefs(blockUuid: String, pageNames: Set<String>) {
+        for (name in pageNames) restricted.insertWikilinkReference(blockUuid, name)
+    }
+
+    /** Replaces all wikilink refs for [blockUuid] with those derived from [content].
+     *  Returns the new set of page names (used to determine which counts need updating). */
+    @OptIn(DirectSqlWrite::class)
+    private suspend fun replaceWikilinkRefs(blockUuid: String, content: String): Set<String> {
+        val pageNames = extractWikilinks(content)
+        restricted.deleteWikilinkReferencesForBlock(blockUuid)
+        for (name in pageNames) restricted.insertWikilinkReference(blockUuid, name)
+        return pageNames
+    }
+
+    /** Set after construction by RepositoryFactory. */
+    @Volatile var histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
+    private val _pendingBlockReads = AtomicInt(0)
 
     private val cacheConfig = RepoCacheConfig.fromPlatform()
 
@@ -71,9 +108,6 @@ class SqlDelightBlockRepository(
     private val hierarchyPageIndex = mutableMapOf<String, MutableSet<String>>()
 
     private val hierarchyTtlMs = 120_000L // 2 minutes
-
-    private fun extractWikilinks(content: String): Set<String> =
-        WIKILINK_REGEX.findAll(content).map { it.groupValues[1].trim() }.toHashSet()
 
     override fun getBlockByUuid(uuid: BlockUuid): Flow<Either<DomainError, Block?>> =
         queries.selectBlockByUuid(uuid.value)
@@ -215,16 +249,17 @@ class SqlDelightBlockRepository(
         }
     }.flowOn(PlatformDispatcher.DB)
 
-    override fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>> =
-        queries.selectBlocksByPageUuidUnpaginated(pageUuid.value)
+    override fun getBlocksForPage(pageUuid: PageUuid): Flow<Either<DomainError, List<Block>>> {
+        val depth = _pendingBlockReads.incrementAndGet()
+        return queries.selectBlocksByPageUuidUnpaginated(pageUuid.value)
             .asFlow()
+            .onStart { histogramWriter?.record("db.read_queue_depth", depth.toLong()) }
             .mapToList(PlatformDispatcher.DB)
             .conflate()
-            .map { list ->
-                val result: Either<DomainError, List<Block>> = list.map { it.toBlockModel() }.right()
-                result
-            }
+            .onCompletion { _pendingBlockReads.decrementAndGet() }
+            .map { list -> list.map { it.toBlockModel() }.right() }
             .catchDbError()
+    }
 
     override suspend fun getBlocksByUuids(uuids: List<BlockUuid>): Either<DomainError, List<Block>> =
         withContext(PlatformDispatcher.DB) {
@@ -246,7 +281,13 @@ class SqlDelightBlockRepository(
         }
 
     override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+        if (blocks.isEmpty()) return@withContext Unit.right()
         try {
+            // Disable FTS5 automerge so individual inserts do not trigger mid-chunk segment
+            // merges. As the FTS5 index grows during a session, each automerge pass reads the
+            // entire index — making large page saves take minutes instead of milliseconds.
+            // A single controlled merge after all chunks completes the indexing in one pass.
+            ftsAutomergeOff()
             // Chunk into bounded transactions so the SQLite write lock is never held for more
             // than ~WRITE_CHUNK_SIZE rows. Without chunking, a 2000-block Phase-3 batch holds
             // the lock for several seconds on Android, blocking concurrent user edits.
@@ -258,20 +299,70 @@ class SqlDelightBlockRepository(
             blocks.chunked(WRITE_CHUNK_SIZE).forEach { chunk ->
                 queries.transaction {
                     chunk.forEach { block ->
-                        queries.insertBlock(
-                            block.uuid.value,
+                        insertBlockRow(block)
+                        // Populate wikilink index so future recomputeBacklinkCountFromIndex
+                        // calls are correct without requiring a full LIKE scan rebuild.
+                        // Backlink counts are NOT updated here — they start at 0 and are
+                        // updated incrementally on user edits (matching existing behaviour).
+                        val pageNames = extractWikilinks(block.content)
+                        for (name in pageNames) {
+                            @OptIn(DirectSqlWrite::class)
+                            restricted.insertWikilinkReference(block.uuid.value, name)
+                        }
+                    }
+                }
+            }
+            ftsAutomergeDefault()
+            // ftsMerge() is intentionally NOT called here. Calling merge=-200 on an already-large
+            // FTS index (e.g. after 500+ pages are indexed) adds hundreds of ms per navigation.
+            // Callers that do bulk indexing must invoke compactFtsIndex() once after the full
+            // batch is complete. Per-save compaction is handled by automerge=8.
+            Unit.right()
+        } catch (e: CancellationException) {
+            runCatching { ftsAutomergeDefault() }
+            throw e
+        } catch (e: Exception) {
+            runCatching { ftsAutomergeDefault() }
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+        }
+    }
+
+    override suspend fun saveBlocksDiff(toInsert: List<Block>, toUpdate: List<Block>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+        if (toInsert.isEmpty() && toUpdate.isEmpty()) return@withContext Unit.right()
+        try {
+            // toInsert contract: these UUIDs must be genuinely absent from the blocks table.
+            // INSERT OR REPLACE is used here (via insertBlock) — if a UUID already exists, it
+            // fires blocks_ad+blocks_ai (double FTS trigger) rather than blocks_au, negating the
+            // FTS optimization. This is safe because:
+            // 1. DatabaseWriteActor serializes all writes — no concurrent insert races from this actor.
+            // 2. The diff is computed from getBlocksForPage() immediately before dispatch, so
+            //    toInsert reflects the current DB state at diff-computation time.
+            // A future improvement: use INSERT OR IGNORE and fall back to UPDATE on affected rows.
+            toInsert.chunked(WRITE_CHUNK_SIZE).forEach { chunk ->
+                queries.transaction {
+                    chunk.forEach { block -> insertBlockRow(block) }
+                }
+            }
+            // UPDATE instead of INSERT OR REPLACE so the blocks_au trigger fires (AFTER UPDATE OF
+            // content) rather than blocks_ad+blocks_ai. blocks_au only fires when content is in the
+            // SET clause, and does not cascade-delete child blocks the way REPLACE's implicit
+            // DELETE step does.
+            toUpdate.chunked(WRITE_CHUNK_SIZE).forEach { chunk ->
+                queries.transaction {
+                    chunk.forEach { block ->
+                        queries.updateBlockForSave(
                             block.pageUuid.value,
                             block.parentUuid,
                             block.leftUuid,
                             block.content,
                             block.level.toLong(),
                             block.position.toLong(),
-                            block.createdAt.toEpochMilliseconds(),
                             block.updatedAt.toEpochMilliseconds(),
                             block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
                             block.version,
                             block.contentHash ?: ContentHasher.sha256ForContent(block.content),
-                            block.blockType
+                            block.blockType,
+                            block.uuid.value,
                         )
                     }
                 }
@@ -282,6 +373,56 @@ class SqlDelightBlockRepository(
         } catch (e: Exception) {
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun insertBlockRow(block: Block) {
+        queries.insertBlock(
+            block.uuid.value,
+            block.pageUuid.value,
+            block.parentUuid,
+            block.leftUuid,
+            block.content,
+            block.level.toLong(),
+            block.position.toLong(),
+            block.createdAt.toEpochMilliseconds(),
+            block.updatedAt.toEpochMilliseconds(),
+            block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
+            block.version,
+            block.contentHash ?: ContentHasher.sha256ForContent(block.content),
+            block.blockType,
+        )
+    }
+
+    // FTS5 special-command INSERTs cannot be expressed in SQLDelight .sq files (the parser
+    // rejects inserting into a virtual table's config pseudo-column). Execute via raw driver.
+    // driver is null only in unit tests that construct the repo directly without a driver arg.
+    // All three helpers are best-effort: an exception here must never abort saveBlocks —
+    // the worst outcome is that automerge isn't controlled (old behavior), not data loss.
+    private fun ftsAutomergeOff() = runCatching { driver?.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('automerge=0')", 0) }
+    private fun ftsAutomergeDefault() = runCatching { driver?.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('automerge=8')", 0) }
+    private fun ftsMerge() = runCatching { driver?.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('merge=-200')", 0) }
+
+    /** Called once at DB open to restore FTS5 automerge in case a prior session was killed
+     *  between ftsAutomergeOff() and ftsAutomergeDefault(). Setting automerge=8 when it is
+     *  already 8 is a no-op in SQLite FTS5. merge=-200 is intentionally NOT called here —
+     *  full index compaction at every startup adds hundreds of ms on large graphs. */
+    fun ftsStartupHeal() {
+        runCatching { driver?.execute(null, "INSERT INTO blocks_fts(blocks_fts) VALUES('automerge=8')", 0) }
+    }
+
+    override suspend fun walCheckpoint(): Unit = withContext(PlatformDispatcher.DB) {
+        try {
+            queries.pragmaWalCheckpointTruncate()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Non-critical — WAL will be checkpointed automatically on next DB open
+        }
+    }
+
+    override suspend fun compactFtsIndex(): Unit = withContext(PlatformDispatcher.DB) {
+        ftsMerge()
     }
 
     override suspend fun saveBlocksUpdate(blocks: List<Block>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
@@ -330,7 +471,9 @@ class SqlDelightBlockRepository(
                 block.contentHash ?: ContentHasher.sha256ForContent(block.content),
                 block.blockType
             )
-            extractWikilinks(block.content).forEach { queries.recomputeBacklinkCountForPage(it) }
+            val pageNames = extractWikilinks(block.content)
+            addWikilinkRefs(block.uuid.value, pageNames)
+            for (name in pageNames) recomputeBacklinkCountFromIndex(name)
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -342,12 +485,13 @@ class SqlDelightBlockRepository(
     override suspend fun updateBlockContentOnly(blockUuid: BlockUuid, content: String): Either<DomainError, Unit> =
         withContext(PlatformDispatcher.DB) {
             try {
-                val oldContent = blockCache.get(blockUuid.value)?.content
-                    ?: queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()?.content ?: ""
+                // Read old page names from the index (O(1) lookup) — no content extraction needed.
+                val oldPageNames = queries.selectWikilinkPageNamesForBlock(blockUuid.value).executeAsList().toSet()
                 queries.updateBlockContent(content, Clock.System.now().toEpochMilliseconds(), ContentHasher.sha256ForContent(content), blockUuid.value)
                 blockCache.remove(blockUuid.value)
-                val changedPages = extractWikilinks(oldContent) + extractWikilinks(content)
-                changedPages.forEach { queries.recomputeBacklinkCountForPage(it) }
+                // Replace all wikilink refs and recompute counts only for changed pages.
+                val newPageNames = replaceWikilinkRefs(blockUuid.value, content)
+                for (name in oldPageNames + newPageNames) recomputeBacklinkCountFromIndex(name)
                 Unit.right()
             } catch (e: CancellationException) {
                 throw e
@@ -368,12 +512,18 @@ class SqlDelightBlockRepository(
                     queries.updateBlockContent(content, now, ContentHasher.sha256ForContent(content), uuid.value)
                     blockCache.remove(uuid.value)
                 }
-                // oldPageName: SET 0 — all its refs were just rewritten away, no scan needed.
-                // newPageName: recompute via LIKE scan — arithmetic read is unreliable because renamePage
-                // already renamed the row, so selectPageBacklinkCount(newName) would return OldName's stale count.
-                queries.setPageBacklinkCount(0L, oldPageName)
-                queries.recomputeBacklinkCountForPage(newPageName)
             }
+            // Move all wikilink refs from oldPageName to newPageName in one UPDATE.
+            // UPDATE OR IGNORE skips rows where (block_uuid, newPageName) already exists
+            // (blocks that referenced both pages); leftover oldPageName rows are cleaned up below.
+            @OptIn(DirectSqlWrite::class)
+            restricted.updateWikilinkPageNameForRename(newName = newPageName, oldName = oldPageName)
+            // Clean up any ignored rows (blocks that had both [[oldPage]] and [[newPage]]).
+            @OptIn(DirectSqlWrite::class)
+            restricted.deleteWikilinkReferencesForPageName(oldPageName)
+            // Recompute both counts from the index — no LIKE scan needed.
+            recomputeBacklinkCountFromIndex(oldPageName)
+            recomputeBacklinkCountFromIndex(newPageName)
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -400,8 +550,9 @@ class SqlDelightBlockRepository(
         try {
             val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
             if (block != null) {
+                // Collect affected page names from index BEFORE deletion (CASCADE removes refs).
                 val wikilinkPages = mutableSetOf<String>()
-                wikilinkPages.addAll(extractWikilinks(block.content))
+                wikilinkPages.addAll(queries.selectWikilinkPageNamesForBlock(block.uuid).executeAsList())
                 if (deleteChildren) {
                     val uuidsToDelete = mutableListOf<String>(block.uuid)
                     var index = 0
@@ -410,7 +561,7 @@ class SqlDelightBlockRepository(
                         val children = queries.selectBlockChildren(currentUuid, Long.MAX_VALUE, 0L).executeAsList()
                         children.forEach { child ->
                             uuidsToDelete.add(child.uuid)
-                            wikilinkPages.addAll(extractWikilinks(child.content))
+                            wikilinkPages.addAll(queries.selectWikilinkPageNamesForBlock(child.uuid).executeAsList())
                         }
                         index++
                     }
@@ -422,6 +573,7 @@ class SqlDelightBlockRepository(
                         queries.updateBlockLeftUuid(block.left_uuid, nextSibling.uuid)
                     }
 
+                    // Deletion cascades to wikilink_references automatically.
                     uuidsToDelete.forEach { queries.deleteBlockByUuid(it) }
                 } else {
                     // Chain repair before deletion
@@ -431,7 +583,7 @@ class SqlDelightBlockRepository(
                     }
                     queries.deleteBlockByUuid(block.uuid)
                 }
-                wikilinkPages.forEach { queries.recomputeBacklinkCountForPage(it) }
+                for (name in wikilinkPages) recomputeBacklinkCountFromIndex(name)
             }
             Unit.right()
         } catch (e: CancellationException) {
@@ -451,7 +603,8 @@ class SqlDelightBlockRepository(
                     val blocksByUuid = queries.selectBlocksByUuids(chunkValues).executeAsList().associateBy { it.uuid }
                     chunkValues.forEach { uuidValue ->
                         val block = blocksByUuid[uuidValue] ?: return@forEach
-                        wikilinkPages.addAll(extractWikilinks(block.content))
+                        // Collect affected page names from index BEFORE deletion (CASCADE removes refs).
+                        wikilinkPages.addAll(queries.selectWikilinkPageNamesForBlock(block.uuid).executeAsList())
                         if (deleteChildren) {
                             // Collect the full subtree
                             val uuidsToDelete = mutableListOf(block.uuid)
@@ -461,7 +614,7 @@ class SqlDelightBlockRepository(
                                 val children = queries.selectBlockChildren(currentUuid, Long.MAX_VALUE, 0L).executeAsList()
                                 children.forEach { child ->
                                     uuidsToDelete.add(child.uuid)
-                                    wikilinkPages.addAll(extractWikilinks(child.content))
+                                    wikilinkPages.addAll(queries.selectWikilinkPageNamesForBlock(child.uuid).executeAsList())
                                 }
                                 index++
                             }
@@ -488,8 +641,8 @@ class SqlDelightBlockRepository(
                         }
                     }
                 }
-                wikilinkPages.forEach { queries.recomputeBacklinkCountForPage(it) }
             }
+            for (name in wikilinkPages) recomputeBacklinkCountFromIndex(name)
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -1107,17 +1260,6 @@ class SqlDelightBlockRepository(
         "ancestors" to ancestorsCache.snapshotAndReset(),
     )
 
-    /** Fold WAL frames into the main database file, shrinking the WAL to near-zero. */
-    suspend fun walCheckpoint() = withContext(PlatformDispatcher.DB) {
-        try {
-            queries.pragmaWalCheckpointTruncate()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            // Non-critical — WAL will be checkpointed automatically on next DB open
-        }
-    }
-
     suspend fun evictBlock(uuid: String) { blockCache.remove(uuid) }
 
     suspend fun evictHierarchyForPage(pageUuid: String) {
@@ -1138,11 +1280,24 @@ class SqlDelightBlockRepository(
 
     override suspend fun deleteBlocksForPage(pageUuid: PageUuid): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
+            // Collect affected page names BEFORE deletion (CASCADE removes wikilink refs).
+            val affectedPageNames = queries.selectWikilinkPageNamesForPage(pageUuid.value).executeAsList().toSet()
+            // Disable FTS5 automerge before bulk delete — mirrors saveBlocks. Without this,
+            // the N blocks_ad triggers can each trigger an automerge pass that scans the full
+            // FTS index, making large page clears take seconds instead of milliseconds.
+            // ftsMerge() is intentionally NOT called here — same rationale as saveBlocks():
+            // it scans the full index and is prohibitively expensive on large graphs.
+            // compactFtsIndex() is invoked once after a full bulk-indexing session instead.
+            ftsAutomergeOff()
             queries.deleteBlocksByPageUuid(pageUuid.value)
+            ftsAutomergeDefault()
+            for (name in affectedPageNames) recomputeBacklinkCountFromIndex(name)
             Unit.right()
         } catch (e: CancellationException) {
+            runCatching { ftsAutomergeDefault() }
             throw e
         } catch (e: Exception) {
+            runCatching { ftsAutomergeDefault() }
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
@@ -1150,11 +1305,21 @@ class SqlDelightBlockRepository(
     override suspend fun deleteBlocksForPages(pageUuids: List<PageUuid>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         if (pageUuids.isEmpty()) return@withContext Unit.right()
         try {
+            // Collect affected page names BEFORE deletion (CASCADE removes wikilink refs).
+            val affectedPageNames = mutableSetOf<String>()
+            for (pageUuid in pageUuids) {
+                affectedPageNames.addAll(queries.selectWikilinkPageNamesForPage(pageUuid.value).executeAsList())
+            }
+            ftsAutomergeOff()
             queries.deleteBlocksByPageUuids(pageUuids.map { it.value })
+            ftsAutomergeDefault()
+            for (name in affectedPageNames) recomputeBacklinkCountFromIndex(name)
             Unit.right()
         } catch (e: CancellationException) {
+            runCatching { ftsAutomergeDefault() }
             throw e
         } catch (e: Exception) {
+            runCatching { ftsAutomergeDefault() }
             DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
     }
@@ -1174,8 +1339,6 @@ class SqlDelightBlockRepository(
     }
 
     companion object {
-        private val WIKILINK_REGEX = Regex("""\[\[([^\]]+)\]\]""")
-
         /**
          * Maximum blocks per SQLite transaction in [saveBlocks]. Limits write-lock hold time
          * to ~WRITE_CHUNK_SIZE * (insert_cost + FTS5_trigger_cost) per transaction.

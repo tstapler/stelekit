@@ -2,18 +2,16 @@
 class Stelekit < Formula
   desc "Markdown-based outliner and note-taking app (Kotlin Multiplatform)"
   homepage "https://github.com/tstapler/stelekit"
-  version "0.40.4"
+  version "0.50.0"
 
   on_linux do
     url "https://github.com/tstapler/stelekit/releases/download/v#{version}/SteleKit-v#{version}-linux.AppImage"
-    sha256 "c9da912ebd0f025051431724e5bf9ed68e34a08d85cf68c550c42b912262e36c"
+    sha256 "163a188fd4fc380de267bfb4aa08ce9c0c10b09cd3f31b2b34ac2203759e39c0"
   end
 
   on_macos do
     url "https://github.com/tstapler/stelekit/releases/download/v#{version}/SteleKit-v#{version}-macos.dmg"
-    sha256 "049382878c496f798684085cc59befdeca1b13610bc24693793267f2b45e827f"
-
-    depends_on "openjdk"
+    sha256 "c70f1b9096f3e1736949d307356c50af1b89817bd5f7852ca33ac38571dc2447"
   end
 
   def install
@@ -53,11 +51,6 @@ class Stelekit < Formula
 
     elsif OS.mac?
       cp_r "stelekit.app", prefix
-      # Replace the bundled JVM with Homebrew's openjdk for macOS compatibility.
-      # The Compose Desktop native launcher looks for the JVM at Contents/runtime/Contents/Home.
-      bundled_jvm = prefix/"stelekit.app/Contents/runtime/Contents/Home"
-      bundled_jvm.rmtree if bundled_jvm.exist?
-      bundled_jvm.make_relative_symlink Formula["openjdk"].opt_libexec/"openjdk.jdk/Contents/Home"
       bin.write_exec_script prefix/"stelekit.app/Contents/MacOS/stelekit"
     end
   end

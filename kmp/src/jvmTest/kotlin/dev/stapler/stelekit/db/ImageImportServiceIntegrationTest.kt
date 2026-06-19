@@ -69,7 +69,7 @@ class ImageImportServiceIntegrationTest {
         val (service, _, _, fs) = build()
         fs.writeFileBytes("/tmp/photo.jpg", fakePngBytes)
 
-        val annotation = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, pageUuid)
+        val annotation = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, PageUuid(pageUuid))
             .requireSuccess()
 
         assertTrue(annotation.filePath.contains("assets/images/"))
@@ -85,7 +85,7 @@ class ImageImportServiceIntegrationTest {
         fs.writeFileBytes("/tmp/photo.jpg", fakePngBytes)
 
         val annotation = service.import(
-            PlatformImageFile("/tmp/photo.jpg"), graphPath, pageUuid, ImageSource.FILE
+            PlatformImageFile("/tmp/photo.jpg"), graphPath, PageUuid(pageUuid), ImageSource.FILE
         ).requireSuccess()
 
         val fromRepo = imageRepo.getImageAnnotationByUuid(annotation.uuid).first().getOrNull()
@@ -101,7 +101,7 @@ class ImageImportServiceIntegrationTest {
         val (service, _, _, fs) = build()
         fs.writeFileBytes("/tmp/photo.jpg", fakePngBytes)
 
-        val annotation = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, pageUuid)
+        val annotation = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, PageUuid(pageUuid))
             .requireSuccess()
 
         val sidecarPath = "$graphPath/.stelekit/images/${annotation.uuid}.measure.json"
@@ -116,7 +116,7 @@ class ImageImportServiceIntegrationTest {
         val (service, _, blockRepo, fs) = build()
         fs.writeFileBytes("/tmp/photo.jpg", fakePngBytes)
 
-        val annotation = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, pageUuid)
+        val annotation = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, PageUuid(pageUuid))
             .requireSuccess()
 
         val blocks = blockRepo.getBlocksForPage(PageUuid(pageUuid)).first().getOrNull()
@@ -140,7 +140,7 @@ class ImageImportServiceIntegrationTest {
             cameraMake = "Google",
             cameraModel = "Pixel 8",
         )
-        val annotation = service.import(tempFile, graphPath, pageUuid, ImageSource.CAMERA)
+        val annotation = service.import(tempFile, graphPath, PageUuid(pageUuid), ImageSource.CAMERA)
             .requireSuccess()
 
         val fromRepo = imageRepo.getImageAnnotationByUuid(annotation.uuid).first().getOrNull()
@@ -155,7 +155,7 @@ class ImageImportServiceIntegrationTest {
     fun `import returns error when source file does not exist`() = runBlocking<Unit> {
         val (service) = build()
 
-        val result = service.import(PlatformImageFile("/tmp/nonexistent.jpg"), graphPath, pageUuid)
+        val result = service.import(PlatformImageFile("/tmp/nonexistent.jpg"), graphPath, PageUuid(pageUuid))
 
         assertTrue(result.isLeft(), "Expected Either.Left but got $result")
     }
@@ -178,7 +178,7 @@ class ImageImportServiceIntegrationTest {
             sidecarManager = ImageSidecarManager(failFs),
         )
 
-        val result = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, pageUuid)
+        val result = service.import(PlatformImageFile("/tmp/photo.jpg"), graphPath, PageUuid(pageUuid))
 
         assertIs<Either.Left<*>>(result)
         val allAnnotations = imageRepo.getAllImageAnnotations().first().getOrNull()

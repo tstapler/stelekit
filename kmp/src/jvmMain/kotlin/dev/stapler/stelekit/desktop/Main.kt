@@ -18,11 +18,13 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.rememberWindowState
 import dev.stapler.stelekit.domain.UrlFetcherJvm
 import dev.stapler.stelekit.service.JvmMediaAttachmentService
+import dev.stapler.stelekit.git.JvmGitRepository
 import dev.stapler.stelekit.ui.StelekitApp
 import dev.stapler.stelekit.ui.theme.setSystemDarkTheme
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.error.JvmErrorTracker
+import dev.stapler.stelekit.performance.BuildInfo
 import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.OtelProvider
 import dev.stapler.stelekit.performance.OtelExporterConfig
@@ -38,6 +40,8 @@ fun main() {
 
     // Desktop builds are always developer builds
     DebugBuildConfig.isDebugBuild = true
+    BuildInfo.commitHash = System.getProperty("app.commit", "unknown")
+    BuildInfo.appVersion = System.getProperty("app.version", "dev")
 
     // Initialize OpenTelemetry SDK early so instrumented code can emit spans
     OtelProvider.initialize(OtelExporterConfig(enableStdout = false, enableRingBuffer = true))
@@ -116,6 +120,7 @@ fun main() {
             }
 
             val attachmentService = remember { JvmMediaAttachmentService() }
+            val gitRepository = remember { JvmGitRepository() }
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = graphPath,
@@ -123,6 +128,7 @@ fun main() {
                 spanRecorder = spanRecorder,
                 cryptoEngine = dev.stapler.stelekit.vault.JvmCryptoEngine(),
                 attachmentService = attachmentService,
+                gitRepository = gitRepository,
             )
         }
     }

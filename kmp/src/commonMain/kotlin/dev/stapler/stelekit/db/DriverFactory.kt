@@ -26,7 +26,16 @@ expect class DriverFactory() {
      * Get the directory where databases are stored.
      */
     fun getDatabaseDirectory(): String
+
+    /**
+     * Create a driver for the separate telemetry database (spans, query_stats, histograms, debug flags).
+     * Uses a single connection to avoid WAL snapshot contention with the content database.
+     */
+    fun createTelemetryDriver(graphId: String): SqlDriver
 }
+
+fun DriverFactory.getTelemetryDatabaseUrl(graphId: String): String =
+    "jdbc:sqlite:${getDatabaseDirectory()}/stelekit-telemetry-$graphId.db"
 
 /**
  * Returns the default JDBC URL for the platform.
@@ -45,3 +54,5 @@ fun createDatabase(driverFactory: DriverFactory, jdbcUrl: String): SteleDatabase
     val driver = driverFactory.createDriver(jdbcUrl)
     return SteleDatabase(driver)
 }
+
+expect fun createTelemetryDatabaseInMemory(): TelemetryDatabase

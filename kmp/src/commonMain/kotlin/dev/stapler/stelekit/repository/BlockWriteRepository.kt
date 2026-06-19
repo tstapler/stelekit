@@ -34,6 +34,31 @@ interface BlockWriteRepository {
     suspend fun saveBlocksUpdate(blocks: List<Block>): Either<DomainError, Unit>
 
     /**
+     * Diff-aware bulk save: INSERTs [toInsert] and UPDATEs [toUpdate] via separate SQL paths.
+     * UPDATE fires blocks_au (scoped to content changes) instead of the INSERT OR REPLACE
+     * double-trigger (blocks_ad + blocks_ai), halving FTS5 work for updated blocks.
+     * Both lists are wrapped with FTS5 automerge=0 / merge pass to prevent compounding segment
+     * merges during large page saves. Default impl delegates to saveBlocks for compatibility.
+     */
+    @DirectRepositoryWrite
+    suspend fun saveBlocksDiff(toInsert: List<Block>, toUpdate: List<Block>): Either<DomainError, Unit> =
+        saveBlocks(toInsert + toUpdate)
+
+    /**
+     * Fold WAL frames into the main DB file. Call after bulk imports to prevent WAL bloat
+     * from slowing subsequent reads. No-op by default (non-SQLite backends).
+     */
+    @DirectRepositoryWrite
+    suspend fun walCheckpoint() {}
+
+    /**
+     * Compact the FTS index with a single controlled merge pass. Call once after bulk
+     * indexing completes — not during incremental saves. No-op by default (non-SQLite backends).
+     */
+    @DirectRepositoryWrite
+    suspend fun compactFtsIndex() {}
+
+    /**
      * Update only the content of a block. Does NOT touch structural fields
      * (parentUuid, position, level, leftUuid), eliminating the race condition
      * where a full saveBlock() with stale structural fields clobbers concurrent

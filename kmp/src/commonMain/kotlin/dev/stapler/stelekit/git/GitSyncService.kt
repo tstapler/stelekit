@@ -11,13 +11,16 @@ import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.FilePath
+import dev.stapler.stelekit.git.merge.JournalMergeService
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.model.wikiRoot
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.NetworkMonitor
+import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -48,14 +51,24 @@ class GitSyncService(
     private val fileSystem: FileSystem,
     /** Returns the active [CredentialAccess] for checking vault availability before sync. Null means always available. */
     private val credentialAccessProvider: (() -> CredentialAccess)? = null,
+    private val journalMergeService: JournalMergeService? = null,
 ) {
+    private val logger = Logger("GitSyncService")
+
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
     // Owns its own scope — never accept rememberCoroutineScope()
-    private val scope = CoroutineScope(SupervisorJob() + PlatformDispatcher.IO)
+    // CoroutineExceptionHandler guards against uncaught Throwable crashing the Android process.
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        logger.error("GitSyncService uncaught error", throwable)
+        _syncState.value = SyncState.Error(
+            DomainError.GitError.FetchFailed("Unexpected error: ${throwable.message}")
+        )
+    }
+    private val scope = CoroutineScope(SupervisorJob() + PlatformDispatcher.IO + exceptionHandler)
 
-    private var periodicSyncJob: Job? = null
+    @kotlin.concurrent.Volatile private var periodicSyncJob: Job? = null
 
     /**
      * Full sync sequence:
@@ -160,6 +173,31 @@ class GitSyncService(
                 }
 
                 if (mergeResult.hasConflicts) {
+                    // Try algorithmic journal merge for journal files
+                    val journalConflicts = mergeResult.conflicts.filter {
+                        JournalMergeService.isJournalFile(
+                            it.filePath.substringAfterLast('/').substringAfterLast('\\')
+                        )
+                    }
+                    // Only attempt algorithmic merge for a single journal conflict — multiple
+                    // conflicts require sequential resolution and must go through the manual screen.
+                    if (journalConflicts.size == 1 && journalMergeService != null) {
+                        val proposal = try {
+                            journalMergeService.propose(journalConflicts.first(), config.wikiRoot)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            null
+                        }
+                        if (proposal != null) {
+                            _syncState.value = SyncState.JournalMergeReady(graphId, proposal)
+                            val conflictErr = DomainError.GitError.MergeConflict(
+                                conflictCount = mergeResult.conflicts.size,
+                                conflictPaths = mergeResult.conflicts.map { it.filePath },
+                            )
+                            return@withContext conflictErr.left()
+                        }
+                    }
                     val conflictErr = DomainError.GitError.MergeConflict(
                         conflictCount = mergeResult.conflicts.size,
                         conflictPaths = mergeResult.conflicts.map { it.filePath },
@@ -366,6 +404,55 @@ class GitSyncService(
     }
 
     /**
+     * Applies an algorithmically-merged journal file: writes [mergedContent] to disk,
+     * marks the file as resolved, commits the merge, reloads the page into the DB,
+     * and pushes.  Called after the user approves the [JournalMergeReviewScreen].
+     */
+    suspend fun applyJournalMerge(
+        graphId: String,
+        filePath: String,
+        mergedContent: String,
+    ): Either<DomainError.GitError, Unit> = withContext(PlatformDispatcher.IO) {
+        val config = when (val result = configRepository.getConfig(graphId)) {
+            is Either.Left -> return@withContext DomainError.GitError.CommitFailed(
+                result.value.message
+            ).left()
+            is Either.Right -> result.value
+        } ?: return@withContext DomainError.GitError.CommitFailed("No git config for $graphId").left()
+
+        if (!fileSystem.writeFile(filePath, mergedContent)) {
+            return@withContext DomainError.GitError.CommitFailed(
+                "Failed to write merged content to: $filePath"
+            ).left()
+        }
+
+        gitRepository.markResolved(config, filePath).onLeft { return@withContext it.left() }
+
+        val message = buildCommitMessage(config, isMerge = true)
+        gitRepository.commit(config, message).onLeft { return@withContext it.left() }
+
+        graphLoader.beginGitMerge(listOf(filePath))
+        try {
+            graphLoader.reloadFiles(listOf(dev.stapler.stelekit.model.FilePath(filePath)))
+        } finally {
+            graphLoader.endGitMerge()
+        }
+
+        _syncState.value = SyncState.Pushing
+        gitRepository.push(config).onLeft { err ->
+            _syncState.value = SyncState.Error(err)
+            return@withContext err.left()
+        }
+
+        _syncState.value = SyncState.Success(
+            localCommitsMade = 0,
+            remoteCommitsMerged = 1,
+            lastSyncAt = Clock.System.now().toEpochMilliseconds(),
+        )
+        Unit.right()
+    }
+
+    /**
      * Aborts an in-progress git merge, leaving the repository in its pre-merge state.
      * Call this when the user cancels conflict resolution.
      */
@@ -409,12 +496,6 @@ class GitSyncService(
         scope.cancel()
     }
 
-    private fun buildCommitMessage(config: GitConfig, isMerge: Boolean = false): String {
-        val date = Clock.System.now().toString().take(10) // yyyy-MM-dd
-        val base = config.commitMessageTemplate
-            .replace("{date}", date)
-        return if (isMerge) "$base (merge)" else base
-    }
 }
 
 /**

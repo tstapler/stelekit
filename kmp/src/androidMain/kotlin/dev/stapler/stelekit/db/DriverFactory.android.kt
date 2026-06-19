@@ -17,20 +17,36 @@ import kotlinx.coroutines.runBlocking
 internal val ANDROID_PRAGMAS: List<String> = listOf(
     "PRAGMA journal_mode=WAL",
     "PRAGMA synchronous=NORMAL",
-    "PRAGMA busy_timeout=10000",
-    "PRAGMA wal_autocheckpoint=4000",
+    // busy_timeout=5000: wait up to 5s for a WAL write lock before returning SQLITE_BUSY.
+    // With DatabaseWriteActor serializing all writes, SQLite-level lock contention is
+    // rare (only during WAL checkpoint); 5s is generous and surfaces real deadlocks faster
+    // than the previous 10s.
+    "PRAGMA busy_timeout=5000",
     "PRAGMA temp_store=MEMORY",
-    "PRAGMA cache_size=-8000",
+    // cache_size=-5000: 5 MB page cache. mmap_size=64MB already serves hot reads via OS
+    // virtual memory, so the cache primarily buffers WAL frames awaiting checkpoint.
+    // Reduced from 8 MB to recover ~3 MB heap on memory-constrained devices.
+    "PRAGMA cache_size=-5000",
     // mmap_size=64MB: maps file pages into process address space, avoids read() syscall
     // overhead on repeated reads. OS lazily maps only accessed pages — not pre-allocated.
     // 64MB is conservative for mobile: covers typical graph sizes while leaving VA headroom
     // on 32-bit ARM devices and staying safe on 1-2GB RAM handsets.
     "PRAGMA mmap_size=67108864",
-    // PRAGMA optimize: selectively runs ANALYZE on tables/indexes whose statistics are
-    // significantly outdated. Ensures the query planner uses correct row-count estimates
-    // after large imports, without the cost of a full ANALYZE on every open.
-    // Safe no-op on tables that are already up-to-date.
-    "PRAGMA optimize",
+    // wal_autocheckpoint=1000: trigger passive checkpoint every 1000 WAL pages (~4 MB).
+    // Smaller threshold keeps the WAL compact so readers don't scan many frames during
+    // concurrent writes. An explicit wal_checkpoint(TRUNCATE) is issued after bulk graph
+    // import via SqlDelightBlockRepository.walCheckpoint() / onBulkImportComplete.
+    "PRAGMA wal_autocheckpoint=1000",
+    // optimize=0x10002: prescribed by SQLite docs for long-lived connections (DB open for
+    // the app lifetime). Mask 0x10002 = 0x10000 (check all tables, not just recently used)
+    // | 0x0002 (run ANALYZE if statistics are missing or stale).
+    // On first install, sqlite_stat1 is empty → optimize triggers ANALYZE automatically,
+    // avoiding the permanent SCAN plans that the old unconditional ANALYZE blocks/pages
+    // workaround was compensating for. On warm starts with fresh stats, optimize is a no-op.
+    // PRAGMA optimize (default mask 0xfffe) is called at close via RepositoryFactoryImpl.close()
+    // to persist stats for tables used during the session; process kills skip that call —
+    // the 0x10000 flag here covers the next open in that case.
+    "PRAGMA optimize=0x10002",
 )
 
 /**
@@ -112,9 +128,38 @@ actual class DriverFactory actual constructor() {
         val context = staticContext ?: error("DriverFactory not initialized with a Context.")
         return context.filesDir.absolutePath
     }
+
+    actual fun createTelemetryDriver(graphId: String): SqlDriver {
+        val dbPath = getTelemetryDatabaseUrl(graphId).substringAfter("jdbc:sqlite:")
+        val context = staticContext ?: error("DriverFactory not initialized with a Context.")
+        if (dbPath.startsWith("/")) {
+            java.io.File(dbPath).parentFile?.mkdirs()
+        }
+        val schema = TelemetryDatabase.Schema.synchronous()
+        val driver = AndroidSqliteDriver(
+            schema = schema,
+            context = context,
+            name = dbPath,
+            factory = RequerySQLiteOpenHelperFactory(),
+            callback = object : AndroidSqliteDriver.Callback(schema) {
+                override fun onConfigure(db: SupportSQLiteDatabase) {
+                    super.onConfigure(db)
+                    ANDROID_PRAGMAS.forEach { pragma ->
+                        try { db.query(pragma).close() } catch (_: Exception) { }
+                    }
+                }
+            },
+        )
+        runBlocking { TelemetryMigrationRunner.applyAll(driver) }
+        return driver
+    }
 }
 
 actual val defaultDatabaseUrl: String
     get() {
         return "jdbc:sqlite:stelekit.db"
     }
+
+actual fun createTelemetryDatabaseInMemory(): TelemetryDatabase {
+    error("createTelemetryDatabaseInMemory is not supported on Android — use createTelemetryDriver for production use")
+}

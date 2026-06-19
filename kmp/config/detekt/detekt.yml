@@ -31,6 +31,14 @@ stelekit:
   MustUseTypedLazyItems:
     active: true
     excludes: ['**/TypedLazyItems.kt', '**/*Test.kt', '**/test/**', '**/*Spec.kt']
+  JvmOnlyApiInCommonMain:
+    active: true
+    excludes: ['**/jvmMain/**', '**/jvmTest/**', '**/androidMain/**', '**/androidUnitTest/**',
+               '**/iosMain/**', '**/buildSrc/**']
+  IndexWithoutAnalyze:
+    active: true
+  ActorWriteInLoop:
+    active: true
 
 # Compose Multiplatform rules (io.nlopez.compose.rules)
 Compose:

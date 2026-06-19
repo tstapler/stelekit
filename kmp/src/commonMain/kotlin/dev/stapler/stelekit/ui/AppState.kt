@@ -49,6 +49,9 @@ sealed class Screen {
     /** Full-screen gallery of annotated images. */
     data object Gallery : Screen()
 
+    /** Asset browser for viewing and managing all graph assets. */
+    data object AssetBrowser : Screen()
+
     /**
      * Annotation editor for a single image annotation.
      *
@@ -103,6 +106,9 @@ data class AppState(
     val isGraphSwitching: Boolean = false,
     // Disk conflict — non-null when a file-watcher change was detected while editing
     val diskConflict: DiskConflict? = null,
+    // Pending conflicts — files changed externally while the user was on a different page.
+    // Keyed by filePath; shown as a dialog when the user next navigates to that page.
+    val pendingConflicts: Map<String, PendingConflict> = emptyMap(),
     // Write error — non-null when a background DB write failed persistently
     val indexingError: String? = null,
     // Fatal error — non-null when a Throwable-level crash was caught and converted to a
@@ -119,6 +125,7 @@ data class AppState(
     val gitSetupInitialStep: Int = 1,
     val gitSetupOpenForClone: Boolean = false,
     val conflictResolutionVisible: Boolean = false,
+    val journalMergeReviewVisible: Boolean = false,
     // Export in-flight: true while an exportPage/exportSelectedBlocks coroutine is running
     val isExporting: Boolean = false,
     // Share dialog state
@@ -156,4 +163,15 @@ data class DiskConflict(
     val editingBlockUuid: String,
     val localContent: String,
     val diskContent: String
+)
+
+/**
+ * A disk conflict detected while the user was NOT viewing the affected page.
+ * Stored until the user navigates to that page, at which point [DiskConflict] is
+ * built from current DB blocks and the captured disk content.
+ */
+data class PendingConflict(
+    val filePath: String,
+    val pageName: String,
+    val diskContent: String,
 )

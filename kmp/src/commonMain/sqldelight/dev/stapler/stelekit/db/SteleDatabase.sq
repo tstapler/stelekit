@@ -68,14 +68,11 @@ CREATE TABLE block_references (
     FOREIGN KEY (to_block_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_pages_uuid ON pages(uuid);
-CREATE INDEX idx_pages_name ON pages(name);
 CREATE INDEX idx_pages_namespace ON pages(namespace);
-CREATE INDEX idx_blocks_uuid ON blocks(uuid);
-CREATE INDEX idx_blocks_page_uuid ON blocks(page_uuid);
-CREATE INDEX idx_blocks_parent_uuid ON blocks(parent_uuid);
+CREATE INDEX idx_blocks_page_position ON blocks(page_uuid, position);
+CREATE INDEX idx_blocks_parent_position ON blocks(parent_uuid, position);
+CREATE INDEX idx_blocks_page_hash ON blocks(page_uuid, uuid, content_hash);
 CREATE INDEX idx_blocks_left_uuid ON blocks(left_uuid);
-CREATE INDEX idx_blocks_level ON blocks(level);
 CREATE INDEX idx_blocks_content_hash ON blocks(content_hash);
 CREATE INDEX idx_properties_block_uuid ON properties(block_uuid);
 CREATE INDEX idx_properties_key ON properties(key);
@@ -84,6 +81,10 @@ CREATE INDEX idx_plugin_data_entity ON plugin_data(entity_type, entity_uuid);
 CREATE INDEX idx_plugin_data_key ON plugin_data(key);
 CREATE INDEX idx_references_from ON block_references(from_block_uuid);
 CREATE INDEX idx_references_to ON block_references(to_block_uuid);
+CREATE INDEX idx_pages_journal ON pages(is_journal, journal_date DESC);
+CREATE INDEX idx_pages_updated_at ON pages(updated_at DESC);
+CREATE INDEX idx_pages_created_at ON pages(created_at DESC);
+CREATE INDEX idx_pages_favorite ON pages(name) WHERE is_favorite = 1;
 
 -- Migration Framework Changelog
 CREATE TABLE migration_changelog (
@@ -162,11 +163,26 @@ CREATE TABLE IF NOT EXISTS page_visits (
     last_visited_at INTEGER NOT NULL   -- epoch milliseconds (Unix)
 );
 
+-- Wikilink reference index: one row per (block, page_name) wikilink.
+-- Replaces the O(blocks) LIKE scan in recomputeBacklinkCountForPage.
+-- ON DELETE CASCADE keeps the index consistent when blocks are deleted.
+CREATE TABLE IF NOT EXISTS wikilink_references (
+    block_uuid TEXT NOT NULL,
+    page_name  TEXT NOT NULL COLLATE NOCASE,
+    PRIMARY KEY (block_uuid, page_name),
+    FOREIGN KEY (block_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_wikilink_refs_page_name ON wikilink_references(page_name COLLATE NOCASE);
+
 -- Repository queries
 
 -- Block queries
 selectBlockByUuid:
 SELECT * FROM blocks WHERE uuid = ?;
+
+selectBlocksByUuids:
+SELECT * FROM blocks WHERE uuid IN ?;
 
 existsBlockByUuid:
 SELECT COUNT(*) FROM blocks WHERE uuid = ?;
@@ -176,6 +192,9 @@ SELECT * FROM blocks ORDER BY uuid;
 
 selectAllBlocksPaginated:
 SELECT * FROM blocks ORDER BY uuid LIMIT ? OFFSET ?;
+
+selectAllBlocksPaginatedAfterUuid:
+SELECT * FROM blocks WHERE uuid > ? ORDER BY uuid LIMIT ?;
 
 selectBlockChildren:
 SELECT * FROM blocks WHERE parent_uuid = ? ORDER BY position LIMIT ? OFFSET ?;
@@ -279,13 +298,17 @@ insertBlock:
 INSERT OR REPLACE INTO blocks (uuid, page_uuid, parent_uuid, left_uuid, content, level, position, created_at, updated_at, properties, version, content_hash, block_type)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+-- Used by saveBlocksDiff for toUpdate blocks: fires blocks_au (AFTER UPDATE OF content) instead
+-- of the double blocks_ad+blocks_ai pair that INSERT OR REPLACE triggers on existing rows.
+-- blocks_au only fires for content column changes, so structural-only diffs avoid FTS5 entirely.
+updateBlockForSave:
+UPDATE blocks
+SET page_uuid = ?, parent_uuid = ?, left_uuid = ?, content = ?, level = ?,
+    position = ?, updated_at = ?, properties = ?, version = ?, content_hash = ?, block_type = ?
+WHERE uuid = ?;
+
 selectBlocksHashByPageUuid:
 SELECT uuid, content_hash FROM blocks WHERE page_uuid = ?;
-
--- Batch lookup by UUID set — used by DatabaseWriteActor.loadExistingBlocks to replace N
--- individual selectBlockByUuid calls with one round-trip (eliminates N+1 IO dispatch).
-selectBlocksByUuids:
-SELECT * FROM blocks WHERE uuid IN ?;
 
 -- Deduplication queries
 selectBlocksByContentHash:
@@ -622,57 +645,6 @@ SELECT page_uuid, last_visited_at, visit_count
 FROM page_visits
 WHERE page_uuid = ?;
 
--- Performance histogram storage
--- Bucketed counters; bucket_ms is the upper bound of the bucket in milliseconds.
--- Boundaries: 0, 16, 33, 50, 100, 500, 1000, 5000 ms (plus an overflow ">5000" bucket represented as 9999).
-CREATE TABLE IF NOT EXISTS perf_histogram_buckets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    operation_name TEXT NOT NULL,
-    bucket_ms INTEGER NOT NULL,
-    count INTEGER NOT NULL DEFAULT 0,
-    recorded_at INTEGER NOT NULL
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_perf_hist_op_bucket
-    ON perf_histogram_buckets(operation_name, bucket_ms);
-
-CREATE TABLE IF NOT EXISTS debug_flags (
-    key TEXT NOT NULL PRIMARY KEY,
-    value INTEGER NOT NULL DEFAULT 0,
-    updated_at INTEGER NOT NULL
-);
-
--- Histogram queries
--- Two-step upsert: first ensure the row exists (no-op on conflict), then increment.
-insertHistogramBucketIfAbsent:
-INSERT OR IGNORE INTO perf_histogram_buckets (operation_name, bucket_ms, count, recorded_at)
-VALUES (?, ?, 0, ?);
-
-incrementHistogramBucketCount:
-UPDATE perf_histogram_buckets
-SET count = count + 1, recorded_at = ?
-WHERE operation_name = ? AND bucket_ms = ?;
-
-selectHistogramForOperation:
-SELECT bucket_ms, count FROM perf_histogram_buckets WHERE operation_name = ? ORDER BY bucket_ms;
-
-selectAllHistogramOperations:
-SELECT DISTINCT operation_name FROM perf_histogram_buckets ORDER BY operation_name;
-
-deleteOldHistogramRows:
-DELETE FROM perf_histogram_buckets WHERE recorded_at < ?;
-
--- Debug flag queries
-upsertDebugFlag:
-INSERT OR REPLACE INTO debug_flags (key, value, updated_at)
-VALUES (?, ?, ?);
-
-selectDebugFlag:
-SELECT value FROM debug_flags WHERE key = ?;
-
-selectAllDebugFlags:
-SELECT key, value FROM debug_flags ORDER BY key;
-
 -- Count blocks that contain a [[pageName]] wikilink (for rename preview)
 countBlocksWithWikilink:
 SELECT COUNT(*) FROM blocks WHERE content LIKE '%[[' || :pageName || ']]%';
@@ -687,19 +659,11 @@ SELECT COUNT(*) FROM blocks WHERE content LIKE '%[[' || :pageName || ']]%';
 
 -- Read precomputed backlink counts for a batch of pages — O(1) per page via UUID index.
 -- The backlink_count column is populated by the pages_backlink_count schema migration
--- and refreshed by recomputeAllBacklinkCounts when the FTS index is rebuilt.
+-- and refreshed by rebuildFts() via a Kotlin-side single-pass scan.
 selectBacklinkCountsForPages:
 SELECT name AS page_name, backlink_count
 FROM pages
 WHERE uuid IN ?;
-
--- Recompute all page backlink counts from block content in one pass.
--- Called alongside FTS rebuild (rebuildFts) so counts stay accurate after bulk imports.
-recomputeAllBacklinkCounts:
-UPDATE pages SET backlink_count = (
-    SELECT COUNT(*) FROM blocks
-    WHERE blocks.content LIKE '%[[' || pages.name || ']]%'
-);
 
 -- Recompute backlink count for a single page by name.
 -- Called incrementally after block writes that add/remove wikilinks.
@@ -717,6 +681,36 @@ UPDATE pages SET backlink_count = ? WHERE name = ?;
 -- Read backlink count for a single page (O(1) via idx_pages_name).
 selectPageBacklinkCount:
 SELECT backlink_count FROM pages WHERE name = ?;
+
+-- Wikilink reference index queries (replace LIKE scan with O(1) index lookups).
+
+insertWikilinkReference:
+INSERT OR IGNORE INTO wikilink_references (block_uuid, page_name) VALUES (?, ?);
+
+deleteWikilinkReferencesForBlock:
+DELETE FROM wikilink_references WHERE block_uuid = ?;
+
+deleteWikilinkReferencesForPageName:
+DELETE FROM wikilink_references WHERE page_name = ? COLLATE NOCASE;
+
+selectWikilinkPageNamesForBlock:
+SELECT page_name FROM wikilink_references WHERE block_uuid = ?;
+
+selectWikilinkPageNamesForPage:
+SELECT DISTINCT page_name FROM wikilink_references
+WHERE block_uuid IN (SELECT uuid FROM blocks WHERE page_uuid = ?);
+
+-- O(1) backlink recount via index (replaces full-table LIKE scan).
+recomputeBacklinkCountFromIndex:
+UPDATE pages SET backlink_count = (
+    SELECT COUNT(*) FROM wikilink_references WHERE page_name = pages.name COLLATE NOCASE
+) WHERE pages.name = ?;
+
+-- Rename all wikilink references from oldName to newName (single UPDATE, no LIKE scan).
+-- UPDATE OR IGNORE: skips rows where (block_uuid, newName) already exists so the PRIMARY KEY
+-- constraint is not violated when a block referenced both [[oldName]] and [[newName]].
+updateWikilinkPageNameForRename:
+UPDATE OR IGNORE wikilink_references SET page_name = :newName WHERE page_name = :oldName COLLATE NOCASE;
 
 -- Metadata table for schema versioning and graph-level facts
 CREATE TABLE metadata (
@@ -835,109 +829,10 @@ SELECT * FROM migration_changelog WHERE graph_id = ? ORDER BY execution_order;
 updateMigrationChecksum:
 UPDATE migration_changelog SET checksum = ? WHERE id = ? AND graph_id = ?;
 
--- Span storage for OTel trace persistence
-
-CREATE TABLE IF NOT EXISTS spans (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    trace_id TEXT NOT NULL DEFAULT '',
-    span_id TEXT NOT NULL DEFAULT '',
-    parent_span_id TEXT NOT NULL DEFAULT '',
-    name TEXT NOT NULL,
-    start_epoch_ms INTEGER NOT NULL,
-    end_epoch_ms INTEGER NOT NULL,
-    duration_ms INTEGER NOT NULL,
-    attributes_json TEXT NOT NULL DEFAULT '{}',
-    status_code TEXT NOT NULL DEFAULT 'OK'
-);
-
-CREATE INDEX IF NOT EXISTS spans_start_epoch_ms_idx ON spans(start_epoch_ms DESC);
-CREATE INDEX IF NOT EXISTS spans_trace_id_idx ON spans(trace_id);
-
-insertSpan:
-INSERT INTO spans (trace_id, span_id, parent_span_id, name, start_epoch_ms, end_epoch_ms, duration_ms, attributes_json, status_code)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-
-selectRecentSpans:
-SELECT * FROM spans ORDER BY start_epoch_ms DESC LIMIT ?;
-
-deleteSpansOlderThan:
-DELETE FROM spans WHERE end_epoch_ms < ?;
-
-deleteExcessSpans:
-DELETE FROM spans WHERE id NOT IN (SELECT id FROM spans ORDER BY start_epoch_ms DESC LIMIT ?);
-
-deleteAllSpans:
-DELETE FROM spans;
-
 -- Maintenance: fold WAL frames into the main database file after bulk import.
 -- Reduces WAL file size and speeds up subsequent opens.
 pragmaWalCheckpointTruncate:
 PRAGMA wal_checkpoint(TRUNCATE);
-
--- Per-query execution statistics, keyed by (app_version, table_name, operation).
--- Provides a pg_stat_statements-equivalent view for SQLite workloads.
--- Histogram buckets use query-latency-optimised boundaries (sub-ms resolution at the fast end).
-CREATE TABLE IF NOT EXISTS query_stats (
-    app_version TEXT NOT NULL,
-    table_name  TEXT NOT NULL,
-    operation   TEXT NOT NULL,
-    calls       INTEGER NOT NULL DEFAULT 0,
-    errors      INTEGER NOT NULL DEFAULT 0,
-    total_ms    INTEGER NOT NULL DEFAULT 0,
-    min_ms      INTEGER NOT NULL DEFAULT 9999999,
-    max_ms      INTEGER NOT NULL DEFAULT 0,
-    b1          INTEGER NOT NULL DEFAULT 0,   -- ≤ 1 ms
-    b5          INTEGER NOT NULL DEFAULT 0,   -- ≤ 5 ms
-    b16         INTEGER NOT NULL DEFAULT 0,   -- ≤ 16 ms
-    b50         INTEGER NOT NULL DEFAULT 0,   -- ≤ 50 ms
-    b100        INTEGER NOT NULL DEFAULT 0,   -- ≤ 100 ms
-    b500        INTEGER NOT NULL DEFAULT 0,   -- ≤ 500 ms
-    b_inf       INTEGER NOT NULL DEFAULT 0,   -- > 500 ms
-    first_seen  INTEGER NOT NULL,
-    last_seen   INTEGER NOT NULL,
-    PRIMARY KEY (app_version, table_name, operation)
-);
-
-CREATE INDEX IF NOT EXISTS idx_query_stats_version_ms
-    ON query_stats(app_version, total_ms DESC);
-
--- query_stats queries
-
-insertQueryStatIfAbsent:
-INSERT OR IGNORE INTO query_stats (app_version, table_name, operation, calls, errors, total_ms, min_ms, max_ms, b1, b5, b16, b50, b100, b500, b_inf, first_seen, last_seen)
-VALUES (?, ?, ?, 0, 0, 0, 9999999, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?);
-
-mergeQueryStat:
-UPDATE query_stats SET
-    calls    = calls    + ?,
-    errors   = errors   + ?,
-    total_ms = total_ms + ?,
-    min_ms   = MIN(min_ms,  ?),
-    max_ms   = MAX(max_ms,  ?),
-    b1       = b1    + ?,
-    b5       = b5    + ?,
-    b16      = b16   + ?,
-    b50      = b50   + ?,
-    b100     = b100  + ?,
-    b500     = b500  + ?,
-    b_inf    = b_inf + ?,
-    last_seen = MAX(last_seen, ?)
-WHERE app_version = ? AND table_name = ? AND operation = ?;
-
-selectQueryStatsByVersion:
-SELECT * FROM query_stats WHERE app_version = ? ORDER BY total_ms DESC;
-
-selectTopQueryStatsByTotalMs:
-SELECT * FROM query_stats WHERE app_version = ? ORDER BY total_ms DESC LIMIT ?;
-
-selectTopQueryStatsByCalls:
-SELECT * FROM query_stats WHERE app_version = ? ORDER BY calls DESC LIMIT ?;
-
-selectAllQueryStatVersions:
-SELECT DISTINCT app_version FROM query_stats ORDER BY app_version DESC;
-
-deleteQueryStatsForVersion:
-DELETE FROM query_stats WHERE app_version = ?;
 
 -- Git config table: one row per graph, stores all git synchronization settings
 CREATE TABLE IF NOT EXISTS git_config (
@@ -1000,6 +895,7 @@ CREATE TABLE IF NOT EXISTS image_annotations (
 CREATE INDEX IF NOT EXISTS idx_image_annotations_block_uuid ON image_annotations(block_uuid);
 CREATE INDEX IF NOT EXISTS idx_image_annotations_page_uuid ON image_annotations(page_uuid);
 CREATE INDEX IF NOT EXISTS idx_image_annotations_graph_path ON image_annotations(graph_path);
+CREATE INDEX IF NOT EXISTS idx_image_annotations_imported_at ON image_annotations(imported_at_ms DESC);
 
 -- Measurement annotations table: stores individual measurements drawn on an image.
 -- Cascade-deletes when the parent image_annotation is deleted.
@@ -1087,3 +983,111 @@ DELETE FROM measurement_annotations WHERE image_uuid = ?;
 
 deleteMeasurementAnnotation:
 DELETE FROM measurement_annotations WHERE uuid = ?;
+
+-- asset_index table: queryable metadata store for all graph assets
+CREATE TABLE IF NOT EXISTS asset_index (
+    uuid TEXT NOT NULL PRIMARY KEY,
+    file_path TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    media_type TEXT NOT NULL,
+    subfolder TEXT NOT NULL DEFAULT 'files',
+    tags TEXT NOT NULL DEFAULT '[]',
+    auto_labels TEXT NOT NULL DEFAULT '[]',
+    ocr_text TEXT,
+    cloud_description TEXT,
+    page_uuids TEXT NOT NULL DEFAULT '[]',
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    imported_at_ms INTEGER NOT NULL,
+    ml_processed INTEGER NOT NULL DEFAULT 0,
+    ml_attempted_at INTEGER,
+    ml_failed INTEGER NOT NULL DEFAULT 0,
+    content_hash TEXT,
+    is_orphan INTEGER NOT NULL DEFAULT 0,
+    ml_tags_source TEXT NOT NULL DEFAULT 'NONE'
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_asset_file_path_unique ON asset_index(file_path);
+CREATE INDEX IF NOT EXISTS idx_asset_unprocessed ON asset_index(ml_processed, ml_failed, imported_at_ms);
+CREATE INDEX IF NOT EXISTS idx_asset_media_type ON asset_index(media_type);
+CREATE INDEX IF NOT EXISTS idx_asset_imported_at ON asset_index(imported_at_ms DESC);
+
+insertAsset:
+INSERT INTO asset_index(uuid, file_path, relative_path, media_type, subfolder, tags, auto_labels, ocr_text, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_failed, content_hash, is_orphan, ml_tags_source)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, 'NONE');
+
+insertAssetOrIgnore:
+INSERT OR IGNORE INTO asset_index(uuid, file_path, relative_path, media_type, subfolder, tags, auto_labels, ocr_text, cloud_description, page_uuids, size_bytes, imported_at_ms, ml_processed, ml_failed, content_hash, is_orphan, ml_tags_source)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, 'NONE');
+
+selectAssetByUuid:
+SELECT * FROM asset_index WHERE uuid = ?;
+
+selectAssets:
+SELECT * FROM asset_index ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
+
+selectAssetsByMediaType:
+SELECT * FROM asset_index WHERE media_type = ? ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
+
+searchAssets:
+SELECT * FROM asset_index WHERE (file_path LIKE :query ESCAPE '\' OR tags LIKE :query ESCAPE '\' OR auto_labels LIKE :query ESCAPE '\' OR ocr_text LIKE :query ESCAPE '\') ORDER BY imported_at_ms DESC LIMIT :limit OFFSET :offset;
+
+selectUnprocessedAssets:
+SELECT * FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0 ORDER BY imported_at_ms ASC LIMIT :limit OFFSET :offset;
+
+countUnprocessedAssets:
+SELECT COUNT(*) FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0;
+
+countAssets:
+SELECT COUNT(*) FROM asset_index;
+
+updateAssetFilePath:
+UPDATE asset_index SET file_path = :filePath, relative_path = :relativePath WHERE uuid = :uuid;
+
+updateAssetTags:
+UPDATE asset_index SET tags = :tags WHERE uuid = :uuid;
+
+updateAssetAutoLabels:
+UPDATE asset_index SET auto_labels = :autoLabels, ml_tags_source = :mlTagsSource WHERE uuid = :uuid;
+
+updateAssetOcrText:
+UPDATE asset_index SET ocr_text = :ocrText WHERE uuid = :uuid;
+
+updateAssetCloudDescription:
+UPDATE asset_index SET cloud_description = :cloudDescription, ml_tags_source = :mlTagsSource WHERE uuid = :uuid;
+
+markAssetMlProcessed:
+UPDATE asset_index SET ml_processed = 1, ml_attempted_at = :attemptedAt WHERE uuid = :uuid;
+
+markAssetMlFailed:
+UPDATE asset_index SET ml_failed = 1, ml_attempted_at = :attemptedAt WHERE uuid = :uuid;
+
+updateAssetPageUuids:
+UPDATE asset_index SET page_uuids = :pageUuids WHERE uuid = :uuid;
+
+deleteAsset:
+DELETE FROM asset_index WHERE uuid = :uuid;
+
+-- pending_asset_moves WAL table: holds in-flight moves for crash recovery
+-- This table is expected to hold <= a handful of rows at any time -- unbounded reads are safe.
+CREATE TABLE IF NOT EXISTS pending_asset_moves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_uuid TEXT NOT NULL,
+    old_file_path TEXT NOT NULL,
+    new_file_path TEXT NOT NULL,
+    old_relative_path TEXT NOT NULL,
+    new_relative_path TEXT NOT NULL,
+    created_at_ms INTEGER NOT NULL
+);
+
+insertPendingMove:
+INSERT INTO pending_asset_moves(asset_uuid, old_file_path, new_file_path, old_relative_path, new_relative_path, created_at_ms)
+VALUES (?, ?, ?, ?, ?, ?);
+
+deletePendingMove:
+DELETE FROM pending_asset_moves WHERE id = ?;
+
+selectAllPendingMoves:
+SELECT * FROM pending_asset_moves;
+
+selectLastInsertRowId:
+SELECT last_insert_rowid();

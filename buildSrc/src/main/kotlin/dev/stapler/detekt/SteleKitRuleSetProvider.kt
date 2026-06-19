@@ -21,6 +21,9 @@ class SteleKitRuleSetProvider : RuleSetProvider {
             NoRunBlockingInLifecycleRule(config),
             UnthemedTextInBackgroundContainerRule(config),
             MustUseTypedLazyItemsRule(config),
+            JvmOnlyApiInCommonMainRule(config),
+            IndexWithoutAnalyzeRule(config),
+            ActorWriteInLoopRule(config),
         ),
     )
 }

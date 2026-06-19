@@ -2,6 +2,7 @@ package dev.stapler.stelekit.db
 
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.native.NativeSqliteDriver
+import kotlinx.coroutines.runBlocking
 
 actual class DriverFactory actual constructor() {
     actual fun init(context: Any) {
@@ -12,7 +13,21 @@ actual class DriverFactory actual constructor() {
         val dbName = jdbcUrl.substringAfter("jdbc:sqlite:")
         return NativeSqliteDriver(SteleDatabase.Schema, dbName)
     }
+
+    actual fun getDatabaseUrl(graphId: String): String = "jdbc:sqlite:stelekit-graph-$graphId.db"
+    actual fun getDatabaseDirectory(): String = "."
+
+    actual fun createTelemetryDriver(graphId: String): SqlDriver {
+        val dbName = "stelekit-telemetry-$graphId.db"
+        val driver = NativeSqliteDriver(TelemetryDatabase.Schema, dbName)
+        runBlocking { TelemetryMigrationRunner.applyAll(driver) }
+        return driver
+    }
 }
 
 actual val defaultDatabaseUrl: String
     get() = "jdbc:sqlite:stelekit.db"
+
+actual fun createTelemetryDatabaseInMemory(): TelemetryDatabase {
+    error("createTelemetryDatabaseInMemory is not supported on iOS — use createTelemetryDriver for production use")
+}

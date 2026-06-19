@@ -8,7 +8,6 @@ import android.provider.OpenableColumns
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 
@@ -45,11 +44,6 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         private const val TAG = "PlatformFileSystem"
         const val PREFS_NAME = "stelekit_prefs"
         const val KEY_SAF_TREE_URI = "saf_tree_uri"
-
-        // Set to false after the first invalidateStaleShadow call in this process.
-        // Allows a full shadow purge on cold start so external writes (e.g. Termux)
-        // are always picked up rather than served from the stale on-device cache.
-        private val freshProcess = AtomicBoolean(true)
 
         fun toSafRoot(treeUri: Uri): String = "saf://${Uri.encode(Uri.decode(treeUri.toString()))}"
 
@@ -416,6 +410,35 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         catch (e: Exception) { Log.w(TAG, "writeFile: unexpected error for $path", e); false }
     }
 
+    override fun writeFileBytes(path: String, data: ByteArray): Boolean {
+        if (path.startsWith("content://")) {
+            return try {
+                val ctx = context ?: return false
+                val uri = Uri.parse(path)
+                // Return false (not true) when openOutputStream is null — the provider refused
+                // the write, and the file stays 0 B. Returning true here would let check(ok)
+                // pass and show a success snackbar while the export file is actually empty.
+                val stream = ctx.contentResolver.openOutputStream(uri, "wt") ?: return false
+                stream.use { it.write(data); it.flush() }
+                true
+            } catch (e: SecurityException) { Log.w(TAG, "writeFileBytes: permission denied for $path", e); false }
+            catch (e: Exception) { Log.w(TAG, "writeFileBytes: error writing to $path", e); false }
+        }
+        return try {
+            val expandedPath = expandTilde(path)
+            val validatedPath = validateLegacyPath(expandedPath)
+            val file = File(validatedPath)
+            val parentDir = file.parentFile
+            if (parentDir != null && !parentDir.exists()) parentDir.mkdirs()
+            file.writeBytes(data)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     actual override fun listFiles(path: String): List<String> {
         if (!path.startsWith("saf://")) return legacyListFiles(path)
         if (isDirectAccess()) {
@@ -672,6 +695,38 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         writeBehindQueue = queue
     }
 
+    private var onFlushComplete: (suspend (String) -> Unit)? = null
+    private var onFlushPreWrite: (suspend (String) -> Unit)? = null
+    private var onFlushFailed: (suspend (String) -> Unit)? = null
+
+    /**
+     * Registers a callback invoked after each successful write-behind SAF flush.
+     * Used to call [dev.stapler.stelekit.db.GraphLoader.markFileWrittenByUs] so the
+     * FileRegistry records the post-flush SAF mtime and suppresses the subsequent poll event
+     * (critical for encrypted .md.stek files where the content-hash guard is disabled).
+     */
+    override fun setOnFlushComplete(callback: (suspend (String) -> Unit)?) {
+        onFlushComplete = callback
+    }
+
+    /**
+     * Registers a callback invoked before each write-behind SAF write begins.
+     * Used to call [dev.stapler.stelekit.db.GraphLoader.preMarkFileWrite] to set the
+     * Long.MAX_VALUE sentinel, closing the race window for encrypted .md.stek files.
+     */
+    override fun setOnFlushPreWrite(callback: (suspend (String) -> Unit)?) {
+        onFlushPreWrite = callback
+    }
+
+    /**
+     * Registers a callback invoked when a write-behind SAF write fails.
+     * Used to call [dev.stapler.stelekit.db.GraphLoader.clearFilePendingWrite] to remove
+     * the Long.MAX_VALUE sentinel so the file is not permanently suppressed.
+     */
+    override fun setOnFlushFailed(callback: (suspend (String) -> Unit)?) {
+        onFlushFailed = callback
+    }
+
     override fun markDirty(path: String, content: String): Boolean {
         val queue = writeBehindQueue ?: return false
         if (!path.startsWith("saf://")) return false
@@ -684,20 +739,25 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     override suspend fun flushPendingWrites() {
         val queue = writeBehindQueue ?: return
         val cache = shadowCache ?: return
-        ShadowFlushActor(this, cache, queue).flush()
+        ShadowFlushActor(
+            this, cache, queue,
+            onPreFlush = onFlushPreWrite,
+            onFlushed = onFlushComplete,
+            onFlushFailed = onFlushFailed,
+        ).flush()
     }
 
     override suspend fun invalidateStaleShadow(graphPath: String) {
         val cache = shadowCache ?: return
         if (!graphPath.startsWith("saf://")) return
 
-        // On the first call in this process, purge the entire shadow directory.
-        // External tools (e.g. Termux) can write files while the app is dead; the
-        // SAF provider may return stale metadata on cold start, making mtime-based
-        // invalidation unreliable. A full purge guarantees freshness at the cost of
-        // one SAF-backed startup for each cold-start cycle.
-        if (freshProcess.getAndSet(false)) {
-            Log.d(TAG, "invalidateStaleShadow: first call after process start — purging shadow for $graphPath")
+        // On the first access of this cache instance (per graph, not per process), purge
+        // the entire shadow directory. External tools (e.g. Termux) can write files while
+        // the app is dead; the SAF provider may return stale metadata on startup, making
+        // mtime-based invalidation unreliable. A full purge guarantees freshness.
+        // Scoped per-instance so graph switches also trigger a full purge for the new graph.
+        if (cache.isFirstAccess()) {
+            Log.d(TAG, "invalidateStaleShadow: first access for this graph — purging shadow for $graphPath")
             cache.deleteAll()
             return
         }
@@ -820,9 +880,10 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return try {
             val ctx = context ?: return false
             val uri = Uri.parse(uriString)
-            ctx.contentResolver.openOutputStream(uri, "wt")?.use { stream -> // "wt" = write-truncate
-                stream.bufferedWriter(Charsets.UTF_8).apply { write(content); flush() }
-            }
+            // "wt" = write-truncate. Return false when openOutputStream is null — the provider
+            // refused the write rather than returning a valid stream.
+            val stream = ctx.contentResolver.openOutputStream(uri, "wt") ?: return false
+            stream.use { it.bufferedWriter(Charsets.UTF_8).apply { write(content); flush() } }
             true
         } catch (e: SecurityException) { Log.w(TAG, "contentUriWriteFile: permission denied", e); false }
         catch (e: Exception) { Log.w(TAG, "contentUriWriteFile: error writing to $uriString", e); false }

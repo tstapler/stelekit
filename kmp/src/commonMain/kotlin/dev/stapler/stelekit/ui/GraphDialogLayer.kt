@@ -28,7 +28,9 @@ import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.google.DriveUploader
 import dev.stapler.stelekit.platform.google.GoogleAuthManager
 import dev.stapler.stelekit.ui.screens.git.ConflictResolutionScreen
+import dev.stapler.stelekit.git.GitHubDeviceFlowClient
 import dev.stapler.stelekit.ui.screens.git.GitSetupScreen
+import dev.stapler.stelekit.ui.screens.git.JournalMergeReviewScreen
 import dev.stapler.stelekit.vault.VaultError
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,6 +43,7 @@ import dev.stapler.stelekit.ui.components.PlatformFrameTimeOverlay
 import dev.stapler.stelekit.ui.components.RenamePageDialog
 import dev.stapler.stelekit.ui.components.SearchDialog
 import dev.stapler.stelekit.ui.components.ShareDialog
+import dev.stapler.stelekit.tags.TagSettings
 import dev.stapler.stelekit.ui.components.settings.SettingsDialog
 import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.voice.VoiceSettings
@@ -93,6 +96,8 @@ internal fun GraphDialogLayer(
     currentPage: Page? = null,
     currentBlocks: List<Block> = emptyList(),
     selectedBlockUuids: Set<String> = emptySet(),
+    tagSettings: TagSettings? = null,
+    hasLlmKey: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
 
@@ -145,26 +150,35 @@ internal fun GraphDialogLayer(
         googleAuthError = googleAuthError,
         onConnectGoogle = onConnectGoogle,
         onDisconnectGoogle = onDisconnectGoogle,
+        tagSettings = tagSettings,
+        hasLlmKey = hasLlmKey,
     )
 
-    val canShowGitSetup = appState.gitSetupVisible &&
-        gitSyncService != null && gitRepository != null && gitConfigRepository != null
-    if (canShowGitSetup) {
-        GitSetupScreen(
-            graphId = activeGraphId ?: "",
-            gitRepository = gitRepository,
-            gitConfigRepository = gitConfigRepository,
-            gitSyncService = gitSyncService,
-            fileSystem = fileSystem,
-            onDismiss = { viewModel.dismissGitSetup() },
-            onSave = { viewModel.dismissGitSetup() },
-            onCloneAndAdd = onCloneAndAdd,
-            graphPath = graphPath,
-            onCloneComplete = onCloneComplete,
-            initialStep = appState.gitSetupInitialStep,
-            initialUseExistingClone = !appState.gitSetupOpenForClone,
-            existingConfig = null,
-        )
+    // key(gitSetupVisible) resets composition — and the remember inside — each time the dialog
+    // opens, giving GitSetupScreen a fresh HttpClient. GitSetupScreen.DisposableEffect closes
+    // the client on dismiss, so we never hand a closed client back in on second open.
+    key(appState.gitSetupVisible) {
+        val canShowGitSetup = appState.gitSetupVisible &&
+            gitSyncService != null && gitRepository != null && gitConfigRepository != null
+        if (canShowGitSetup) {
+            val deviceFlowClient = remember { GitHubDeviceFlowClient.withDefaultClient() }
+            GitSetupScreen(
+                graphId = activeGraphId ?: "",
+                gitRepository = gitRepository,
+                gitConfigRepository = gitConfigRepository,
+                gitSyncService = gitSyncService,
+                fileSystem = fileSystem,
+                onDismiss = { viewModel.dismissGitSetup() },
+                onSave = { viewModel.dismissGitSetup() },
+                onCloneAndAdd = onCloneAndAdd,
+                graphPath = graphPath,
+                onCloneComplete = onCloneComplete,
+                initialStep = appState.gitSetupInitialStep,
+                initialUseExistingClone = !appState.gitSetupOpenForClone,
+                existingConfig = null,
+                deviceFlowClient = deviceFlowClient,
+            )
+        }
     }
 
     if (appState.conflictResolutionVisible) {
@@ -193,6 +207,19 @@ internal fun GraphDialogLayer(
             } else null,
             onDismiss = { viewModel.dismissConflictResolution() },
         )
+    }
+
+    if (appState.journalMergeReviewVisible) {
+        val liveSyncState by viewModel.syncState.collectAsState()
+        val proposal = (liveSyncState as? SyncState.JournalMergeReady)?.proposal
+        if (proposal != null) {
+            JournalMergeReviewScreen(
+                proposal = proposal,
+                onAccept = { mergedContent -> viewModel.acceptJournalMerge(mergedContent) },
+                onFallbackToManual = { viewModel.abortJournalMerge() },
+                onDismiss = { viewModel.abortJournalMerge() },
+            )
+        }
     }
 
     appState.diskConflict?.let { conflict ->

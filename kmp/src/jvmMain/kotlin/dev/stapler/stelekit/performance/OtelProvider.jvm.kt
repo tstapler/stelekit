@@ -6,6 +6,7 @@ import io.opentelemetry.exporter.logging.LoggingSpanExporter
 import io.opentelemetry.sdk.OpenTelemetrySdk
 import io.opentelemetry.sdk.metrics.SdkMeterProvider
 import io.opentelemetry.sdk.trace.SdkTracerProvider
+import io.opentelemetry.sdk.trace.SpanLimits
 import io.opentelemetry.sdk.trace.export.BatchSpanProcessor
 import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor
 
@@ -21,7 +22,14 @@ actual object OtelProvider {
         // Shutdown any existing SDK first if called repeatedly
         sdk?.shutdown()
 
+        // Bound attribute count and value length via SDK limits — prevents a single
+        // runaway span from consuming unbounded memory in the 1000-span ring buffer.
+        val spanLimits = SpanLimits.builder()
+            .setMaxNumberOfAttributes(32)
+            .setMaxAttributeValueLength(512)
+            .build()
         val tracerProviderBuilder = SdkTracerProvider.builder()
+            .setSpanLimits(spanLimits)
         if (config.enableStdout) {
             tracerProviderBuilder.addSpanProcessor(
                 BatchSpanProcessor.builder(LoggingSpanExporter.create()).build()

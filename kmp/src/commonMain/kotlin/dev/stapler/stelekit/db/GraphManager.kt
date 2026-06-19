@@ -258,7 +258,15 @@ class GraphManager(
             _graphRegistry.value = updated
             saveRegistry()
         }
-        
+
+        // Fire-and-forget git detection; updates registry when complete
+        coroutineScope.launch(PlatformDispatcher.IO) {
+            val detected = detectGitRoot(expandedPath)
+            if (detected != null) {
+                updateGraphInfoDetection(graphId, detected.first, detected.second)
+            }
+        }
+
         return graphId
     }
     
@@ -373,7 +381,7 @@ class GraphManager(
                 preFlightJob?.await()
 
                 val dbUrl = driverFactory.getDatabaseUrl(id)
-                val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl)
+                val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl, graphId = id)
                 val deviceInfo = try {
                     dev.stapler.stelekit.performance.getDeviceInfo()
                 } catch (e: CancellationException) {
@@ -469,6 +477,55 @@ class GraphManager(
     
     fun getActiveRepositorySet(): RepositorySet? = _activeRepositorySet.value
     
+    private suspend fun detectGitRoot(graphPath: String): Pair<String, String>? {
+        if (graphPath.startsWith("content://")) return null
+        return withContext(PlatformDispatcher.IO) {
+            try {
+                val normalizedPath = graphPath.replace('\\', '/')
+                var currentPath = normalizedPath.trimEnd('/')
+                var depth = 0
+                while (depth <= 10 && currentPath.isNotEmpty()) {
+                    val gitPath = "$currentPath/.git"
+                    if (fileSystem.fileExists(gitPath) || fileSystem.directoryExists(gitPath)) {
+                        val wikiSubdir = normalizedPath
+                            .removePrefix(currentPath)
+                            .trimStart('/')
+                        return@withContext Pair(currentPath, wikiSubdir)
+                    }
+                    val lastSlash = currentPath.lastIndexOf('/')
+                    if (lastSlash <= 0) break
+                    currentPath = currentPath.substring(0, lastSlash)
+                    depth++
+                }
+                null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    private suspend fun updateGraphInfoDetection(graphId: String, repoRoot: String, wikiSubdir: String) {
+        val registry = _graphRegistry.value
+        val updatedGraphs = registry.graphs.map { g ->
+            if (g.id == graphId) g.copy(detectedRepoRoot = repoRoot, detectedWikiSubdir = wikiSubdir)
+            else g
+        }
+        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
+        saveRegistry()
+    }
+
+    suspend fun setGitDetectionDismissed(graphId: String, dismissed: Boolean) {
+        val registry = _graphRegistry.value
+        val updatedGraphs = registry.graphs.map { g ->
+            if (g.id == graphId) g.copy(gitDetectionDismissed = dismissed)
+            else g
+        }
+        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
+        saveRegistry()
+    }
+
     private fun checkGitignoreForDatabase(graphPath: String) {
         val gitignorePath = "$graphPath/.gitignore"
         if (!fileSystem.fileExists(gitignorePath)) {

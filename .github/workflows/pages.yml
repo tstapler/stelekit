@@ -13,10 +13,10 @@ on:
   # Pages deploy picks up the fresh F-Droid index without a separate site build.
   workflow_call:
     inputs:
-      skip_demo_rebuild:
+      force_demo_rebuild:
         type: boolean
         default: false
-        description: 'Skip Wasm rebuild — pass true from release.yml to avoid rebuilding on every release deploy'
+        description: 'Force Wasm rebuild even when kmp/ files did not change — pass true from release.yml so the demo artifact is present in the run for build-site to download'
 
 # Queue pages.yml runs rather than cancelling them. A fast CI-only push completing
 # and deploying would otherwise cancel a concurrent workflow_dispatch run mid-way
@@ -29,6 +29,9 @@ concurrency:
 permissions:
   contents: read
   actions: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   check-changes:
@@ -44,11 +47,12 @@ jobs:
         # Use the full push range (github.event.before → HEAD) so multi-commit pushes
         # don't miss changes that landed in earlier commits of the same push.
         run: |
-          # When called from release.yml with skip_demo_rebuild=true, skip the Wasm rebuild.
+          # When called from release.yml with force_demo_rebuild=true, force the Wasm rebuild
+          # even though release commits only bump version files (not kmp/ code).
           # github.event_name propagates the caller's trigger (push, not workflow_call),
-          # so we use an explicit boolean input instead.
-          if [ "${{ inputs.skip_demo_rebuild }}" = "true" ]; then
-            echo "kmp=false" >> "$GITHUB_OUTPUT"
+          # so we use an explicit boolean input instead of inspecting event_name.
+          if [ "${{ inputs.force_demo_rebuild }}" = "true" ]; then
+            echo "kmp=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           BEFORE="${{ github.event.before }}"

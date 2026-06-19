@@ -13,6 +13,8 @@ permissions:
   contents: write
   pull-requests: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ── Release Please ─────────────────────────────────────────────────────────
@@ -32,7 +34,6 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          draft: true
 
   # ── Resolve version ────────────────────────────────────────────────────────
   # Normalises the version string from either Release Please or workflow_dispatch
@@ -132,8 +133,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+      - name: Install Xvfb
+        run: sudo apt-get install -y xvfb
       - name: Run JVM and Android unit tests
-        run: ./gradlew jvmTest testDebugUnitTest --no-daemon --build-cache
+        run: xvfb-run --auto-servernum ./gradlew jvmTest testDebugUnitTest --no-daemon --build-cache
 
   # ── Android release APK ────────────────────────────────────────────────────
   android-release:
@@ -154,8 +157,6 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-home-cache-cleanup: true
-          gradle-home-cache-strict-match: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Decode keystore
@@ -215,8 +216,6 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-home-cache-cleanup: true
-          gradle-home-cache-strict-match: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Install RPM toolchain
@@ -355,8 +354,6 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-home-cache-cleanup: true
-          gradle-home-cache-strict-match: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Install Bazelisk
@@ -371,7 +368,18 @@ jobs:
       - name: Package desktop distributable
         run: |
           APP_VERSION="${{ needs.resolve-version.outputs.version }}"
-          ./gradlew :kmp:packageDistributionForCurrentOS --no-daemon --build-cache \
+          ./gradlew :kmp:createDistributable --no-daemon --build-cache \
+            -PappVersion="${APP_VERSION#v}"
+
+      - name: Ad-hoc codesign app bundle
+        run: |
+          APP=$(find kmp/build/compose/binaries/main/app -name "*.app" -maxdepth 1 | head -1)
+          codesign --sign - --force --deep "$APP"
+
+      - name: Package DMG
+        run: |
+          APP_VERSION="${{ needs.resolve-version.outputs.version }}"
+          ./gradlew :kmp:packageDmg --no-daemon --build-cache \
             -PappVersion="${APP_VERSION#v}"
 
       - name: Rename distributable with version
@@ -438,8 +446,6 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-home-cache-cleanup: true
-          gradle-home-cache-strict-match: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Package desktop distributable
@@ -709,7 +715,7 @@ jobs:
     if: ${{ always() && needs.update-fdroid.result == 'success' }}
     uses: ./.github/workflows/pages.yml
     with:
-      skip_demo_rebuild: true
+      force_demo_rebuild: true
     permissions:
       contents: read
       pages: write

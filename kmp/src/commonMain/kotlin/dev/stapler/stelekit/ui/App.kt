@@ -64,6 +64,7 @@ import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.repository.*
 import dev.stapler.stelekit.ui.components.*
+import dev.stapler.stelekit.ui.components.git.GitDetectionBanner
 import dev.stapler.stelekit.ui.components.settings.SettingsDialog
 import dev.stapler.stelekit.ui.rememberShareProvider
 import dev.stapler.stelekit.ui.i18n.I18n
@@ -97,6 +98,10 @@ import dev.stapler.stelekit.voice.VoiceCaptureState
 import dev.stapler.stelekit.voice.VoiceCaptureViewModel
 import dev.stapler.stelekit.voice.VoicePipelineConfig
 import dev.stapler.stelekit.voice.VoiceSettings
+import dev.stapler.stelekit.tags.LlmTagProvider
+import dev.stapler.stelekit.tags.TagSettings
+import dev.stapler.stelekit.tags.TagSuggestionEngine
+import dev.stapler.stelekit.tags.TagSuggestionViewModel
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import kotlin.math.roundToInt
@@ -149,7 +154,7 @@ internal suspend fun executeCaptureAndImport(
             val result = service.import(
                 tempFile = captured.value,
                 graphPath = graphPath,
-                pageUuid = pageUuid,
+                pageUuid = dev.stapler.stelekit.model.PageUuid(pageUuid),
                 source = ImageSource.CAMERA,
                 insertToJournalPage = false,
             )
@@ -517,14 +522,32 @@ private fun GraphContent(
             spanRepository = repos.spanRepository,
         ).also { it.onBulkImportComplete = repos.onBulkImportComplete }
     }
+    // Wire write-behind flush callbacks so FileRegistry correctly tracks SAF write windows.
+    // - onFlushPreWrite: sets Long.MAX_VALUE sentinel before write, closing the mtime race
+    //   window where a concurrent detectChanges poll emits a spurious event for .md.stek files.
+    // - onFlushComplete: replaces sentinel with post-flush mtime after successful write.
+    // - onFlushFailed: removes sentinel when write fails so the file is not permanently suppressed.
+    remember(graphLoader) {
+        fileSystem.setOnFlushPreWrite(graphLoader::preMarkFileWrite)
+        fileSystem.setOnFlushComplete(graphLoader::markFileWrittenByUs)
+        fileSystem.setOnFlushFailed(graphLoader::clearFilePendingWrite)
+    }
+
     val graphWriter = remember {
         GraphWriter(
             fileSystem,
             repos.writeActor,
             onFileWritten = graphLoader::markFileWrittenByUs,
             sidecarManager = sidecarManager,
-            onPreWrite = { filePath -> graphLoader.fileRegistry.preMarkPendingWrite(dev.stapler.stelekit.model.FilePath(filePath)) },
-            onClearPendingWrite = { filePath -> graphLoader.fileRegistry.clearPendingWrite(dev.stapler.stelekit.model.FilePath(filePath)) },
+            onPreWrite = { filePath -> graphLoader.preMarkFileWrite(filePath) },
+            onClearPendingWrite = { filePath -> graphLoader.clearFilePendingWrite(filePath) },
+            checkPreWriteConflict = { filePath, diskContent ->
+                val lastKnown = graphLoader.fileRegistry.getContentHash(dev.stapler.stelekit.model.FilePath(filePath))
+                lastKnown != null && diskContent.hashCode() != lastKnown
+            },
+            onPreWriteConflict = { filePath, _, diskContent ->
+                graphLoader.emitExternalFileChange(filePath, diskContent)
+            },
         )
     }
 
@@ -567,7 +590,10 @@ private fun GraphContent(
             graphWriter = graphWriter,
             pageRepository = repos.pageRepository,
             graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" },
-            histogramWriter = repos.histogramWriter
+            histogramWriter = repos.histogramWriter,
+            writeActor = repos.writeActor,
+            invalidationSource = repos.writeActor?.blockInvalidations,
+            pushSource = repos.writeActor?.blocksPushed,
         )
     }
 
@@ -611,6 +637,7 @@ private fun GraphContent(
                 ringBuffer = repos.ringBuffer,
                 activeGitSyncService = graphManager.activeGitSyncService,
                 activeGraphIdProvider = { graphManager.getActiveGraphId() },
+                onDismissGitDetection = { graphId -> graphManager.setGitDetectionDismissed(graphId, true) },
                 scope = viewModelScope,
             )
         ).also {
@@ -860,7 +887,8 @@ private fun GraphContent(
         mutableStateOf(repos.debugFlagRepository?.loadDebugMenuState() ?: DebugMenuState())
     }
 
-    // Sync span capture toggle → ring buffer enabled flag (defaults to false in DebugMenuState).
+    // Sync span capture toggle → ring buffer enabled flag so histograms remain always-on
+    // but span recording only runs when explicitly requested.
     androidx.compose.runtime.LaunchedEffect(debugMenuState.isSpanCaptureEnabled) {
         repos.ringBuffer?.enabled = debugMenuState.isSpanCaptureEnabled
     }
@@ -958,11 +986,34 @@ private fun GraphContent(
     val journalsViewModel = remember {
         JournalsViewModel(repos.journalService, blockStateManager)
     }
-    val voiceCaptureViewModel = remember(voicePipeline) {
+
+    val tagSettings = remember(platformSettings) { TagSettings(platformSettings) }
+    val tagEngine = remember(viewModel.pageNameIndex, voiceSettings, tagSettings) {
+        if (!tagSettings.isEnabled()) null
+        else {
+            val llmProvider = if (tagSettings.isLlmTierEnabled() && voiceSettings != null) {
+                val llmFormatter = buildLlmFormatterForTags(voiceSettings)
+                if (llmFormatter != null) LlmTagProvider(llmFormatter) else null
+            } else null
+            TagSuggestionEngine(
+                pageNameIndex = viewModel.pageNameIndex,
+                llmTagProvider = llmProvider,
+            )
+        }
+    }
+    val tagSuggestionViewModel = remember(tagEngine) {
+        if (tagEngine != null) TagSuggestionViewModel(tagEngine) else null
+    }
+    DisposableEffect(tagSuggestionViewModel) {
+        onDispose { tagSuggestionViewModel?.close() }
+    }
+
+    val voiceCaptureViewModel = remember(voicePipeline, tagEngine) {
         VoiceCaptureViewModel(
             voicePipeline,
             repos.journalService,
             currentOpenPageUuid = { viewModel.uiState.value.currentPage?.uuid?.value },
+            tagSuggestionEngine = tagEngine,
         )
     }
     DisposableEffect(voiceCaptureViewModel) {
@@ -1226,6 +1277,22 @@ private fun GraphContent(
                         content = {
                             val cameraImportEnabled =
                                 imageImportService != null && SensorModule.cameraProvider.isAvailable
+                            val activeGraphInfo2 = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }
+                            val showGitBanner = activeGraphInfo2?.detectedRepoRoot != null &&
+                                appState.gitConfig == null &&
+                                activeGraphInfo2.gitDetectionDismissed == false
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                if (showGitBanner) {
+                                    GitDetectionBanner(
+                                        repoRoot = activeGraphInfo2!!.detectedRepoRoot!!,
+                                        onSetupSync = { viewModel.openGitSetup() },
+                                        onDismiss = {
+                                            val gid = activeGraphId ?: return@GitDetectionBanner
+                                            viewModel.dismissGitDetection(gid)
+                                        },
+                                    )
+                                }
+                            Box(modifier = Modifier.weight(1f)) {
                             ScreenRouter(
                                 screen = appState.currentScreen,
                                 repos = repos,
@@ -1256,9 +1323,7 @@ private fun GraphContent(
                                                         val safeAlt = attachment.displayName.replace("]", "\\]")
                                                         val safePath = attachment.relativePath.replace(")", "\\)")
                                                         val markdown = "![${safeAlt}](${safePath})"
-                                                        if (editingBlockUuid != null) {
-                                                            blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
-                                                        }
+                                                        blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
                                                     }
                                                 )
                                             }
@@ -1376,7 +1441,10 @@ private fun GraphContent(
                                 perfSpans = perfSpans,
                                 perfHistograms = perfHistograms,
                                 perfQueryStats = perfQueryStats,
+                                tagSuggestionViewModel = tagSuggestionViewModel,
                             )
+                            } // Box
+                            } // Column
                         },
                         statusBar = {
                             if (!isMobile) {
@@ -1476,6 +1544,8 @@ private fun GraphContent(
                         exportService = exportService,
                         driveClient = null, // DriveApiClient injected from platform entry point in a future phase
                         shareGoogleAuthManager = googleAuthManager,
+                        tagSettings = tagSettings,
+                        hasLlmKey = voiceSettings?.getAnthropicKey() != null || voiceSettings?.getOpenAiKey() != null,
                         currentPage = appState.currentPage,
                         currentBlocks = appState.currentPage?.let {
                             blockStateManager.blocksForPage(it.uuid.value)
@@ -1530,7 +1600,18 @@ private fun onGraphKeyEvent(
     }
 }
 
-
+/**
+ * Builds a [dev.stapler.stelekit.voice.LlmFormatterProvider] for tag suggestions,
+ * reusing the same Anthropic / OpenAI keys already stored in [VoiceSettings].
+ * Returns null when no key is configured.
+ */
+private fun buildLlmFormatterForTags(
+    voiceSettings: VoiceSettings,
+): dev.stapler.stelekit.voice.LlmFormatterProvider? =
+    voiceSettings.getAnthropicKey()
+        ?.let { dev.stapler.stelekit.voice.ClaudeLlmFormatterProvider.withDefaults(it) }
+        ?: voiceSettings.getOpenAiKey()
+            ?.let { dev.stapler.stelekit.voice.OpenAiLlmFormatterProvider.withDefaults(it) }
 
 /**
  * Status bar row — pure presentational composable. Receives only primitives;

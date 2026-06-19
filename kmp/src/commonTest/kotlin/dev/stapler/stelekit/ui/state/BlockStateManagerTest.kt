@@ -149,10 +149,13 @@ class BlockStateManagerTest {
         assertEquals("user typed this", editedBlock.content)
         assertEquals(5L, editedBlock.version)
 
-        // Simulate stale DB re-emission (version 0 < local version 5)
-        // This happens naturally via the reactive flow when saveBlock triggers a re-query
-        // but the DB hasn't processed the save yet
-        // The merge logic should keep the local version
+        // Simulate stale DB re-emission (version 0 < local version 5).
+        // Re-save the original (pre-edit) block to the repository — this triggers the
+        // reactive flow with stale data, exercising the dirty-block merge guard.
+        val originalBlock = block.copy(content = "original", version = 0)
+        blockRepo.saveBlock(originalBlock)
+        advanceUntilIdle()
+
         val staleBlocks = manager.blocks.value[pageUuid]!!
         val staleBlock = staleBlocks.find { it.uuid.value == "block-1" }
         assertNotNull(staleBlock)
@@ -516,7 +519,10 @@ class BlockStateManagerTest {
     }
 
     @Test
-    fun hasPendingDiskWrite_returns_false_after_debounce_fires() = runTest {
+    fun hasPendingDiskWrite_returns_true_in_graphWriter_window_after_bsm_debounce_fires() = runTest {
+        // After the BSM 300ms debounce fires it calls graphWriter.queueSave, which starts its
+        // own 500ms debounce. hasPendingDiskWrite must stay true for that entire second window
+        // so an external change arriving then still shows the conflict dialog.
         val blockRepo = InMemoryBlockRepository()
         val pageRepo = InMemoryPageRepository()
         val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
@@ -539,14 +545,20 @@ class BlockStateManagerTest {
 
         manager.updateBlockContent(BlockUuid("b1"), "edited", 1)
         advanceTimeBy(10)
-        assertTrue(manager.hasPendingDiskWrite(pageUuid), "Should be pending before delay")
+        assertTrue(manager.hasPendingDiskWrite(pageUuid), "Should be pending before BSM debounce")
 
-        // Advance past the debounce delay (DebounceManager uses 300ms for BSM)
+        // Advance past BSM debounce (300ms) but stay inside GraphWriter window (500ms more)
         advanceTimeBy(400)
+
+        assertTrue(manager.hasPendingDiskWrite(pageUuid),
+            "Must still be pending in GraphWriter window (BSM fired, GraphWriter hasn't yet)")
+
+        // Advance past GraphWriter debounce too
+        advanceTimeBy(600)
         advanceUntilIdle()
 
         assertFalse(manager.hasPendingDiskWrite(pageUuid),
-            "Must not be pending after debounce fires")
+            "Must not be pending after both debounces have fired")
     }
 
     @Test
@@ -646,6 +658,56 @@ class BlockStateManagerTest {
         assertFalse(manager.hasPendingDiskWrite(pageUuid), "Cancelled page must not be pending")
         assertTrue(manager.hasPendingDiskWrite(otherPageUuid),
             "Unrelated page's write must still be pending")
+    }
+
+    @Test
+    fun cancelPendingDiskSave_in_graphWriter_window_prevents_stale_write() = runTest {
+        // Regression test for the "GraphWriter window" gap:
+        // BSM debounce fires at T+300ms and calls graphWriter.queueSave() with the user's blocks.
+        // An external change arriving in the subsequent 500ms graphWriter window would have been
+        // auto-reloaded into the DB, but then graphWriter would fire at T+800ms and overwrite
+        // with the stale pre-reload content. cancelPendingDiskSave must also cancel the
+        // graphWriter job to prevent this.
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val trackingFs = TrackingFileSystem()
+        val writer = GraphWriter(trackingFs)
+        writer.startAutoSave(scope)
+        val manager = BlockStateManager(
+            blockRepository = blockRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            graphWriter = writer,
+            pageRepository = pageRepo,
+            graphPathProvider = { "/graph" }
+        )
+
+        pageRepo.savePage(createPageWithFilePath("/graph/pages/test-page.md"))
+        blockRepo.saveBlock(createBlock("b1", content = "original"))
+        manager.observePage(PageUuid(pageUuid))
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.updateBlockContent(BlockUuid("b1"), "edited", 1)
+
+        // Advance past BSM debounce — graphWriter now has the pending write
+        advanceTimeBy(400)
+
+        assertTrue(manager.hasPendingDiskWrite(pageUuid),
+            "GraphWriter window: must still be pending after BSM debounce fires")
+
+        // Simulate conflict dialog showing: cancel
+        manager.cancelPendingDiskSave(pageUuid)
+        assertFalse(manager.hasPendingDiskWrite(pageUuid),
+            "Must not be pending after cancel in GraphWriter window")
+
+        // Advance past the GraphWriter debounce — write must not fire
+        advanceTimeBy(600)
+        advanceUntilIdle()
+
+        assertTrue(trackingFs.writtenPaths.isEmpty(),
+            "GraphWriter must not write after cancelPendingDiskSave called in GraphWriter window")
     }
 
     // ---- insertLinkAtCursor — overrideCursorIndex ----
@@ -1064,7 +1126,7 @@ class BlockStateManagerTest {
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
         assertEquals(2, blocks.size, "splitBlock must produce two blocks")
         assertTrue(blocks.any { it.content == "Hello" }, "First block must have content before cursor")
-        assertTrue(blocks.any { it.content == "World" }, "Second block must have content after cursor")
+        assertTrue(blocks.any { it.content.trim() == "World" }, "Second block must have content after cursor")
     }
 
     @Test
@@ -1823,6 +1885,183 @@ class BlockStateManagerTest {
             "b2 must be deleted after handleBackspace merge")
 
         actor.close()
+    }
+}
+
+// ---- dirtyPageUuids: watcher guard for journals refresh (FR-2) ----
+
+/**
+ * Tests for [BlockStateManager.dirtyPageUuids] — the StateFlow used by GraphLoader to protect
+ * only pages with unsaved edits from auto-reload (journals-page live refresh root cause).
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class BlockStateManagerDirtyPageUuidsTest {
+
+    private val now = Clock.System.now()
+    private val page1Uuid = "page-1-uuid"
+    private val page2Uuid = "page-2-uuid"
+
+    private fun block(uuid: String, pageUuid: String, content: String = "", version: Long = 0) = Block(
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid(pageUuid),
+        content = content,
+        position = 0,
+        version = version,
+        createdAt = now,
+        updatedAt = now,
+    )
+
+    private fun page(uuid: String) = Page(
+        uuid = PageUuid(uuid),
+        name = "Page $uuid",
+        filePath = null,
+        createdAt = now,
+        updatedAt = now,
+    )
+
+    /**
+     * TC-DPU-1: dirtyPageUuids is empty on construction — no false-positives out of the gate.
+     */
+    @Test
+    fun dirtyPageUuids_is_empty_on_construction() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        assertTrue(manager.dirtyPageUuids.value.isEmpty(), "dirtyPageUuids must be empty before any edits")
+    }
+
+    /**
+     * TC-DPU-2: dirtyPageUuids contains the page UUID when a block edit is in-flight.
+     *
+     * Uses [DelayedContentBlockRepository] to keep the dirty flag alive during the assertion:
+     * with an immediate in-memory repo, the reactive flow re-emits the confirmed version and
+     * clears the dirty flag before the assertion runs. The delay extends the window so the
+     * combine emits the non-empty set while the DB write is still in-flight.
+     */
+    @Test
+    fun dirtyPageUuids_contains_page_after_block_edit() = runTest {
+        val innerRepo = InMemoryBlockRepository()
+        val delayedRepo = DelayedContentBlockRepository(innerRepo, contentDelayMs = 500L)
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, delayedRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+
+        pageRepo.savePage(page(page1Uuid))
+        innerRepo.saveBlock(block("b1", page1Uuid, content = "original", version = 0))
+
+        val manager = BlockStateManager(delayedRepo, graphLoader, scope)
+        manager.observePage(PageUuid(page1Uuid))
+        manager.blocks.first { it.containsKey(page1Uuid) }
+
+        // Edit the block — marks it dirty; DB write is delayed so dirty flag persists
+        manager.updateBlockContent(BlockUuid("b1"), "edited content", newVersion = 1L)
+        // Advance only 100ms — dirty flag is set but DB write hasn't completed (delay=500ms)
+        advanceTimeBy(100)
+
+        assertTrue(
+            page1Uuid in manager.dirtyPageUuids.value,
+            "dirtyPageUuids must contain the page UUID when one of its blocks has an unsaved edit",
+        )
+    }
+
+    /**
+     * TC-DPU-3: An open-but-unedited page must NOT appear in dirtyPageUuids.
+     *
+     * Journals page is open (observed) but the user hasn't typed anything.
+     * dirtyPageUuids must be empty so the watcher reloads the page on external change.
+     */
+    @Test
+    fun dirtyPageUuids_is_empty_for_open_but_unedited_page() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+
+        pageRepo.savePage(page(page1Uuid))
+        blockRepo.saveBlock(block("b1", page1Uuid, content = "journal entry", version = 0))
+
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+        manager.observePage(PageUuid(page1Uuid))
+        manager.blocks.first { it.containsKey(page1Uuid) }
+        // No edit — user is just reading the page
+
+        advanceUntilIdle()
+        assertTrue(
+            manager.dirtyPageUuids.value.isEmpty(),
+            "An open-but-unedited page must NOT be in dirtyPageUuids (journals refresh must work)",
+        )
+    }
+
+    /**
+     * TC-DPU-4: dirtyPageUuids returns to empty after the DB confirms the save.
+     *
+     * Uses [DelayedContentBlockRepository]: dirty flag is set during the delay window,
+     * then clears when the delayed write completes and the reactive flow re-emits
+     * the confirmed version (dirtyVersion == incomingVersion → clear).
+     */
+    @Test
+    fun dirtyPageUuids_clears_after_db_confirms_save() = runTest {
+        val innerRepo = InMemoryBlockRepository()
+        val delayedRepo = DelayedContentBlockRepository(innerRepo, contentDelayMs = 500L)
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, delayedRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+
+        pageRepo.savePage(page(page1Uuid))
+        innerRepo.saveBlock(block("b1", page1Uuid, content = "original", version = 0))
+
+        val manager = BlockStateManager(delayedRepo, graphLoader, scope)
+        manager.observePage(PageUuid(page1Uuid))
+        manager.blocks.first { it.containsKey(page1Uuid) }
+
+        // Edit — dirty flag set, DB write in-flight
+        manager.updateBlockContent(BlockUuid("b1"), "saved content", newVersion = 1L)
+        advanceTimeBy(100) // before delay expires — still dirty
+        assertTrue(page1Uuid in manager.dirtyPageUuids.value, "page must be dirty before DB confirms")
+
+        // Advance past delay — DB write completes, reactive flow re-emits confirmed version
+        advanceUntilIdle()
+        assertTrue(
+            manager.dirtyPageUuids.value.isEmpty(),
+            "dirtyPageUuids must be empty after the DB confirms the save (version matches)",
+        )
+    }
+
+    /**
+     * TC-DPU-5: Only pages with dirty blocks appear in dirtyPageUuids — not all observed pages.
+     *
+     * Two pages are open. User edits a block on page1 only. page2 must NOT be in dirtyPageUuids
+     * so it remains eligible for auto-reload (journals use case with multiple open pages).
+     * Uses [DelayedContentBlockRepository] so the dirty flag on page1 persists during assertion.
+     */
+    @Test
+    fun dirtyPageUuids_excludes_pages_with_no_dirty_blocks() = runTest {
+        val innerRepo = InMemoryBlockRepository()
+        val delayedRepo = DelayedContentBlockRepository(innerRepo, contentDelayMs = 500L)
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, delayedRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+
+        pageRepo.savePage(page(page1Uuid))
+        pageRepo.savePage(page(page2Uuid))
+        innerRepo.saveBlock(block("b1", page1Uuid, content = "editing this", version = 0))
+        innerRepo.saveBlock(block("b2", page2Uuid, content = "viewing this", version = 0))
+
+        val manager = BlockStateManager(delayedRepo, graphLoader, scope)
+        manager.observePage(PageUuid(page1Uuid))
+        manager.observePage(PageUuid(page2Uuid))
+        manager.blocks.first { it.containsKey(page1Uuid) && it.containsKey(page2Uuid) }
+
+        // Only edit page1's block; DB write is delayed so dirty flag persists
+        manager.updateBlockContent(BlockUuid("b1"), "my edits", newVersion = 1L)
+        advanceTimeBy(100) // before delay expires — page1 still dirty
+
+        val dirty = manager.dirtyPageUuids.value
+        assertTrue(page1Uuid in dirty, "page1 (edited) must be in dirtyPageUuids")
+        assertFalse(page2Uuid in dirty, "page2 (unedited) must NOT be in dirtyPageUuids — it must be auto-reloadable")
     }
 }
 

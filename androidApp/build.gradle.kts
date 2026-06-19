@@ -8,6 +8,10 @@ plugins {
 }
 
 val appVersionStr = (findProperty("appVersion") as? String ?: "0.1.0").removePrefix("v")
+val gitCommitHash = providers.exec {
+    commandLine("git", "rev-parse", "--short=8", "HEAD")
+    isIgnoreExitValue = true
+}.standardOutput.asText.getOrElse("unknown").trim().ifEmpty { "unknown" }
 val versionParts = appVersionStr.split(".")
 val vMajor = versionParts.getOrNull(0)?.toIntOrNull() ?: 0
 val vMinor = versionParts.getOrNull(1)?.toIntOrNull() ?: 0
@@ -28,6 +32,7 @@ android {
         versionCode = computedVersionCode
         versionName = appVersionStr
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "GIT_COMMIT_HASH", "\"$gitCommitHash\"")
     }
 
     signingConfigs {
@@ -74,6 +79,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     lint {
@@ -115,6 +121,7 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.10.6")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     debugImplementation("androidx.compose.ui:ui-test-manifest:1.10.6")
 
 }

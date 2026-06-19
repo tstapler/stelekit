@@ -89,6 +89,9 @@ kotlin {
 
                 // Ksoup — HTML parsing for URL import feature
                 implementation("com.fleeksoft.ksoup:ksoup:0.2.6")
+
+                // Okio — cross-platform file I/O for asset management
+                implementation("com.squareup.okio:okio:3.17.0")
             }
         }
 
@@ -105,6 +108,8 @@ kotlin {
                 implementation(kotlin("test"))
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
                 implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
+                // Okio FakeFileSystem — in-memory file system for asset tests
+                implementation("com.squareup.okio:okio-fakefilesystem:3.17.0")
             }
         }
 
@@ -130,6 +135,12 @@ kotlin {
 
                 // BouncyCastle — Argon2id KDF + HKDF-SHA256 for paranoid-mode vault
                 implementation("org.bouncycastle:bcprov-jdk18on:1.80")
+
+                // PDFBox — PDF text extraction for asset OCR pipeline
+                implementation("org.apache.pdfbox:pdfbox:3.0.4")
+
+                // ONNX Runtime — on-device ML inference for image auto-labeling
+                implementation("com.microsoft.onnxruntime:onnxruntime:1.26.0")
 
                 // Graph databases for performance evaluation
                 // implementation("com.kuzudb:kuzu-jdbc:0.7.0")
@@ -198,6 +209,15 @@ kotlin {
 
                 // ExifInterface — EXIF orientation correction for camera-captured images
                 implementation("androidx.exifinterface:exifinterface:1.3.7")
+
+                // PDFBox Android — PDF text extraction for asset OCR pipeline (Android)
+                implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
+                // ML Kit Image Labeling — on-device image auto-labeling
+                implementation("com.google.mlkit:image-labeling:17.0.9")
+
+                // ML Kit Text Recognition — on-device OCR for image assets
+                implementation("com.google.mlkit:text-recognition:16.0.1")
 
                 // ARCore Depth API — optional AR depth sensing (Story 8.5)
                 // required=false in AndroidManifest so the app installs on non-AR devices.
@@ -776,6 +796,19 @@ tasks.register("runApp") {
     dependsOn("run")
 }
 
+// ── SteleKit headless sync CLI ───────────────────────────────────────────────
+// Run with: ./gradlew :kmp:runSync -Pargs="--graph /path/to/graph"
+tasks.register<JavaExec>("runSync") {
+    group = "application"
+    description = "Run the SteleKit headless sync CLI"
+    classpath = kotlin.jvm().compilations["main"].output.allOutputs +
+                kotlin.jvm().compilations["main"].runtimeDependencyFiles
+    mainClass.set("dev.stapler.stelekit.cli.SyncMainKt")
+    val argsStr = project.findProperty("args") as String? ?: ""
+    args = argsStr.split(" ").filter { it.isNotBlank() }
+    dependsOn("jvmJar")
+}
+
 // ── Detekt static analysis ──────────────────────────────────────────────────
 detekt {
     config.setFrom(file("config/detekt/detekt.yml"))
@@ -947,6 +980,12 @@ sqldelight {
         create("SteleDatabase") {
             packageName.set("dev.stapler.stelekit.db")
             generateAsync.set(true)
+            srcDirs("src/commonMain/sqldelight")
+        }
+        create("TelemetryDatabase") {
+            packageName.set("dev.stapler.stelekit.db")
+            generateAsync.set(true)
+            srcDirs("src/commonMain/sqldelightTelemetry")
         }
     }
 }

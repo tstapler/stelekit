@@ -12,6 +12,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,7 +37,8 @@ fun AllPagesScreen(
     viewModel: AllPagesViewModel,
     onPageClick: (Page) -> Unit,
     onBulkDelete: (List<String>) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    conflictFilePaths: Set<String> = emptySet(),
 ) {
     NavigationTracingEffect("AllPages")
     val pages by viewModel.pages.collectAsState()
@@ -194,6 +197,7 @@ fun AllPagesScreen(
                             row = row,
                             isSelected = row.page.uuid.value in selectedUuids,
                             isInSelectionMode = isInSelectionMode,
+                            hasConflict = row.page.filePath in conflictFilePaths,
                             onToggleSelection = { viewModel.toggleSelection(row.page.uuid.value) },
                             onClick = {
                                 if (isInSelectionMode) {
@@ -284,7 +288,8 @@ private fun PageRowItem(
     onToggleSelection: () -> Unit,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    hasConflict: Boolean = false,
 ) {
     Row(
         modifier = modifier
@@ -300,6 +305,15 @@ private fun PageRowItem(
                 modifier = Modifier.size(24.dp)
             )
             Spacer(Modifier.width(8.dp))
+        }
+        if (hasConflict) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = "Page modified on disk",
+                tint = Color(0xFFF59E0B),
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(Modifier.width(4.dp))
         }
         Text(
             text = row.page.name,

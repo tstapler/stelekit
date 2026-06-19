@@ -1,0 +1,141 @@
+{
+  "timestamp": "2026-06-18 06:24:26 UTC",
+  "gitSha": "85e1f3f419",
+  "branch": "main",
+  "graphConfig": "large",
+  "pageCount": 2365,
+  "journalCount": 365,
+  "phase1TtiMs": 0,
+  "phase2Ms": 0,
+  "phase3Ms": 0,
+  "totalMs": 0,
+  "jankBaselineP50Ms": 1,
+  "jankBaselineP95Ms": 10,
+  "jankLoadP50Ms": -1,
+  "jankLoadP95Ms": -1,
+  "jankFactor": -0.1,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 615,
+      "pct": 34.6
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 137,
+      "pct": 7.7
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 133,
+      "pct": 7.5
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 91,
+      "pct": 5.1
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 54,
+      "pct": 3.0
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 44,
+      "pct": 2.5
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 44,
+      "pct": 2.5
+    },
+    {
+      "frame": "java.nio.DirectByteBuffer_[k]",
+      "samples": 43,
+      "pct": 2.4
+    },
+    {
+      "frame": "java.util.HashMap$Node[]_[k]",
+      "samples": 40,
+      "pct": 2.2
+    },
+    {
+      "frame": "java.util.LinkedHashMap_[k]",
+      "samples": 39,
+      "pct": 2.2
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "org/sqlite/core/NativeDB.step",
+      "samples": 205,
+      "pct": 67.2
+    },
+    {
+      "frame": "org/sqlite/core/NativeDB.prepare_utf8",
+      "samples": 24,
+      "pct": 7.9
+    },
+    {
+      "frame": "dev/stapler/stelekit/model/Validation.validateString_[j]",
+      "samples": 15,
+      "pct": 4.9
+    },
+    {
+      "frame": "dev/stapler/stelekit/util/UuidGenerator.fnv1a64_[j]",
+      "samples": 10,
+      "pct": 3.3
+    },
+    {
+      "frame": "java/util/concurrent/atomic/AtomicReferenceFieldUpdater$AtomicReferenceFieldUpdaterImpl.accessCheck_[i]",
+      "samples": 4,
+      "pct": 1.3
+    },
+    {
+      "frame": "dev/stapler/stelekit/parsing/lexer/Lexer.nextToken_[j]",
+      "samples": 4,
+      "pct": 1.3
+    },
+    {
+      "frame": "dev/stapler/stelekit/util/ContentHasher.sha256_[j]",
+      "samples": 2,
+      "pct": 0.7
+    },
+    {
+      "frame": "java/util/HashMap.putVal_[i]",
+      "samples": 2,
+      "pct": 0.7
+    },
+    {
+      "frame": "dev/stapler/stelekit/parsing/InlineParser.parse_[j]",
+      "samples": 2,
+      "pct": 0.7
+    },
+    {
+      "frame": "dev/stapler/stelekit/model/Validation.validateUuid_[j]",
+      "samples": 2,
+      "pct": 0.7
+    }
+  ],
+  "queryStats": [
+    {
+      "table": "blocks_fts",
+      "op": "insert",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 0,
+      "totalMs": 0
+    },
+    {
+      "table": "pages",
+      "op": "select",
+      "calls": 2,
+      "p50": 1,
+      "p99": 1,
+      "maxMs": 0,
+      "totalMs": 0
+    }
+  ]
+}

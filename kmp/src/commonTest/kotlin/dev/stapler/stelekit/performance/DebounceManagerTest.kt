@@ -73,6 +73,35 @@ class DebounceManagerTest {
         assertEquals(0, executed, "Cancelled actions should not execute")
     }
 
+    /**
+     * Regression guard for the scope.launch registration race.
+     *
+     * Before the fix, [DebounceManager.debounce] launched an inner coroutine to register
+     * the action in [pendingActions]. Calling [flushAll] without yielding first would see
+     * an empty [pendingActions] (the inner launch hadn't run) and silently do nothing.
+     *
+     * After the fix, [debounce] is a suspend fun that holds the mutex directly, so the
+     * action is visible in [pendingActions] before [debounce] returns.
+     *
+     * This test MUST fail against any version that defers action registration to an
+     * inner coroutine.
+     */
+    @Test
+    fun flushAll_sees_action_without_yield_after_debounce() = runTest {
+        val manager = DebounceManager(this, delayMs = 100L)
+        var value = ""
+
+        manager.debounce("key") { value = "flushed" }
+        // No advanceUntilIdle() — simulates the real-world race where flush() is called
+        // in the same coroutine immediately after debounce(), before the scheduler yields.
+        manager.flushAll()
+
+        assertEquals("flushed", value,
+            "flushAll must see the pending action even without a yield after debounce(). " +
+                "Regression: pre-fix debounce() deferred registration to an inner scope.launch, " +
+                "causing flushAll() to see an empty pendingActions map.")
+    }
+
     @Test
     fun flushAll_executes_pending_immediately() = runTest {
         val manager = DebounceManager(this, delayMs = 100L)
