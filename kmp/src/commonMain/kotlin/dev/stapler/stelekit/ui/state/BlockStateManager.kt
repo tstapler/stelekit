@@ -412,7 +412,6 @@ class BlockStateManager(
                 // Launched as a sibling to the invalidation collector so neither cancels the other.
                 // Use collect (not collectLatest) — applying a pushed block list is instant and
                 // must not be cancelled mid-apply. Rapid edits are serialized by the actor queue.
-                // TODO(perf-benchmark): Story 3.3 — record before/after getBlocksForPage call counts
                 pushSource?.let { push ->
                     launch {
                         push.collect { event ->
