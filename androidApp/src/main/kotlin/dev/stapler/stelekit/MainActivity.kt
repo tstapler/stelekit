@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private var onMemoryPressureHandler: (() -> Unit)? = null
     private var pendingFolderPick: CompletableDeferred<String?>? = null
     private var pendingMicPermission: CompletableDeferred<Boolean>? = null
+    private var pendingCameraPermission: CompletableDeferred<Boolean>? = null
     private var pendingSaveFile: CompletableDeferred<String?>? = null
     private var pendingFilePick: CompletableDeferred<String?>? = null
 
@@ -56,6 +57,13 @@ class MainActivity : ComponentActivity() {
     ) { granted ->
         pendingMicPermission?.complete(granted)
         pendingMicPermission = null
+    }
+
+    private val cameraPermLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        pendingCameraPermission?.complete(granted)
+        pendingCameraPermission = null
     }
 
     private val saveFileLauncher = registerForActivityResult(
@@ -273,6 +281,7 @@ class MainActivity : ComponentActivity() {
                 onGraphManagerReady = { gm -> graphManager = gm },
                 onMemoryPressure = { handler -> onMemoryPressureHandler = handler },
                 attachmentService = attachmentService,
+                requestCameraPermission = ::requestCameraPermission,
             )
         }
     }
@@ -330,6 +339,16 @@ class MainActivity : ComponentActivity() {
         val deferred = CompletableDeferred<Boolean>()
         pendingMicPermission = deferred
         runOnUiThread { micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }
+        return deferred.await()
+    }
+
+    private suspend fun requestCameraPermission(): Boolean {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED
+        ) return true
+        val deferred = CompletableDeferred<Boolean>()
+        pendingCameraPermission = deferred
+        runOnUiThread { cameraPermLauncher.launch(Manifest.permission.CAMERA) }
         return deferred.await()
     }
 

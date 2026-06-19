@@ -323,6 +323,56 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return if (slashIdx >= 0) withoutScheme.substring(slashIdx + 1) else ""
     }
 
+    override fun readFileBytes(path: String): ByteArray? {
+        if (!path.startsWith("saf://")) return legacyReadFileBytes(path)
+        if (isDirectAccess()) {
+            val realPath = resolveToRealPath(path)
+            if (realPath != null) return legacyReadFileBytes(realPath)
+        }
+        return try {
+            val docUri = parseDocumentUri(path)
+            context?.contentResolver?.openInputStream(docUri)?.use { it.readBytes() }
+        } catch (e: Exception) { null }
+    }
+
+    override fun writeFileBytes(path: String, data: ByteArray): Boolean {
+        if (!path.startsWith("saf://")) return legacyWriteFileBytes(path, data)
+        if (isDirectAccess()) {
+            val realPath = resolveToRealPath(path)
+            if (realPath != null) return legacyWriteFileBytes(realPath, data)
+        }
+        return try {
+            var docUri = parseDocumentUri(path)
+            val ctx = context ?: return false
+            if (path !in knownExistingFiles) {
+                val docFile = DocumentFile.fromSingleUri(ctx, docUri)
+                if (docFile == null || !docFile.exists()) {
+                    val fileName = path.substringAfterLast('/')
+                    val parentPath = path.substring(0, path.lastIndexOf('/'))
+                    if (parentPath !in knownExistingDirs && !directoryExists(parentPath)) {
+                        if (!createDirectory(parentPath)) return false
+                    }
+                    knownExistingDirs.add(parentPath)
+                    val parentDocUri = parseDocumentUri(parentPath)
+                    val mimeType = when (fileName.substringAfterLast('.').lowercase()) {
+                        "jpg", "jpeg" -> "image/jpeg"
+                        "png" -> "image/png"
+                        "webp" -> "image/webp"
+                        else -> "application/octet-stream"
+                    }
+                    docUri = DocumentsContract.createDocument(
+                        ctx.contentResolver, parentDocUri, mimeType, fileName
+                    ) ?: return false
+                }
+            }
+            ctx.contentResolver.openOutputStream(docUri, "wt")?.use { stream ->
+                stream.write(data)
+            }
+            knownExistingFiles.add(path)
+            true
+        } catch (e: Exception) { false }
+    }
+
     actual override fun writeFile(path: String, content: String): Boolean {
         if (path.startsWith("content://")) return contentUriWriteFile(path, content)
         if (!path.startsWith("saf://")) return legacyWriteFile(path, content)
@@ -795,6 +845,27 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         } catch (e: Exception) {
             null
         }
+    }
+
+    private fun legacyReadFileBytes(path: String): ByteArray? {
+        return try {
+            val file = File(expandTilde(path))
+            if (!file.exists() || !file.isFile) return null
+            if (file.length() > maxFileSize) return null
+            file.readBytes()
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { null }
+    }
+
+    private fun legacyWriteFileBytes(path: String, data: ByteArray): Boolean {
+        return try {
+            val file = File(expandTilde(path))
+            val parentDir = file.parentFile
+            if (parentDir != null && !parentDir.exists()) parentDir.mkdirs()
+            file.writeBytes(data)
+            true
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { false }
     }
 
     private fun legacyWriteFile(path: String, content: String): Boolean {
