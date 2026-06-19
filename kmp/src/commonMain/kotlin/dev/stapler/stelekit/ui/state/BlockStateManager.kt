@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -64,7 +65,11 @@ class BlockStateManager(
     private val pageRepository: PageRepository? = null,
     private val graphPathProvider: () -> String = { "" },
     private val writeActor: DatabaseWriteActor? = null,
-    private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
+    private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
+    // Collapses write bursts (parseAndSavePage: N deleteBlock + saveBlocks) so each visible
+    // journal page re-executes getBlocksForPage at most once per burst on Android's single
+    // connection. 0 = no debounce (default, tests); production passes 100L.
+    private val blockObserveDebounceMs: Long = 0L,
 ) : BlockEditingPort, BlockStructurePort, BlockSelectionPort, BlockNavigationPort {
     private val logger = Logger("BlockStateManager")
     private val diskWriteDebounce = DebounceManager(scope, 300L)
@@ -368,7 +373,9 @@ class BlockStateManager(
                 }
             }
 
-            blockRepository.getBlocksForPage(pageUuid).collect { result ->
+            val pageFlow = blockRepository.getBlocksForPage(pageUuid)
+            val debouncedFlow = if (blockObserveDebounceMs > 0) pageFlow.debounce(blockObserveDebounceMs) else pageFlow
+            debouncedFlow.collect { result ->
                 val incomingBlocks = result.getOrNull() ?: emptyList()
                 _blocks.update { current ->
                     val localBlocks = current[pageUuidStr] ?: emptyList()

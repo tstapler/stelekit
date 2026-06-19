@@ -587,7 +587,8 @@ private fun GraphContent(
             graphWriter = graphWriter,
             pageRepository = repos.pageRepository,
             graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" },
-            histogramWriter = repos.histogramWriter
+            histogramWriter = repos.histogramWriter,
+            blockObserveDebounceMs = 100L,
         )
     }
 

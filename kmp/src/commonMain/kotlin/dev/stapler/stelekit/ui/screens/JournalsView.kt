@@ -133,6 +133,7 @@ fun JournalsView(
                     isLoading = !page.isContentLoaded || page.uuid.value in loadingPageUuids,
                     isDebugMode = isDebugMode,
                     hasConflict = page.filePath in conflictFilePaths,
+                    onTitleClick = { onLinkClick(page.name) },
                     editingBlockUuid = editingBlockUuid?.value,
                     editingCursorIndex = editingCursorIndex,
                     collapsedBlocks = collapsedBlockUuids,
@@ -279,6 +280,7 @@ private fun JournalEntry(
     isLoading: Boolean,
     isDebugMode: Boolean,
     hasConflict: Boolean = false,
+    onTitleClick: () -> Unit,
     editingBlockUuid: String?,
     editingCursorIndex: Int?,
     collapsedBlocks: Set<String>,
@@ -319,7 +321,9 @@ private fun JournalEntry(
         // Journal date header with optional conflict indicator
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(bottom = 16.dp, top = 8.dp)
+            modifier = Modifier
+                .clickable { onTitleClick() }
+                .padding(bottom = 16.dp, top = 8.dp)
         ) {
             Text(
                 text = formatJournalDate(page.name),

@@ -1239,10 +1239,12 @@ class SqlDelightBlockRepository(
             // Disable FTS5 automerge before bulk delete — mirrors saveBlocks. Without this,
             // the N blocks_ad triggers can each trigger an automerge pass that scans the full
             // FTS index, making large page clears take seconds instead of milliseconds.
+            // ftsMerge() is intentionally NOT called here — same rationale as saveBlocks():
+            // it scans the full index and is prohibitively expensive on large graphs.
+            // compactFtsIndex() is invoked once after a full bulk-indexing session instead.
             ftsAutomergeOff()
             queries.deleteBlocksByPageUuid(pageUuid.value)
             ftsAutomergeDefault()
-            ftsMerge()
             Unit.right()
         } catch (e: CancellationException) {
             runCatching { ftsAutomergeDefault() }
@@ -1259,7 +1261,6 @@ class SqlDelightBlockRepository(
             ftsAutomergeOff()
             queries.deleteBlocksByPageUuids(pageUuids.map { it.value })
             ftsAutomergeDefault()
-            ftsMerge()
             Unit.right()
         } catch (e: CancellationException) {
             runCatching { ftsAutomergeDefault() }
