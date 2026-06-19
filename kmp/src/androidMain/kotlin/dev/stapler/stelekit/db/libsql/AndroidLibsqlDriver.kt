@@ -29,6 +29,9 @@ class AndroidLibsqlDriver private constructor(
     /** True when the database was opened with MVCC (BEGIN CONCURRENT) support. */
     val isMvccActive: Boolean get() = core.isMvccActive
 
+    /** Re-opens all pooled connections so they see schema changes made since pool creation. */
+    fun resetPool() = core.resetPool()
+
     companion object {
         fun create(context: Context, graphId: String): AndroidLibsqlDriver {
             LibsqlJni  // trigger init { loadLibsqlNativeLibrary() } via class initialisation

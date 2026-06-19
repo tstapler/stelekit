@@ -339,7 +339,8 @@ class StelekitViewModel(
             isLoading = true,
             onboardingCompleted = platformSettings.getBoolean("onboardingCompleted", false),
             currentGraphPath = platformSettings.getString("lastGraphPath", ""),
-            isLeftHanded = platformSettings.getBoolean("isLeftHanded", false)
+            isLeftHanded = platformSettings.getBoolean("isLeftHanded", false),
+            isLibsqlDriverEnabled = platformSettings.getBoolean("db.libsql.enabled", false),
         )
     )
     val uiState: StateFlow<AppState> = _uiState.asStateFlow()
@@ -1799,6 +1800,11 @@ class StelekitViewModel(
     fun setLeftHanded(value: Boolean) {
         platformSettings.putBoolean("isLeftHanded", value)
         _uiState.update { it.copy(isLeftHanded = value) }
+    }
+
+    fun setLibsqlDriverEnabled(value: Boolean) {
+        platformSettings.putBoolean("db.libsql.enabled", value)
+        _uiState.update { it.copy(isLibsqlDriverEnabled = value) }
     }
 
     fun showDebugMenu() {

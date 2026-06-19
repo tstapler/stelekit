@@ -58,6 +58,9 @@ fun SettingsDialog(
     // Tag Suggestions settings
     tagSettings: TagSettings? = null,
     hasLlmKey: Boolean = false,
+    // Developer settings
+    isLibsqlDriverEnabled: Boolean = false,
+    onLibsqlDriverToggle: ((Boolean) -> Unit)? = null,
 ) {
     if (visible) {
         Dialog(
@@ -92,12 +95,13 @@ fun SettingsDialog(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        val visibleCategories = remember(onConnectGoogle, audiobookNotesSettingsContent, tagSettings) {
+                        val visibleCategories = remember(onConnectGoogle, audiobookNotesSettingsContent, tagSettings, onLibsqlDriverToggle) {
                             SettingsCategory.entries.filter { category ->
                                 when (category) {
                                     SettingsCategory.GOOGLE_ACCOUNT -> onConnectGoogle != null
                                     SettingsCategory.AUDIOBOOK_NOTES -> audiobookNotesSettingsContent != null
                                     SettingsCategory.TAG_SUGGESTIONS -> tagSettings != null
+                                    SettingsCategory.DEVELOPER -> onLibsqlDriverToggle != null
                                     else -> true
                                 }
                             }
@@ -193,6 +197,12 @@ fun SettingsDialog(
                                         hasLlmKey = hasLlmKey,
                                     )
                                 }
+                                SettingsCategory.DEVELOPER -> if (onLibsqlDriverToggle != null) {
+                                    DeveloperSettings(
+                                        isLibsqlDriverEnabled = isLibsqlDriverEnabled,
+                                        onLibsqlDriverToggle = onLibsqlDriverToggle,
+                                    )
+                                }
                             }
                         }
                     }
@@ -244,4 +254,28 @@ enum class SettingsCategory(val label: String, val icon: ImageVector) {
     AUDIOBOOK_NOTES("Audiobook Notes", Icons.Default.Book),
     GOOGLE_ACCOUNT("Google Account", Icons.Default.Cloud),
     VAULT("Vault", Icons.Default.Lock),
+    DEVELOPER("Developer", Icons.Default.BugReport),
+}
+
+@Composable
+private fun DeveloperSettings(
+    isLibsqlDriverEnabled: Boolean,
+    onLibsqlDriverToggle: (Boolean) -> Unit,
+) {
+    SettingsSection("Database Driver") {
+        SettingsToggleRow(
+            label = "Use libsql JNI driver",
+            checked = isLibsqlDriverEnabled,
+            onCheckedChange = onLibsqlDriverToggle,
+        )
+        Text(
+            text = if (isLibsqlDriverEnabled)
+                "Active: libsql JNI (WAL + MVCC). Reload the graph to apply."
+            else
+                "Active: system SQLite. Reload the graph to apply.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = androidx.compose.ui.Modifier.padding(top = 4.dp, bottom = 8.dp),
+        )
+    }
 }

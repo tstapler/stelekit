@@ -152,6 +152,8 @@ internal fun GraphDialogLayer(
         onDisconnectGoogle = onDisconnectGoogle,
         tagSettings = tagSettings,
         hasLlmKey = hasLlmKey,
+        isLibsqlDriverEnabled = appState.isLibsqlDriverEnabled,
+        onLibsqlDriverToggle = { viewModel.setLibsqlDriverEnabled(it) },
     )
 
     // key(gitSetupVisible) resets composition — and the remember inside — each time the dialog

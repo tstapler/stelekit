@@ -5,6 +5,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import app.cash.sqldelight.async.coroutines.synchronous
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
+import dev.stapler.stelekit.db.libsql.AndroidLibsqlDriver
+import dev.stapler.stelekit.platform.PlatformSettings
 import io.requery.android.database.sqlite.RequerySQLiteOpenHelperFactory
 import kotlinx.coroutines.runBlocking
 
@@ -92,6 +94,21 @@ actual class DriverFactory actual constructor() {
         // Ensure parent directory exists for absolute paths
         if (dbName.startsWith("/")) {
             java.io.File(dbName).parentFile?.mkdirs()
+        }
+
+        // Runtime feature flag: use the libsql JNI driver when enabled in developer settings.
+        // Reads from the same PlatformSettings store that the Settings UI toggle writes to.
+        // Takes effect on the next graph open; a restart is not required.
+        val useLibsql = try { PlatformSettings().getBoolean("db.libsql.enabled", false) }
+                        catch (_: Exception) { false }
+        if (useLibsql && dbName.startsWith("/")) {
+            val driver = AndroidLibsqlDriver(dbName)
+            runBlocking {
+                try { SteleDatabase.Schema.create(driver).await() } catch (_: Exception) { }
+                driver.resetPool()
+                MigrationRunner.applyAll(driver)
+            }
+            return driver
         }
 
         // AndroidSqliteDriver handles schema creation (fresh installs) and numbered .sqm
