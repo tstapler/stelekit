@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.51.0](https://github.com/tstapler/stelekit/compare/v0.50.0...v0.51.0) (2026-06-19)
+
+
+### Features
+
+* **docs:** enforce documentation coverage for all user-facing screens ([f2194b5](https://github.com/tstapler/stelekit/commit/f2194b568efafb93dbb36b460ca64eaf17316a34))
+
+
+### Bug Fixes
+
+* **android:** wire camera permission request and binary JPEG copy ([#175](https://github.com/tstapler/stelekit/issues/175)) ([173af54](https://github.com/tstapler/stelekit/commit/173af54028f664e3b8b78affcd48e065f04bea9a))
+* **compose:** add missing remember keys for constructor-capturing lambdas ([47cc022](https://github.com/tstapler/stelekit/commit/47cc02296283dc5d72a455f2ab9f74d922f01e31))
+* **demo:** suppress false git-detection banner; expand web and resource demo content ([c3015a7](https://github.com/tstapler/stelekit/commit/c3015a70be7c17a29315e4970e0851996017b9d6))
+* **detekt:** repair broken PSI visitor recursion in 2 custom rules ([8da2b97](https://github.com/tstapler/stelekit/commit/8da2b972909aa0016de508bba2a3a3e62b195989))
+
 ## [0.50.0](https://github.com/tstapler/stelekit/compare/v0.49.2...v0.50.0) (2026-06-19)
 
 
