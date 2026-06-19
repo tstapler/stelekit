@@ -601,8 +601,8 @@ object MigrationRunner {
         //
         // NOTE: PRAGMA analysis_limit=400 is NOT called here because on Android the Requery
         // driver throws when execSQL is called for result-returning statements. It is set in
-        // ANDROID_PRAGMAS via the rawQuery path instead, and in DriverFactory.jvm.kt via
-        // driver.execute() which silently discards the returned value in JDBC.
+        // ANDROID_PRAGMAS via the rawQuery path (DriverFactory.android.kt) and in
+        // buildMainDbConnectionProps() for JVM so every pool connection inherits it.
         driver.execute(null, "ANALYZE blocks", 0).await()
         driver.execute(null, "ANALYZE pages", 0).await()
         // PRAGMA optimize is still useful for other tables we don't explicitly analyze above.

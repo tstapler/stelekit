@@ -37,6 +37,13 @@ internal val ANDROID_PRAGMAS: List<String> = listOf(
     // concurrent writes. An explicit wal_checkpoint(TRUNCATE) is issued after bulk graph
     // import via SqlDelightBlockRepository.walCheckpoint() / onBulkImportComplete.
     "PRAGMA wal_autocheckpoint=1000",
+    // analysis_limit=400: bound ANALYZE to 400 reservoir-sampled rows per index.
+    // Without this, ANALYZE blocks/pages in MigrationRunner.applyAll() scans ALL rows —
+    // on a 50 000-row blocks table this takes 5+ seconds on Android's single connection,
+    // blocking every concurrent read for the duration. 400 samples are accurate enough
+    // for the planner to prefer idx_blocks_page_position over a full heap scan.
+    // Must be set before optimize=0x10002 (which may also trigger ANALYZE internally).
+    "PRAGMA analysis_limit=400",
     // optimize=0x10002: prescribed by SQLite docs for long-lived connections (DB open for
     // the app lifetime). Mask 0x10002 = 0x10000 (check all tables, not just recently used)
     // | 0x0002 (run ANALYZE if statistics are missing or stale).

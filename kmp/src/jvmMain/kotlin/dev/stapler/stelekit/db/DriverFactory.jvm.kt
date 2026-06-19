@@ -57,6 +57,10 @@ internal fun buildMainDbConnectionProps() = Properties().apply {
     // mmap_size=256MB: maps file pages into VA space. OS lazily maps only accessed pages.
     // Safe on 64-bit JVMs (all supported SteleKit desktop platforms).
     setProperty("mmap_size", "268435456")
+    // analysis_limit=400: bound ANALYZE to 400 reservoir-sampled rows per index.
+    // Applied to every pool connection so MigrationRunner.applyAll()'s ANALYZE blocks/pages
+    // calls are bounded regardless of which connection the pool assigns them to.
+    setProperty("analysis_limit", "400")
 }
 
 actual class DriverFactory actual constructor() {

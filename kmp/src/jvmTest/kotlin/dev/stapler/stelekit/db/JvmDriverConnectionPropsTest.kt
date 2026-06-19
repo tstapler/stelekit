@@ -46,4 +46,14 @@ class JvmDriverConnectionPropsTest {
         val timeout = props.getProperty("busy_timeout")?.toLongOrNull() ?: 0L
         assert(timeout > 0) { "busy_timeout must be positive, got: $timeout" }
     }
+
+    @Test
+    fun `main db sets analysis_limit to bound ANALYZE row scans`() {
+        val props = buildMainDbConnectionProps()
+        val limit = props.getProperty("analysis_limit")?.toIntOrNull() ?: 0
+        assert(limit in 100..1000) {
+            "analysis_limit must be set (100–1000) so MigrationRunner ANALYZE calls are bounded. " +
+            "Without it, ANALYZE blocks/pages scans all rows on startup. Got: $limit"
+        }
+    }
 }

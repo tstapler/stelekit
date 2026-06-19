@@ -298,12 +298,24 @@ class SqlDelightBlockRepository(
             // source file on next startup to recover any missing blocks.
             blocks.chunked(WRITE_CHUNK_SIZE).forEach { chunk ->
                 queries.transaction {
+                    chunk.forEach { block -> insertBlockRow(block) }
+                }
+            }
+            ftsAutomergeDefault()
+            // Populate wikilink index in a separate pass after all block inserts complete.
+            // On Android's single SQLite connection (even in WAL mode, which requires
+            // enableWriteAheadLogging() for true read/write concurrency), every extra
+            // INSERT inside the block-insert transaction holds the write lock longer,
+            // starving concurrent reads (getBlocksForPage, pullBlocksForPage) and user
+            // edit writes (updateBlockContentOnly via DatabaseWriteActor).
+            // Before this fix, a 50-block chunk with 5 wikilinks/block = 300 write
+            // statements per transaction instead of 50, inflating lock hold time ~6×.
+            // Separating the passes keeps block-insert transaction times at pre-index
+            // baselines while still populating the index before any backlink count
+            // queries can run (backlink counts are not updated here either).
+            blocks.chunked(WRITE_CHUNK_SIZE).forEach { chunk ->
+                queries.transaction {
                     chunk.forEach { block ->
-                        insertBlockRow(block)
-                        // Populate wikilink index so future recomputeBacklinkCountFromIndex
-                        // calls are correct without requiring a full LIKE scan rebuild.
-                        // Backlink counts are NOT updated here — they start at 0 and are
-                        // updated incrementally on user edits (matching existing behaviour).
                         val pageNames = extractWikilinks(block.content)
                         for (name in pageNames) {
                             @OptIn(DirectSqlWrite::class)
@@ -312,7 +324,6 @@ class SqlDelightBlockRepository(
                     }
                 }
             }
-            ftsAutomergeDefault()
             // ftsMerge() is intentionally NOT called here. Calling merge=-200 on an already-large
             // FTS index (e.g. after 500+ pages are indexed) adds hundreds of ms per navigation.
             // Callers that do bulk indexing must invoke compactFtsIndex() once after the full
