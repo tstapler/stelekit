@@ -4,6 +4,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.datetime.LocalDate
 import dev.stapler.stelekit.docs.AllPagesDocs
 import dev.stapler.stelekit.docs.FlashcardsDocs
+import dev.stapler.stelekit.docs.GlobalUnlinkedReferencesDocs
+import dev.stapler.stelekit.docs.HelpExempt
 import dev.stapler.stelekit.docs.HelpPage
 import dev.stapler.stelekit.docs.JournalsDocs
 import dev.stapler.stelekit.docs.PageViewDocs
@@ -34,22 +36,36 @@ sealed class Screen {
     @HelpPage(docs = AllPagesDocs::class)
     data object AllPages : Screen()
 
+    @HelpExempt(reason = "Internal diagnostics screen; developer tooling only, not reachable from user nav")
     data object LibraryStats : Screen()
+
+    @HelpExempt(reason = "System surface shown automatically; users do not navigate to it deliberately")
     data object Notifications : Screen()
+
+    @HelpExempt(reason = "Developer log viewer; reachable only from debug menu")
     data object Logs : Screen()
+
+    @HelpExempt(reason = "Developer profiling screen; reachable only from debug menu")
     data object Performance : Screen()
+
+    @HelpPage(docs = GlobalUnlinkedReferencesDocs::class)
     data object GlobalUnlinkedReferences : Screen()
+
+    @HelpExempt(reason = "Transient wizard step shown during onboarding; not a standing navigation destination")
     data object Import : Screen()
 
+    @HelpExempt(reason = "Shown programmatically when opening a paranoid-mode graph; not a user-initiated nav destination")
     data object VaultUnlock : Screen()
 
     @HelpPage(docs = PageViewDocs::class)
     data class PageView(val page: Page) : Screen()
 
     /** Full-screen gallery of annotated images. */
+    @HelpExempt(reason = "Full-screen gallery shown from image blocks; not a primary navigation destination")
     data object Gallery : Screen()
 
     /** Asset browser for viewing and managing all graph assets. */
+    @HelpExempt(reason = "Asset management surface; power-user feature not in primary nav")
     data object AssetBrowser : Screen()
 
     /**
@@ -58,6 +74,7 @@ sealed class Screen {
      * [imageAnnotationUuid] is the UUID of the [ImageAnnotation] to open.
      * [pageUuid] is the UUID of the page that owns the block — used for "Go to page" navigation.
      */
+    @HelpExempt(reason = "Entered via image tap, not from sidebar nav; advanced feature for image annotation")
     data class AnnotationEditor(
         val imageAnnotationUuid: String,
         val pageUuid: String? = null,
