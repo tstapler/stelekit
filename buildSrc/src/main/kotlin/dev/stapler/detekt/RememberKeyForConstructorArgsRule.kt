@@ -7,9 +7,9 @@ import io.gitlab.arturbosch.detekt.api.Entity
 import io.gitlab.arturbosch.detekt.api.Issue
 import io.gitlab.arturbosch.detekt.api.Rule
 import io.gitlab.arturbosch.detekt.api.Severity
+import org.jetbrains.kotlin.com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.psi.KtCallExpression
 import org.jetbrains.kotlin.psi.KtNameReferenceExpression
-import org.jetbrains.kotlin.psi.KtVisitorVoid
 
 /**
  * Flags `remember { SomeClass(capturedVar) }` calls that capture outer-scope variables
@@ -51,9 +51,11 @@ class RememberKeyForConstructorArgsRule(config: Config = Config.empty) : Rule(co
     override fun visitCallExpression(call: KtCallExpression) {
         super.visitCallExpression(call)
 
-        // Only match bare `remember { }` — callee text is "remember", no value args (keys).
+        // Only match bare `remember { }` — callee text is "remember", no explicit key args in
+        // parentheses. Note: `call.valueArguments` includes trailing lambdas, so we must check
+        // `valueArgumentList?.arguments` (in-paren args only) to detect key presence correctly.
         if (call.calleeExpression?.text != "remember") return
-        if (call.valueArguments.isNotEmpty()) return
+        if (call.valueArgumentList?.arguments?.isNotEmpty() == true) return
 
         val lambdaBody = call.lambdaArguments
             .firstOrNull()
@@ -63,17 +65,12 @@ class RememberKeyForConstructorArgsRule(config: Config = Config.empty) : Rule(co
         // Walk all call expressions in the lambda looking for constructor-like calls
         // (callee starts with uppercase letter, per Kotlin convention) whose argument list
         // includes at least one bare name reference — indicating a captured outer variable.
-        var violation = false
-        lambdaBody.accept(object : KtVisitorVoid() {
-            override fun visitCallExpression(inner: KtCallExpression) {
-                super.visitCallExpression(inner)
-                val callee = inner.calleeExpression?.text ?: return
-                if (callee.firstOrNull()?.isUpperCase() != true) return
-                if (inner.valueArguments.any { it.getArgumentExpression() is KtNameReferenceExpression }) {
-                    violation = true
-                }
+        val violation = PsiTreeUtil.findChildrenOfType(lambdaBody, KtCallExpression::class.java)
+            .any { inner ->
+                val callee = inner.calleeExpression?.text ?: return@any false
+                if (callee.firstOrNull()?.isUpperCase() != true) return@any false
+                inner.valueArguments.any { it.getArgumentExpression() is KtNameReferenceExpression }
             }
-        })
 
         if (violation) {
             report(
