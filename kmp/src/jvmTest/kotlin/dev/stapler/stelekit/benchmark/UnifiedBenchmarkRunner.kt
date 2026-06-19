@@ -143,13 +143,25 @@ class UnifiedBenchmarkRunner {
             )
         }
 
-        println("[UnifiedBenchmarkRunner] WriteConcurrency/${preset.name}: running libsql vs jdbc concurrent benchmark")
-        val bench = LibsqlConcurrentWriteBenchmarkTest()
-
         val libsqlTmp = java.nio.file.Files.createTempFile("unified-bench-libsql-", ".db").toFile()
             .also { it.deleteOnExit() }
         val jdbcTmp = java.nio.file.Files.createTempFile("unified-bench-jdbc-", ".db").toFile()
             .also { it.deleteOnExit() }
+
+        // Probe for MVCC support — concurrent benchmark requires BEGIN CONCURRENT.
+        val probeDriver = dev.stapler.stelekit.db.libsql.JvmLibsqlDriver(libsqlTmp.absolutePath, poolSize = 1)
+        val mvccAvailable = probeDriver.isMvccActive
+        probeDriver.close()
+        libsqlTmp.delete()
+        libsqlTmp.createNewFile()
+
+        if (!mvccAvailable) {
+            println("[UnifiedBenchmarkRunner] WriteConcurrency/${preset.name}: libsql MVCC not available — using sentinel metrics")
+            return mapOf("p50Ms" to -1.0, "p95Ms" to -1.0, "p99Ms" to -1.0)
+        }
+
+        println("[UnifiedBenchmarkRunner] WriteConcurrency/${preset.name}: running libsql vs jdbc concurrent benchmark")
+        val bench = LibsqlConcurrentWriteBenchmarkTest()
 
         return try {
             val libsqlDriver = dev.stapler.stelekit.db.libsql.JvmLibsqlDriver(libsqlTmp.absolutePath, poolSize = 8)

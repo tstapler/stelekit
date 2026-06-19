@@ -22,6 +22,9 @@ object LibsqlTestHarness {
         tmp.deleteOnExit()
         val driver = JvmLibsqlDriver(tmp.absolutePath, poolSize = 4)
         runBlocking { SteleDatabase.Schema.create(driver).await() }
+        // libsql local mode does not propagate DDL to pre-opened connections; reset so
+        // all pool connections reload the freshly created schema.
+        driver.resetPool()
         return driver
     }
 

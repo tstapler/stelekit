@@ -10,16 +10,19 @@ edition = "2021"
 name = "stelekit_libsql"
 crate-type = ["cdylib"]
 
+[dev-dependencies]
+tempfile = "3"
+
 [dependencies]
 # JNI glue — features = ["invocation"] required for catch_unwind compatibility
-jni = { version = "0.22", default-features = false, features = ["invocation"] }
+jni = { version = "0.21", default-features = false, features = ["invocation"] }
 # libsql local embedded mode (no Turso cloud sync).
 # "core" gives the local file driver; leaving remote/replication/encryption features off
 # keeps the binary small and avoids pulling in reqwest/rustls/etc.
 libsql = { version = "0.9", default-features = false, features = ["core"] }
 # Tokio runtime required to drive libsql's async API from synchronous JNI call sites.
 # "rt-multi-thread" allows blocking JNI threads without starving the libsql I/O worker.
-tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
 
 [profile.release]
 opt-level = "z"   # size-optimise; libsql's bundled SQLite already does the heavy lifting

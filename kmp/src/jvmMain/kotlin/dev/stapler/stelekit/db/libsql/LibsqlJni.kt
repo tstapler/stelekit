@@ -80,7 +80,8 @@ object LibsqlJni {
     /** Frees a statement handle.  Must be called after execute/query is complete. */
     @JvmStatic external fun finalizeStatement(handle: Long)
 
-    // 1-based index to match SQLDelight's SqlPreparedStatement convention.
+    // Index convention: 0-based (SQLDelight generated code) or 1-based (hand-written callers).
+    // build_params() in lib.rs detects the convention from min(idx) and handles both.
     @JvmStatic external fun bindNull(handle: Long, idx: Int)
     @JvmStatic external fun bindLong(handle: Long, idx: Int, value: Long)
     @JvmStatic external fun bindDouble(handle: Long, idx: Int, value: Double)
@@ -142,11 +143,11 @@ object LibsqlJni {
         }
         val resourcePath = "/native/$resourceDir/$libName"
         val stream = LibsqlJni::class.java.getResourceAsStream(resourcePath)
-            ?: error("Native library not bundled at $resourcePath. Run: bazel build //native/libsql:stelekit_libsql")
+            ?: error("Native library not bundled at $resourcePath. Trigger the 'Build Native Libraries' workflow or run: cd native/libsql && cargo build --release")
         // Read bytes once — used for both the hash and the write.
         val bytes = stream.use { it.readBytes() }
-        val hash = bytes.take(8).fold(0) { acc, b -> acc * 31 + b.toInt() }
-            .let { Integer.toHexString(it and 0xFFFFFF) }
+        val crc = java.util.zip.CRC32().also { it.update(bytes) }
+        val hash = java.lang.Long.toHexString(crc.value).padStart(8, '0')
         val tmpDir = File(
             System.getProperty("org.sqlite.tmpdir") ?: System.getProperty("java.io.tmpdir"),
             "stelekit-libsql",

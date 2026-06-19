@@ -109,6 +109,9 @@ actual class DriverFactory actual constructor() {
         } catch (e: Exception) {
             // Schema already exists on an existing DB — this is expected and safe to ignore
         }
+        // libsql local mode does not propagate DDL to pre-opened connections; reset the pool
+        // so all connections see the freshly created schema (FTS tables, triggers, etc.).
+        driver.resetPool()
         runBlocking {
             driver.execute(null, "PRAGMA optimize=0x10002", 0).await()
             MigrationRunner.applyAll(driver)

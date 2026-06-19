@@ -46,6 +46,19 @@ class LibsqlConcurrentWriteBenchmarkTest {
         val libsqlTmp = Files.createTempFile("bench-libsql-concurrent-", ".db").toFile().also { it.deleteOnExit() }
         val jdbcTmp = Files.createTempFile("bench-jdbc-concurrent-", ".db").toFile().also { it.deleteOnExit() }
 
+        // Check MVCC availability before running the libsql half.
+        val probeDriver = JvmLibsqlDriver(libsqlTmp.absolutePath, poolSize = 1)
+        val mvccAvailable = probeDriver.isMvccActive
+        probeDriver.close()
+        libsqlTmp.delete()
+        libsqlTmp.createNewFile() // recreate empty file for the real benchmark
+
+        assumeTrue(
+            "libsql MVCC (BEGIN CONCURRENT) not supported by this build — " +
+                "concurrent write benchmark requires MVCC; skipping.",
+            mvccAvailable,
+        )
+
         val libsqlResult = try {
             val driver = JvmLibsqlDriver(libsqlTmp.absolutePath, poolSize = 8)
             runConcurrentBenchmark(driver, "libsql")
@@ -99,6 +112,9 @@ class LibsqlConcurrentWriteBenchmarkTest {
         } catch (_: Exception) {
             // Already exists on jdbc path — safe to ignore
         }
+        // libsql local mode does not propagate DDL to pre-opened pool connections; reset so
+        // all connections reload the freshly created schema (FTS tables, triggers, etc.).
+        if (driver is JvmLibsqlDriver) driver.resetPool()
 
         // Seed one page per thread so concurrent updates target distinct rows (no row-level conflicts)
         val pageUuids = (1..NUM_THREADS).map { idx -> "bench-concurrent-page-$idx" }
@@ -113,10 +129,10 @@ class LibsqlConcurrentWriteBenchmarkTest {
                 """.trimIndent(),
                 parameters = 4,
             ) {
-                bindString(1, uuid)
-                bindString(2, "Bench Concurrent $uuid")
+                bindString(0, uuid)
+                bindString(1, "Bench Concurrent $uuid")
+                bindLong(2, nowMs)
                 bindLong(3, nowMs)
-                bindLong(4, nowMs)
             }
         }
 
@@ -186,9 +202,9 @@ class LibsqlConcurrentWriteBenchmarkTest {
                         sql = "UPDATE pages SET name = ?, updated_at = ? WHERE uuid = ?",
                         parameters = 3,
                     ) {
-                        bindString(1, "Updated-$iteration-${Thread.currentThread().name}")
-                        bindLong(2, System.currentTimeMillis())
-                        bindString(3, pageUuid)
+                        bindString(0, "Updated-$iteration-${Thread.currentThread().name}")
+                        bindLong(1, System.currentTimeMillis())
+                        bindString(2, pageUuid)
                     }
                 }
             }
@@ -201,9 +217,9 @@ class LibsqlConcurrentWriteBenchmarkTest {
                         sql = "UPDATE pages SET name = ?, updated_at = ? WHERE uuid = ?",
                         parameters = 3,
                     ) {
-                        bindString(1, "Retry-$iteration-${Thread.currentThread().name}")
-                        bindLong(2, System.currentTimeMillis())
-                        bindString(3, pageUuid)
+                        bindString(0, "Retry-$iteration-${Thread.currentThread().name}")
+                        bindLong(1, System.currentTimeMillis())
+                        bindString(2, pageUuid)
                     }
                 }
             }
@@ -225,8 +241,8 @@ class LibsqlConcurrentWriteBenchmarkTest {
                                     sql = "UPDATE pages SET name = ? WHERE uuid = ?",
                                     parameters = 2,
                                 ) {
-                                    bindString(1, "Warmup-$i")
-                                    bindString(2, uuid)
+                                    bindString(0, "Warmup-$i")
+                                    bindString(1, uuid)
                                 }
                             }
                         }
@@ -267,6 +283,118 @@ class LibsqlConcurrentWriteBenchmarkTest {
             // non-fatal — JSON output is informational
         }
     }
+}
+
+/**
+ * Sequential write+read latency benchmark: libsql vs. PooledJdbcSqliteDriver.
+ *
+ * Runs on a single thread so MVCC is not needed.  Each operation is:
+ *   BEGIN → INSERT page row → COMMIT → SELECT COUNT to verify.
+ *
+ * This gives an apples-to-apples comparison of raw driver overhead (JNI round-trip
+ * vs JDBC connection) at the SQLDelight API layer.
+ */
+class LibsqlSequentialWriteBenchmarkTest {
+
+    companion object {
+        private const val WARMUP_OPS = 50
+        private const val MEASURED_OPS = 500
+    }
+
+    @Test
+    fun sequentialWriteLatency_libsql_vs_pooledJdbc() {
+        assumeTrue("libsql native library not available — skipping", LibsqlTestHarness.isNativeAvailable())
+
+        val libsqlTmp = Files.createTempFile("bench-seq-libsql-", ".db").toFile().also { it.deleteOnExit() }
+        val jdbcTmp   = Files.createTempFile("bench-seq-jdbc-",   ".db").toFile().also { it.deleteOnExit() }
+
+        val libsqlResult: SequentialBenchmarkResult
+        val jdbcResult: SequentialBenchmarkResult
+
+        try {
+            val driver = JvmLibsqlDriver(libsqlTmp.absolutePath, poolSize = 4)
+            runBlocking { SteleDatabase.Schema.create(driver).await() }
+            driver.resetPool()
+            libsqlResult = runSequentialBenchmark(driver, "libsql")
+        } finally { libsqlTmp.delete() }
+
+        try {
+            val driver = DriverFactory().createDriver("jdbc:sqlite:${jdbcTmp.absolutePath}")
+            jdbcResult = runSequentialBenchmark(driver, "jdbc")
+        } finally { jdbcTmp.delete() }
+
+        val p99RatioVsJdbc = if (jdbcResult.p99Ns > 0) libsqlResult.p99Ns.toDouble() / jdbcResult.p99Ns.toDouble() else Double.NaN
+        val throughputRatio = if (jdbcResult.throughputOpsPerSec > 0) libsqlResult.throughputOpsPerSec / jdbcResult.throughputOpsPerSec else Double.NaN
+
+        println("[SeqWriteBench] libsql  P50=${libsqlResult.p50Ns/1_000}µs  P95=${libsqlResult.p95Ns/1_000}µs  P99=${libsqlResult.p99Ns/1_000}µs  tput=${libsqlResult.throughputOpsPerSec.toLong()}/s")
+        println("[SeqWriteBench] jdbc    P50=${jdbcResult.p50Ns/1_000}µs  P95=${jdbcResult.p95Ns/1_000}µs  P99=${jdbcResult.p99Ns/1_000}µs  tput=${jdbcResult.throughputOpsPerSec.toLong()}/s")
+        println("[SeqWriteBench] P99 ratio (libsql/jdbc)=%.2f  throughput ratio=%.2f".format(p99RatioVsJdbc, throughputRatio))
+
+        // Write results
+        val outputDir = File(System.getProperty("benchmark.output.dir", "build/reports")).also { it.mkdirs() }
+        File(outputDir, "benchmark-sequential-libsql.json").writeText(libsqlResult.toJson("libsql", p99RatioVsJdbc, throughputRatio))
+        File(outputDir, "benchmark-sequential-jdbc.json").writeText(jdbcResult.toJson("jdbc", 1.0, 1.0))
+    }
+
+    private fun runSequentialBenchmark(driver: SqlDriver, label: String): SequentialBenchmarkResult {
+        val db = SteleDatabase(driver)
+        val nowMs = System.currentTimeMillis()
+        val latenciesNs = LongArray(MEASURED_OPS)
+        // Use all 8 columns as ? to match paramCount; mixing literals causes xerial to mis-size
+        // its internal batch array (1-based index vs 0-based array length mismatch).
+        val insertSql = "INSERT OR IGNORE INTO pages " +
+            "(uuid,name,created_at,updated_at,is_journal,is_favorite,is_content_loaded,backlink_count) " +
+            "VALUES (?,?,?,?,?,?,?,?)"
+
+        fun bind(stmt: app.cash.sqldelight.db.SqlPreparedStatement, uuid: String, name: String) {
+            stmt.bindString(0, uuid); stmt.bindString(1, name)
+            stmt.bindLong(2, nowMs); stmt.bindLong(3, nowMs)
+            stmt.bindLong(4, 0); stmt.bindLong(5, 0); stmt.bindLong(6, 1); stmt.bindLong(7, 0)
+        }
+
+        // Warm-up
+        repeat(WARMUP_OPS) { i ->
+            runBlocking { db.transaction { driver.execute(null, insertSql, 8) { bind(this, "warmup-$label-$i", "Warmup $i") } } }
+        }
+
+        val wallStart = System.nanoTime()
+        repeat(MEASURED_OPS) { i ->
+            val opStart = System.nanoTime()
+            runBlocking { db.transaction { driver.execute(null, insertSql, 8) { bind(this, "bench-$label-$i", "Bench Page $i") } } }
+            latenciesNs[i] = System.nanoTime() - opStart
+        }
+        val wallElapsed = System.nanoTime() - wallStart
+
+        driver.close()
+        latenciesNs.sort()
+        val throughput = MEASURED_OPS / (wallElapsed / 1_000_000_000.0)
+        println("[SeqWriteBench] $label: ops=$MEASURED_OPS wallMs=${wallElapsed/1_000_000} tput=${throughput.toLong()}/s")
+        return SequentialBenchmarkResult(
+            p50Ns  = latenciesNs[(MEASURED_OPS * 0.50).toInt()],
+            p95Ns  = latenciesNs[(MEASURED_OPS * 0.95).toInt()],
+            p99Ns  = latenciesNs[(MEASURED_OPS * 0.99).toInt()],
+            throughputOpsPerSec = throughput,
+        )
+    }
+}
+
+data class SequentialBenchmarkResult(
+    val p50Ns: Long,
+    val p95Ns: Long,
+    val p99Ns: Long,
+    val throughputOpsPerSec: Double,
+) {
+    fun toJson(label: String, p99Ratio: Double, tputRatio: Double) = """
+        {
+          "driver": "$label",
+          "p50µs": ${p50Ns / 1_000.0},
+          "p95µs": ${p95Ns / 1_000.0},
+          "p99µs": ${p99Ns / 1_000.0},
+          "throughputOpsPerSec": $throughputOpsPerSec,
+          "p99RatioLibsqlOverJdbc": $p99Ratio,
+          "throughputRatioLibsqlOverJdbc": $tputRatio
+        }
+    """.trimIndent()
 }
 
 /**

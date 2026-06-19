@@ -118,7 +118,18 @@ class JvmLibsqlDriver(
             connHandle = pool.poll() ?: LibsqlJni.openConnection(dbHandle)
             savepointLevel = 0
             val beginSql = if (isMvccActive) "BEGIN CONCURRENT" else "BEGIN IMMEDIATE"
-            LibsqlJni.executeRaw(connHandle, beginSql)
+            val beginResult = LibsqlJni.executeRaw(connHandle, beginSql)
+            if (beginResult < 0) {
+                // BEGIN failed (e.g. SQLITE_BUSY when another writer holds the lock).
+                // Return the connection before throwing so it isn't lost.
+                if (!pool.offer(connHandle)) LibsqlJni.closeConnection(connHandle)
+                val errcode = LibsqlJni.connectionExtendedErrcode(connHandle)
+                val msg = LibsqlJni.connectionLastError(connHandle) ?: beginSql
+                if (errcode == LibsqlJni.SQLITE_BUSY_SNAPSHOT) {
+                    throw LibsqlBusySnapshotException("$beginSql failed: $msg")
+                }
+                throw RuntimeException("$beginSql failed (errcode=$errcode): $msg")
+            }
             txState.set(TxState(connHandle = connHandle))
         }
 
@@ -244,6 +255,24 @@ class JvmLibsqlDriver(
     }
 
     // ── Lifecycle ──────────────────────────────────────────────────────────
+
+    /**
+     * Closes and reopens all idle pool connections so they reload the current schema from disk.
+     *
+     * libsql local mode does not propagate DDL committed by other connections to pre-opened
+     * connection handles — their internal sqlite3 schema cache is not refreshed automatically.
+     * This causes "no such table" errors when a trigger fires and references a virtual table
+     * that was created (by another pool connection) after the triggering connection was opened.
+     *
+     * Call this once after [SteleDatabase.Schema.create] or [MigrationRunner.applyAll] to
+     * ensure all pool connections see the freshly created schema.
+     */
+    fun resetPool() {
+        val handles = mutableListOf<Long>()
+        pool.drainTo(handles)
+        handles.forEach { LibsqlJni.closeConnection(it) }
+        repeat(handles.size) { pool.put(LibsqlJni.openConnection(dbHandle)) }
+    }
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return  // idempotent — Concern A fix
