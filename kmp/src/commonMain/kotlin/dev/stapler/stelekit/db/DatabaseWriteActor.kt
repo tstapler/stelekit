@@ -130,6 +130,60 @@ class DatabaseWriteActor(
             override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
             val enqueueMs: Long = HistogramWriter.epochMs(),
         ) : WriteRequest()
+
+        // Typed hot-path subclasses — carry pageUuid so blockInvalidations emits a targeted set
+        // instead of the wildcard sentinel, preventing N re-queries across all observed pages.
+
+        data class WriteBlockContent(
+            val blockUuid: BlockUuid,
+            val pageUuid: PageUuid,
+            val content: String,
+            override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
+        ) : WriteRequest() {
+            override val priority: Priority = Priority.HIGH
+        }
+
+        data class WriteBlock(
+            val block: Block,
+            override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
+        ) : WriteRequest() {
+            override val priority: Priority = Priority.HIGH
+        }
+
+        data class DeleteBlock(
+            val blockUuid: BlockUuid,
+            val pageUuid: PageUuid,
+            override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
+        ) : WriteRequest() {
+            override val priority: Priority = Priority.HIGH
+        }
+
+        data class MergeBlocks(
+            val blockUuid: BlockUuid,
+            val pageUuid: PageUuid,
+            val nextBlockUuid: BlockUuid,
+            val separator: String,
+            override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
+        ) : WriteRequest() {
+            override val priority: Priority = Priority.HIGH
+        }
+
+        data class DeleteBlockStructural(
+            val blockUuid: BlockUuid,
+            val pageUuid: PageUuid,
+            override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
+        ) : WriteRequest() {
+            override val priority: Priority = Priority.HIGH
+        }
+
+        data class WriteBlockProperties(
+            val blockUuid: BlockUuid,
+            val pageUuid: PageUuid,
+            val properties: Map<String, String>,
+            override val deferred: CompletableDeferred<Either<DomainError, Unit>> = CompletableDeferred(),
+        ) : WriteRequest() {
+            override val priority: Priority = Priority.HIGH
+        }
     }
 
     /** Set after construction once the ring buffer is available. Written once before first channel send. */
@@ -241,6 +295,12 @@ class DatabaseWriteActor(
             is WriteRequest.SaveBlocks -> processSaveBlocks(request)
             is WriteRequest.SaveBlocksDiff -> processSaveBlocksDiff(request)
             is WriteRequest.Execute -> processExecute(request)
+            is WriteRequest.WriteBlockContent -> processWriteBlockContent(request)
+            is WriteRequest.WriteBlock -> processWriteBlock(request)
+            is WriteRequest.DeleteBlock -> processDeleteBlock(request)
+            is WriteRequest.MergeBlocks -> processMergeBlocks(request)
+            is WriteRequest.DeleteBlockStructural -> processDeleteBlockStructural(request)
+            is WriteRequest.WriteBlockProperties -> processWriteBlockProperties(request)
         }
     }
 
@@ -269,8 +329,75 @@ class DatabaseWriteActor(
         if (waitMs > 10L) {
             recordQueueWaitSpan(request, waitMs)
         }
+        // Wildcard emitted BEFORE deferred.complete so subscribers receive the signal before
+        // the caller's await() returns. processExecute has no onWriteSuccess call (unlike typed
+        // arms) — the emit must be unconditional here.
         _blockInvalidations.tryEmit(setOf(WILDCARD_PAGE_UUID))
         request.deferred.complete(request.op())
+    }
+
+    private suspend fun processWriteBlockContent(request: WriteRequest.WriteBlockContent) {
+        val result = blockRepository.updateBlockContentOnly(request.blockUuid, request.content)
+        if (result.isRight()) {
+            onWriteSuccess?.invoke(request)
+            _blockInvalidations.tryEmit(setOf(request.pageUuid))
+        }
+        request.deferred.complete(result)
+    }
+
+    private suspend fun processWriteBlock(request: WriteRequest.WriteBlock) {
+        val result = blockRepository.saveBlock(request.block)
+        if (result.isRight()) {
+            onWriteSuccess?.invoke(request)
+            _blockInvalidations.tryEmit(setOf(request.block.pageUuid))
+        }
+        request.deferred.complete(result)
+    }
+
+    private suspend fun processDeleteBlock(request: WriteRequest.DeleteBlock) {
+        if (opLogger != null) {
+            try {
+                val block = blockRepository.getBlockByUuid(request.blockUuid).first().getOrNull()
+                block?.let { opLogger.logDelete(it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Non-fatal: op log failure must not block the delete
+            }
+        }
+        val result = blockRepository.deleteBlock(request.blockUuid)
+        if (result.isRight()) {
+            onWriteSuccess?.invoke(request)
+            _blockInvalidations.tryEmit(setOf(request.pageUuid))
+        }
+        request.deferred.complete(result)
+    }
+
+    private suspend fun processMergeBlocks(request: WriteRequest.MergeBlocks) {
+        val result = blockRepository.mergeBlocks(request.blockUuid, request.nextBlockUuid, request.separator)
+        if (result.isRight()) {
+            onWriteSuccess?.invoke(request)
+            _blockInvalidations.tryEmit(setOf(request.pageUuid))
+        }
+        request.deferred.complete(result)
+    }
+
+    private suspend fun processDeleteBlockStructural(request: WriteRequest.DeleteBlockStructural) {
+        val result = blockRepository.deleteBlock(request.blockUuid)
+        if (result.isRight()) {
+            onWriteSuccess?.invoke(request)
+            _blockInvalidations.tryEmit(setOf(request.pageUuid))
+        }
+        request.deferred.complete(result)
+    }
+
+    private suspend fun processWriteBlockProperties(request: WriteRequest.WriteBlockProperties) {
+        val result = blockRepository.updateBlockPropertiesOnly(request.blockUuid, request.properties)
+        if (result.isRight()) {
+            onWriteSuccess?.invoke(request)
+            _blockInvalidations.tryEmit(setOf(request.pageUuid))
+        }
+        request.deferred.complete(result)
     }
 
     private fun recordQueueWaitSpan(request: WriteRequest.Execute, waitMs: Long) {
@@ -584,35 +711,54 @@ class DatabaseWriteActor(
         }
     }
 
-    suspend fun saveBlock(block: Block): Either<DomainError, Unit> =
-        execute { blockRepository.saveBlock(block) }
+    /**
+     * Save a full block record. Routes through [WriteRequest.WriteBlock] for targeted
+     * page-UUID invalidation instead of the wildcard sentinel.
+     */
+    suspend fun saveBlock(block: Block): Either<DomainError, Unit> {
+        val req = WriteRequest.WriteBlock(block)
+        return sendAndAwait(req)
+    }
 
-    suspend fun updateBlockContentOnly(blockUuid: BlockUuid, content: String): Either<DomainError, Unit> =
-        execute { blockRepository.updateBlockContentOnly(blockUuid, content) }
+    /**
+     * Update only block content. Routes through [WriteRequest.WriteBlockContent] for targeted
+     * page-UUID invalidation. The caller must supply [pageUuid] — BlockStateManager always
+     * has it in scope (Option A from the plan).
+     */
+    suspend fun updateBlockContentOnly(blockUuid: BlockUuid, content: String, pageUuid: PageUuid): Either<DomainError, Unit> {
+        val req = WriteRequest.WriteBlockContent(blockUuid, pageUuid, content)
+        return sendAndAwait(req)
+    }
 
-    suspend fun updateBlockPropertiesOnly(blockUuid: BlockUuid, properties: Map<String, String>): Either<DomainError, Unit> =
-        execute { blockRepository.updateBlockPropertiesOnly(blockUuid, properties) }
+    /**
+     * Update only block properties. Routes through [WriteRequest.WriteBlockProperties] for
+     * targeted page-UUID invalidation.
+     */
+    suspend fun updateBlockPropertiesOnly(blockUuid: BlockUuid, properties: Map<String, String>, pageUuid: PageUuid): Either<DomainError, Unit> {
+        val req = WriteRequest.WriteBlockProperties(blockUuid, pageUuid, properties)
+        return sendAndAwait(req)
+    }
 
-    suspend fun deleteBlock(blockUuid: BlockUuid): Either<DomainError, Unit> =
-        execute {
-            if (opLogger != null) {
-                try {
-                    val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
-                    block?.let { opLogger.logDelete(it) }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    // Non-fatal: op log failure must not block the delete
-                }
-            }
-            blockRepository.deleteBlock(blockUuid)
-        }
+    /**
+     * Delete a block (with op-logger support). Routes through [WriteRequest.DeleteBlock] for
+     * targeted page-UUID invalidation.
+     */
+    suspend fun deleteBlock(blockUuid: BlockUuid, pageUuid: PageUuid): Either<DomainError, Unit> {
+        val req = WriteRequest.DeleteBlock(blockUuid, pageUuid)
+        return sendAndAwait(req)
+    }
 
     /**
      * Splits [blockUuid] at [cursorPosition] through the actor's serialized queue.
      * Guaranteed to execute after any pending [updateBlockContentOnly] for the same block.
      *
      * Returns the newly created [Block] on success, or a [DomainError] on failure.
+     *
+     * splitBlock keeps using Execute{} because it returns Either<DomainError, Block> (not Unit),
+     * which cannot fit the WriteRequest.deferred: CompletableDeferred<Either<DomainError, Unit>>
+     * abstraction without a more invasive refactor. The wildcard invalidation is acceptable here
+     * since splitBlock fires only on Enter keypress (low frequency). Structural ops via execute{}
+     * (indent, outdent, move, split) all take this path.
      */
     suspend fun splitBlock(
         blockUuid: BlockUuid,
@@ -639,22 +785,29 @@ class DatabaseWriteActor(
     /**
      * Merges [nextBlockUuid] into [blockUuid] through the actor's serialized queue.
      * Guaranteed to execute after any pending [updateBlockContentOnly] for either block.
+     * Routes through [WriteRequest.MergeBlocks] for targeted page-UUID invalidation.
      */
     suspend fun mergeBlocks(
         blockUuid: BlockUuid,
         nextBlockUuid: BlockUuid,
         separator: String,
-    ): Either<DomainError, Unit> =
-        execute { blockRepository.mergeBlocks(blockUuid, nextBlockUuid, separator) }
+        pageUuid: PageUuid,
+    ): Either<DomainError, Unit> {
+        val req = WriteRequest.MergeBlocks(blockUuid, pageUuid, nextBlockUuid, separator)
+        return sendAndAwait(req)
+    }
 
     /**
      * Deletes [blockUuid] through the actor's serialized queue.
      * Distinct from [deleteBlock] (which logs to op-logger); this variant is for
      * structural deletions triggered by backspace/merge where the block being removed
-     * has no content to log.
+     * has no content to log. Routes through [WriteRequest.DeleteBlockStructural] for
+     * targeted page-UUID invalidation.
      */
-    suspend fun deleteBlockStructural(blockUuid: BlockUuid): Either<DomainError, Unit> =
-        execute { blockRepository.deleteBlock(blockUuid) }
+    suspend fun deleteBlockStructural(blockUuid: BlockUuid, pageUuid: PageUuid): Either<DomainError, Unit> {
+        val req = WriteRequest.DeleteBlockStructural(blockUuid, pageUuid)
+        return sendAndAwait(req)
+    }
 
     /**
      * Executes [block] with all writes wrapped in a BATCH_START / BATCH_END log entry.

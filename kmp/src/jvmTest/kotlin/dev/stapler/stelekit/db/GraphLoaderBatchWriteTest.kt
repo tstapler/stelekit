@@ -291,7 +291,7 @@ class GraphLoaderBatchWriteTest {
         // PRE-FIX: N separate writeActor.deleteBlock() calls, each an independent actor round-trip.
         // Each waits for background saves to drain → N × drain-wait total.
         val preFixMs = runCongestionScenario(BLOCKS, BG_COROUTINES, WRITE_DELAY_MS, testPage) { actor, _, uuids ->
-            uuids.forEach { uuid -> actor.deleteBlock(uuid) }
+            uuids.forEach { uuid -> actor.deleteBlock(uuid, testPage.uuid) }
         }
 
         // POST-FIX: 1 execute { N direct blockRepo.deleteBlock() } — only 1 actor round-trip.

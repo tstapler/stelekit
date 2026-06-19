@@ -26,8 +26,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -66,10 +66,10 @@ class BlockStateManager(
     private val graphPathProvider: () -> String = { "" },
     private val writeActor: DatabaseWriteActor? = null,
     private val histogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null,
-    // Collapses write bursts (parseAndSavePage: N deleteBlock + saveBlocks) so each visible
-    // journal page re-executes getBlocksForPage at most once per burst on Android's single
-    // connection. 0 = no debounce (default, tests); production passes 100L.
-    private val blockObserveDebounceMs: Long = 0L,
+    // When provided, observePage uses initial-pull + invalidation-driven re-query instead of a
+    // standing SQLDelight subscription. Each emission is a set of page UUIDs that were written;
+    // WILDCARD_PAGE_UUID means all observed pages should re-query.
+    private val invalidationSource: SharedFlow<Set<PageUuid>>? = null,
 ) : BlockEditingPort, BlockStructurePort, BlockSelectionPort, BlockNavigationPort {
     private val logger = Logger("BlockStateManager")
     private val diskWriteDebounce = DebounceManager(scope, 300L)
@@ -84,13 +84,13 @@ class BlockStateManager(
         writeActor?.saveBlock(block) ?: blockRepository.saveBlock(block)
 
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun writeContentOnly(blockUuid: BlockUuid, content: String) =
-        writeActor?.updateBlockContentOnly(blockUuid, content)
+    private suspend fun writeContentOnly(blockUuid: BlockUuid, content: String, pageUuid: PageUuid) =
+        writeActor?.updateBlockContentOnly(blockUuid, content, pageUuid)
             ?: blockRepository.updateBlockContentOnly(blockUuid, content)
 
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun writePropertiesOnly(blockUuid: BlockUuid, properties: Map<String, String>) =
-        writeActor?.updateBlockPropertiesOnly(blockUuid, properties)
+    private suspend fun writePropertiesOnly(blockUuid: BlockUuid, properties: Map<String, String>, pageUuid: PageUuid) =
+        writeActor?.updateBlockPropertiesOnly(blockUuid, properties, pageUuid)
             ?: blockRepository.updateBlockPropertiesOnly(blockUuid, properties)
 
     @OptIn(DirectRepositoryWrite::class)
@@ -106,12 +106,13 @@ class BlockStateManager(
         blockUuid: BlockUuid,
         nextBlockUuid: BlockUuid,
         separator: String,
-    ) = writeActor?.mergeBlocks(blockUuid, nextBlockUuid, separator)
+        pageUuid: PageUuid,
+    ) = writeActor?.mergeBlocks(blockUuid, nextBlockUuid, separator, pageUuid)
         ?: blockRepository.mergeBlocks(blockUuid, nextBlockUuid, separator)
 
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun writeDeleteBlockStructural(blockUuid: BlockUuid) =
-        writeActor?.deleteBlockStructural(blockUuid)
+    private suspend fun writeDeleteBlockStructural(blockUuid: BlockUuid, pageUuid: PageUuid) =
+        writeActor?.deleteBlockStructural(blockUuid, pageUuid)
             ?: blockRepository.deleteBlock(blockUuid)
 
     @OptIn(DirectRepositoryWrite::class)
@@ -349,9 +350,35 @@ class BlockStateManager(
     // ---- Page observation ----
 
     /**
+     * One-shot pull: fetch the current block list for [pageUuid] from the repository and
+     * merge it into [_blocks] using dirty-set semantics.
+     *
+     * Used as the query body inside the invalidation-driven [collectLatest] loop in [observePage].
+     * Also called for initial population so the first paint is always correct.
+     */
+    private suspend fun pullBlocksForPage(pageUuid: PageUuid) {
+        val pageUuidStr = pageUuid.value
+        val result = blockRepository.getBlocksForPage(pageUuid).first()
+        val incomingBlocks = result.getOrNull() ?: return
+        _blocks.update { current ->
+            val localBlocks = current[pageUuidStr] ?: emptyList()
+            val merged = mergeBlocks(localBlocks, incomingBlocks)
+            current + (pageUuidStr to merged)
+        }
+    }
+
+    /**
      * Start observing blocks for a page. Triggers lazy load if needed.
      * Uses dirty-set merge: incoming blocks only overwrite local state if
      * the block is NOT dirty (i.e., has no unconfirmed local edit).
+     *
+     * When [invalidationSource] is provided (production path), uses initial pull +
+     * invalidation-driven [collectLatest] re-queries instead of a standing SQLDelight
+     * subscription. Each [invalidationSource] emission is a set of page UUIDs that were
+     * written; [DatabaseWriteActor.WILDCARD_PAGE_UUID] signals all pages must re-query.
+     *
+     * When [invalidationSource] is null (in-memory / test path), falls back to the
+     * original standing subscription so existing tests continue to work.
      */
     fun observePage(pageUuid: PageUuid, isContentLoaded: Boolean = true) {
         val pageUuidStr = pageUuid.value
@@ -373,14 +400,27 @@ class BlockStateManager(
                 }
             }
 
-            val pageFlow = blockRepository.getBlocksForPage(pageUuid)
-            val debouncedFlow = if (blockObserveDebounceMs > 0) pageFlow.debounce(blockObserveDebounceMs) else pageFlow
-            debouncedFlow.collect { result ->
-                val incomingBlocks = result.getOrNull() ?: emptyList()
-                _blocks.update { current ->
-                    val localBlocks = current[pageUuidStr] ?: emptyList()
-                    val merged = mergeBlocks(localBlocks, incomingBlocks)
-                    current + (pageUuidStr to merged)
+            val source = invalidationSource
+            if (source != null) {
+                // Invalidation-driven path: initial pull + re-query on targeted signals.
+                // collectLatest cancels any in-flight re-query when the next signal arrives,
+                // so rapid-fire edits on the same page don't stack up concurrent DB reads.
+                pullBlocksForPage(pageUuid)
+                source.collectLatest { invalidatedUuids ->
+                    val wildcard = DatabaseWriteActor.WILDCARD_PAGE_UUID
+                    if (pageUuid in invalidatedUuids || wildcard in invalidatedUuids) {
+                        pullBlocksForPage(pageUuid)
+                    }
+                }
+            } else {
+                // Fallback: standing subscription (used when no actor is wired — in-memory / tests).
+                blockRepository.getBlocksForPage(pageUuid).collect { result ->
+                    val incomingBlocks = result.getOrNull() ?: emptyList()
+                    _blocks.update { current ->
+                        val localBlocks = current[pageUuidStr] ?: emptyList()
+                        val merged = mergeBlocks(localBlocks, incomingBlocks)
+                        current + (pageUuidStr to merged)
+                    }
                 }
             }
         }
@@ -584,7 +624,7 @@ class BlockStateManager(
         val pageUuid = _blocks.value.entries.find { (_, blocks) -> blocks.any { it.uuid == blockUuid } }?.key
             ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()?.pageUuid?.value
             ?: return@launch
-        val propsResult = writePropertiesOnly(blockUuid, newProperties)
+        val propsResult = writePropertiesOnly(blockUuid, newProperties, PageUuid(pageUuid))
         if (propsResult.isLeft()) {
             logger.warn("updateBlockProperties: DB write failed for $uuidStr — properties live in-memory only")
         }
@@ -642,7 +682,7 @@ class BlockStateManager(
         _dirtyBlocks.update { it + (uuidStr to version) }
 
         val t0 = dev.stapler.stelekit.performance.HistogramWriter.epochMs()
-        val writeResult = writeContentOnly(blockUuid, content)
+        val writeResult = writeContentOnly(blockUuid, content, block.pageUuid)
         histogramWriter?.record("editor_input", dev.stapler.stelekit.performance.HistogramWriter.epochMs() - t0)
         if (writeResult.isLeft()) {
             logger.warn("applyContentChange: DB write failed for $uuidStr — content lives in-memory only")
@@ -1095,7 +1135,7 @@ class BlockStateManager(
             val preMergeEditCursor = _editingCursorIndex.value
             // Move focus before the DB round-trip so keyboard lands immediately
             requestEditBlock(prevBlock.uuid, prevBlock.content.length)
-            writeMergeBlocks(prevBlock.uuid, blockUuid, "").onRight {
+            writeMergeBlocks(prevBlock.uuid, blockUuid, "", currentBlock.pageUuid).onRight {
                 queueDiskSave(pageUuidStr)
                 val after = takePageSnapshot(pageUuidStr)
                 record(
@@ -1135,7 +1175,7 @@ class BlockStateManager(
             val prevBlock = siblings[currentIndex - 1]
             // Move focus before the DB round-trip so keyboard lands immediately
             requestEditBlock(prevBlock.uuid, prevBlock.content.length)
-            writeMergeBlocks(prevBlock.uuid, blockUuid, "").onRight {
+            writeMergeBlocks(prevBlock.uuid, blockUuid, "", currentBlock.pageUuid).onRight {
                 afterOp(prevBlock.uuid, prevBlock.content.length)
             }.onLeft { err ->
                 logger.error("handleBackspace: DB merge failed for $blockUuid: $err")
@@ -1147,7 +1187,7 @@ class BlockStateManager(
                 if (currentBlock.content.isEmpty()) {
                     // Move focus before the DB round-trip
                     requestEditBlock(parent.uuid, parent.content.length)
-                    val result = writeDeleteBlockStructural(blockUuid)
+                    val result = writeDeleteBlockStructural(blockUuid, currentBlock.pageUuid)
                     result.onRight {
                         afterOp(parent.uuid, parent.content.length)
                     }.onLeft { err ->
@@ -1157,7 +1197,7 @@ class BlockStateManager(
                 } else {
                     // Move focus before the DB round-trip
                     requestEditBlock(parent.uuid, parent.content.length)
-                    writeMergeBlocks(parent.uuid, blockUuid, "").onRight {
+                    writeMergeBlocks(parent.uuid, blockUuid, "", currentBlock.pageUuid).onRight {
                         afterOp(parent.uuid, parent.content.length)
                     }.onLeft { err ->
                         logger.error("handleBackspace: DB merge failed for $blockUuid: $err")
@@ -1170,7 +1210,7 @@ class BlockStateManager(
                 val nextBlock = siblings[1]
                 // Move focus before the DB round-trip
                 requestEditBlock(nextBlock.uuid, 0)
-                val result = writeDeleteBlockStructural(blockUuid)
+                val result = writeDeleteBlockStructural(blockUuid, currentBlock.pageUuid)
                 result.onRight {
                     afterOp(nextBlock.uuid, 0)
                 }.onLeft { err ->
