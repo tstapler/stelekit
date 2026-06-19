@@ -30,7 +30,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -67,6 +71,13 @@ class DatabaseWriteActor(
 
     /** Called after a successful write, before the caller's deferred is completed. */
     @Volatile var onWriteSuccess: (suspend (WriteRequest) -> Unit)? = null
+
+    private val _blockInvalidations = MutableSharedFlow<Set<PageUuid>>(
+        replay = 0,
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val blockInvalidations: SharedFlow<Set<PageUuid>> = _blockInvalidations.asSharedFlow()
 
     /** Controls which channel a write request enters. */
     enum class Priority { HIGH, LOW }
@@ -245,7 +256,10 @@ class DatabaseWriteActor(
             }
         }
         val result = blockRepository.deleteBlocksForPage(request.pageUuid)
-        if (result.isRight()) onWriteSuccess?.invoke(request)
+        if (result.isRight()) {
+            onWriteSuccess?.invoke(request)
+            _blockInvalidations.tryEmit(setOf(request.pageUuid))
+        }
         request.deferred.complete(result)
     }
 
@@ -255,6 +269,7 @@ class DatabaseWriteActor(
         if (waitMs > 10L) {
             recordQueueWaitSpan(request, waitMs)
         }
+        _blockInvalidations.tryEmit(setOf(WILDCARD_PAGE_UUID))
         request.deferred.complete(request.op())
     }
 
@@ -288,10 +303,14 @@ class DatabaseWriteActor(
                 }
             }
             onWriteSuccess?.invoke(request)
+            _blockInvalidations.tryEmit(request.pageUuids.toSet())
             request.deferred.complete(Unit.right())
         } else {
             val result = blockRepository.deleteBlocksForPages(request.pageUuids)
-            if (result.isRight()) onWriteSuccess?.invoke(request)
+            if (result.isRight()) {
+                onWriteSuccess?.invoke(request)
+                _blockInvalidations.tryEmit(request.pageUuids.toSet())
+            }
             request.deferred.complete(result)
         }
     }
@@ -366,6 +385,7 @@ class DatabaseWriteActor(
             if (result.isRight()) {
                 logSaveBlocks(blocks, existingByUuid)
                 onWriteSuccess?.invoke(batch[0])
+                _blockInvalidations.tryEmit(batch[0].blocks.mapTo(mutableSetOf()) { it.pageUuid })
             }
             batch[0].deferred.complete(result)
             return
@@ -376,6 +396,7 @@ class DatabaseWriteActor(
         val batchResult = blockRepository.saveBlocks(allBlocks)
         if (batchResult.isRight()) {
             logSaveBlocks(allBlocks, existingByUuid)
+            _blockInvalidations.tryEmit(allBlocks.mapTo(mutableSetOf()) { it.pageUuid })
             batch.forEach {
                 onWriteSuccess?.invoke(it)
                 it.deferred.complete(Unit.right())
@@ -392,6 +413,7 @@ class DatabaseWriteActor(
                 if (reqResult.isRight()) {
                     logSaveBlocks(req.blocks, existingByUuid)
                     onWriteSuccess?.invoke(req)
+                    _blockInvalidations.tryEmit(req.blocks.mapTo(mutableSetOf()) { it.pageUuid })
                 }
                 req.deferred.complete(reqResult)
             }
@@ -429,6 +451,7 @@ class DatabaseWriteActor(
         val batchResult = blockRepository.saveBlocksDiff(allInserts, allUpdates)
         if (batchResult.isRight()) {
             logSaveBlocks(allInserts + allUpdates, existingByUuid)
+            _blockInvalidations.tryEmit((allInserts + allUpdates).mapTo(mutableSetOf()) { it.pageUuid })
             batch.forEach {
                 onWriteSuccess?.invoke(it)
                 it.deferred.complete(Unit.right())
@@ -443,6 +466,7 @@ class DatabaseWriteActor(
                 if (reqResult.isRight()) {
                     logSaveBlocks(req.toInsert + req.toUpdate, reqExisting)
                     onWriteSuccess?.invoke(req)
+                    _blockInvalidations.tryEmit((req.toInsert + req.toUpdate).mapTo(mutableSetOf()) { it.pageUuid })
                 }
                 req.deferred.complete(reqResult)
             }
@@ -669,6 +693,13 @@ class DatabaseWriteActor(
          * materializing all blocks across every page before the first delete runs.
          */
         private const val PAGE_DELETE_CHUNK = 25
+
+        /**
+         * Sentinel page UUID emitted by [blockInvalidations] when the write came from a generic
+         * [Execute] call where the exact affected page UUID is unknown. Subscribers should treat
+         * this as a signal to re-query all observed pages.
+         */
+        val WILDCARD_PAGE_UUID = PageUuid("*")
 
         /**
          * Creates a [Resource]-managed [DatabaseWriteActor].
