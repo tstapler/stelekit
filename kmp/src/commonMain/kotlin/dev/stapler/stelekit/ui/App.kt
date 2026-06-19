@@ -590,6 +590,7 @@ private fun GraphContent(
             histogramWriter = repos.histogramWriter,
             writeActor = repos.writeActor,
             invalidationSource = repos.writeActor?.blockInvalidations,
+            pushSource = repos.writeActor?.blocksPushed,
         )
     }
 

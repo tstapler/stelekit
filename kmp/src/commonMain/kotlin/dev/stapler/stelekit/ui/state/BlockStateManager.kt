@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.ui.state
 
+import dev.stapler.stelekit.db.BlockUpdateEvent
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
@@ -70,6 +71,9 @@ class BlockStateManager(
     // standing SQLDelight subscription. Each emission is a set of page UUIDs that were written;
     // WILDCARD_PAGE_UUID means all observed pages should re-query.
     private val invalidationSource: SharedFlow<Set<PageUuid>>? = null,
+    // Phase 2 push path: when provided, block list updates for in-app hot-path edits arrive
+    // pre-fetched from the actor. Zero additional DB re-query for user edit operations.
+    private val pushSource: SharedFlow<BlockUpdateEvent.BlocksWritten>? = null,
 ) : BlockEditingPort, BlockStructurePort, BlockSelectionPort, BlockNavigationPort {
     private val logger = Logger("BlockStateManager")
     private val diskWriteDebounce = DebounceManager(scope, 300L)
@@ -402,9 +406,30 @@ class BlockStateManager(
 
             val source = invalidationSource
             if (source != null) {
+                // Phase 2: direct push path — receives full block list from the actor after each
+                // hot-path write (WriteBlockContent, WriteBlock, DeleteBlock, MergeBlocks,
+                // DeleteBlockStructural, WriteBlockProperties). Zero DB re-query for in-app edits.
+                // Launched as a sibling to the invalidation collector so neither cancels the other.
+                // Use collect (not collectLatest) — applying a pushed block list is instant and
+                // must not be cancelled mid-apply. Rapid edits are serialized by the actor queue.
+                // TODO(perf-benchmark): Story 3.3 — record before/after getBlocksForPage call counts
+                pushSource?.let { push ->
+                    launch {
+                        push.collect { event ->
+                            if (event.pageUuid != pageUuid) return@collect
+                            _blocks.update { current ->
+                                val localBlocks = current[pageUuidStr] ?: emptyList()
+                                current + (pageUuidStr to mergeBlocks(localBlocks, event.blocks))
+                            }
+                        }
+                    }
+                }
+
                 // Invalidation-driven path: initial pull + re-query on targeted signals.
                 // collectLatest cancels any in-flight re-query when the next signal arrives,
                 // so rapid-fire edits on the same page don't stack up concurrent DB reads.
+                // When pushSource is active, invalidation signals arrive only for paths without
+                // a push payload (SaveBlocks, SaveBlocksDiff, processExecute wildcard).
                 pullBlocksForPage(pageUuid)
                 source.collectLatest { invalidatedUuids ->
                     val wildcard = DatabaseWriteActor.WILDCARD_PAGE_UUID
