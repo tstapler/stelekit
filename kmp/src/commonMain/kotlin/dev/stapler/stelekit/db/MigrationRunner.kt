@@ -549,6 +549,23 @@ object MigrationRunner {
                 "DROP TABLE IF EXISTS debug_flags",
             )
         ),
+        Migration(
+            name = "wikilink_references_table",
+            statements = listOf(
+                // Wikilink reference index: replaces the O(total_blocks) LIKE scan in
+                // recomputeBacklinkCountForPage with O(1) index lookups.
+                // ON DELETE CASCADE keeps the index consistent when blocks are deleted.
+                """
+                CREATE TABLE IF NOT EXISTS wikilink_references (
+                    block_uuid TEXT NOT NULL,
+                    page_name  TEXT NOT NULL COLLATE NOCASE,
+                    PRIMARY KEY (block_uuid, page_name),
+                    FOREIGN KEY (block_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_wikilink_refs_page_name ON wikilink_references(page_name COLLATE NOCASE)",
+            )
+        ),
     )
 
     /**

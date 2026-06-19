@@ -324,6 +324,12 @@ class QueryPlanAuditTest {
         AuditQuery("selectPageVisitByUuid",
             "SELECT page_uuid, last_visited_at, visit_count FROM page_visits WHERE page_uuid = 'p0'"),
 
+        // ── wikilink_references ────────────────────────────────────────────────────────────────
+        AuditQuery("selectWikilinkPageNamesForBlock",
+            "SELECT page_name FROM wikilink_references WHERE block_uuid = 'b0'"),
+        AuditQuery("selectWikilinkPageNamesForPage",
+            "SELECT DISTINCT page_name FROM wikilink_references WHERE block_uuid IN (SELECT uuid FROM blocks WHERE page_uuid = 'p0')"),
+
         // ── pending_asset_moves ────────────────────────────────────────────────────────────────
         AuditQuery("selectAllPendingMoves",
             "SELECT * FROM pending_asset_moves"),

@@ -374,6 +374,28 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     suspend fun setPageBacklinkCount(name: String, count: Long): Long =
         queries.setPageBacklinkCount(count, name)
 
+    // ── Wikilink reference index writes ───────────────────────────────────────
+
+    @DirectSqlWrite
+    suspend fun insertWikilinkReference(block_uuid: String, page_name: String): Long =
+        queries.insertWikilinkReference(block_uuid, page_name)
+
+    @DirectSqlWrite
+    suspend fun deleteWikilinkReferencesForBlock(block_uuid: String): Long =
+        queries.deleteWikilinkReferencesForBlock(block_uuid)
+
+    @DirectSqlWrite
+    suspend fun deleteWikilinkReferencesForPageName(page_name: String): Long =
+        queries.deleteWikilinkReferencesForPageName(page_name)
+
+    @DirectSqlWrite
+    suspend fun recomputeBacklinkCountFromIndex(name: String): Long =
+        queries.recomputeBacklinkCountFromIndex(name)
+
+    @DirectSqlWrite
+    suspend fun updateWikilinkPageNameForRename(newName: String, oldName: String): Long =
+        queries.updateWikilinkPageNameForRename(newName, oldName)
+
     // ── Git config writes ─────────────────────────────────────────────────────
 
     @DirectSqlWrite
