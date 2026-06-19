@@ -1,0 +1,14 @@
+# Disk cache — persisted between builds by CI (setup-bazel or actions/cache).
+# Local developers get caching in ~/.cache/bazel-disk-cache automatically.
+build --disk_cache=~/.cache/bazel-disk-cache
+
+# Optimised output (equivalent to cargo --release).
+build --compilation_mode=opt
+
+# Make progress output legible in CI logs.
+build --show_timestamps
+build --noshow_loading_progress
+
+# CI profile: quieter output, no colour codes in log files.
+build:ci --color=no
+build:ci --curses=no
