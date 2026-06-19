@@ -154,7 +154,7 @@ internal suspend fun executeCaptureAndImport(
             val result = service.import(
                 tempFile = captured.value,
                 graphPath = graphPath,
-                pageUuid = pageUuid,
+                pageUuid = dev.stapler.stelekit.model.PageUuid(pageUuid),
                 source = ImageSource.CAMERA,
                 insertToJournalPage = false,
             )

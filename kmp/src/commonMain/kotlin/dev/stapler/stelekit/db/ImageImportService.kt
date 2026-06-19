@@ -44,9 +44,9 @@ import kotlin.time.Clock
  */
 class ImageImportService(
     private val fileSystem: FileSystem,
-    private val imageAnnotationRepository: ImageAnnotationRepository? = null,
-    private val blockRepository: BlockWriteRepository? = null,
-    private val sidecarManager: ImageSidecarManager? = null,
+    private val imageAnnotationRepository: ImageAnnotationRepository,
+    private val blockRepository: BlockWriteRepository,
+    private val sidecarManager: ImageSidecarManager,
     private val journalService: JournalService? = null,
     private val writeActor: DatabaseWriteActor? = null,
     private val measurementAnnotationRepository: MeasurementAnnotationRepository? = null,
@@ -81,22 +81,10 @@ class ImageImportService(
     suspend fun import(
         tempFile: PlatformImageFile,
         graphPath: String,
-        pageUuid: String,
+        pageUuid: PageUuid,
         source: ImageSource = ImageSource.FILE,
         insertToJournalPage: Boolean = false,
     ): Either<DomainError, ImageAnnotation> {
-        if (imageAnnotationRepository == null) {
-            return DomainError.DatabaseError.WriteFailed(
-                "ImageImportService: imageAnnotationRepository not wired"
-            ).left()
-        }
-        if (sidecarManager == null) {
-            return DomainError.FileSystemError.WriteFailed(
-                "<unknown>",
-                "ImageImportService: imageSidecarManager not wired"
-            ).left()
-        }
-
         val annotationUuid = UuidGenerator.generateV7()
         val blockUuid = UuidGenerator.generateV7()
         val now = Clock.System.now()
@@ -118,7 +106,7 @@ class ImageImportService(
         val annotation = ImageAnnotation(
             uuid = annotationUuid,
             blockUuid = blockUuid,
-            pageUuid = pageUuid,
+            pageUuid = pageUuid.value,
             graphPath = graphPath,
             filePath = destPath,
             source = source,
@@ -171,7 +159,7 @@ class ImageImportService(
         )
         val block = Block(
             uuid = BlockUuid(blockUuid),
-            pageUuid = PageUuid(pageUuid),
+            pageUuid = pageUuid,
             content = blockContent,
             position = 0,
             createdAt = now,
@@ -265,14 +253,7 @@ class ImageImportService(
     @OptIn(DirectRepositoryWrite::class)
     private suspend fun saveBlock(block: Block): Either<DomainError, Unit> {
         val actor = writeActor
-        val repo = blockRepository
-        return when {
-            actor != null -> actor.saveBlock(block)
-            repo != null -> repo.saveBlock(block)
-            else -> DomainError.DatabaseError.WriteFailed(
-                "BlockRepository not wired — cannot create image_annotation block"
-            ).left()
-        }
+        return if (actor != null) actor.saveBlock(block) else blockRepository.saveBlock(block)
     }
 
     private fun ensureDirectory(path: String) {

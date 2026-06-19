@@ -11,18 +11,21 @@ import dev.stapler.stelekit.platform.sensor.PlatformImageFile
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryImageAnnotationRepository
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.After
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import java.io.File
+import java.io.IOException
 
 /**
- * TC-PHOTO-001..004: Android instrumented tests for the image import pipeline.
+ * TC-PHOTO-001..005: Android instrumented tests for the image import pipeline.
  *
  * Verifies that [ImageImportService.import] works correctly on-device using a real
  * Java [File]-backed filesystem. This catches Android-specific failures that in-process
@@ -50,7 +53,13 @@ class PhotoInsertAndroidTest {
         tempDir.deleteRecursively()
     }
 
-    private fun buildServices(): Triple<ImageImportService, InMemoryImageAnnotationRepository, InMemoryBlockRepository> {
+    private data class TestServices(
+        val service: ImageImportService,
+        val imageRepo: InMemoryImageAnnotationRepository,
+        val blockRepo: InMemoryBlockRepository,
+    )
+
+    private fun buildServices(): TestServices {
         val fs = JavaFileSystem()
         val imageRepo = InMemoryImageAnnotationRepository()
         val blockRepo = InMemoryBlockRepository()
@@ -60,19 +69,19 @@ class PhotoInsertAndroidTest {
             blockRepository = blockRepo,
             sidecarManager = ImageSidecarManager(fs),
         )
-        return Triple(service, imageRepo, blockRepo)
+        return TestServices(service, imageRepo, blockRepo)
     }
 
     // TC-PHOTO-001: Import pipeline copies image bytes to <graph>/assets/images/
     @Test
-    fun importCopiesBytesToAssetsDir() = runBlocking {
+    fun importCopiesBytesToAssetsDir() = runTest {
         val (service, _, _) = buildServices()
         val photoFile = File(tempDir, "photo.jpg").also { it.writeBytes("FAKE_JPEG".encodeToByteArray()) }
 
         val result = service.import(
             tempFile = PlatformImageFile(photoFile.absolutePath),
             graphPath = graphDir.absolutePath,
-            pageUuid = "page-001",
+            pageUuid = PageUuid("page-001"),
             source = ImageSource.FILE,
         )
 
@@ -85,14 +94,14 @@ class PhotoInsertAndroidTest {
 
     // TC-PHOTO-002: Import pipeline creates annotation row in the repository
     @Test
-    fun importCreatesAnnotationInRepository() = runBlocking {
+    fun importCreatesAnnotationInRepository() = runTest {
         val (service, imageRepo, _) = buildServices()
         val photoFile = File(tempDir, "photo.jpg").also { it.writeBytes("FAKE_JPEG".encodeToByteArray()) }
 
         val result = service.import(
             tempFile = PlatformImageFile(photoFile.absolutePath),
             graphPath = graphDir.absolutePath,
-            pageUuid = "page-001",
+            pageUuid = PageUuid("page-001"),
             source = ImageSource.CAMERA,
         )
 
@@ -108,14 +117,14 @@ class PhotoInsertAndroidTest {
 
     // TC-PHOTO-003: Import pipeline creates an image_annotation Block on the target page
     @Test
-    fun importCreatesImageAnnotationBlock() = runBlocking {
+    fun importCreatesImageAnnotationBlock() = runTest {
         val (service, _, blockRepo) = buildServices()
         val photoFile = File(tempDir, "photo.jpg").also { it.writeBytes("FAKE_JPEG".encodeToByteArray()) }
 
         val result = service.import(
             tempFile = PlatformImageFile(photoFile.absolutePath),
             graphPath = graphDir.absolutePath,
-            pageUuid = "page-002",
+            pageUuid = PageUuid("page-002"),
             source = ImageSource.FILE,
         )
 
@@ -133,13 +142,13 @@ class PhotoInsertAndroidTest {
 
     // TC-PHOTO-004: Import returns Either.Left (not a crash) when source file is missing
     @Test
-    fun importReturnsErrorForMissingSourceFile() = runBlocking {
+    fun importReturnsErrorForMissingSourceFile() = runTest {
         val (service, _, _) = buildServices()
 
         val result = service.import(
             tempFile = PlatformImageFile("${tempDir.absolutePath}/nonexistent.jpg"),
             graphPath = graphDir.absolutePath,
-            pageUuid = "page-001",
+            pageUuid = PageUuid("page-001"),
         )
 
         assertTrue("Missing file must return Left, not throw — got: $result", result.isLeft())
@@ -148,21 +157,20 @@ class PhotoInsertAndroidTest {
     // TC-PHOTO-005: AndroidMediaAttachmentService.hasClipboardImage returns false for empty clipboard
     @Test
     fun clipboardImageDetectionReturnsFalseForEmptyClipboard() {
+        assumeTrue(
+            "clearPrimaryClip requires API 28+",
+            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P,
+        )
         val clipboardManager = context.getSystemService(android.content.ClipboardManager::class.java)
-        // Clear the clipboard before checking (API 28+ only; safe to skip if unavailable)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-            clipboardManager?.clearPrimaryClip()
-        }
+        checkNotNull(clipboardManager) { "ClipboardManager must not be null" }
+        clipboardManager.clearPrimaryClip()
 
         val service = dev.stapler.stelekit.service.AndroidMediaAttachmentService(
             context = context,
             launchGalleryPicker = { null },
         )
 
-        if (clipboardManager?.hasPrimaryClip() == false) {
-            assertTrue("hasClipboardImage must be false when clipboard is empty", !service.hasClipboardImage())
-        }
-        // If we couldn't clear the clipboard (API < 28 or no permission), skip the assertion
+        assertFalse("hasClipboardImage must be false when clipboard is empty", service.hasClipboardImage())
     }
 }
 
@@ -171,16 +179,19 @@ class PhotoInsertAndroidTest {
  *
  * Avoids the SAF machinery in [dev.stapler.stelekit.platform.PlatformFileSystem] and the
  * in-memory simplifications in [FakeFileSystem], giving tests real on-device file I/O.
+ * Only [IOException] is suppressed; all other exceptions propagate to surface root causes.
  */
 private class JavaFileSystem : FileSystem {
     override fun getDefaultGraphPath(): String = ""
     override fun expandTilde(path: String): String = path
-    override fun readFile(path: String): String? = runCatching { File(path).readText() }.getOrNull()
-    override fun writeFile(path: String, content: String): Boolean =
-        runCatching { File(path).apply { parentFile?.mkdirs() }.writeText(content); true }.getOrElse { false }
-    override fun readFileBytes(path: String): ByteArray? = runCatching { File(path).readBytes() }.getOrNull()
-    override fun writeFileBytes(path: String, data: ByteArray): Boolean =
-        runCatching { File(path).apply { parentFile?.mkdirs() }.writeBytes(data); true }.getOrElse { false }
+    override fun readFile(path: String): String? = try { File(path).readText() } catch (_: IOException) { null }
+    override fun writeFile(path: String, content: String): Boolean = try {
+        File(path).apply { parentFile?.mkdirs() }.writeText(content); true
+    } catch (_: IOException) { false }
+    override fun readFileBytes(path: String): ByteArray? = try { File(path).readBytes() } catch (_: IOException) { null }
+    override fun writeFileBytes(path: String, data: ByteArray): Boolean = try {
+        File(path).apply { parentFile?.mkdirs() }.writeBytes(data); true
+    } catch (_: IOException) { false }
     override fun fileExists(path: String): Boolean = File(path).exists()
     override fun directoryExists(path: String): Boolean = File(path).isDirectory
     override fun createDirectory(path: String): Boolean = File(path).mkdirs()

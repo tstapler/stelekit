@@ -58,21 +58,20 @@ class ImageMeterAndroidTest {
         ).also { it.initialize(annotation) }
     }
 
+    private fun launchEditor(annotation: ImageAnnotation, viewModel: AnnotationEditorViewModel) {
+        composeRule.setContent {
+            StelekitTheme {
+                AnnotationEditorScreen(viewModel = viewModel, imageAnnotation = annotation)
+            }
+        }
+        composeRule.waitForIdle()
+    }
+
     // TC-IMGMETER-001: Tool buttons (Distance, Area, Angle) are visible when image is calibrated
     @Test
     fun calibratedToolButtonsAreDisplayed() {
         val annotation = makeAnnotation(calibrated = true)
-        val viewModel = makeViewModel(annotation)
-        composeRule.setContent {
-            StelekitTheme {
-                AnnotationEditorScreen(
-                    viewModel = viewModel,
-                    imageAnnotation = annotation,
-                )
-            }
-        }
-
-        composeRule.waitForIdle()
+        launchEditor(annotation, makeViewModel(annotation))
         composeRule.onNodeWithText("Distance").assertIsDisplayed()
         composeRule.onNodeWithText("Area").assertIsDisplayed()
         composeRule.onNodeWithText("Angle").assertIsDisplayed()
@@ -82,17 +81,7 @@ class ImageMeterAndroidTest {
     @Test
     fun annotationCanvasHasAccessibleContentDescription() {
         val annotation = makeAnnotation(calibrated = true)
-        val viewModel = makeViewModel(annotation)
-        composeRule.setContent {
-            StelekitTheme {
-                AnnotationEditorScreen(
-                    viewModel = viewModel,
-                    imageAnnotation = annotation,
-                )
-            }
-        }
-
-        composeRule.waitForIdle()
+        launchEditor(annotation, makeViewModel(annotation))
         composeRule.onNodeWithContentDescription("Annotation canvas — tap to place points")
             .assertIsDisplayed()
     }
@@ -101,17 +90,7 @@ class ImageMeterAndroidTest {
     @Test
     fun uncalibratedAnnotationShowsNotCalibratedStatus() {
         val annotation = makeAnnotation(calibrated = false)
-        val viewModel = makeViewModel(annotation)
-        composeRule.setContent {
-            StelekitTheme {
-                AnnotationEditorScreen(
-                    viewModel = viewModel,
-                    imageAnnotation = annotation,
-                )
-            }
-        }
-
-        composeRule.waitForIdle()
+        launchEditor(annotation, makeViewModel(annotation))
         composeRule.onNodeWithText("Not calibrated").assertIsDisplayed()
     }
 }
