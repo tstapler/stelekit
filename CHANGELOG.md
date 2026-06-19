@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.50.0](https://github.com/tstapler/stelekit/compare/v0.49.2...v0.50.0) (2026-06-19)
+
+
+### Features
+
+* **db:** add BlockUpdateEvent sealed class and blockInvalidations SharedFlow ([1d998b2](https://github.com/tstapler/stelekit/commit/1d998b258e3c3e5a49cfc46b0a043685927167db))
+* **release:** ad-hoc codesign macOS app bundle before DMG packaging ([844271c](https://github.com/tstapler/stelekit/commit/844271c167e18ef3a7c516e2e161bee6555be141))
+
+
+### Bug Fixes
+
+* **review:** address code review findings from /code:review ([00c9b5e](https://github.com/tstapler/stelekit/commit/00c9b5e675ceaf867204c1ef5ebeb87dd9766ccf))
+
+
+### Performance Improvements
+
+* **android:** reduce editing latency — debounce observer fanout, eliminate hot-path FTS merges, fix journal title nav ([05b5978](https://github.com/tstapler/stelekit/commit/05b597844ce62ee342f510fd7d6fb9ad66e77f01))
+* **db:** add wikilink_references index for O(1) backlink counting ([386ffe9](https://github.com/tstapler/stelekit/commit/386ffe9a55ce889fbd0f3935cf3c1bec50673898))
+* **db:** Phase 2 push payload — zero DB re-query for hot-path in-app block edits (ADR-012 Epic 3) ([667715a](https://github.com/tstapler/stelekit/commit/667715a4b90e01acf5a5f9755df08bcca9fc5e5d))
+* **db:** replace reactive block subscriptions with page-scoped invalidation (ADR-012 Phase 1) ([fb16c1b](https://github.com/tstapler/stelekit/commit/fb16c1b4a80ee1bfafb5d0ae6952b5db1376edb4))
+
 ## [0.49.2](https://github.com/tstapler/stelekit/compare/v0.49.1...v0.49.2) (2026-06-18)
 
 
