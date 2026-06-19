@@ -30,7 +30,7 @@ fun GlobalUnlinkedReferencesScreen(
     modifier: Modifier = Modifier,
 ) {
     NavigationTracingEffect("GlobalUnlinkedReferences")
-    val viewModel = remember {
+    val viewModel = remember(pageRepository, blockRepository, writeActor, suggestionMatcher) {
         GlobalUnlinkedReferencesViewModel(
             pageRepository = pageRepository,
             blockRepository = blockRepository,

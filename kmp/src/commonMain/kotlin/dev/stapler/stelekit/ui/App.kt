@@ -235,7 +235,7 @@ fun StelekitApp(
     remember { registerAllMigrations() }
 
     // Create GraphManager - this owns all graph lifecycle
-    val graphManager = graphManager ?: remember {
+    val graphManager = graphManager ?: remember(platformSettings, fileSystem) {
         GraphManager(platformSettings, DriverFactory(), fileSystem)
     }
     LaunchedEffect(graphManager) { onGraphManagerReady?.invoke(graphManager) }
@@ -449,7 +449,7 @@ private fun GraphContent(
         )
     }
 
-    var vaultManager by remember {
+    var vaultManager by remember(isParanoidMode, cryptoEngine, fileSystem) {
         androidx.compose.runtime.mutableStateOf(
             if (!isParanoidMode || cryptoEngine == null) null
             else dev.stapler.stelekit.vault.VaultManager(
@@ -472,11 +472,11 @@ private fun GraphContent(
         graphManager.registerVaultCredentialStore(vaultCredentialStore)
     }
 
-    val sidecarManager = remember {
+    val sidecarManager = remember(activeGraphPath, fileSystem) {
         val graphPath = activeGraphPath.ifEmpty { null }
         if (graphPath != null) SidecarManager(fileSystem, graphPath) else null
     }
-    val imageSidecarManager = remember {
+    val imageSidecarManager = remember(activeGraphPath, fileSystem) {
         if (activeGraphPath.isNotEmpty()) dev.stapler.stelekit.db.sidecar.ImageSidecarManager(fileSystem) else null
     }
     val imageImportService = remember(imageSidecarManager) {
@@ -509,7 +509,7 @@ private fun GraphContent(
             }
         }
     }
-    val graphLoader = remember {
+    val graphLoader = remember(fileSystem, repos, sidecarManager) {
         GraphLoader(
             fileSystem,
             repos.pageRepository,
@@ -533,7 +533,7 @@ private fun GraphContent(
         fileSystem.setOnFlushFailed(graphLoader::clearFilePendingWrite)
     }
 
-    val graphWriter = remember {
+    val graphWriter = remember(fileSystem, repos, graphLoader, sidecarManager) {
         GraphWriter(
             fileSystem,
             repos.writeActor,
@@ -583,7 +583,7 @@ private fun GraphContent(
     // created first with a lazy lambda that resolves viewModel after both are initialised.
     var viewModelRef: StelekitViewModel? = null
 
-    val blockStateManager = remember {
+    val blockStateManager = remember(repos, graphLoader, graphWriter) {
         dev.stapler.stelekit.ui.state.BlockStateManager(
             blockRepository = repos.blockRepository,
             graphLoader = graphLoader,
@@ -597,7 +597,7 @@ private fun GraphContent(
         )
     }
 
-    val exportService = remember {
+    val exportService = remember(clipboardProvider, repos) {
         ExportService(
             exporters = listOf(
                 MarkdownExporter(),
@@ -616,7 +616,7 @@ private fun GraphContent(
     // ViewModel scope must NOT be rememberCoroutineScope() — that scope is cancelled when the
     // composable leaves the composition, which would cancel all ViewModel coroutines on pause.
     val viewModelScope = remember { kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default) }
-    val viewModel = remember {
+    val viewModel = remember(fileSystem, repos, platformSettings, graphLoader, graphWriter, blockStateManager, exportService, graphManager, viewModelScope) {
         StelekitViewModel(
             StelekitViewModelDependencies(
                 fileSystem = fileSystem,
@@ -983,7 +983,7 @@ private fun GraphContent(
         }
     }
 
-    val journalsViewModel = remember {
+    val journalsViewModel = remember(repos, blockStateManager) {
         JournalsViewModel(repos.journalService, blockStateManager)
     }
 
@@ -1050,7 +1050,7 @@ private fun GraphContent(
     val allPagesViewModel = remember {
         AllPagesViewModel(repos.pageRepository, repos.blockRepository)
     }
-    val libraryStatsViewModel = remember {
+    val libraryStatsViewModel = remember(libraryStatsProvider, graphManager) {
         LibraryStatsViewModel(libraryStatsProvider, graphManager.getActiveGraphInfo()?.path ?: "")
     }
     val searchViewModel = remember {
