@@ -226,6 +226,7 @@ fun StelekitApp(
      * When null (default), the panel is rendered but the buttons are no-ops.
      */
     googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
+    requestCameraPermission: (suspend () -> Boolean)? = null,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -388,6 +389,7 @@ fun StelekitApp(
             cryptoEngine = cryptoEngine,
             attachmentService = attachmentService,
             googleAuthManager = googleAuthManager,
+            requestCameraPermission = requestCameraPermission,
         )
     }
 }
@@ -421,6 +423,7 @@ private fun GraphContent(
     cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine? = null,
     attachmentService: dev.stapler.stelekit.service.MediaAttachmentService? = null,
     googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
+    requestCameraPermission: (suspend () -> Boolean)? = null,
 ) {
     CompositionLocalProvider(LocalSpanRecorder provides spanRecorder) {
     val scope = rememberCoroutineScope()
@@ -1383,6 +1386,13 @@ private fun GraphContent(
                                     onCaptureImage = if (cameraImportEnabled) {
                                         {
                                             scope.launch {
+                                                if (requestCameraPermission != null) {
+                                                    val granted = requestCameraPermission.invoke()
+                                                    if (!granted) {
+                                                        viewModel.sendSnackbar("Camera permission denied — enable it in Settings to take photos")
+                                                        return@launch
+                                                    }
+                                                }
                                                 // Resolve page UUID before capturing — camera suspends for seconds,
                                                 // so we snapshot navigation state at button-tap time, not return time.
                                                 val pageUuid: String? =
@@ -1406,6 +1416,13 @@ private fun GraphContent(
                                 onImportImage = if (cameraImportEnabled) {
                                     {
                                         scope.launch {
+                                            if (requestCameraPermission != null) {
+                                                val granted = requestCameraPermission.invoke()
+                                                if (!granted) {
+                                                    viewModel.sendSnackbar("Camera permission denied — enable it in Settings to take photos")
+                                                    return@launch
+                                                }
+                                            }
                                             val page = repos.journalService.ensureTodayJournal()
                                             executeCaptureAndImport(
                                                 imageImportService = imageImportService,
