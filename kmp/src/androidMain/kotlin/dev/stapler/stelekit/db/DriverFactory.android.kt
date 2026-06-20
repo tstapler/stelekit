@@ -70,6 +70,10 @@ private class WalConfiguredCallback(
 ) : AndroidSqliteDriver.Callback(schema) {
     override fun onConfigure(db: SupportSQLiteDatabase) {
         super.onConfigure(db) // preserves foreign-key enforcement and other AndroidSqliteDriver defaults
+        // Sets ENABLE_WRITE_AHEAD_LOGGING on Android's SQLiteConnectionPool, allowing the pool
+        // to issue non-primary read connections. Without this call the pool serializes all reads
+        // on the primary connection regardless of the WAL journal mode set by PRAGMA below.
+        db.enableWriteAheadLogging()
         ANDROID_PRAGMAS.forEach { pragma ->
             try { db.query(pragma).close() } catch (_: Exception) { }
         }
@@ -147,6 +151,7 @@ actual class DriverFactory actual constructor() {
             callback = object : AndroidSqliteDriver.Callback(schema) {
                 override fun onConfigure(db: SupportSQLiteDatabase) {
                     super.onConfigure(db)
+                    db.enableWriteAheadLogging()
                     ANDROID_PRAGMAS.forEach { pragma ->
                         try { db.query(pragma).close() } catch (_: Exception) { }
                     }
