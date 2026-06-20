@@ -15,7 +15,6 @@ import app.cash.sqldelight.db.SqlDriver
 import dev.stapler.stelekit.db.DirectSqlWrite
 import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
-import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.PageUuid
@@ -54,7 +53,6 @@ class SqlDelightBlockRepository(
     private val driver: SqlDriver? = null,
 ) : BlockRepository {
 
-    private val logger = Logger("SqlDelightBlockRepository")
     private val queries = database.steleDatabaseQueries
     private val restricted = RestrictedDatabaseQueries(queries, driver)
 

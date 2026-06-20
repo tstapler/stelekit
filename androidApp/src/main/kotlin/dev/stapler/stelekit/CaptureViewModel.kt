@@ -14,6 +14,7 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
+import dev.stapler.stelekit.util.FractionalIndexing
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -89,7 +90,9 @@ class CaptureViewModel(app: Application) : AndroidViewModel(app) {
             uuid = BlockUuid(UuidGenerator.generateV7()),
             pageUuid = page.uuid,
             content = text,
-            position = (existingBlocks.maxOfOrNull { it.position } ?: -1) + 1,
+            position = FractionalIndexing.generateKeyBetween(
+                existingBlocks.maxByOrNull { it.position }?.position, null
+            ),
             createdAt = now,
             updatedAt = now,
         )
