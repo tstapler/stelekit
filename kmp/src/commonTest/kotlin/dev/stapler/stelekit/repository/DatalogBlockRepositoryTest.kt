@@ -29,7 +29,7 @@ class DatalogBlockRepositoryTest {
         repository = DatalogBlockRepository()
     }
 
-    private fun createBlock(uuidSuffix: Long, parentUuidSuffix: Long? = null, position: Int, content: String = "Block $uuidSuffix"): Block {
+    private fun createBlock(uuidSuffix: Long, parentUuidSuffix: Long? = null, position: String, content: String = "Block $uuidSuffix"): Block {
         // Pad ID to make valid UUID: 00000000-0000-0000-0000-000000000001
         val uuid = "00000000-0000-0000-0000-${uuidSuffix.toString().padStart(12, '0')}"
         val pageUuid = "00000000-0000-0000-0000-000000000001"
@@ -50,8 +50,8 @@ class DatalogBlockRepositoryTest {
     @Test
     fun testIndentBlock() = runTest {
         // Setup: B1 -> B2. Indent B2 into B1.
-        val b1 = createBlock(1, position = 0)
-        val b2 = createBlock(2, position = 1)
+        val b1 = createBlock(1, position = "a0")
+        val b2 = createBlock(2, position = "a1")
         val uuid2 = b2.uuid
         val uuid1 = b1.uuid
         
@@ -74,8 +74,8 @@ class DatalogBlockRepositoryTest {
     @Test
     fun testMoveBlockUp() = runTest {
         // Setup: B1 -> B2. Move B2 up.
-        val b1 = createBlock(1, position = 0)
-        val b2 = createBlock(2, position = 1)
+        val b1 = createBlock(1, position = "a0")
+        val b2 = createBlock(2, position = "a1")
         val uuid1 = b1.uuid
         val uuid2 = b2.uuid
         
@@ -98,8 +98,8 @@ class DatalogBlockRepositoryTest {
     @Test
     fun testMoveBlockDown() = runTest {
         // Setup: B1 -> B2. Move B1 down.
-        val b1 = createBlock(1, position = 0)
-        val b2 = createBlock(2, position = 1)
+        val b1 = createBlock(1, position = "a0")
+        val b2 = createBlock(2, position = "a1")
         val uuid1 = b1.uuid
         val uuid2 = b2.uuid
         

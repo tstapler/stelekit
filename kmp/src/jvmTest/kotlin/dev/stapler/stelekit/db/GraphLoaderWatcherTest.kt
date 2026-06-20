@@ -115,7 +115,7 @@ class GraphLoaderWatcherTest {
                     pageUuid = page.uuid,
                     content = "Block written by GraphWriter",
                     level = 0,
-                    position = 0,
+                    position = "a0",
                     createdAt = now,
                     updatedAt = now
                 )
@@ -173,7 +173,7 @@ class GraphLoaderWatcherTest {
             val now = Clock.System.now()
             val page = Page(uuid = PageUuid("p1"), name = "IntegPage", createdAt = now, updatedAt = now)
             val blocks = listOf(
-                Block(uuid = BlockUuid("b1"), pageUuid = PageUuid("p1"), content = "Hello", level = 0, position = 0, createdAt = now, updatedAt = now)
+                Block(uuid = BlockUuid("b1"), pageUuid = PageUuid("p1"), content = "Hello", level = 0, position = "a0", createdAt = now, updatedAt = now)
             )
             writer.savePage(page, blocks, graphDir.absolutePath)
 

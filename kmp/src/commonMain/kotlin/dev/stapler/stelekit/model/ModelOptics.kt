@@ -29,7 +29,7 @@ object BlockOptics {
     val leftUuid: Lens<Block, String?> = Lens(get = { it.leftUuid }, set = { b, v -> b.copy(leftUuid = v) })
     val content: Lens<Block, String> = Lens(get = { it.content }, set = { b, v -> b.copy(content = v) })
     val level: Lens<Block, Int> = Lens(get = { it.level }, set = { b, v -> b.copy(level = v) })
-    val position: Lens<Block, Int> = Lens(get = { it.position }, set = { b, v -> b.copy(position = v) })
+    val position: Lens<Block, String> = Lens(get = { it.position }, set = { b, v -> b.copy(position = v) })
     val createdAt: Lens<Block, Instant> = Lens(get = { it.createdAt }, set = { b, v -> b.copy(createdAt = v) })
     val updatedAt: Lens<Block, Instant> = Lens(get = { it.updatedAt }, set = { b, v -> b.copy(updatedAt = v) })
     val version: Lens<Block, Long> = Lens(get = { it.version }, set = { b, v -> b.copy(version = v) })

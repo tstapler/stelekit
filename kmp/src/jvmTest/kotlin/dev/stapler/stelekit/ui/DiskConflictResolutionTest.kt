@@ -53,7 +53,7 @@ class DiskConflictResolutionTest {
         pageUuid = PageUuid(testPageUuid),
         content = "Original content",
         level = 0,
-        position = 0,
+        position = "a0",
         createdAt = now,
         updatedAt = now
     )

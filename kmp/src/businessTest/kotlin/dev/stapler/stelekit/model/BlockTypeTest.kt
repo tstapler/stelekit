@@ -39,7 +39,7 @@ class BlockTypeTest {
             pageUuid = PageUuid("page-uuid-1"),
             content = "some content",
             level = 0,
-            position = 0,
+            position = "a0",
             createdAt = now,
             updatedAt = now,
             blockType = BlockType.Unknown("foo"),

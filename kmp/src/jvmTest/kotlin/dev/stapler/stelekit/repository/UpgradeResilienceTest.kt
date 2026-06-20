@@ -221,7 +221,7 @@ class UpgradeResilienceTest {
                 uuid = BlockUuid(FIXTURE_BLOCK_UUID),
                 pageUuid = PageUuid(FIXTURE_PAGE_UUID),
                 content = "Upgrade test block",
-                position = 0,
+                position = "a0",
                 createdAt = now,
                 updatedAt = now,
             )

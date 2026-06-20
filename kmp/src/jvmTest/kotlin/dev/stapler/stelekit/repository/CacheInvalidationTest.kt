@@ -51,7 +51,7 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         updatedAt = now()
     )
 
-    private fun block(uuid: String, pageUuid: String, content: String = "", position: Int = 0) = Block(
+    private fun block(uuid: String, pageUuid: String, content: String = "", position: String = "a0") = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid(pageUuid),
         content = content,
@@ -85,8 +85,8 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         assertEquals(1, hierarchyB1.size, "page B should start with 1 block in hierarchy")
 
         // Add a child to each root without touching hierarchy cache (saveBlock doesn't evict)
-        blockRepo.saveBlock(block("child-a", pageAUuid, content = "child of A", position = 0).copy(parentUuid = rootA))
-        blockRepo.saveBlock(block("child-b", pageBUuid, content = "child of B", position = 0).copy(parentUuid = rootB))
+        blockRepo.saveBlock(block("child-a", pageAUuid, content = "child of A", position = "a0").copy(parentUuid = rootA))
+        blockRepo.saveBlock(block("child-b", pageBUuid, content = "child of B", position = "a0").copy(parentUuid = rootB))
 
         // Evict only page A's hierarchy
         blockRepo.evictHierarchyForPage(pageAUuid)
@@ -123,7 +123,7 @@ class CacheInvalidationTest : BlockHoundTestBase() {
         val targetUuid = "block-target"
         val siblingUuid = "block-sibling"
         blockRepo.saveBlock(block(targetUuid, pageUuid, content = "original target"))
-        blockRepo.saveBlock(block(siblingUuid, pageUuid, content = "sibling", position = 1))
+        blockRepo.saveBlock(block(siblingUuid, pageUuid, content = "sibling", position = "a1"))
 
         // Warm up block cache by reading both blocks
         val target1 = blockRepo.getBlockByUuid(BlockUuid(targetUuid)).first().getOrNull()

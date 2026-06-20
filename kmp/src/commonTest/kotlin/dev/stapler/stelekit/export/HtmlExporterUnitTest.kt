@@ -30,7 +30,7 @@ class HtmlExporterUnitTest {
         uuid: String,
         content: String,
         level: Int,
-        position: Int,
+        position: String,
         parentUuid: String? = null
     ) = Block(
         uuid = BlockUuid(uuid),
@@ -64,7 +64,7 @@ class HtmlExporterUnitTest {
     // U-HT-03: top-level block (level=0) with no children → <p>content</p>
     @Test
     fun topLevelBlockRendersAsParagraph() {
-        val block = makeBlock("b-p", "Simple paragraph", level = 0, position = 0)
+        val block = makeBlock("b-p", "Simple paragraph", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "<p>")
         assertContains(output, "Simple paragraph")
@@ -73,8 +73,8 @@ class HtmlExporterUnitTest {
     // U-HT-04: nested block (level=1) renders inside <ul><li>
     @Test
     fun nestedBlockRendersInList() {
-        val parent = makeBlock("b-parent", "Parent", level = 0, position = 0)
-        val child = makeBlock("b-child", "Child item", level = 1, position = 0, parentUuid = "b-parent")
+        val parent = makeBlock("b-parent", "Parent", level = 0, position = "a0")
+        val child = makeBlock("b-child", "Child item", level = 1, position = "a0", parentUuid = "b-parent")
         val output = HtmlExporter().export(makePage(), listOf(parent, child))
         assertContains(output, "<ul>")
         assertContains(output, "<li>")
@@ -85,10 +85,10 @@ class HtmlExporterUnitTest {
     @Test
     fun deepNestingBalancedUlTags() {
         val blocks = listOf(
-            makeBlock("dn-0", "Level 0", level = 0, position = 0),
-            makeBlock("dn-1", "Level 1", level = 1, position = 0, parentUuid = "dn-0"),
-            makeBlock("dn-2", "Level 2", level = 2, position = 0, parentUuid = "dn-1"),
-            makeBlock("dn-3", "Level 3", level = 3, position = 0, parentUuid = "dn-2")
+            makeBlock("dn-0", "Level 0", level = 0, position = "a0"),
+            makeBlock("dn-1", "Level 1", level = 1, position = "a0", parentUuid = "dn-0"),
+            makeBlock("dn-2", "Level 2", level = 2, position = "a0", parentUuid = "dn-1"),
+            makeBlock("dn-3", "Level 3", level = 3, position = "a0", parentUuid = "dn-2")
         )
         val output = HtmlExporter().export(makePage(), blocks)
         val openCount = "<ul>".toRegex().findAll(output).count()
@@ -99,7 +99,7 @@ class HtmlExporterUnitTest {
     // U-HT-06: code fence (content with \n) with <script> → output contains &lt;script&gt;
     @Test
     fun codeFenceEscapesScriptTag() {
-        val block = makeBlock("b-code", "<script>alert(1)</script>\nmore code", level = 0, position = 0)
+        val block = makeBlock("b-code", "<script>alert(1)</script>\nmore code", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "&lt;script&gt;", message = "Script tag must be HTML-escaped")
         assertFalse(output.contains("<script>"), "Literal <script> must not appear")
@@ -108,7 +108,7 @@ class HtmlExporterUnitTest {
     // U-HT-07: code fence emits <pre><code>
     @Test
     fun codeFenceEmitsPreCode() {
-        val block = makeBlock("b-pre", "line one\nline two", level = 0, position = 0)
+        val block = makeBlock("b-pre", "line one\nline two", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "<pre><code>")
         assertContains(output, "</code></pre>")
@@ -117,7 +117,7 @@ class HtmlExporterUnitTest {
     // U-HT-08: WikiLinkNode renders as <a href="#Page Name">Page Name</a>
     @Test
     fun wikiLinkRendersAsAnchor() {
-        val block = makeBlock("b-wl", "[[Page Name]]", level = 0, position = 0)
+        val block = makeBlock("b-wl", "[[Page Name]]", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "<a href=\"#Page Name\">Page Name</a>")
     }
@@ -125,7 +125,7 @@ class HtmlExporterUnitTest {
     // U-HT-09: WikiLinkNode with alias uses alias as link text
     @Test
     fun wikiLinkAliasUsedAsLinkText() {
-        val block = makeBlock("b-wl-alias", "[[Target|Display Text]]", level = 0, position = 0)
+        val block = makeBlock("b-wl-alias", "[[Target|Display Text]]", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "Display Text")
         assertContains(output, "href=\"#Target\"")
@@ -135,7 +135,7 @@ class HtmlExporterUnitTest {
     // U-HT-10: XSS: page named "Hello <World>" → href contains &lt;World&gt;
     @Test
     fun xssInWikiLinkTargetIsEscaped() {
-        val block = makeBlock("b-xss", "[[Hello <World>]]", level = 0, position = 0)
+        val block = makeBlock("b-xss", "[[Hello <World>]]", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "&lt;World&gt;")
         assertFalse(output.contains("<World>"), "Literal < > in link target must be escaped")
@@ -144,7 +144,7 @@ class HtmlExporterUnitTest {
     // U-HT-11: bold → <strong>
     @Test
     fun boldRendersAsStrong() {
-        val block = makeBlock("b-bold", "**bold text**", level = 0, position = 0)
+        val block = makeBlock("b-bold", "**bold text**", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "<strong>")
         assertContains(output, "</strong>")
@@ -154,7 +154,7 @@ class HtmlExporterUnitTest {
     // U-HT-12: italic → <em>
     @Test
     fun italicRendersAsEm() {
-        val block = makeBlock("b-italic", "*italic text*", level = 0, position = 0)
+        val block = makeBlock("b-italic", "*italic text*", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "<em>")
         assertContains(output, "</em>")
@@ -164,7 +164,7 @@ class HtmlExporterUnitTest {
     // U-HT-13: strikethrough → <s>
     @Test
     fun strikethroughRendersAsS() {
-        val block = makeBlock("b-strike", "~~struck~~", level = 0, position = 0)
+        val block = makeBlock("b-strike", "~~struck~~", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "<s>")
         assertContains(output, "</s>")
@@ -173,7 +173,7 @@ class HtmlExporterUnitTest {
     // U-HT-14: highlight → <mark>
     @Test
     fun highlightRendersAsMark() {
-        val block = makeBlock("b-mark", "==highlighted==", level = 0, position = 0)
+        val block = makeBlock("b-mark", "==highlighted==", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "<mark>")
         assertContains(output, "</mark>")
@@ -182,7 +182,7 @@ class HtmlExporterUnitTest {
     // U-HT-15: inline code → <code>code</code>
     @Test
     fun inlineCodeRendersAsCode() {
-        val block = makeBlock("b-code-inline", "`some code`", level = 0, position = 0)
+        val block = makeBlock("b-code-inline", "`some code`", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "<code>some code</code>")
     }
@@ -190,7 +190,7 @@ class HtmlExporterUnitTest {
     // U-HT-16: TODO block adds class="todo" to container (p or li)
     @Test
     fun todoBlockAddsClassTodo() {
-        val block = makeBlock("b-todo", "TODO do the thing", level = 0, position = 0)
+        val block = makeBlock("b-todo", "TODO do the thing", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "class=\"todo\"")
     }
@@ -198,7 +198,7 @@ class HtmlExporterUnitTest {
     // U-HT-17: DONE block adds class="done" and a checked checkbox
     @Test
     fun doneBlockAddsClassDoneAndCheckedCheckbox() {
-        val block = makeBlock("b-done", "DONE finished task", level = 0, position = 0)
+        val block = makeBlock("b-done", "DONE finished task", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "class=\"done\"")
         assertContains(output, "checked")
@@ -207,7 +207,7 @@ class HtmlExporterUnitTest {
     // U-HT-18: NOW renders as <span class="task-marker now">NOW</span>
     @Test
     fun nowRendersAsTaskMarkerSpan() {
-        val block = makeBlock("b-now", "NOW in progress", level = 0, position = 0)
+        val block = makeBlock("b-now", "NOW in progress", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "<span class=\"task-marker now\">NOW</span>")
     }
@@ -215,7 +215,7 @@ class HtmlExporterUnitTest {
     // U-HT-19: BlockRefNode resolved → <blockquote data-block-ref="uuid">resolved text</blockquote>
     @Test
     fun resolvedBlockRefRendersAsBlockquote() {
-        val block = makeBlock("b-ref-resolved", "((ref-block-uuid))", level = 0, position = 0)
+        val block = makeBlock("b-ref-resolved", "((ref-block-uuid))", level = 0, position = "a0")
         val output = HtmlExporter().export(
             makePage(),
             listOf(block),
@@ -230,7 +230,7 @@ class HtmlExporterUnitTest {
     // U-HT-20: BlockRefNode dangling → <span class="unresolved-ref">[block ref]</span>
     @Test
     fun danglingBlockRefRendersAsUnresolvedSpan() {
-        val block = makeBlock("b-ref-dangling", "((dangling-uuid))", level = 0, position = 0)
+        val block = makeBlock("b-ref-dangling", "((dangling-uuid))", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "<span class=\"unresolved-ref\">[block ref]</span>")
     }
@@ -238,7 +238,7 @@ class HtmlExporterUnitTest {
     // U-HT-21: image node → <img alt="alt" src="url.png">
     @Test
     fun imageNodeRendersAsImgTag() {
-        val block = makeBlock("b-img", "![alt](url.png)", level = 0, position = 0)
+        val block = makeBlock("b-img", "![alt](url.png)", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "<img")
         assertContains(output, "alt=\"alt\"")
@@ -248,7 +248,7 @@ class HtmlExporterUnitTest {
     // U-HT-22: markdown link → <a href="https://example.com">text</a>
     @Test
     fun markdownLinkRendersAsAnchor() {
-        val block = makeBlock("b-mdlink", "[text](https://example.com)", level = 0, position = 0)
+        val block = makeBlock("b-mdlink", "[text](https://example.com)", level = 0, position = "a0")
         val output = HtmlExporter().export(makePage(), listOf(block))
         assertContains(output, "<a href=\"https://example.com\">text</a>")
     }
@@ -257,14 +257,14 @@ class HtmlExporterUnitTest {
     @Test
     fun sixLevelNestingBalancedUlTags() {
         val blocks = listOf(
-            makeBlock("l0", "Level 0", level = 0, position = 0),
-            makeBlock("l1", "Level 1", level = 1, position = 0, parentUuid = "l0"),
-            makeBlock("l2", "Level 2", level = 2, position = 0, parentUuid = "l1"),
-            makeBlock("l3", "Level 3", level = 3, position = 0, parentUuid = "l2"),
-            makeBlock("l4", "Level 4", level = 4, position = 0, parentUuid = "l3"),
-            makeBlock("l5", "Level 5", level = 5, position = 0, parentUuid = "l4"),
-            makeBlock("l6", "Level 6", level = 6, position = 0, parentUuid = "l5"),
-            makeBlock("back", "Back to top", level = 0, position = 1)
+            makeBlock("l0", "Level 0", level = 0, position = "a0"),
+            makeBlock("l1", "Level 1", level = 1, position = "a0", parentUuid = "l0"),
+            makeBlock("l2", "Level 2", level = 2, position = "a0", parentUuid = "l1"),
+            makeBlock("l3", "Level 3", level = 3, position = "a0", parentUuid = "l2"),
+            makeBlock("l4", "Level 4", level = 4, position = "a0", parentUuid = "l3"),
+            makeBlock("l5", "Level 5", level = 5, position = "a0", parentUuid = "l4"),
+            makeBlock("l6", "Level 6", level = 6, position = "a0", parentUuid = "l5"),
+            makeBlock("back", "Back to top", level = 0, position = "a1")
         )
         val output = HtmlExporter().export(makePage(), blocks)
         val openCount = "<ul>".toRegex().findAll(output).count()

@@ -17,7 +17,7 @@ class BlockRefExpansionTest {
         uuid: String,
         content: String,
         level: Int = 0,
-        position: Int = 0,
+        position: String = "a0",
         parentUuid: String? = null,
         pageUuid: String = "page-br"
     ) = Block(

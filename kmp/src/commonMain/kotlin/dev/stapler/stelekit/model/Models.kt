@@ -105,7 +105,7 @@ data class Block(
     val leftUuid: String? = null,
     val content: String,
     val level: Int = 0,
-    val position: Int,
+    val position: String,
     val createdAt: Instant,
     val updatedAt: Instant,
     val version: Long = 0,
@@ -121,7 +121,7 @@ data class Block(
         leftUuid?.let { Validation.validateUuid(it) }
         Validation.validateContent(content)
         require(level >= 0) { "Level must be non-negative" }
-        require(position >= 0) { "Position must be non-negative" }
+        require(position.isNotBlank()) { "Position must not be blank" }
         properties.forEach { (key, value) ->
             Validation.validateName(key)
             Validation.validateContent(value)

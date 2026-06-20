@@ -53,7 +53,7 @@ class SaveBlocksChunkingTest {
                 uuid = BlockUuid("block-$i"),
                 pageUuid = PageUuid("p1"),
                 content = "content $i",
-                position = i,
+                position = i.toString().padStart(11, '0'),
                 createdAt = now,
                 updatedAt = now
             )
@@ -79,7 +79,7 @@ class SaveBlocksChunkingTest {
                 uuid = BlockUuid("b-$i"),
                 pageUuid = PageUuid("p2"),
                 content = "c$i",
-                position = i,
+                position = i.toString().padStart(11, '0'),
                 createdAt = now,
                 updatedAt = now
             )
@@ -103,7 +103,7 @@ class SaveBlocksChunkingTest {
                 uuid = BlockUuid("c-$i"),
                 pageUuid = PageUuid("p3"),
                 content = "item $i",
-                position = i,
+                position = i.toString().padStart(11, '0'),
                 createdAt = now,
                 updatedAt = now
             )

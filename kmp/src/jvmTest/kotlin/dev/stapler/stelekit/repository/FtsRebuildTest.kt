@@ -68,9 +68,9 @@ class FtsRebuildTest {
         queries.insertPage("uuid-alpha", "Alpha", null, null, 0L, 0L, null, 1L, null, null, null, 1L)
         queries.insertPage("uuid-beta", "Beta", null, null, 0L, 0L, null, 1L, null, null, null, 1L)
         // Two blocks reference Alpha, one references Beta
-        queries.insertBlock("block-1", "uuid-alpha", null, null, "See [[Alpha]] for details", 0L, 0L, 0L, 0L, null, 1L, null, "paragraph")
-        queries.insertBlock("block-2", "uuid-alpha", null, null, "[[Alpha]] and [[Beta]] are linked", 0L, 1L, 0L, 0L, null, 1L, null, "paragraph")
-        queries.insertBlock("block-3", "uuid-beta", null, null, "No wikilinks here", 0L, 0L, 0L, 0L, null, 1L, null, "paragraph")
+        queries.insertBlock("block-1", "uuid-alpha", null, null, "See [[Alpha]] for details", 0L, "a0", 0L, 0L, null, 1L, null, "paragraph")
+        queries.insertBlock("block-2", "uuid-alpha", null, null, "[[Alpha]] and [[Beta]] are linked", 0L, "a1", 0L, 0L, null, 1L, null, "paragraph")
+        queries.insertBlock("block-3", "uuid-beta", null, null, "No wikilinks here", 0L, "a0", 0L, 0L, null, 1L, null, "paragraph")
 
         val repo = SqlDelightSearchRepository(db, driver = driver)
         val result = repo.rebuildFts()

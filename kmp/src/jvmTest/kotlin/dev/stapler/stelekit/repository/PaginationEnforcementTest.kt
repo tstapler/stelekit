@@ -183,7 +183,7 @@ class PaginationEnforcementTest {
             leftUuid = null,
             content = content,
             level = 0,
-            position = idx,
+            position = idx.toString().padStart(11, '0'),
             createdAt = now,
             updatedAt = now,
             properties = emptyMap(),

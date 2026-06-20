@@ -82,7 +82,7 @@ class BlockInvalidationIntegrationTest {
         updatedAt = now,
     )
 
-    private fun makeBlock(uuid: String, pageUuid: String, position: Int = 0) = Block(
+    private fun makeBlock(uuid: String, pageUuid: String, position: String = "a0") = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid(pageUuid),
         content = "content",
@@ -113,7 +113,7 @@ class BlockInvalidationIntegrationTest {
 
         // Save one block per page so getBlocksForPage returns non-empty results
         pageUuids.forEachIndexed { idx, pageUuid ->
-            blockRepo.inner.saveBlock(makeBlock("block-$idx", pageUuid.value, position = 0))
+            blockRepo.inner.saveBlock(makeBlock("block-$idx", pageUuid.value, position = "a0"))
         }
 
         val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler) + SupervisorJob())

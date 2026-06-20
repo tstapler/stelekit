@@ -600,6 +600,79 @@ object MigrationRunner {
             name = "analyze_wikilink_references_post_without_rowid",
             statements = listOf("ANALYZE wikilink_references")
         ),
+        Migration(
+            name = "blocks_position_fractional_index",
+            statements = listOf(
+                // Migrate blocks.position from INTEGER to TEXT to support fractional string
+                // indices (rocicorp/fractional-indexing algorithm). New insertions call
+                // FractionalIndexing.generateKeyBetween(left, right) — zero UPDATE statements
+                // for sibling shift. Existing rows are converted to zero-padded 11-digit strings
+                // via printf('%011d', ...) which sort correctly under BINARY string order.
+                //
+                // SQLite cannot ALTER COLUMN type, so we use create/copy/drop/rename.
+                // blocks.id AUTOINCREMENT is preserved so FTS5 content_rowid remains valid.
+                "PRAGMA foreign_keys=OFF",
+                "DROP TABLE IF EXISTS blocks_new",
+                """
+                CREATE TABLE IF NOT EXISTS blocks_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    uuid TEXT NOT NULL UNIQUE,
+                    page_uuid TEXT NOT NULL,
+                    parent_uuid TEXT,
+                    left_uuid TEXT,
+                    content TEXT NOT NULL,
+                    level INTEGER NOT NULL DEFAULT 0,
+                    position TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    properties TEXT,
+                    version INTEGER NOT NULL DEFAULT 0,
+                    content_hash TEXT,
+                    block_type TEXT NOT NULL DEFAULT 'bullet',
+                    FOREIGN KEY (page_uuid) REFERENCES pages(uuid) ON DELETE CASCADE,
+                    FOREIGN KEY (parent_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE,
+                    FOREIGN KEY (left_uuid) REFERENCES blocks(uuid) ON DELETE SET NULL
+                )
+                """,
+                // printf('%011d', CAST(position AS INTEGER)) zero-pads to 11 digits.
+                // Valid on SQLite 3.8+ (Android system SQLite 3.18 on API 26).
+                // ROW_NUMBER() would require SQLite 3.25+ — NOT available on API 26.
+                "INSERT INTO blocks_new SELECT id, uuid, page_uuid, parent_uuid, left_uuid, content, level, printf('%011d', CAST(position AS INTEGER)), created_at, updated_at, properties, version, content_hash, block_type FROM blocks",
+                "DROP TABLE blocks",
+                "ALTER TABLE blocks_new RENAME TO blocks",
+                // Recreate all indexes (dropped with the old blocks table)
+                "CREATE INDEX IF NOT EXISTS idx_blocks_page_position ON blocks(page_uuid, position)",
+                "CREATE INDEX IF NOT EXISTS idx_blocks_parent_position ON blocks(parent_uuid, position)",
+                "CREATE INDEX IF NOT EXISTS idx_blocks_page_hash ON blocks(page_uuid, uuid, content_hash)",
+                "CREATE INDEX IF NOT EXISTS idx_blocks_left_uuid ON blocks(left_uuid)",
+                "CREATE INDEX IF NOT EXISTS idx_blocks_content_hash ON blocks(content_hash)",
+                // Recreate FTS5 triggers (dropped with blocks table; blocks_fts virtual table
+                // itself is NOT dropped — it retains data and rowid references are preserved).
+                "DROP TRIGGER IF EXISTS blocks_ai",
+                "DROP TRIGGER IF EXISTS blocks_ad",
+                "DROP TRIGGER IF EXISTS blocks_au",
+                """
+                CREATE TRIGGER blocks_ai AFTER INSERT ON blocks BEGIN
+                    INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content);
+                END
+                """,
+                """
+                CREATE TRIGGER blocks_ad AFTER DELETE ON blocks BEGIN
+                    INSERT INTO blocks_fts(blocks_fts, rowid, content)
+                    VALUES('delete', old.id, old.content);
+                END
+                """,
+                """
+                CREATE TRIGGER blocks_au AFTER UPDATE OF content ON blocks BEGIN
+                    INSERT INTO blocks_fts(blocks_fts, rowid, content)
+                    VALUES('delete', old.id, old.content);
+                    INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content);
+                END
+                """,
+                "PRAGMA foreign_keys=ON",
+                "ANALYZE blocks",
+            )
+        ),
     )
 
     /**

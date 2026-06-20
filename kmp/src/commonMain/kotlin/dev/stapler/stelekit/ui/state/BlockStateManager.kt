@@ -125,7 +125,7 @@ class BlockStateManager(
             ?: blockRepository.deleteBulk(uuids.map { BlockUuid(it) }, deleteChildren)
 
     @OptIn(DirectRepositoryWrite::class)
-    private suspend fun writeMoveBlock(uuid: BlockUuid, newParentUuid: BlockUuid?, position: Int) =
+    private suspend fun writeMoveBlock(uuid: BlockUuid, newParentUuid: BlockUuid?, position: String) =
         writeActor?.execute { blockRepository.moveBlock(uuid, newParentUuid, position) }
             ?: blockRepository.moveBlock(uuid, newParentUuid, position)
 
@@ -299,20 +299,23 @@ class BlockStateManager(
             return@launch
         }
 
-        // Compute start position: how many children the target parent already has
-        // at the point after insertAfterUuid
+        // Compute fractional position range for insertion
         val allBlocks = _blocks.value[pageUuid] ?: emptyList()
-        val siblingCount = allBlocks.count { it.parentUuid == newParentUuid?.value }
-        val startPosition = if (insertAfterUuid == null) {
-            0
+        val siblings = allBlocks.filter { it.parentUuid == newParentUuid?.value }.sortedBy { it.position }
+        val insertAfterBlock = if (insertAfterUuid != null) allBlocks.find { it.uuid == insertAfterUuid } else null
+        val afterPosition = insertAfterBlock?.position
+        val nextSiblingPosition = if (insertAfterBlock != null) {
+            siblings.firstOrNull { it.position > insertAfterBlock.position }?.position
         } else {
-            val insertAfterBlock = allBlocks.find { it.uuid == insertAfterUuid }
-            if (insertAfterBlock != null) (insertAfterBlock.position + 1) else siblingCount
+            siblings.firstOrNull()?.position
         }
 
-        // Move each block in sorted order, incrementing position for each
-        toMove.forEachIndexed { index, uuid ->
-            writeMoveBlock(BlockUuid(uuid), newParentUuid, startPosition + index)
+        // Move each block in sorted order, generating sequential fractional keys
+        var prevMovePosition: String? = afterPosition
+        toMove.forEach { uuid ->
+            val newPos = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(prevMovePosition, nextSiblingPosition)
+            prevMovePosition = newPos
+            writeMoveBlock(BlockUuid(uuid), newParentUuid, newPos)
         }
 
         // Refresh state
@@ -1041,7 +1044,7 @@ class BlockStateManager(
 
         val topLevelBlocks = blocks.filter { it.parentUuid == null }.sortedBy { it.position }
         val lastBlock = topLevelBlocks.lastOrNull()
-        val newPosition = if (lastBlock != null) (lastBlock.position) + 1 else 0
+        val newPosition = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(lastBlock?.position, null)
 
         val now = kotlin.time.Clock.System.now()
         val newBlock = Block(
@@ -1101,7 +1104,7 @@ class BlockStateManager(
         val blocks = blocksForPage(pageUuidStr)
         val topLevelBlocks = blocks.filter { it.parentUuid == null }.sortedBy { it.position }
         val lastBlock = topLevelBlocks.lastOrNull()
-        val newPosition = if (lastBlock != null) (lastBlock.position) + 1 else 0
+        val newPosition = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(lastBlock?.position, null)
 
         val now = kotlin.time.Clock.System.now()
         val newBlock = Block(

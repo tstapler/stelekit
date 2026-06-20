@@ -43,7 +43,7 @@ interface IBlockOperations : BlockRepository {
         content: String,
         parentId: String? = null,
         leftId: String? = null,
-        position: Int? = null,
+        position: String? = null,
         properties: Map<String, String> = emptyMap(),
         uuid: String? = null,
         createdAt: Instant? = null

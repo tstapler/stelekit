@@ -11,6 +11,7 @@ import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.util.FractionalIndexing
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -117,7 +118,7 @@ class JournalService(
             uuid = BlockUuid(UuidGenerator.generateV7()),
             pageUuid = pageUuid,
             content = "",
-            position = 0,
+            position = "a0",
             createdAt = clock.now(),
             updatedAt = clock.now()
         )
@@ -162,7 +163,7 @@ class JournalService(
     @OptIn(DirectRepositoryWrite::class)
     private suspend fun appendBlockToPage(page: Page, content: String) {
         val blocks = blockRepository.getBlocksForPage(page.uuid).first().getOrNull() ?: emptyList()
-        val nextPosition = (blocks.maxOfOrNull { it.position } ?: -1) + 1
+        val nextPosition = FractionalIndexing.generateKeyBetween(blocks.maxByOrNull { it.position }?.position, null)
         val newBlock = Block(
             uuid = BlockUuid(UuidGenerator.generateV7()),
             pageUuid = page.uuid,
@@ -203,7 +204,7 @@ class JournalService(
             uuid = BlockUuid(UuidGenerator.generateV7()),
             pageUuid = pageUuid,
             content = content,
-            position = 0,
+            position = "a0",
             createdAt = clock.now(),
             updatedAt = clock.now(),
         )

@@ -56,7 +56,7 @@ class GraphSwitchInvalidationTest {
         updatedAt = now,
     )
 
-    private fun makeBlock(uuid: String, pageUuid: String, position: Int = 0) = Block(
+    private fun makeBlock(uuid: String, pageUuid: String, position: String = "a0") = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid(pageUuid),
         content = "content",

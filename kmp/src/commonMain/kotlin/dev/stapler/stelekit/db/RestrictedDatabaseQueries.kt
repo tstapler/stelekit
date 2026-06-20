@@ -39,7 +39,7 @@ class RestrictedDatabaseQueries(
         left_uuid: String?,
         content: String,
         level: Long,
-        position: Long,
+        position: String,
         created_at: Long,
         updated_at: Long,
         properties: String?,
@@ -58,7 +58,7 @@ class RestrictedDatabaseQueries(
         left_uuid: String?,
         content: String,
         level: Long,
-        position: Long,
+        position: String,
         updated_at: Long,
         properties: String?,
         version: Long,
@@ -77,7 +77,7 @@ class RestrictedDatabaseQueries(
     @DirectSqlWrite
     suspend fun updateBlockParentPositionAndLevel(
         parent_uuid: String?,
-        position: Long,
+        position: String,
         level: Long,
         uuid: String,
     ): Long = queries.updateBlockParentPositionAndLevel(parent_uuid, position, level, uuid)
@@ -86,21 +86,21 @@ class RestrictedDatabaseQueries(
     suspend fun updateBlockHierarchy(
         parent_uuid: String?,
         left_uuid: String?,
-        position: Long,
+        position: String,
         level: Long,
         uuid: String,
     ): Long = queries.updateBlockHierarchy(parent_uuid, left_uuid, position, level, uuid)
 
     @DirectSqlWrite
-    suspend fun updateBlockPositionOnly(position: Long, uuid: String): Long =
+    suspend fun updateBlockPositionOnly(position: String, uuid: String): Long =
         queries.updateBlockPositionOnly(position, uuid)
 
     @DirectSqlWrite
-    suspend fun shiftRootBlockPositionsFrom(page_uuid: String, fromPosition: Long): Long =
+    suspend fun shiftRootBlockPositionsFrom(page_uuid: String, fromPosition: String): Long =
         queries.shiftRootBlockPositionsFrom(page_uuid, fromPosition)
 
     @DirectSqlWrite
-    suspend fun shiftChildBlockPositionsFrom(parent_uuid: String, fromPosition: Long): Long =
+    suspend fun shiftChildBlockPositionsFrom(parent_uuid: String, fromPosition: String): Long =
         queries.shiftChildBlockPositionsFrom(parent_uuid, fromPosition)
 
     @DirectSqlWrite
@@ -114,7 +114,7 @@ class RestrictedDatabaseQueries(
         left_uuid: String?,
         content: String,
         level: Long,
-        position: Long,
+        position: String,
         updated_at: Long,
         properties: String?,
         content_hash: String?,

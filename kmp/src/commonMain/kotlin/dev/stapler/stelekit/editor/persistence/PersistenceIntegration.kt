@@ -426,7 +426,7 @@ object PersistenceExample {
             pageUuid = PageUuid("test-page-uuid"),
             content = "This is a test block",
             level = 0,
-            position = 0,
+            position = "a0",
             createdAt = kotlin.time.Clock.System.now(),
             updatedAt = kotlin.time.Clock.System.now()
         )

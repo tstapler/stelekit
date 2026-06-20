@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.outliner
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.util.FractionalIndexing
 
 /**
  * Pure logic for tree manipulation operations.
@@ -210,12 +211,15 @@ object TreeOperations {
      */
     fun reorderSiblings(siblings: List<Block>): List<Block> {
         var currentLeftUuid: String? = null
-        return siblings.mapIndexed { index, b ->
+        var prevPosition: String? = null
+        return siblings.map { b ->
+            val position = FractionalIndexing.generateKeyBetween(prevPosition, null)
             val updated = b.copy(
                 leftUuid = currentLeftUuid,
-                position = index
+                position = position
             )
             currentLeftUuid = updated.uuid.value
+            prevPosition = position
             updated
         }
     }

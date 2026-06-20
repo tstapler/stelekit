@@ -111,7 +111,7 @@ class JournalsViewUITest {
             uuid = BlockUuid("journal-block-1"),
             pageUuid = PageUuid("journal-1"),
             content = "Today's note",
-            position = 0,
+            position = "a0",
             createdAt = now,
             updatedAt = now,
         )
@@ -160,7 +160,7 @@ class JournalsViewUITest {
             uuid = BlockUuid("journal-block-2"),
             pageUuid = PageUuid("journal-1"),
             content = "Selectable note",
-            position = 0,
+            position = "a0",
             createdAt = now,
             updatedAt = now,
         )

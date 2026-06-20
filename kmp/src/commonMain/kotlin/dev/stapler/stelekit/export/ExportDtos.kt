@@ -25,7 +25,7 @@ data class PageDto(
 data class BlockDto(
     val uuid: String,
     val parentUuid: String?,
-    val position: Int,
+    val position: String,
     val level: Int,
     val content: String, // raw Logseq syntax preserved
     val properties: Map<String, String>, // id:: key filtered out

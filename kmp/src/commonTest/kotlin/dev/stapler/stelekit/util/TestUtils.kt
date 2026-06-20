@@ -15,7 +15,7 @@ object TestUtils {
         parentUuid: String? = null,
         content: String = "",
         level: Int = 0,
-        position: Int = 0
+        position: String = "a0"
     ): Block {
         val now = Clock.System.now()
         return Block(

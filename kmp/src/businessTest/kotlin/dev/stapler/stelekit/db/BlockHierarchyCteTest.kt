@@ -38,7 +38,7 @@ class BlockHierarchyCteTest {
 
     private fun page(uuid: String) = Page(uuid = PageUuid(uuid), name = uuid, createdAt = now(), updatedAt = now())
 
-    private fun block(uuid: String, pageUuid: String, parentUuid: String? = null, position: Int = 0) = Block(
+    private fun block(uuid: String, pageUuid: String, parentUuid: String? = null, position: String = "a0") = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid(pageUuid),
         parentUuid = parentUuid,
@@ -61,7 +61,7 @@ class BlockHierarchyCteTest {
         var previousUuid = rootUuid
         for (i in 1..50) {
             val uuid = "block-$i"
-            blockRepo.saveBlock(block(uuid, "p1", parentUuid = previousUuid, position = 0))
+            blockRepo.saveBlock(block(uuid, "p1", parentUuid = previousUuid, position = "a0"))
             previousUuid = uuid
         }
 

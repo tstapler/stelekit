@@ -67,7 +67,7 @@ class OutlinerRegressionTest {
                     uuid = BlockUuid(block1Uuid),
                     pageUuid = PageUuid(pageUuid),
                     content = "Parent Block",
-                    position = 0,
+                    position = "a0",
                     createdAt = now,
                     updatedAt = now
                 )
@@ -80,7 +80,7 @@ class OutlinerRegressionTest {
                     content = "Child Block",
                     parentUuid = block1Uuid,
                     level = 1,
-                    position = 0,
+                    position = "a0",
                     createdAt = now,
                     updatedAt = now
                 )

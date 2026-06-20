@@ -77,7 +77,7 @@ object SyntheticGraphDbBuilder {
                     leftUuid = null,
                     content = "$word1 $word2 $word3 notes from block $bi on page $pi",
                     level = 0,
-                    position = bi,
+                    position = bi.toString().padStart(11, '0'),
                     createdAt = now,
                     updatedAt = now,
                     properties = emptyMap(),

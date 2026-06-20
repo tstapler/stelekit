@@ -23,6 +23,7 @@ import dev.stapler.stelekit.model.blockTypeFromString
 import dev.stapler.stelekit.model.toDiscriminatorString
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.util.ContentHasher
+import dev.stapler.stelekit.util.FractionalIndexing
 import dev.stapler.stelekit.util.UuidGenerator
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
@@ -354,7 +355,7 @@ class SqlDelightBlockRepository(
                             block.leftUuid,
                             block.content,
                             block.level.toLong(),
-                            block.position.toLong(),
+                            block.position,
                             block.updatedAt.toEpochMilliseconds(),
                             block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
                             block.version,
@@ -382,7 +383,7 @@ class SqlDelightBlockRepository(
             block.leftUuid,
             block.content,
             block.level.toLong(),
-            block.position.toLong(),
+            block.position,
             block.createdAt.toEpochMilliseconds(),
             block.updatedAt.toEpochMilliseconds(),
             block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
@@ -434,7 +435,7 @@ class SqlDelightBlockRepository(
                             block.leftUuid,
                             block.content,
                             block.level.toLong(),
-                            block.position.toLong(),
+                            block.position,
                             block.updatedAt.toEpochMilliseconds(),
                             block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
                             block.contentHash ?: ContentHasher.sha256ForContent(block.content),
@@ -461,7 +462,7 @@ class SqlDelightBlockRepository(
                 block.leftUuid,
                 block.content,
                 block.level.toLong(),
-                block.position.toLong(),
+                block.position,
                 block.createdAt.toEpochMilliseconds(),
                 block.updatedAt.toEpochMilliseconds(),
                 block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
@@ -653,52 +654,44 @@ class SqlDelightBlockRepository(
     override suspend fun moveBlock(
         blockUuid: BlockUuid,
         newParentUuid: BlockUuid?,
-        newPosition: Int
+        newPosition: String
     ): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             queries.transaction {
                 val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull() ?: return@transaction
-                
+
                 // 1. Repair OLD chain: the block that followed us now follows our old left sibling
                 val blockFollowingOld = queries.selectBlockByLeftUuid(block.uuid).executeAsOneOrNull()
                 if (blockFollowingOld != null) {
                     queries.updateBlockLeftUuid(block.left_uuid, blockFollowingOld.uuid)
                 }
-                
+
                 // 2. Resolve NEW parent and level
                 val newParent = newParentUuid?.let { queries.selectBlockByUuid(it.value).executeAsOneOrNull() }
                 val newParentUuidResolved = newParent?.uuid
                 val newLevel = (newParent?.level ?: -1L) + 1L
-                
-                // 3. Find NEW left sibling (or parent)
+
+                // 3. Find NEW left sibling: the sibling whose position is largest but < newPosition
                 val siblings = if (newParentUuidResolved == null) {
                     queries.selectRootBlocksByPageUuidOrdered(block.page_uuid).executeAsList()
                 } else {
                     queries.selectBlocksByParentUuidOrdered(newParentUuidResolved).executeAsList()
                 }
-                
-                // Exclude the block itself if it was already a sibling
                 val otherSiblings = siblings.filter { it.uuid != block.uuid }.sortedBy { it.position }
-                
-                val newLeftUuid = if (newPosition <= 0 || otherSiblings.isEmpty()) {
-                    newParentUuidResolved ?: block.page_uuid // Use parent or pageUuid (for root)
-                } else {
-                    val prevIdx = (newPosition - 1).coerceAtMost(otherSiblings.size - 1)
-                    otherSiblings[prevIdx].uuid
+                val leftSibling = otherSiblings.lastOrNull { it.position < newPosition }
+                val newLeftUuid = leftSibling?.uuid ?: (newParentUuidResolved ?: block.page_uuid)
+
+                // 4. Repair NEW chain: the block that will now follow us must point to us
+                val rightSibling = otherSiblings.firstOrNull { it.position >= newPosition }
+                if (rightSibling != null) {
+                    queries.updateBlockLeftUuid(block.uuid, rightSibling.uuid)
                 }
-                
-                // 4. Repair NEW chain: the block that will follow us now follows us
-                // If there's a block at the new position, its left_uuid should become ours
-                val targetBlockAtPosition = otherSiblings.getOrNull(newPosition)
-                if (targetBlockAtPosition != null) {
-                    queries.updateBlockLeftUuid(block.uuid, targetBlockAtPosition.uuid)
-                }
-                
+
                 // 5. Update block hierarchy
                 queries.updateBlockHierarchy(
                     newParentUuidResolved,
                     newLeftUuid,
-                    newPosition.toLong(),
+                    newPosition,
                     newLevel,
                     block.uuid
                 )
@@ -739,7 +732,7 @@ class SqlDelightBlockRepository(
                 // New parent is prevSibling.
                 val lastChildOfNewParent = queries.selectLastChild(prevSibling.uuid).executeAsOneOrNull()
                 val newLeftUuid = lastChildOfNewParent?.uuid ?: prevSibling.uuid
-                val newPosition = (lastChildOfNewParent?.position ?: -1L) + 1L
+                val newPosition = FractionalIndexing.generateKeyBetween(lastChildOfNewParent?.position, null)
                 val newLevel = block.level + 1L
                 
                 // Update current block hierarchy in one shot
@@ -779,23 +772,19 @@ class SqlDelightBlockRepository(
                 
                 // 3. New hierarchy calculation: New leftUuid is the old parent's UUID.
                 val newLeftUuid = currentParent.uuid
-                val newPosition = currentParent.position + 1L
-                val newLevel = block.level - 1L
-                
-                // Shift positions of siblings at or after the new position in one SQL UPDATE.
-                if (grandParentUuid == null) {
-                    queries.shiftRootBlockPositionsFrom(block.page_uuid, newPosition)
-                } else {
-                    queries.shiftChildBlockPositionsFrom(grandParentUuid, newPosition)
-                }
-
-                // Repair new sibling chain: Any block that followed currentParent at the grandparent level 
-                // now must follow the moved block.
+                // Place immediately after the parent using fractional indexing (no sibling shifting).
                 val blockFollowingOldParent = queries.selectBlockByLeftUuid(currentParent.uuid).executeAsOneOrNull()
+                val newPosition = FractionalIndexing.generateKeyBetween(
+                    currentParent.position,
+                    blockFollowingOldParent?.position
+                )
+                val newLevel = block.level - 1L
+
+                // Repair new sibling chain: the block that followed parent now follows us.
                 if (blockFollowingOldParent != null) {
                     queries.updateBlockLeftUuid(block.uuid, blockFollowingOldParent.uuid)
                 }
-                
+
                 // Update current block hierarchy in one shot
                 queries.updateBlockHierarchy(grandParentUuid, newLeftUuid, newPosition, newLevel, block.uuid)
             }
@@ -917,12 +906,13 @@ class SqlDelightBlockRepository(
                     // Query selectLastChild once before the loop and maintain position/leftUuid locally —
                     // replaces N individual selectLastChild calls (one per child of B).
                     val initialLastChild = queries.selectLastChild(blockA.uuid).executeAsOneOrNull()
-                    var nextPosition = (initialLastChild?.position ?: -1L) + 1L
+                    var nextPrevPosition: String? = initialLastChild?.position
                     var nextLeftUuid: String = initialLastChild?.uuid ?: blockA.uuid
                     childrenOfB.forEach { child ->
+                        val nextPosition = FractionalIndexing.generateKeyBetween(nextPrevPosition, null)
                         queries.updateBlockHierarchy(blockA.uuid, nextLeftUuid, nextPosition, (blockA.level + 1L), child.uuid)
                         nextLeftUuid = child.uuid
-                        nextPosition++
+                        nextPrevPosition = nextPosition
                     }
                 }
                 
@@ -968,19 +958,11 @@ class SqlDelightBlockRepository(
                 //    optimistic in-memory block and the DB block share the same UUID, eliminating
                 //    the UUID-correction pass in BlockStateManager.
                 val newUuid = newBlockUuid?.value ?: UuidGenerator.generateV7()
-                val newPosition = block.position + 1L
-                
-                // Shift all siblings at or after the new position in one SQL UPDATE —
-                // O(1) statements regardless of page size, replacing the former O(n) loop
-                // that loaded all siblings and then issued N individual updateBlockPositionOnly calls.
-                if (block.parent_uuid == null) {
-                    queries.shiftRootBlockPositionsFrom(block.page_uuid, newPosition)
-                } else {
-                    queries.shiftChildBlockPositionsFrom(block.parent_uuid, newPosition)
-                }
 
-                // Repair chain: block that followed 'block' now follows 'newBlock'
+                // Use fractional indexing: new block's position sits between 'block' and its next sibling.
+                // No sibling shifting required — O(0) UPDATE statements.
                 val nextSibling = queries.selectBlockByLeftUuid(block.uuid).executeAsOneOrNull()
+                val newPosition = FractionalIndexing.generateKeyBetween(block.position, nextSibling?.position)
 
                 val now = Clock.System.now().toEpochMilliseconds()
                 queries.insertBlock(
@@ -1011,7 +993,7 @@ class SqlDelightBlockRepository(
                     leftUuid = block.uuid,
                     content = secondPart,
                     level = block.level.toInt(),
-                    position = newPosition.toInt(),
+                    position = newPosition,
                     createdAt = kotlinx.datetime.Instant.fromEpochMilliseconds(now),
                     updatedAt = kotlinx.datetime.Instant.fromEpochMilliseconds(now),
                     properties = emptyMap(),
@@ -1225,7 +1207,7 @@ class SqlDelightBlockRepository(
             leftUuid = this.left_uuid,
             content = this.content,
             level = this.level.toInt(),
-            position = this.position.toInt(),
+            position = this.position,
             createdAt = Instant.fromEpochMilliseconds(this.created_at),
             updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
             version = this.version,
@@ -1244,7 +1226,7 @@ class SqlDelightBlockRepository(
             leftUuid = this.left_uuid,
             content = this.content,
             level = this.level.toInt(),
-            position = this.position.toInt(),
+            position = this.position,
             createdAt = Instant.fromEpochMilliseconds(this.created_at),
             updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
             version = this.version,

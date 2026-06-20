@@ -38,7 +38,7 @@ class JsonExporterTest {
         uuid: String,
         content: String,
         level: Int,
-        position: Int,
+        position: String,
         parentUuid: String? = null,
         properties: Map<String, String> = emptyMap()
     ) = Block(
@@ -57,7 +57,7 @@ class JsonExporterTest {
     @Test
     fun outputIsValidJson() {
         val page = makePage()
-        val block = makeBlock("b1", "Hello world", level = 0, position = 0)
+        val block = makeBlock("b1", "Hello world", level = 0, position = "a0")
         val output = JsonExporter().export(page, listOf(block))
         // Must not throw
         Json.decodeFromString<ExportRoot>(output)
@@ -93,8 +93,8 @@ class JsonExporterTest {
     @Test
     fun nestedBlocksAppearAsChildren() {
         val page = makePage()
-        val parent = makeBlock("parent-uuid", "Parent block", level = 0, position = 0)
-        val child = makeBlock("child-uuid", "Child block", level = 1, position = 0, parentUuid = "parent-uuid")
+        val parent = makeBlock("parent-uuid", "Parent block", level = 0, position = "a0")
+        val child = makeBlock("child-uuid", "Child block", level = 1, position = "a0", parentUuid = "parent-uuid")
         val output = JsonExporter().export(page, listOf(parent, child))
         val root = Json.decodeFromString<ExportRoot>(output)
         assertEquals(1, root.blocks.size, "Only one top-level block expected")
@@ -110,7 +110,7 @@ class JsonExporterTest {
     @Test
     fun blockContentPreservesRawSyntax() {
         val page = makePage()
-        val block = makeBlock("b-raw", "[[Page]]", level = 0, position = 0)
+        val block = makeBlock("b-raw", "[[Page]]", level = 0, position = "a0")
         val output = JsonExporter().export(page, listOf(block))
         val root = Json.decodeFromString<ExportRoot>(output)
         assertContains(root.blocks[0].content, "[[Page]]")
@@ -124,7 +124,7 @@ class JsonExporterTest {
             uuid = "b-props",
             content = "Block with props",
             level = 0,
-            position = 0,
+            position = "a0",
             properties = mapOf("tag" to "important", "status" to "active")
         )
         val output = JsonExporter().export(page, listOf(block))
@@ -152,7 +152,7 @@ class JsonExporterTest {
             uuid = "b-id-filter",
             content = "Block",
             level = 0,
-            position = 0,
+            position = "a0",
             properties = mapOf("id" to "block-id-value", "key" to "value")
         )
         val output = JsonExporter().export(page, listOf(block))
@@ -173,8 +173,8 @@ class JsonExporterTest {
     @Test
     fun subtreeExportContainsFullPageMetadataAndOnlyPassedBlocks() {
         val page = makePage(uuid = "page-sub", name = "Subtree Page")
-        val blockA = makeBlock("sub-a", "Block A", level = 0, position = 0)
-        val blockB = makeBlock("sub-b", "Block B", level = 0, position = 1)
+        val blockA = makeBlock("sub-a", "Block A", level = 0, position = "a0")
+        val blockB = makeBlock("sub-b", "Block B", level = 0, position = "a1")
         // Pass only blockA as the subtree
         val output = JsonExporter().export(page, listOf(blockA))
         val root = Json.decodeFromString<ExportRoot>(output)
@@ -204,14 +204,14 @@ class JsonExporterTest {
     @Test
     fun blockPositionMatchesInputOrder() {
         val page = makePage()
-        val blockFirst = makeBlock("b-pos-0", "First", level = 0, position = 0)
-        val blockSecond = makeBlock("b-pos-1", "Second", level = 0, position = 1)
-        val blockThird = makeBlock("b-pos-2", "Third", level = 0, position = 2)
+        val blockFirst = makeBlock("b-pos-0", "First", level = 0, position = "a0")
+        val blockSecond = makeBlock("b-pos-1", "Second", level = 0, position = "a1")
+        val blockThird = makeBlock("b-pos-2", "Third", level = 0, position = "a2")
         val output = JsonExporter().export(page, listOf(blockFirst, blockSecond, blockThird))
         val root = Json.decodeFromString<ExportRoot>(output)
         assertEquals(3, root.blocks.size)
-        assertEquals(0, root.blocks[0].position)
-        assertEquals(1, root.blocks[1].position)
-        assertEquals(2, root.blocks[2].position)
+        assertEquals("a0", root.blocks[0].position)
+        assertEquals("a1", root.blocks[1].position)
+        assertEquals("a2", root.blocks[2].position)
     }
 }

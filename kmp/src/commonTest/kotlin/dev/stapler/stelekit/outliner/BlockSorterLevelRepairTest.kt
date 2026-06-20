@@ -9,7 +9,7 @@ import kotlin.test.assertEquals
 
 class BlockSorterLevelRepairTest {
 
-    private fun createBlock(uuidSuffix: Long, parentUuidSuffix: Long?, content: String, position: Int, level: Int): Block {
+    private fun createBlock(uuidSuffix: Long, parentUuidSuffix: Long?, content: String, position: String, level: Int): Block {
         val uuid = "00000000-0000-0000-0000-${uuidSuffix.toString().padStart(12, '0')}"
         val pageUuid = "00000000-0000-0000-0000-000000000001"
         val parentUuid = parentUuidSuffix?.let { "00000000-0000-0000-0000-${it.toString().padStart(12, '0')}" }
@@ -33,9 +33,9 @@ class BlockSorterLevelRepairTest {
         //   - Child (level 0 - WRONG, should be 1)
         //     - Grandchild (level 5 - WRONG, should be 2)
         
-        val root = createBlock(1, null, "Root", 0, 10)
-        val child = createBlock(2, 1, "Child", 0, 0)
-        val grandchild = createBlock(3, 2, "Grandchild", 0, 5)
+        val root = createBlock(1, null, "Root", "a0", 10)
+        val child = createBlock(2, 1, "Child", "a0", 0)
+        val grandchild = createBlock(3, 2, "Grandchild", "a0", 5)
         
         val input = listOf(grandchild, root, child)
         val sorted = BlockSorter.sort(input)
@@ -55,9 +55,9 @@ class BlockSorterLevelRepairTest {
     @Test
     fun `test stable sorting with duplicate positions`() {
         // Blocks with same position should be sorted by UUID descending to be stable
-        val b1 = createBlock(1, null, "B1", 0, 0)
-        val b2 = createBlock(2, null, "B2", 0, 0)
-        val b3 = createBlock(3, null, "B3", 0, 0)
+        val b1 = createBlock(1, null, "B1", "a0", 0)
+        val b2 = createBlock(2, null, "B2", "a0", 0)
+        val b3 = createBlock(3, null, "B3", "a0", 0)
         
         val sorted = BlockSorter.sort(listOf(b1, b2, b3))
         println("Sorted UUIDs: ${sorted.map { it.uuid }}")

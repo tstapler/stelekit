@@ -79,7 +79,7 @@ class SqlDelightBacklinkRepositoryTest {
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid(pageUuid),
         content = content,
-        position = 0,
+        position = "a0",
         createdAt = now(),
         updatedAt = now(),
     )

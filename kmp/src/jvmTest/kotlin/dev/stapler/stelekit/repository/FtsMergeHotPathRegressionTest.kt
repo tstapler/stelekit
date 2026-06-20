@@ -113,7 +113,7 @@ class FtsMergeHotPathRegressionTest {
         uuid = BlockUuid(id),
         pageUuid = pageUuid,
         content = "Block $id",
-        position = 0,
+        position = "a0",
         createdAt = now,
         updatedAt = now,
     )
