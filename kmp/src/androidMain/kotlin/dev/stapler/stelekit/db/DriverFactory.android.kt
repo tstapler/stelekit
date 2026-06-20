@@ -6,6 +6,10 @@ import app.cash.sqldelight.async.coroutines.synchronous
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
+import dev.stapler.stelekit.db.libsql.AndroidLibsqlDriver
+import dev.stapler.stelekit.platform.PlatformSettings
+import java.util.logging.Logger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -83,6 +87,8 @@ private class WalConfiguredCallback(
 actual class DriverFactory actual constructor() {
     companion object {
         internal var staticContext: Context? = null
+        private val log = Logger.getLogger("DriverFactory")
+        private val settings: PlatformSettings by lazy { PlatformSettings() }
 
         fun setContext(context: Context) {
             staticContext = context.applicationContext
@@ -106,6 +112,27 @@ actual class DriverFactory actual constructor() {
         // Ensure parent directory exists for absolute paths
         if (dbName.startsWith("/")) {
             java.io.File(dbName).parentFile?.mkdirs()
+        }
+
+        // Runtime feature flag: use the libsql JNI driver when enabled in developer settings.
+        // Reads from the same PlatformSettings store that the Settings UI toggle writes to.
+        // Takes effect on the next graph open; a restart is not required.
+        val useLibsql = try { settings.getBoolean("db.libsql.enabled", false) }
+                        catch (e: CancellationException) { throw e }
+                        catch (_: Exception) { false }
+        if (useLibsql && !dbName.startsWith("/")) {
+            log.warning("libsql driver enabled but '$dbName' is not an absolute path; falling back to system SQLite")
+        }
+        if (useLibsql && dbName.startsWith("/")) {
+            val driver = AndroidLibsqlDriver(dbName)
+            runBlocking {
+                try { SteleDatabase.Schema.create(driver).await() }
+                catch (e: CancellationException) { throw e }
+                catch (_: Exception) { }
+                driver.resetPool()
+                MigrationRunner.applyAll(driver)
+            }
+            return driver
         }
 
         // AndroidSqliteDriver handles schema creation (fresh installs) and numbered .sqm

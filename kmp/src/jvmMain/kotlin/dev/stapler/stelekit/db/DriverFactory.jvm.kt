@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import app.cash.sqldelight.db.SqlDriver
+import dev.stapler.stelekit.db.libsql.JvmLibsqlDriver
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import java.io.File
@@ -110,6 +111,29 @@ actual class DriverFactory actual constructor() {
 
         return driver
     }
+
+    fun createLibsqlDriver(dbPath: String): SqlDriver {
+        File(dbPath).parentFile?.mkdirs()
+        val driver = JvmLibsqlDriver(dbPath, poolSize = 8)
+        try {
+            runBlocking { SteleDatabase.Schema.create(driver).await() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Schema already exists on an existing DB — this is expected and safe to ignore
+        }
+        // libsql local mode does not propagate DDL to pre-opened connections; reset the pool
+        // so all connections see the freshly created schema (FTS tables, triggers, etc.).
+        driver.resetPool()
+        runBlocking {
+            driver.execute(null, "PRAGMA optimize=0x10002", 0).await()
+            MigrationRunner.applyAll(driver)
+        }
+        return driver
+    }
+
+    fun getLibsqlDatabasePath(graphId: String): String =
+        "${getDatabaseDirectory()}/stelekit-graph-$graphId-libsql.db"
 
     actual fun getDatabaseUrl(graphId: String): String =
         "jdbc:sqlite:${getDatabaseDirectory()}/stelekit-graph-$graphId.db"

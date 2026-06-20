@@ -116,6 +116,8 @@ data class AppState(
     val isDebugMenuVisible: Boolean = false,
     // Accessibility
     val isLeftHanded: Boolean = false,
+    // Developer flags
+    val isLibsqlDriverEnabled: Boolean = false,
     // Multi-graph support
     val currentGraphId: String? = null,
     val currentGraphName: String = "",

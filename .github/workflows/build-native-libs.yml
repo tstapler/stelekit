@@ -1,0 +1,322 @@
+name: Build Native Libraries
+
+# Builds the libsql JNI bridge (native/libsql) for every supported JVM desktop and Android
+# platform, then commits the resulting binaries back to the branch so they stay in sync with
+# the Rust source.
+#
+# Fast-exit: the `check` job hashes native/libsql/src/ + Cargo.{toml,lock} and compares
+# against native/libsql/.inputs-hash committed alongside the prebuilt binaries.  If the hash
+# matches, every downstream job is skipped and the workflow completes in < 10 s.
+#
+# Supported output targets
+# ─────────────────────────────────────────────────────────────────────────────
+# JVM Desktop — built via Bazel (rules_rust, disk-cached):
+#   linux-x86_64      x86_64-unknown-linux-gnu     libstelekit_libsql.so
+#   linux-aarch64     aarch64-unknown-linux-gnu     libstelekit_libsql.so
+#   macos-aarch64     aarch64-apple-darwin          libstelekit_libsql.dylib
+#   macos-x86_64      x86_64-apple-darwin           libstelekit_libsql.dylib
+#   windows-x86_64    x86_64-pc-windows-msvc        stelekit_libsql.dll
+#
+# Android — built via cargo-ndk (Bazel + rules_android_ndk is future work):
+#   arm64-v8a         aarch64-linux-android26
+#   armeabi-v7a       armv7-linux-androideabi26
+#   x86_64            x86_64-linux-android26
+#   x86               i686-linux-android26
+#
+# iOS / WASM: not applicable — the JNI bridge is JVM/Android only.
+
+on:
+  push:
+    branches-ignore: [main, master]
+    paths:
+      - 'native/libsql/src/**'
+      - 'native/libsql/Cargo.toml'
+      - 'native/libsql/Cargo.lock'
+      - 'MODULE.bazel'
+      - '.github/workflows/build-native-libs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  CARGO_TERM_COLOR: always
+  # Tell Bazel to use the CI profile defined in .bazelrc.
+  BAZELFLAGS: "--config=ci"
+
+jobs:
+  # ── Fast-exit: hash native lib sources against the stored .inputs-hash ─────
+  # Completes in < 10 s.  All downstream jobs are gated on `needs_build == true`.
+  check:
+    name: Check if rebuild needed
+    runs-on: ubuntu-latest
+    outputs:
+      needs_build: ${{ steps.hash.outputs.needs_build }}
+      source_hash: ${{ steps.hash.outputs.source_hash }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - id: hash
+        name: Compare source hash to .inputs-hash
+        run: |
+          HASH=$(
+            (find native/libsql/src -type f | sort | xargs sha256sum
+             sha256sum native/libsql/Cargo.toml native/libsql/Cargo.lock
+            ) | sha256sum | cut -d' ' -f1
+          )
+          echo "source_hash=$HASH" >> "$GITHUB_OUTPUT"
+
+          STORED=$(tr -d '[:space:]' < native/libsql/.inputs-hash 2>/dev/null)
+
+          if [ "$HASH" = "$STORED" ]; then
+            echo "needs_build=false" >> "$GITHUB_OUTPUT"
+            echo "Hash $HASH matches .inputs-hash — prebuilt libraries are current, skipping build."
+          else
+            echo "needs_build=true" >> "$GITHUB_OUTPUT"
+            echo "Hash $HASH differs from stored '$STORED' — rebuild required."
+          fi
+
+  # ── Linux JVM (x86_64 + aarch64) via Bazel ───────────────────────────────
+  # Bazel disk cache: cache hit returns in ~5 s; full Rust compile on miss ~90 s.
+  build-linux-jvm:
+    name: JVM Linux (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    needs: check
+    if: needs.check.outputs.needs_build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            bazel-platform: x86_64-unknown-linux-gnu
+            resource-dir: linux-x86_64
+            lib-name: libstelekit_libsql.so
+          - arch: aarch64
+            bazel-platform: aarch64-unknown-linux-gnu
+            resource-dir: linux-aarch64
+            lib-name: libstelekit_libsql.so
+            # aarch64 cross-linker required for Bazel's C link step.
+            linker-pkg: gcc-aarch64-linux-gnu
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install cross-linker
+        if: matrix.linker-pkg != ''
+        run: sudo apt-get install -y ${{ matrix.linker-pkg }}
+
+      - name: Cache Bazel disk cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: ~/.cache/bazel-disk-cache
+          key: bazel-${{ runner.os }}-${{ matrix.bazel-platform }}-${{ needs.check.outputs.source_hash }}
+          restore-keys: bazel-${{ runner.os }}-${{ matrix.bazel-platform }}-
+
+      - name: Build via Bazel
+        run: |
+          bazel build //native/libsql:stelekit_libsql \
+            --platforms=@rules_rust//rust/platform:${{ matrix.bazel-platform }}
+          OUTFILE=$(bazel cquery \
+            --platforms=@rules_rust//rust/platform:${{ matrix.bazel-platform }} \
+            --output=files \
+            //native/libsql:stelekit_libsql)
+          echo "outfile=$OUTFILE" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43f776f3b
+        with:
+          name: native-jvm-${{ matrix.resource-dir }}
+          path: ${{ env.outfile }}
+          retention-days: 1
+
+  # ── macOS JVM (aarch64 + x86_64) via Bazel ───────────────────────────────
+  # Must run on macOS — Bazel cannot cross-compile macOS targets without the Xcode SDK.
+  build-macos-jvm:
+    name: JVM macOS (${{ matrix.arch }})
+    runs-on: macos-latest
+    needs: check
+    if: needs.check.outputs.needs_build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64
+            bazel-platform: aarch64-apple-darwin
+            resource-dir: macos-aarch64
+            lib-name: libstelekit_libsql.dylib
+          - arch: x86_64
+            bazel-platform: x86_64-apple-darwin
+            resource-dir: macos-x86_64
+            lib-name: libstelekit_libsql.dylib
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Cache Bazel disk cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: ~/.cache/bazel-disk-cache
+          key: bazel-${{ runner.os }}-${{ matrix.bazel-platform }}-${{ needs.check.outputs.source_hash }}
+          restore-keys: bazel-${{ runner.os }}-${{ matrix.bazel-platform }}-
+
+      - name: Build via Bazel
+        run: |
+          bazel build //native/libsql:stelekit_libsql \
+            --platforms=@rules_rust//rust/platform:${{ matrix.bazel-platform }}
+          OUTFILE=$(bazel cquery \
+            --platforms=@rules_rust//rust/platform:${{ matrix.bazel-platform }} \
+            --output=files \
+            //native/libsql:stelekit_libsql)
+          echo "outfile=$OUTFILE" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43f776f3b
+        with:
+          name: native-jvm-${{ matrix.resource-dir }}
+          path: ${{ env.outfile }}
+          retention-days: 1
+
+  # ── Windows JVM (x86_64, MSVC) via Bazel ─────────────────────────────────
+  # Must run on Windows — MSVC toolchain required for a JVM-loadable DLL.
+  build-windows-jvm:
+    name: JVM Windows (x86_64)
+    runs-on: windows-latest
+    needs: check
+    if: needs.check.outputs.needs_build == 'true'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Cache Bazel disk cache
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: ~/.cache/bazel-disk-cache
+          key: bazel-${{ runner.os }}-x86_64-pc-windows-msvc-${{ needs.check.outputs.source_hash }}
+          restore-keys: bazel-${{ runner.os }}-x86_64-pc-windows-msvc-
+
+      - name: Build via Bazel
+        shell: bash
+        run: |
+          bazel build //native/libsql:stelekit_libsql \
+            --platforms=@rules_rust//rust/platform:x86_64-pc-windows-msvc
+          OUTFILE=$(bazel cquery \
+            --platforms=@rules_rust//rust/platform:x86_64-pc-windows-msvc \
+            --output=files \
+            //native/libsql:stelekit_libsql)
+          echo "outfile=$OUTFILE" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43f776f3b
+        with:
+          name: native-jvm-windows-x86_64
+          # Windows output: stelekit_libsql.dll (no "lib" prefix — matches System.mapLibraryName)
+          path: ${{ env.outfile }}
+          retention-days: 1
+
+  # ── Android (arm64-v8a / armeabi-v7a / x86_64 / x86) via cargo-ndk ───────
+  # cargo-ndk is used instead of Bazel because rules_android_ndk is not yet wired
+  # in MODULE.bazel.  Gated on the same source-hash check as the desktop builds.
+  build-android:
+    name: Android (${{ matrix.abi }})
+    runs-on: ubuntu-latest
+    needs: check
+    if: needs.check.outputs.needs_build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            rust-target: aarch64-linux-android
+          - abi: armeabi-v7a
+            rust-target: armv7-linux-androideabi
+          - abi: x86_64
+            rust-target: x86_64-linux-android
+          - abi: x86
+            rust-target: i686-linux-android
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050ecd3e5b93e1c5c2bc85e1bd7
+        with:
+          workspaces: native/libsql
+          key: ${{ matrix.rust-target }}
+
+      - uses: android-actions/setup-android@00854ea68c109d98b75d0d3c39cd2e94c8e5ae78
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --version "^3" --locked
+
+      - name: Build
+        run: cargo ndk --target ${{ matrix.abi }} --platform 26 -- build --release
+        working-directory: native/libsql
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43f776f3b
+        with:
+          name: native-android-${{ matrix.abi }}
+          path: native/libsql/target/${{ matrix.rust-target }}/release/libstelekit_libsql.so
+          retention-days: 1
+
+  # ── Package: place all artifacts, update .inputs-hash, commit ─────────────
+  package:
+    name: Commit native libraries
+    runs-on: ubuntu-latest
+    needs:
+      - check
+      - build-linux-jvm
+      - build-macos-jvm
+      - build-windows-jvm
+      - build-android
+    if: needs.check.outputs.needs_build == 'true'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # JVM Desktop artifacts
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+        with: { name: native-jvm-linux-x86_64,   path: _dl/jvm/linux-x86_64   }
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+        with: { name: native-jvm-linux-aarch64,  path: _dl/jvm/linux-aarch64  }
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+        with: { name: native-jvm-macos-aarch64,  path: _dl/jvm/macos-aarch64  }
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+        with: { name: native-jvm-macos-x86_64,   path: _dl/jvm/macos-x86_64   }
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+        with: { name: native-jvm-windows-x86_64, path: _dl/jvm/windows-x86_64 }
+
+      # Android ABI artifacts
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+        with: { name: native-android-arm64-v8a,    path: _dl/android/arm64-v8a    }
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+        with: { name: native-android-armeabi-v7a,  path: _dl/android/armeabi-v7a  }
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+        with: { name: native-android-x86_64,       path: _dl/android/x86_64       }
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f9f2ef63f
+        with: { name: native-android-x86,          path: _dl/android/x86          }
+
+      - name: Place JVM resources
+        run: |
+          install -D _dl/jvm/linux-x86_64/libstelekit_libsql.so   kmp/src/jvmMain/resources/native/linux-x86_64/libstelekit_libsql.so
+          install -D _dl/jvm/linux-aarch64/libstelekit_libsql.so  kmp/src/jvmMain/resources/native/linux-aarch64/libstelekit_libsql.so
+          install -D _dl/jvm/macos-aarch64/libstelekit_libsql.dylib kmp/src/jvmMain/resources/native/macos-aarch64/libstelekit_libsql.dylib
+          install -D _dl/jvm/macos-x86_64/libstelekit_libsql.dylib  kmp/src/jvmMain/resources/native/macos-x86_64/libstelekit_libsql.dylib
+          # Windows: System.mapLibraryName omits the "lib" prefix on Windows.
+          install -D _dl/jvm/windows-x86_64/stelekit_libsql.dll    kmp/src/jvmMain/resources/native/windows-x86_64/stelekit_libsql.dll
+
+      - name: Place Android jniLibs
+        run: |
+          install -D _dl/android/arm64-v8a/libstelekit_libsql.so   kmp/src/androidMain/jniLibs/arm64-v8a/libstelekit_libsql.so
+          install -D _dl/android/armeabi-v7a/libstelekit_libsql.so kmp/src/androidMain/jniLibs/armeabi-v7a/libstelekit_libsql.so
+          install -D _dl/android/x86_64/libstelekit_libsql.so      kmp/src/androidMain/jniLibs/x86_64/libstelekit_libsql.so
+          install -D _dl/android/x86/libstelekit_libsql.so         kmp/src/androidMain/jniLibs/x86/libstelekit_libsql.so
+
+      - name: Update .inputs-hash
+        run: printf '%s\n' '${{ needs.check.outputs.source_hash }}' > native/libsql/.inputs-hash
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add kmp/src/jvmMain/resources/native/ \
+                  kmp/src/androidMain/jniLibs/ \
+                  native/libsql/.inputs-hash
+          git diff --staged --quiet && echo "No binary changes" && exit 0
+          git commit -m "chore(native): update prebuilt libsql JNI libraries"
+          git push
