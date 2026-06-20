@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.stapler.stelekit.db.ImageImportService
 import dev.stapler.stelekit.db.sidecar.ImageSidecarManager
+import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.ImageSource
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.FileSystem
@@ -135,7 +136,7 @@ class PhotoInsertAndroidTest {
         assertNotNull("Block list must be retrievable", blocks)
         val imageBlock = blocks!!.find { it.uuid.value == annotation.blockUuid }
         assertNotNull("image_annotation block must exist for page page-002", imageBlock)
-        assertEquals("image_annotation", imageBlock!!.blockType)
+        assertEquals(BlockType.ImageAnnotation, imageBlock!!.blockType)
         assertTrue("block content must reference the image path", imageBlock.content.contains("assets/images/"))
         assertEquals("image-id property must match annotation UUID", annotation.uuid, imageBlock.properties["image-id"])
     }
