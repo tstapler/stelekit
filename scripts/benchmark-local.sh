@@ -67,7 +67,7 @@ GRADLE_ARGS=(":kmp:jvmTestProfile" "--rerun-tasks" "--no-daemon" "--no-configura
 [[ -n "$GRAPH_PATH" ]]  && GRADLE_ARGS+=("-PgraphPath=$GRAPH_PATH")
 [[ -n "$AP_LIB" ]]      && GRADLE_ARGS+=("-PapLib=$AP_LIB")
 [[ "$SAF_LATENCY" == "true" ]] && GRADLE_ARGS+=("-PsafLatency=true")
-GRADLE_ARGS+=("-DSTELEKIT_BENCH_CONFIG=$BENCH_CONFIG")
+GRADLE_ARGS+=("-PbenchConfig=$BENCH_CONFIG")
 
 cd "$REPO_ROOT"
 ./gradlew "${GRADLE_ARGS[@]}"

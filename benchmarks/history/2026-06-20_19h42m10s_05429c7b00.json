@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-06-20 19:42:10 UTC",
+  "gitSha": "05429c7b00",
+  "branch": "main",
+  "graphConfig": "xlarge",
+  "pageCount": 230,
+  "journalCount": 30,
+  "phase1TtiMs": 0,
+  "phase2Ms": 0,
+  "phase3Ms": 0,
+  "totalMs": 0,
+  "jankBaselineP50Ms": 0,
+  "jankBaselineP95Ms": 10,
+  "jankLoadP50Ms": 0,
+  "jankLoadP95Ms": 0,
+  "jankFactor": 0.0,
+  "allocHotspots": [
+    {
+      "frame": "byte[]_[k]",
+      "samples": 831,
+      "pct": 34.4
+    },
+    {
+      "frame": "java.util.LinkedHashMap$Entry_[k]",
+      "samples": 174,
+      "pct": 7.2
+    },
+    {
+      "frame": "java.lang.String_[k]",
+      "samples": 164,
+      "pct": 6.8
+    },
+    {
+      "frame": "int[]_[k]",
+      "samples": 162,
+      "pct": 6.7
+    },
+    {
+      "frame": "java.lang.Object[]_[k]",
+      "samples": 88,
+      "pct": 3.6
+    },
+    {
+      "frame": "java.util.Arrays$ArrayItr_[k]",
+      "samples": 61,
+      "pct": 2.5
+    },
+    {
+      "frame": "dev.stapler.stelekit.parsing.lexer.Token_[k]",
+      "samples": 57,
+      "pct": 2.4
+    },
+    {
+      "frame": "java.lang.StringBuilder_[k]",
+      "samples": 53,
+      "pct": 2.2
+    },
+    {
+      "frame": "java.util.LinkedHashMap_[k]",
+      "samples": 50,
+      "pct": 2.1
+    },
+    {
+      "frame": "java.nio.DirectByteBuffer_[k]",
+      "samples": 48,
+      "pct": 2.0
+    }
+  ],
+  "cpuHotspots": [
+    {
+      "frame": "/usr/lib/libc.so.6",
+      "samples": 45785,
+      "pct": 99.2
+    },
+    {
+      "frame": "/tmp/sqlite-3.51.3.0-55c0df12-7ff7-45ac-ba43-330fa9122353-libsqlitejdbc.so",
+      "samples": 164,
+      "pct": 0.4
+    },
+    {
+      "frame": "java/lang/String.checkIndex_[i]",
+      "samples": 16,
+      "pct": 0.0
+    },
+    {
+      "frame": "dev/stapler/stelekit/util/ContentHasher.sha256_[1]",
+      "samples": 10,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/String.isLatin1_[i]",
+      "samples": 7,
+      "pct": 0.0
+    },
+    {
+      "frame": "dev/stapler/stelekit/model/Validation.validateString_[1]",
+      "samples": 6,
+      "pct": 0.0
+    },
+    {
+      "frame": "munmap",
+      "samples": 5,
+      "pct": 0.0
+    },
+    {
+      "frame": "java/lang/String.coder_[i]",
+      "samples": 5,
+      "pct": 0.0
+    },
+    {
+      "frame": "SR_handler",
+      "samples": 5,
+      "pct": 0.0
+    },
+    {
+      "frame": "malloc",
+      "samples": 5,
+      "pct": 0.0
+    }
+  ],
+  "queryStats": []
+}
