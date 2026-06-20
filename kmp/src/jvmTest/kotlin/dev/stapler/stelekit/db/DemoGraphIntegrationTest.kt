@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.DatalogBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
@@ -82,7 +83,7 @@ class DemoGraphIntegrationTest {
             for (block in blocks) {
                 // Skip code fence blocks — their content is raw source (e.g. example tables),
                 // not prose page references.
-                if (block.blockType == "code_fence") continue
+                if (block.blockType is BlockType.CodeFence) continue
                 // Strip inline code spans before scanning for wiki links so that links inside
                 // backticks (e.g. `[[wiki links]]`) are not treated as page references
                 val contentWithoutCode = block.content.replace(Regex("`[^`]*`"), "")

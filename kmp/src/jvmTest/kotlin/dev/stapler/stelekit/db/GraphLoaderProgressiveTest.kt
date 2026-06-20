@@ -609,7 +609,7 @@ class GraphLoaderProgressiveTest {
                 uuid = BlockUuid("block-nav-1"),
                 pageUuid = PageUuid(pageUuid),
                 content = "old content",
-                position = 0,
+                position = "a0",
                 createdAt = oldInstant,
                 updatedAt = oldInstant,
                 isLoaded = true

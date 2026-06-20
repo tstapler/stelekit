@@ -60,19 +60,19 @@ class JournalsViewScreenshotTest {
             uuid = BlockUuid(parentBlockUuid),
             pageUuid = PageUuid(pageUuid),
             content = "**Bold text** with [[Wiki Link]] and plain text",
-            level = 0, position = 0, createdAt = now, updatedAt = now
+            level = 0, position = "a0", createdAt = now, updatedAt = now
         )
         val childBlock = Block(
             uuid = BlockUuid(childBlockUuid),
             pageUuid = PageUuid(pageUuid), parentUuid = parentBlockUuid, leftUuid = parentBlockUuid,
             content = "Child block with #tag and ~~strikethrough~~ and `code`",
-            level = 1, position = 0, createdAt = now, updatedAt = now
+            level = 1, position = "a0", createdAt = now, updatedAt = now
         )
         val grandchildBlock = Block(
             uuid = BlockUuid(grandchildBlockUuid),
             pageUuid = PageUuid(pageUuid), parentUuid = childBlockUuid, leftUuid = childBlockUuid,
             content = "Grandchild with unresolved ref ((00000000-0000-0000-0000-000000000099))",
-            level = 2, position = 0, createdAt = now, updatedAt = now
+            level = 2, position = "a0", createdAt = now, updatedAt = now
         )
 
         val pageRepo = FakePageRepository(initialPages = listOf(page))

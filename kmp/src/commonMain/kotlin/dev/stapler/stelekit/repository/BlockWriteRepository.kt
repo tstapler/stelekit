@@ -52,6 +52,13 @@ interface BlockWriteRepository {
     suspend fun walCheckpoint() {}
 
     /**
+     * Compact the FTS index with a single controlled merge pass. Call once after bulk
+     * indexing completes — not during incremental saves. No-op by default (non-SQLite backends).
+     */
+    @DirectRepositoryWrite
+    suspend fun compactFtsIndex() {}
+
+    /**
      * Update only the content of a block. Does NOT touch structural fields
      * (parentUuid, position, level, leftUuid), eliminating the race condition
      * where a full saveBlock() with stale structural fields clobbers concurrent

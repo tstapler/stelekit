@@ -33,6 +33,7 @@ SteleKit is a Kotlin Multiplatform (KMP) migration of Logseq — a Markdown-base
 ./gradlew packageDistributionForCurrentOS
 
 # Run all CI checks locally (detekt + jvmTest + Android unit tests + assembleDebug)
+# Also compiles androidTest/ and WASM test sources to catch platform-specific type errors without a device.
 ./gradlew ciCheck
 # UI/screenshot tests require a display. Use the appropriate wrapper for your environment:
 #   Wayland (native display available):   ./gradlew ciCheck                  # display is already set
@@ -40,6 +41,8 @@ SteleKit is a Kotlin Multiplatform (KMP) migration of Logseq — a Markdown-base
 #   Headless Linux / SSH (no display):    xvfb-run --auto-servernum ./gradlew ciCheck
 # Automatic detection (try Wayland/X11 first, fall back to xvfb-run):
 # [ -n "$WAYLAND_DISPLAY" ] || [ -n "$DISPLAY" ] && ./gradlew ciCheck || xvfb-run --auto-servernum ./gradlew ciCheck
+# Run instrumented tests on a connected device/emulator (adb must see the device):
+./gradlew ciCheck -PciInstrumentedTests
 # README sync is not covered by ciCheck — run separately:
 # bash scripts/generate-readme.sh && git diff --exit-code README.md
 
@@ -51,8 +54,9 @@ actionlint -color
 uvx 'zizmor==1.25.2' .
 
 # Run benchmark locally — mirrors CI, generates flamegraph PNGs (requires async-profiler + librsvg)
-./scripts/benchmark-local.sh                        # synthetic graph only
-./scripts/benchmark-local.sh /path/to/your/graph   # include real-graph test
+./scripts/benchmark-local.sh /path/to/your/graph   # real graph (recommended — most representative)
+./scripts/benchmark-local.sh                        # synthetic XLARGE only (7978 pages, matches real graph scale)
+# BENCH_CONFIG=SMALL ./scripts/benchmark-local.sh  # quick smoke (200 pages, same as CI)
 
 # Or run the Gradle task directly (flamegraph PNGs require flamegraph.pl + rsvg-convert separately)
 ./gradlew :kmp:jvmTestProfile -PgraphPath=/path/to/your/graph

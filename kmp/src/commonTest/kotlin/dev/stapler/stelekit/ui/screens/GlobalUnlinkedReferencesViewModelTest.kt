@@ -32,7 +32,7 @@ class GlobalUnlinkedReferencesViewModelTest {
         updatedAt = now(),
     )
 
-    private fun makeBlock(uuid: String, pageUuid: String, content: String, position: Int = 0): Block = Block(
+    private fun makeBlock(uuid: String, pageUuid: String, content: String, position: String = "a0"): Block = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid(pageUuid),
         content = content,
@@ -70,12 +70,12 @@ class GlobalUnlinkedReferencesViewModelTest {
         pageRepo.savePage(pageBeta)
 
         // Blocks on Alpha that mention Beta as plain text (unlinked)
-        blockRepo.saveBlock(makeBlock("blk-a1", "page-alpha", "Beta is a good topic", position = 0))
-        blockRepo.saveBlock(makeBlock("blk-a2", "page-alpha", "We should study Beta more", position = 1))
+        blockRepo.saveBlock(makeBlock("blk-a1", "page-alpha", "Beta is a good topic", position = "a0"))
+        blockRepo.saveBlock(makeBlock("blk-a2", "page-alpha", "We should study Beta more", position = "a1"))
 
         // Blocks on Beta that mention Alpha as plain text (unlinked)
-        blockRepo.saveBlock(makeBlock("blk-b1", "page-beta", "Alpha was discussed yesterday", position = 0))
-        blockRepo.saveBlock(makeBlock("blk-b2", "page-beta", "Alpha resources are helpful", position = 1))
+        blockRepo.saveBlock(makeBlock("blk-b1", "page-beta", "Alpha was discussed yesterday", position = "a0"))
+        blockRepo.saveBlock(makeBlock("blk-b2", "page-beta", "Alpha resources are helpful", position = "a1"))
 
         val matcher = AhoCorasickMatcher(
             mapOf(
@@ -122,13 +122,13 @@ class GlobalUnlinkedReferencesViewModelTest {
         val pageTarget = makePage("page-target", "Target")
         pageRepo.savePage(pageTarget)
 
-        val block = makeBlock("blk-t1", "page-target", "No real unlinked content here", position = 0)
+        val block = makeBlock("blk-t1", "page-target", "No real unlinked content here", position = "a0")
         blockRepo.saveBlock(block)
 
         // Add a source page whose blocks mention Target
         val pageSource = makePage("page-source", "Source")
         pageRepo.savePage(pageSource)
-        blockRepo.saveBlock(makeBlock("blk-s1", "page-source", "Target is a useful page", position = 0))
+        blockRepo.saveBlock(makeBlock("blk-s1", "page-source", "Target is a useful page", position = "a0"))
 
         val matcher = AhoCorasickMatcher(mapOf("target" to "Target"))
         val vm = buildViewModel(pageRepo, blockRepo, matcher)
@@ -165,7 +165,7 @@ class GlobalUnlinkedReferencesViewModelTest {
         pageRepo.savePage(pageSource)
 
         val blockContent = "Tgt is a great concept"
-        val sourceBlock = makeBlock("blk-src1", "page-src", blockContent, position = 0)
+        val sourceBlock = makeBlock("blk-src1", "page-src", blockContent, position = "a0")
         blockRepo.saveBlock(sourceBlock)
 
         val matcher = AhoCorasickMatcher(mapOf("tgt" to "Tgt"))
@@ -200,7 +200,7 @@ class GlobalUnlinkedReferencesViewModelTest {
 
         // Current live content differs from what will be captured
         val liveContent = "Stale concept updated by user"
-        val liveBlock = makeBlock("blk-stale1", "page-stale-src", liveContent, position = 0)
+        val liveBlock = makeBlock("blk-stale1", "page-stale-src", liveContent, position = "a0")
         blockRepo.saveBlock(liveBlock)
 
         val matcher = AhoCorasickMatcher(mapOf("stale" to "Stale"))

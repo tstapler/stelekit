@@ -26,7 +26,7 @@ class PlainTextExporterTest {
     private fun block(
         content: String,
         level: Int = 0,
-        position: Int = 0,
+        position: String = "a0",
         uuid: String = "block-1",
         parentUuid: String? = null,
         properties: Map<String, String> = emptyMap(),
@@ -129,8 +129,8 @@ class PlainTextExporterTest {
     @Test
     fun `U-PT-11 top-level blocks are separated by blank lines`() {
         val blocks = listOf(
-            block("first block", level = 0, position = 0, uuid = "block-a"),
-            block("second block", level = 0, position = 1, uuid = "block-b"),
+            block("first block", level = 0, position = "a0", uuid = "block-a"),
+            block("second block", level = 0, position = "a1", uuid = "block-b"),
         )
         val output = exporter.export(page(), blocks, emptyMap())
         // A blank line between two top-level blocks means two consecutive newlines between them
@@ -141,9 +141,9 @@ class PlainTextExporterTest {
     @Test
     fun `U-PT-12 nested block indented by two spaces per level`() {
         val blocks = listOf(
-            block("parent", level = 0, position = 0, uuid = "parent"),
-            block("child", level = 1, position = 0, uuid = "child", parentUuid = "parent"),
-            block("grandchild", level = 2, position = 0, uuid = "grand", parentUuid = "child"),
+            block("parent", level = 0, position = "a0", uuid = "parent"),
+            block("child", level = 1, position = "a0", uuid = "child", parentUuid = "parent"),
+            block("grandchild", level = 2, position = "a0", uuid = "grand", parentUuid = "child"),
         )
         val output = exporter.export(page(), blocks, emptyMap())
         assertContains(output, "  child")
@@ -154,9 +154,9 @@ class PlainTextExporterTest {
     @Test
     fun `U-PT-13 nested blocks are not separated by blank lines`() {
         val blocks = listOf(
-            block("parent", level = 0, position = 0, uuid = "parent"),
-            block("child one", level = 1, position = 0, uuid = "child-a", parentUuid = "parent"),
-            block("child two", level = 1, position = 1, uuid = "child-b", parentUuid = "parent"),
+            block("parent", level = 0, position = "a0", uuid = "parent"),
+            block("child one", level = 1, position = "a0", uuid = "child-a", parentUuid = "parent"),
+            block("child two", level = 1, position = "a1", uuid = "child-b", parentUuid = "parent"),
         )
         val output = exporter.export(page(), blocks, emptyMap())
         // Children must appear on consecutive lines with no blank line between them

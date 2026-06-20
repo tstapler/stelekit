@@ -1,0 +1,76 @@
+---
+title: Daily Notes
+description: Capture your daily thoughts, tasks, and ideas in SteleKit's journal view.
+---
+
+SteleKit opens today's daily note automatically at startup. You do not need to create it.
+
+## What is the Daily Notes view?
+
+The Daily Notes view is a reverse-chronological feed of your journal entries. Each day gets its
+own page, stored as a plain Markdown file in the `journals/` directory inside your graph folder.
+Daily notes are ordinary pages — they appear in search, accept wiki links, and accumulate
+backlinks like any other page.
+
+## Storage format
+
+Journal pages live in the `journals/` directory:
+
+```
+journals/
+  2024_01_15.md
+  2024_01_16.md
+  2024_01_17.md
+```
+
+The filename format is `YYYY_MM_DD.md`. This is the same format Logseq uses, so your existing
+journal history opens without conversion.
+
+## How to access it
+
+Tap or click the **Journals** icon in the sidebar. SteleKit opens today's entry automatically.
+
+## Key interactions
+
+- Type in any block to add content to today's daily note
+- Scroll down to see previous days in reverse-chronological order
+- Tap a date header to open that date as a full page
+- Use the left/right arrows to step backward or forward by one day
+- Past entries are read-write — you can add notes to any previous journal page
+
+## Writing in a daily note
+
+Open today's entry and start typing. Each line becomes a block. Use Tab to indent — daily notes
+support the full outliner feature set:
+
+```
+- Morning standup notes
+  - blocked on the API integration
+  - need to talk to [[Alice]]
+- Read [[Getting Started]] for SteleKit setup
+```
+
+## Linking to daily note pages
+
+Reference a journal page by its date in `[[YYYY-MM-DD]]` format:
+
+```
+See the notes from [[2024-01-10]]
+```
+
+SteleKit displays the date in a readable format in the backlinks panel.
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+|---|---|
+| Enter | Create a new block below the current block |
+| Tab | Indent the current block |
+| Shift+Tab | Unindent the current block |
+| Backspace on empty | Delete the block and move focus up |
+
+## Related features
+
+- [Block Editing](./block-editing) — full guide to creating and organizing blocks
+- [Backlinks](./backlinks) — see which pages link back to your journal entries
+- [Search](./search) — search across all journal entries by keyword

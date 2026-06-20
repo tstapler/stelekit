@@ -294,6 +294,7 @@ class MainActivity : ComponentActivity() {
                 onGraphManagerReady = { gm -> graphManager = gm },
                 onMemoryPressure = { handler -> onMemoryPressureHandler = handler },
                 attachmentService = attachmentService,
+                requestCameraPermission = ::requestCameraPermission,
             )
         }
     }
@@ -358,6 +359,7 @@ class MainActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
         ) return true
+        pendingCameraPermission?.let { return it.await() }
         val deferred = CompletableDeferred<Boolean>()
         pendingCameraPermission = deferred
         runOnUiThread { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }

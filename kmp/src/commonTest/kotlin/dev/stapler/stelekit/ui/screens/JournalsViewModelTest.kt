@@ -74,7 +74,7 @@ class JournalsViewModelTest {
         override suspend fun deleteBulk(blockUuids: List<BlockUuid>, deleteChildren: Boolean): Either<DomainError, Unit> = Unit.right()
         override suspend fun deleteBlocksForPage(pageUuid: PageUuid): Either<DomainError, Unit> = Unit.right()
         override suspend fun deleteBlocksForPages(pageUuids: List<PageUuid>): Either<DomainError, Unit> = Unit.right()
-        override suspend fun moveBlock(blockUuid: BlockUuid, newParentUuid: BlockUuid?, newPosition: Int): Either<DomainError, Unit> = Unit.right()
+        override suspend fun moveBlock(blockUuid: BlockUuid, newParentUuid: BlockUuid?, newPosition: String): Either<DomainError, Unit> = Unit.right()
         override suspend fun indentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()
         override suspend fun outdentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()
         override suspend fun moveBlockUp(blockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()

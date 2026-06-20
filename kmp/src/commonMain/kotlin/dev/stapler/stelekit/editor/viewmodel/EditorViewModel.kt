@@ -509,11 +509,11 @@ class EditorViewModel(
                     uuid = BlockUuid(newUuid),
                     pageUuid = PageUuid(pageUuid),
                     content = content,
-                    position = 0,
+                    position = "a0",
                     createdAt = now,
                     updatedAt = now
                 )
-                
+
                 val result = blockRepository.saveBlock(newBlock)
                 
                 if (result.isRight()) {

@@ -123,7 +123,7 @@ class UserSessionBenchmarkTest {
         return elapsed.inWholeMilliseconds.also { mergeSamples.add(it) }
     }
 
-    private suspend fun reorderBlock(vm: StelekitViewModel, block: Block, newPos: Int): Long {
+    private suspend fun reorderBlock(vm: StelekitViewModel, block: Block, newPos: String): Long {
         val elapsed = measureTime {
             vm.moveBlock(block.uuid.value, block.parentUuid, newPos)
             delay(50)
@@ -309,7 +309,7 @@ class UserSessionBenchmarkTest {
                     cycle == 2 && block != null -> {
                         mergeBlock(vm, block)
                         nextSafe()?.let { b ->
-                            val newPos = (b.position + 2).coerceAtLeast(1)
+                            val newPos = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(b.position, null)
                             reorderBlock(vm, b, newPos)
                         }
                     }

@@ -317,6 +317,66 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return if (slashIdx >= 0) withoutScheme.substring(slashIdx + 1) else ""
     }
 
+    override fun readFileBytes(path: String): ByteArray? {
+        if (!path.startsWith("saf://")) return legacyReadFileBytes(path)
+        if (isDirectAccess()) {
+            val realPath = resolveToRealPath(path)
+            if (realPath != null) return legacyReadFileBytes(realPath)
+        }
+        return try {
+            val docUri = parseDocumentUri(path)
+            context?.contentResolver?.openInputStream(docUri)?.use { it.readBytes() }
+        } catch (e: Exception) { null }
+    }
+
+    override fun writeFileBytes(path: String, data: ByteArray): Boolean {
+        if (path.startsWith("content://")) {
+            return try {
+                val ctx = context ?: return false
+                val uri = Uri.parse(path)
+                val stream = ctx.contentResolver.openOutputStream(uri, "wt") ?: return false
+                stream.use { it.write(data); it.flush() }
+                true
+            } catch (e: SecurityException) { Log.w(TAG, "writeFileBytes: permission denied for $path", e); false }
+            catch (e: Exception) { Log.w(TAG, "writeFileBytes: error writing to $path", e); false }
+        }
+        if (!path.startsWith("saf://")) return legacyWriteFileBytes(path, data)
+        if (isDirectAccess()) {
+            val realPath = resolveToRealPath(path)
+            if (realPath != null) return legacyWriteFileBytes(realPath, data)
+        }
+        return try {
+            var docUri = parseDocumentUri(path)
+            val ctx = context ?: return false
+            if (path !in knownExistingFiles) {
+                val docFile = DocumentFile.fromSingleUri(ctx, docUri)
+                if (docFile == null || !docFile.exists()) {
+                    val fileName = path.substringAfterLast('/')
+                    val parentPath = path.substring(0, path.lastIndexOf('/'))
+                    if (parentPath !in knownExistingDirs && !directoryExists(parentPath)) {
+                        if (!createDirectory(parentPath)) return false
+                    }
+                    knownExistingDirs.add(parentPath)
+                    val parentDocUri = parseDocumentUri(parentPath)
+                    val mimeType = when (fileName.substringAfterLast('.').lowercase()) {
+                        "jpg", "jpeg" -> "image/jpeg"
+                        "png" -> "image/png"
+                        "webp" -> "image/webp"
+                        else -> "application/octet-stream"
+                    }
+                    docUri = DocumentsContract.createDocument(
+                        ctx.contentResolver, parentDocUri, mimeType, fileName
+                    ) ?: return false
+                }
+            }
+            ctx.contentResolver.openOutputStream(docUri, "w")?.use { stream ->
+                stream.write(data)
+            }
+            knownExistingFiles.add(path)
+            true
+        } catch (e: Exception) { false }
+    }
+
     actual override fun writeFile(path: String, content: String): Boolean {
         if (path.startsWith("content://")) return contentUriWriteFile(path, content)
         if (!path.startsWith("saf://")) return legacyWriteFile(path, content)
@@ -360,34 +420,6 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         catch (e: Exception) { Log.w(TAG, "writeFile: unexpected error for $path", e); false }
     }
 
-    override fun writeFileBytes(path: String, data: ByteArray): Boolean {
-        if (path.startsWith("content://")) {
-            return try {
-                val ctx = context ?: return false
-                val uri = Uri.parse(path)
-                // Return false (not true) when openOutputStream is null — the provider refused
-                // the write, and the file stays 0 B. Returning true here would let check(ok)
-                // pass and show a success snackbar while the export file is actually empty.
-                val stream = ctx.contentResolver.openOutputStream(uri, "wt") ?: return false
-                stream.use { it.write(data); it.flush() }
-                true
-            } catch (e: SecurityException) { Log.w(TAG, "writeFileBytes: permission denied for $path", e); false }
-            catch (e: Exception) { Log.w(TAG, "writeFileBytes: error writing to $path", e); false }
-        }
-        return try {
-            val expandedPath = expandTilde(path)
-            val validatedPath = validateLegacyPath(expandedPath)
-            val file = File(validatedPath)
-            val parentDir = file.parentFile
-            if (parentDir != null && !parentDir.exists()) parentDir.mkdirs()
-            file.writeBytes(data)
-            true
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            false
-        }
-    }
 
     actual override fun listFiles(path: String): List<String> {
         if (!path.startsWith("saf://")) return legacyListFiles(path)
@@ -856,6 +888,44 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         } catch (e: Exception) {
             null
         }
+    }
+
+    private fun legacyReadFileBytes(path: String): ByteArray? {
+        return try {
+            val expandedPath = expandTilde(path)
+            val canonicalPath = File(expandedPath).canonicalPath
+            val homePath = File(homeDir).canonicalPath
+            val ctx = context
+            val allowedPrefixes = buildList {
+                add(homePath)
+                if (ctx != null) {
+                    add(ctx.cacheDir.canonicalPath)
+                    add(ctx.filesDir.canonicalPath)
+                    ctx.externalCacheDir?.canonicalPath?.let { add(it) }
+                }
+            }
+            require(allowedPrefixes.any { canonicalPath.startsWith(it) }) {
+                "Path must be within an allowed directory"
+            }
+            val file = File(canonicalPath)
+            if (!file.exists() || !file.isFile) return null
+            if (file.length() > maxFileSize) return null
+            file.readBytes()
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { null }
+    }
+
+    private fun legacyWriteFileBytes(path: String, data: ByteArray): Boolean {
+        return try {
+            val expandedPath = expandTilde(path)
+            val validatedPath = validateLegacyPath(expandedPath)
+            val file = File(validatedPath)
+            val parentDir = file.parentFile
+            if (parentDir != null && !parentDir.exists()) parentDir.mkdirs()
+            file.writeBytes(data)
+            true
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { false }
     }
 
     private fun legacyWriteFile(path: String, content: String): Boolean {

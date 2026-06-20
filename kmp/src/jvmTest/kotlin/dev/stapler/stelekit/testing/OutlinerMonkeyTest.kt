@@ -87,7 +87,7 @@ class OutlinerMonkeyTest {
             uuid = BlockUuid(initialBlockUuid),
             pageUuid = PageUuid(pageUuid),
             content = "Root block",
-            position = 0,
+            position = "a0",
             createdAt = Clock.System.now(),
             updatedAt = Clock.System.now()
         ))

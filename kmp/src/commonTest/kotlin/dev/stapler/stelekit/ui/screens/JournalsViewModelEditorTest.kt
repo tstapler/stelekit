@@ -200,7 +200,7 @@ class JournalsViewModelEditorTest {
             return Unit.right()
         }
 
-        override suspend fun moveBlock(blockUuid: BlockUuid, newParentUuid: BlockUuid?, newPosition: Int): Either<DomainError, Unit> =
+        override suspend fun moveBlock(blockUuid: BlockUuid, newParentUuid: BlockUuid?, newPosition: String): Either<DomainError, Unit> =
             Unit.right()
 
         override suspend fun indentBlock(blockUuid: BlockUuid): Either<DomainError, Unit> = Unit.right()
@@ -230,18 +230,13 @@ class JournalsViewModelEditorTest {
             val secondPart = fullContent.substring(safeSplitIndex).trim()
 
             val updatedBlock = block.copy(content = firstPart)
-            val newPosition = block.position + 1
-
-            // Shift siblings
-            val siblingsToShift = currentMap.values.filter {
-                it.pageUuid == block.pageUuid && it.parentUuid == block.parentUuid && it.position >= newPosition
-            }
-            siblingsToShift.forEach { sibling ->
-                currentMap[sibling.uuid.value] = sibling.copy(position = sibling.position + 1)
-            }
+            val nextSiblingPos = currentMap.values
+                .filter { it.pageUuid == block.pageUuid && it.parentUuid == block.parentUuid && it.position > block.position }
+                .minByOrNull { it.position }?.position
+            val newPosition = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(block.position, nextSiblingPos)
 
             val newBlock = block.copy(
-                uuid = newBlockUuid ?: BlockUuid(java.util.UUID.randomUUID().toString()),
+                uuid = newBlockUuid ?: BlockUuid(dev.stapler.stelekit.util.UuidGenerator.generateV7()),
                 content = secondPart,
                 position = newPosition
             )
@@ -363,7 +358,7 @@ class JournalsViewModelEditorTest {
         uuid: String,
         pageUuid: String = "page-1",
         parentUuid: String? = null,
-        position: Int,
+        position: String,
         content: String = "Block $uuid",
         level: Int = 0
     ): Block {
@@ -412,8 +407,8 @@ class JournalsViewModelEditorTest {
         val page = createPage("page-1")
         pageRepo.addPage(page)
 
-        val block1 = createBlock("block-1", pageUuid = "page-1", position = 0, content = "Hello ")
-        val block2 = createBlock("block-2", pageUuid = "page-1", position = 1, content = "World")
+        val block1 = createBlock("block-1", pageUuid = "page-1", position = "a0", content = "Hello ")
+        val block2 = createBlock("block-2", pageUuid = "page-1", position = "a1", content = "World")
         blockRepo.addBlock(block1)
         blockRepo.addBlock(block2)
 
@@ -446,7 +441,7 @@ class JournalsViewModelEditorTest {
         val page = createPage("page-1")
         pageRepo.addPage(page)
 
-        val block1 = createBlock("block-1", pageUuid = "page-1", position = 0, content = "First block")
+        val block1 = createBlock("block-1", pageUuid = "page-1", position = "a0", content = "First block")
         blockRepo.addBlock(block1)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
@@ -471,9 +466,9 @@ class JournalsViewModelEditorTest {
         val page = createPage("page-1")
         pageRepo.addPage(page)
 
-        val block1 = createBlock("block-1", pageUuid = "page-1", position = 0, content = "A")
-        val block2 = createBlock("block-2", pageUuid = "page-1", position = 1, content = "B")
-        val block3 = createBlock("block-3", pageUuid = "page-1", position = 2, content = "C")
+        val block1 = createBlock("block-1", pageUuid = "page-1", position = "a0", content = "A")
+        val block2 = createBlock("block-2", pageUuid = "page-1", position = "a1", content = "B")
+        val block3 = createBlock("block-3", pageUuid = "page-1", position = "a2", content = "C")
         blockRepo.addBlock(block1)
         blockRepo.addBlock(block2)
         blockRepo.addBlock(block3)
@@ -508,8 +503,8 @@ class JournalsViewModelEditorTest {
         val page = createPage("page-1")
         pageRepo.addPage(page)
 
-        val block1 = createBlock("block-1", pageUuid = "page-1", position = 0, content = "Previous block")
-        val block2 = createBlock("block-2", pageUuid = "page-1", position = 1, content = "")  // Empty block
+        val block1 = createBlock("block-1", pageUuid = "page-1", position = "a0", content = "Previous block")
+        val block2 = createBlock("block-2", pageUuid = "page-1", position = "a1", content = "")  // Empty block
         blockRepo.addBlock(block1)
         blockRepo.addBlock(block2)
 
@@ -538,8 +533,8 @@ class JournalsViewModelEditorTest {
         val page = createPage("page-1")
         pageRepo.addPage(page)
 
-        val block1 = createBlock("block-1", pageUuid = "page-1", position = 0, content = "")  // Empty first block
-        val block2 = createBlock("block-2", pageUuid = "page-1", position = 1, content = "Second block")
+        val block1 = createBlock("block-1", pageUuid = "page-1", position = "a0", content = "")  // Empty first block
+        val block2 = createBlock("block-2", pageUuid = "page-1", position = "a1", content = "Second block")
         blockRepo.addBlock(block1)
         blockRepo.addBlock(block2)
 
@@ -568,7 +563,7 @@ class JournalsViewModelEditorTest {
         val page = createPage("page-1")
         pageRepo.addPage(page)
 
-        val block1 = createBlock("block-1", pageUuid = "page-1", position = 0, content = "")  // Only block
+        val block1 = createBlock("block-1", pageUuid = "page-1", position = "a0", content = "")  // Only block
         blockRepo.addBlock(block1)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
@@ -592,8 +587,8 @@ class JournalsViewModelEditorTest {
         val page = createPage("page-1")
         pageRepo.addPage(page)
 
-        val parent = createBlock("parent", pageUuid = "page-1", position = 0, content = "Parent", level = 0)
-        val child = createBlock("child", pageUuid = "page-1", parentUuid = "parent", position = 0, content = "", level = 1)  // Empty child
+        val parent = createBlock("parent", pageUuid = "page-1", position = "a0", content = "Parent", level = 0)
+        val child = createBlock("child", pageUuid = "page-1", parentUuid = "parent", position = "a0", content = "", level = 1)  // Empty child
         blockRepo.addBlock(parent)
         blockRepo.addBlock(child)
 
@@ -626,7 +621,7 @@ class JournalsViewModelEditorTest {
         val page = createPage("page-1")
         pageRepo.addPage(page)
 
-        val block = createBlock("block-1", pageUuid = "page-1", position = 0, content = "HelloWorld")
+        val block = createBlock("block-1", pageUuid = "page-1", position = "a0", content = "HelloWorld")
         blockRepo.addBlock(block)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
@@ -655,7 +650,7 @@ class JournalsViewModelEditorTest {
         val page = createPage("page-1")
         pageRepo.addPage(page)
 
-        val block = createBlock("block-1", pageUuid = "page-1", position = 0, content = "Full content")
+        val block = createBlock("block-1", pageUuid = "page-1", position = "a0", content = "Full content")
         blockRepo.addBlock(block)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
@@ -683,7 +678,7 @@ class JournalsViewModelEditorTest {
         val page = createPage("page-1")
         pageRepo.addPage(page)
 
-        val block = createBlock("block-1", pageUuid = "page-1", position = 0, content = "Full content")
+        val block = createBlock("block-1", pageUuid = "page-1", position = "a0", content = "Full content")
         blockRepo.addBlock(block)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
@@ -711,9 +706,9 @@ class JournalsViewModelEditorTest {
         val page = createPage("page-1")
         pageRepo.addPage(page)
 
-        val block1 = createBlock("block-1", pageUuid = "page-1", position = 0, content = "First")
-        val block2 = createBlock("block-2", pageUuid = "page-1", position = 1, content = "HelloWorld")
-        val block3 = createBlock("block-3", pageUuid = "page-1", position = 2, content = "Third")
+        val block1 = createBlock("block-1", pageUuid = "page-1", position = "a0", content = "First")
+        val block2 = createBlock("block-2", pageUuid = "page-1", position = "a1", content = "HelloWorld")
+        val block3 = createBlock("block-3", pageUuid = "page-1", position = "a2", content = "Third")
         blockRepo.addBlock(block1)
         blockRepo.addBlock(block2)
         blockRepo.addBlock(block3)
@@ -736,9 +731,9 @@ class JournalsViewModelEditorTest {
         assertEquals("World", blocks[2].content)
         assertEquals("Third", blocks[3].content)
 
-        // Verify positions are sequential
-        blocks.forEachIndexed { index, block ->
-            assertEquals(index, block.position, "Block at index $index should have position $index")
+        // Verify positions are in ascending lexicographic order (fractional index)
+        blocks.zipWithNext().forEach { (a, b) ->
+            assertTrue(a.position < b.position, "Block positions must be in ascending order")
         }
     }
 
@@ -754,7 +749,7 @@ class JournalsViewModelEditorTest {
         val page = createPage("page-1")
         pageRepo.addPage(page)
 
-        val block1 = createBlock("block-1", pageUuid = "page-1", position = 0, content = "First")
+        val block1 = createBlock("block-1", pageUuid = "page-1", position = "a0", content = "First")
         blockRepo.addBlock(block1)
 
         val viewModel = createViewModel(pageRepo, blockRepo)
@@ -782,9 +777,9 @@ class JournalsViewModelEditorTest {
         val page = createPage("page-1")
         pageRepo.addPage(page)
 
-        val block1 = createBlock("block-1", pageUuid = "page-1", position = 0, content = "A")
-        val block2 = createBlock("block-2", pageUuid = "page-1", position = 1, content = "B")
-        val block3 = createBlock("block-3", pageUuid = "page-1", position = 2, content = "C")
+        val block1 = createBlock("block-1", pageUuid = "page-1", position = "a0", content = "A")
+        val block2 = createBlock("block-2", pageUuid = "page-1", position = "a1", content = "B")
+        val block3 = createBlock("block-3", pageUuid = "page-1", position = "a2", content = "C")
         blockRepo.addBlock(block1)
         blockRepo.addBlock(block2)
         blockRepo.addBlock(block3)
@@ -823,14 +818,14 @@ class JournalsViewModelEditorTest {
         pageRepo.addPage(page2)
 
         // Page 1 blocks
-        val p1Block1 = createBlock("p1-b1", pageUuid = "page-1", position = 0, content = "Page1-A")
-        val p1Block2 = createBlock("p1-b2", pageUuid = "page-1", position = 1, content = "Page1-B")
+        val p1Block1 = createBlock("p1-b1", pageUuid = "page-1", position = "a0", content = "Page1-A")
+        val p1Block2 = createBlock("p1-b2", pageUuid = "page-1", position = "a1", content = "Page1-B")
         blockRepo.addBlock(p1Block1)
         blockRepo.addBlock(p1Block2)
 
         // Page 2 blocks
-        val p2Block1 = createBlock("p2-b1", pageUuid = "page-2", position = 0, content = "Page2-A")
-        val p2Block2 = createBlock("p2-b2", pageUuid = "page-2", position = 1, content = "Page2-B")
+        val p2Block1 = createBlock("p2-b1", pageUuid = "page-2", position = "a0", content = "Page2-A")
+        val p2Block2 = createBlock("p2-b2", pageUuid = "page-2", position = "a1", content = "Page2-B")
         blockRepo.addBlock(p2Block1)
         blockRepo.addBlock(p2Block2)
 

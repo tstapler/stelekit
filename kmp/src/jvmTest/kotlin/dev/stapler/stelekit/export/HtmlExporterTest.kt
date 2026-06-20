@@ -25,7 +25,7 @@ class HtmlExporterTest {
         uuid: String,
         content: String,
         level: Int,
-        position: Int,
+        position: String = "a0",
         parentUuid: String? = null
     ) = Block(
         uuid = BlockUuid(uuid),
@@ -46,13 +46,13 @@ class HtmlExporterTest {
     fun testDeeplyNestedBlocksProduceBalancedUlTags() {
         // Build a 6-level-deep chain, then a top-level block afterwards to force list close
         val blocks = listOf(
-            makeBlock("dn-0", "Level 0 root", level = 0, position = 0),
-            makeBlock("dn-1", "Level 1", level = 1, position = 0, parentUuid = "dn-0"),
-            makeBlock("dn-2", "Level 2", level = 2, position = 0, parentUuid = "dn-1"),
-            makeBlock("dn-3", "Level 3", level = 3, position = 0, parentUuid = "dn-2"),
-            makeBlock("dn-4", "Level 4", level = 4, position = 0, parentUuid = "dn-3"),
-            makeBlock("dn-5", "Level 5", level = 5, position = 0, parentUuid = "dn-4"),
-            makeBlock("dn-back", "Back to level 0", level = 0, position = 1)
+            makeBlock("dn-0", "Level 0 root", level = 0, position = "a0"),
+            makeBlock("dn-1", "Level 1", level = 1, position = "a0", parentUuid = "dn-0"),
+            makeBlock("dn-2", "Level 2", level = 2, position = "a0", parentUuid = "dn-1"),
+            makeBlock("dn-3", "Level 3", level = 3, position = "a0", parentUuid = "dn-2"),
+            makeBlock("dn-4", "Level 4", level = 4, position = "a0", parentUuid = "dn-3"),
+            makeBlock("dn-5", "Level 5", level = 5, position = "a0", parentUuid = "dn-4"),
+            makeBlock("dn-back", "Back to level 0", level = 0, position = "a1")
         )
 
         val output = HtmlExporter().export(makePage(), blocks)
@@ -69,9 +69,9 @@ class HtmlExporterTest {
     @Test
     fun testMixedTaskMarkers() {
         val blocks = listOf(
-            makeBlock("task-todo", "TODO do something", level = 0, position = 0),
-            makeBlock("task-done", "DONE finished", level = 0, position = 1),
-            makeBlock("task-now", "NOW in progress", level = 0, position = 2)
+            makeBlock("task-todo", "TODO do something", level = 0, position = "a0"),
+            makeBlock("task-done", "DONE finished", level = 0, position = "a1"),
+            makeBlock("task-now", "NOW in progress", level = 0, position = "a2")
         )
 
         val output = HtmlExporter().export(makePage(), blocks)
@@ -114,7 +114,7 @@ class HtmlExporterTest {
     fun testXssInCodeFence() {
         // A block with a newline triggers the code-fence (<pre><code>) path
         val xssContent = "<script>alert('xss')</script>\nmore code"
-        val block = makeBlock("xss-block", xssContent, level = 0, position = 0)
+        val block = makeBlock("xss-block", xssContent, level = 0, position = "a0")
 
         val output = HtmlExporter().export(makePage(), listOf(block))
 
@@ -128,7 +128,7 @@ class HtmlExporterTest {
 
     @Test
     fun testWikiLinksRenderAsAnchors() {
-        val block = makeBlock("wl-block", "[[Page Name]]", level = 0, position = 0)
+        val block = makeBlock("wl-block", "[[Page Name]]", level = 0, position = "a0")
 
         val output = HtmlExporter().export(makePage(), listOf(block))
 

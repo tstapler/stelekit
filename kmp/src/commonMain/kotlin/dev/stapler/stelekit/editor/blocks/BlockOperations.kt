@@ -42,7 +42,7 @@ class BlockOperations(
         content: String,
         parentId: String?,
         leftId: String?,
-        position: Int?,
+        position: String?,
         properties: Map<String, String>,
         uuid: String?,
         createdAt: Instant?
@@ -56,7 +56,7 @@ class BlockOperations(
                 pageUuid = PageUuid(pageId),
                 parentUuid = parentId,
                 leftUuid = leftId,
-                position = position ?: 0,
+                position = position ?: dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(null, null),
                 level = 0, // Level should be determined based on parent, but keeping it simple for now
                 createdAt = createdAt ?: kotlin.time.Clock.System.now(),
                 updatedAt = kotlin.time.Clock.System.now(),
@@ -160,34 +160,35 @@ class BlockOperations(
             val siblings = siblingsResult.getOrNull()
                 ?.let { if (targetParentUuid == null) it.filter { b -> b.parentUuid == null } else it }
                 ?.sortedBy { it.position }
+                ?.filter { it.uuid.value != blockUuid }
                 ?: emptyList()
 
-            // 2. Calculate new position
+            // 2. Calculate new position using fractional indexing — no sibling shifting needed
             val newPosition = when (positioning) {
-                PositioningMode.START -> 0
-                PositioningMode.END -> (siblings.maxOfOrNull { it.position } ?: -1) + 1
+                PositioningMode.START ->
+                    dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(null, siblings.firstOrNull()?.position)
+                PositioningMode.END ->
+                    dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(siblings.lastOrNull()?.position, null)
                 PositioningMode.BEFORE -> {
-                    val targetBlock = siblings.find { it.uuid.value == targetUuid }
-                    targetBlock?.position ?: ((siblings.maxOfOrNull { it.position } ?: -1) + 1)
+                    val idx = siblings.indexOfFirst { it.uuid.value == targetUuid }
+                    val left = if (idx > 0) siblings[idx - 1].position else null
+                    val right = siblings.getOrNull(idx)?.position
+                    dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(left, right)
                 }
                 PositioningMode.AFTER -> {
-                    val targetBlock = siblings.find { it.uuid.value == targetUuid }
-                    (targetBlock?.position ?: (siblings.maxOfOrNull { it.position } ?: -1)) + 1
+                    val idx = siblings.indexOfFirst { it.uuid.value == targetUuid }
+                    val left = siblings.getOrNull(idx)?.position
+                    val right = siblings.getOrNull(idx + 1)?.position
+                    dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(left, right)
                 }
                 PositioningMode.REPLACE -> {
                     val targetBlock = siblings.find { it.uuid.value == targetUuid }
-                    targetBlock?.position ?: ((siblings.maxOfOrNull { it.position } ?: -1) + 1)
+                    targetBlock?.position
+                        ?: dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(siblings.lastOrNull()?.position, null)
                 }
             }
 
-            // 3. Shift siblings if inserting in between
-            val siblingsToShift = siblings.filter { it.position >= newPosition && it.uuid.value != blockUuid }
-            if (siblingsToShift.isNotEmpty()) {
-                val shifted = siblingsToShift.map { it.copy(position = it.position + 1) }
-                blockRepository.saveBlocks(shifted)
-            }
-
-            // 4. Perform the move
+            // 3. Perform the move — no sibling shifting required with fractional keys
             blockRepository.moveBlock(blockUuidTyped, targetParentUuid?.let { BlockUuid(it) }, newPosition)
         } catch (e: CancellationException) {
             throw e

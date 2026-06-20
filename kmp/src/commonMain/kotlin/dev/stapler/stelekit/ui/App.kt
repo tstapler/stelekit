@@ -154,7 +154,7 @@ internal suspend fun executeCaptureAndImport(
             val result = service.import(
                 tempFile = captured.value,
                 graphPath = graphPath,
-                pageUuid = pageUuid,
+                pageUuid = dev.stapler.stelekit.model.PageUuid(pageUuid),
                 source = ImageSource.CAMERA,
                 insertToJournalPage = false,
             )
@@ -226,6 +226,7 @@ fun StelekitApp(
      * When null (default), the panel is rendered but the buttons are no-ops.
      */
     googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
+    requestCameraPermission: (suspend () -> Boolean)? = null,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -234,7 +235,7 @@ fun StelekitApp(
     remember { registerAllMigrations() }
 
     // Create GraphManager - this owns all graph lifecycle
-    val graphManager = graphManager ?: remember {
+    val graphManager = graphManager ?: remember(platformSettings, fileSystem) {
         GraphManager(platformSettings, DriverFactory(), fileSystem)
     }
     LaunchedEffect(graphManager) { onGraphManagerReady?.invoke(graphManager) }
@@ -388,6 +389,7 @@ fun StelekitApp(
             cryptoEngine = cryptoEngine,
             attachmentService = attachmentService,
             googleAuthManager = googleAuthManager,
+            requestCameraPermission = requestCameraPermission,
         )
     }
 }
@@ -421,6 +423,7 @@ private fun GraphContent(
     cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine? = null,
     attachmentService: dev.stapler.stelekit.service.MediaAttachmentService? = null,
     googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
+    requestCameraPermission: (suspend () -> Boolean)? = null,
 ) {
     CompositionLocalProvider(LocalSpanRecorder provides spanRecorder) {
     val scope = rememberCoroutineScope()
@@ -446,7 +449,7 @@ private fun GraphContent(
         )
     }
 
-    var vaultManager by remember {
+    var vaultManager by remember(isParanoidMode, cryptoEngine, fileSystem) {
         androidx.compose.runtime.mutableStateOf(
             if (!isParanoidMode || cryptoEngine == null) null
             else dev.stapler.stelekit.vault.VaultManager(
@@ -469,11 +472,11 @@ private fun GraphContent(
         graphManager.registerVaultCredentialStore(vaultCredentialStore)
     }
 
-    val sidecarManager = remember {
+    val sidecarManager = remember(activeGraphPath, fileSystem) {
         val graphPath = activeGraphPath.ifEmpty { null }
         if (graphPath != null) SidecarManager(fileSystem, graphPath) else null
     }
-    val imageSidecarManager = remember {
+    val imageSidecarManager = remember(activeGraphPath, fileSystem) {
         if (activeGraphPath.isNotEmpty()) dev.stapler.stelekit.db.sidecar.ImageSidecarManager(fileSystem) else null
     }
     val imageImportService = remember(imageSidecarManager) {
@@ -506,7 +509,7 @@ private fun GraphContent(
             }
         }
     }
-    val graphLoader = remember {
+    val graphLoader = remember(fileSystem, repos, sidecarManager) {
         GraphLoader(
             fileSystem,
             repos.pageRepository,
@@ -530,7 +533,7 @@ private fun GraphContent(
         fileSystem.setOnFlushFailed(graphLoader::clearFilePendingWrite)
     }
 
-    val graphWriter = remember {
+    val graphWriter = remember(fileSystem, repos, graphLoader, sidecarManager) {
         GraphWriter(
             fileSystem,
             repos.writeActor,
@@ -580,18 +583,21 @@ private fun GraphContent(
     // created first with a lazy lambda that resolves viewModel after both are initialised.
     var viewModelRef: StelekitViewModel? = null
 
-    val blockStateManager = remember {
+    val blockStateManager = remember(repos, graphLoader, graphWriter) {
         dev.stapler.stelekit.ui.state.BlockStateManager(
             blockRepository = repos.blockRepository,
             graphLoader = graphLoader,
             graphWriter = graphWriter,
             pageRepository = repos.pageRepository,
             graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" },
-            histogramWriter = repos.histogramWriter
+            histogramWriter = repos.histogramWriter,
+            writeActor = repos.writeActor,
+            invalidationSource = repos.writeActor?.blockInvalidations,
+            pushSource = repos.writeActor?.blocksPushed,
         )
     }
 
-    val exportService = remember {
+    val exportService = remember(clipboardProvider, repos) {
         ExportService(
             exporters = listOf(
                 MarkdownExporter(),
@@ -610,7 +616,7 @@ private fun GraphContent(
     // ViewModel scope must NOT be rememberCoroutineScope() — that scope is cancelled when the
     // composable leaves the composition, which would cancel all ViewModel coroutines on pause.
     val viewModelScope = remember { kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default) }
-    val viewModel = remember {
+    val viewModel = remember(fileSystem, repos, platformSettings, graphLoader, graphWriter, blockStateManager, exportService, graphManager, viewModelScope) {
         StelekitViewModel(
             StelekitViewModelDependencies(
                 fileSystem = fileSystem,
@@ -977,7 +983,7 @@ private fun GraphContent(
         }
     }
 
-    val journalsViewModel = remember {
+    val journalsViewModel = remember(repos, blockStateManager) {
         JournalsViewModel(repos.journalService, blockStateManager)
     }
 
@@ -1044,7 +1050,7 @@ private fun GraphContent(
     val allPagesViewModel = remember {
         AllPagesViewModel(repos.pageRepository, repos.blockRepository)
     }
-    val libraryStatsViewModel = remember {
+    val libraryStatsViewModel = remember(libraryStatsProvider, graphManager) {
         LibraryStatsViewModel(libraryStatsProvider, graphManager.getActiveGraphInfo()?.path ?: "")
     }
     val searchViewModel = remember {
@@ -1380,6 +1386,13 @@ private fun GraphContent(
                                     onCaptureImage = if (cameraImportEnabled) {
                                         {
                                             scope.launch {
+                                                if (requestCameraPermission != null) {
+                                                    val granted = requestCameraPermission.invoke()
+                                                    if (!granted) {
+                                                        viewModel.sendSnackbar("Camera permission denied — enable it in Settings to take photos")
+                                                        return@launch
+                                                    }
+                                                }
                                                 // Resolve page UUID before capturing — camera suspends for seconds,
                                                 // so we snapshot navigation state at button-tap time, not return time.
                                                 val pageUuid: String? =
@@ -1403,6 +1416,13 @@ private fun GraphContent(
                                 onImportImage = if (cameraImportEnabled) {
                                     {
                                         scope.launch {
+                                            if (requestCameraPermission != null) {
+                                                val granted = requestCameraPermission.invoke()
+                                                if (!granted) {
+                                                    viewModel.sendSnackbar("Camera permission denied — enable it in Settings to take photos")
+                                                    return@launch
+                                                }
+                                            }
                                             val page = repos.journalService.ensureTodayJournal()
                                             executeCaptureAndImport(
                                                 imageImportService = imageImportService,

@@ -5,7 +5,7 @@ import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.MeasurementAnnotation
 import dev.stapler.stelekit.model.NormalizedPoint
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -24,7 +24,7 @@ class InMemoryMeasurementAnnotationRepositoryTest {
     )
 
     @Test
-    fun saveMeasurements_should_returnRight_when_listIsNonEmpty() = runBlocking {
+    fun saveMeasurements_should_returnRight_when_listIsNonEmpty() = runTest {
         val r = repo()
         val measurements = listOf(
             measurement("meas-001"),
@@ -40,7 +40,7 @@ class InMemoryMeasurementAnnotationRepositoryTest {
     }
 
     @Test
-    fun deleteMeasurementsForImage_should_cascadeDelete_when_imageUuidProvided() = runBlocking {
+    fun deleteMeasurementsForImage_should_cascadeDelete_when_imageUuidProvided() = runTest {
         val r = repo()
         r.saveMeasurements("img-001", listOf(measurement("m1"), measurement("m2")))
         r.deleteMeasurementsForImage("img-001")
@@ -51,7 +51,7 @@ class InMemoryMeasurementAnnotationRepositoryTest {
     }
 
     @Test
-    fun saveMeasurements_should_replaceExisting_when_calledTwice() = runBlocking {
+    fun saveMeasurements_should_replaceExisting_when_calledTwice() = runTest {
         val r = repo()
         r.saveMeasurements("img-001", listOf(measurement("m1"), measurement("m2")))
         r.saveMeasurements("img-001", listOf(measurement("m3")))
@@ -63,7 +63,7 @@ class InMemoryMeasurementAnnotationRepositoryTest {
     }
 
     @Test
-    fun deleteMeasurementAnnotation_should_removeOnlyTargetMeasurement() = runBlocking {
+    fun deleteMeasurementAnnotation_should_removeOnlyTargetMeasurement() = runTest {
         val r = repo()
         r.saveMeasurements("img-001", listOf(measurement("m1"), measurement("m2")))
         r.deleteMeasurementAnnotation("m1")

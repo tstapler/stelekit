@@ -6,7 +6,6 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.ParsedBlock
 import dev.stapler.stelekit.model.ParsedPage
-import dev.stapler.stelekit.model.toDiscriminatorString
 import dev.stapler.stelekit.outliner.JournalUtils
 import dev.stapler.stelekit.parsing.ParseMode
 import dev.stapler.stelekit.util.ContentHasher
@@ -136,6 +135,7 @@ object MarkdownPageParser {
         sidecarMap: Map<String, SidecarManager.SidecarEntry>? = null,
     ) {
         var previousSiblingUuid: String? = null
+        var previousPosition: String? = null
 
         parsedBlocks.forEachIndexed { index, parsedBlock ->
             val blockUuidStr = generateUuid(parsedBlock, pagePath, index, parentUuid, sidecarMap)
@@ -147,6 +147,8 @@ object MarkdownPageParser {
                 if (currentVersion > 0) currentVersion + 1 else 0L
             }
 
+            val positionKey = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(previousPosition, null)
+
             val block = Block(
                 uuid = blockUuid,
                 pageUuid = pageUuid,
@@ -154,18 +156,19 @@ object MarkdownPageParser {
                 leftUuid = previousSiblingUuid,
                 content = parsedBlock.content,
                 level = baseLevel,
-                position = index,
+                position = positionKey,
                 createdAt = now,
                 updatedAt = now,
                 version = versionToSave,
                 properties = parsedBlock.mergedProperties(),
                 isLoaded = mode == ParseMode.FULL,
                 contentHash = ContentHasher.sha256ForContent(parsedBlock.content),
-                blockType = parsedBlock.blockType.toDiscriminatorString()
+                blockType = parsedBlock.blockType
             )
 
             destinationList.add(block)
             previousSiblingUuid = blockUuidStr
+            previousPosition = positionKey
 
             if (parsedBlock.children.isNotEmpty()) {
                 processParsedBlocks(
@@ -200,9 +203,12 @@ object MarkdownPageParser {
         now: Instant,
         destination: MutableList<Block>
     ) {
+        var stubPrevPosition: String? = null
         parsedBlocks.forEachIndexed { index, parsedBlock ->
             val blockUuidStr = generateUuid(parsedBlock, pagePath, index, parentUuid)
             val blockUuid = BlockUuid(blockUuidStr)
+            val stubPositionKey = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(stubPrevPosition, null)
+            stubPrevPosition = stubPositionKey
 
             destination.add(
                 Block(
@@ -211,13 +217,13 @@ object MarkdownPageParser {
                     parentUuid = parentUuid,
                     content = parsedBlock.content,
                     level = baseLevel,
-                    position = index,
+                    position = stubPositionKey,
                     createdAt = now,
                     updatedAt = now,
                     properties = parsedBlock.mergedProperties(),
                     isLoaded = false,
                     contentHash = ContentHasher.sha256ForContent(parsedBlock.content),
-                    blockType = parsedBlock.blockType.toDiscriminatorString()
+                    blockType = parsedBlock.blockType
                 )
             )
 

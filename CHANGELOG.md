@@ -1,5 +1,86 @@
 # Changelog
 
+## [0.51.0](https://github.com/tstapler/stelekit/compare/v0.50.0...v0.51.0) (2026-06-19)
+
+
+### Features
+
+* **docs:** enforce documentation coverage for all user-facing screens ([f2194b5](https://github.com/tstapler/stelekit/commit/f2194b568efafb93dbb36b460ca64eaf17316a34))
+
+
+### Bug Fixes
+
+* **android:** wire camera permission request and binary JPEG copy ([#175](https://github.com/tstapler/stelekit/issues/175)) ([173af54](https://github.com/tstapler/stelekit/commit/173af54028f664e3b8b78affcd48e065f04bea9a))
+* **compose:** add missing remember keys for constructor-capturing lambdas ([47cc022](https://github.com/tstapler/stelekit/commit/47cc02296283dc5d72a455f2ab9f74d922f01e31))
+* **demo:** suppress false git-detection banner; expand web and resource demo content ([c3015a7](https://github.com/tstapler/stelekit/commit/c3015a70be7c17a29315e4970e0851996017b9d6))
+* **detekt:** repair broken PSI visitor recursion in 2 custom rules ([8da2b97](https://github.com/tstapler/stelekit/commit/8da2b972909aa0016de508bba2a3a3e62b195989))
+
+## [0.50.0](https://github.com/tstapler/stelekit/compare/v0.49.2...v0.50.0) (2026-06-19)
+
+
+### Features
+
+* **db:** add BlockUpdateEvent sealed class and blockInvalidations SharedFlow ([1d998b2](https://github.com/tstapler/stelekit/commit/1d998b258e3c3e5a49cfc46b0a043685927167db))
+* **release:** ad-hoc codesign macOS app bundle before DMG packaging ([844271c](https://github.com/tstapler/stelekit/commit/844271c167e18ef3a7c516e2e161bee6555be141))
+
+
+### Bug Fixes
+
+* **review:** address code review findings from /code:review ([00c9b5e](https://github.com/tstapler/stelekit/commit/00c9b5e675ceaf867204c1ef5ebeb87dd9766ccf))
+
+
+### Performance Improvements
+
+* **android:** reduce editing latency — debounce observer fanout, eliminate hot-path FTS merges, fix journal title nav ([05b5978](https://github.com/tstapler/stelekit/commit/05b597844ce62ee342f510fd7d6fb9ad66e77f01))
+* **db:** add wikilink_references index for O(1) backlink counting ([386ffe9](https://github.com/tstapler/stelekit/commit/386ffe9a55ce889fbd0f3935cf3c1bec50673898))
+* **db:** Phase 2 push payload — zero DB re-query for hot-path in-app block edits (ADR-012 Epic 3) ([667715a](https://github.com/tstapler/stelekit/commit/667715a4b90e01acf5a5f9755df08bcca9fc5e5d))
+* **db:** replace reactive block subscriptions with page-scoped invalidation (ADR-012 Phase 1) ([fb16c1b](https://github.com/tstapler/stelekit/commit/fb16c1b4a80ee1bfafb5d0ae6952b5db1376edb4))
+
+## [0.49.2](https://github.com/tstapler/stelekit/compare/v0.49.1...v0.49.2) (2026-06-18)
+
+
+### Bug Fixes
+
+* **db:** eliminate SQLITE_BUSY_SNAPSHOT by using BEGIN IMMEDIATE for all JVM transactions ([e341140](https://github.com/tstapler/stelekit/commit/e3411409d01149d69026db2d2ed13637a889fb13))
+
+
+### Performance Improvements
+
+* **db:** move FTS merge from per-save to post-bulk-index ([ea67faa](https://github.com/tstapler/stelekit/commit/ea67faac97c99d7cb708f5e8ae2b58084613d444))
+
+## [0.49.1](https://github.com/tstapler/stelekit/compare/v0.49.0...v0.49.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **detekt:** suppress UnusedPrivateProperty on for-loop signal variable ([ed87003](https://github.com/tstapler/stelekit/commit/ed87003129acd2f4128e1ec31ba6e46c680f55c0))
+* **wasm:** extract pragmaOptimizeAndClose expect/actual; debounce QueryStatsCollector ([77c7bbe](https://github.com/tstapler/stelekit/commit/77c7bbe723aa43dd5e73b2e583a99ad14e343596))
+
+
+### Performance Improvements
+
+* **telemetry:** batch telemetry writes — drain channel, coalesce histograms, single-transaction spans ([8f85ed7](https://github.com/tstapler/stelekit/commit/8f85ed74c78454fc0e4a1f4a41df187d00e3c83e))
+
+## [0.49.0](https://github.com/tstapler/stelekit/compare/v0.48.3...v0.49.0) (2026-06-18)
+
+
+### Features
+
+* **db:** split telemetry tables into dedicated TelemetryDatabase ([91de722](https://github.com/tstapler/stelekit/commit/91de722edb9486405868dfcc2c406b5cd68f5a64))
+
+## [0.48.3](https://github.com/tstapler/stelekit/compare/v0.48.2...v0.48.3) (2026-06-18)
+
+
+### Bug Fixes
+
+* **db:** correct PRAGMA optimize mask and call site per SQLite docs ([65ad04c](https://github.com/tstapler/stelekit/commit/65ad04cce8f57faada1e858e0ac62d2bffeb5d70))
+
+
+### Performance Improvements
+
+* **db:** fix write-actor priority flooding, span placement, and WAL autocheckpoint ([83cf1e8](https://github.com/tstapler/stelekit/commit/83cf1e8227149a297fe6637794b6b16652a11fb5))
+* **db:** reduce busy_timeout and Android cache_size per pragma audit ([85e1f3f](https://github.com/tstapler/stelekit/commit/85e1f3f419cc7325e5c214fa3f1b7be37eab308e))
+
 ## [0.48.2](https://github.com/tstapler/stelekit/compare/v0.48.1...v0.48.2) (2026-06-18)
 
 

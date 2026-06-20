@@ -18,7 +18,7 @@ class BlockClipboardTest {
         pageUuid = PageUuid("page-1"),
         content = content,
         level = 0,
-        position = 0,
+        position = "a0",
         createdAt = now,
         updatedAt = now
     )

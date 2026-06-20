@@ -14,6 +14,9 @@ actual class DriverFactory actual constructor() {
     actual fun getDatabaseUrl(graphId: String): String = "jdbc:sqlite:stelekit-graph-$graphId"
     actual fun getDatabaseDirectory(): String = "/stelekit"
 
+    actual fun createTelemetryDriver(graphId: String): SqlDriver =
+        error("Telemetry database not supported on wasmJs")
+
     suspend fun createDriverAsync(graphId: String): WasmOpfsSqlDriver {
         check(cachedDriver == null) { "createDriverAsync() called twice for graph '$graphId'" }
         val opfsPath = "/graph-${graphId}.sqlite3"
@@ -29,6 +32,9 @@ actual class DriverFactory actual constructor() {
         return driver
     }
 }
+
+actual fun createTelemetryDatabaseInMemory(): TelemetryDatabase =
+    error("createTelemetryDatabaseInMemory is not supported on wasmJs")
 
 actual val defaultDatabaseUrl: String
     get() = "jdbc:sqlite:stelekit"

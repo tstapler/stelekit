@@ -21,10 +21,7 @@ class AddBlockCommand(
     override val description = "Add Block"
 
     override suspend fun execute(): Either<DomainError, Unit> {
-        // Shift siblings down (position + 1)
-        val updatedSiblings = siblingsToShift.map { it.copy(position = it.position + 1) }
-        val blocksToSave = updatedSiblings + newBlock
-        return repository.saveBlocks(blocksToSave)
+        return repository.saveBlocks(listOf(newBlock))
     }
 
     override suspend fun undo(): Either<DomainError, Unit> {
@@ -64,19 +61,13 @@ class DeleteBlockCommand(
         val deleteResult = repository.deleteBlock(blockUuidTyped, deleteChildren = true)
         if (deleteResult.isLeft()) return deleteResult
         
-        // Shift siblings up (position - 1)
-        val shiftedSiblings = siblingsToShiftUp.map { it.copy(position = it.position - 1) }
-        if (shiftedSiblings.isNotEmpty()) {
-            return repository.saveBlocks(shiftedSiblings)
-        }
-        
         return Unit.right()
     }
 
     override suspend fun undo(): Either<DomainError, Unit> {
         val block = deletedBlock ?: return DomainError.DatabaseError.WriteFailed("No block to restore").left()
 
-        // Restore siblings to original positions (move them back down)
+        // Restore deleted block and children
         if (siblingsToShiftUp.isNotEmpty()) {
             val restoreSiblingsResult = repository.saveBlocks(siblingsToShiftUp)
             if (restoreSiblingsResult.isLeft()) return restoreSiblingsResult
@@ -123,10 +114,7 @@ class SplitBlockCommand(
         val updateResult = repository.updateBlockContentOnly(BlockUuid(originalBlockUuid), newContentForOriginal)
         if (updateResult.isLeft()) return updateResult
 
-        // 2. Shift siblings and add new block
-        val updatedSiblings = siblingsToShift.map { it.copy(position = it.position + 1) }
-        val blocksToSave = updatedSiblings + newBlock
-        return repository.saveBlocks(blocksToSave)
+        return repository.saveBlocks(listOf(newBlock))
     }
 
     override suspend fun undo(): Either<DomainError, Unit> {
@@ -172,12 +160,6 @@ class MergeBlockCommand(
 
         val deleteResult = repository.deleteBlock(mergedBlockUuidTyped, deleteChildren = true)
         if (deleteResult.isLeft()) return deleteResult
-
-        // 3. Shift siblings up
-        val shiftedSiblings = siblingsToShiftUp.map { it.copy(position = it.position - 1) }
-        if (shiftedSiblings.isNotEmpty()) {
-            return repository.saveBlocks(shiftedSiblings)
-        }
 
         return Unit.right()
     }

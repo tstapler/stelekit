@@ -26,7 +26,7 @@ fun SqlCursor.toBlock(): Block {
         leftUuid = getString(4), // left_uuid
         content = getString(5) ?: "", // content
         level = getLong(6)?.toInt() ?: 0, // level
-        position = getLong(7)?.toInt() ?: 0, // position
+        position = getString(7) ?: "a0", // position
         createdAt = kotlin.time.Instant.fromEpochMilliseconds(getLong(8) ?: 0L), // created_at
         updatedAt = kotlin.time.Instant.fromEpochMilliseconds(getLong(9) ?: 0L), // updated_at
         properties = getString(10)?.let { parseJsonProperties(it) } ?: emptyMap(), // properties

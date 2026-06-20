@@ -97,7 +97,7 @@ class GraphLoadTimingTest {
         pageUuid  = pageUuid,
         content   = "Simulated journal entry $index — typing while graph loads",
         level     = 0,
-        position  = index,
+        position  = index.toString().padStart(11, '0'),
         createdAt = Clock.System.now(),
         updatedAt = Clock.System.now(),
     )

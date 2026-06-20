@@ -61,7 +61,7 @@ class LibsqlFts5IntegrationTest {
         uuid: String,
         pageUuid: String,
         content: String,
-        position: Long = 0L,
+        position: String = "0",
     ) = runBlocking {
         queries.insertBlock(
             uuid = uuid,
@@ -90,8 +90,8 @@ class LibsqlFts5IntegrationTest {
     fun fts5_blockSearch_returnsMatchingBlocks() {
         val pageUuid = "page-fts-basic"
         insertPage(pageUuid, "FTS Basic Test Page")
-        insertBlock("block-fox", pageUuid, "the quick brown fox jumps", position = 0L)
-        insertBlock("block-dog", pageUuid, "a lazy dog lies still", position = 1L)
+        insertBlock("block-fox", pageUuid, "the quick brown fox jumps", position = "0")
+        insertBlock("block-dog", pageUuid, "a lazy dog lies still", position = "1")
 
         val results = queries.searchBlocksByContentFts(
             query = "fox",
@@ -117,9 +117,9 @@ class LibsqlFts5IntegrationTest {
     fun fts5_blockSearch_bm25Ordering() {
         val pageUuid = "page-fts-bm25"
         insertPage(pageUuid, "FTS BM25 Test Page")
-        insertBlock("block-cat-many", pageUuid, "cat cat cat loves cats", position = 0L)
-        insertBlock("block-cat-one", pageUuid, "cat", position = 1L)
-        insertBlock("block-no-cat", pageUuid, "unrelated dog content", position = 2L)
+        insertBlock("block-cat-many", pageUuid, "cat cat cat loves cats", position = "0")
+        insertBlock("block-cat-one", pageUuid, "cat", position = "1")
+        insertBlock("block-no-cat", pageUuid, "unrelated dog content", position = "2")
 
         val results = queries.searchBlocksByContentFts(
             query = "cat",
@@ -148,7 +148,7 @@ class LibsqlFts5IntegrationTest {
     fun fts5_blockUpdate_triggerKeepsIndexFresh() {
         val pageUuid = "page-fts-trigger"
         insertPage(pageUuid, "FTS Trigger Test Page")
-        insertBlock("block-update", pageUuid, "original text content here", position = 0L)
+        insertBlock("block-update", pageUuid, "original text content here", position = "0")
 
         // Verify the original term is indexed
         val beforeUpdate = queries.searchBlocksByContentFts(
@@ -212,12 +212,12 @@ class LibsqlFts5IntegrationTest {
         val pageUuid = "page-fts-count"
         insertPage(pageUuid, "FTS Count Test Page")
         // 3 matching blocks
-        insertBlock("block-match-1", pageUuid, "elephant in the room", position = 0L)
-        insertBlock("block-match-2", pageUuid, "spotted elephant roaming", position = 1L)
-        insertBlock("block-match-3", pageUuid, "elephant stampede", position = 2L)
+        insertBlock("block-match-1", pageUuid, "elephant in the room", position = "0")
+        insertBlock("block-match-2", pageUuid, "spotted elephant roaming", position = "1")
+        insertBlock("block-match-3", pageUuid, "elephant stampede", position = "2")
         // 2 non-matching blocks
-        insertBlock("block-no-match-1", pageUuid, "giraffe eating leaves", position = 3L)
-        insertBlock("block-no-match-2", pageUuid, "zebra crossing stripes", position = 4L)
+        insertBlock("block-no-match-1", pageUuid, "giraffe eating leaves", position = "3")
+        insertBlock("block-no-match-2", pageUuid, "zebra crossing stripes", position = "4")
 
         val count = queries.searchBlocksCountFts(query = "elephant").executeAsOne()
         assertEquals(3L, count, "Count should be 3 matching blocks")

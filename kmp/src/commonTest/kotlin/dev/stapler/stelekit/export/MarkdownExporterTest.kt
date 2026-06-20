@@ -35,7 +35,7 @@ class MarkdownExporterTest {
     private fun block(
         content: String,
         level: Int = 0,
-        position: Int = 0,
+        position: String = "a0",
         uuid: String = "block-1",
         parentUuid: String? = null,
         properties: Map<String, String> = emptyMap(),
@@ -69,8 +69,8 @@ class MarkdownExporterTest {
     // U-MD-03: level=1 block renders as "- child\n"
     @Test
     fun `U-MD-03 level 1 block renders as bullet item`() {
-        val parent = block("parent", level = 0, position = 0, uuid = "parent")
-        val child = block("child", level = 1, position = 0, uuid = "child", parentUuid = "parent")
+        val parent = block("parent", level = 0, position = "a0", uuid = "parent")
+        val child = block("child", level = 1, position = "a0", uuid = "child", parentUuid = "parent")
         val output = exporter.export(page(), listOf(parent, child), emptyMap())
         assertContains(output, "- child\n")
     }
@@ -78,9 +78,9 @@ class MarkdownExporterTest {
     // U-MD-04: level=2 block renders as "  - grandchild\n" (2-space indent)
     @Test
     fun `U-MD-04 level 2 block renders with two-space indent`() {
-        val parent = block("parent", level = 0, position = 0, uuid = "parent")
-        val child = block("child", level = 1, position = 0, uuid = "child", parentUuid = "parent")
-        val grandchild = block("grandchild", level = 2, position = 0, uuid = "grand", parentUuid = "child")
+        val parent = block("parent", level = 0, position = "a0", uuid = "parent")
+        val child = block("child", level = 1, position = "a0", uuid = "child", parentUuid = "parent")
+        val grandchild = block("grandchild", level = 2, position = "a0", uuid = "grand", parentUuid = "child")
         val output = exporter.export(page(), listOf(parent, child, grandchild), emptyMap())
         assertContains(output, "  - grandchild\n")
     }
@@ -88,8 +88,8 @@ class MarkdownExporterTest {
     // U-MD-05: tab-indented input normalizes to 2-space bullet indent
     @Test
     fun `U-MD-05 level 1 block produces two-space-based indentation not tab`() {
-        val parent = block("parent", level = 0, position = 0, uuid = "parent")
-        val child = block("item", level = 1, position = 0, uuid = "child", parentUuid = "parent")
+        val parent = block("parent", level = 0, position = "a0", uuid = "parent")
+        val child = block("item", level = 1, position = "a0", uuid = "child", parentUuid = "parent")
         val output = exporter.export(page(), listOf(parent, child), emptyMap())
         assertContains(output, "- item\n")
         assertFalse(output.contains("\t- item"), "Tab indentation must not appear; exporter uses 2-space indent")
@@ -230,7 +230,7 @@ class MarkdownExporterTest {
             pageUuid = PageUuid("page-1"),
             content = "line one\nline two",
             level = 0,
-            position = 0,
+            position = "a0",
             createdAt = now,
             updatedAt = now,
         )

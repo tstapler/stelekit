@@ -4,13 +4,17 @@ import dev.stapler.stelekit.cache.PlatformLock
 import dev.stapler.stelekit.cache.withLock
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 
 /**
  * Lock-guarded in-place SQL stats accumulator. Collects calls/errors/latencies per (table, operation)
- * and flushes to [QueryStatsRepository] periodically (30 s default) or on [drainNow] demand.
+ * and flushes to [QueryStatsRepository] via request coalescing: each [record] call signals a
+ * [Channel.CONFLATED] channel; the consumer waits [debounceMs] after the last signal before
+ * flushing, so a burst of queries produces one DB write shortly after the burst ends rather than
+ * waiting up to [debounceMs] from the first call.
  *
  * Uses a [PlatformLock]-guarded [HashMap] so [record] accumulates directly without heap allocation
  * beyond the first call for a given key. The earlier channel-based design created two objects per
@@ -20,13 +24,17 @@ import kotlinx.coroutines.CancellationException
 class QueryStatsCollector(
     private val appVersion: String,
     scope: CoroutineScope,
-    private val flushIntervalMs: Long = 30_000L,
+    private val debounceMs: Long = 2_000L,
 ) {
     private var repository: QueryStatsRepository? = null
 
     fun setRepository(repo: QueryStatsRepository) {
         repository = repo
     }
+
+    // CONFLATED: only one pending signal at a time — multiple record() calls during the debounce
+    // window collapse to a single flush trigger, with no heap allocation per SQL call.
+    private val flushSignal = Channel<Unit>(Channel.CONFLATED)
 
     private val lock = PlatformLock()
     private val accum = HashMap<String, Accum>()
@@ -52,8 +60,11 @@ class QueryStatsCollector(
 
     init {
         scope.launch(PlatformDispatcher.DB) {
-            while (true) {
-                delay(flushIntervalMs)
+            for (@Suppress("UNUSED_VARIABLE") signal in flushSignal) {
+                // Wait for activity to settle before writing — absorbs any signal that arrives
+                // during the quiet window so we don't immediately re-trigger.
+                delay(debounceMs)
+                flushSignal.tryReceive()
                 drainNow()
             }
         }
@@ -82,6 +93,7 @@ class QueryStatsCollector(
                 else              -> a.bInf++
             }
         }
+        flushSignal.trySend(Unit)
     }
 
     /**

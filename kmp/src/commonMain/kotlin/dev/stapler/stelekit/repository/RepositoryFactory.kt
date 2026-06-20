@@ -1,12 +1,11 @@
 package dev.stapler.stelekit.repository
 
-import arrow.core.Either
-import arrow.core.right
 import dev.stapler.stelekit.db.DatabaseWriteActor
-import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.db.DriverFactory
+import dev.stapler.stelekit.db.pragmaOptimizeAndClose
 import dev.stapler.stelekit.db.OperationLogger
 import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.db.TelemetryDatabase
 import dev.stapler.stelekit.db.UndoManager
 import dev.stapler.stelekit.db.createDatabase
 import dev.stapler.stelekit.logging.LogManager
@@ -26,7 +25,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
 
 enum class GraphBackend {
     SQLDELIGHT,
@@ -81,11 +80,14 @@ data class RepositorySet(
  */
 class RepositoryFactoryImpl(
     private val driverFactory: DriverFactory,
-    private val jdbcUrl: String = "jdbc:sqlite:stelekit.db"
+    private val jdbcUrl: String = "jdbc:sqlite:stelekit.db",
+    private val graphId: String? = null,
 ) : RepositoryFactory {
 
     private var activeDriver: app.cash.sqldelight.db.SqlDriver? = null
     private var wrappedDriver: app.cash.sqldelight.db.SqlDriver? = null
+    private var activeTelemetryDriver: app.cash.sqldelight.db.SqlDriver? = null
+    private var activeTelemetryDb: TelemetryDatabase? = null
 
     // Set by createRepositorySet before repositories are instantiated so constructors receive
     // the live perf objects. Fields are written once before first use — not thread-safe by design.
@@ -221,6 +223,17 @@ class RepositoryFactoryImpl(
         } else null
         if (collector != null) queryStatsCollector = collector
 
+        // Create telemetry DB (separate SQLite file with poolSize=1 — no WAL contention)
+        val telemetryDb: TelemetryDatabase? = if (graphId != null && backend == GraphBackend.SQLDELIGHT) {
+            try {
+                val driver = driverFactory.createTelemetryDriver(graphId)
+                activeTelemetryDriver = driver
+                TelemetryDatabase(driver).also { activeTelemetryDb = it }
+            } catch (_: Exception) {
+                null
+            }
+        } else null
+
         val blockRepo = createBlockRepository(backend)
         val pageRepo = createPageRepository(backend)
         val backgroundPageRepo: PageRepository = if (backend == GraphBackend.SQLDELIGHT) {
@@ -237,15 +250,23 @@ class RepositoryFactoryImpl(
             null to null
         }
 
-        val queryStatsRepo = if (backend == GraphBackend.SQLDELIGHT) {
-            QueryStatsRepository(database, actor)
+        // One mutex shared across all telemetry writers — serializes concurrent writes to the
+        // single-connection telemetry DB (poolSize=1) at the Kotlin level.
+        val telemetryWriteMutex = if (telemetryDb != null) Mutex() else null
+
+        val queryStatsRepo = if (telemetryDb != null) {
+            QueryStatsRepository(telemetryDb, telemetryWriteMutex!!)
         } else null
         if (queryStatsRepo != null) collector?.setRepository(queryStatsRepo)
 
         // Wire performance objects only for SQLDelight + a live scope (i.e. production graphs)
-        val histogramWriter = if (backend == GraphBackend.SQLDELIGHT && scope != null) {
-            dev.stapler.stelekit.performance.HistogramWriter(database, scope, actor)
+        val histogramWriter = if (telemetryDb != null && scope != null) {
+            dev.stapler.stelekit.performance.HistogramWriter(telemetryDb, scope, writeMutex = telemetryWriteMutex!!)
         } else null
+
+        if (telemetryDb != null && scope != null) {
+            dev.stapler.stelekit.performance.HistogramRetentionJob(telemetryDb, writeMutex = telemetryWriteMutex!!).start(scope)
+        }
 
         // Wire histogramWriter into actor and repositories for queue depth/wait tracking
         if (histogramWriter != null) {
@@ -255,12 +276,12 @@ class RepositoryFactoryImpl(
             (backgroundPageRepo as? SqlDelightPageRepository)?.histogramWriter = histogramWriter
         }
 
-        val debugFlagRepo = if (backend == GraphBackend.SQLDELIGHT) {
-            dev.stapler.stelekit.performance.DebugFlagRepository(database)
+        val debugFlagRepo = if (telemetryDb != null) {
+            dev.stapler.stelekit.performance.DebugFlagRepository(telemetryDb, telemetryWriteMutex!!)
         } else null
 
-        val spanRepository = if (backend == GraphBackend.SQLDELIGHT) {
-            SqlDelightSpanRepository(database)
+        val spanRepository = if (telemetryDb != null) {
+            SqlDelightSpanRepository(telemetryDb, telemetryWriteMutex!!)
         } else null
 
         val bugReportBuilder = if (histogramWriter != null && ringBuffer != null) {
@@ -307,7 +328,7 @@ class RepositoryFactoryImpl(
         // Route through the actor so span inserts are serialized with all other DB writes and
         // don't race with block saves on Dispatchers.IO (which causes SQLITE_BUSY at startup).
         if (scope != null && ringBuffer != null && spanRepository != null) {
-            launchDrainLoop(scope, ringBuffer, actor, spanRepository, sqlBlockRepo, histogramWriter, poolWaitMetrics)
+            launchDrainLoop(scope, ringBuffer, spanRepository, sqlBlockRepo, histogramWriter, poolWaitMetrics)
         }
 
         val walCallback: (suspend () -> Unit)? = sqlBlockRepo?.let { repo -> suspend { repo.walCheckpoint() } }
@@ -374,8 +395,7 @@ class RepositoryFactoryImpl(
     private fun launchDrainLoop(
         scope: CoroutineScope,
         ringBuffer: dev.stapler.stelekit.performance.RingBufferSpanExporter,
-        actor: DatabaseWriteActor?,
-        spanRepository: SqlDelightSpanRepository,
+        spanRepository: dev.stapler.stelekit.performance.SpanRepository,
         sqlBlockRepo: SqlDelightBlockRepository?,
         histogramWriter: dev.stapler.stelekit.performance.HistogramWriter?,
         poolWaitMetrics: dev.stapler.stelekit.performance.PoolWaitMetrics?,
@@ -397,16 +417,13 @@ class RepositoryFactoryImpl(
                         }
                     }
                 }
-                val drainBlock: suspend () -> Either<DomainError, Unit> = {
-                    drained.forEach { span -> spanRepository.insertSpan(span) }
+                // Telemetry DB has poolSize=1 and its own SQLite file — no WAL contention with
+                // content writes, so we call directly instead of routing through the write actor.
+                @OptIn(DirectRepositoryWrite::class)
+                run {
+                    spanRepository.insertSpans(drained)
                     spanRepository.deleteSpansOlderThan(HistogramWriter.epochMs() - sevenDaysMs)
                     spanRepository.deleteExcessSpans(10_000)
-                    Unit.right()
-                }
-                if (actor != null) {
-                    actor.execute(DatabaseWriteActor.Priority.LOW, drainBlock)
-                } else {
-                    drainBlock()
                 }
                 if (sqlBlockRepo != null && histogramWriter != null) {
                     val stats = sqlBlockRepo.cacheStats()
@@ -434,23 +451,12 @@ class RepositoryFactoryImpl(
     fun steleDatabase(): SteleDatabase = database
 
     override fun close() {
-        // Persist query-planner statistics for tables used this session before closing.
-        // SQLite docs prescribe PRAGMA optimize (default mask 0xfffe) at connection close for
-        // long-lived connections. close() is always called from a non-suspend context
-        // (GraphManager.switchGraph / shutdown), so runBlocking is safe here.
-        // Note: on Android, process kills bypass this call — the open-time optimize=0x10002
-        // handles the next cold start in that case.
-        try {
-            runBlocking { activeDriver?.execute(null, "PRAGMA optimize", 0)?.await() }
-        } catch (_: Exception) { }
-        // SQLDelight driver must be closed
-        try {
-            activeDriver?.close()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // Driver might not be initialized or already closed
-        }
+        // PRAGMA optimize + driver close per SQLite docs recommendation at connection close.
+        // Platform-specific: JVM/iOS use runBlocking; WASM/JS skips PRAGMA (in-memory only).
+        pragmaOptimizeAndClose(activeDriver)
+        pragmaOptimizeAndClose(activeTelemetryDriver)
+        activeTelemetryDriver = null
+        activeTelemetryDb = null
         instances.clear()
         queryStatsCollector = null
     }

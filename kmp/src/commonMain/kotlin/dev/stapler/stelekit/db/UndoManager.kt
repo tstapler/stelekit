@@ -124,7 +124,8 @@ class UndoManager(
             OperationLogger.OpType.INSERT_BLOCK.name -> {
                 // Undo of insert = delete
                 val after = payload.after ?: return
-                writeActor.deleteBlock(BlockUuid(after.uuid)).onLeft { e ->
+                val pageUuidForUndo = op.page_uuid ?: return
+                writeActor.deleteBlock(BlockUuid(after.uuid), PageUuid(pageUuidForUndo)).onLeft { e ->
                     logger.error("UndoManager: failed to delete block ${after.uuid}: ${e.message}")
                 }
             }
@@ -167,7 +168,8 @@ class UndoManager(
             }
             OperationLogger.OpType.DELETE_BLOCK.name -> {
                 val before = payload.before ?: return
-                writeActor.deleteBlock(BlockUuid(before.uuid))
+                val pageUuidForRedo = op.page_uuid ?: return
+                writeActor.deleteBlock(BlockUuid(before.uuid), PageUuid(pageUuidForRedo))
             }
             else -> { /* structural markers */ }
         }

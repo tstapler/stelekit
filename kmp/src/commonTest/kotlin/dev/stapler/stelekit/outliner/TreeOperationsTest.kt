@@ -11,7 +11,7 @@ import kotlin.test.assertNull
 
 class TreeOperationsTest {
 
-    private fun createBlock(uuidSuffix: String, parentUuid: String? = null, leftUuid: String? = null, position: Int = 0, level: Int = 0): Block {
+    private fun createBlock(uuidSuffix: String, parentUuid: String? = null, leftUuid: String? = null, position: String = "a0", level: Int = 0): Block {
         val idStr = uuidSuffix.padStart(12, '0')
         return Block(
             uuid = BlockUuid("00000000-0000-0000-0000-$idStr"),
@@ -34,7 +34,7 @@ class TreeOperationsTest {
     fun testIndent() {
         // Setup: B1 -> B2. Indent B2 to be child of B1.
         val b1 = createBlock("1")
-        val b2 = createBlock("2", leftUuid = uuid("1"), position = 1)
+        val b2 = createBlock("2", leftUuid = uuid("1"), position = "a1")
         val siblings = listOf(b1, b2)
 
         // Indent B2. B1 has no children, so lastChildOfNewParent is null.
@@ -51,9 +51,9 @@ class TreeOperationsTest {
     @Test
     fun testIndentWithGapClosing() {
         // Setup: B1 -> B2 -> B3
-        val b1 = createBlock("1", position = 0)
-        val b2 = createBlock("2", leftUuid = uuid("1"), position = 1)
-        val b3 = createBlock("3", leftUuid = uuid("2"), position = 2)
+        val b1 = createBlock("1", position = "a0")
+        val b2 = createBlock("2", leftUuid = uuid("1"), position = "a1")
+        val b3 = createBlock("3", leftUuid = uuid("2"), position = "a2")
         val siblings = listOf(b1, b2, b3)
 
         // Indent B2 into B1.
@@ -75,7 +75,7 @@ class TreeOperationsTest {
     fun testIndentWithExistingChildren() {
         // Setup: B1 -> B2. B1 already has child C1.
         val b1 = createBlock("1")
-        val b2 = createBlock("2", leftUuid = uuid("1"), position = 1)
+        val b2 = createBlock("2", leftUuid = uuid("1"), position = "a1")
         val c1 = createBlock("10", parentUuid = uuid("1"), level = 1) // Child of B1
         val siblings = listOf(b1, b2)
 
@@ -132,7 +132,7 @@ class TreeOperationsTest {
     @Test
     fun testMoveUp() {
         val b1 = createBlock("1")
-        val b2 = createBlock("2", leftUuid = uuid("1"), position = 1)
+        val b2 = createBlock("2", leftUuid = uuid("1"), position = "a1")
         val siblings = listOf(b1, b2)
 
         val result = TreeOperations.moveUp(b2, siblings)
@@ -149,7 +149,7 @@ class TreeOperationsTest {
     @Test
     fun testMoveDown() {
         val b1 = createBlock("1")
-        val b2 = createBlock("2", leftUuid = uuid("1"), position = 1)
+        val b2 = createBlock("2", leftUuid = uuid("1"), position = "a1")
         val siblings = listOf(b1, b2)
 
         val result = TreeOperations.moveDown(b1, siblings)
@@ -165,19 +165,19 @@ class TreeOperationsTest {
 
     @Test
     fun testReorderSiblings() {
-        val b1 = createBlock("1", leftUuid = uuid("99"), position = 5)
-        val b2 = createBlock("2", leftUuid = uuid("1"), position = 6)
-        val b3 = createBlock("3", leftUuid = uuid("2"), position = 7)
+        val b1 = createBlock("1", leftUuid = uuid("99"), position = "a5")
+        val b2 = createBlock("2", leftUuid = uuid("1"), position = "a6")
+        val b3 = createBlock("3", leftUuid = uuid("2"), position = "a7")
         
         val reordered = TreeOperations.reorderSiblings(listOf(b1, b2, b3))
         
-        assertEquals(0, reordered[0].position)
+        assertEquals("a0", reordered[0].position)
         assertNull(reordered[0].leftUuid)
-        
-        assertEquals(1, reordered[1].position)
+
+        assertEquals("a1", reordered[1].position)
         assertEquals(uuid("1"), reordered[1].leftUuid)
-        
-        assertEquals(2, reordered[2].position)
+
+        assertEquals("a2", reordered[2].position)
         assertEquals(uuid("2"), reordered[2].leftUuid)
     }
 }

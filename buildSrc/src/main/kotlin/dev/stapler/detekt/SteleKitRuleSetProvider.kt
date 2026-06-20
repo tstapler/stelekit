@@ -24,6 +24,7 @@ class SteleKitRuleSetProvider : RuleSetProvider {
             JvmOnlyApiInCommonMainRule(config),
             IndexWithoutAnalyzeRule(config),
             ActorWriteInLoopRule(config),
+            MissingHelpPageAnnotationRule(config),
         ),
     )
 }

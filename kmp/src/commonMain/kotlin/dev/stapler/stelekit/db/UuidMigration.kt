@@ -78,7 +78,7 @@ class UuidMigration(
         for (row in allBlockRows) {
             val filePath = row.file_path ?: continue
             val parentUuid = row.parent_uuid
-            val position = row.position.toInt()
+            val position = row.position
             val content = row.content
             val existingUuid = row.uuid
 

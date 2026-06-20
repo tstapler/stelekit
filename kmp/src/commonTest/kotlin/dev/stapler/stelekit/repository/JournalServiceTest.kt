@@ -127,7 +127,7 @@ class JournalServiceTest {
             uuid = BlockUuid("block-a"),
             pageUuid = PageUuid("page-a"),
             content = "",
-            position = 0,
+            position = "a0",
             createdAt = now, updatedAt = now
         ))
 
@@ -144,7 +144,7 @@ class JournalServiceTest {
             uuid = BlockUuid("block-b"),
             pageUuid = PageUuid("page-b"),
             content = "Real journal content from disk",
-            position = 0,
+            position = "a0",
             createdAt = now, updatedAt = now
         ))
 
@@ -179,7 +179,7 @@ class JournalServiceTest {
         pageRepo.savePage(pageA)
         blockRepo.saveBlock(Block(
             uuid = BlockUuid("block-a-content"), pageUuid = PageUuid("page-a"),
-            content = "Important note", position = 0,
+            content = "Important note", position = "a0",
             createdAt = now, updatedAt = now
         ))
 
@@ -193,7 +193,7 @@ class JournalServiceTest {
         pageRepo.savePage(pageB)
         blockRepo.saveBlock(Block(
             uuid = BlockUuid("block-b-content"), pageUuid = PageUuid("page-b"),
-            content = "Disk content", position = 0,
+            content = "Disk content", position = "a0",
             createdAt = now, updatedAt = now
         ))
 
