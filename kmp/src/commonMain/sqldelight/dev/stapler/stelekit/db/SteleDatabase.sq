@@ -251,6 +251,18 @@ UPDATE blocks SET parent_uuid = ?, left_uuid = ?, position = ?, level = ? WHERE 
 updateBlockPositionOnly:
 UPDATE blocks SET position = ? WHERE uuid = ?;
 
+-- Shift all root-level block positions in one statement (parent_uuid IS NULL).
+-- Replaces the O(n) Kotlin loop that loaded all siblings then issued N individual UPDATEs.
+shiftRootBlockPositionsFrom:
+UPDATE blocks SET position = position + 1
+WHERE page_uuid = ? AND parent_uuid IS NULL AND position >= ?;
+
+-- Shift all child block positions under a given parent in one statement.
+-- Replaces the O(n) Kotlin loop that loaded all siblings then issued N individual UPDATEs.
+shiftChildBlockPositionsFrom:
+UPDATE blocks SET position = position + 1
+WHERE parent_uuid = ? AND position >= ?;
+
 updateBlockContent:
 UPDATE blocks SET content = ?, updated_at = ?, version = version + 1, content_hash = ? WHERE uuid = ?;
 
@@ -705,6 +717,13 @@ recomputeBacklinkCountFromIndex:
 UPDATE pages SET backlink_count = (
     SELECT COUNT(*) FROM wikilink_references WHERE page_name = pages.name COLLATE NOCASE
 ) WHERE pages.name = ?;
+
+-- Batch version: recompute backlink counts for multiple pages in one UPDATE.
+-- Replaces N individual recomputeBacklinkCountFromIndex calls on the hot-path edit.
+recomputeBacklinkCountsForPages:
+UPDATE pages SET backlink_count = (
+    SELECT COUNT(*) FROM wikilink_references WHERE page_name = pages.name COLLATE NOCASE
+) WHERE pages.name IN ?;
 
 -- Rename all wikilink references from oldName to newName (single UPDATE, no LIKE scan).
 -- UPDATE OR IGNORE: skips rows where (block_uuid, newName) already exists so the PRIMARY KEY

@@ -63,6 +63,12 @@ class SqlDelightBlockRepository(
     private suspend fun recomputeBacklinkCountFromIndex(name: String) =
         restricted.recomputeBacklinkCountFromIndex(name)
 
+    @OptIn(DirectSqlWrite::class)
+    private suspend fun recomputeBacklinkCountsFromIndex(names: Collection<String>) {
+        if (names.isEmpty()) return
+        restricted.recomputeBacklinkCountsForPages(names)
+    }
+
     /** Inserts all wikilink refs for [content] into wikilink_references for [blockUuid].
      *  Caller is responsible for deleting stale refs first when updating existing content. */
     @OptIn(DirectSqlWrite::class)
@@ -484,7 +490,7 @@ class SqlDelightBlockRepository(
             )
             val pageNames = extractWikilinks(block.content)
             addWikilinkRefs(block.uuid.value, pageNames)
-            for (name in pageNames) recomputeBacklinkCountFromIndex(name)
+            recomputeBacklinkCountsFromIndex(pageNames)
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -502,7 +508,7 @@ class SqlDelightBlockRepository(
                 blockCache.remove(blockUuid.value)
                 // Replace all wikilink refs and recompute counts only for changed pages.
                 val newPageNames = replaceWikilinkRefs(blockUuid.value, content)
-                for (name in oldPageNames + newPageNames) recomputeBacklinkCountFromIndex(name)
+                recomputeBacklinkCountsFromIndex(oldPageNames + newPageNames)
                 Unit.right()
             } catch (e: CancellationException) {
                 throw e
@@ -533,8 +539,7 @@ class SqlDelightBlockRepository(
             @OptIn(DirectSqlWrite::class)
             restricted.deleteWikilinkReferencesForPageName(oldPageName)
             // Recompute both counts from the index — no LIKE scan needed.
-            recomputeBacklinkCountFromIndex(oldPageName)
-            recomputeBacklinkCountFromIndex(newPageName)
+            recomputeBacklinkCountsFromIndex(listOf(oldPageName, newPageName))
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -594,7 +599,7 @@ class SqlDelightBlockRepository(
                     }
                     queries.deleteBlockByUuid(block.uuid)
                 }
-                for (name in wikilinkPages) recomputeBacklinkCountFromIndex(name)
+                recomputeBacklinkCountsFromIndex(wikilinkPages)
             }
             Unit.right()
         } catch (e: CancellationException) {
@@ -653,7 +658,7 @@ class SqlDelightBlockRepository(
                     }
                 }
             }
-            for (name in wikilinkPages) recomputeBacklinkCountFromIndex(name)
+            recomputeBacklinkCountsFromIndex(wikilinkPages)
             Unit.right()
         } catch (e: CancellationException) {
             throw e
@@ -794,16 +799,11 @@ class SqlDelightBlockRepository(
                 val newPosition = currentParent.position + 1L
                 val newLevel = block.level - 1L
                 
-                // Shift positions of siblings that come after the new position to make room
-                val siblingsToShift = if (grandParentUuid == null) {
-                    queries.selectRootBlocksByPageUuidOrdered(block.page_uuid).executeAsList()
+                // Shift positions of siblings at or after the new position in one SQL UPDATE.
+                if (grandParentUuid == null) {
+                    queries.shiftRootBlockPositionsFrom(block.page_uuid, newPosition)
                 } else {
-                    queries.selectBlocksByParentUuidOrdered(grandParentUuid).executeAsList()
-                }
-                siblingsToShift.forEach { sibling ->
-                    if (sibling.position >= newPosition) {
-                        queries.updateBlockPositionOnly(sibling.position + 1L, sibling.uuid)
-                    }
+                    queries.shiftChildBlockPositionsFrom(grandParentUuid, newPosition)
                 }
 
                 // Repair new sibling chain: Any block that followed currentParent at the grandparent level 
@@ -989,22 +989,19 @@ class SqlDelightBlockRepository(
                 val newUuid = newBlockUuid?.value ?: UuidGenerator.generateV7()
                 val newPosition = block.position + 1L
                 
-                // Shift siblings' positions
-                val siblings = if (block.parent_uuid == null) {
-                    queries.selectRootBlocksByPageUuidOrdered(block.page_uuid).executeAsList()
+                // Shift all siblings at or after the new position in one SQL UPDATE —
+                // O(1) statements regardless of page size, replacing the former O(n) loop
+                // that loaded all siblings and then issued N individual updateBlockPositionOnly calls.
+                if (block.parent_uuid == null) {
+                    queries.shiftRootBlockPositionsFrom(block.page_uuid, newPosition)
                 } else {
-                    queries.selectBlocksByParentUuidOrdered(block.parent_uuid).executeAsList()
+                    queries.shiftChildBlockPositionsFrom(block.parent_uuid, newPosition)
                 }
-                
-                siblings.forEach { sibling ->
-                    if (sibling.position >= newPosition) {
-                        queries.updateBlockPositionOnly(sibling.position + 1L, sibling.uuid)
-                    }
-                }
-                
+
                 // Repair chain: block that followed 'block' now follows 'newBlock'
                 val nextSibling = queries.selectBlockByLeftUuid(block.uuid).executeAsOneOrNull()
-                
+
+                val now = Clock.System.now().toEpochMilliseconds()
                 queries.insertBlock(
                     uuid = newUuid,
                     page_uuid = block.page_uuid,
@@ -1013,20 +1010,34 @@ class SqlDelightBlockRepository(
                     content = secondPart,
                     level = block.level,
                     position = newPosition,
-                    created_at = Clock.System.now().toEpochMilliseconds(),
-                    updated_at = Clock.System.now().toEpochMilliseconds(),
+                    created_at = now,
+                    updated_at = now,
                     properties = null,
                     version = 0L,
                     content_hash = ContentHasher.sha256ForContent(secondPart),
                     block_type = block.block_type
                 )
-                
-                val insertedBlock = queries.selectBlockByUuid(newUuid).executeAsOne()
+
                 if (nextSibling != null) {
-                    queries.updateBlockLeftUuid(insertedBlock.uuid, nextSibling.uuid)
+                    queries.updateBlockLeftUuid(newUuid, nextSibling.uuid)
                 }
-                
-                newBlock = insertedBlock.toBlockModel()
+
+                // Construct from known insert parameters — avoids a redundant SELECT after INSERT.
+                newBlock = Block(
+                    uuid = BlockUuid(newUuid),
+                    pageUuid = PageUuid(block.page_uuid),
+                    parentUuid = block.parent_uuid,
+                    leftUuid = block.uuid,
+                    content = secondPart,
+                    level = block.level.toInt(),
+                    position = newPosition.toInt(),
+                    createdAt = kotlinx.datetime.Instant.fromEpochMilliseconds(now),
+                    updatedAt = kotlinx.datetime.Instant.fromEpochMilliseconds(now),
+                    properties = emptyMap(),
+                    version = 0L,
+                    contentHash = ContentHasher.sha256ForContent(secondPart),
+                    blockType = block.block_type,
+                )
             }
             
             hierarchyCache.invalidateAll()
@@ -1302,7 +1313,7 @@ class SqlDelightBlockRepository(
             ftsAutomergeOff()
             queries.deleteBlocksByPageUuid(pageUuid.value)
             ftsAutomergeDefault()
-            for (name in affectedPageNames) recomputeBacklinkCountFromIndex(name)
+            recomputeBacklinkCountsFromIndex(affectedPageNames)
             Unit.right()
         } catch (e: CancellationException) {
             runCatching { ftsAutomergeDefault() }
@@ -1324,7 +1335,7 @@ class SqlDelightBlockRepository(
             ftsAutomergeOff()
             queries.deleteBlocksByPageUuids(pageUuids.map { it.value })
             ftsAutomergeDefault()
-            for (name in affectedPageNames) recomputeBacklinkCountFromIndex(name)
+            recomputeBacklinkCountsFromIndex(affectedPageNames)
             Unit.right()
         } catch (e: CancellationException) {
             runCatching { ftsAutomergeDefault() }

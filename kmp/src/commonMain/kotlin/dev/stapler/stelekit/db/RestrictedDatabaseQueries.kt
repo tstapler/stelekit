@@ -92,6 +92,14 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
         queries.updateBlockPositionOnly(position, uuid)
 
     @DirectSqlWrite
+    suspend fun shiftRootBlockPositionsFrom(page_uuid: String, fromPosition: Long): Long =
+        queries.shiftRootBlockPositionsFrom(page_uuid, fromPosition)
+
+    @DirectSqlWrite
+    suspend fun shiftChildBlockPositionsFrom(parent_uuid: String, fromPosition: Long): Long =
+        queries.shiftChildBlockPositionsFrom(parent_uuid, fromPosition)
+
+    @DirectSqlWrite
     suspend fun updateBlockContent(content: String, updated_at: Long, content_hash: String?, uuid: String): Long =
         queries.updateBlockContent(content, updated_at, content_hash, uuid)
 
@@ -391,6 +399,10 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     @DirectSqlWrite
     suspend fun recomputeBacklinkCountFromIndex(name: String): Long =
         queries.recomputeBacklinkCountFromIndex(name)
+
+    @DirectSqlWrite
+    suspend fun recomputeBacklinkCountsForPages(names: Collection<String>): Long =
+        queries.recomputeBacklinkCountsForPages(names)
 
     @DirectSqlWrite
     suspend fun updateWikilinkPageNameForRename(newName: String, oldName: String): Long =
