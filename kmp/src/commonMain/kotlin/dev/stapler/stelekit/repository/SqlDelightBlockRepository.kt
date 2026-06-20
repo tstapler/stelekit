@@ -55,7 +55,7 @@ class SqlDelightBlockRepository(
 
     private val logger = Logger("SqlDelightBlockRepository")
     private val queries = database.steleDatabaseQueries
-    private val restricted = RestrictedDatabaseQueries(queries)
+    private val restricted = RestrictedDatabaseQueries(queries, driver)
 
     @OptIn(DirectSqlWrite::class)
     private suspend fun recomputeBacklinkCount(name: String) =
@@ -71,11 +71,12 @@ class SqlDelightBlockRepository(
         restricted.recomputeBacklinkCountsForPages(names)
     }
 
-    /** Inserts all wikilink refs for [content] into wikilink_references for [blockUuid].
-     *  Caller is responsible for deleting stale refs first when updating existing content. */
+    /** Inserts all wikilink refs for [blockUuid] into wikilink_references using a single
+     *  multi-row INSERT OR IGNORE per chunk. Caller is responsible for deleting stale refs
+     *  first when updating existing content. */
     @OptIn(DirectSqlWrite::class)
     private suspend fun addWikilinkRefs(blockUuid: String, pageNames: Set<String>) {
-        for (name in pageNames) restricted.insertWikilinkReference(blockUuid, name)
+        restricted.insertWikilinkReferencesBatch(blockUuid, pageNames)
     }
 
     /** Replaces all wikilink refs for [blockUuid] with those derived from [content].
@@ -84,7 +85,7 @@ class SqlDelightBlockRepository(
     private suspend fun replaceWikilinkRefs(blockUuid: String, content: String): Set<String> {
         val pageNames = extractWikilinks(content)
         restricted.deleteWikilinkReferencesForBlock(blockUuid)
-        for (name in pageNames) restricted.insertWikilinkReference(blockUuid, name)
+        restricted.insertWikilinkReferencesBatch(blockUuid, pageNames)
         return pageNames
     }
 

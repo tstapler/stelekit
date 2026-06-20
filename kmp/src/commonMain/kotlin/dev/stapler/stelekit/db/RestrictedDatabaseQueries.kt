@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import app.cash.sqldelight.SuspendingTransactionWithoutReturn
+import app.cash.sqldelight.db.SqlDriver
 
 /**
  * Wraps [SteleDatabaseQueries] and gates every mutating method behind [DirectSqlWrite].
@@ -12,7 +13,10 @@ import app.cash.sqldelight.SuspendingTransactionWithoutReturn
  * Keep this file in sync with SteleDatabase.sq: every new INSERT/UPDATE/DELETE/UPSERT query
  * needs a corresponding forwarding stub annotated [DirectSqlWrite].
  */
-class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
+class RestrictedDatabaseQueries(
+    private val queries: SteleDatabaseQueries,
+    private val driver: SqlDriver? = null,
+) {
 
     // Exposed for read-only SELECT access. Never call write methods (INSERT/UPDATE/DELETE/UPSERT)
     // via this reference — use the annotated methods below instead.
@@ -387,6 +391,43 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     @DirectSqlWrite
     suspend fun insertWikilinkReference(block_uuid: String, page_name: String): Long =
         queries.insertWikilinkReference(block_uuid, page_name)
+
+    /**
+     * Inserts multiple wikilink references for [blockUuid] in a single multi-row INSERT OR IGNORE
+     * statement per chunk. Each chunk is at most [MAX_WIKILINK_BATCH_SIZE] pairs so the total
+     * bind-variable count stays below SQLite's SQLITE_MAX_VARIABLE_NUMBER (999 on Android API<30).
+     *
+     * Uses raw [SqlDriver.execute] because SQLDelight .sq files cannot express variable-arity
+     * VALUES clauses. [driver] may be null only in unit tests that construct the repository
+     * without a driver; in that case this method falls back to the per-row path.
+     */
+    @DirectSqlWrite
+    suspend fun insertWikilinkReferencesBatch(blockUuid: String, pageNames: Collection<String>) {
+        if (pageNames.isEmpty()) return
+        if (driver == null) {
+            // Fallback: no driver available (unit-test construction without driver arg).
+            for (name in pageNames) queries.insertWikilinkReference(blockUuid, name)
+            return
+        }
+        pageNames.chunked(MAX_WIKILINK_BATCH_SIZE).forEach { chunk ->
+            val placeholders = chunk.joinToString(", ") { "(?, ?)" }
+            val sql = "INSERT OR IGNORE INTO wikilink_references (block_uuid, page_name) VALUES $placeholders"
+            // identifier = null disables statement caching — required for variable-length SQL.
+            // bindString indices are 0-based in SQLDelight 2.x SqlPreparedStatement.
+            // The synchronous JDBC driver returns QueryResult.Value immediately; no .await() needed.
+            driver.execute(null, sql, chunk.size * 2) {
+                chunk.forEachIndexed { i, name ->
+                    bindString(i * 2, blockUuid)
+                    bindString(i * 2 + 1, name)
+                }
+            }
+        }
+    }
+
+    companion object {
+        /** floor(999 / 2) — each pair consumes 2 bind params; stays below SQLITE_MAX_VARIABLE_NUMBER. */
+        const val MAX_WIKILINK_BATCH_SIZE = 499
+    }
 
     @DirectSqlWrite
     suspend fun deleteWikilinkReferencesForBlock(block_uuid: String): Long =
