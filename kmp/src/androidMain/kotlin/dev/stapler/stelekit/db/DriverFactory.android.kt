@@ -5,7 +5,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import app.cash.sqldelight.async.coroutines.synchronous
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
-import io.requery.android.database.sqlite.RequerySQLiteOpenHelperFactory
+import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import kotlinx.coroutines.runBlocking
 
 /**
@@ -59,11 +59,9 @@ internal val ANDROID_PRAGMAS: List<String> = listOf(
 /**
  * Applies performance PRAGMAs in [onConfigure] via [SupportSQLiteDatabase.query] (rawQuery path).
  *
- * Requery's [RequerySQLiteOpenHelperFactory] restricts [SupportSQLiteDatabase.execSQL] for
- * statements that return a result set (like `PRAGMA journal_mode=WAL`), throwing
- * "Queries can be performed using SQLiteDatabase query or rawQuery methods only." The rawQuery
- * path ([query]) is unrestricted and correctly executes SET-type PRAGMAs — SQLite runs the
- * PRAGMA and returns the new value as a cursor, which we discard by calling [close].
+ * Uses the rawQuery path ([query]) rather than [SupportSQLiteDatabase.execSQL] because
+ * SET-type PRAGMAs return a result set; [query] handles both write and read variants uniformly.
+ * The cursor is discarded by calling [close].
  *
  * [onConfigure] fires before schema creation, ensuring WAL is in effect for all DDL.
  */
@@ -72,8 +70,6 @@ private class WalConfiguredCallback(
 ) : AndroidSqliteDriver.Callback(schema) {
     override fun onConfigure(db: SupportSQLiteDatabase) {
         super.onConfigure(db) // preserves foreign-key enforcement and other AndroidSqliteDriver defaults
-        // rawQuery path: Requery allows query/rawQuery for all statement types including SET-PRAGMAs.
-        // See ANDROID_PRAGMAS for the full list and per-pragma rationale.
         ANDROID_PRAGMAS.forEach { pragma ->
             try { db.query(pragma).close() } catch (_: Exception) { }
         }
@@ -116,7 +112,7 @@ actual class DriverFactory actual constructor() {
             schema = schema,
             context = context,
             name = dbName,
-            factory = RequerySQLiteOpenHelperFactory(),
+            factory = FrameworkSQLiteOpenHelperFactory(),
             callback = WalConfiguredCallback(schema),
         )
 
@@ -147,7 +143,7 @@ actual class DriverFactory actual constructor() {
             schema = schema,
             context = context,
             name = dbPath,
-            factory = RequerySQLiteOpenHelperFactory(),
+            factory = FrameworkSQLiteOpenHelperFactory(),
             callback = object : AndroidSqliteDriver.Callback(schema) {
                 override fun onConfigure(db: SupportSQLiteDatabase) {
                     super.onConfigure(db)

@@ -184,7 +184,7 @@ kotlin {
                 implementation("androidx.core:core-ktx:1.15.0")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
                 implementation("app.cash.sqldelight:android-driver:2.3.2")
-                implementation("com.github.requery:sqlite-android:3.49.0")
+                implementation("androidx.sqlite:sqlite-framework:2.4.0")
 
                 // Ktor engine for Android (used by coil-network-ktor3)
                 implementation("io.ktor:ktor-client-okhttp:3.1.3")
