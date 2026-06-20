@@ -1029,11 +1029,30 @@ tasks.register("checkDocCoverage") {
 // Mirrors the four Gradle jobs in .github/workflows/ci.yml.
 // README sync (scripts/generate-readme.sh) must be run separately.
 // On headless Linux, wrap with: xvfb-run --auto-servernum ./gradlew ciCheck
+//
+// Always compiles instrumented test sources for all available platforms so type
+// errors in androidTest/ are caught locally without needing a device.
+//
+// Instrumented tests require a connected device or emulator — opt in explicitly:
+//   ./gradlew ciCheck -PciInstrumentedTests
+//
+// iOS compile tasks require macOS + Xcode and are skipped on Linux.
 tasks.register("ciCheck") {
     group = "verification"
-    description = "Run all Gradle CI checks locally (detekt + jvmTest + Android unit tests + assembleDebug)"
-    dependsOn(":kmp:detekt", ":kmp:jvmTest", ":kmp:testDebugUnitTest", ":androidApp:assembleDebug",
-        ":kmp:checkDocCoverage")
+    description = "Run all Gradle CI checks locally. Pass -PciInstrumentedTests to also run connectedDebugAndroidTest."
+    dependsOn(
+        ":kmp:detekt",
+        ":kmp:jvmTest",
+        ":kmp:testDebugUnitTest",
+        ":androidApp:assembleDebug",
+        ":kmp:checkDocCoverage",
+        // Always compile instrumented test sources — catches type errors without needing a device.
+        ":androidApp:compileDebugAndroidTestKotlin",
+    )
+    // Instrumented tests: opt-in via -PciInstrumentedTests (configuration-cache-safe).
+    if (project.hasProperty("ciInstrumentedTests")) {
+        dependsOn(":androidApp:connectedDebugAndroidTest")
+    }
 }
 
 // ── always-on JFR profiling for desktop run ─────────────────────────────────
