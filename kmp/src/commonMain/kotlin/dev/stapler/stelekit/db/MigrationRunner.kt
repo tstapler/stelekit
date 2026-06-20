@@ -566,6 +566,40 @@ object MigrationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_wikilink_refs_page_name ON wikilink_references(page_name COLLATE NOCASE)",
             )
         ),
+        Migration(
+            name = "wikilink_references_without_rowid",
+            statements = listOf(
+                // Migrate wikilink_references to WITHOUT ROWID to remove the hidden rowid B-tree.
+                // All lookups on this table are composite PK lookups — no rowid-dependent queries exist.
+                // WITHOUT ROWID stores data directly in the PK B-tree, reducing both insert cost and
+                // lookup cost.
+                //
+                // Technique: create replacement table, copy data, swap names.
+                // wikilink_references_new is a transient staging table; it is explicitly dropped
+                // at the end so MigrationRunnerSchemaSyncTest can track its lifetime correctly.
+                "PRAGMA foreign_keys=OFF",
+                // Safety: clean up any leftover staging table from a previously interrupted migration.
+                "DROP TABLE IF EXISTS wikilink_references_new",
+                """
+                CREATE TABLE IF NOT EXISTS wikilink_references_new (
+                    block_uuid TEXT NOT NULL,
+                    page_name  TEXT NOT NULL COLLATE NOCASE,
+                    PRIMARY KEY (block_uuid, page_name),
+                    FOREIGN KEY (block_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE
+                ) WITHOUT ROWID
+                """,
+                "INSERT OR IGNORE INTO wikilink_references_new SELECT block_uuid, page_name FROM wikilink_references",
+                "DROP TABLE IF EXISTS wikilink_references",
+                "ALTER TABLE wikilink_references_new RENAME TO wikilink_references",
+                "DROP INDEX IF EXISTS idx_wikilink_refs_page_name_new",
+                "CREATE INDEX IF NOT EXISTS idx_wikilink_refs_page_name ON wikilink_references(page_name COLLATE NOCASE)",
+                "PRAGMA foreign_keys=ON",
+            )
+        ),
+        Migration(
+            name = "analyze_wikilink_references_post_without_rowid",
+            statements = listOf("ANALYZE wikilink_references")
+        ),
     )
 
     /**

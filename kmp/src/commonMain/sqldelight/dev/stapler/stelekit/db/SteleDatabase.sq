@@ -166,12 +166,13 @@ CREATE TABLE IF NOT EXISTS page_visits (
 -- Wikilink reference index: one row per (block, page_name) wikilink.
 -- Replaces the O(blocks) LIKE scan in recomputeBacklinkCountForPage.
 -- ON DELETE CASCADE keeps the index consistent when blocks are deleted.
+-- WITHOUT ROWID: removes the hidden rowid B-tree — all lookups are composite PK lookups.
 CREATE TABLE IF NOT EXISTS wikilink_references (
     block_uuid TEXT NOT NULL,
     page_name  TEXT NOT NULL COLLATE NOCASE,
     PRIMARY KEY (block_uuid, page_name),
     FOREIGN KEY (block_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE
-);
+) WITHOUT ROWID;
 
 CREATE INDEX IF NOT EXISTS idx_wikilink_refs_page_name ON wikilink_references(page_name COLLATE NOCASE);
 
