@@ -9,6 +9,7 @@ import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.PageUuid
+import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSensorData
 import dev.stapler.stelekit.model.ImageSource
@@ -165,7 +166,7 @@ class ImageImportService(
             createdAt = now,
             updatedAt = now,
             properties = blockProperties,
-            blockType = "image_annotation",
+            blockType = BlockType.ImageAnnotation,
         )
 
         saveBlock(block).fold(

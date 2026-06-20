@@ -36,7 +36,7 @@ object BlockOptics {
     val properties: Lens<Block, Map<String, String>> = Lens(get = { it.properties }, set = { b, v -> b.copy(properties = v) })
     val isLoaded: Lens<Block, Boolean> = Lens(get = { it.isLoaded }, set = { b, v -> b.copy(isLoaded = v) })
     val contentHash: Lens<Block, String?> = Lens(get = { it.contentHash }, set = { b, v -> b.copy(contentHash = v) })
-    val blockType: Lens<Block, String> = Lens(get = { it.blockType }, set = { b, v -> b.copy(blockType = v) })
+    val blockType: Lens<Block, BlockType> = Lens(get = { it.blockType }, set = { b, v -> b.copy(blockType = v) })
 }
 
 object PropertyOptics {

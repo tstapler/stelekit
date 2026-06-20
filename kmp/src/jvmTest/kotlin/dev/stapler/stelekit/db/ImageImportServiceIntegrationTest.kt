@@ -3,6 +3,7 @@ package dev.stapler.stelekit.db
 import arrow.core.Either
 import dev.stapler.stelekit.db.sidecar.FakeFileSystem
 import dev.stapler.stelekit.db.sidecar.ImageSidecarManager
+import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSource
 import dev.stapler.stelekit.platform.sensor.PlatformImageFile
@@ -123,7 +124,7 @@ class ImageImportServiceIntegrationTest {
         assertNotNull(blocks)
         val imageBlock = blocks.find { it.uuid.value == annotation.blockUuid }
         assertNotNull(imageBlock, "image_annotation block not found for page $pageUuid")
-        assertEquals("image_annotation", imageBlock.blockType)
+        assertIs<BlockType.ImageAnnotation>(imageBlock.blockType)
         assertTrue(imageBlock.content.contains("assets/images/"))
         assertEquals(annotation.uuid, imageBlock.properties["image-id"])
     }

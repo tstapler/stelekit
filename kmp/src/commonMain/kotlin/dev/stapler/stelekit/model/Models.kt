@@ -98,12 +98,6 @@ data class Page(
     }
 }
 
-private val validBlockTypes = setOf(
-    "bullet", "paragraph", "heading", "code_fence", "blockquote",
-    "ordered_list_item", "thematic_break", "table", "raw_html",
-    "image_annotation"
-)
-
 data class Block(
     val uuid: BlockUuid,
     val pageUuid: PageUuid,
@@ -118,7 +112,7 @@ data class Block(
     val properties: Map<String, String> = emptyMap(),
     val isLoaded: Boolean = true, // Indicates if the content is fully loaded
     val contentHash: String? = null, // SHA-256 of normalised content; null until first save
-    val blockType: String = "bullet" // Structural discriminator for the block type
+    val blockType: BlockType = BlockType.Bullet // Structural discriminator for the block type
 ) {
     init {
         Validation.validateUuid(uuid)
@@ -132,7 +126,6 @@ data class Block(
             Validation.validateName(key)
             Validation.validateContent(value)
         }
-        require(blockType in validBlockTypes) { "Invalid blockType: $blockType" }
     }
 }
 

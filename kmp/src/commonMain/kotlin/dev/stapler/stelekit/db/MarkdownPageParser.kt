@@ -6,7 +6,6 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.ParsedBlock
 import dev.stapler.stelekit.model.ParsedPage
-import dev.stapler.stelekit.model.toDiscriminatorString
 import dev.stapler.stelekit.outliner.JournalUtils
 import dev.stapler.stelekit.parsing.ParseMode
 import dev.stapler.stelekit.util.ContentHasher
@@ -161,7 +160,7 @@ object MarkdownPageParser {
                 properties = parsedBlock.mergedProperties(),
                 isLoaded = mode == ParseMode.FULL,
                 contentHash = ContentHasher.sha256ForContent(parsedBlock.content),
-                blockType = parsedBlock.blockType.toDiscriminatorString()
+                blockType = parsedBlock.blockType
             )
 
             destinationList.add(block)
@@ -217,7 +216,7 @@ object MarkdownPageParser {
                     properties = parsedBlock.mergedProperties(),
                     isLoaded = false,
                     contentHash = ContentHasher.sha256ForContent(parsedBlock.content),
-                    blockType = parsedBlock.blockType.toDiscriminatorString()
+                    blockType = parsedBlock.blockType
                 )
             )
 

@@ -13,6 +13,7 @@ import dev.stapler.stelekit.domain.TopicEnricher
 import dev.stapler.stelekit.domain.TopicSuggestion
 import dev.stapler.stelekit.domain.UrlFetcher
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
@@ -434,7 +435,7 @@ class ImportViewModel(
                     position = index,
                     createdAt = now,
                     updatedAt = now,
-                    blockType = "paragraph",
+                    blockType = BlockType.Paragraph,
                 )
             }
         } else {
@@ -450,7 +451,7 @@ class ImportViewModel(
                         position = index,
                         createdAt = now,
                         updatedAt = now,
-                        blockType = "paragraph",
+                        blockType = BlockType.Paragraph,
                     )
                 }
         }

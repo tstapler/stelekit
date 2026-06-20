@@ -19,6 +19,8 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.PageUuid
+import dev.stapler.stelekit.model.blockTypeFromString
+import dev.stapler.stelekit.model.toDiscriminatorString
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.util.ContentHasher
 import dev.stapler.stelekit.util.UuidGenerator
@@ -378,7 +380,7 @@ class SqlDelightBlockRepository(
                             block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
                             block.version,
                             block.contentHash ?: ContentHasher.sha256ForContent(block.content),
-                            block.blockType,
+                            block.blockType.toDiscriminatorString(),
                             block.uuid.value,
                         )
                     }
@@ -407,7 +409,7 @@ class SqlDelightBlockRepository(
             block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
             block.version,
             block.contentHash ?: ContentHasher.sha256ForContent(block.content),
-            block.blockType,
+            block.blockType.toDiscriminatorString(),
         )
     }
 
@@ -457,7 +459,7 @@ class SqlDelightBlockRepository(
                             block.updatedAt.toEpochMilliseconds(),
                             block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
                             block.contentHash ?: ContentHasher.sha256ForContent(block.content),
-                            block.blockType,
+                            block.blockType.toDiscriminatorString(),
                             block.uuid.value,
                         )
                     }
@@ -486,7 +488,7 @@ class SqlDelightBlockRepository(
                 block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
                 block.version,
                 block.contentHash ?: ContentHasher.sha256ForContent(block.content),
-                block.blockType
+                block.blockType.toDiscriminatorString()
             )
             val pageNames = extractWikilinks(block.content)
             addWikilinkRefs(block.uuid.value, pageNames)
@@ -1250,19 +1252,8 @@ class SqlDelightBlockRepository(
             version = this.version,
             properties = parseProperties(this.properties),
             contentHash = this.content_hash,
-            blockType = knownBlockTypeOrDefault(this.block_type, this.uuid)
+            blockType = blockTypeFromString(this.block_type)
         )
-    }
-
-    private val knownBlockTypes = setOf(
-        "bullet", "paragraph", "heading", "code_fence", "blockquote",
-        "ordered_list_item", "thematic_break", "table", "raw_html"
-    )
-
-    private fun knownBlockTypeOrDefault(blockType: String, uuid: String): String {
-        if (blockType in knownBlockTypes) return blockType
-        logger.warn("Unknown block_type '$blockType' for block $uuid — falling back to 'bullet'")
-        return "bullet"
     }
 
     private fun parseProperties(propertiesString: String?): Map<String, String> {
