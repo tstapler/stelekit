@@ -1017,7 +1017,7 @@ class SqlDelightBlockRepository(
                     properties = emptyMap(),
                     version = 0L,
                     contentHash = ContentHasher.sha256ForContent(secondPart),
-                    blockType = block.block_type,
+                    blockType = blockTypeFromString(block.block_type),
                 )
             }
             

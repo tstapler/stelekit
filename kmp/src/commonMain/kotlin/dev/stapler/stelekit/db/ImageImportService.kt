@@ -190,8 +190,8 @@ class ImageImportService(
             )
             try {
                 measurementAnnotationRepository?.saveMeasurementAnnotation(bearingAnnotation)
-            } catch (_: CancellationException) {
-                throw CancellationException()
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 // Non-fatal: bearing annotation failure must not fail the import
             }
