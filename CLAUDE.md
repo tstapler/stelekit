@@ -54,8 +54,9 @@ actionlint -color
 uvx 'zizmor==1.25.2' .
 
 # Run benchmark locally — mirrors CI, generates flamegraph PNGs (requires async-profiler + librsvg)
-./scripts/benchmark-local.sh                        # synthetic graph only
-./scripts/benchmark-local.sh /path/to/your/graph   # include real-graph test
+./scripts/benchmark-local.sh /path/to/your/graph   # real graph (recommended — most representative)
+./scripts/benchmark-local.sh                        # synthetic XLARGE only (7978 pages, matches real graph scale)
+# BENCH_CONFIG=SMALL ./scripts/benchmark-local.sh  # quick smoke (200 pages, same as CI)
 
 # Or run the Gradle task directly (flamegraph PNGs require flamegraph.pl + rsvg-convert separately)
 ./gradlew :kmp:jvmTestProfile -PgraphPath=/path/to/your/graph
