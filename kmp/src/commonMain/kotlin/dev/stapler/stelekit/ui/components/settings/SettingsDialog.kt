@@ -270,7 +270,7 @@ private fun DeveloperSettings(
         )
         Text(
             text = if (isLibsqlDriverEnabled)
-                "Active: libsql JNI (WAL + MVCC). Reload the graph to apply."
+                "Active: libsql JNI driver (WAL mode). Reload the graph to apply."
             else
                 "Active: system SQLite. Reload the graph to apply.",
             style = MaterialTheme.typography.bodySmall,

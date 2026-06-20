@@ -7,7 +7,6 @@ import java.util.logging.Logger
 private val log = Logger.getLogger("LibsqlJni")
 
 internal actual fun loadLibsqlNativeLibrary() {
-    val version = "0.1.0"
     val libName = System.mapLibraryName("stelekit_libsql") // e.g. "libstelekit_libsql.so"
     val ext = libName.substringAfterLast('.') // "so", "dylib", or "dll"
     val os = System.getProperty("os.name").lowercase()
@@ -32,9 +31,8 @@ internal actual fun loadLibsqlNativeLibrary() {
         "stelekit-libsql",
     )
     tmpDir.mkdirs()
-    // Versioned + hash filename prevents stale-binary collisions across upgrades.
-    val versionedName = "libstelekit_libsql-$version-$hash.$ext"
-    val tmpLib = File(tmpDir, versionedName)
+    // Hash-based filename prevents stale-binary collisions; no separate version needed.
+    val tmpLib = File(tmpDir, "libstelekit_libsql-$hash.$ext")
     if (!tmpLib.exists()) {
         FileOutputStream(tmpLib).use { it.write(bytes) }
     }

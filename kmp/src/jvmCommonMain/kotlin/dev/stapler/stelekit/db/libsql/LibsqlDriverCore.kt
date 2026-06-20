@@ -13,6 +13,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.logging.Logger
 
 /**
  * Shared [SqlDriver] implementation backed by the libsql JNI bridge.
@@ -24,8 +25,10 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 internal class LibsqlDriverCore(
     dbPath: String,
-    poolSize: Int,
+    private val poolSize: Int,
 ) : SqlDriver {
+
+    private val log = Logger.getLogger("LibsqlDriverCore")
 
     private val dbHandle: Long = LibsqlJni.openDatabase(dbPath)
 
@@ -248,13 +251,16 @@ internal class LibsqlDriverCore(
         val handles = mutableListOf<Long>()
         pool.drainTo(handles)
         handles.forEach { LibsqlJni.closeConnection(it) }
-        repeat(handles.size) { pool.put(LibsqlJni.openConnection(dbHandle)) }
+        repeat(poolSize) { pool.put(LibsqlJni.openConnection(dbHandle)) }
     }
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         if (inFlightCount.get() == 0) closeLatch.countDown()
-        closeLatch.await(5, TimeUnit.SECONDS)
+        val drained = closeLatch.await(5, TimeUnit.SECONDS)
+        if (!drained) {
+            log.warning("libsql driver close timed out: ${inFlightCount.get()} in-flight queries still active")
+        }
         listeners.clear()
         val handles = mutableListOf<Long>()
         pool.drainTo(handles)

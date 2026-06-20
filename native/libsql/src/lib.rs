@@ -39,7 +39,7 @@ fn get_runtime() -> &'static Arc<Runtime> {
     RT.get_or_init(|| {
         Arc::new(
             tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(8)
+                .worker_threads(4)
                 .enable_all()
                 .build()
                 .expect("failed to build Tokio runtime"),
@@ -147,6 +147,12 @@ fn build_params(bindings: &[(usize, Value)]) -> Vec<Value> {
     }
     let min_idx = bindings.iter().map(|(i, _)| *i).min().unwrap_or(1);
     let max_idx = bindings.iter().map(|(i, _)| *i).max().unwrap_or(0);
+    // Catch duplicate indices, which are a symptom of mixing 0-based and 1-based conventions.
+    debug_assert_eq!(
+        bindings.iter().map(|(i, _)| i).collect::<std::collections::HashSet<_>>().len(),
+        bindings.len(),
+        "build_params: duplicate binding indices detected — possible 0-based/1-based convention mix"
+    );
     if min_idx == 0 {
         // 0-based: SQLDelight generated code and any caller starting at index 0
         let mut params = vec![Value::Null; max_idx + 1];
@@ -348,7 +354,7 @@ pub extern "system" fn Java_dev_stapler_stelekit_db_libsql_LibsqlJni_executeRaw<
                 let msg = e.to_string();
                 let ch = unsafe { &mut (*conn_ptr) };
                 if is_fatal_connection_error(&msg) {
-                    ch.poisoned.store(true, std::sync::atomic::Ordering::SeqCst);
+                    ch.poisoned.store(true, std::sync::atomic::Ordering::Release);
                 }
                 ch.last_error = Some(msg);
                 -1i64 as jlong
@@ -493,7 +499,7 @@ pub extern "system" fn Java_dev_stapler_stelekit_db_libsql_LibsqlJni_executeStat
                 let msg = e.to_string();
                 let ch = unsafe { &mut (*conn_ptr) };
                 if is_fatal_connection_error(&msg) {
-                    ch.poisoned.store(true, std::sync::atomic::Ordering::SeqCst);
+                    ch.poisoned.store(true, std::sync::atomic::Ordering::Release);
                 }
                 ch.last_error = Some(msg);
                 -1i64 as jlong
@@ -540,7 +546,7 @@ pub extern "system" fn Java_dev_stapler_stelekit_db_libsql_LibsqlJni_queryStatem
                 // SAFETY: block_on completed; no aliasing with the async block above.
                 let ch = unsafe { &mut (*conn_ptr) };
                 if is_fatal_connection_error(&msg) {
-                    ch.poisoned.store(true, std::sync::atomic::Ordering::SeqCst);
+                    ch.poisoned.store(true, std::sync::atomic::Ordering::Release);
                 }
                 ch.last_error = Some(msg);
                 -1i64 as jlong
@@ -721,7 +727,7 @@ pub extern "system" fn Java_dev_stapler_stelekit_db_libsql_LibsqlJni_isConnectio
     with_env_catch(env.get_raw(), AssertUnwindSafe(|| {
         if conn_handle == 0 { return JNI_FALSE; }
         let ch = unsafe { &*(conn_handle as *const ConnHandle) };
-        if ch.poisoned.load(std::sync::atomic::Ordering::SeqCst) {
+        if ch.poisoned.load(std::sync::atomic::Ordering::Acquire) {
             JNI_TRUE
         } else {
             JNI_FALSE
