@@ -153,6 +153,34 @@ actual class DriverFactory actual constructor() {
         return driver
     }
 
+    actual fun createReadDriver(jdbcUrl: String): SqlDriver? {
+        val dbName = jdbcUrl.substringAfter("jdbc:sqlite:")
+        val context = staticContext ?: return null
+        if (dbName.startsWith("/")) java.io.File(dbName).parentFile?.mkdirs()
+        val schema = SteleDatabase.Schema.synchronous()
+        // Second connection to the same WAL database file. onCreate/onUpgrade are no-ops —
+        // the write driver owns schema creation and migrations; the read driver just opens
+        // the existing file. Both connections apply the same PRAGMAs so WAL mode, mmap,
+        // and busy_timeout are consistent across connections.
+        return AndroidSqliteDriver(
+            schema = schema,
+            context = context,
+            name = dbName,
+            factory = FrameworkSQLiteOpenHelperFactory(),
+            callback = object : AndroidSqliteDriver.Callback(schema) {
+                override fun onConfigure(db: SupportSQLiteDatabase) {
+                    super.onConfigure(db)
+                    db.enableWriteAheadLogging()
+                    ANDROID_PRAGMAS.forEach { pragma ->
+                        try { db.query(pragma).close() } catch (_: Exception) { }
+                    }
+                }
+                override fun onCreate(db: SupportSQLiteDatabase) = Unit
+                override fun onUpgrade(db: SupportSQLiteDatabase, old: Int, new: Int) = Unit
+            },
+        )
+    }
+
     actual fun getDatabaseUrl(graphId: String): String {
         val basePath = getDatabaseDirectory()
         return "jdbc:sqlite:$basePath/stelekit-graph-$graphId.db"

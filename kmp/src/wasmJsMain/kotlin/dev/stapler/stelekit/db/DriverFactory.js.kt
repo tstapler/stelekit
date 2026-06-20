@@ -11,6 +11,8 @@ actual class DriverFactory actual constructor() {
     actual fun createDriver(jdbcUrl: String): SqlDriver =
         cachedDriver ?: error("createDriverAsync() must be called before createDriver() on wasmJs")
 
+    actual fun createReadDriver(jdbcUrl: String): SqlDriver? = null  // WASM is single-threaded
+
     actual fun getDatabaseUrl(graphId: String): String = "jdbc:sqlite:stelekit-graph-$graphId"
     actual fun getDatabaseDirectory(): String = "/stelekit"
 

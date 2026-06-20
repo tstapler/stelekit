@@ -135,6 +135,10 @@ actual class DriverFactory actual constructor() {
     fun getLibsqlDatabasePath(graphId: String): String =
         "${getDatabaseDirectory()}/stelekit-graph-$graphId-libsql.db"
 
+    // JVM uses PooledJdbcSqliteDriver (8 connections) — the pool already provides concurrent
+    // R/W without a separate connection. Return null so RepositoryFactoryImpl skips the router.
+    actual fun createReadDriver(jdbcUrl: String): SqlDriver? = null
+
     actual fun getDatabaseUrl(graphId: String): String =
         "jdbc:sqlite:${getDatabaseDirectory()}/stelekit-graph-$graphId.db"
 

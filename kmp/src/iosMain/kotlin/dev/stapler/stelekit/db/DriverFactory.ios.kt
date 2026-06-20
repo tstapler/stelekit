@@ -14,6 +14,8 @@ actual class DriverFactory actual constructor() {
         return NativeSqliteDriver(SteleDatabase.Schema, dbName)
     }
 
+    actual fun createReadDriver(jdbcUrl: String): SqlDriver? = null  // NativeSqliteDriver is single-threaded
+
     actual fun getDatabaseUrl(graphId: String): String = "jdbc:sqlite:stelekit-graph-$graphId.db"
     actual fun getDatabaseDirectory(): String = "."
 

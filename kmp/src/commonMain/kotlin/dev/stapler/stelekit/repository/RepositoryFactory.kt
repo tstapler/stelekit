@@ -85,6 +85,7 @@ class RepositoryFactoryImpl(
 ) : RepositoryFactory {
 
     private var activeDriver: app.cash.sqldelight.db.SqlDriver? = null
+    private var activeReadDriver: app.cash.sqldelight.db.SqlDriver? = null
     private var wrappedDriver: app.cash.sqldelight.db.SqlDriver? = null
     private var activeTelemetryDriver: app.cash.sqldelight.db.SqlDriver? = null
     private var activeTelemetryDb: TelemetryDatabase? = null
@@ -97,11 +98,19 @@ class RepositoryFactoryImpl(
     private var searchHistogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
 
     private val database: SteleDatabase by lazy {
-        val driver = driverFactory.createDriver(jdbcUrl)
-        activeDriver = driver
+        val writeDriver = driverFactory.createDriver(jdbcUrl)
+        activeDriver = writeDriver
+        val readDriver = driverFactory.createReadDriver(jdbcUrl)
+        activeReadDriver = readDriver
+        // On Android: readDriver is a second connection; router gives reads their own WAL
+        // snapshot and never blocks them behind write transactions.
+        // On JVM/iOS/WASM: readDriver is null; pool or single-connection handles R/W.
+        val baseDriver = if (readDriver != null) {
+            dev.stapler.stelekit.db.ReadWriteRouterDriver(readDriver, writeDriver)
+        } else writeDriver
         val effectiveDriver = if (tracingRingBuffer != null || queryStatsCollector != null) {
-            TimingDriverWrapper(driver, tracingRingBuffer, queryStatsCollector)
-        } else driver
+            TimingDriverWrapper(baseDriver, tracingRingBuffer, queryStatsCollector)
+        } else baseDriver
         wrappedDriver = effectiveDriver
         SteleDatabase(effectiveDriver)
     }
@@ -453,7 +462,10 @@ class RepositoryFactoryImpl(
     override fun close() {
         // PRAGMA optimize + driver close per SQLite docs recommendation at connection close.
         // Platform-specific: JVM/iOS use runBlocking; WASM/JS skips PRAGMA (in-memory only).
+        // Close write driver first (flushes WAL), then read driver.
         pragmaOptimizeAndClose(activeDriver)
+        activeReadDriver?.close()
+        activeReadDriver = null
         pragmaOptimizeAndClose(activeTelemetryDriver)
         activeTelemetryDriver = null
         activeTelemetryDb = null

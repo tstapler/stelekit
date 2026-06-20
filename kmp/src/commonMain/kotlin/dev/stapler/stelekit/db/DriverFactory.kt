@@ -32,6 +32,22 @@ expect class DriverFactory() {
      * Uses a single connection to avoid WAL snapshot contention with the content database.
      */
     fun createTelemetryDriver(graphId: String): SqlDriver
+
+    /**
+     * Create a separate read-only SQLite driver for concurrent reads.
+     *
+     * On Android, returns a second [AndroidSqliteDriver] connection to the same database file.
+     * With WAL mode active on both connections, reads proceed in parallel with write transactions —
+     * [selectPageByName] and [getBlocksForPage] are never blocked by a bulk [saveBlocks] import.
+     *
+     * On JVM, the write driver is already a [PooledJdbcSqliteDriver] with 8 connections, so
+     * this returns null (the pool already provides concurrent R/W). On iOS and WASM, also null
+     * (single-threaded runtimes; no connection pool needed).
+     *
+     * When null, [RepositoryFactoryImpl] uses the write driver for both reads and writes.
+     * When non-null, it wraps both in a [ReadWriteRouterDriver].
+     */
+    fun createReadDriver(jdbcUrl: String): SqlDriver?
 }
 
 fun DriverFactory.getTelemetryDatabaseUrl(graphId: String): String =
