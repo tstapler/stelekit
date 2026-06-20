@@ -71,9 +71,10 @@ class BlockStateManager(
     // standing SQLDelight subscription. Each emission is a set of page UUIDs that were written;
     // WILDCARD_PAGE_UUID means all observed pages should re-query.
     private val invalidationSource: SharedFlow<Set<PageUuid>>? = null,
-    // Phase 2 push path: when provided, block list updates for in-app hot-path edits arrive
-    // pre-fetched from the actor. Zero additional DB re-query for user edit operations.
-    private val pushSource: SharedFlow<BlockUpdateEvent.BlocksWritten>? = null,
+    // Push path: typed events from the actor for in-app hot-path edits.
+    // BlocksWritten: full list (structural ops — delete, merge).
+    // Patch variants: single-field updates applied directly to _blocks with zero DB re-query.
+    private val pushSource: SharedFlow<BlockUpdateEvent>? = null,
 ) : BlockEditingPort, BlockStructurePort, BlockSelectionPort, BlockNavigationPort {
     private val logger = Logger("BlockStateManager")
     private val diskWriteDebounce = DebounceManager(scope, 300L)
@@ -409,19 +410,36 @@ class BlockStateManager(
 
             val source = invalidationSource
             if (source != null) {
-                // Phase 2: direct push path — receives full block list from the actor after each
-                // hot-path write (WriteBlockContent, WriteBlock, DeleteBlock, MergeBlocks,
-                // DeleteBlockStructural, WriteBlockProperties). Zero DB re-query for in-app edits.
-                // Launched as a sibling to the invalidation collector so neither cancels the other.
-                // Use collect (not collectLatest) — applying a pushed block list is instant and
-                // must not be cancelled mid-apply. Rapid edits are serialized by the actor queue.
+                // Push path — events arrive from the actor after each hot-path write.
+                // BlocksWritten: full list (structural ops: delete, merge) — merged with dirty-set.
+                // Patch variants: single-field mutations applied in-place; zero DB re-query.
+                // Use collect (not collectLatest) — applying updates is instant; cancellation
+                // mid-apply would leave _blocks partially updated. Rapid edits are serialized
+                // by the actor queue so no stacking occurs.
                 pushSource?.let { push ->
                     launch {
                         push.collect { event ->
-                            if (event.pageUuid != pageUuid) return@collect
-                            _blocks.update { current ->
-                                val localBlocks = current[pageUuidStr] ?: emptyList()
-                                current + (pageUuidStr to mergeBlocks(localBlocks, event.blocks))
+                            when (event) {
+                                is BlockUpdateEvent.BlocksWritten -> {
+                                    if (event.pageUuid != pageUuid) return@collect
+                                    _blocks.update { current ->
+                                        val localBlocks = current[pageUuidStr] ?: emptyList()
+                                        current + (pageUuidStr to mergeBlocks(localBlocks, event.blocks))
+                                    }
+                                }
+                                is BlockUpdateEvent.BlockContentPatched -> {
+                                    if (event.pageUuid != pageUuid) return@collect
+                                    applyContentPatch(pageUuidStr, event.blockUuid, event.newContent)
+                                }
+                                is BlockUpdateEvent.BlockReplaced -> {
+                                    if (event.pageUuid != pageUuid) return@collect
+                                    applyBlockReplace(pageUuidStr, event.block)
+                                }
+                                is BlockUpdateEvent.BlockPropertiesPatched -> {
+                                    if (event.pageUuid != pageUuid) return@collect
+                                    applyPropertiesPatch(pageUuidStr, event.blockUuid, event.properties)
+                                }
+                                is BlockUpdateEvent.PagesInvalidated -> { /* not consumed here */ }
                             }
                         }
                     }
@@ -506,6 +524,58 @@ class BlockStateManager(
         val incomingUuids = incomingBlocks.mapTo(HashSet()) { it.uuid }
         val pending = localBlocks.filter { it.uuid.value in pendingNewBlockUuids.value && it.uuid !in incomingUuids }
         return if (pending.isEmpty()) merged else merged + pending
+    }
+
+    // ---- In-place patch helpers (Phase 3 push path) ----
+    // Apply dirty-set semantics: a block with a pending unconfirmed local edit (dirtyVersion >
+    // block.version) keeps its local content; confirmed or clean blocks accept the patched value.
+
+    private fun applyContentPatch(pageUuidStr: String, blockUuid: BlockUuid, newContent: String) {
+        _blocks.update { current ->
+            val pageBlocks = current[pageUuidStr] ?: return@update current
+            val updated = pageBlocks.map { block ->
+                if (block.uuid != blockUuid) return@map block
+                val dirtyVersion = _dirtyBlocks.value[block.uuid.value]
+                if (dirtyVersion != null && dirtyVersion > block.version) block
+                else {
+                    _dirtyBlocks.update { it - block.uuid.value }
+                    block.copy(content = newContent)
+                }
+            }
+            current + (pageUuidStr to updated)
+        }
+    }
+
+    private fun applyBlockReplace(pageUuidStr: String, incoming: Block) {
+        _blocks.update { current ->
+            val pageBlocks = current[pageUuidStr] ?: return@update current
+            val updated = pageBlocks.map { block ->
+                if (block.uuid != incoming.uuid) return@map block
+                val dirtyVersion = _dirtyBlocks.value[block.uuid.value]
+                if (dirtyVersion != null && dirtyVersion > incoming.version) block
+                else {
+                    _dirtyBlocks.update { it - block.uuid.value }
+                    incoming
+                }
+            }
+            current + (pageUuidStr to updated)
+        }
+    }
+
+    private fun applyPropertiesPatch(pageUuidStr: String, blockUuid: BlockUuid, properties: Map<String, String>) {
+        _blocks.update { current ->
+            val pageBlocks = current[pageUuidStr] ?: return@update current
+            val updated = pageBlocks.map { block ->
+                if (block.uuid != blockUuid) return@map block
+                val dirtyVersion = _dirtyBlocks.value[block.uuid.value]
+                if (dirtyVersion != null && dirtyVersion > block.version) block
+                else {
+                    _dirtyBlocks.update { it - block.uuid.value }
+                    block.copy(properties = properties)
+                }
+            }
+            current + (pageUuidStr to updated)
+        }
     }
 
     fun blocksForPage(pageUuid: String): List<Block> =

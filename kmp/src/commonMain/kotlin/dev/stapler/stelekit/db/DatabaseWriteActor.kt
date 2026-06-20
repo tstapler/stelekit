@@ -93,12 +93,12 @@ class DatabaseWriteActor(
      * changes flow through GraphLoader → saveBlocks() → SaveBlocks arm and also stay on the
      * Phase 1 invalidation path only.
      */
-    private val _blocksPushed = MutableSharedFlow<BlockUpdateEvent.BlocksWritten>(
+    private val _blocksPushed = MutableSharedFlow<BlockUpdateEvent>(
         replay = 0,
         extraBufferCapacity = 64,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
-    val blocksPushed: SharedFlow<BlockUpdateEvent.BlocksWritten> = _blocksPushed.asSharedFlow()
+    val blocksPushed: SharedFlow<BlockUpdateEvent> = _blocksPushed.asSharedFlow()
 
     /** Controls which channel a write request enters. */
     enum class Priority { HIGH, LOW }
@@ -358,17 +358,17 @@ class DatabaseWriteActor(
     }
 
     /**
-     * Fetch the post-write block list for [pageUuid] and emit a [BlockUpdateEvent.BlocksWritten]
-     * push payload. Suppresses [_blockInvalidations] for these typed hot-path arms (Option A from
-     * the plan) — the push is the authoritative signal so no redundant re-query invalidation is
-     * needed. BlockStateManager receives the full list directly, zero additional DB queries.
+     * Fetch the post-write block list for [pageUuid] from DB and emit a [BlockUpdateEvent.BlocksWritten].
+     * Used only for structural operations (delete, merge) where the post-write state involves
+     * child re-parenting or multi-row changes that cannot be reconstructed from the request alone.
+     *
+     * Pure-update arms (WriteBlockContent, WriteBlock, WriteBlockProperties) emit typed patch
+     * events directly without a DB re-read — see [processWriteBlockContent] etc.
      */
     private suspend fun emitPushPayload(pageUuid: PageUuid) {
         val blocks = blockRepository.getBlocksForPage(pageUuid).first().getOrNull() ?: emptyList()
         _blocksPushed.tryEmit(BlockUpdateEvent.BlocksWritten(pageUuid, blocks, WriteSource.UserEdit))
-        // Note: _blockInvalidations is intentionally NOT emitted here (Option A suppression).
-        // Subscribers that have not yet adopted blocksPushed will miss this event, but all
-        // production consumers (BlockStateManager.observePage) now consume blocksPushed.
+        // _blockInvalidations intentionally NOT emitted here — push is the authoritative signal.
         // Bulk import paths (SaveBlocks, SaveBlocksDiff) continue to emit _blockInvalidations only.
     }
 
@@ -376,7 +376,9 @@ class DatabaseWriteActor(
         val result = blockRepository.updateBlockContentOnly(request.blockUuid, request.content)
         if (result.isRight()) {
             onWriteSuccess?.invoke(request)
-            emitPushPayload(request.pageUuid)
+            _blocksPushed.tryEmit(
+                BlockUpdateEvent.BlockContentPatched(request.pageUuid, request.blockUuid, request.content)
+            )
         }
         request.deferred.complete(result)
     }
@@ -385,7 +387,9 @@ class DatabaseWriteActor(
         val result = blockRepository.saveBlock(request.block)
         if (result.isRight()) {
             onWriteSuccess?.invoke(request)
-            emitPushPayload(request.block.pageUuid)
+            _blocksPushed.tryEmit(
+                BlockUpdateEvent.BlockReplaced(request.block.pageUuid, request.block)
+            )
         }
         request.deferred.complete(result)
     }
@@ -431,7 +435,9 @@ class DatabaseWriteActor(
         val result = blockRepository.updateBlockPropertiesOnly(request.blockUuid, request.properties)
         if (result.isRight()) {
             onWriteSuccess?.invoke(request)
-            emitPushPayload(request.pageUuid)
+            _blocksPushed.tryEmit(
+                BlockUpdateEvent.BlockPropertiesPatched(request.pageUuid, request.blockUuid, request.properties)
+            )
         }
         request.deferred.complete(result)
     }

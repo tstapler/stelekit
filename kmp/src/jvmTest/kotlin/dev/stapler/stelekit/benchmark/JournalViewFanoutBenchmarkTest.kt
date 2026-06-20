@@ -38,9 +38,9 @@ import kotlin.time.Clock
  * Architecture invariants tested:
  * - During [DatabaseWriteActor.saveBlocks] (bulk import), [blockInvalidations] emits only
  *   the imported page UUIDs (F-J). Observed pages A-E receive no invalidation → zero re-queries.
- * - During [DatabaseWriteActor.updateBlockContentOnly] (hot-path write, Phase 2), the actor
- *   emits [BlockUpdateEvent.BlocksWritten] via [blocksPushed]. [BlockStateManager] applies
- *   the pushed block list directly → zero additional [getBlocksForPage] calls from BSM.
+ * - During [DatabaseWriteActor.updateBlockContentOnly] (hot-path write, Phase 3), the actor
+ *   emits [BlockUpdateEvent.BlockContentPatched] via [blocksPushed]. [BlockStateManager] applies
+ *   the patch directly to [_blocks] with zero [getBlocksForPage] calls from either side.
  *
  * This test runs in CI via `./gradlew :kmp:jvmTest`.
  */
@@ -70,8 +70,8 @@ class JournalViewFanoutBenchmarkTest {
      * Wraps [SqlDelightBlockRepository] and counts [getBlocksForPage] calls per [PageUuid].
      *
      * Created fresh per test to avoid cross-test contamination. Uses a [SqlDelightBlockRepository]
-     * as inner so that actual DB data is returned — required for the push-payload tests where the
-     * actor fetches blocks from the DB before emitting [dev.stapler.stelekit.db.BlockUpdateEvent.BlocksWritten].
+     * as inner so that actual DB data is returned — required for structural ops (delete, merge)
+     * where the actor still calls [emitPushPayload] and reads from DB.
      *
      * Cannot import from businessTest (separate source set) — parallel implementation here is intentional.
      */
@@ -200,21 +200,19 @@ class JournalViewFanoutBenchmarkTest {
 
     /**
      * AC-5 structural assertion: an in-app block edit via [DatabaseWriteActor.updateBlockContentOnly]
-     * triggers exactly one [getBlocksForPage] call — from the actor's internal [emitPushPayload],
-     * NOT from the BSM.
+     * triggers zero [getBlocksForPage] calls (Phase 3 patch path).
      *
-     * Phase 2 push path:
-     *  - Actor writes the block content, then calls [emitPushPayload] (1 internal getBlocksForPage).
-     *  - [blocksPushed] emits [BlockUpdateEvent.BlocksWritten] with the fetched block list.
-     *  - BSM receives the pushed event on [pushSource] and applies it directly to [_blocks].
+     * Phase 3 patch path:
+     *  - Actor writes the block content, then emits [BlockUpdateEvent.BlockContentPatched] — no DB read.
+     *  - BSM receives the patch on [pushSource], applies it directly to [_blocks] with dirty-set semantics.
      *  - [blockInvalidations] is NOT emitted for typed hot-path arms (Option A suppression).
      *  - BSM's [invalidationSource] collector never fires → 0 BSM-side re-queries.
      *
-     * Expected total count = 1 (actor internal). If count > 1, BSM is regressing to the
-     * Phase 1 invalidation path for this write arm — AC-5 is violated.
+     * Expected total count = 0. If count > 0, either the actor is re-reading from DB (regression
+     * to Phase 2) or BSM is falling through to the invalidation path (regression to Phase 1).
      */
     @Test
-    fun hotPathEdit_updateBlockContentOnly_triggersExactlyOneGetBlocksCall() = runTest {
+    fun hotPathEdit_updateBlockContentOnly_triggersZeroGetBlocksCalls() = runTest {
         val testScope = CoroutineScope(UnconfinedTestDispatcher(testScheduler) + SupervisorJob())
         val (countingRepo, pageRepo, actor) = buildRealRepos(testScope)
 
@@ -245,20 +243,31 @@ class JournalViewFanoutBenchmarkTest {
             // Reset counts — only post-reset calls are under test
             countingRepo.resetCounts()
 
-            // Hot-path write: typed WriteBlockContent arm, emits blocksPushed (not blockInvalidations)
+            // Hot-path write: typed WriteBlockContent arm emits BlockContentPatched (not blockInvalidations).
+            // Neither the actor nor BSM should call getBlocksForPage.
             actor.updateBlockContentOnly(BlockUuid(block.uuid.value), "updated content", pageA)
             advanceUntilIdle()
 
-            // The actor internally calls getBlocksForPage once inside emitPushPayload.
-            // BSM must consume blocksPushed without triggering another getBlocksForPage call.
-            // If count == 2, the BSM is double-querying (Phase 1 regression).
             val actualCount = countingRepo.getCount(pageA)
             assertEquals(
-                1,
+                0,
                 actualCount,
-                "After updateBlockContentOnly, getBlocksForPage should be called exactly once " +
-                    "(by actor.emitPushPayload, not by BSM). Count=$actualCount means BSM " +
-                    "is making an extra re-query — Phase 2 push path is not being consumed.",
+                "After updateBlockContentOnly, getBlocksForPage must not be called. " +
+                    "Actor emits BlockContentPatched (Phase 3 patch); BSM applies it in-place. " +
+                    "Count=$actualCount indicates the actor or BSM is making an extra DB read.",
+            )
+
+            // Verify the in-memory content was actually updated. Use first{} rather than .value
+            // so the assertion waits for the push collector coroutine to apply the patch — the
+            // test dispatcher may schedule it after advanceUntilIdle() if it resumed from real IO.
+            val updatedBlockMap = bsm.blocks.first { blocks ->
+                blocks[pageA.value]?.any { it.uuid == block.uuid && it.content == "updated content" } == true
+            }
+            val updatedBlock = updatedBlockMap[pageA.value]?.find { it.uuid == block.uuid }
+            assertEquals(
+                "updated content",
+                updatedBlock?.content,
+                "BSM _blocks must reflect the patched content without a DB round-trip.",
             )
 
             bsm.close()
