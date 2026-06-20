@@ -137,49 +137,27 @@ class SqlDelightBlockRepository(
                 return@flow
             }
 
-            val rootRow = queries.selectBlockByUuid(rootUuid.value).executeAsOneOrNull()
-            if (rootRow == null) {
-                emit(emptyList<BlockWithDepth>().right())
-            } else {
-                val visitedUuids = mutableSetOf<String>()
-                val resultList = mutableListOf<BlockWithDepth>()
-                // BFS: convert raw rows to Block models per level; cache each converted block.
-                var currentLevel = listOf(rootRow.toBlockModel())
-                var currentDepth = 0
-
-                while (currentLevel.isNotEmpty()) {
-                    val nextLevelUuids = mutableListOf<String>()
-                    currentLevel.forEach { block ->
-                        if (block.uuid.value !in visitedUuids) {
-                            visitedUuids.add(block.uuid.value)
-                            blockCache.put(block.uuid.value, block)
-                            resultList.add(BlockWithDepth(block, currentDepth))
-                            nextLevelUuids.add(block.uuid.value)
-                        }
-                    }
-                    if (nextLevelUuids.isEmpty()) break
-                    val childRows = queries.selectBlocksByParentUuids(nextLevelUuids).executeAsList()
-                    if (childRows.isEmpty()) break
-                    currentDepth++
-                    currentLevel = childRows.map { it.toBlockModel() }
-                    if (currentDepth > 100) break
-                }
-
-                hierarchyCache.put(rootUuid.value, HierarchyCacheEntry(resultList, Clock.System.now().toEpochMilliseconds()))
-                val pageUuid = resultList.firstOrNull()?.block?.pageUuid
-                if (pageUuid != null) {
-                    hierarchyIndexMutex.withLock {
-                        val set = hierarchyPageIndex.getOrPut(pageUuid.value) { mutableSetOf() }
-                        set.removeAll { it != rootUuid.value && !hierarchyCache.containsKey(it) }
-                        set.add(rootUuid.value)
-                    }
-                }
-                emit(resultList.right())
+            val rows = queries.selectBlockHierarchyRecursive(rootUuid.value).executeAsList()
+            val resultList = rows.map { row ->
+                val block = row.toBlockModel()
+                blockCache.put(block.uuid.value, block)
+                BlockWithDepth(block, row.depth.toInt())
             }
+
+            hierarchyCache.put(rootUuid.value, HierarchyCacheEntry(resultList, Clock.System.now().toEpochMilliseconds()))
+            val pageUuid = resultList.firstOrNull()?.block?.pageUuid
+            if (pageUuid != null) {
+                hierarchyIndexMutex.withLock {
+                    val set = hierarchyPageIndex.getOrPut(pageUuid.value) { mutableSetOf() }
+                    set.removeAll { it != rootUuid.value && !hierarchyCache.containsKey(it) }
+                    set.add(rootUuid.value)
+                }
+            }
+            emit(resultList.right())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            emit(DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left())
+            emit(DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left())
         }
     }.flowOn(PlatformDispatcher.DB)
 
@@ -1255,6 +1233,26 @@ class SqlDelightBlockRepository(
             blockType = blockTypeFromString(this.block_type)
         )
     }
+
+
+    private fun dev.stapler.stelekit.db.SelectBlockHierarchyRecursive.toBlockModel(): Block {
+        return Block(
+            uuid = BlockUuid(this.uuid),
+            pageUuid = PageUuid(this.page_uuid),
+            parentUuid = this.parent_uuid,
+            leftUuid = this.left_uuid,
+            content = this.content,
+            level = this.level.toInt(),
+            position = this.position.toInt(),
+            createdAt = Instant.fromEpochMilliseconds(this.created_at),
+            updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
+            version = this.version,
+            properties = parseProperties(this.properties),
+            contentHash = this.content_hash,
+            blockType = blockTypeFromString(this.block_type)
+        )
+    }
+
 
     private fun parseProperties(propertiesString: String?): Map<String, String> {
         return propertiesString?.split(",")?.filter { it.isNotBlank() }?.associate {

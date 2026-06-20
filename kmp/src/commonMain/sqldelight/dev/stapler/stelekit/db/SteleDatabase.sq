@@ -239,6 +239,27 @@ SELECT * FROM blocks WHERE parent_uuid = ? ORDER BY position;
 selectBlocksByParentUuids:
 SELECT * FROM blocks WHERE parent_uuid IN ? ORDER BY parent_uuid, position;
 
+selectBlockHierarchyRecursive:
+WITH RECURSIVE subtree(
+    id, uuid, page_uuid, parent_uuid, left_uuid, content, level, position,
+    created_at, updated_at, properties, version, content_hash, block_type, depth
+) AS (
+    SELECT b.id, b.uuid, b.page_uuid, b.parent_uuid, b.left_uuid, b.content,
+           b.level, b.position, b.created_at, b.updated_at, b.properties,
+           b.version, b.content_hash, b.block_type, 0 AS depth
+    FROM blocks b
+    WHERE b.uuid = ?
+    UNION ALL
+    SELECT b.id, b.uuid, b.page_uuid, b.parent_uuid, b.left_uuid, b.content,
+           b.level, b.position, b.created_at, b.updated_at, b.properties,
+           b.version, b.content_hash, b.block_type, s.depth + 1
+    FROM blocks b
+    INNER JOIN subtree s ON b.parent_uuid = s.uuid
+    WHERE s.depth < 100
+)
+SELECT * FROM subtree
+ORDER BY depth, parent_uuid, position;
+
 selectRootBlocksByPageUuidOrdered:
 SELECT * FROM blocks WHERE parent_uuid IS NULL AND page_uuid = ? ORDER BY position;
 

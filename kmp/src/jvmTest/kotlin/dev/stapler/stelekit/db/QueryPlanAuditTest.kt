@@ -53,6 +53,12 @@ class QueryPlanAuditTest {
         "selectAllPendingMoves",
         // SQLite reports "SCAN CONSTANT ROW" for rowid helpers with no FROM clause — not a real scan
         "selectLastInsertRowId",
+        // WITH RECURSIVE CTE — SQLite's recursive implementation always scans the CTE working
+        // table (SCAN s) and the outer sort result (SCAN subtree). The anchor step uses the
+        // unique-index lookup on uuid and the recursive step uses idx_blocks_parent_position
+        // when real hierarchical data is present (ANALYZE-verified). The SCAN lines in the plan
+        // reflect CTE plumbing, not an unindexed table scan on production data.
+        "selectBlockHierarchyRecursive",
     )
 
     // ── All SELECT queries from SteleDatabase.sq, parameters replaced with literals ──────────
@@ -98,6 +104,26 @@ class QueryPlanAuditTest {
             "SELECT * FROM blocks WHERE parent_uuid = 'x' ORDER BY position"),
         AuditQuery("selectBlocksByParentUuids",
             "SELECT * FROM blocks WHERE parent_uuid IN ('x') ORDER BY parent_uuid, position"),
+        AuditQuery("selectBlockHierarchyRecursive",
+            """WITH RECURSIVE subtree(
+    id, uuid, page_uuid, parent_uuid, left_uuid, content, level, position,
+    created_at, updated_at, properties, version, content_hash, block_type, depth
+) AS (
+    SELECT b.id, b.uuid, b.page_uuid, b.parent_uuid, b.left_uuid, b.content,
+           b.level, b.position, b.created_at, b.updated_at, b.properties,
+           b.version, b.content_hash, b.block_type, 0 AS depth
+    FROM blocks b
+    WHERE b.uuid = 'b0'
+    UNION ALL
+    SELECT b.id, b.uuid, b.page_uuid, b.parent_uuid, b.left_uuid, b.content,
+           b.level, b.position, b.created_at, b.updated_at, b.properties,
+           b.version, b.content_hash, b.block_type, s.depth + 1
+    FROM blocks b
+    INNER JOIN subtree s ON b.parent_uuid = s.uuid
+    WHERE s.depth < 100
+)
+SELECT * FROM subtree
+ORDER BY depth, parent_uuid, position"""),
         AuditQuery("selectRootBlocksByPageUuidOrdered",
             "SELECT * FROM blocks WHERE parent_uuid IS NULL AND page_uuid = 'x' ORDER BY position"),
         AuditQuery("selectBlockByLeftUuid",
@@ -629,9 +655,10 @@ class QueryPlanAuditTest {
         val sqContent = File(sqFilePath).readText()
 
         // Named query format in SQLDelight: "queryName:\nSELECT ..."
-        // The regex matches a word followed by ':' at line start, then SELECT on the next line.
+        // The regex matches a word followed by ':' at line start, then SELECT (or WITH RECURSIVE
+        // CTE queries that are read-only) on the next line.
         val selectNamesInSq: Set<String> = Regex(
-            """^(\w+):\s*\n\s*SELECT""",
+            """^(\w+):\s*\n\s*(?:SELECT|WITH\s+RECURSIVE)""",
             setOf(RegexOption.MULTILINE, RegexOption.IGNORE_CASE)
         ).findAll(sqContent).map { it.groupValues[1] }.toSet()
 
