@@ -266,62 +266,55 @@ class SqlDelightBlockRepository(
             }
         }
 
-    override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
-        if (blocks.isEmpty()) return@withContext Unit.right()
+    override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> {
+        if (blocks.isEmpty()) return Unit.right()
+        // Each withContext call is a suspension point: the primary DB connection is released
+        // between chunks, allowing concurrent reads (selectPageByName, getBlocksForPage) to
+        // proceed on their own pool connections rather than queuing behind the bulk write.
+        // On Android's single-connection SQLiteConnectionPool, this eliminates the 1–3 second
+        // db.lookupPage stalls observed during background indexing (BUG-009).
+        //
+        // Trade-off: inter-chunk suspension means saveBlocks is NOT all-or-nothing. If chunk
+        // N+1 fails, chunks 0..N are already committed. This is intentional — a single outer
+        // transaction reintroduces BUG-008 write-lock starvation. The caller can re-parse the
+        // source file on next startup to recover any missing blocks.
         try {
-            // Disable FTS5 automerge so individual inserts do not trigger mid-chunk segment
-            // merges. As the FTS5 index grows during a session, each automerge pass reads the
-            // entire index — making large page saves take minutes instead of milliseconds.
-            // A single controlled merge after all chunks completes the indexing in one pass.
-            ftsAutomergeOff()
-            // Chunk into bounded transactions so the SQLite write lock is never held for more
-            // than ~WRITE_CHUNK_SIZE rows. Without chunking, a 2000-block Phase-3 batch holds
-            // the lock for several seconds on Android, blocking concurrent user edits.
-            //
-            // Trade-off: chunking is NOT all-or-nothing. If chunk N+1 fails, chunks 0..N are
-            // already committed. This is intentional — a single outer transaction would reintroduce
-            // the BUG-008 write-lock starvation. The caller (Phase-3 loader) can re-parse the
-            // source file on next startup to recover any missing blocks.
-            blocks.chunked(WRITE_CHUNK_SIZE).forEach { chunk ->
-                queries.transaction {
-                    chunk.forEach { block -> insertBlockRow(block) }
+            withContext(PlatformDispatcher.DB) { ftsAutomergeOff() }
+            for (chunk in blocks.chunked(WRITE_CHUNK_SIZE)) {
+                // Suspension between iterations: releases DB connection, lets reads run.
+                withContext(PlatformDispatcher.DB) {
+                    queries.transaction { chunk.forEach { block -> insertBlockRow(block) } }
                 }
             }
-            ftsAutomergeDefault()
-            // Populate wikilink index in a separate pass after all block inserts complete.
-            // On Android's single SQLite connection (even in WAL mode, which requires
-            // enableWriteAheadLogging() for true read/write concurrency), every extra
-            // INSERT inside the block-insert transaction holds the write lock longer,
-            // starving concurrent reads (getBlocksForPage, pullBlocksForPage) and user
-            // edit writes (updateBlockContentOnly via DatabaseWriteActor).
-            // Before this fix, a 50-block chunk with 5 wikilinks/block = 300 write
-            // statements per transaction instead of 50, inflating lock hold time ~6×.
-            // Separating the passes keeps block-insert transaction times at pre-index
-            // baselines while still populating the index before any backlink count
-            // queries can run (backlink counts are not updated here either).
-            blocks.chunked(WRITE_CHUNK_SIZE).forEach { chunk ->
-                queries.transaction {
-                    chunk.forEach { block ->
-                        val pageNames = extractWikilinks(block.content)
-                        for (name in pageNames) {
-                            @OptIn(DirectSqlWrite::class)
-                            restricted.insertWikilinkReference(block.uuid.value, name)
+            withContext(PlatformDispatcher.DB) { ftsAutomergeDefault() }
+            // Wikilink pass: separate from block inserts to halve per-transaction cost.
+            // Each withContext here is also a read window — backlink queries may run between
+            // wikilink chunks (backlink counts are updated in a subsequent compaction step).
+            for (chunk in blocks.chunked(WRITE_CHUNK_SIZE)) {
+                withContext(PlatformDispatcher.DB) {
+                    queries.transaction {
+                        chunk.forEach { block ->
+                            val pageNames = extractWikilinks(block.content)
+                            for (name in pageNames) {
+                                @OptIn(DirectSqlWrite::class)
+                                restricted.insertWikilinkReference(block.uuid.value, name)
+                            }
                         }
                     }
                 }
             }
-            // ftsMerge() is intentionally NOT called here. Calling merge=-200 on an already-large
-            // FTS index (e.g. after 500+ pages are indexed) adds hundreds of ms per navigation.
-            // Callers that do bulk indexing must invoke compactFtsIndex() once after the full
-            // batch is complete. Per-save compaction is handled by automerge=8.
+            // ftsMerge() is intentionally NOT called here. merge=-200 on a large index adds
+            // hundreds of ms per navigation. Callers do bulk compactFtsIndex() once per session.
+            // Per-save compaction is handled by automerge=8.
             Unit.right()
         } catch (e: CancellationException) {
-            runCatching { ftsAutomergeDefault() }
+            runCatching { withContext(PlatformDispatcher.DB) { ftsAutomergeDefault() } }
             throw e
         } catch (e: Exception) {
-            runCatching { ftsAutomergeDefault() }
-            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            runCatching { withContext(PlatformDispatcher.DB) { ftsAutomergeDefault() } }
+            return DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
         }
+        return Unit.right()
     }
 
     override suspend fun saveBlocksDiff(toInsert: List<Block>, toUpdate: List<Block>): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
