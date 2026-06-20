@@ -327,6 +327,8 @@ class QueryPlanAuditTest {
         // ── wikilink_references ────────────────────────────────────────────────────────────────
         AuditQuery("selectWikilinkPageNamesForBlock",
             "SELECT page_name FROM wikilink_references WHERE block_uuid = 'b0'"),
+        AuditQuery("selectWikilinkPageNamesForBlocks",
+            "SELECT DISTINCT page_name FROM wikilink_references WHERE block_uuid IN ('b0')"),
         AuditQuery("selectWikilinkPageNamesForPage",
             "SELECT DISTINCT page_name FROM wikilink_references WHERE block_uuid IN (SELECT uuid FROM blocks WHERE page_uuid = 'p0')"),
 

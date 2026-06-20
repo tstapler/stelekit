@@ -566,21 +566,20 @@ class SqlDelightBlockRepository(
         try {
             val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
             if (block != null) {
-                // Collect affected page names from index BEFORE deletion (CASCADE removes refs).
-                val wikilinkPages = mutableSetOf<String>()
-                wikilinkPages.addAll(queries.selectWikilinkPageNamesForBlock(block.uuid).executeAsList())
                 if (deleteChildren) {
+                    // BFS to collect all descendant UUIDs. Wikilink collection is deferred to a single
+                    // batch query below — replaces per-node selectWikilinkPageNamesForBlock in the loop.
                     val uuidsToDelete = mutableListOf<String>(block.uuid)
                     var index = 0
                     while (index < uuidsToDelete.size) {
-                        val currentUuid = uuidsToDelete[index]
-                        val children = queries.selectBlockChildren(currentUuid, Long.MAX_VALUE, 0L).executeAsList()
-                        children.forEach { child ->
-                            uuidsToDelete.add(child.uuid)
-                            wikilinkPages.addAll(queries.selectWikilinkPageNamesForBlock(child.uuid).executeAsList())
-                        }
+                        queries.selectBlockChildren(uuidsToDelete[index], Long.MAX_VALUE, 0L).executeAsList()
+                            .forEach { child -> uuidsToDelete.add(child.uuid) }
                         index++
                     }
+                    // Collect wikilink pages for all affected blocks in one IN-clause batch.
+                    val wikilinkPages = uuidsToDelete.chunked(BATCH_UUID_CHUNK_SIZE).flatMap { chunk ->
+                        queries.selectWikilinkPageNamesForBlocks(chunk).executeAsList()
+                    }.toSet()
 
                     // Chain repair before deletion — use firstOrNull because duplicate
                     // left_uuid values indicate data corruption; we repair what we can.
@@ -588,18 +587,20 @@ class SqlDelightBlockRepository(
                     if (nextSibling != null) {
                         queries.updateBlockLeftUuid(block.left_uuid, nextSibling.uuid)
                     }
-
                     // Deletion cascades to wikilink_references automatically.
                     uuidsToDelete.forEach { queries.deleteBlockByUuid(it) }
+                    recomputeBacklinkCountsFromIndex(wikilinkPages)
                 } else {
+                    // Collect affected page names from index BEFORE deletion (CASCADE removes refs).
+                    val wikilinkPages = queries.selectWikilinkPageNamesForBlock(block.uuid).executeAsList().toSet()
                     // Chain repair before deletion
                     val nextSibling = queries.selectBlockByLeftUuid(block.uuid).executeAsList().firstOrNull()
                     if (nextSibling != null) {
                         queries.updateBlockLeftUuid(block.left_uuid, nextSibling.uuid)
                     }
                     queries.deleteBlockByUuid(block.uuid)
+                    recomputeBacklinkCountsFromIndex(wikilinkPages)
                 }
-                recomputeBacklinkCountsFromIndex(wikilinkPages)
             }
             Unit.right()
         } catch (e: CancellationException) {
@@ -619,20 +620,19 @@ class SqlDelightBlockRepository(
                     val blocksByUuid = queries.selectBlocksByUuids(chunkValues).executeAsList().associateBy { it.uuid }
                     chunkValues.forEach { uuidValue ->
                         val block = blocksByUuid[uuidValue] ?: return@forEach
-                        // Collect affected page names from index BEFORE deletion (CASCADE removes refs).
-                        wikilinkPages.addAll(queries.selectWikilinkPageNamesForBlock(block.uuid).executeAsList())
                         if (deleteChildren) {
-                            // Collect the full subtree
+                            // BFS to collect all descendant UUIDs. Wikilink collection is deferred to a
+                            // batch query below — replaces per-node selectWikilinkPageNamesForBlock calls.
                             val uuidsToDelete = mutableListOf(block.uuid)
                             var index = 0
                             while (index < uuidsToDelete.size) {
-                                val currentUuid = uuidsToDelete[index]
-                                val children = queries.selectBlockChildren(currentUuid, Long.MAX_VALUE, 0L).executeAsList()
-                                children.forEach { child ->
-                                    uuidsToDelete.add(child.uuid)
-                                    wikilinkPages.addAll(queries.selectWikilinkPageNamesForBlock(child.uuid).executeAsList())
-                                }
+                                queries.selectBlockChildren(uuidsToDelete[index], Long.MAX_VALUE, 0L).executeAsList()
+                                    .forEach { child -> uuidsToDelete.add(child.uuid) }
                                 index++
+                            }
+                            // Collect wikilink pages for the whole subtree in one IN-clause batch.
+                            uuidsToDelete.chunked(BATCH_UUID_CHUNK_SIZE).forEach { subtreeChunk ->
+                                wikilinkPages.addAll(queries.selectWikilinkPageNamesForBlocks(subtreeChunk).executeAsList())
                             }
                             // Chain repair for the top-level block being deleted.
                             // Re-read left_uuid live: prior iterations in this batch may have updated a
@@ -645,6 +645,8 @@ class SqlDelightBlockRepository(
                             }
                             uuidsToDelete.forEach { queries.deleteBlockByUuid(it) }
                         } else {
+                            // Collect affected page names from index BEFORE deletion (CASCADE removes refs).
+                            wikilinkPages.addAll(queries.selectWikilinkPageNamesForBlock(block.uuid).executeAsList())
                             // Chain repair before deletion. Re-read left_uuid live: prior iterations
                             // may have updated a sibling's left_uuid, making the pre-fetched map stale.
                             val liveLeftUuid = queries.selectBlockByUuid(block.uuid).executeAsOneOrNull()?.left_uuid
@@ -833,26 +835,25 @@ class SqlDelightBlockRepository(
             val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
                 ?: return@withContext Unit.right()
 
-            val siblings = if (block.parent_uuid == null) {
-                queries.selectRootBlocksByPageUuidOrdered(block.page_uuid).executeAsList()
-            } else {
-                queries.selectBlocksByParentUuidOrdered(block.parent_uuid).executeAsList()
-            }
-
-            val blockIndex = siblings.indexOfFirst { it.uuid == block.uuid }
-            if (blockIndex <= 0) return@withContext Unit.right() // Already first
-
-            val prevSibling = siblings[blockIndex - 1]
-            val nextSibling = siblings.getOrNull(blockIndex + 1)
+            // Use left_uuid linked-list to find adjacent siblings in O(1) queries —
+            // avoids loading all N siblings just to locate the predecessor and successor.
+            // block.left_uuid is a page/parent UUID sentinel when block is first; selectBlockByUuid
+            // returns null (pages not in blocks table) or a different-level block — both filtered out.
+            val prevSibling = block.left_uuid
+                ?.let { queries.selectBlockByUuid(it).executeAsOneOrNull() }
+                ?.takeIf { it.parent_uuid == block.parent_uuid }
+                ?: return@withContext Unit.right() // block is first in its sibling list
+            val nextSibling = queries.selectBlockByLeftUuid(block.uuid).executeAsList()
+                .firstOrNull { it.parent_uuid == block.parent_uuid }
 
             queries.transaction {
                 // Swap positions and leftUuids
                 // Current block (B) takes previous sibling's (A) leftUuid and position
                 queries.updateBlockHierarchy(block.parent_uuid, prevSibling.left_uuid, prevSibling.position, block.level.toLong(), block.uuid)
-                
+
                 // Previous sibling (A) now follows current block (B)
                 queries.updateBlockHierarchy(prevSibling.parent_uuid, block.uuid, block.position, prevSibling.level.toLong(), prevSibling.uuid)
-                
+
                 // If there was a next sibling (C) following B, it now follows A
                 if (nextSibling != null) {
                     queries.updateBlockLeftUuid(prevSibling.uuid, nextSibling.uuid)
@@ -875,17 +876,13 @@ class SqlDelightBlockRepository(
             val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
                 ?: return@withContext Unit.right()
 
-            val siblings = if (block.parent_uuid == null) {
-                queries.selectRootBlocksByPageUuidOrdered(block.page_uuid).executeAsList()
-            } else {
-                queries.selectBlocksByParentUuidOrdered(block.parent_uuid).executeAsList()
-            }
-
-            val blockIndex = siblings.indexOfFirst { it.uuid == block.uuid }
-            if (blockIndex >= siblings.size - 1) return@withContext Unit.right() // Already last
-
-            val nextSibling = siblings[blockIndex + 1]
-            val afterNextSibling = siblings.getOrNull(blockIndex + 2)
+            // Use left_uuid linked-list to find adjacent siblings in O(1) queries —
+            // avoids loading all N siblings just to locate the successor and the block after it.
+            val nextSibling = queries.selectBlockByLeftUuid(block.uuid).executeAsList()
+                .firstOrNull { it.parent_uuid == block.parent_uuid }
+                ?: return@withContext Unit.right() // block is last in its sibling list
+            val afterNextSibling = queries.selectBlockByLeftUuid(nextSibling.uuid).executeAsList()
+                .firstOrNull { it.parent_uuid == block.parent_uuid }
 
             queries.transaction {
                 // Swap positions and leftUuids
@@ -894,7 +891,7 @@ class SqlDelightBlockRepository(
 
                 // Current block (A) now follows next sibling (B)
                 queries.updateBlockHierarchy(block.parent_uuid, nextSibling.uuid, nextSibling.position, block.level.toLong(), block.uuid)
-                
+
                 // If there was a block (C) following B, it now follows A
                 if (afterNextSibling != null) {
                     queries.updateBlockLeftUuid(block.uuid, afterNextSibling.uuid)
@@ -935,14 +932,17 @@ class SqlDelightBlockRepository(
                 
                 // 2. Reparent all children of block B to block A
                 val childrenOfB = queries.selectBlocksByParentUuidOrdered(blockB.uuid).executeAsList()
-                childrenOfB.forEach { child ->
-                    // For each child, we need to update parent_uuid AND potentially recalculate position
-                    // To keep it simple for now, we just append them to A's children
-                    val lastChildOfA = queries.selectLastChild(blockA.uuid).executeAsOneOrNull()
-                    val newPosition = (lastChildOfA?.position ?: -1L) + 1L
-                    val newLeftUuid = lastChildOfA?.uuid ?: blockA.uuid
-                    
-                    queries.updateBlockHierarchy(blockA.uuid, newLeftUuid, newPosition, (blockA.level + 1L), child.uuid)
+                if (childrenOfB.isNotEmpty()) {
+                    // Query selectLastChild once before the loop and maintain position/leftUuid locally —
+                    // replaces N individual selectLastChild calls (one per child of B).
+                    val initialLastChild = queries.selectLastChild(blockA.uuid).executeAsOneOrNull()
+                    var nextPosition = (initialLastChild?.position ?: -1L) + 1L
+                    var nextLeftUuid: String = initialLastChild?.uuid ?: blockA.uuid
+                    childrenOfB.forEach { child ->
+                        queries.updateBlockHierarchy(blockA.uuid, nextLeftUuid, nextPosition, (blockA.level + 1L), child.uuid)
+                        nextLeftUuid = child.uuid
+                        nextPosition++
+                    }
                 }
                 
                 // 3. Chain repair for block B (B is being deleted)
