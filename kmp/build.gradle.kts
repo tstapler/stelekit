@@ -1048,6 +1048,8 @@ tasks.register("ciCheck") {
         ":kmp:checkDocCoverage",
         // Always compile instrumented test sources — catches type errors without needing a device.
         ":androidApp:compileDebugAndroidTestKotlin",
+        // Always compile WASM test sources — catches JVM-only API leaking into commonTest.
+        ":kmp:compileTestKotlinWasmJs",
     )
     // Instrumented tests: opt-in via -PciInstrumentedTests (configuration-cache-safe).
     if (project.hasProperty("ciInstrumentedTests")) {

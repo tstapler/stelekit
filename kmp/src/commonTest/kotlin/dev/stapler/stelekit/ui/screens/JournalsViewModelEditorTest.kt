@@ -236,7 +236,7 @@ class JournalsViewModelEditorTest {
             val newPosition = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(block.position, nextSiblingPos)
 
             val newBlock = block.copy(
-                uuid = newBlockUuid ?: BlockUuid(java.util.UUID.randomUUID().toString()),
+                uuid = newBlockUuid ?: BlockUuid(dev.stapler.stelekit.util.UuidGenerator.generateV7()),
                 content = secondPart,
                 position = newPosition
             )
