@@ -362,9 +362,20 @@ class GraphLoader(
     /**
      * Called by GraphWriter after it writes a file, so the watcher doesn't treat
      * our own write as an external change.
+     *
+     * [FileRegistry.markWrittenByUs] updates the content hash synchronously (reads file
+     * content, no getLastModifiedTime SAF IPC). A background launch then fires getLastModifiedTime
+     * to replace the temporary modTimes=0 (for .md) or sentinel (for .md.stek) with the real
+     * post-write mtime, eliminating extra readFile calls on the next watcher poll.
      */
     suspend fun markFileWrittenByUs(filePath: String) {
         fileRegistry.markWrittenByUs(filePath)
+        // Fire-and-forget: set real post-write mtime so subsequent watcher polls
+        // see modTime == lastKnown and skip the file without calling readFile.
+        parallelScope.launch {
+            val modTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
+            if (modTime != 0L) fileRegistry.updateModTime(filePath, modTime)
+        }
     }
 
     /**

@@ -446,13 +446,16 @@ class FileRegistryTest {
         val registry = FileRegistry(fs)
         registry.detectChanges("/graph/pages") // register baseline
 
-        // GraphWriter writes the encrypted file and marks it
-        fs.externalWrite("/graph/pages/Secret.md.stek", "STEK<v2>")
+        // Production flow: preMarkPendingWrite (sentinel) before write, markWrittenByUs after.
+        // For .md.stek, markWrittenByUs leaves the sentinel in place (no content-hash guard
+        // for encrypted files); the sentinel blocks detection until fire-and-forget sets real mtime.
+        registry.preMarkPendingWrite(FilePath("/graph/pages/Secret.md.stek"))
+        fs.externalWrite("/graph/pages/Secret.md.stek", "STEK<v2>")
         registry.markWrittenByUs("/graph/pages/Secret.md.stek")
 
         val changes = registry.detectChanges("/graph/pages")
         assertTrue(changes.changedFiles.isEmpty(),
-            "Own .md.stek write marked via markWrittenByUs must not be reported as external change")
+            "Own .md.stek write must not be reported as external change when sentinel is set")
     }
 
     @Test
