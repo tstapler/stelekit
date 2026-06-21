@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.52.2](https://github.com/tstapler/stelekit/compare/v0.52.1...v0.52.2) (2026-06-21)
+
+
+### Bug Fixes
+
+* **db:** drop stale FTS5 triggers programmatically on FTS5-unavailable devices ([dcdffa5](https://github.com/tstapler/stelekit/commit/dcdffa5992d4894855de35e7ee5c537e166c423c))
+* **db:** guard FTS5 triggers with WHEN clause to prevent crashes on devices lacking FTS5 ([7b08455](https://github.com/tstapler/stelekit/commit/7b084556ed654646c6677f1a82d9e1b15cb3f147))
+
 ## [0.52.1](https://github.com/tstapler/stelekit/compare/v0.52.0...v0.52.1) (2026-06-21)
 
 
