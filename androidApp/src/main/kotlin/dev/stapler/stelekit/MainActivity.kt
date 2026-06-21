@@ -259,7 +259,7 @@ class MainActivity : ComponentActivity() {
             }
             val spanRecorder = remember { createAndroidSpanRecorder() }
             val gitRepository = remember { AndroidGitRepository() }
-            val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity)
+            val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
 
             // Keep GitSyncServiceRegistry in sync so GitSyncWorker can reach the active service
             // even when the process was revived by WorkManager without the UI being foregrounded.

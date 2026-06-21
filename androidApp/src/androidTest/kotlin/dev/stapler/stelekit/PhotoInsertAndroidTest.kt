@@ -168,6 +168,7 @@ class PhotoInsertAndroidTest {
 
         val service = dev.stapler.stelekit.service.AndroidMediaAttachmentService(
             context = context,
+            fileSystem = JavaFileSystem(),
             launchGalleryPicker = { null },
         )
 
