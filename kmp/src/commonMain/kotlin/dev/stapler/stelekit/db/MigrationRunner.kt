@@ -675,69 +675,24 @@ object MigrationRunner {
         ),
         Migration(
             name = "fts5_triggers_when_guard",
-            // Devices whose system SQLite lacks FTS5 (some Android ROMs, custom builds) end up
-            // with pages_ai / blocks_ai triggers whose bodies reference non-existent FTS5 virtual
-            // tables. SQLite evaluates the trigger body on every INSERT, so savePage and
-            // saveBlocks fail with "no such module: fts5" on those devices.
+            // Devices whose system SQLite lacks FTS5 end up with pages_ai / blocks_ai triggers
+            // whose bodies reference non-existent FTS5 virtual tables (pages_fts / blocks_fts).
+            // SQLite validates trigger body table references at trigger-fire time, BEFORE
+            // evaluating the WHEN clause — so even `WHEN 0` does not prevent the body-validation
+            // step, and every INSERT INTO pages or blocks fails with "no such table: pages_fts".
             //
-            // Fix: rebuild all six FTS triggers (pages + blocks) with a WHEN clause that checks
-            // whether the FTS5 virtual table exists in sqlite_master before executing the body.
-            // On devices WITH FTS5 the WHEN condition is always true and behaviour is unchanged.
-            // On devices WITHOUT FTS5 the WHEN condition is always false, the body is silently
-            // skipped, and INSERT into pages/blocks succeeds (search just returns no results).
+            // Fix: drop all six FTS5 triggers here. applyAll() calls ensureFts5TriggerState()
+            // after every startup: if pages_fts/blocks_fts exist it recreates the triggers;
+            // if they are absent (FTS5 unavailable) it leaves them absent. This is the only
+            // approach that works because SQLite offers no way to guard against body-validation
+            // errors via WHEN clauses alone.
             statements = listOf(
-                // ── pages triggers ──────────────────────────────────────────────────────────
                 "DROP TRIGGER IF EXISTS pages_ai",
-                """
-                CREATE TRIGGER IF NOT EXISTS pages_ai AFTER INSERT ON pages
-                WHEN (SELECT count(*) FROM sqlite_master WHERE type='table' AND name='pages_fts') > 0
-                BEGIN
-                    INSERT INTO pages_fts(rowid, name) VALUES (new.rowid, new.name);
-                END
-                """,
                 "DROP TRIGGER IF EXISTS pages_ad",
-                """
-                CREATE TRIGGER IF NOT EXISTS pages_ad AFTER DELETE ON pages
-                WHEN (SELECT count(*) FROM sqlite_master WHERE type='table' AND name='pages_fts') > 0
-                BEGIN
-                    INSERT INTO pages_fts(pages_fts, rowid, name) VALUES('delete', old.rowid, old.name);
-                END
-                """,
                 "DROP TRIGGER IF EXISTS pages_au",
-                """
-                CREATE TRIGGER IF NOT EXISTS pages_au AFTER UPDATE OF name ON pages
-                WHEN (SELECT count(*) FROM sqlite_master WHERE type='table' AND name='pages_fts') > 0
-                BEGIN
-                    INSERT INTO pages_fts(pages_fts, rowid, name) VALUES('delete', old.rowid, old.name);
-                    INSERT INTO pages_fts(rowid, name) VALUES (new.rowid, new.name);
-                END
-                """,
-                // ── blocks triggers ─────────────────────────────────────────────────────────
                 "DROP TRIGGER IF EXISTS blocks_ai",
-                """
-                CREATE TRIGGER IF NOT EXISTS blocks_ai AFTER INSERT ON blocks
-                WHEN (SELECT count(*) FROM sqlite_master WHERE type='table' AND name='blocks_fts') > 0
-                BEGIN
-                    INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content);
-                END
-                """,
                 "DROP TRIGGER IF EXISTS blocks_ad",
-                """
-                CREATE TRIGGER IF NOT EXISTS blocks_ad AFTER DELETE ON blocks
-                WHEN (SELECT count(*) FROM sqlite_master WHERE type='table' AND name='blocks_fts') > 0
-                BEGIN
-                    INSERT INTO blocks_fts(blocks_fts, rowid, content) VALUES('delete', old.id, old.content);
-                END
-                """,
                 "DROP TRIGGER IF EXISTS blocks_au",
-                """
-                CREATE TRIGGER IF NOT EXISTS blocks_au AFTER UPDATE OF content ON blocks
-                WHEN (SELECT count(*) FROM sqlite_master WHERE type='table' AND name='blocks_fts') > 0
-                BEGIN
-                    INSERT INTO blocks_fts(blocks_fts, rowid, content) VALUES('delete', old.id, old.content);
-                    INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content);
-                END
-                """,
             )
         ),
     )
@@ -755,6 +710,14 @@ object MigrationRunner {
      */
     suspend fun applyAll(driver: SqlDriver) {
         applyAll(driver, all)
+        // Ensure FTS5 triggers are present iff the FTS5 virtual tables exist.
+        // This handles devices whose SQLite lacks FTS5: the pages_fts_setup migration silently
+        // skips pages_fts creation (IF NOT EXISTS swallows the error) but leaves pages_ai/ad/au
+        // and blocks_ai/ad/au triggers intact — and SQLite validates trigger body table refs at
+        // fire time, so every INSERT into pages/blocks throws "no such table: pages_fts".
+        // The fts5_triggers_when_guard migration dropped those triggers; this call recreates them
+        // only on FTS5-capable devices, and is idempotent (IF NOT EXISTS / IF EXISTS guards).
+        ensureFts5TriggerState(driver)
         // Run a fast sampled ANALYZE on every startup to keep query-planner statistics fresh.
         //
         // Why unconditional: ANALYZE on an empty table writes NOTHING to sqlite_stat1 — there
@@ -904,6 +867,56 @@ object MigrationRunner {
             appliedCount++
         }
         logger.info("SchemaRunner: complete — applied=$appliedCount skipped=${migrations.size - appliedCount}")
+    }
+
+    /**
+     * Ensures FTS5 triggers are present iff the corresponding FTS5 virtual tables exist.
+     *
+     * Called after every migration run. Idempotent: all statements use IF NOT EXISTS / IF EXISTS.
+     *
+     * - If [pages_fts] exists → CREATE IF NOT EXISTS pages_ai/ad/au triggers.
+     * - If [pages_fts] is absent → DROP IF EXISTS pages_ai/ad/au triggers (stale refs crash INSERT).
+     * - Same logic for blocks_fts / blocks_ai/ad/au.
+     *
+     * Background: SQLite validates all table references in a trigger body at trigger-fire time,
+     * before the WHEN clause is evaluated. A trigger body that references a non-existent table
+     * will throw "no such table" on every INSERT — regardless of any WHEN guard. Dropping the
+     * trigger is the only reliable way to silence the error on FTS5-unavailable devices.
+     */
+    internal suspend fun ensureFts5TriggerState(driver: SqlDriver) {
+        suspend fun tableExists(name: String): Boolean =
+            driver.executeQuery(
+                identifier = null,
+                sql = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='$name'",
+                mapper = { cursor ->
+                    cursor.next()
+                    QueryResult.Value((cursor.getLong(0) ?: 0L) > 0L)
+                },
+                parameters = 0,
+            ).await()
+
+        suspend fun exec(sql: String) = driver.execute(null, sql.trimIndent(), 0).await()
+
+        if (tableExists("pages_fts")) {
+            exec("CREATE TRIGGER IF NOT EXISTS pages_ai AFTER INSERT ON pages BEGIN INSERT INTO pages_fts(rowid, name) VALUES (new.rowid, new.name); END")
+            exec("CREATE TRIGGER IF NOT EXISTS pages_ad AFTER DELETE ON pages BEGIN INSERT INTO pages_fts(pages_fts, rowid, name) VALUES('delete', old.rowid, old.name); END")
+            exec("CREATE TRIGGER IF NOT EXISTS pages_au AFTER UPDATE OF name ON pages BEGIN INSERT INTO pages_fts(pages_fts, rowid, name) VALUES('delete', old.rowid, old.name); INSERT INTO pages_fts(rowid, name) VALUES (new.rowid, new.name); END")
+        } else {
+            exec("DROP TRIGGER IF EXISTS pages_ai")
+            exec("DROP TRIGGER IF EXISTS pages_ad")
+            exec("DROP TRIGGER IF EXISTS pages_au")
+            logger.warn("SchemaRunner: pages_fts absent — FTS5 triggers for pages dropped (device lacks FTS5)")
+        }
+
+        if (tableExists("blocks_fts")) {
+            exec("CREATE TRIGGER IF NOT EXISTS blocks_ai AFTER INSERT ON blocks BEGIN INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content); END")
+            exec("CREATE TRIGGER IF NOT EXISTS blocks_ad AFTER DELETE ON blocks BEGIN INSERT INTO blocks_fts(blocks_fts, rowid, content) VALUES('delete', old.id, old.content); END")
+            exec("CREATE TRIGGER IF NOT EXISTS blocks_au AFTER UPDATE OF content ON blocks BEGIN INSERT INTO blocks_fts(blocks_fts, rowid, content) VALUES('delete', old.id, old.content); INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content); END")
+        } else {
+            exec("DROP TRIGGER IF EXISTS blocks_ai")
+            exec("DROP TRIGGER IF EXISTS blocks_ad")
+            exec("DROP TRIGGER IF EXISTS blocks_au")
+        }
     }
 
     /**

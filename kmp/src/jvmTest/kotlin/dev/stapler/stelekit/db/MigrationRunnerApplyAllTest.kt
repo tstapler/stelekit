@@ -7,6 +7,8 @@ import org.junit.Test
 import java.io.File
 import java.util.Properties
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -219,7 +221,116 @@ class MigrationRunnerApplyAllTest {
         )
     }
 
-    // ── Test 3: idempotent "already exists" errors do record the migration ─────
+    // ── Test 3: FTS5 trigger WHEN guard ───────────────────────────────────────
+
+    /**
+     * Regression test for the Android "no such module: fts5" / "no such table: pages_fts" crash.
+     *
+     * Root cause: on devices whose SQLite lacks FTS5, pages_fts_setup silently fails to create
+     * pages_fts (IF NOT EXISTS swallows the error) but successfully creates pages_ai/ad/au
+     * triggers. SQLite validates trigger body table references at fire time, BEFORE any WHEN
+     * clause — so every INSERT INTO pages throws "no such table: pages_fts".
+     *
+     * Fix: the fts5_triggers_when_guard migration drops all six FTS5 triggers.
+     * ensureFts5TriggerState() then recreates them only when pages_fts/blocks_fts actually exist.
+     *
+     * This test exercises ensureFts5TriggerState directly: given stale FTS5 triggers and
+     * no pages_fts, it must drop the triggers so INSERT works.
+     */
+    @Test
+    fun `ensureFts5TriggerState drops broken FTS5 triggers when pages_fts is absent`() = runBlocking {
+        // Arrange: pages table + broken pages_ai trigger referencing non-existent pages_fts.
+        val conn = driver.getConnection()
+        try {
+            conn.prepareStatement(
+                "CREATE TABLE pages (uuid TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE)"
+            ).execute()
+            conn.prepareStatement(
+                "CREATE TRIGGER pages_ai AFTER INSERT ON pages BEGIN INSERT INTO pages_fts(rowid, name) VALUES (new.rowid, new.name); END"
+            ).execute()
+        } finally {
+            driver.closeConnection(conn)
+        }
+
+        // Pre-condition: INSERT fails because the trigger fires and pages_fts doesn't exist.
+        // (SQLite validates trigger body table refs before the WHEN clause — even `WHEN 0` fails.)
+        val preFixError = runCatching {
+            val c = driver.getConnection()
+            try { c.createStatement().execute("INSERT INTO pages VALUES ('u1','TestPage')") }
+            finally { driver.closeConnection(c) }
+        }.exceptionOrNull()
+        assertNotNull(preFixError, "Pre-fix INSERT must fail (trigger body references missing pages_fts)")
+
+        // Act: ensureFts5TriggerState sees pages_fts is absent → drops pages_ai/ad/au
+        MigrationRunner.ensureFts5TriggerState(driver)
+
+        // Assert 1: pages_ai must be gone (not recreated since pages_fts is absent)
+        val pagesAiAfter = run {
+            val c = driver.getConnection()
+            try {
+                val rs = c.createStatement().executeQuery(
+                    "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='pages_ai'"
+                )
+                if (rs.next()) rs.getString(1) else null
+            } finally { driver.closeConnection(c) }
+        }
+        assertNull(pagesAiAfter, "pages_ai must be absent; got: $pagesAiAfter")
+
+        // Assert 2: INSERT now succeeds
+        val postFixError = runCatching {
+            val c = driver.getConnection()
+            try { c.createStatement().execute("INSERT INTO pages VALUES ('u2','AnotherPage')") }
+            finally { driver.closeConnection(c) }
+        }.exceptionOrNull()
+        assertNull(postFixError, "INSERT must succeed after ensureFts5TriggerState; error: $postFixError")
+    }
+
+    /**
+     * Complementary test: ensureFts5TriggerState must RECREATE triggers when pages_fts exists
+     * (ensures normal FTS5 operation is not broken on capable devices).
+     */
+    @Test
+    fun `ensureFts5TriggerState keeps FTS5 triggers present when pages_fts exists`() = runBlocking {
+        // Arrange: pages table + pages_fts virtual table (FTS5 available) — no triggers yet.
+        val conn = driver.getConnection()
+        try {
+            conn.prepareStatement(
+                "CREATE TABLE pages (uuid TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE)"
+            ).execute()
+            conn.prepareStatement(
+                "CREATE VIRTUAL TABLE pages_fts USING fts5(name, content=pages, content_rowid=rowid)"
+            ).execute()
+            // No triggers created yet — simulates the state AFTER fts5_triggers_when_guard dropped them.
+        } finally {
+            driver.closeConnection(conn)
+        }
+
+        // Act: ensureFts5TriggerState sees pages_fts IS present → recreates pages_ai/ad/au
+        MigrationRunner.ensureFts5TriggerState(driver)
+
+        // Assert: pages_ai exists and references pages_fts correctly
+        val pagesAiSql = run {
+            val c = driver.getConnection()
+            try {
+                val rs = c.createStatement().executeQuery(
+                    "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='pages_ai'"
+                )
+                if (rs.next()) rs.getString(1) else null
+            } finally { driver.closeConnection(c) }
+        }
+        assertNotNull(pagesAiSql, "pages_ai must be recreated when pages_fts exists")
+        assertTrue(pagesAiSql.contains("pages_fts"), "pages_ai body must reference pages_fts")
+
+        // Assert: INSERT works and the FTS5 index is updated
+        val insertError = runCatching {
+            val c = driver.getConnection()
+            try { c.createStatement().execute("INSERT INTO pages VALUES ('u1','TestPage')") }
+            finally { driver.closeConnection(c) }
+        }.exceptionOrNull()
+        assertNull(insertError, "INSERT must succeed on FTS5-capable device; error: $insertError")
+    }
+
+    // ── Test 4: idempotent "already exists" errors do record the migration ──────
 
     /**
      * Verifies that "duplicate column name" and "already exists" exceptions are still
