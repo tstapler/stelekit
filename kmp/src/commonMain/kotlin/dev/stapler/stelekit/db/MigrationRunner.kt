@@ -673,6 +673,73 @@ object MigrationRunner {
                 "ANALYZE blocks",
             )
         ),
+        Migration(
+            name = "fts5_triggers_when_guard",
+            // Devices whose system SQLite lacks FTS5 (some Android ROMs, custom builds) end up
+            // with pages_ai / blocks_ai triggers whose bodies reference non-existent FTS5 virtual
+            // tables. SQLite evaluates the trigger body on every INSERT, so savePage and
+            // saveBlocks fail with "no such module: fts5" on those devices.
+            //
+            // Fix: rebuild all six FTS triggers (pages + blocks) with a WHEN clause that checks
+            // whether the FTS5 virtual table exists in sqlite_master before executing the body.
+            // On devices WITH FTS5 the WHEN condition is always true and behaviour is unchanged.
+            // On devices WITHOUT FTS5 the WHEN condition is always false, the body is silently
+            // skipped, and INSERT into pages/blocks succeeds (search just returns no results).
+            statements = listOf(
+                // ── pages triggers ──────────────────────────────────────────────────────────
+                "DROP TRIGGER IF EXISTS pages_ai",
+                """
+                CREATE TRIGGER IF NOT EXISTS pages_ai AFTER INSERT ON pages
+                WHEN (SELECT count(*) FROM sqlite_master WHERE type='table' AND name='pages_fts') > 0
+                BEGIN
+                    INSERT INTO pages_fts(rowid, name) VALUES (new.rowid, new.name);
+                END
+                """,
+                "DROP TRIGGER IF EXISTS pages_ad",
+                """
+                CREATE TRIGGER IF NOT EXISTS pages_ad AFTER DELETE ON pages
+                WHEN (SELECT count(*) FROM sqlite_master WHERE type='table' AND name='pages_fts') > 0
+                BEGIN
+                    INSERT INTO pages_fts(pages_fts, rowid, name) VALUES('delete', old.rowid, old.name);
+                END
+                """,
+                "DROP TRIGGER IF EXISTS pages_au",
+                """
+                CREATE TRIGGER IF NOT EXISTS pages_au AFTER UPDATE OF name ON pages
+                WHEN (SELECT count(*) FROM sqlite_master WHERE type='table' AND name='pages_fts') > 0
+                BEGIN
+                    INSERT INTO pages_fts(pages_fts, rowid, name) VALUES('delete', old.rowid, old.name);
+                    INSERT INTO pages_fts(rowid, name) VALUES (new.rowid, new.name);
+                END
+                """,
+                // ── blocks triggers ─────────────────────────────────────────────────────────
+                "DROP TRIGGER IF EXISTS blocks_ai",
+                """
+                CREATE TRIGGER IF NOT EXISTS blocks_ai AFTER INSERT ON blocks
+                WHEN (SELECT count(*) FROM sqlite_master WHERE type='table' AND name='blocks_fts') > 0
+                BEGIN
+                    INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content);
+                END
+                """,
+                "DROP TRIGGER IF EXISTS blocks_ad",
+                """
+                CREATE TRIGGER IF NOT EXISTS blocks_ad AFTER DELETE ON blocks
+                WHEN (SELECT count(*) FROM sqlite_master WHERE type='table' AND name='blocks_fts') > 0
+                BEGIN
+                    INSERT INTO blocks_fts(blocks_fts, rowid, content) VALUES('delete', old.id, old.content);
+                END
+                """,
+                "DROP TRIGGER IF EXISTS blocks_au",
+                """
+                CREATE TRIGGER IF NOT EXISTS blocks_au AFTER UPDATE OF content ON blocks
+                WHEN (SELECT count(*) FROM sqlite_master WHERE type='table' AND name='blocks_fts') > 0
+                BEGIN
+                    INSERT INTO blocks_fts(blocks_fts, rowid, content) VALUES('delete', old.id, old.content);
+                    INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content);
+                END
+                """,
+            )
+        ),
     )
 
     /**

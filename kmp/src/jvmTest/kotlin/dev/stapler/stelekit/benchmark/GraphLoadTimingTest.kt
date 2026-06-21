@@ -423,20 +423,27 @@ class GraphLoadTimingTest {
             return@runBlocking
         }
         val tempDir = BenchmarkGraphUtils.copyGraphToTempDir(graphPath, "stelekit-real-bench")
-        val dbFile = Files.createTempFile("stelekit-real-bench", ".db").toFile().also { it.deleteOnExit() }
+        // Use ~/.cache so the WAL (potentially gigabytes on large graphs) stays on the
+        // main filesystem, not the tmpfs-backed /tmp which is typically 16–32 GB.
+        val cacheBase = File(System.getProperty("user.home"), ".cache/stelekit-benchmarks")
+        cacheBase.mkdirs()
+        val dbFile = Files.createTempFile(cacheBase.toPath(), "stelekit-real-bench", ".db").toFile()
         val scope  = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        var factory: RepositoryFactoryImpl? = null
         try {
-            val factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite:${dbFile.absolutePath}")
+            factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite:${dbFile.absolutePath}")
             val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope)
             val loader  = GraphLoader(fileSystem, repoSet.pageRepository, repoSet.blockRepository,
                                       externalWriteActor = repoSet.writeActor, histogramWriter = repoSet.histogramWriter)
             loadAndTime(tempDir.absolutePath, loader, "real graph / SQLite") {
                 repoSet.pageRepository.getAllPagesSnapshot().getOrNull()?.size ?: 0
             }.also { }
-            factory.close()
         } finally {
             scope.cancel()
-            dbFile.delete()
+            runCatching { factory?.close() }
+            // Delete WAL and SHM alongside the main DB — deleteOnExit() only covers .db,
+            // leaving .db-wal (potentially gigabytes) behind if the JVM exits abnormally.
+            for (suffix in listOf("", "-wal", "-shm")) java.io.File("${dbFile.absolutePath}$suffix").delete()
             tempDir.deleteRecursively()
         }
     }
@@ -604,10 +611,13 @@ class GraphLoadTimingTest {
         }
 
         val tempDir = BenchmarkGraphUtils.copyGraphToTempDir(graphPath, "stelekit-jank-real")
-        val dbFile = Files.createTempFile("stelekit-jank-real", ".db").toFile().also { it.deleteOnExit() }
+        val cacheBase = File(System.getProperty("user.home"), ".cache/stelekit-benchmarks")
+        cacheBase.mkdirs()
+        val dbFile = Files.createTempFile(cacheBase.toPath(), "stelekit-jank-real", ".db").toFile()
         val scope  = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        var factory: RepositoryFactoryImpl? = null
         try {
-            val factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite:${dbFile.absolutePath}")
+            factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite:${dbFile.absolutePath}")
             val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope)
             val actor   = repoSet.writeActor ?: run {
                 println("[jank/real] SKIPPED — no write actor")
@@ -618,10 +628,10 @@ class GraphLoadTimingTest {
 
             val results = runWriteLatencyBenchmark(tempDir.absolutePath, actor, loader, "real graph")
             printWriteLatencyReport("real graph", results)
-            factory.close()
         } finally {
             scope.cancel()
-            dbFile.delete()
+            runCatching { factory?.close() }
+            for (suffix in listOf("", "-wal", "-shm")) java.io.File("${dbFile.absolutePath}$suffix").delete()
             tempDir.deleteRecursively()
         }
     }
