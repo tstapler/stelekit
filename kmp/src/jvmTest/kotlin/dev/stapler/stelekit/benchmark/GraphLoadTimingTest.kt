@@ -12,6 +12,7 @@ import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.repository.RepositoryFactoryImpl
+import dev.stapler.stelekit.repository.createGraphLoader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -535,11 +536,7 @@ class GraphLoadTimingTest {
             SyntheticGraphGenerator(cfg).generate(dir)
             val factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite:${File(dir, "largepage.db").absolutePath}")
             val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope)
-            val loader  = GraphLoader(fileSystem, repoSet.pageRepository, repoSet.blockRepository,
-                                      externalWriteActor = repoSet.writeActor, histogramWriter = repoSet.histogramWriter)
-            // Wire production callback: checkpoints the WAL after bulk import so the navigation
-            // timed below runs against a compacted DB (no WAL I/O contention from indexing).
-            loader.onBulkImportComplete = repoSet.onBulkImportComplete
+            val loader = repoSet.createGraphLoader(fileSystem)
             loader.loadGraphProgressive(
                 graphPath             = dir.absolutePath,
                 immediateJournalCount = 10,

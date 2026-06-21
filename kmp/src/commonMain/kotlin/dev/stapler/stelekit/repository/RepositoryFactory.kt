@@ -75,6 +75,27 @@ data class RepositorySet(
 )
 
 /**
+ * Creates a [dev.stapler.stelekit.db.GraphLoader] wired with all standard production callbacks
+ * from this [RepositorySet]. Use this in both production code and tests to guarantee parity —
+ * any future wiring added here is automatically picked up by all callers.
+ */
+fun RepositorySet.createGraphLoader(
+    fileSystem: dev.stapler.stelekit.platform.FileSystem,
+    sidecarManager: dev.stapler.stelekit.db.SidecarManager? = null,
+): dev.stapler.stelekit.db.GraphLoader =
+    dev.stapler.stelekit.db.GraphLoader(
+        fileSystem = fileSystem,
+        pageRepository = pageRepository,
+        blockRepository = blockRepository,
+        journalDateResolver = journalService,
+        externalWriteActor = writeActor,
+        backgroundPageRepository = backgroundPageRepository,
+        histogramWriter = histogramWriter,
+        spanRepository = spanRepository,
+        sidecarManager = sidecarManager,
+    ).also { it.onBulkImportComplete = onBulkImportComplete }
+
+/**
  * Factory implementation for creating repository instances.
  * Supports cross-platform database initialization and backend switching.
  */

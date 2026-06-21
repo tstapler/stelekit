@@ -61,7 +61,6 @@ import dev.stapler.stelekit.performance.PlatformJankStatsEffect
 import dev.stapler.stelekit.performance.SpanRecorder
 import dev.stapler.stelekit.platform.*
 import dev.stapler.stelekit.db.DriverFactory
-import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.repository.*
 import dev.stapler.stelekit.ui.components.*
 import dev.stapler.stelekit.ui.components.git.GitDetectionBanner
@@ -510,17 +509,7 @@ private fun GraphContent(
         }
     }
     val graphLoader = remember(fileSystem, repos, sidecarManager) {
-        GraphLoader(
-            fileSystem,
-            repos.pageRepository,
-            repos.blockRepository,
-            repos.journalService,
-            externalWriteActor = repos.writeActor,
-            backgroundPageRepository = repos.backgroundPageRepository,
-            sidecarManager = sidecarManager,
-            histogramWriter = repos.histogramWriter,
-            spanRepository = repos.spanRepository,
-        ).also { it.onBulkImportComplete = repos.onBulkImportComplete }
+        repos.createGraphLoader(fileSystem, sidecarManager = sidecarManager)
     }
     // Wire write-behind flush callbacks so FileRegistry correctly tracks SAF write windows.
     // - onFlushPreWrite: sets Long.MAX_VALUE sentinel before write, closing the mtime race
