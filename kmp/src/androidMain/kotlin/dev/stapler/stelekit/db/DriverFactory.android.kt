@@ -72,6 +72,7 @@ internal val ANDROID_PRAGMAS: List<String> = listOf(
 private class WalConfiguredCallback(
     schema: app.cash.sqldelight.db.SqlSchema<app.cash.sqldelight.db.QueryResult.Value<Unit>>,
 ) : AndroidSqliteDriver.Callback(schema) {
+    private val log = java.util.logging.Logger.getLogger("WalConfiguredCallback")
     override fun onConfigure(db: SupportSQLiteDatabase) {
         super.onConfigure(db) // preserves foreign-key enforcement and other AndroidSqliteDriver defaults
         // Sets ENABLE_WRITE_AHEAD_LOGGING on Android's SQLiteConnectionPool, allowing the pool
@@ -80,6 +81,25 @@ private class WalConfiguredCallback(
         db.enableWriteAheadLogging()
         ANDROID_PRAGMAS.forEach { pragma ->
             try { db.query(pragma).close() } catch (_: Exception) { }
+        }
+    }
+
+    override fun onCreate(db: SupportSQLiteDatabase) {
+        try {
+            super.onCreate(db) // calls schema.create() — creates all tables including FTS5 virtual tables
+        } catch (e: Exception) {
+            // On devices whose system SQLite lacks FTS5, schema.create() throws
+            // "no such module: fts5" when it hits CREATE VIRTUAL TABLE blocks_fts.
+            // Catching here (instead of re-throwing) lets the outer SQLiteOpenHelper
+            // transaction commit all tables created before the FTS5 line, so regular
+            // pages/blocks tables exist on fresh installs. Tables after blocks_fts in
+            // the schema (page_visits, wikilink_references) are created by migrations.
+            // MigrationRunner.ensureFts5TriggerState() keeps triggers absent on these devices.
+            if (e.message?.contains("no such module: fts5", ignoreCase = true) == true) {
+                log.warning("DriverFactory: FTS5 unavailable — schema created without FTS5 tables; MigrationRunner handles triggers")
+            } else {
+                throw e
+            }
         }
     }
 }
