@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.52.1](https://github.com/tstapler/stelekit/compare/v0.52.0...v0.52.1) (2026-06-21)
+
+
+### Bug Fixes
+
+* **watcher:** remove racy mtime update from parseAndSavePage ([295fd1a](https://github.com/tstapler/stelekit/commit/295fd1afab820a8bf296eaa160c7f221ff048a4e))
+
 ## [0.52.0](https://github.com/tstapler/stelekit/compare/v0.51.0...v0.52.0) (2026-06-21)
 
 
