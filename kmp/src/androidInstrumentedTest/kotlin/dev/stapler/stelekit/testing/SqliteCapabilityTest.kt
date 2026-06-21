@@ -271,14 +271,15 @@ class SqliteCapabilityTest {
             DriverFactory.setContext(context)
             val driver = DriverFactory().createDriver("jdbc:sqlite:${testDb.absolutePath}")
             runBlocking {
-                // Insert a page — fires pages_ai FTS5 trigger
+                // Insert a page — fires pages_ai FTS5 trigger.
+                // Name uses spaces so unicode61 tokenises into separate tokens: 'kotlin', 'multiplatform'.
                 driver.execute(
                     null,
-                    "INSERT INTO pages (uuid, name, created_at, updated_at) VALUES ('uuid-fts5', 'KotlinMultiplatform', 0, 0)",
+                    "INSERT INTO pages (uuid, name, created_at, updated_at) VALUES ('uuid-fts5', 'Kotlin Multiplatform', 0, 0)",
                     0,
                 ).await()
 
-                // FTS5 search via porter tokenizer: 'kotlin' matches 'KotlinMultiplatform'
+                // FTS5 search: 'kotlin' matches the 'Kotlin' token
                 val found = driver.executeQuery(
                     null,
                     "SELECT count(*) FROM pages_fts WHERE pages_fts MATCH 'kotlin'",
