@@ -274,7 +274,7 @@ class SqliteCapabilityTest {
                 // Insert a page — fires pages_ai FTS5 trigger
                 driver.execute(
                     null,
-                    "INSERT INTO pages (uuid, name, is_content_loaded) VALUES ('uuid-fts5', 'KotlinMultiplatform', 1)",
+                    "INSERT INTO pages (uuid, name, created_at, updated_at) VALUES ('uuid-fts5', 'KotlinMultiplatform', 0, 0)",
                     0,
                 ).await()
 
@@ -308,7 +308,7 @@ class SqliteCapabilityTest {
                 // Must NOT throw "no such table: pages_fts" (the pre-fix production crash)
                 driver.execute(
                     null,
-                    "INSERT INTO pages (uuid, name, is_content_loaded) VALUES ('uuid-trigger', 'TriggerSafetyTest', 1)",
+                    "INSERT INTO pages (uuid, name, created_at, updated_at) VALUES ('uuid-trigger', 'TriggerSafetyTest', 0, 0)",
                     0,
                 ).await()
 
