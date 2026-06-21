@@ -50,15 +50,8 @@ jobs:
           arch: x86_64
           profile: pixel_3a
           script: |
-            # Step 1: Verify SQLite capabilities before running benchmarks.
-            # Fails fast if the bundled SQLite is missing FTS5, WAL, JSON1, etc.
-            ./gradlew :kmp:connectedDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.class=dev.stapler.stelekit.testing.SqliteCapabilityTest \
-              --no-daemon
-            # Step 2: Run instrumented benchmarks (only reached if capabilities pass).
-            ./gradlew :kmp:connectedDebugAndroidTest \
-              -Pandroid.testInstrumentationRunnerArguments.class=dev.stapler.stelekit.benchmark.AndroidGraphBenchmark \
-              --no-daemon
+            ./gradlew :kmp:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.stapler.stelekit.testing.SqliteCapabilityTest --no-daemon
+            ./gradlew :kmp:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.stapler.stelekit.benchmark.AndroidGraphBenchmark --no-daemon
             adb logcat -d -s ANDROID_BENCH:I > /tmp/android-bench-logcat.txt || true
 
       - name: Parse results and write summary
