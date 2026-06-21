@@ -1714,21 +1714,6 @@ class GraphLoader(
                 dispatchFullBlockWrites(
                     filePathStr, content, existingBlocks, blocksToSave, page, priority, traceId, rootSpan.spanId
                 )
-
-                // Update mod time in watcher cache so we don't re-trigger from our own write.
-                // Launched async: SAF contentResolver.query() can block minutes on Android when
-                // the document provider is slow. The content-hash guard in detectChanges already
-                // suppresses own-write triggers, so a short delay in this cache update is safe.
-                val capturedTraceId = traceId
-                val capturedParentId = rootSpan.spanId
-                parallelScope.launch {
-                    val modTimeSpan = Span("file.updateModTime", capturedTraceId, capturedParentId)
-                    val updatedModTime = fileSystem.getLastModifiedTime(filePathStr) ?: 0L
-                    if (updatedModTime != 0L) {
-                        fileRegistry.updateModTime(filePathStr, updatedModTime)
-                    }
-                    modTimeSpan.finish("OK")
-                }
             } finally {
                 CurrentSpanContext.set(null)
                 rootSpan.finish("OK", "file.path" to filePathStr.redactPath())
