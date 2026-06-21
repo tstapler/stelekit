@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.53.0](https://github.com/tstapler/stelekit/compare/v0.52.2...v0.53.0) (2026-06-21)
+
+
+### Features
+
+* **android:** switch to bundled SQLite with pluggable driver provider ([5a191f4](https://github.com/tstapler/stelekit/commit/5a191f48ad60a86120b22c81f2152e1852941ae0))
+
+
+### Bug Fixes
+
+* **android:** handle FTS5-unavailable devices on fresh install ([7b76394](https://github.com/tstapler/stelekit/commit/7b7639460db21adacf5eff23693f997366437a87))
+* **ci:** remove backslash line continuations in android-benchmark script ([850a84a](https://github.com/tstapler/stelekit/commit/850a84a6502aafb7a002b57e7fa72b8a200c1329))
+* **test:** include required created_at/updated_at in SqliteCapabilityTest INSERTs ([3299f8d](https://github.com/tstapler/stelekit/commit/3299f8d2b3884adbcd08845aa6cbb704df80d669))
+* **test:** use spaced page name in FTS5 end-to-end test ([a87011d](https://github.com/tstapler/stelekit/commit/a87011d12c3ff27b09062a087d33ca956aad0ccd))
+
 ## [0.52.2](https://github.com/tstapler/stelekit/compare/v0.52.1...v0.52.2) (2026-06-21)
 
 
