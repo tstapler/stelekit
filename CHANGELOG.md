@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.52.0](https://github.com/tstapler/stelekit/compare/v0.51.0...v0.52.0) (2026-06-21)
+
+
+### Features
+
+* **db:** add libsql JNI driver with MVCC support for JVM and Android ([#171](https://github.com/tstapler/stelekit/issues/171)) ([18d8250](https://github.com/tstapler/stelekit/commit/18d8250cf3f6141fce243c4bca57ce7151797090))
+* **db:** migrate wikilink_references to WITHOUT ROWID (Epic 5) ([3cdd025](https://github.com/tstapler/stelekit/commit/3cdd025078247c2dff219139e3315f05d5dcfbe3))
+* **model:** BlockType sealed class with Unknown(raw) fallback (Epic 2) ([9393b9a](https://github.com/tstapler/stelekit/commit/9393b9aef0fce6f737004b1931429baf19defa47))
+
+
+### Bug Fixes
+
+* **android:** call enableWriteAheadLogging() to unlock SQLiteConnectionPool multi-reader ([6fb248c](https://github.com/tstapler/stelekit/commit/6fb248cfd3959e8c5311d2b4e1ae0c5b6ba55ac1))
+* **android:** update CaptureViewModel to use fractional position; remove unused logger ([7f11b70](https://github.com/tstapler/stelekit/commit/7f11b705c6521b8e46e4d59950bf7b4630c14458))
+* **bench:** pass benchConfig as Gradle project property not JVM system property ([db008d2](https://github.com/tstapler/stelekit/commit/db008d229dca7b2984331b6dae1393eac4b8b81a))
+* post-merge compile errors — blockTypeFromString in splitBlock, CancellationException rethrow ([4e0521d](https://github.com/tstapler/stelekit/commit/4e0521d3ee0545e65defa43d0069ee03f6ad37e3))
+* **test:** update PhotoInsertAndroidTest to compare BlockType sealed class not String ([fc8167e](https://github.com/tstapler/stelekit/commit/fc8167e15138542107866994854ebc72d8dfa74d))
+
+
+### Performance Improvements
+
+* **android:** eliminate SAF getLastModifiedTime from own-write path ([f6ba685](https://github.com/tstapler/stelekit/commit/f6ba6851685b63a2042822982ea1d6eef2ae5d6c))
+* **android:** fire-and-forget SAF modtime update after parseAndSavePage ([5c599c6](https://github.com/tstapler/stelekit/commit/5c599c6fe9871242636f6f2efc621997137b9ec4))
+* **android:** replace Requery with FrameworkSQLiteOpenHelperFactory (Epic 7) ([08bb18b](https://github.com/tstapler/stelekit/commit/08bb18b5f6e77c53735bf5c27bfd46dc926e5503))
+* **android:** separate WAL read connection eliminates read/write lock contention ([a6eda9f](https://github.com/tstapler/stelekit/commit/a6eda9f0d0fabf6cf2b6ec917ed6cf154270e64e))
+* **android:** yield DB connection between saveBlocks chunks to unblock reads ([6a93847](https://github.com/tstapler/stelekit/commit/6a9384711b75798f062ec44c6c0ca2bc295c8540))
+* **db:** batch wikilink inserts — N individual INSERTs → 1 multi-row (Epic 4) ([a593c93](https://github.com/tstapler/stelekit/commit/a593c937715f549d9f2a046b602e5fa89f527451))
+* **db:** eliminate O(n) sibling position shifts and N-call backlink recomputes ([83155e5](https://github.com/tstapler/stelekit/commit/83155e51769f34f23ae0c1c5ab86e86916e29a39))
+* **db:** fix Android editor lag — separate wikilink index pass from block inserts ([a904b5d](https://github.com/tstapler/stelekit/commit/a904b5d03d1aca8d6e244ba2117e896794979dd8))
+* **db:** fractional string positions for zero-shift block insertion (Epic 6) ([4d843be](https://github.com/tstapler/stelekit/commit/4d843be3f0ca347f2f205a19bd483f735c2b2aca))
+* **db:** O(1) move/merge/delete-subtree — batch wikilink collection ([4c24d7a](https://github.com/tstapler/stelekit/commit/4c24d7a29a7fa84d47dbfa71b4d6ef2c9a5808cf))
+* **db:** replace getBlockHierarchy BFS with WITH RECURSIVE CTE (Epic 3) ([80b4e33](https://github.com/tstapler/stelekit/commit/80b4e33e2dcfc2322e861046687f23ccea1bb21b))
+* **editor:** zero DB reads for hot-path block writes (Phase 3 push events) ([4eeb68b](https://github.com/tstapler/stelekit/commit/4eeb68bcf9062f9f2dc07cd83202e230a22f8180))
+
 ## [0.51.0](https://github.com/tstapler/stelekit/compare/v0.50.0...v0.51.0) (2026-06-19)
 
 
