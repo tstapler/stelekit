@@ -184,7 +184,10 @@ kotlin {
                 implementation("androidx.core:core-ktx:1.15.0")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
                 implementation("app.cash.sqldelight:android-driver:2.3.2")
-                implementation("androidx.sqlite:sqlite-framework:2.4.0")
+                // Bundled SQLite with FTS5, FTS4, FTS3, JSON1, RTREE compiled in.
+                // Guarantees consistent SQLite capabilities regardless of Android OEM build.
+                // 3.49.0 is the latest stable tag; update by bumping this version.
+                implementation("com.github.requery:sqlite-android:3.49.0")
 
                 // Ktor engine for Android (used by coil-network-ktor3)
                 implementation("io.ktor:ktor-client-okhttp:3.1.3")

@@ -5,8 +5,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import app.cash.sqldelight.async.coroutines.synchronous
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
-import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import dev.stapler.stelekit.db.libsql.AndroidLibsqlDriver
+import dev.stapler.stelekit.db.sqlite.RequeryDriverProvider
+import dev.stapler.stelekit.db.sqlite.SqliteDriverProvider
 import dev.stapler.stelekit.platform.PlatformSettings
 import java.util.logging.Logger
 import kotlinx.coroutines.CancellationException
@@ -72,7 +73,6 @@ internal val ANDROID_PRAGMAS: List<String> = listOf(
 private class WalConfiguredCallback(
     schema: app.cash.sqldelight.db.SqlSchema<app.cash.sqldelight.db.QueryResult.Value<Unit>>,
 ) : AndroidSqliteDriver.Callback(schema) {
-    private val log = java.util.logging.Logger.getLogger("WalConfiguredCallback")
     override fun onConfigure(db: SupportSQLiteDatabase) {
         super.onConfigure(db) // preserves foreign-key enforcement and other AndroidSqliteDriver defaults
         // Sets ENABLE_WRITE_AHEAD_LOGGING on Android's SQLiteConnectionPool, allowing the pool
@@ -83,25 +83,6 @@ private class WalConfiguredCallback(
             try { db.query(pragma).close() } catch (_: Exception) { }
         }
     }
-
-    override fun onCreate(db: SupportSQLiteDatabase) {
-        try {
-            super.onCreate(db) // calls schema.create() — creates all tables including FTS5 virtual tables
-        } catch (e: Exception) {
-            // On devices whose system SQLite lacks FTS5, schema.create() throws
-            // "no such module: fts5" when it hits CREATE VIRTUAL TABLE blocks_fts.
-            // Catching here (instead of re-throwing) lets the outer SQLiteOpenHelper
-            // transaction commit all tables created before the FTS5 line, so regular
-            // pages/blocks tables exist on fresh installs. Tables after blocks_fts in
-            // the schema (page_visits, wikilink_references) are created by migrations.
-            // MigrationRunner.ensureFts5TriggerState() keeps triggers absent on these devices.
-            if (e.message?.contains("no such module: fts5", ignoreCase = true) == true) {
-                log.warning("DriverFactory: FTS5 unavailable — schema created without FTS5 tables; MigrationRunner handles triggers")
-            } else {
-                throw e
-            }
-        }
-    }
 }
 
 actual class DriverFactory actual constructor() {
@@ -110,9 +91,26 @@ actual class DriverFactory actual constructor() {
         private val log = Logger.getLogger("DriverFactory")
         private val settings: PlatformSettings by lazy { PlatformSettings() }
 
+        /**
+         * Injectable [SqliteDriverProvider] that controls which SQLite binary and capabilities
+         * are used for all driver instances created by this factory.
+         *
+         * Defaults to [RequeryDriverProvider] (bundled SQLite 3.49+ with FTS5/JSON1 guaranteed).
+         * Set before the first [createDriver] call — typically in [android.app.Application.onCreate]
+         * alongside [setContext]:
+         *
+         * ```kotlin
+         * DriverFactory.driverProvider = FrameworkDriverProvider() // diagnostic only
+         * ```
+         */
+        var driverProvider: SqliteDriverProvider? = null
+
         fun setContext(context: Context) {
             staticContext = context.applicationContext
         }
+
+        internal fun resolveProvider(): SqliteDriverProvider = driverProvider ?: RequeryDriverProvider()
+        internal fun resolveFactory() = resolveProvider().factory
     }
 
     actual fun init(context: Any) {
@@ -163,7 +161,7 @@ actual class DriverFactory actual constructor() {
             schema = schema,
             context = context,
             name = dbName,
-            factory = FrameworkSQLiteOpenHelperFactory(),
+            factory = resolveFactory(),
             callback = WalConfiguredCallback(schema),
         )
 
@@ -186,7 +184,7 @@ actual class DriverFactory actual constructor() {
             schema = schema,
             context = context,
             name = dbName,
-            factory = FrameworkSQLiteOpenHelperFactory(),
+            factory = resolveFactory(),
             callback = object : AndroidSqliteDriver.Callback(schema) {
                 override fun onConfigure(db: SupportSQLiteDatabase) {
                     super.onConfigure(db)
@@ -222,7 +220,7 @@ actual class DriverFactory actual constructor() {
             schema = schema,
             context = context,
             name = dbPath,
-            factory = FrameworkSQLiteOpenHelperFactory(),
+            factory = resolveFactory(),
             callback = object : AndroidSqliteDriver.Callback(schema) {
                 override fun onConfigure(db: SupportSQLiteDatabase) {
                     super.onConfigure(db)
