@@ -1270,6 +1270,7 @@ private fun GraphContent(
                                 imageImportService != null && SensorModule.cameraProvider.isAvailable
                             var pendingCaptureFile by remember { mutableStateOf<PlatformImageFile?>(null) }
                             var pendingCapturePageUuid by remember { mutableStateOf<String?>(null) }
+                            var isCaptureImporting by remember { mutableStateOf(false) }
                             val activeGraphInfo2 = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }
                             val showGitBanner = activeGraphInfo2?.detectedRepoRoot != null &&
                                 appState.gitConfig == null &&
@@ -1442,14 +1443,19 @@ private fun GraphContent(
                             if (captureFile != null && capturePageUuid != null) {
                                 CapturePreviewDialog(
                                     imagePath = captureFile.path,
+                                    isImporting = isCaptureImporting,
                                     onSave = {
                                         val file = captureFile
                                         val pageUuid = capturePageUuid
-                                        pendingCaptureFile = null
-                                        pendingCapturePageUuid = null
+                                        isCaptureImporting = true
                                         scope.launch {
                                             val graphPath = graphManager.getActiveGraphInfo()?.path
-                                                ?: return@launch
+                                            if (graphPath == null) {
+                                                isCaptureImporting = false
+                                                pendingCaptureFile = null
+                                                pendingCapturePageUuid = null
+                                                return@launch
+                                            }
                                             val result = imageImportService?.import(
                                                 tempFile = file,
                                                 graphPath = graphPath,
@@ -1461,6 +1467,9 @@ private fun GraphContent(
                                                 graphContentLogger.warn("Camera image import failed: ${err.message}")
                                                 viewModel.sendSnackbar(err.toUiMessage())
                                             }
+                                            isCaptureImporting = false
+                                            pendingCaptureFile = null
+                                            pendingCapturePageUuid = null
                                         }
                                     },
                                     onDiscard = {

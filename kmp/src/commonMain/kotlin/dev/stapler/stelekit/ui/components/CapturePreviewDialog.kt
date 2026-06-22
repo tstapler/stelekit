@@ -26,18 +26,21 @@ import coil3.compose.LocalPlatformContext
  * it directly from the "file://" scheme without any custom mapper.
  *
  * The user taps [Save] to confirm import or [Discard] to throw the capture away.
+ * While [isImporting] is true the Save button is disabled and shows a spinner;
+ * the dialog stays visible so the user knows work is in progress.
  */
 @Composable
 internal fun CapturePreviewDialog(
     imagePath: String,
     onSave: () -> Unit,
     onDiscard: () -> Unit,
+    isImporting: Boolean = false,
 ) {
     val context = LocalPlatformContext.current
     val imageLoader = remember(context) { ImageLoader.Builder(context).build() }
 
     Dialog(
-        onDismissRequest = onDiscard,
+        onDismissRequest = { if (!isImporting) onDiscard() },
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
         Column(
@@ -60,8 +63,18 @@ internal fun CapturePreviewDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             ) {
-                OutlinedButton(onClick = onDiscard) { Text("Discard") }
-                Button(onClick = onSave) { Text("Save") }
+                OutlinedButton(onClick = onDiscard, enabled = !isImporting) { Text("Discard") }
+                Button(onClick = onSave, enabled = !isImporting) {
+                    if (isImporting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    } else {
+                        Text("Save")
+                    }
+                }
             }
         }
     }
