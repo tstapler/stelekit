@@ -31,6 +31,7 @@ import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.components.BlockList
 import dev.stapler.stelekit.ui.components.EditorCapabilities
 import dev.stapler.stelekit.ui.components.EditorToolbar
+import dev.stapler.stelekit.ui.components.LocalGraphRootPath
 import dev.stapler.stelekit.ui.components.asLazyKey
 import dev.stapler.stelekit.ui.components.SuggestionItem
 import dev.stapler.stelekit.ui.components.typedItems
@@ -50,6 +51,7 @@ fun JournalsView(
     viewModel: JournalsViewModel,
     isDebugMode: Boolean,
     onLinkClick: (String) -> Unit,
+    graphPath: String = "",
     searchViewModel: SearchViewModel? = null,
     onSearchPages: (String) -> kotlinx.coroutines.flow.Flow<List<SearchResultItem>> = { kotlinx.coroutines.flow.emptyFlow() },
     suggestionMatcher: AhoCorasickMatcher? = null,
@@ -103,6 +105,7 @@ fun JournalsView(
 
     val toolbarHeightDp = with(LocalDensity.current) { toolbarHeight.toDp() }
 
+    CompositionLocalProvider(LocalGraphRootPath provides graphPath.ifEmpty { null }) {
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -268,6 +271,7 @@ fun JournalsView(
             )
         }
     }
+    } // CompositionLocalProvider(LocalGraphRootPath)
 }
 
 /**

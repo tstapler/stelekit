@@ -148,21 +148,20 @@ internal fun ScreenRouter(
                 isExporting = appState.isExporting,
                 tagSuggestionViewModel = tagSuggestionViewModel,
             )
-            is Screen.Journals -> CompositionLocalProvider(LocalGraphRootPath provides appState.currentGraphPath.ifEmpty { null }) {
-                JournalsView(
-                    viewModel = journalsViewModel,
-                    isDebugMode = appState.isDebugMode,
-                    onLinkClick = { viewModel.navigateToPageByName(it) },
-                    searchViewModel = searchViewModel,
-                    onSearchPages = { query -> viewModel.searchPages(query) },
-                    suggestionMatcher = suggestionMatcher,
-                    isLeftHanded = appState.isLeftHanded,
-                    onOpenAnnotationEditor = { uuid -> viewModel.navigateToAnnotationEditor(uuid) },
-                    capabilities = capabilities,
-                    tagSuggestionViewModel = tagSuggestionViewModel,
-                    conflictFilePaths = appState.pendingConflicts.keys.toSet(),
-                )
-            }
+            is Screen.Journals -> JournalsView(
+                viewModel = journalsViewModel,
+                isDebugMode = appState.isDebugMode,
+                onLinkClick = { viewModel.navigateToPageByName(it) },
+                graphPath = appState.currentGraphPath,
+                searchViewModel = searchViewModel,
+                onSearchPages = { query -> viewModel.searchPages(query) },
+                suggestionMatcher = suggestionMatcher,
+                isLeftHanded = appState.isLeftHanded,
+                onOpenAnnotationEditor = { uuid -> viewModel.navigateToAnnotationEditor(uuid) },
+                capabilities = capabilities,
+                tagSuggestionViewModel = tagSuggestionViewModel,
+                conflictFilePaths = appState.pendingConflicts.keys.toSet(),
+            )
             is Screen.Flashcards -> {
                 NavigationTracingEffect("Flashcards")
                 FlashcardsScreen(blockStateManager)
