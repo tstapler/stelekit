@@ -135,29 +135,40 @@ fun LeftSidebar(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
             )
 
-            // Navigation Section — hidden on mobile since bottom nav covers these destinations
-            if (!isMobile) {
-                Text(
-                    "Navigation",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-                NavigationItem("Journals", Icons.Default.DateRange, currentScreen is Screen.Journals) { onNavigate(Screen.Journals) }
-                NavigationItem("Flashcards", Icons.Default.Style, currentScreen is Screen.Flashcards) { onNavigate(Screen.Flashcards) }
-                NavigationItem("All Pages", Icons.AutoMirrored.Filled.List, currentScreen is Screen.AllPages) { onNavigate(Screen.AllPages) }
-                NavigationItem("Library Stats", Icons.Default.BarChart, currentScreen is Screen.LibraryStats) { onNavigate(Screen.LibraryStats) }
-                NavigationItem("Gallery", Icons.Default.PhotoLibrary, currentScreen is Screen.Gallery) { onNavigate(Screen.Gallery) }
-                NavigationItem("Assets", Icons.Default.FolderOpen, currentScreen is Screen.AssetBrowser) { onNavigate(Screen.AssetBrowser) }
-                NavigationItem("Unlinked References", Icons.Default.Link, currentScreen is Screen.GlobalUnlinkedReferences) { onNavigate(Screen.GlobalUnlinkedReferences) }
-                NavigationItem("Notifications", Icons.Default.Notifications, currentScreen is Screen.Notifications) { onNavigate(Screen.Notifications) }
-                NavigationItem("Git Sync", Icons.Default.Sync, false) { onGitSetup() }
+            // Navigation Section
+            Text(
+                "Navigation",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+            // Primary — daily-use screens
+            NavigationItem("Journals", Icons.Default.DateRange, currentScreen is Screen.Journals) { onNavigate(Screen.Journals) }
+            NavigationItem("All Pages", Icons.AutoMirrored.Filled.List, currentScreen is Screen.AllPages) { onNavigate(Screen.AllPages) }
+            NavigationItem("Flashcards", Icons.Default.Style, currentScreen is Screen.Flashcards) { onNavigate(Screen.Flashcards) }
 
-                // Developer tools — accessible via Settings → Debug on mobile
-                if (currentScreen is Screen.Logs || currentScreen is Screen.Performance) {
-                    NavigationItem("Logs", Icons.Default.Info, currentScreen is Screen.Logs) { onNavigate(Screen.Logs) }
-                    NavigationItem("Performance", Icons.Default.Settings, currentScreen is Screen.Performance) { onNavigate(Screen.Performance) }
-                }
+            Spacer(Modifier.height(4.dp))
+
+            // Note-taking tools
+            NavigationItem("Unlinked References", Icons.Default.Link, currentScreen is Screen.GlobalUnlinkedReferences) { onNavigate(Screen.GlobalUnlinkedReferences) }
+            NavigationItem("Notifications", Icons.Default.Notifications, currentScreen is Screen.Notifications) { onNavigate(Screen.Notifications) }
+
+            Spacer(Modifier.height(4.dp))
+
+            // Media / Library
+            NavigationItem("Gallery", Icons.Default.PhotoLibrary, currentScreen is Screen.Gallery) { onNavigate(Screen.Gallery) }
+            NavigationItem("Assets", Icons.Default.FolderOpen, currentScreen is Screen.AssetBrowser) { onNavigate(Screen.AssetBrowser) }
+
+            Spacer(Modifier.height(4.dp))
+
+            // Admin / Dev
+            NavigationItem("Library Stats", Icons.Default.BarChart, currentScreen is Screen.LibraryStats) { onNavigate(Screen.LibraryStats) }
+            NavigationItem("Git Setup", Icons.Default.Sync, false) { onGitSetup() }
+
+            // Developer tools — only visible when already on those screens
+            if (currentScreen is Screen.Logs || currentScreen is Screen.Performance) {
+                NavigationItem("Logs", Icons.Default.Info, currentScreen is Screen.Logs) { onNavigate(Screen.Logs) }
+                NavigationItem("Performance", Icons.Default.Settings, currentScreen is Screen.Performance) { onNavigate(Screen.Performance) }
             }
             
             Spacer(modifier = Modifier.height(16.dp))

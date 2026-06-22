@@ -674,6 +674,12 @@ object MigrationRunner {
             )
         ),
         Migration(
+            name = "git_config_oauth_token_key",
+            statements = listOf(
+                "ALTER TABLE git_config ADD COLUMN oauth_token_key TEXT"
+            )
+        ),
+        Migration(
             name = "fts5_triggers_when_guard",
             // Devices whose system SQLite lacks FTS5 end up with pages_ai / blocks_ai triggers
             // whose bodies reference non-existent FTS5 virtual tables (pages_fts / blocks_fts).

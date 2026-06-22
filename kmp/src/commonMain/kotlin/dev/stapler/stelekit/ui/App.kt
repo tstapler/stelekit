@@ -1520,6 +1520,7 @@ private fun GraphContent(
                                     closeSidebarIfMobile()
                                 },
                                 onSearch = { viewModel.setSearchDialogVisible(true) },
+                                onToggleSidebar = { viewModel.toggleSidebar() },
                                 isLeftHanded = appState.isLeftHanded,
                                 voiceCaptureButton = {
                                     VoiceCaptureButton(

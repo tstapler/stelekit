@@ -42,6 +42,9 @@ import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.util.toTitleCase
 import kotlinx.coroutines.flow.Flow
 
+@Composable
+expect fun SearchDialogWindowEffect()
+
 private val REGEX_TAG_FILTER = Regex("""#\S+""")
 private val REGEX_SCOPE_FILTER = Regex("""/(pages?|blocks?|journal|current)\b""", RegexOption.IGNORE_CASE)
 private val REGEX_DATE_FILTER = Regex("""modified:(today|day|week|month|year)""", RegexOption.IGNORE_CASE)
@@ -101,6 +104,7 @@ fun SearchDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        SearchDialogWindowEffect()
         val isMobile = LocalWindowSizeClass.current.isMobile
 
         val keyEventHandler: (KeyEvent) -> Boolean = { keyEvent ->
