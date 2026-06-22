@@ -109,8 +109,7 @@ class IOSLidarDepthProvider : DepthSensorProvider {
                     for (x in 0 until width) {
                         val srcIdx = y * floatsPerRow + x
                         val dstIdx = y * width + x
-                        // ARKit gives metres; convert to mm (DepthFrame.depthMapMm contract = mm).
-                        depthMapMm[dstIdx] = floatPtr[srcIdx] * 1000f
+                        depthMapMm[dstIdx] = arKitMetresToMm(floatPtr[srcIdx])
                     }
                 }
             }
@@ -120,7 +119,7 @@ class IOSLidarDepthProvider : DepthSensorProvider {
             // Confidence map: ARKit provides ARConfidenceLevel (0=low, 1=medium, 2=high) as
             // a CVPixelBuffer with kCVPixelFormatType_OneComponent8.
             // Store raw 0–255 (DepthFrame.confidenceMap contract); CalibrationService divides by 255.
-            val confidenceMap = FloatArray(pixelCount) { 217f } // default ~85% (217/255) if no confidence map
+            val confidenceMap = FloatArray(pixelCount) { ARKIT_CONFIDENCE_DEFAULT }
             val confBuffer = sceneDepth.confidenceMap
             if (confBuffer != null) {
                 CVPixelBufferLockBaseAddress(confBuffer, kCVPixelBufferLock_ReadOnly)
@@ -132,9 +131,8 @@ class IOSLidarDepthProvider : DepthSensorProvider {
                         for (x in 0 until width) {
                             val srcIdx = y * confBytesPerRow + x
                             val dstIdx = y * width + x
-                            // ARConfidenceLevel: 0=low, 1=medium, 2=high → raw [0-255] for DepthFrame contract
-                            val level = (confPtr[srcIdx].toInt() and 0xFF).coerceIn(0, 2)
-                            confidenceMap[dstIdx] = (level + 1) * 85f // 85, 170, 255
+                            val level = confPtr[srcIdx].toInt() and 0xFF
+                            confidenceMap[dstIdx] = arKitConfidenceLevelToRaw(level)
                         }
                     }
                 }

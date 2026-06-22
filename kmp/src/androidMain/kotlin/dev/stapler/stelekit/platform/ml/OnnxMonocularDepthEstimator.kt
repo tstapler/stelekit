@@ -35,9 +35,9 @@ import java.nio.FloatBuffer
  */
 class OnnxMonocularDepthEstimator(private val context: Context) : MonocularDepthEstimator {
 
-    private var ortEnv: OrtEnvironment? = null
-    private var ortSession: OrtSession? = null
-    private var _isAvailable: Boolean = false
+    @Volatile private var ortEnv: OrtEnvironment? = null
+    @Volatile private var ortSession: OrtSession? = null
+    @Volatile private var _isAvailable: Boolean = false
 
     private val inputBuffer: FloatBuffer by lazy {
         FloatBuffer.allocate(INPUT_SIZE * INPUT_SIZE * 3)
@@ -133,6 +133,11 @@ class OnnxMonocularDepthEstimator(private val context: Context) : MonocularDepth
      * NEVER called on the main thread — dispatched to [PlatformDispatcher.Default].
      */
     override suspend fun estimateDepth(imageBitmap: ImageBitmap): Either<DomainError, FloatArray> {
+        // Auto-initialize on first call; initialize() is idempotent.
+        if (!_isAvailable || ortSession == null) {
+            val init = initialize()
+            if (init.isLeft()) return init.map { FloatArray(0) }
+        }
         val session = ortSession
             ?: return DomainError.SensorError.HardwareUnavailable(
                 "OnnxMonocularDepthEstimator not initialized",
@@ -182,7 +187,7 @@ class OnnxMonocularDepthEstimator(private val context: Context) : MonocularDepth
                 }
 
                 // 5. Normalize to [0,1].
-                val maxVal = rawDepth.max()
+                val maxVal = rawDepth.maxOrNull() ?: 0f
                 if (maxVal > 0f) {
                     for (i in rawDepth.indices) rawDepth[i] /= maxVal
                 }

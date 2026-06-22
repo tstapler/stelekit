@@ -2,6 +2,7 @@ package dev.stapler.stelekit.platform.sensor
 
 import dev.stapler.stelekit.platform.ml.MonocularDepthEstimator
 import dev.stapler.stelekit.platform.ml.NoOpMonocularDepthEstimator
+import kotlin.concurrent.Volatile
 
 /**
  * Holds the platform-appropriate sensor providers for the current target.
@@ -36,7 +37,7 @@ object SensorModule {
      * Thread-safe for simple read after startup (Kotlin `@Volatile`).
      */
 
-    var cameraProvider: CameraProvider = NoOpCameraProvider()
+    @Volatile var cameraProvider: CameraProvider = NoOpCameraProvider()
 
     /**
      * The active [MotionSensorProvider] for this process.
@@ -46,7 +47,7 @@ object SensorModule {
      * Thread-safe for simple read after startup (Kotlin `@Volatile`).
      */
 
-    var motionSensorProvider: MotionSensorProvider = NoOpMotionSensorProvider()
+    @Volatile var motionSensorProvider: MotionSensorProvider = NoOpMotionSensorProvider()
 
     /**
      * The active [DepthSensorProvider] for this process.
@@ -56,7 +57,7 @@ object SensorModule {
      * Thread-safe for simple read after startup (Kotlin `@Volatile`).
      */
 
-    var depthSensorProvider: DepthSensorProvider = NoOpDepthProvider()
+    @Volatile var depthSensorProvider: DepthSensorProvider = NoOpDepthProvider()
 
     /**
      * The active [MonocularDepthEstimator] for this process.
@@ -67,5 +68,5 @@ object SensorModule {
      * Thread-safe for simple read after startup (Kotlin `@Volatile`).
      */
 
-    var monocularDepthEstimator: MonocularDepthEstimator = NoOpMonocularDepthEstimator()
+    @Volatile var monocularDepthEstimator: MonocularDepthEstimator = NoOpMonocularDepthEstimator()
 }

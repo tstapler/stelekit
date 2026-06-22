@@ -36,8 +36,13 @@ class SteleKitAssetMapper(graphRoot: String, private val fileSystem: FileSystem?
     override fun map(data: String, options: Options): Uri? {
         if (!data.startsWith("../assets/")) return null
         val filename = data.removePrefix("../assets/")
-        // Guard against path traversal: reject backslashes and any ".." path component
-        if (filename.contains('\\') || filename.split('/').any { it == ".." }) {
+        // Guard against path traversal: reject backslashes, ".." components, and
+        // percent-encoded dots (%2e / %2E) which bypass the literal ".." check.
+        val lowerFilename = filename.lowercase()
+        if (filename.contains('\\') ||
+            lowerFilename.contains("%2e") ||
+            filename.split('/').any { it == ".." }
+        ) {
             return null
         }
         val platformUri = fileSystem?.buildAssetUri(graphRoot, "assets/$filename")
