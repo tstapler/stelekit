@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.54.0](https://github.com/tstapler/stelekit/compare/v0.53.1...v0.54.0) (2026-06-22)
+
+
+### Features
+
+* **sensor:** wire AndroidMotionSensorProvider and OnnxMonocularDepthEstimator at startup ([7883861](https://github.com/tstapler/stelekit/commit/78838612444110b9e0a347e45dcb9c7cb3ad1f53))
+
+
+### Bug Fixes
+
+* **calibration:** correct 1000× unit mismatch in ARCore and LiDAR depth providers ([1fcfbfe](https://github.com/tstapler/stelekit/commit/1fcfbfe2786f27844f358a1d297b1e261c207452))
+* **capture:** show loading state while import runs, block premature dismiss ([54e9e55](https://github.com/tstapler/stelekit/commit/54e9e55fbdb6ce71a056ff9b9b03ef54a564db8e))
+* **git-sync:** triad review fixes — schema, nav, UX, accessibility ([533fbba](https://github.com/tstapler/stelekit/commit/533fbbae030dd2e3f679fc376a900fb34b121b9a))
+* **imagemeter:** repair three broken image behaviors on Android SAF graphs ([66ce7ca](https://github.com/tstapler/stelekit/commit/66ce7cab522b5c0469fb537076a6cae2f84c4e96))
+* **journals:** provide LocalGraphRootPath inside JournalsView for image rendering ([d6dc254](https://github.com/tstapler/stelekit/commit/d6dc254cef8e227253d1061df94a0370d7de749e))
+* **sensor:** enforce correctness structurally after reflect-and-fix ([db540fb](https://github.com/tstapler/stelekit/commit/db540fbb910c118bef73524c6741d7a0fb28d540))
+
 ## [0.53.1](https://github.com/tstapler/stelekit/compare/v0.53.0...v0.53.1) (2026-06-22)
 
 
