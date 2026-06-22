@@ -141,4 +141,12 @@ interface FileSystem {
      * but warms the cache for subsequent reads. No-op on non-SAF file systems.
      */
     suspend fun syncShadow(graphPath: String) { /* no-op */ }
+
+    /**
+     * Returns a platform-loadable URI string for a file at [graphRoot]/[relativePath].
+     * On Android SAF paths this returns the `content://` document URI (or a `file://`
+     * real path when MANAGE_EXTERNAL_STORAGE is granted); on other platforms returns null
+     * to fall through to the default `file://` construction in the caller.
+     */
+    fun resolveAssetUri(graphRoot: String, relativePath: String): String? = null
 }

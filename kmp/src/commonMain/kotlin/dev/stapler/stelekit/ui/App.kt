@@ -424,7 +424,10 @@ private fun GraphContent(
     googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
     requestCameraPermission: (suspend () -> Boolean)? = null,
 ) {
-    CompositionLocalProvider(LocalSpanRecorder provides spanRecorder) {
+    CompositionLocalProvider(
+        LocalSpanRecorder provides spanRecorder,
+        LocalFileSystem provides fileSystem,
+    ) {
     val scope = rememberCoroutineScope()
     val graphContentLogger = remember { Logger("GraphContent") }
     val composeClipboard = LocalClipboardManager.current
@@ -1548,7 +1551,7 @@ private fun GraphContent(
             }
         }
     }
-    } // CompositionLocalProvider(LocalSpanRecorder)
+    } // CompositionLocalProvider(LocalSpanRecorder, LocalFileSystem)
 }
 
 /**
