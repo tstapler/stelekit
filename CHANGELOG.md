@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.53.1](https://github.com/tstapler/stelekit/compare/v0.53.0...v0.53.1) (2026-06-22)
+
+
+### Bug Fixes
+
+* **android:** fix SAF image display and gallery attachment ([#181](https://github.com/tstapler/stelekit/issues/181)) ([009857d](https://github.com/tstapler/stelekit/commit/009857d258a68b93ad9f845f52c7bb67e113d60f))
+* **test:** time the hot-read path in GraphLoadTimingTest, not the cold write ([da309b0](https://github.com/tstapler/stelekit/commit/da309b01fbb0e15c6d7c293bcc24b8168d6d4519))
+
 ## [0.53.0](https://github.com/tstapler/stelekit/compare/v0.52.2...v0.53.0) (2026-06-21)
 
 
