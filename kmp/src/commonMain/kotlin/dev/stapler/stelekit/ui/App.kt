@@ -125,6 +125,7 @@ import dev.stapler.stelekit.error.toUiMessage
 import dev.stapler.stelekit.model.ImageSource
 import dev.stapler.stelekit.platform.sensor.CameraProvider
 import dev.stapler.stelekit.platform.sensor.SensorModule
+import dev.stapler.stelekit.platform.sensor.PlatformImageFile
 
 internal suspend fun executeCaptureAndImport(
     imageImportService: ImageImportService?,
@@ -1137,7 +1138,8 @@ private fun GraphContent(
 
                     CompositionLocalProvider(
                         LocalWindowSizeClass provides windowSizeClass,
-                        LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) }
+                        LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) },
+                        LocalFileSystem provides fileSystem,
                     ) {
 
                     // Auto-manage sidebar based on layout: open on desktop, closed on mobile.
@@ -1266,6 +1268,8 @@ private fun GraphContent(
                         content = {
                             val cameraImportEnabled =
                                 imageImportService != null && SensorModule.cameraProvider.isAvailable
+                            var pendingCaptureFile by remember { mutableStateOf<PlatformImageFile?>(null) }
+                            var pendingCapturePageUuid by remember { mutableStateOf<String?>(null) }
                             val activeGraphInfo2 = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }
                             val showGitBanner = activeGraphInfo2?.detectedRepoRoot != null &&
                                 appState.gitConfig == null &&
@@ -1389,15 +1393,16 @@ private fun GraphContent(
                                                         ?: appState.currentPage?.uuid?.value
                                                 val resolvedPageUuid = pageUuid
                                                     ?: repos.journalService.ensureTodayJournal().uuid.value
-                                                executeCaptureAndImport(
-                                                    imageImportService = imageImportService,
-                                                    getActiveGraphPath = { graphManager.getActiveGraphInfo()?.path },
-                                                    pageUuid = resolvedPageUuid,
-                                                    navigateAfterImport = false,
-                                                    onSnackbar = { viewModel.sendSnackbar(it) },
-                                                    onNavigate = { annUuid, pgUuid -> viewModel.navigateToAnnotationEditor(annUuid, pgUuid) },
-                                                    onWarn = { graphContentLogger.warn(it) },
-                                                )
+                                                when (val captured = SensorModule.cameraProvider.capturePhoto()) {
+                                                    is Either.Left -> {
+                                                        graphContentLogger.warn("Camera capture failed: ${captured.value.message}")
+                                                        viewModel.sendSnackbar(captured.value.toUiMessage())
+                                                    }
+                                                    is Either.Right -> {
+                                                        pendingCapturePageUuid = resolvedPageUuid
+                                                        pendingCaptureFile = captured.value
+                                                    }
+                                                }
                                             }
                                         }
                                     } else null,
@@ -1432,6 +1437,38 @@ private fun GraphContent(
                                 perfQueryStats = perfQueryStats,
                                 tagSuggestionViewModel = tagSuggestionViewModel,
                             )
+                            val captureFile = pendingCaptureFile
+                            val capturePageUuid = pendingCapturePageUuid
+                            if (captureFile != null && capturePageUuid != null) {
+                                CapturePreviewDialog(
+                                    imagePath = captureFile.path,
+                                    onSave = {
+                                        val file = captureFile
+                                        val pageUuid = capturePageUuid
+                                        pendingCaptureFile = null
+                                        pendingCapturePageUuid = null
+                                        scope.launch {
+                                            val graphPath = graphManager.getActiveGraphInfo()?.path
+                                                ?: return@launch
+                                            val result = imageImportService?.import(
+                                                tempFile = file,
+                                                graphPath = graphPath,
+                                                pageUuid = dev.stapler.stelekit.model.PageUuid(pageUuid),
+                                                source = ImageSource.CAMERA,
+                                                insertToJournalPage = false,
+                                            )
+                                            result?.onLeft { err ->
+                                                graphContentLogger.warn("Camera image import failed: ${err.message}")
+                                                viewModel.sendSnackbar(err.toUiMessage())
+                                            }
+                                        }
+                                    },
+                                    onDiscard = {
+                                        pendingCaptureFile = null
+                                        pendingCapturePageUuid = null
+                                    },
+                                )
+                            }
                             } // Box
                             } // Column
                         },

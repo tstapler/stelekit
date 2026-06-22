@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.ui.components
 
 import androidx.compose.runtime.compositionLocalOf
+import dev.stapler.stelekit.platform.FileSystem
 
 /**
  * Provides the absolute path to the currently-open graph's root directory.
@@ -11,3 +12,9 @@ import androidx.compose.runtime.compositionLocalOf
  * Provide this at the page-screen level via [androidx.compose.runtime.CompositionLocalProvider].
  */
 val LocalGraphRootPath = compositionLocalOf<String?> { null }
+
+/**
+ * Provides the active [FileSystem] so that [SteleKitAssetMapper] can resolve SAF-backed
+ * asset paths to content:// URIs on Android. Null when no graph is loaded.
+ */
+val LocalFileSystem = compositionLocalOf<FileSystem?> { null }

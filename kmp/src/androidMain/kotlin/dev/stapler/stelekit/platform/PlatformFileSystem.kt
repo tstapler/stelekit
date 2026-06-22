@@ -794,6 +794,23 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         cache.syncFromSaf("journals", journalsMods) { fileName -> safReadContent("$journalsPath/$fileName") }
     }
 
+    override fun buildAssetUri(graphRoot: String, relativePath: String): String? {
+        if (!graphRoot.startsWith("saf://")) return null
+        return try {
+            val cleanRelPath = relativePath.trimStart('/')
+            parseDocumentUri("$graphRoot/$cleanRelPath").toString()
+        } catch (_: Exception) { null }
+    }
+
+    override fun resolveLoadableUri(path: String): String? {
+        if (path.startsWith("saf://")) {
+            return try {
+                parseDocumentUri(path).toString()
+            } catch (_: Exception) { null }
+        }
+        return super.resolveLoadableUri(path)
+    }
+
     override fun hasStoragePermission(): Boolean {
         val uri = treeUri ?: return false
         return isSafPermissionValid(context ?: return false, uri)

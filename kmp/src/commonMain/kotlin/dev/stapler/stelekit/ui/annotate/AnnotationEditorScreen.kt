@@ -332,8 +332,12 @@ fun AnnotationEditorScreen(
             // We use Coil AsyncImage which handles subsampling for large images.
             // Zoom/pan is achieved via graphicsLayer transform so the Canvas layers are
             // not recomposed on gesture updates.
+            val fileSystem = dev.stapler.stelekit.ui.components.LocalFileSystem.current
+            val imageUri = remember(imageAnnotation.filePath) {
+                fileSystem?.resolveLoadableUri(imageAnnotation.filePath) ?: imageAnnotation.filePath
+            }
             AsyncImage(
-                model = imageAnnotation.filePath,
+                model = imageUri,
                 contentDescription = "Annotated image",
                 modifier = Modifier
                     .fillMaxSize()
