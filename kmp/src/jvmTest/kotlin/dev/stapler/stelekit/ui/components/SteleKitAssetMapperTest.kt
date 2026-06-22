@@ -2,7 +2,7 @@ package dev.stapler.stelekit.ui.components
 
 import coil3.PlatformContext
 import coil3.request.Options
-import dev.stapler.stelekit.db.sidecar.FakeFileSystem
+import dev.stapler.stelekit.platform.FileSystem
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -72,33 +72,47 @@ class SteleKitAssetMapperTest {
         assertEquals("file:///home/user/graph/assets/photo.jpg", result?.toString())
     }
 
-    // SAF branch: fileSystem.buildAssetUri() provides a content:// URI
-
-    @Test fun `uses buildAssetUri result when fileSystem provides one`() {
-        val fakeFs = object : FakeFileSystem() {
-            override fun buildAssetUri(graphRoot: String, relativePath: String) =
-                "content://com.example/document/$relativePath"
-        }
-        val result = SteleKitAssetMapper("saf://root", fakeFs).map("../assets/images/photo.jpg", options)
-        assertEquals("content://com.example/document/assets/images/photo.jpg", result?.toString())
+    // Minimal FileSystem stub for testing resolveAssetUri delegation.
+    // Only resolveAssetUri is overridden — all other methods return safe no-op defaults.
+    private class StubFileSystem(private val resolvedUri: String?) : FileSystem {
+        override fun getDefaultGraphPath() = ""
+        override fun expandTilde(path: String) = path
+        override fun readFile(path: String): String? = null
+        override fun writeFile(path: String, content: String) = false
+        override fun listFiles(path: String): List<String> = emptyList()
+        override fun listDirectories(path: String): List<String> = emptyList()
+        override fun fileExists(path: String) = false
+        override fun directoryExists(path: String) = false
+        override fun createDirectory(path: String) = false
+        override fun deleteFile(path: String) = false
+        override fun pickDirectory(): String? = null
+        override fun getLastModifiedTime(path: String): Long? = null
+        override fun resolveAssetUri(graphRoot: String, relativePath: String): String? = resolvedUri
     }
 
-    @Test fun `falls back to file uri when buildAssetUri returns null`() {
-        val result = SteleKitAssetMapper("/graph/root", FakeFileSystem()).map("../assets/photo.jpg", options)
-        assertEquals("file:///graph/root/assets/photo.jpg", result?.toString())
+    @Test fun `delegates to fileSystem resolveAssetUri when it returns a content uri`() {
+        val contentUri = "content://com.android.externalstorage.documents/tree/primary%3Alogseq/assets/photo.jpg"
+        val fs = StubFileSystem(contentUri)
+        val result = SteleKitAssetMapper("saf://content%3A%2F%2Flogseq", fs).map("../assets/photo.jpg", options)
+        assertEquals(contentUri, result?.toString())
     }
 
-    @Test fun `buildAssetUri not called for percent-encoded traversal attempt`() {
-        var called = false
-        val fakeFs = object : FakeFileSystem() {
-            override fun buildAssetUri(graphRoot: String, relativePath: String): String? {
-                called = true
-                return "content://should-not-reach"
-            }
-        }
-        val result = SteleKitAssetMapper("saf://root", fakeFs).map("../assets/%2e%2e/secret", options)
+    @Test fun `falls back to file uri when fileSystem resolveAssetUri returns null`() {
+        val fs = StubFileSystem(null)
+        val result = SteleKitAssetMapper("/home/user/graph", fs).map("../assets/photo.jpg", options)
+        assertEquals("file:///home/user/graph/assets/photo.jpg", result?.toString())
+    }
+
+    @Test fun `security check still runs before fileSystem delegation`() {
+        val fs = StubFileSystem("content://anything")
+        val result = SteleKitAssetMapper("/home/user/graph", fs).map("../assets/../../../etc/passwd", options)
         assertNull(result)
-        assertEquals(false, called, "buildAssetUri must not be reached for traversal inputs")
+    }
+
+    @Test fun `security check runs before delegation for percent-encoded traversal`() {
+        val fs = StubFileSystem("content://should-not-reach")
+        val result = SteleKitAssetMapper("saf://root", fs).map("../assets/%2e%2e/secret", options)
+        assertNull(result)
     }
 }
 
@@ -106,8 +120,24 @@ class SteleKitSafPathMapperTest {
 
     private val options = Options(context = PlatformContext.INSTANCE)
 
+    private class StubSafFs(private val resolved: String?) : FileSystem {
+        override fun getDefaultGraphPath() = ""
+        override fun expandTilde(path: String) = path
+        override fun readFile(path: String): String? = null
+        override fun writeFile(path: String, content: String) = false
+        override fun listFiles(path: String): List<String> = emptyList()
+        override fun listDirectories(path: String): List<String> = emptyList()
+        override fun fileExists(path: String) = false
+        override fun directoryExists(path: String) = false
+        override fun createDirectory(path: String) = false
+        override fun deleteFile(path: String) = false
+        override fun pickDirectory(): String? = null
+        override fun getLastModifiedTime(path: String): Long? = null
+        override fun resolveLoadableUri(path: String): String? = resolved
+    }
+
     @Test fun `returns null for non-saf uri`() {
-        val mapper = SteleKitSafPathMapper(FakeFileSystem())
+        val mapper = SteleKitSafPathMapper(StubSafFs("content://resolved"))
         assertNull(mapper.map("file:///some/path.jpg", options))
         assertNull(mapper.map("../assets/foo.jpg", options))
         assertNull(mapper.map("https://example.com/img.png", options))
@@ -115,17 +145,12 @@ class SteleKitSafPathMapperTest {
 
     @Test fun `delegates to resolveLoadableUri for saf uri`() {
         val resolved = "content://com.android.externalstorage.documents/document/primary%3Asomefile.jpg"
-        val fakeFs = object : FakeFileSystem() {
-            override fun resolveLoadableUri(path: String): String? = resolved
-        }
-        val result = SteleKitSafPathMapper(fakeFs).map("saf://com.android.externalstorage.documents/tree/primary", options)
+        val result = SteleKitSafPathMapper(StubSafFs(resolved))
+            .map("saf://com.android.externalstorage.documents/tree/primary", options)
         assertEquals(resolved, result?.toString())
     }
 
     @Test fun `returns null when resolveLoadableUri returns null`() {
-        val fakeFs = object : FakeFileSystem() {
-            override fun resolveLoadableUri(path: String): String? = null
-        }
-        assertNull(SteleKitSafPathMapper(fakeFs).map("saf://some/path", options))
+        assertNull(SteleKitSafPathMapper(StubSafFs(null)).map("saf://some/path", options))
     }
 }

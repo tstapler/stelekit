@@ -37,6 +37,11 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     private val knownExistingFiles: MutableSet<String> = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap())
     private val knownExistingDirs: MutableSet<String> = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap())
 
+    // Cached result of StorageManager.getStorageVolumes() — avoids Binder IPC on repeated calls.
+    // Keyed by treeRootDocId since the volume root is stable within a graph session.
+    private var cachedVolumeRoot: java.io.File? = null
+    private var cachedVolumeDocId: String? = null
+
     // Write-behind queue — non-null when MANAGE_EXTERNAL_STORAGE is not granted.
     private var writeBehindQueue: WriteBehindQueue? = null
 
@@ -265,10 +270,17 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val volumeRoot: java.io.File = if (volumeName == "primary") {
             android.os.Environment.getExternalStorageDirectory()
         } else {
-            val ctx = context ?: return null
-            val sm = ctx.getSystemService(android.os.storage.StorageManager::class.java) ?: return null
-            sm.storageVolumes.firstOrNull { it.uuid?.equals(volumeName, ignoreCase = true) == true }
-                ?.directory ?: return null
+            if (cachedVolumeDocId == docId && cachedVolumeRoot != null) {
+                cachedVolumeRoot!!
+            } else {
+                val ctx = context ?: return null
+                val sm = ctx.getSystemService(android.os.storage.StorageManager::class.java) ?: return null
+                val root = sm.storageVolumes.firstOrNull { it.uuid?.equals(volumeName, ignoreCase = true) == true }
+                    ?.directory ?: return null
+                cachedVolumeRoot = root
+                cachedVolumeDocId = docId
+                root
+            }
         }
         // saf://... path: strip "saf://{encodedTreeUri}/{relativePath}"; relativePath is everything after first '/'
         val withoutScheme = safPath.removePrefix("saf://")
@@ -281,6 +293,18 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     // -------------------------------------------------------------------------
     // FileSystem implementation — SAF paths
     // -------------------------------------------------------------------------
+
+    override fun resolveAssetUri(graphRoot: String, relativePath: String): String? {
+        if (!graphRoot.startsWith("saf://")) return null
+        val fullPath = "$graphRoot/$relativePath"
+        if (isDirectAccess()) {
+            val realPath = resolveToRealPath(fullPath)
+            if (realPath != null) return "file://$realPath"
+        }
+        return try {
+            parseDocumentUri(fullPath).toString()
+        } catch (_: Exception) { null }
+    }
 
     actual override fun readFile(path: String): String? {
         if (!path.startsWith("saf://")) return legacyReadFile(path)
@@ -792,14 +816,6 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val journalsMods = listFilesWithModTimes(journalsPath)
         cache.syncFromSaf("pages", pagesMods) { fileName -> safReadContent("$pagesPath/$fileName") }
         cache.syncFromSaf("journals", journalsMods) { fileName -> safReadContent("$journalsPath/$fileName") }
-    }
-
-    override fun buildAssetUri(graphRoot: String, relativePath: String): String? {
-        if (!graphRoot.startsWith("saf://")) return null
-        return try {
-            val cleanRelPath = relativePath.trimStart('/')
-            parseDocumentUri("$graphRoot/$cleanRelPath").toString()
-        } catch (_: Exception) { null }
     }
 
     override fun resolveLoadableUri(path: String): String? {

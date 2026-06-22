@@ -143,13 +143,12 @@ interface FileSystem {
     suspend fun syncShadow(graphPath: String) { /* no-op */ }
 
     /**
-     * Returns a platform-loadable URI string for [relativePath] within [graphRoot], or null to
-     * fall back to the default `file://` construction in [SteleKitAssetMapper].
-     *
-     * Android's SAF-backed graphs override this to return a `content://` document URI so that
-     * Coil can load the image via [android.content.ContentResolver] instead of a file path.
+     * Returns a platform-loadable URI string for a file at [graphRoot]/[relativePath].
+     * On Android SAF paths this returns the `content://` document URI (or a `file://`
+     * real path when MANAGE_EXTERNAL_STORAGE is granted); on other platforms returns null
+     * to fall through to the default `file://` construction in the caller.
      */
-    fun buildAssetUri(graphRoot: String, relativePath: String): String? = null
+    fun resolveAssetUri(graphRoot: String, relativePath: String): String? = null
 
     /**
      * Converts a raw file [path] (absolute or saf://) to a URI string that Coil can load.

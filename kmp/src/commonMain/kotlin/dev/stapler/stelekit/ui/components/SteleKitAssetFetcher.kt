@@ -15,14 +15,11 @@ import coil3.toUri
 import dev.stapler.stelekit.platform.FileSystem
 
 /**
- * Coil 3 [Mapper] that rewrites Logseq-style relative asset paths to loadable URIs.
+ * Coil 3 [Mapper] that rewrites Logseq-style relative asset paths to absolute URIs.
  *
- * For file-system-backed graphs:
- *   Input:  "../assets/photo.jpg"
- *   Output: coil3.Uri("file:///absolute/graph/root/assets/photo.jpg")
- *
- * For SAF-backed graphs on Android, [fileSystem] overrides URI construction and returns a
- * `content://` document URI so Coil can load via ContentResolver.
+ * Input:  "../assets/photo.jpg"
+ * Output: coil3.Uri("file:///absolute/graph/root/assets/photo.jpg")
+ *         or coil3.Uri("content://...") for SAF-backed graphs on Android
  *
  * Strings that do not start with "../assets/" pass through as null so Coil falls through
  * to its default handling (http/https NetworkFetcher, absolute file:// FileUriFetcher, etc.).
@@ -30,7 +27,10 @@ import dev.stapler.stelekit.platform.FileSystem
  * Returns null (cache miss) if [filename] contains path traversal sequences (`..`) or
  * path separator characters (`/`, `\`) to prevent escaping the assets directory.
  */
-class SteleKitAssetMapper(graphRoot: String, private val fileSystem: FileSystem? = null) : Mapper<String, Uri> {
+class SteleKitAssetMapper(
+    graphRoot: String,
+    private val fileSystem: FileSystem? = null,
+) : Mapper<String, Uri> {
     private val graphRoot = graphRoot.trimEnd('/')
 
     override fun map(data: String, options: Options): Uri? {
@@ -45,8 +45,10 @@ class SteleKitAssetMapper(graphRoot: String, private val fileSystem: FileSystem?
         ) {
             return null
         }
-        val platformUri = fileSystem?.buildAssetUri(graphRoot, "assets/$filename")
-        return (platformUri ?: "file://$graphRoot/assets/$filename").toUri()
+        // Delegate to platform FileSystem for SAF-backed graphs (returns content:// on Android)
+        fileSystem?.resolveAssetUri(graphRoot, "assets/$filename")
+            ?.let { return it.toUri() }
+        return "file://$graphRoot/assets/$filename".toUri()
     }
 }
 
@@ -66,7 +68,7 @@ class SteleKitSafPathMapper(private val fileSystem: FileSystem) : Mapper<String,
 /**
  * Returns a Coil [ImageLoader] scoped to the current graph root path.
  * Registers [SteleKitAssetMapper] when [LocalGraphRootPath] is non-null so that
- * `../assets/<filename>` paths resolve to loadable URIs (file:// or content://).
+ * `../assets/<filename>` paths resolve to absolute URIs (content:// for SAF graphs).
  * Registers [SteleKitSafPathMapper] when [LocalFileSystem] is non-null so that
  * full `saf://` paths (used by [ImageAnnotation.filePath]) also resolve correctly.
  */

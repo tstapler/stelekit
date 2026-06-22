@@ -14,7 +14,7 @@ import dev.stapler.stelekit.platform.FileSystem
 val LocalGraphRootPath = compositionLocalOf<String?> { null }
 
 /**
- * Provides the active [FileSystem] so that [SteleKitAssetMapper] can resolve SAF-backed
- * asset paths to content:// URIs on Android. Null when no graph is loaded.
+ * Provides the platform [FileSystem] to composables that need to resolve asset URIs.
+ * On Android, used by [SteleKitAssetMapper] to convert SAF paths to loadable `content://` URIs.
  */
 val LocalFileSystem = compositionLocalOf<FileSystem?> { null }
