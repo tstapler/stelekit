@@ -1,0 +1,31 @@
+# Adversarial Review: tag-suggestion-trigger
+**Date**: 2026-06-22
+**Verdict**: CONCERNS (0 blockers / 3 concerns / 4 minors)
+
+---
+
+## Blockers
+
+None.
+
+---
+
+## Concerns
+
+- [ ] **Lambda instability on every `allBlocks` emission causes recomposition of `MobileBlockToolbar` on every keystroke** — The plan derives `onSuggestTags` inside `EditorToolbar` using `run { }`, capturing `allBlocks` (which is `collectAsState()` of a `StateFlow<Map<String, List<Block>>>`). `allBlocks` changes on every keystroke because `BlockStateManager._blocks` is updated by every local edit. The derived lambda is a new object reference every time `allBlocks` changes, so `MobileBlockToolbar` recomposes on every character typed. The requirements state a performance SLO: "toolbar must not re-compose on every keystroke — the callback is stable." This pattern violates that SLO. The existing `onAttachImage = run { ... }` derivation in `EditorToolbar` has the same shape but only captures `editingBlockUuid` (a `BlockUuid?`), which changes far less frequently. **Recommendation**: Do not capture `allBlocks` in the `run { }` block. Instead, pass `allBlocks` to `MobileBlockToolbar` as a separate parameter and read it inside `onClick` — or use `rememberUpdatedState` to wrap `allBlocks` so the lambda identity is stable. The simplest safe fix: pass `blockStateManager` into the lambda closure directly and read `blockStateManager.blocks.value` at click time inside the `onClick` body in `EditorToolbar`, which is already done for link-picker (`val block = allBlocks.values.flatten().find { ... }` but that's inside a `showLinkPicker = true` callback that itself is only re-created when `searchViewModel` changes).
+
+- [ ] **Empty-block edge case is undocumented but silently benign — verify `TagSuggestionViewModel.requestSuggestions` handles empty string** — When the editing block's content is `""` (new block, blank line), `EditorToolbar` will call `tagSuggestionViewModel.requestSuggestions(uuid, "")`. The plan notes `content = block?.content ?: ""` when the block is not found but does not check `TagSuggestionViewModel.requestSuggestions` behavior for empty content. If the VM forwards empty content to the LLM provider it wastes an API call and shows an empty bottom sheet with no actionable results — a confusing UX. **Recommendation**: Add a guard in `EditorToolbar`'s derived lambda (or in `TagSuggestionViewModel.requestSuggestions`) to no-op when `content.isBlank()`. Even a one-line `if (content.isBlank()) return@onSuggestTags` inside the lambda prevents silent LLM requests on empty blocks.
+
+- [ ] **`onRequestTagSuggestions` on `BlockItem` is still live after dead-code removal — the plan's cleanup is incomplete** — Story 1.1.5 says to delete lines 499–516 and "verify `onRequestTagSuggestions` is still used by legitimate call sites (e.g. the context menu path around lines 480–496) before removing the parameter itself." But the code at lines 499–516 is the *only* consumer of `onRequestTagSuggestions` inside `BlockItem`. The context-menu path at lines 480–496 (the `SuggestionState` popup) does *not* call `onRequestTagSuggestions` — it is a separate suggestion-navigation flow. Meaning: after deleting lines 499–516, `onRequestTagSuggestions` at line 92 of `BlockItem.kt` has zero usages inside the file and can be fully removed along with all call sites that pass it (`JournalsView.kt:190–194`, `PageView.kt:361–364`). The plan hedges ("if it is only consumed by this dead block") but the verification is left to the implementer. Leaving the now-dead `onRequestTagSuggestions` parameter on `BlockItem` after deletion creates a second dead parameter, immediately re-accruing technical debt. **Recommendation**: Task 1.1.5a should explicitly include removing the `onRequestTagSuggestions` parameter from `BlockItem`, its `JournalsView` call site at lines 190–194, and its `PageView` call site at lines 361–364.
+
+---
+
+## Minors
+
+- **Desktop trigger is intentionally absent but unacknowledged** — `MobileBlockToolbar` is rendered on Desktop (JVM) via `EditorToolbar` — the name "Mobile" is cosmetic. This is fine for scope. However, the plan and requirements say nothing about Desktop UX: the button will appear on Desktop too since `EditorToolbar` is platform-agnostic. This is correct behavior but should be a documented decision, not an accidental side effect, since Desktop already has a "Suggest tags for page" menu item in the export overflow.
+
+- **Icon import path not verified against available Material icons artifact** — `Icons.AutoMirrored.Filled.Label` is specified in the plan. The existing codebase uses `Icons.AutoMirrored.Filled.FormatIndentDecrease` and `Icons.AutoMirrored.Filled.Undo`, confirming the AutoMirrored namespace is available. However, `Label` (a tag-shape icon) should be verified at compile time — `Icons.Default.Label` does exist in Material Icons Extended but may require the extended icons dependency. Confirm the dependency is already present before assuming the import is valid.
+
+- **No screenshot/UI regression test specified** — The plan adds a visible button to a toolbar that has existing Roborazzi screenshot tests (`JournalsViewUITest.kt`). No task mentions updating or adding a screenshot test. The new button will appear in existing screenshots and silently break them at CI time, producing a false-positive screenshot diff failure. **Recommendation**: Add a task to update the baseline screenshot or add a targeted test for the new button's presence.
+
+- **PageView wiring (Story 1.1.4) is listed as optional framing but is actually required by requirements** — The requirements say "Works on both JournalsView and PageView screens (consistent placement)" as a success metric. The plan correctly includes Story 1.1.4 but marks both screens equivalently — fine. However, the call sites in `PageView` also pass `onRequestTagSuggestions` to every `BlockItem` (lines 361–364), which will become dead after Story 1.1.5 removes the dead dropdown. The plan's Story 1.1.5 must coordinate with Story 1.1.4 cleanup or it leaves `PageView` with two wiring sites for the same action (the new toolbar path and the still-passing `onRequestTagSuggestions` to `BlockItem`) until both tasks are applied.

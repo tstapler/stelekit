@@ -187,14 +187,6 @@ fun JournalsView(
                         )
                     },
                     onOpenAnnotationEditor = onOpenAnnotationEditor,
-                    onRequestTagSuggestions = if (tagSuggestionViewModel != null) { blockUuid, content ->
-                        val alreadyLinked = WikiLinkExtractor.extractPageNames(content)
-                        tagSuggestionViewModel.requestSuggestions(
-                            blockUuid = blockUuid,
-                            blockContent = content,
-                            alreadyLinkedTerms = alreadyLinked,
-                        )
-                    } else null,
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -254,6 +246,16 @@ fun JournalsView(
             capabilities = capabilities,
             searchViewModel = searchViewModel,
             isLeftHanded = isLeftHanded,
+            onSuggestTags = if (tagSuggestionViewModel != null) { blockUuid, content ->
+                if (content.isNotBlank()) {
+                    val alreadyLinked = WikiLinkExtractor.extractPageNames(content)
+                    tagSuggestionViewModel.requestSuggestions(
+                        blockUuid = blockUuid,
+                        blockContent = content,
+                        alreadyLinkedTerms = alreadyLinked,
+                    )
+                }
+            } else null,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .onSizeChanged { toolbarHeight = it.height },
@@ -318,7 +320,6 @@ private fun JournalEntry(
     onNavigateAllSuggestions: ((List<SuggestionItem>) -> Unit)? = null,
     onBlockSelectionChange: ((blockUuid: String, range: IntRange?) -> Unit)? = null,
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
-    onRequestTagSuggestions: ((blockUuid: String, content: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
@@ -411,7 +412,6 @@ private fun JournalEntry(
                 onNavigateAllSuggestions = onNavigateAllSuggestions,
                 onBlockSelectionChange = onBlockSelectionChange,
                 onOpenAnnotationEditor = onOpenAnnotationEditor,
-                onRequestTagSuggestions = onRequestTagSuggestions,
             )
 
             // Clickable area below blocks to append new block
