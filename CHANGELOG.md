@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.0](https://github.com/tstapler/stelekit/compare/v0.54.0...v0.55.0) (2026-06-23)
+
+
+### Features
+
+* **imagemeter:** loupe magnifier, ripple, context hints, toolbar UX overhaul ([#183](https://github.com/tstapler/stelekit/issues/183)) ([1cc2b99](https://github.com/tstapler/stelekit/commit/1cc2b998cb765b9865edaa01defd34ecd03ef8f3))
+
 ## [0.54.0](https://github.com/tstapler/stelekit/compare/v0.53.1...v0.54.0) (2026-06-22)
 
 
