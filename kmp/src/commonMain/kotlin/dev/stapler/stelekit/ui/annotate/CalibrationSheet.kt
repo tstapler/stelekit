@@ -48,9 +48,9 @@ fun CalibrationSheet(
     /** Called when the user wants to manually draw a reference line. The caller should select [AnnotationTool.GRID_REF]. */
     onDrawReference: () -> Unit,
     onUseBle: () -> Unit,
+    modifier: Modifier = Modifier,
     peerCalibration: Pair<String, Calibration>? = null,
     onUsePeerCalibration: ((Calibration) -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     var showHowTo by remember { mutableStateOf(false) }
     ModalBottomSheet(

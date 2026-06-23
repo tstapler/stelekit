@@ -849,9 +849,9 @@ private fun InProgressAnnotationCanvas(
     currentTool: AnnotationTool,
     canvasSize: IntSize,
     onTap: (Offset) -> Unit,
+    modifier: Modifier = Modifier,
     onLoupeOffset: ((Offset?) -> Unit)? = null,
     onRipple: ((Offset) -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     DisposableEffect(currentTool) {
         onDispose { onLoupeOffset?.invoke(null) }
@@ -1405,42 +1405,41 @@ private fun LoupeOverlay(
         modifier = Modifier
             .offset { IntOffset(loupeXPx.toInt(), loupeYPx.toInt()) }
             .size(loupeSizeDp)
-            .clip(CircleShape)
     ) {
-        AsyncImage(
-            model = imageUri,
-            contentDescription = null,
-            contentScale = ContentScale.FillBounds,
-            modifier = Modifier
-                .size(innerWidthDp, innerHeightDp)
-                .offset { IntOffset(innerOffsetXPx.toInt(), innerOffsetYPx.toInt()) },
-        )
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val halfX = size.width / 2f
-            val halfY = size.height / 2f
-            val shadowColor = Color.Black.copy(alpha = 0.6f)
-            val lineColor = Color.White
-            val stroke = 1.dp.toPx()
-            drawLine(shadowColor, Offset(0f, halfY + 0.5f), Offset(size.width, halfY + 0.5f), stroke * 1.5f)
-            drawLine(shadowColor, Offset(halfX + 0.5f, 0f), Offset(halfX + 0.5f, size.height), stroke * 1.5f)
-            drawLine(lineColor, Offset(0f, halfY), Offset(size.width, halfY), stroke)
-            drawLine(lineColor, Offset(halfX, 0f), Offset(halfX, size.height), stroke)
+        // Clipped inner area: zoomed image + crosshair
+        Box(modifier = Modifier.fillMaxSize().clip(CircleShape)) {
+            AsyncImage(
+                model = imageUri,
+                contentDescription = null,
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier
+                    .size(innerWidthDp, innerHeightDp)
+                    .offset { IntOffset(innerOffsetXPx.toInt(), innerOffsetYPx.toInt()) },
+            )
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val halfX = size.width / 2f
+                val halfY = size.height / 2f
+                val shadowColor = Color.Black.copy(alpha = 0.6f)
+                val lineColor = Color.White
+                val stroke = 1.dp.toPx()
+                drawLine(shadowColor, Offset(0f, halfY + 0.5f), Offset(size.width, halfY + 0.5f), stroke * 1.5f)
+                drawLine(shadowColor, Offset(halfX + 0.5f, 0f), Offset(halfX + 0.5f, size.height), stroke * 1.5f)
+                drawLine(lineColor, Offset(0f, halfY), Offset(size.width, halfY), stroke)
+                drawLine(lineColor, Offset(halfX, 0f), Offset(halfX, size.height), stroke)
+            }
         }
-    }
-    Canvas(
-        modifier = Modifier
-            .offset { IntOffset(loupeXPx.toInt(), loupeYPx.toInt()) }
-            .size(loupeSizeDp)
-    ) {
-        drawCircle(
-            color = Color.Black.copy(alpha = 0.3f),
-            radius = size.width / 2f + 1.dp.toPx(),
-            style = Stroke(width = 3.dp.toPx()),
-        )
-        drawCircle(
-            color = Color.White,
-            radius = size.width / 2f - 0.5f.dp.toPx(),
-            style = Stroke(width = 1.5f.dp.toPx()),
-        )
+        // Border ring drawn outside the clip so it appears around the loupe edge
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawCircle(
+                color = Color.Black.copy(alpha = 0.3f),
+                radius = size.width / 2f + 1.dp.toPx(),
+                style = Stroke(width = 3.dp.toPx()),
+            )
+            drawCircle(
+                color = Color.White,
+                radius = size.width / 2f - 0.5f.dp.toPx(),
+                style = Stroke(width = 1.5f.dp.toPx()),
+            )
+        }
     }
 }
