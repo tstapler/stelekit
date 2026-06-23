@@ -89,8 +89,6 @@ fun BlockList(
     onBlockSelectionChange: ((blockUuid: String, range: IntRange?) -> Unit)? = null,
     /** Called when the user taps an image_annotation block thumbnail to open the annotation editor. */
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
-    /** Called when the user requests tag suggestions for a block via context menu. */
-    onRequestTagSuggestions: ((blockUuid: String, content: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     if (isDebugMode) {
@@ -246,7 +244,6 @@ fun BlockList(
                         }
                     } else null,
                     onOpenAnnotationEditor = onOpenAnnotationEditor,
-                    onRequestTagSuggestions = onRequestTagSuggestions,
                     onDragStart = { uuid, startY ->
                         val toHighlight = if (uuid in selectedBlockUuids) selectedBlockUuids else setOf(uuid)
                         if (uuid !in selectedBlockUuids) {

@@ -358,14 +358,6 @@ fun PageView(
                         onOpenAnnotationEditor = { uuid ->
                             viewModel.navigateToAnnotationEditor(uuid, page.uuid.value)
                         },
-                        onRequestTagSuggestions = if (tagSuggestionViewModel != null) { blockUuid, content ->
-                            val alreadyLinked = WikiLinkExtractor.extractPageNames(content)
-                            tagSuggestionViewModel.requestSuggestions(
-                                blockUuid = blockUuid,
-                                blockContent = content,
-                                alreadyLinkedTerms = alreadyLinked,
-                            )
-                        } else null,
                     )
 
                     Box(
@@ -430,6 +422,16 @@ fun PageView(
             capabilities = capabilities,
             searchViewModel = searchViewModel,
             isLeftHanded = isLeftHanded,
+            onSuggestTags = if (tagSuggestionViewModel != null) { blockUuid, content ->
+                if (content.isNotBlank()) {
+                    val alreadyLinked = WikiLinkExtractor.extractPageNames(content)
+                    tagSuggestionViewModel.requestSuggestions(
+                        blockUuid = blockUuid,
+                        blockContent = content,
+                        alreadyLinkedTerms = alreadyLinked,
+                    )
+                }
+            } else null,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .onSizeChanged { toolbarHeight = it.height },

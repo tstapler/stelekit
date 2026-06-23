@@ -19,6 +19,7 @@ fun EditorToolbar(
     capabilities: EditorCapabilities,
     searchViewModel: SearchViewModel?,
     isLeftHanded: Boolean,
+    onSuggestTags: ((blockUuid: String, content: String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val editingBlockUuid by blockStateManager.editingBlockUuid.collectAsState()
@@ -75,6 +76,17 @@ fun EditorToolbar(
             val targetUuid = editingBlockUuid
             if (attachFn != null && targetUuid != null) {
                 { attachFn.invoke(targetUuid) }
+            } else null
+        },
+        onSuggestTags = run {
+            val suggestFn = onSuggestTags
+            val targetUuid = editingBlockUuid
+            if (suggestFn != null && targetUuid != null) {
+                {
+                    val block = allBlocks.values.flatten().find { it.uuid == targetUuid }
+                    val content = block?.content ?: ""
+                    suggestFn(targetUuid.value, content)
+                }
             } else null
         },
         onCaptureImage = capabilities.onCaptureImage,
