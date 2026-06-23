@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.LinearScale
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.PlainTooltip
@@ -131,12 +132,18 @@ fun AnnotationToolbar(
             )
             ToolButton(
                 tool = AnnotationTool.GRID_REF,
-                icon = Icons.Default.GridOn,
-                label = "Ref",
+                icon = Icons.Default.Straighten,
+                label = "Reference",
                 isActive = currentTool == AnnotationTool.GRID_REF,
                 onSelect = onToolSelect,
                 enabled = isCalibrated,
                 showLabels = showLabels,
+            )
+            Box(
+                modifier = Modifier
+                    .height(36.dp)
+                    .width(1.dp)
+                    .background(Color.White.copy(alpha = 0.25f))
             )
             CalibrateButton(
                 onClick = onCalibrate,
@@ -276,9 +283,9 @@ private fun CalibrateButton(
             ) {
                 IconButton(onClick = onClick, enabled = true) {
                     Icon(
-                        imageVector = Icons.Default.Straighten,
+                        imageVector = Icons.Default.Tune,
                         contentDescription = "Calibrate",
-                        tint = Color(0xFFBBBBBB),
+                        tint = MaterialTheme.colorScheme.primary,
                     )
                 }
             }
@@ -286,7 +293,7 @@ private fun CalibrateButton(
                 Text(
                     text = "Calibrate",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFFBBBBBB),
+                    color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
                 )
             }
