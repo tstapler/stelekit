@@ -574,6 +574,10 @@ class AnnotationEditorViewModel(
      */
     @OptIn(DirectRepositoryWrite::class)
     fun updateCalibration(newCalibration: Calibration) {
+        if (!newCalibration.pixelsPerMeter.isFinite() || newCalibration.pixelsPerMeter <= 0.0) {
+            logger.warn("updateCalibration rejected: invalid pixelsPerMeter=${newCalibration.pixelsPerMeter}")
+            return
+        }
         val st = _state.value
 
         // Push current state to calibration history for undo (single-entry — keeps most recent only)

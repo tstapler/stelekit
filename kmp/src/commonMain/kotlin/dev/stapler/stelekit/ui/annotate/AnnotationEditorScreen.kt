@@ -4,7 +4,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -51,10 +50,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,6 +72,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import dev.stapler.stelekit.model.AnnotationType
+import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSensorData
@@ -151,7 +148,7 @@ fun AnnotationEditorScreen(
      * ViewModel's [AnnotationEditorState.depthMap] via [AnnotationEditorViewModel.runDepthEstimation].
      */
     onEstimateDepth: (() -> Unit)? = null,
-    peerCalibration: Pair<String, dev.stapler.stelekit.model.Calibration>? = null,
+    peerCalibration: Pair<String, Calibration>? = null,
 ) {
     val state by viewModel.state.collectAsState()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
@@ -467,6 +464,10 @@ fun AnnotationEditorScreen(
                     "Tap to add more vertices"
                 state.currentTool == AnnotationTool.AREA ->
                     "Tap to place first vertex"
+                state.currentTool == AnnotationTool.ANGLE && state.inProgressPoints.size == 1 ->
+                    "Tap to place vertex"
+                state.currentTool == AnnotationTool.ANGLE && state.inProgressPoints.size == 2 ->
+                    "Tap to complete angle"
                 state.inProgressPoints.isEmpty() -> "Tap to place start point"
                 state.inProgressPoints.size == 1 -> "Tap to place end point"
                 else -> null
@@ -862,9 +863,10 @@ private fun InProgressAnnotationCanvas(
             .semantics { contentDescription = "Annotation canvas — tap to place points" }
             .pointerInput(currentTool) {
                 awaitEachGesture {
-                    val down = awaitFirstDown()
+                    val down = awaitFirstDown(requireUnconsumed = false)
                     val downPos = down.position
                     if (currentTool != AnnotationTool.SELECT) {
+                        down.consume()
                         onLoupeOffset?.invoke(downPos)
                     }
                     var lastPos = downPos
@@ -873,6 +875,7 @@ private fun InProgressAnnotationCanvas(
                         val change = event.changes.firstOrNull() ?: break
                         lastPos = change.position
                         if (currentTool != AnnotationTool.SELECT) {
+                            change.consume()
                             onLoupeOffset?.invoke(lastPos)
                         }
                         if (!change.pressed) break
