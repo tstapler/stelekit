@@ -19,8 +19,8 @@ fun EditorToolbar(
     capabilities: EditorCapabilities,
     searchViewModel: SearchViewModel?,
     isLeftHanded: Boolean,
-    onSuggestTags: ((blockUuid: String, content: String) -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onSuggestTags: ((blockUuid: String, content: String) -> Unit)? = null,
 ) {
     val editingBlockUuid by blockStateManager.editingBlockUuid.collectAsState()
     val editingCursorIndex by blockStateManager.editingCursorIndex.collectAsState()
