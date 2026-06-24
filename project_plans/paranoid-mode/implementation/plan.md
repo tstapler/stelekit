@@ -371,9 +371,17 @@ kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/
 - T8.1.2: Argon2id parameter benchmarking at vault creation: measure 64 MiB / 3 iter timing; offer "Fast" (lower memory) / "Standard" / "Strong" presets
 - T8.1.3: Random pre-fill of graph directory with dummy data before first file write (prevents distinguishing encrypted from unencrypted graphs by file count)
 
-**Story 8.2 — Format versioning**
-- T8.2.1: Format version field (byte 4 of vault header) guards the deserializer; unknown version → `VaultError.UnsupportedVersion`
-- T8.2.2: Migration path for v1→v2: decrypt all files with old DEK → re-encrypt with new algorithm → update header version field; write new files before updating header (transaction-safe)
+**Story 8.2 — Hidden activation gesture (FR-9)**
+- T8.2.1: Add a `LowKeyModeActivationState` to `AppState` — an integer tap count (0–4) and a timestamp for the 3-second window. No external state.
+- T8.2.2: In the About screen composable, wrap the version `Text` in a `Modifier.pointerInput` (or `clickable`) with a multi-tap detector: increment count + restart 3-second timer on each tap. On count == 2, show the countdown label (`"3 more taps to unlock Low-key Mode"`, 12 sp, muted color, auto-hides after 2 s). On count == 5, open the activation bottom sheet.
+- T8.2.3: Implement `LowKeyActivationSheet` composable (mobile) / `LowKeyActivationDialog` (desktop): title "Low-key Mode", description text, **Enable** button (navigates to vault creation flow, Story 8.1) and **Not now** button (dismisses, resets count). No paranoid-mode branding anywhere visible before the 5th tap.
+- T8.2.4: Tap target for version text: `Modifier.defaultMinSize(minWidth = 44.dp, minHeight = 44.dp)` to ensure ≥ 44 dp touch area on mobile.
+- T8.2.5: Test: `LowKeyActivationTest` in `jvmTest` — simulate 5 taps within 2 s, assert sheet appears; simulate 4 taps + 3.1 s gap, assert no sheet; simulate 5 taps with "Not now", assert no vault settings visible.
+- Files: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/settings/AboutScreen.kt`, `LowKeyActivationSheet.kt`, `AppState.kt`
+
+**Story 8.3 — Format versioning**
+- T8.3.1: Format version field (byte 4 of vault header) guards the deserializer; unknown version → `VaultError.UnsupportedVersion`
+- T8.3.2: Migration path for v1→v2: decrypt all files with old DEK → re-encrypt with new algorithm → update header version field; write new files before updating header (transaction-safe)
 
 ---
 

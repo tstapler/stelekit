@@ -17,6 +17,7 @@
 | S4 | Vault Settings Screen | Settings → Graph → Paranoid Mode |
 | S5 | Auto-Lock Settings Panel | Within Vault Settings |
 | S6 | Error States | Wrong passphrase, corrupted vault, locked-while-using |
+| S7 | Hidden Activation Gesture | Tap version number 5× in Settings → About |
 
 ---
 
@@ -904,3 +905,83 @@ Shown in the app's notification area (not a blocking dialog) when the user is wo
 | UXQ-3 | Is a passphrase strength indicator (Phase B) appropriate UX or does it give false confidence? | Include it; it is informational, not a gate. |
 | UXQ-4 | Should the unlock dialog show the graph name ("Unlock Graph — my-notes") or just "Unlock Graph"? | Show graph name for clarity when multiple graphs are used. |
 | UXQ-5 | Should auto-lock warn the user with a countdown (e.g., "Locking in 60 s…")? | No countdown for v1 (adds complexity; Argon2id cost is the primary protection). |
+
+---
+
+### S7 — Hidden Activation Gesture ("Low-key Mode")
+
+**Trigger:** User taps/clicks the version number in Settings → About exactly 5 times within 3 seconds.
+
+**Rationale:** Paranoid Mode must not be visible in the primary navigation — the feature's own existence should be deniable. The Android developer-mode pattern (tap build number 7×) is well-understood by power users who would seek out encryption features.
+
+**Wireframe — Settings → About (mobile)**
+
+```
+┌─────────────────────────────────┐
+│  ← About                         │
+│                                   │
+│  [SteleKit Logo]                  │
+│                                   │
+│  SteleKit                         │
+│  Version 1.4.2  ◄── tap target   │
+│       ↕ min 44 dp touch area      │
+│                                   │
+│  Open source · License · GitHub   │
+└─────────────────────────────────┘
+
+After 2nd tap (label fades in, auto-hides after 2 s):
+┌─────────────────────────────────┐
+│  Version 1.4.2                    │
+│  3 more taps to unlock Low-key Mode │  ← 12sp muted text, no animation
+└─────────────────────────────────┘
+
+After 4th tap:
+│  1 more tap to unlock Low-key Mode  │
+
+After 5th tap → bottom sheet slides up:
+┌─────────────────────────────────┐
+│                                   │
+│  ▬▬▬  (drag handle)               │
+│                                   │
+│  Low-key Mode                     │
+│                                   │
+│  Enable encrypted graphs with     │
+│  plausible deniability. Your      │
+│  notes stay ciphertext on disk    │
+│  at all times.                    │
+│                                   │
+│  [ Enable ]     [ Not now ]       │
+│                                   │
+└─────────────────────────────────┘
+```
+
+**Interaction flow:**
+
+| Step | User action | System response |
+|------|------------|-----------------|
+| 1 | Tap version (1×) | No visible response — timer starts (3 s window) |
+| 2 | Tap version (2×) | Muted label: "3 more taps to unlock Low-key Mode" (auto-hides 2 s) |
+| 3 | Tap version (3×) | Label: "2 more taps…" |
+| 4 | Tap version (4×) | Label: "1 more tap…" |
+| 5 | Tap version (5×) | Label disappears; bottom sheet / modal appears immediately |
+| — | Timer expires (< 5 taps) | Count resets silently; label disappears |
+| — | User taps "Enable" | Navigate to Vault Creation Wizard (FR-3 / S3) |
+| — | User taps "Not now" | Sheet dismisses; count resets; no trace in UI |
+
+**Desktop variant:** identical but uses mouse clicks; the bottom sheet becomes a centered modal dialog with the same content and buttons.
+
+**WASM variant:** identical to mobile; no keyboard shortcut exists for this path.
+
+**Once Low-key Mode is ever activated:** A "Low-key Mode" row appears in Settings → Graph for that specific graph only (per FR-9.4). The tap sequence remains available to create additional encrypted graphs.
+
+**UX Acceptance Criteria — S7:**
+
+| AC | Criterion |
+|----|-----------|
+| UX-S7-1 | Tapping the version number 5 times within 3 s on a mobile device shows the activation bottom sheet without requiring a keyboard. |
+| UX-S7-2 | Tapping only 4 times within 3 s shows no activation sheet; the count resets silently. |
+| UX-S7-3 | The countdown label ("N more taps…") never appears before the 2nd tap; the 5th tap produces no label (sheet appears directly). |
+| UX-S7-4 | Tapping "Not now" leaves the Settings → About screen unchanged — no "Low-key Mode" entry visible anywhere. |
+| UX-S7-5 | After enabling and creating one encrypted graph, Settings → Graph for that graph shows "Low-key Mode" settings; Settings → Graph for a non-encrypted graph shows nothing. |
+| UX-S7-6 | The version number tap target is at least 44 × 44 dp on all platforms. |
+| UX-S7-7 | No label, button, tooltip, or screen-reader hint on Settings → About reveals the existence of encryption before the 2nd tap of the sequence. |
