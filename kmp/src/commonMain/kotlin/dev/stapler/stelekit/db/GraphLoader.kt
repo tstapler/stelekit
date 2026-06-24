@@ -372,9 +372,12 @@ class GraphLoader(
         fileRegistry.markWrittenByUs(filePath)
         // Fire-and-forget: set real post-write mtime so subsequent watcher polls
         // see modTime == lastKnown and skip the file without calling readFile.
+        // Uses updateModTimeIfSentinel so that if detectChanges already ran and updated
+        // modTimes (either suppressing our write or recording an external change), the
+        // background coroutine does not overwrite that value with a potentially-stale mtime.
         parallelScope.launch {
             val modTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
-            if (modTime != 0L) fileRegistry.updateModTime(filePath, modTime)
+            if (modTime != 0L) fileRegistry.updateModTimeIfSentinel(filePath, modTime)
         }
     }
 

@@ -219,6 +219,20 @@ class FileRegistry(private val fileSystem: FileSystem) {
         modTimes[FilePath(filePath)] = modTime
     }
 
+    /**
+     * Updates mod time only if the stored value is still the own-write sentinel (0L).
+     *
+     * Used by the fire-and-forget background coroutine in [GraphLoader.markFileWrittenByUs].
+     * If [detectChanges] ran before the background coroutine and already updated modTimes
+     * to the real post-write mtime (own-write suppressed) or to an external change's mtime,
+     * this is a no-op — preventing the background coroutine from overwriting a modTime that
+     * already reflects the current disk state and causing the next detectChanges to miss changes.
+     */
+    suspend fun updateModTimeIfSentinel(filePath: String, modTime: Long) = detectMutex.withLock {
+        val key = FilePath(filePath)
+        if (modTimes[key] == 0L) modTimes[key] = modTime
+    }
+
     /** Updates content hash for a file. */
     suspend fun updateContentHash(filePath: String, contentHash: Int) = detectMutex.withLock {
         contentHashes[FilePath(filePath)] = contentHash
