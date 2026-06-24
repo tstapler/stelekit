@@ -22,7 +22,10 @@ kt_jvm_library(
         ["**/*.kt"],
         exclude = ["**/benchmarks/**"],  # JMH benchmarks — Gradle-only (jmh plugin)
     ),
-    common_srcs = ["//kmp/src/commonMain/kotlin:kt_srcs"],
+    common_srcs = [
+        "//kmp/src/commonMain/kotlin:kt_srcs",
+        "//kmp/src/jvmCommonMain/kotlin:kt_srcs",
+    ],
     kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
     plugins = [
         "//:compose_compiler_plugin",
