@@ -24,7 +24,7 @@ kt_android_library(
     ] + glob(["**/*.kt"]),
     common_srcs = [
         "//kmp/src/commonMain/kotlin:kt_srcs",
-        "//kmp/src/jvmCommonMain/kotlin:kt_srcs",
+        "//kmp/src/jvmCommonMain/kotlin:kt_expect_srcs",
     ],
     kotlinc_opts = "//:kmp_android_kotlinc_opts",
     plugins = [

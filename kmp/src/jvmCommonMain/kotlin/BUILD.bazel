@@ -20,3 +20,17 @@ filegroup(
     srcs = glob(["**/*.kt"]),
     visibility = ["//kmp:__subpackages__"],
 )
+
+# Files in jvmCommonMain that contain `expect` declarations (for jvmMain/androidMain actuals).
+# These must be passed as common_srcs so the Kotlin compiler treats them as the expect side
+# of the jvmCommonMain→jvmMain/androidMain expect/actual pair.
+# The remaining jvmCommonMain files contain `actual` implementations of commonMain expects and
+# must NOT appear in common_srcs (doing so puts both the expect and the actual in "common",
+# which the compiler rejects with "expect and actual declared in the same module").
+filegroup(
+    name = "kt_expect_srcs",
+    srcs = [
+        "dev/stapler/stelekit/db/libsql/LibsqlNativeLoader.kt",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+)
