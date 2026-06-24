@@ -152,6 +152,7 @@ internal fun ScreenRouter(
                 viewModel = journalsViewModel,
                 isDebugMode = appState.isDebugMode,
                 onLinkClick = { viewModel.navigateToPageByName(it) },
+                graphPath = appState.currentGraphPath,
                 searchViewModel = searchViewModel,
                 onSearchPages = { query -> viewModel.searchPages(query) },
                 suggestionMatcher = suggestionMatcher,

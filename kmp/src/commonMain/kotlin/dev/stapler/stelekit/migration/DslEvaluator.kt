@@ -161,15 +161,17 @@ class DslEvaluator(private val repoSet: RepositorySet) {
             val blocks = blocksByPage[page.uuid] ?: emptyList()
             // Offset root-level blocks past existing content in the target page to avoid
             // position collisions. Child blocks use sibling-relative positions so no offset needed.
-            val targetRootMax = blocksByPage[PageUuid(targetPageUuid)]
+            val targetRootBlocks = blocksByPage[PageUuid(targetPageUuid)]
                 ?.filter { it.parentUuid == null }
-                ?.maxOfOrNull { it.position } ?: -1
-            val rootOffset = targetRootMax + 1
+                ?.sortedBy { it.position } ?: emptyList()
+            var lastRootPosition: String? = targetRootBlocks.lastOrNull()?.position
 
             for (block in blocks) {
                 if (block.content.isNotBlank()) {
                     val moved = if (block.parentUuid == null) {
-                        block.copy(pageUuid = PageUuid(targetPageUuid), position = block.position + rootOffset)
+                        val newPos = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(lastRootPosition, null)
+                        lastRootPosition = newPos
+                        block.copy(pageUuid = PageUuid(targetPageUuid), position = newPos)
                     } else {
                         block.copy(pageUuid = PageUuid(targetPageUuid))
                     }

@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import app.cash.sqldelight.SuspendingTransactionWithoutReturn
+import app.cash.sqldelight.db.SqlDriver
 
 /**
  * Wraps [SteleDatabaseQueries] and gates every mutating method behind [DirectSqlWrite].
@@ -12,7 +13,10 @@ import app.cash.sqldelight.SuspendingTransactionWithoutReturn
  * Keep this file in sync with SteleDatabase.sq: every new INSERT/UPDATE/DELETE/UPSERT query
  * needs a corresponding forwarding stub annotated [DirectSqlWrite].
  */
-class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
+class RestrictedDatabaseQueries(
+    private val queries: SteleDatabaseQueries,
+    private val driver: SqlDriver? = null,
+) {
 
     // Exposed for read-only SELECT access. Never call write methods (INSERT/UPDATE/DELETE/UPSERT)
     // via this reference — use the annotated methods below instead.
@@ -35,7 +39,7 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
         left_uuid: String?,
         content: String,
         level: Long,
-        position: Long,
+        position: String,
         created_at: Long,
         updated_at: Long,
         properties: String?,
@@ -54,7 +58,7 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
         left_uuid: String?,
         content: String,
         level: Long,
-        position: Long,
+        position: String,
         updated_at: Long,
         properties: String?,
         version: Long,
@@ -73,7 +77,7 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     @DirectSqlWrite
     suspend fun updateBlockParentPositionAndLevel(
         parent_uuid: String?,
-        position: Long,
+        position: String,
         level: Long,
         uuid: String,
     ): Long = queries.updateBlockParentPositionAndLevel(parent_uuid, position, level, uuid)
@@ -82,14 +86,22 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     suspend fun updateBlockHierarchy(
         parent_uuid: String?,
         left_uuid: String?,
-        position: Long,
+        position: String,
         level: Long,
         uuid: String,
     ): Long = queries.updateBlockHierarchy(parent_uuid, left_uuid, position, level, uuid)
 
     @DirectSqlWrite
-    suspend fun updateBlockPositionOnly(position: Long, uuid: String): Long =
+    suspend fun updateBlockPositionOnly(position: String, uuid: String): Long =
         queries.updateBlockPositionOnly(position, uuid)
+
+    @DirectSqlWrite
+    suspend fun shiftRootBlockPositionsFrom(page_uuid: String, fromPosition: String): Long =
+        queries.shiftRootBlockPositionsFrom(page_uuid, fromPosition)
+
+    @DirectSqlWrite
+    suspend fun shiftChildBlockPositionsFrom(parent_uuid: String, fromPosition: String): Long =
+        queries.shiftChildBlockPositionsFrom(parent_uuid, fromPosition)
 
     @DirectSqlWrite
     suspend fun updateBlockContent(content: String, updated_at: Long, content_hash: String?, uuid: String): Long =
@@ -102,7 +114,7 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
         left_uuid: String?,
         content: String,
         level: Long,
-        position: Long,
+        position: String,
         updated_at: Long,
         properties: String?,
         content_hash: String?,
@@ -259,26 +271,6 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     suspend fun deletePluginDataByEntity(entity_type: String, entity_uuid: String): Long =
         queries.deletePluginDataByEntity(entity_type, entity_uuid)
 
-    // ── Histogram writes ──────────────────────────────────────────────────────
-
-    @DirectSqlWrite
-    suspend fun insertHistogramBucketIfAbsent(operation_name: String, bucket_ms: Long, recorded_at: Long): Long =
-        queries.insertHistogramBucketIfAbsent(operation_name, bucket_ms, recorded_at)
-
-    @DirectSqlWrite
-    suspend fun incrementHistogramBucketCount(recorded_at: Long, operation_name: String, bucket_ms: Long): Long =
-        queries.incrementHistogramBucketCount(recorded_at, operation_name, bucket_ms)
-
-    @DirectSqlWrite
-    suspend fun deleteOldHistogramRows(recorded_at: Long): Long =
-        queries.deleteOldHistogramRows(recorded_at)
-
-    // ── Debug flag writes ─────────────────────────────────────────────────────
-
-    @DirectSqlWrite
-    suspend fun upsertDebugFlag(key: String, value_: Long, updated_at: Long): Long =
-        queries.upsertDebugFlag(key, value_, updated_at)
-
     // ── Metadata writes ───────────────────────────────────────────────────────
 
     @DirectSqlWrite
@@ -345,35 +337,6 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     suspend fun updateMigrationChecksum(checksum: String, id: String, graph_id: String): Long =
         queries.updateMigrationChecksum(checksum, id, graph_id)
 
-    // ── Span writes ───────────────────────────────────────────────────────────
-
-    @DirectSqlWrite
-    suspend fun insertSpan(
-        trace_id: String,
-        span_id: String,
-        parent_span_id: String,
-        name: String,
-        start_epoch_ms: Long,
-        end_epoch_ms: Long,
-        duration_ms: Long,
-        attributes_json: String,
-        status_code: String,
-        app_version: String,
-        commit_hash: String,
-    ): Long = queries.insertSpan(trace_id, span_id, parent_span_id, name, start_epoch_ms, end_epoch_ms, duration_ms, attributes_json, status_code, app_version, commit_hash)
-
-    @DirectSqlWrite
-    suspend fun deleteSpansOlderThan(end_epoch_ms: Long): Long =
-        queries.deleteSpansOlderThan(end_epoch_ms)
-
-    @DirectSqlWrite
-    suspend fun deleteExcessSpans(limit: Long): Long =
-        queries.deleteExcessSpans(limit)
-
-    @DirectSqlWrite
-    suspend fun deleteAllSpans(): Long =
-        queries.deleteAllSpans()
-
     // ── UUID migration writes ─────────────────────────────────────────────────
 
     @DirectSqlWrite
@@ -400,26 +363,6 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     suspend fun updatePropertiesBlockUuidForMigration(block_uuid: String, block_uuid_: String): Long =
         queries.updatePropertiesBlockUuidForMigration(block_uuid, block_uuid_)
 
-    // ── Query stats writes ────────────────────────────────────────────────────
-
-    @DirectSqlWrite
-    suspend fun insertQueryStatIfAbsent(app_version: String, table_name: String, operation: String, first_seen: Long, last_seen: Long): Long =
-        queries.insertQueryStatIfAbsent(app_version, table_name, operation, first_seen, last_seen)
-
-    @DirectSqlWrite
-    suspend fun mergeQueryStat(
-        calls: Long, errors: Long, total_ms: Long,
-        min_ms: Long, max_ms: Long,
-        b1: Long, b5: Long, b16: Long, b50: Long, b100: Long, b500: Long, b_inf: Long,
-        last_seen: Long,
-        app_version: String, table_name: String, operation: String,
-    ): Long =
-        queries.mergeQueryStat(calls, errors, total_ms, min_ms, max_ms, b1, b5, b16, b50, b100, b500, b_inf, last_seen, app_version, table_name, operation)
-
-    @DirectSqlWrite
-    suspend fun deleteQueryStatsForVersion(app_version: String): Long =
-        queries.deleteQueryStatsForVersion(app_version)
-
     // ── Visit tracking ────────────────────────────────────────────────────────
 
     @DirectSqlWrite
@@ -443,6 +386,69 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
     suspend fun setPageBacklinkCount(name: String, count: Long): Long =
         queries.setPageBacklinkCount(count, name)
 
+    // ── Wikilink reference index writes ───────────────────────────────────────
+
+    @DirectSqlWrite
+    suspend fun insertWikilinkReference(block_uuid: String, page_name: String): Long =
+        queries.insertWikilinkReference(block_uuid, page_name)
+
+    /**
+     * Inserts multiple wikilink references for [blockUuid] in a single multi-row INSERT OR IGNORE
+     * statement per chunk. Each chunk is at most [MAX_WIKILINK_BATCH_SIZE] pairs so the total
+     * bind-variable count stays below SQLite's SQLITE_MAX_VARIABLE_NUMBER (999 on Android API<30).
+     *
+     * Uses raw [SqlDriver.execute] because SQLDelight .sq files cannot express variable-arity
+     * VALUES clauses. [driver] may be null only in unit tests that construct the repository
+     * without a driver; in that case this method falls back to the per-row path.
+     */
+    @DirectSqlWrite
+    suspend fun insertWikilinkReferencesBatch(blockUuid: String, pageNames: Collection<String>) {
+        if (pageNames.isEmpty()) return
+        if (driver == null) {
+            // Fallback: no driver available (unit-test construction without driver arg).
+            for (name in pageNames) queries.insertWikilinkReference(blockUuid, name)
+            return
+        }
+        pageNames.chunked(MAX_WIKILINK_BATCH_SIZE).forEach { chunk ->
+            val placeholders = chunk.joinToString(", ") { "(?, ?)" }
+            val sql = "INSERT OR IGNORE INTO wikilink_references (block_uuid, page_name) VALUES $placeholders"
+            // identifier = null disables statement caching — required for variable-length SQL.
+            // bindString indices are 0-based in SQLDelight 2.x SqlPreparedStatement.
+            // The synchronous JDBC driver returns QueryResult.Value immediately; no .await() needed.
+            driver.execute(null, sql, chunk.size * 2) {
+                chunk.forEachIndexed { i, name ->
+                    bindString(i * 2, blockUuid)
+                    bindString(i * 2 + 1, name)
+                }
+            }
+        }
+    }
+
+    companion object {
+        /** floor(999 / 2) — each pair consumes 2 bind params; stays below SQLITE_MAX_VARIABLE_NUMBER. */
+        const val MAX_WIKILINK_BATCH_SIZE = 499
+    }
+
+    @DirectSqlWrite
+    suspend fun deleteWikilinkReferencesForBlock(block_uuid: String): Long =
+        queries.deleteWikilinkReferencesForBlock(block_uuid)
+
+    @DirectSqlWrite
+    suspend fun deleteWikilinkReferencesForPageName(page_name: String): Long =
+        queries.deleteWikilinkReferencesForPageName(page_name)
+
+    @DirectSqlWrite
+    suspend fun recomputeBacklinkCountFromIndex(name: String): Long =
+        queries.recomputeBacklinkCountFromIndex(name)
+
+    @DirectSqlWrite
+    suspend fun recomputeBacklinkCountsForPages(names: Collection<String>): Long =
+        queries.recomputeBacklinkCountsForPages(names)
+
+    @DirectSqlWrite
+    suspend fun updateWikilinkPageNameForRename(newName: String, oldName: String): Long =
+        queries.updateWikilinkPageNameForRename(newName, oldName)
+
     // ── Git config writes ─────────────────────────────────────────────────────
 
     @DirectSqlWrite
@@ -456,12 +462,13 @@ class RestrictedDatabaseQueries(private val queries: SteleDatabaseQueries) {
         ssh_key_path: String?,
         ssh_key_passphrase_key: String?,
         https_token_key: String?,
+        oauth_token_key: String?,
         poll_interval_minutes: Long,
         auto_commit: Long,
         commit_message_template: String,
     ) = queries.insertOrReplaceGitConfig(
         graph_id, repo_root, wiki_subdir, remote_name, remote_branch,
-        auth_type, ssh_key_path, ssh_key_passphrase_key, https_token_key,
+        auth_type, ssh_key_path, ssh_key_passphrase_key, https_token_key, oauth_token_key,
         poll_interval_minutes, auto_commit, commit_message_template,
     )
 

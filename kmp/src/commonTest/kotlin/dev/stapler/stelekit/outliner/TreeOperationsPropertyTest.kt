@@ -3,6 +3,7 @@ package dev.stapler.stelekit.outliner
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.PageUuid
+import dev.stapler.stelekit.util.FractionalIndexing
 import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 import kotlin.test.Test
@@ -21,7 +22,7 @@ class TreeOperationsPropertyTest {
         parentUuid: String? = null,
         leftUuid: String? = null,
         level: Int = 0,
-        position: Int = 0,
+        position: String = "a0",
         content: String = "content"
     ) = Block(
         uuid = BlockUuid(uuid),
@@ -36,12 +37,15 @@ class TreeOperationsPropertyTest {
     )
 
     private fun createSiblingList(count: Int, level: Int = 0): List<Block> {
+        var lastPos: String? = null
         return (0 until count).map { i ->
+            val pos = FractionalIndexing.generateKeyBetween(lastPos, null)
+            lastPos = pos
             createBlock(
                 uuid = "block-$i",
                 leftUuid = if (i > 0) "block-${i - 1}" else null,
                 level = level,
-                position = i
+                position = pos
             )
         }
     }
@@ -113,19 +117,22 @@ class TreeOperationsPropertyTest {
     fun outdentShouldHandleVariousTreeStructures() {
         repeat(10) { childCount ->
             val parent = createBlock("parent", level = 0)
+            var lastChildPos: String? = null
             val children = (0 until childCount).map { i ->
+                val pos = FractionalIndexing.generateKeyBetween(lastChildPos, null)
+                lastChildPos = pos
                 createBlock(
                     uuid = "child-$i",
                     parentUuid = parent.uuid.value,
                     leftUuid = if (i > 0) "child-${i - 1}" else null,
                     level = parent.level + 1,
-                    position = i
+                    position = pos
                 )
             }
             val grandparentSiblings = listOf(
-                createBlock("gp-1", level = 0, position = 0),
+                createBlock("gp-1", level = 0, position = "a0"),
                 parent,
-                createBlock("gp-3", level = 0, position = 2)
+                createBlock("gp-3", level = 0, position = "a2")
             )
 
             children.forEach { child ->
@@ -427,8 +434,8 @@ class TreeOperationsPropertyTest {
                     createBlock(uuid = "level-$level", level = level)
                 }
                 val reordered = TreeOperations.reorderSiblings(blocks)
-                reordered.forEachIndexed { index, block ->
-                    assertEquals(index, block.position)
+                reordered.zipWithNext().forEach { (a, b) ->
+                    assertTrue(a.position < b.position, "Positions must be in ascending order after reorderSiblings")
                 }
             } catch (e: CancellationException) {
                 throw e

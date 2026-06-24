@@ -144,7 +144,7 @@ class SqlDelightPropertyRepository(
             leftUuid = this.left_uuid,
             content = this.content,
             level = this.level.toInt(),
-            position = this.position.toInt(),
+            position = this.position,
             createdAt = Instant.fromEpochMilliseconds(this.created_at),
             updatedAt = Instant.fromEpochMilliseconds(this.updated_at),
             version = this.version,

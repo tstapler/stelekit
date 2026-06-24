@@ -21,6 +21,9 @@ permissions:
   contents: read
   actions: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   update-fdroid:
     runs-on: ubuntu-latest
@@ -120,10 +123,10 @@ jobs:
               DOWNLOADED=1
             fi
           else
-            # archive_older: 5 in fdroid/config.yml means fdroid update keeps only the
-            # 5 newest APKs in the live repo/; older ones go to archive/ which is never
-            # deployed. Downloading more than 5 on a cache miss wastes bandwidth.
-            echo "APK cache miss — downloading 5 most recent APKs (matches archive_older: 5)"
+            # archive_older: 3 in fdroid/config.yml means fdroid update keeps only the
+            # 3 newest APKs in the live repo/; older ones go to archive/ which is never
+            # deployed. Downloading more than 3 on a cache miss wastes bandwidth.
+            echo "APK cache miss — downloading 3 most recent APKs (matches archive_older: 3)"
             DOWNLOADED=0
             while IFS= read -r tag; do
               if gh release download "$tag" \
@@ -131,7 +134,7 @@ jobs:
                 --dir fdroid/repo/ 2>/dev/null; then
                 DOWNLOADED=$((DOWNLOADED + 1))
               fi
-            done < <(gh release list --limit 5 --json tagName --jq '.[].tagName')
+            done < <(gh release list --limit 3 --json tagName --jq '.[].tagName')
           fi
           echo "Downloaded $DOWNLOADED APK(s)"
           [ "$DOWNLOADED" -gt 0 ] || { echo "No APKs downloaded — refusing to publish empty F-Droid repo"; exit 1; }
@@ -159,8 +162,8 @@ jobs:
           # the artifact lands flat (no repo/ subdirectory), breaking the pages.yml check.
           #
           # APKs are included: the 100 MB Git file limit does not apply to Actions-deployed
-          # Pages artifacts. With archive_older:5, repo/ has at most 5 APKs (~500 MB total)
-          # which fits under the 900 MB site safety limit.
+          # Pages artifacts. With archive_older:3, repo/ has at most 3 APKs (~300 MB total).
+          # The Wasm demo adds ~450 MB, keeping total site size under the 900 MB safety limit.
           mkdir -p fdroid-staging/repo
           rsync -a fdroid/repo/ fdroid-staging/repo/
 

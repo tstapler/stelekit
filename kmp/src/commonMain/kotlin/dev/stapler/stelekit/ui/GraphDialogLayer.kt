@@ -43,6 +43,7 @@ import dev.stapler.stelekit.ui.components.PlatformFrameTimeOverlay
 import dev.stapler.stelekit.ui.components.RenamePageDialog
 import dev.stapler.stelekit.ui.components.SearchDialog
 import dev.stapler.stelekit.ui.components.ShareDialog
+import dev.stapler.stelekit.db.isLibsqlDriverSupported
 import dev.stapler.stelekit.tags.TagSettings
 import dev.stapler.stelekit.ui.components.settings.SettingsDialog
 import dev.stapler.stelekit.ui.screens.SearchViewModel
@@ -152,6 +153,8 @@ internal fun GraphDialogLayer(
         onDisconnectGoogle = onDisconnectGoogle,
         tagSettings = tagSettings,
         hasLlmKey = hasLlmKey,
+        isLibsqlDriverEnabled = appState.isLibsqlDriverEnabled,
+        onLibsqlDriverToggle = if (isLibsqlDriverSupported) { { viewModel.setLibsqlDriverEnabled(it) } } else null,
     )
 
     // key(gitSetupVisible) resets composition — and the remember inside — each time the dialog

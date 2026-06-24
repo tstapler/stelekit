@@ -11,7 +11,7 @@ public data class SearchBlocksByContentFtsInPage(
   public val left_uuid: String?,
   public val content: String,
   public val level: Long,
-  public val position: Long,
+  public val position: String,
   public val created_at: Long,
   public val updated_at: Long,
   public val properties: String?,

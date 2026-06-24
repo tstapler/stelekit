@@ -1,16 +1,12 @@
 package dev.stapler.stelekit.performance
 
-import arrow.core.Either
-import arrow.core.left
-import arrow.core.right
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
-import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.DirectSqlWrite
-import dev.stapler.stelekit.db.RestrictedDatabaseQueries
-import dev.stapler.stelekit.db.SteleDatabase
-import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.db.RestrictedTelemetryQueries
+import dev.stapler.stelekit.db.TelemetryDatabase
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -48,19 +44,19 @@ data class QueryStat(
 }
 
 class QueryStatsRepository(
-    private val database: SteleDatabase,
-    private val writeActor: DatabaseWriteActor? = null,
+    private val database: TelemetryDatabase,
+    writeMutex: Mutex = Mutex(),
 ) {
-    private val queries = database.steleDatabaseQueries
-    private val restricted = RestrictedDatabaseQueries(queries)
+    private val queries = database.telemetryQueries
+    private val restricted = RestrictedTelemetryQueries(queries, writeMutex)
 
     @OptIn(DirectSqlWrite::class)
     suspend fun upsertBatch(stats: Map<String, QueryStatsCollector.Accum>, appVersion: String) {
         if (stats.isEmpty()) return
         val now = HistogramWriter.epochMs()
-        val writeOp: suspend () -> Either<DomainError, Unit> = {
-            try {
-                withContext(PlatformDispatcher.DB) {
+        try {
+            withContext(PlatformDispatcher.DB) {
+                restricted.withWriteLock {
                     restricted.transaction {
                         for ((key, a) in stats) {
                             val colonIdx = key.indexOf(':')
@@ -94,14 +90,12 @@ class QueryStatsRepository(
                         }
                     }
                 }
-                Unit.right()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Stats are best-effort; DB failures (e.g. contention at startup) are silently dropped.
         }
-        if (writeActor != null) writeActor.execute(op = writeOp) else writeOp()
     }
 
     fun getStatsByVersion(appVersion: String): List<QueryStat> =
@@ -117,20 +111,16 @@ class QueryStatsRepository(
         queries.selectAllQueryStatVersions().executeAsList()
 
     suspend fun deleteVersion(appVersion: String) {
-        val writeOp: suspend () -> Either<DomainError, Unit> = {
-            try {
-                withContext(PlatformDispatcher.DB) {
+        try {
+            withContext(PlatformDispatcher.DB) {
+                restricted.withWriteLock {
                     @OptIn(DirectSqlWrite::class)
                     restricted.deleteQueryStatsForVersion(appVersion)
                 }
-                Unit.right()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
             }
-        }
-        if (writeActor != null) writeActor.execute(op = writeOp) else writeOp()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) { }
     }
 
     private fun dev.stapler.stelekit.db.Query_stats.toQueryStat() = QueryStat(

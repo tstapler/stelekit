@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
+import androidx.compose.material.icons.filled.ContentCopy
+import dev.stapler.stelekit.model.Calibration
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -47,6 +49,8 @@ fun CalibrationSheet(
     onDrawReference: () -> Unit,
     onUseBle: () -> Unit,
     modifier: Modifier = Modifier,
+    peerCalibration: Pair<String, Calibration>? = null,
+    onUsePeerCalibration: ((Calibration) -> Unit)? = null,
 ) {
     var showHowTo by remember { mutableStateOf(false) }
     ModalBottomSheet(
@@ -70,6 +74,16 @@ fun CalibrationSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(modifier = Modifier.height(16.dp))
+            if (peerCalibration != null && onUsePeerCalibration != null) {
+                FilledTonalButton(
+                    onClick = { onUsePeerCalibration(peerCalibration.second) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null)
+                    Text(text = "Use scale from ${peerCalibration.first}", modifier = Modifier.padding(start = 8.dp))
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

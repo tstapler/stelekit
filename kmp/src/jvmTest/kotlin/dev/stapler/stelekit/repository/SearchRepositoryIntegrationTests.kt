@@ -56,7 +56,7 @@ class SearchRepositoryIntegrationTests {
         pageUuid: String,
         content: String,
         properties: Map<String, String> = emptyMap(),
-        position: Int = 0
+        position: String = "a0"
     ): Block {
         return Block(
             uuid = BlockUuid(uuid),
@@ -92,9 +92,9 @@ class SearchRepositoryIntegrationTests {
     fun testSearchBlocksByContent() = runTest {
         val pageUuid = generateUuid(100)
         pageRepo.savePage(createTestPage(pageUuid, "Page 1"))
-        blockRepo.saveBlock(createTestBlock(generateUuid(1), pageUuid, "Hello world content", position = 1))
-        blockRepo.saveBlock(createTestBlock(generateUuid(2), pageUuid, "Goodbye world content", position = 2))
-        blockRepo.saveBlock(createTestBlock(generateUuid(3), pageUuid, "Another unrelated block", position = 3))
+        blockRepo.saveBlock(createTestBlock(generateUuid(1), pageUuid, "Hello world content", position = "a1"))
+        blockRepo.saveBlock(createTestBlock(generateUuid(2), pageUuid, "Goodbye world content", position = "a2"))
+        blockRepo.saveBlock(createTestBlock(generateUuid(3), pageUuid, "Another unrelated block", position = "a3"))
 
         val results = repository.searchBlocksByContent("hello").last()
         assertTrue(results.isRight())
@@ -106,8 +106,8 @@ class SearchRepositoryIntegrationTests {
     fun testSearchBlocksByContentCaseInsensitive() = runTest {
         val pageUuid = generateUuid(100)
         pageRepo.savePage(createTestPage(pageUuid, "Page 1"))
-        blockRepo.saveBlock(createTestBlock(generateUuid(1), pageUuid, "KOTLIN PROGRAMMING", position = 1))
-        blockRepo.saveBlock(createTestBlock(generateUuid(2), pageUuid, "kotlin is great", position = 2))
+        blockRepo.saveBlock(createTestBlock(generateUuid(1), pageUuid, "KOTLIN PROGRAMMING", position = "a1"))
+        blockRepo.saveBlock(createTestBlock(generateUuid(2), pageUuid, "kotlin is great", position = "a2"))
 
         val results = repository.searchBlocksByContent("kotlin").last()
         assertTrue(results.isRight())
@@ -134,9 +134,9 @@ class SearchRepositoryIntegrationTests {
         val refBlock1Uuid = generateUuid(2)
         val refBlock2Uuid = generateUuid(3)
 
-        blockRepo.saveBlock(createTestBlock(targetBlockUuid, pageUuid, "Target content", position = 1))
-        blockRepo.saveBlock(createTestBlock(refBlock1Uuid, pageUuid, "References target-block", position = 2))
-        blockRepo.saveBlock(createTestBlock(refBlock2Uuid, pageUuid, "Also references target-block", position = 3))
+        blockRepo.saveBlock(createTestBlock(targetBlockUuid, pageUuid, "Target content", position = "a1"))
+        blockRepo.saveBlock(createTestBlock(refBlock1Uuid, pageUuid, "References target-block", position = "a2"))
+        blockRepo.saveBlock(createTestBlock(refBlock2Uuid, pageUuid, "Also references target-block", position = "a3"))
 
         refRepo.addReference(BlockUuid(refBlock1Uuid), BlockUuid(targetBlockUuid))
         refRepo.addReference(BlockUuid(refBlock2Uuid), BlockUuid(targetBlockUuid))
@@ -150,8 +150,8 @@ class SearchRepositoryIntegrationTests {
     fun testSearchWithFilters() = runTest {
         val pageUuid = generateUuid(100)
         pageRepo.savePage(createTestPage(pageUuid, "Page 1"))
-        blockRepo.saveBlock(createTestBlock(generateUuid(1), pageUuid, "Hello world", mapOf("tag" to "test"), position = 1))
-        blockRepo.saveBlock(createTestBlock(generateUuid(2), pageUuid, "Hello again", mapOf("tag" to "other"), position = 2))
+        blockRepo.saveBlock(createTestBlock(generateUuid(1), pageUuid, "Hello world", mapOf("tag" to "test"), position = "a1"))
+        blockRepo.saveBlock(createTestBlock(generateUuid(2), pageUuid, "Hello again", mapOf("tag" to "other"), position = "a2"))
 
         val request = SearchRequest(
             query = "hello",
@@ -170,11 +170,11 @@ class SearchRepositoryIntegrationTests {
         val pageUuid = generateUuid(200)
         pageRepo.savePage(createTestPage(pageUuid, "Finance"))
         // block 1: contains both "tax" and "2025"
-        blockRepo.saveBlock(createTestBlock(generateUuid(11), pageUuid, "tax season 2025", position = 1))
+        blockRepo.saveBlock(createTestBlock(generateUuid(11), pageUuid, "tax season 2025", position = "a1"))
         // block 2: contains only "meeting"
-        blockRepo.saveBlock(createTestBlock(generateUuid(12), pageUuid, "meeting notes", position = 2))
+        blockRepo.saveBlock(createTestBlock(generateUuid(12), pageUuid, "meeting notes", position = "a2"))
         // block 3: contains "2025" but not "tax"
-        blockRepo.saveBlock(createTestBlock(generateUuid(13), pageUuid, "2025 budget planning", position = 3))
+        blockRepo.saveBlock(createTestBlock(generateUuid(13), pageUuid, "2025 budget planning", position = "a3"))
 
         val results = repository.searchBlocksByContent("2025 tax").last()
         assertTrue(results.isRight())
@@ -193,7 +193,7 @@ class SearchRepositoryIntegrationTests {
         // Block on a different page that also mentions "project alpha"
         val otherPageUuid = generateUuid(401)
         pageRepo.savePage(createTestPage(otherPageUuid, "Notes"))
-        blockRepo.saveBlock(createTestBlock(generateUuid(31), otherPageUuid, "project alpha notes from meeting", position = 1))
+        blockRepo.saveBlock(createTestBlock(generateUuid(31), otherPageUuid, "project alpha notes from meeting", position = "a1"))
 
         val request = SearchRequest(query = "project alpha", limit = 10, offset = 0)
         val result = repository.searchWithFilters(request).last()
@@ -210,8 +210,8 @@ class SearchRepositoryIntegrationTests {
     fun testOrFallbackFiresWhenAndReturnsEmpty() = runTest {
         val pageUuid = generateUuid(300)
         pageRepo.savePage(createTestPage(pageUuid, "Fallback Page"))
-        blockRepo.saveBlock(createTestBlock(generateUuid(21), pageUuid, "completely unrelated content", position = 1))
-        blockRepo.saveBlock(createTestBlock(generateUuid(22), pageUuid, "another block about topics", position = 2))
+        blockRepo.saveBlock(createTestBlock(generateUuid(21), pageUuid, "completely unrelated content", position = "a1"))
+        blockRepo.saveBlock(createTestBlock(generateUuid(22), pageUuid, "another block about topics", position = "a2"))
 
         // "topics unrelated" should fail AND (neither block has both), then OR fallback
         // returns blocks containing either "topic*" or "unrelated*"
@@ -236,9 +236,9 @@ class SearchRepositoryIntegrationTests {
         val linkedBlockUuid = generateUuid(511)
         val unlinkedBlockUuid = generateUuid(512)
 
-        blockRepo.saveBlock(createTestBlock(sourceBlockUuid, currentPageUuid, "source block", position = 1))
-        blockRepo.saveBlock(createTestBlock(linkedBlockUuid, linkedPageUuid, "kotlin development guide", position = 1))
-        blockRepo.saveBlock(createTestBlock(unlinkedBlockUuid, unlinkedPageUuid, "kotlin development guide", position = 1))
+        blockRepo.saveBlock(createTestBlock(sourceBlockUuid, currentPageUuid, "source block", position = "a1"))
+        blockRepo.saveBlock(createTestBlock(linkedBlockUuid, linkedPageUuid, "kotlin development guide", position = "a1"))
+        blockRepo.saveBlock(createTestBlock(unlinkedBlockUuid, unlinkedPageUuid, "kotlin development guide", position = "a1"))
 
         refRepo.addReference(BlockUuid(sourceBlockUuid), BlockUuid(linkedBlockUuid))
 
@@ -275,7 +275,7 @@ class SearchRepositoryIntegrationTests {
             leftUuid = null,
             content = "kotlin guide reference",
             level = 1,
-            position = 1,
+            position = "a1",
             createdAt = now,
             updatedAt = now,
             properties = emptyMap()
@@ -287,7 +287,7 @@ class SearchRepositoryIntegrationTests {
             leftUuid = null,
             content = "kotlin guide reference",
             level = 1,
-            position = 1,
+            position = "a1",
             createdAt = now - 90.days,
             updatedAt = now - 90.days,
             properties = emptyMap()
@@ -355,8 +355,8 @@ class SearchRepositoryIntegrationTests {
         pageRepo.savePage(createTestPage(neverVisitedPageUuid, "Kotlin Dev Notes Unvisited"))
 
         val identicalContent = "kotlin development guide reference notes"
-        blockRepo.saveBlock(createTestBlock(generateUuid(720), visitedPageUuid, identicalContent, position = 1))
-        blockRepo.saveBlock(createTestBlock(generateUuid(721), neverVisitedPageUuid, identicalContent, position = 1))
+        blockRepo.saveBlock(createTestBlock(generateUuid(720), visitedPageUuid, identicalContent, position = "a1"))
+        blockRepo.saveBlock(createTestBlock(generateUuid(721), neverVisitedPageUuid, identicalContent, position = "a1"))
 
         // Record a very recent visit for visitedPageUuid
         repository.recordPageVisit(PageUuid(visitedPageUuid))
@@ -394,8 +394,8 @@ class SearchRepositoryIntegrationTests {
 
         // Give the other pages high-BM25 block content to ensure they'd otherwise rank higher
         val heavyContent = "taxes taxes taxes taxes taxes tax deduction refund"
-        blockRepo.saveBlock(createTestBlock(generateUuid(740), taxReturnsPageUuid, heavyContent, position = 1))
-        blockRepo.saveBlock(createTestBlock(generateUuid(741), taxPlanningPageUuid, heavyContent, position = 1))
+        blockRepo.saveBlock(createTestBlock(generateUuid(740), taxReturnsPageUuid, heavyContent, position = "a1"))
+        blockRepo.saveBlock(createTestBlock(generateUuid(741), taxPlanningPageUuid, heavyContent, position = "a1"))
         // "Taxes" page has no blocks — would normally rank lower
 
         val result = repository.searchWithFilters(SearchRequest(query = "Taxes", limit = 10)).last()
@@ -422,8 +422,8 @@ class SearchRepositoryIntegrationTests {
         pageRepo.savePage(createTestPage(taxPlanningPageUuid, "Tax Planning"))
 
         val heavyContent = "taxes taxes taxes taxes taxes tax deduction refund"
-        blockRepo.saveBlock(createTestBlock(generateUuid(740), taxReturnsPageUuid, heavyContent, position = 1))
-        blockRepo.saveBlock(createTestBlock(generateUuid(741), taxPlanningPageUuid, heavyContent, position = 1))
+        blockRepo.saveBlock(createTestBlock(generateUuid(740), taxReturnsPageUuid, heavyContent, position = "a1"))
+        blockRepo.saveBlock(createTestBlock(generateUuid(741), taxPlanningPageUuid, heavyContent, position = "a1"))
 
         // Query with uppercase — should still find "Taxes" first
         val result = repository.searchWithFilters(SearchRequest(query = "TAXES", limit = 10)).last()
@@ -483,7 +483,7 @@ class SearchRepositoryIntegrationTests {
         pageRepo.savePage(createTestPage(taxReturnsPageUuid, "Tax Returns 2025"))
 
         blockRepo.saveBlock(createTestBlock(generateUuid(740), taxReturnsPageUuid,
-            "taxes taxes taxes taxes tax deduction", position = 1))
+            "taxes taxes taxes taxes tax deduction", position = "a1"))
 
         // Query "tax" does not exactly match "Taxes" (different string)
         val result = repository.searchWithFilters(SearchRequest(query = "tax", limit = 10)).last()

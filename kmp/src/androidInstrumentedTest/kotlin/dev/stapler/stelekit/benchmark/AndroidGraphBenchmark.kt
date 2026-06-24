@@ -15,6 +15,7 @@ import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.RepositoryFactoryImpl
+import dev.stapler.stelekit.util.FractionalIndexing
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -218,8 +219,10 @@ class AndroidGraphBenchmark {
 
         // --- addBlockToPage latency ---
         var blockIndex = existingBlocks.size
+        var prevPosition: String? = lastTopLevel?.position
         repeat(20) { i ->
-            val position = (lastTopLevel?.position ?: -1) + 1 + i
+            val position = FractionalIndexing.generateKeyBetween(prevPosition, null)
+            prevPosition = position
             val lat = measureTime {
                 actor.saveBlock(block(pageUuid.value, blockIndex++, position))
             }.inWholeMilliseconds
@@ -229,7 +232,7 @@ class AndroidGraphBenchmark {
 
         // --- splitBlock latency: fetch a block and call splitBlock ---
         val blocksAfterAdd = repoSet.blockRepository.getBlocksForPage(pageUuid).first().getOrNull() ?: emptyList()
-        val blockToSplit = blocksAfterAdd.maxByOrNull { it.position } ?: block(pageUuid.value, blockIndex++, 0)
+        val blockToSplit = blocksAfterAdd.maxByOrNull { it.position } ?: block(pageUuid.value, blockIndex++, "00000000000")
         repeat(10) { i ->
             val target = repoSet.blockRepository.getBlockByUuid(blockToSplit.uuid).first().getOrNull()
                 ?: return@repeat
@@ -311,7 +314,7 @@ class AndroidGraphBenchmark {
 
     // ── helpers ────────────────────────────────────────────────────────────────
 
-    private fun block(pageUuid: String, index: Int, position: Int = index) = Block(
+    private fun block(pageUuid: String, index: Int, position: String = index.toString().padStart(11, '0')) = Block(
         uuid = BlockUuid("bench-block-$index"),
         pageUuid = PageUuid(pageUuid),
         content = "Bench $index",

@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AutoStories
-import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -30,14 +30,14 @@ private enum class BottomNavItem(
     JOURNALS(Icons.Default.AutoStories, "Journals"),
     ALL_PAGES(Icons.AutoMirrored.Filled.List, "Pages"),
     SEARCH(Icons.Default.Search, "Search"),
-    NOTIFICATIONS(Icons.Default.Notifications, "Notifications");
+    MENU(Icons.Default.Menu, "More");
 
     fun matchesScreen(screen: Screen): Boolean = when (this) {
-        JOURNALS      -> screen is Screen.Journals
-        ALL_PAGES     -> screen is Screen.AllPages || screen is Screen.PageView
-        // Search is a dialog, not a navigation destination — never appears "selected"
-        SEARCH        -> false
-        NOTIFICATIONS -> screen is Screen.Notifications
+        JOURNALS  -> screen is Screen.Journals
+        ALL_PAGES -> screen is Screen.AllPages || screen is Screen.PageView
+        // Search and Menu are actions, not navigation destinations — never "selected"
+        SEARCH    -> false
+        MENU      -> false
     }
 }
 
@@ -46,6 +46,7 @@ actual fun PlatformBottomBar(
     currentScreen: Screen,
     onNavigate: (Screen) -> Unit,
     onSearch: () -> Unit,
+    onToggleSidebar: () -> Unit,
     isLeftHanded: Boolean,
     voiceCaptureButton: @Composable () -> Unit,
 ) {
@@ -66,10 +67,10 @@ actual fun PlatformBottomBar(
                     selected = item.matchesScreen(currentScreen),
                     onClick = {
                         when (item) {
-                            BottomNavItem.SEARCH        -> onSearch()
-                            BottomNavItem.JOURNALS      -> onNavigate(Screen.Journals)
-                            BottomNavItem.ALL_PAGES     -> onNavigate(Screen.AllPages)
-                            BottomNavItem.NOTIFICATIONS -> onNavigate(Screen.Notifications)
+                            BottomNavItem.SEARCH    -> onSearch()
+                            BottomNavItem.JOURNALS  -> onNavigate(Screen.Journals)
+                            BottomNavItem.ALL_PAGES -> onNavigate(Screen.AllPages)
+                            BottomNavItem.MENU      -> onToggleSidebar()
                         }
                     },
                     icon = { Icon(item.icon, contentDescription = item.label) },
@@ -83,10 +84,10 @@ actual fun PlatformBottomBar(
                     selected = item.matchesScreen(currentScreen),
                     onClick = {
                         when (item) {
-                            BottomNavItem.SEARCH        -> onSearch()
-                            BottomNavItem.JOURNALS      -> onNavigate(Screen.Journals)
-                            BottomNavItem.ALL_PAGES     -> onNavigate(Screen.AllPages)
-                            BottomNavItem.NOTIFICATIONS -> onNavigate(Screen.Notifications)
+                            BottomNavItem.SEARCH    -> onSearch()
+                            BottomNavItem.JOURNALS  -> onNavigate(Screen.Journals)
+                            BottomNavItem.ALL_PAGES -> onNavigate(Screen.AllPages)
+                            BottomNavItem.MENU      -> onToggleSidebar()
                         }
                     },
                     icon = { Icon(item.icon, contentDescription = item.label) },

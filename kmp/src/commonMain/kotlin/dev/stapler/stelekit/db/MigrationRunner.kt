@@ -537,6 +537,170 @@ object MigrationRunner {
                 "DROP INDEX IF EXISTS idx_blocks_level",
             )
         ),
+        Migration(
+            name = "drop_telemetry_tables_from_content_db",
+            statements = listOf(
+                // Telemetry tables moved to stelekit-telemetry-{graphId}.db.
+                // Drop them from existing content databases to recover disk space and eliminate
+                // WAL contention between telemetry background writes and content writes.
+                "DROP TABLE IF EXISTS spans",
+                "DROP TABLE IF EXISTS query_stats",
+                "DROP TABLE IF EXISTS perf_histogram_buckets",
+                "DROP TABLE IF EXISTS debug_flags",
+            )
+        ),
+        Migration(
+            name = "wikilink_references_table",
+            statements = listOf(
+                // Wikilink reference index: replaces the O(total_blocks) LIKE scan in
+                // recomputeBacklinkCountForPage with O(1) index lookups.
+                // ON DELETE CASCADE keeps the index consistent when blocks are deleted.
+                """
+                CREATE TABLE IF NOT EXISTS wikilink_references (
+                    block_uuid TEXT NOT NULL,
+                    page_name  TEXT NOT NULL COLLATE NOCASE,
+                    PRIMARY KEY (block_uuid, page_name),
+                    FOREIGN KEY (block_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_wikilink_refs_page_name ON wikilink_references(page_name COLLATE NOCASE)",
+            )
+        ),
+        Migration(
+            name = "wikilink_references_without_rowid",
+            statements = listOf(
+                // Migrate wikilink_references to WITHOUT ROWID to remove the hidden rowid B-tree.
+                // All lookups on this table are composite PK lookups — no rowid-dependent queries exist.
+                // WITHOUT ROWID stores data directly in the PK B-tree, reducing both insert cost and
+                // lookup cost.
+                //
+                // Technique: create replacement table, copy data, swap names.
+                // wikilink_references_new is a transient staging table; it is explicitly dropped
+                // at the end so MigrationRunnerSchemaSyncTest can track its lifetime correctly.
+                "PRAGMA foreign_keys=OFF",
+                // Safety: clean up any leftover staging table from a previously interrupted migration.
+                "DROP TABLE IF EXISTS wikilink_references_new",
+                """
+                CREATE TABLE IF NOT EXISTS wikilink_references_new (
+                    block_uuid TEXT NOT NULL,
+                    page_name  TEXT NOT NULL COLLATE NOCASE,
+                    PRIMARY KEY (block_uuid, page_name),
+                    FOREIGN KEY (block_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE
+                ) WITHOUT ROWID
+                """,
+                "INSERT OR IGNORE INTO wikilink_references_new SELECT block_uuid, page_name FROM wikilink_references",
+                "DROP TABLE IF EXISTS wikilink_references",
+                "ALTER TABLE wikilink_references_new RENAME TO wikilink_references",
+                "DROP INDEX IF EXISTS idx_wikilink_refs_page_name_new",
+                "CREATE INDEX IF NOT EXISTS idx_wikilink_refs_page_name ON wikilink_references(page_name COLLATE NOCASE)",
+                "PRAGMA foreign_keys=ON",
+            )
+        ),
+        Migration(
+            name = "analyze_wikilink_references_post_without_rowid",
+            statements = listOf("ANALYZE wikilink_references")
+        ),
+        Migration(
+            name = "blocks_position_fractional_index",
+            statements = listOf(
+                // Migrate blocks.position from INTEGER to TEXT to support fractional string
+                // indices (rocicorp/fractional-indexing algorithm). New insertions call
+                // FractionalIndexing.generateKeyBetween(left, right) — zero UPDATE statements
+                // for sibling shift. Existing rows are converted to zero-padded 11-digit strings
+                // via printf('%011d', ...) which sort correctly under BINARY string order.
+                //
+                // SQLite cannot ALTER COLUMN type, so we use create/copy/drop/rename.
+                // blocks.id AUTOINCREMENT is preserved so FTS5 content_rowid remains valid.
+                "PRAGMA foreign_keys=OFF",
+                "DROP TABLE IF EXISTS blocks_new",
+                """
+                CREATE TABLE IF NOT EXISTS blocks_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    uuid TEXT NOT NULL UNIQUE,
+                    page_uuid TEXT NOT NULL,
+                    parent_uuid TEXT,
+                    left_uuid TEXT,
+                    content TEXT NOT NULL,
+                    level INTEGER NOT NULL DEFAULT 0,
+                    position TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    properties TEXT,
+                    version INTEGER NOT NULL DEFAULT 0,
+                    content_hash TEXT,
+                    block_type TEXT NOT NULL DEFAULT 'bullet',
+                    FOREIGN KEY (page_uuid) REFERENCES pages(uuid) ON DELETE CASCADE,
+                    FOREIGN KEY (parent_uuid) REFERENCES blocks(uuid) ON DELETE CASCADE,
+                    FOREIGN KEY (left_uuid) REFERENCES blocks(uuid) ON DELETE SET NULL
+                )
+                """,
+                // printf('%011d', CAST(position AS INTEGER)) zero-pads to 11 digits.
+                // Valid on SQLite 3.8+ (Android system SQLite 3.18 on API 26).
+                // ROW_NUMBER() would require SQLite 3.25+ — NOT available on API 26.
+                "INSERT INTO blocks_new SELECT id, uuid, page_uuid, parent_uuid, left_uuid, content, level, printf('%011d', CAST(position AS INTEGER)), created_at, updated_at, properties, version, content_hash, block_type FROM blocks",
+                "DROP TABLE blocks",
+                "ALTER TABLE blocks_new RENAME TO blocks",
+                // Recreate all indexes (dropped with the old blocks table)
+                "CREATE INDEX IF NOT EXISTS idx_blocks_page_position ON blocks(page_uuid, position)",
+                "CREATE INDEX IF NOT EXISTS idx_blocks_parent_position ON blocks(parent_uuid, position)",
+                "CREATE INDEX IF NOT EXISTS idx_blocks_page_hash ON blocks(page_uuid, uuid, content_hash)",
+                "CREATE INDEX IF NOT EXISTS idx_blocks_left_uuid ON blocks(left_uuid)",
+                "CREATE INDEX IF NOT EXISTS idx_blocks_content_hash ON blocks(content_hash)",
+                // Recreate FTS5 triggers (dropped with blocks table; blocks_fts virtual table
+                // itself is NOT dropped — it retains data and rowid references are preserved).
+                "DROP TRIGGER IF EXISTS blocks_ai",
+                "DROP TRIGGER IF EXISTS blocks_ad",
+                "DROP TRIGGER IF EXISTS blocks_au",
+                """
+                CREATE TRIGGER blocks_ai AFTER INSERT ON blocks BEGIN
+                    INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content);
+                END
+                """,
+                """
+                CREATE TRIGGER blocks_ad AFTER DELETE ON blocks BEGIN
+                    INSERT INTO blocks_fts(blocks_fts, rowid, content)
+                    VALUES('delete', old.id, old.content);
+                END
+                """,
+                """
+                CREATE TRIGGER blocks_au AFTER UPDATE OF content ON blocks BEGIN
+                    INSERT INTO blocks_fts(blocks_fts, rowid, content)
+                    VALUES('delete', old.id, old.content);
+                    INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content);
+                END
+                """,
+                "PRAGMA foreign_keys=ON",
+                "ANALYZE blocks",
+            )
+        ),
+        Migration(
+            name = "git_config_oauth_token_key",
+            statements = listOf(
+                "ALTER TABLE git_config ADD COLUMN oauth_token_key TEXT"
+            )
+        ),
+        Migration(
+            name = "fts5_triggers_when_guard",
+            // Devices whose system SQLite lacks FTS5 end up with pages_ai / blocks_ai triggers
+            // whose bodies reference non-existent FTS5 virtual tables (pages_fts / blocks_fts).
+            // SQLite validates trigger body table references at trigger-fire time, BEFORE
+            // evaluating the WHEN clause — so even `WHEN 0` does not prevent the body-validation
+            // step, and every INSERT INTO pages or blocks fails with "no such table: pages_fts".
+            //
+            // Fix: drop all six FTS5 triggers here. applyAll() calls ensureFts5TriggerState()
+            // after every startup: if pages_fts/blocks_fts exist it recreates the triggers;
+            // if they are absent (FTS5 unavailable) it leaves them absent. This is the only
+            // approach that works because SQLite offers no way to guard against body-validation
+            // errors via WHEN clauses alone.
+            statements = listOf(
+                "DROP TRIGGER IF EXISTS pages_ai",
+                "DROP TRIGGER IF EXISTS pages_ad",
+                "DROP TRIGGER IF EXISTS pages_au",
+                "DROP TRIGGER IF EXISTS blocks_ai",
+                "DROP TRIGGER IF EXISTS blocks_ad",
+                "DROP TRIGGER IF EXISTS blocks_au",
+            )
+        ),
     )
 
     /**
@@ -552,11 +716,39 @@ object MigrationRunner {
      */
     suspend fun applyAll(driver: SqlDriver) {
         applyAll(driver, all)
-        // Ask SQLite to refresh statistics for any table where row counts have drifted
-        // significantly since the last ANALYZE. PRAGMA optimize is designed to be called
-        // on every database open — it runs targeted ANALYZE only when the planner would
-        // benefit (25%+ change in row count). On large graphs with stale statistics the
-        // planner otherwise falls back to full heap scans (~9 s/query on blocks).
+        // Ensure FTS5 triggers are present iff the FTS5 virtual tables exist.
+        // This handles devices whose SQLite lacks FTS5: the pages_fts_setup migration silently
+        // skips pages_fts creation (IF NOT EXISTS swallows the error) but leaves pages_ai/ad/au
+        // and blocks_ai/ad/au triggers intact — and SQLite validates trigger body table refs at
+        // fire time, so every INSERT into pages/blocks throws "no such table: pages_fts".
+        // The fts5_triggers_when_guard migration dropped those triggers; this call recreates them
+        // only on FTS5-capable devices, and is idempotent (IF NOT EXISTS / IF EXISTS guards).
+        ensureFts5TriggerState(driver)
+        // Run a fast sampled ANALYZE on every startup to keep query-planner statistics fresh.
+        //
+        // Why unconditional: ANALYZE on an empty table writes NOTHING to sqlite_stat1 — there
+        // is no "0-row" entry, simply no entry at all. On a fresh install the analyze_blocks
+        // migration runs before graph import, so sqlite_stat1 stays empty for blocks. On every
+        // subsequent startup the migration is already applied and skipped, and the old code had
+        // no further ANALYZE call, so the planner never received statistics. On Android SQLite
+        // the planner falls back to SCAN blocks (~1.5 s/query) when no stats exist.
+        //
+        // Why analysis_limit=400: limits sampling to 400 rows per index (reservoir sample),
+        // making each ANALYZE call O(1) in table size and typically under 50 ms on Android
+        // even for 50 000-row tables. The 400-sample statistics are accurate enough for the
+        // planner to always prefer the composite index over a heap scan.
+        // ANALYZE blocks and pages unconditionally so fresh installs get correct statistics
+        // on their second launch (after graph import). The analysis_limit=400 PRAGMA is set by
+        // DriverFactory per-platform before this runs (rawQuery on Android, driver.execute on JVM)
+        // so each ANALYZE reads at most 400 index rows — typically under 50 ms.
+        //
+        // NOTE: PRAGMA analysis_limit=400 is NOT called here because on Android the Requery
+        // driver throws when execSQL is called for result-returning statements. It is set in
+        // ANDROID_PRAGMAS via the rawQuery path (DriverFactory.android.kt) and in
+        // buildMainDbConnectionProps() for JVM so every pool connection inherits it.
+        driver.execute(null, "ANALYZE blocks", 0).await()
+        driver.execute(null, "ANALYZE pages", 0).await()
+        // PRAGMA optimize is still useful for other tables we don't explicitly analyze above.
         driver.execute(null, "PRAGMA optimize", 0).await()
     }
 
@@ -594,6 +786,13 @@ object MigrationRunner {
             parameters = 0
         ).await()
 
+        val pending = migrations.filter { appliedByName[it.name] == null }
+        logger.info(
+            "SchemaRunner: starting — ${pending.size} pending, " +
+            "${appliedByName.size} already applied, ${migrations.size} total"
+        )
+
+        var appliedCount = 0
         for (migration in migrations) {
             val recordedHash = appliedByName[migration.name]
 
@@ -670,6 +869,59 @@ object MigrationRunner {
                 bindString(0, migration.hash)
                 bindString(1, migration.name)
             }.await()
+            logger.info("SchemaRunner: applied '${migration.name}'")
+            appliedCount++
+        }
+        logger.info("SchemaRunner: complete — applied=$appliedCount skipped=${migrations.size - appliedCount}")
+    }
+
+    /**
+     * Ensures FTS5 triggers are present iff the corresponding FTS5 virtual tables exist.
+     *
+     * Called after every migration run. Idempotent: all statements use IF NOT EXISTS / IF EXISTS.
+     *
+     * - If [pages_fts] exists → CREATE IF NOT EXISTS pages_ai/ad/au triggers.
+     * - If [pages_fts] is absent → DROP IF EXISTS pages_ai/ad/au triggers (stale refs crash INSERT).
+     * - Same logic for blocks_fts / blocks_ai/ad/au.
+     *
+     * Background: SQLite validates all table references in a trigger body at trigger-fire time,
+     * before the WHEN clause is evaluated. A trigger body that references a non-existent table
+     * will throw "no such table" on every INSERT — regardless of any WHEN guard. Dropping the
+     * trigger is the only reliable way to silence the error on FTS5-unavailable devices.
+     */
+    internal suspend fun ensureFts5TriggerState(driver: SqlDriver) {
+        suspend fun tableExists(name: String): Boolean =
+            driver.executeQuery(
+                identifier = null,
+                sql = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='$name'",
+                mapper = { cursor ->
+                    cursor.next()
+                    QueryResult.Value((cursor.getLong(0) ?: 0L) > 0L)
+                },
+                parameters = 0,
+            ).await()
+
+        suspend fun exec(sql: String) = driver.execute(null, sql.trimIndent(), 0).await()
+
+        if (tableExists("pages_fts")) {
+            exec("CREATE TRIGGER IF NOT EXISTS pages_ai AFTER INSERT ON pages BEGIN INSERT INTO pages_fts(rowid, name) VALUES (new.rowid, new.name); END")
+            exec("CREATE TRIGGER IF NOT EXISTS pages_ad AFTER DELETE ON pages BEGIN INSERT INTO pages_fts(pages_fts, rowid, name) VALUES('delete', old.rowid, old.name); END")
+            exec("CREATE TRIGGER IF NOT EXISTS pages_au AFTER UPDATE OF name ON pages BEGIN INSERT INTO pages_fts(pages_fts, rowid, name) VALUES('delete', old.rowid, old.name); INSERT INTO pages_fts(rowid, name) VALUES (new.rowid, new.name); END")
+        } else {
+            exec("DROP TRIGGER IF EXISTS pages_ai")
+            exec("DROP TRIGGER IF EXISTS pages_ad")
+            exec("DROP TRIGGER IF EXISTS pages_au")
+            logger.warn("SchemaRunner: pages_fts absent — FTS5 triggers for pages dropped (device lacks FTS5)")
+        }
+
+        if (tableExists("blocks_fts")) {
+            exec("CREATE TRIGGER IF NOT EXISTS blocks_ai AFTER INSERT ON blocks BEGIN INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content); END")
+            exec("CREATE TRIGGER IF NOT EXISTS blocks_ad AFTER DELETE ON blocks BEGIN INSERT INTO blocks_fts(blocks_fts, rowid, content) VALUES('delete', old.id, old.content); END")
+            exec("CREATE TRIGGER IF NOT EXISTS blocks_au AFTER UPDATE OF content ON blocks BEGIN INSERT INTO blocks_fts(blocks_fts, rowid, content) VALUES('delete', old.id, old.content); INSERT INTO blocks_fts(rowid, content) VALUES (new.id, new.content); END")
+        } else {
+            exec("DROP TRIGGER IF EXISTS blocks_ai")
+            exec("DROP TRIGGER IF EXISTS blocks_ad")
+            exec("DROP TRIGGER IF EXISTS blocks_au")
         }
     }
 

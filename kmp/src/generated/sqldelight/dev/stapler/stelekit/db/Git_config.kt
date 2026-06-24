@@ -13,6 +13,7 @@ public data class Git_config(
   public val ssh_key_path: String?,
   public val ssh_key_passphrase_key: String?,
   public val https_token_key: String?,
+  public val oauth_token_key: String?,
   public val poll_interval_minutes: Long,
   public val auto_commit: Long,
   public val commit_message_template: String,

@@ -123,7 +123,7 @@ class UserSessionBenchmarkTest {
         return elapsed.inWholeMilliseconds.also { mergeSamples.add(it) }
     }
 
-    private suspend fun reorderBlock(vm: StelekitViewModel, block: Block, newPos: Int): Long {
+    private suspend fun reorderBlock(vm: StelekitViewModel, block: Block, newPos: String): Long {
         val elapsed = measureTime {
             vm.moveBlock(block.uuid.value, block.parentUuid, newPos)
             delay(50)
@@ -166,6 +166,8 @@ class UserSessionBenchmarkTest {
 
         var viewModel: StelekitViewModel? = null
         var tempDir: File? = null
+        var factory: RepositoryFactoryImpl? = null
+        var dbFile: File? = null
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
         try {
@@ -173,10 +175,9 @@ class UserSessionBenchmarkTest {
 
             val cacheBase = File(System.getProperty("user.home"), ".cache/stelekit-benchmarks")
             cacheBase.mkdirs()
-            val dbFile = File(cacheBase, "session-bench-${System.currentTimeMillis()}.db")
-            dbFile.deleteOnExit()
+            dbFile = File(cacheBase, "session-bench-${System.currentTimeMillis()}.db")
 
-            val factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite:${dbFile.absolutePath}")
+            factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite:${dbFile.absolutePath}")
             val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope)
             // Warm up: ensure schema creation completes on the calling thread before
             // the ViewModel's Dispatchers.Default workers first access the database.
@@ -309,7 +310,7 @@ class UserSessionBenchmarkTest {
                     cycle == 2 && block != null -> {
                         mergeBlock(vm, block)
                         nextSafe()?.let { b ->
-                            val newPos = (b.position + 2).coerceAtLeast(1)
+                            val newPos = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(b.position, null)
                             reorderBlock(vm, b, newPos)
                         }
                     }
@@ -435,11 +436,13 @@ class UserSessionBenchmarkTest {
 
             assertTrue(allPages.size > 0, "Should have loaded pages from $graphPath")
 
-            factory.close()
-
         } finally {
             viewModel?.close()
             scope.cancel()
+            runCatching { factory?.close() }
+            dbFile?.let { f ->
+                for (suffix in listOf("", "-wal", "-shm")) java.io.File("${f.absolutePath}$suffix").delete()
+            }
             tempDir?.deleteRecursively()
         }
     }

@@ -15,6 +15,9 @@ permissions:
   checks: write
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   # ── JVM tests (shared + desktop logic) ────────────────────────────────────
   jvm-test:
@@ -32,7 +35,6 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-home-cache-cleanup: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Install Xvfb
@@ -73,7 +75,6 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-home-cache-cleanup: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           # Exclude Kotlin IC state — stale metadata across branches causes spurious
           # expect/actual mismatch errors (e.g. PlatformSettings supertype mismatch).
@@ -150,7 +151,6 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-home-cache-cleanup: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Run Detekt
@@ -186,7 +186,6 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-home-cache-cleanup: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           gradle-home-cache-excludes: caches/kotlin-build-*
 
@@ -260,7 +259,6 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-home-cache-cleanup: true
           cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Compile wasmJs target

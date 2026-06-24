@@ -274,8 +274,8 @@ class ExternalChangeConflictTest {
             isJournal = true
         )
         pageRepo.savePage(page)
-        blockRepo.saveBlock(Block(uuid = BlockUuid("b1"), pageUuid = PageUuid("journal-today"), content = "Important meeting notes", position = 0, createdAt = now, updatedAt = now))
-        blockRepo.saveBlock(Block(uuid = BlockUuid("b2"), pageUuid = PageUuid("journal-today"), content = "Action items", position = 1, createdAt = now, updatedAt = now))
+        blockRepo.saveBlock(Block(uuid = BlockUuid("b1"), pageUuid = PageUuid("journal-today"), content = "Important meeting notes", position = "a0", createdAt = now, updatedAt = now))
+        blockRepo.saveBlock(Block(uuid = BlockUuid("b2"), pageUuid = PageUuid("journal-today"), content = "Action items", position = "a1", createdAt = now, updatedAt = now))
 
         // Watcher calls parseAndSavePage with blank file content (no suppress happened)
         loader.parseAndSavePage(FilePath(filePath), "", dev.stapler.stelekit.parsing.ParseMode.FULL)

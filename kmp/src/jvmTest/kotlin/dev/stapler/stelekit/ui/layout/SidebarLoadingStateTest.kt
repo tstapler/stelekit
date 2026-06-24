@@ -100,10 +100,10 @@ class SidebarLoadingStateTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Favorites").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Favorites").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("My Favorite Page").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Recent").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Recent Note").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Recent").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Recent Note").performScrollTo().assertIsDisplayed()
     }
 
     @Test

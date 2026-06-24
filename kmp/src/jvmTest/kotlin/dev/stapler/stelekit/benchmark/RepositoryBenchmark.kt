@@ -77,7 +77,7 @@ class RepositoryBenchmark(
                         leftUuid = null,
                         content = "Test block content $i",
                         level = if (i > 1) 1 else 0,
-                        position = i,
+                        position = i.toString().padStart(11, '0'),
                         createdAt = kotlin.time.Clock.System.now(),
                         updatedAt = kotlin.time.Clock.System.now(),
                         properties = mapOf("test" to "value$i")

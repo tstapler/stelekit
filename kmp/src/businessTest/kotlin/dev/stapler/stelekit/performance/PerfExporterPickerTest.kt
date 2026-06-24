@@ -1,7 +1,6 @@
 package dev.stapler.stelekit.performance
 
-import dev.stapler.stelekit.db.DriverFactory
-import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.db.createTelemetryDatabaseInMemory
 import dev.stapler.stelekit.platform.FileSystem
 import arrow.core.Either
 import arrow.core.right
@@ -33,6 +32,7 @@ class PerfExporterPickerTest {
 
         override fun getRecentSpans(limit: Int): Flow<Either<DomainError, List<SerializedSpan>>> = flowOf(spans.right())
         @DirectRepositoryWrite override suspend fun insertSpan(span: SerializedSpan) = Unit
+        @DirectRepositoryWrite override suspend fun insertSpans(spans: List<SerializedSpan>) = Unit
         @DirectRepositoryWrite override suspend fun deleteSpansOlderThan(cutoffEpochMs: Long) = Unit
         @DirectRepositoryWrite override suspend fun deleteExcessSpans(maxCount: Int) = Unit
         @DirectRepositoryWrite override suspend fun clear() = Unit
@@ -80,8 +80,7 @@ class PerfExporterPickerTest {
     private fun FakeFileSystem.wasWritten(path: String) = writtenBytes.containsKey(path) || written.containsKey(path)
 
     private fun realHistogramWriter(): HistogramWriter {
-        val driver = DriverFactory().createDriver("jdbc:sqlite::memory:")
-        val database = SteleDatabase(driver)
+        val database = createTelemetryDatabaseInMemory()
         val scope = CoroutineScope(Dispatchers.IO)
         return HistogramWriter(database, scope)
     }

@@ -53,13 +53,21 @@ object Validation {
     }
 
     fun validateUuid(uuid: PageUuid): PageUuid {
-        validateString(uuid.value, 36)
+        validateUuidString(uuid.value)
         return uuid
     }
 
     fun validateUuid(uuid: BlockUuid): BlockUuid {
-        validateString(uuid.value, 36)
+        validateUuidString(uuid.value)
         return uuid
+    }
+
+    private fun validateUuidString(value: String) {
+        validateString(value, 36)
+        require(value.isNotBlank()) { "UUID cannot be blank" }
+        require(value.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' }) {
+            "Invalid UUID format: $value"
+        }
     }
 }
 
@@ -90,12 +98,6 @@ data class Page(
     }
 }
 
-private val validBlockTypes = setOf(
-    "bullet", "paragraph", "heading", "code_fence", "blockquote",
-    "ordered_list_item", "thematic_break", "table", "raw_html",
-    "image_annotation"
-)
-
 data class Block(
     val uuid: BlockUuid,
     val pageUuid: PageUuid,
@@ -103,14 +105,14 @@ data class Block(
     val leftUuid: String? = null,
     val content: String,
     val level: Int = 0,
-    val position: Int,
+    val position: String,
     val createdAt: Instant,
     val updatedAt: Instant,
     val version: Long = 0,
     val properties: Map<String, String> = emptyMap(),
     val isLoaded: Boolean = true, // Indicates if the content is fully loaded
     val contentHash: String? = null, // SHA-256 of normalised content; null until first save
-    val blockType: String = "bullet" // Structural discriminator for the block type
+    val blockType: BlockType = BlockType.Bullet // Structural discriminator for the block type
 ) {
     init {
         Validation.validateUuid(uuid)
@@ -119,12 +121,11 @@ data class Block(
         leftUuid?.let { Validation.validateUuid(it) }
         Validation.validateContent(content)
         require(level >= 0) { "Level must be non-negative" }
-        require(position >= 0) { "Position must be non-negative" }
+        require(position.isNotBlank()) { "Position must not be blank" }
         properties.forEach { (key, value) ->
             Validation.validateName(key)
             Validation.validateContent(value)
         }
-        require(blockType in validBlockTypes) { "Invalid blockType: $blockType" }
     }
 }
 

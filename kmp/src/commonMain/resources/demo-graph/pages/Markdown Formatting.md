@@ -5,6 +5,7 @@
 	- Italic: `*italic text*` → *italic text*
 	- Bold and italic combined: `***bold italic***` → ***bold italic***
 	- Strikethrough: `~~struck through~~` → ~~struck through~~
+	- Highlight: `==important text==` → ==important text==
 - **Inline code**
 	- Wrap text in backticks: `` `code here` `` → `code here`
 	- Use inline code for file paths, variable names, and commands.
@@ -12,6 +13,10 @@
 	- Add `# ` at the start of a block to render it as a heading.
 	- `# Heading 1`, `## Heading 2`, `### Heading 3` are all supported.
 	- Note: in an outliner, headings are rarely needed — use nesting for hierarchy instead.
+- **Blockquotes**
+	- Prefix a block with `> ` to render it as a blockquote.
+	- Example: `> This is a quoted passage.` → renders with a left-border indent.
+	- Use for quotes, callouts, or content lifted from another source.
 - **Fenced code blocks**
 	- Use triple backticks with an optional language identifier.
 	- Example — a Kotlin snippet:
@@ -22,8 +27,10 @@ println(greeting)
 - **Links**
 	- External links: `[link text](https://example.com)`
 	- Wiki links: `[[Page Linking]]` is an example — see [[Page Linking]] for full details
+- **Tags**
+	- Add `#tag-name` inline in any block to tag it.
+	- Tags are searchable and appear in the [[Tags & Highlight]] reference page.
 - **Support status**
-	- Fully supported: bold, italic, strikethrough, inline code, fenced code blocks, wiki links, external links
+	- Fully supported: bold, italic, strikethrough, inline code, highlight, fenced code blocks, blockquotes, wiki links, external links, tags, tables
 	- Partially supported: headings (rendered but outliner hierarchy is preferred)
-	- Planned: tables (see [[Tables]]), task markers (see [[Tasks]])
-- See [[Block Editor Reference]] for editing shortcuts and [[Tables]] for table syntax.
+- See [[Block Editor Reference]] for editing shortcuts, [[Tables]] for pipe-table syntax, and [[Tags & Highlight]] for tag and highlight details.

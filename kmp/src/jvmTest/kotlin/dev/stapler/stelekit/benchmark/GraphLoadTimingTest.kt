@@ -12,6 +12,7 @@ import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.repository.RepositoryFactoryImpl
+import dev.stapler.stelekit.repository.createGraphLoader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -97,7 +98,7 @@ class GraphLoadTimingTest {
         pageUuid  = pageUuid,
         content   = "Simulated journal entry $index — typing while graph loads",
         level     = 0,
-        position  = index,
+        position  = index.toString().padStart(11, '0'),
         createdAt = Clock.System.now(),
         updatedAt = Clock.System.now(),
     )
@@ -423,20 +424,27 @@ class GraphLoadTimingTest {
             return@runBlocking
         }
         val tempDir = BenchmarkGraphUtils.copyGraphToTempDir(graphPath, "stelekit-real-bench")
-        val dbFile = Files.createTempFile("stelekit-real-bench", ".db").toFile().also { it.deleteOnExit() }
+        // Use ~/.cache so the WAL (potentially gigabytes on large graphs) stays on the
+        // main filesystem, not the tmpfs-backed /tmp which is typically 16–32 GB.
+        val cacheBase = File(System.getProperty("user.home"), ".cache/stelekit-benchmarks")
+        cacheBase.mkdirs()
+        val dbFile = Files.createTempFile(cacheBase.toPath(), "stelekit-real-bench", ".db").toFile()
         val scope  = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        var factory: RepositoryFactoryImpl? = null
         try {
-            val factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite:${dbFile.absolutePath}")
+            factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite:${dbFile.absolutePath}")
             val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope)
             val loader  = GraphLoader(fileSystem, repoSet.pageRepository, repoSet.blockRepository,
                                       externalWriteActor = repoSet.writeActor, histogramWriter = repoSet.histogramWriter)
             loadAndTime(tempDir.absolutePath, loader, "real graph / SQLite") {
                 repoSet.pageRepository.getAllPagesSnapshot().getOrNull()?.size ?: 0
             }.also { }
-            factory.close()
         } finally {
             scope.cancel()
-            dbFile.delete()
+            runCatching { factory?.close() }
+            // Delete WAL and SHM alongside the main DB — deleteOnExit() only covers .db,
+            // leaving .db-wal (potentially gigabytes) behind if the JVM exits abnormally.
+            for (suffix in listOf("", "-wal", "-shm")) java.io.File("${dbFile.absolutePath}$suffix").delete()
             tempDir.deleteRecursively()
         }
     }
@@ -528,8 +536,7 @@ class GraphLoadTimingTest {
             SyntheticGraphGenerator(cfg).generate(dir)
             val factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite:${File(dir, "largepage.db").absolutePath}")
             val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope)
-            val loader  = GraphLoader(fileSystem, repoSet.pageRepository, repoSet.blockRepository,
-                                      externalWriteActor = repoSet.writeActor, histogramWriter = repoSet.histogramWriter)
+            val loader = repoSet.createGraphLoader(fileSystem)
             loader.loadGraphProgressive(
                 graphPath             = dir.absolutePath,
                 immediateJournalCount = 10,
@@ -538,6 +545,10 @@ class GraphLoadTimingTest {
                 onFullyLoaded         = {},
             )
             loader.indexRemainingPages {}
+            // Match production: checkpoint WAL after indexRemainingPages too (production calls
+            // onBulkImportComplete inside loadGraphProgressive's background job, but the test
+            // calls indexRemainingPages separately after loadGraphProgressive returns).
+            repoSet.onBulkImportComplete?.invoke()
 
             // Write a dense page with 150 blocks to the pages/ directory
             val densePageContent = buildString {
@@ -546,15 +557,31 @@ class GraphLoadTimingTest {
             val pagesDir = File(dir, "pages").also { it.mkdirs() }
             File(pagesDir, "Dense Page.md").writeText(densePageContent)
 
-            // Measure navigation — this is the hot path that was broken in v0.33.0
-            val loadMs = measureTime {
+            // First load: parse file + write 150 blocks to DB. Not timed — this is the write
+            // path, not the regression path. The v0.33.0 regression was a slow READ on an
+            // already-indexed page (selectBlocksByPageUuid doing a full table scan).
+            loader.loadPageByName(PageName("Dense Page"))
+
+            // Second load: page is already in DB — measures the HOT READ path (the actual
+            // regression guard). On v0.33.0 this took 203 seconds; with the composite index
+            // idx_blocks_page_uuid_position it should be < 2 s even on a slow CI runner.
+            val readMs = measureTime {
                 loader.loadPageByName(PageName("Dense Page"))
             }.inWholeMilliseconds
 
-            println("\n[large-page] Navigation to 150-block page: ${loadMs}ms")
-            assertTrue(loadMs < 2_000,
-                "Large-page navigation took ${loadMs}ms — regression detected " +
+            println("\n[large-page] Hot re-navigation to 150-block page: ${readMs}ms")
+            assertTrue(readMs < 2_000,
+                "Hot re-navigation took ${readMs}ms — regression detected " +
                 "(index idx_blocks_page_uuid_position may be missing; expected < 2000ms)")
+
+            // Guarantee blocks:select is always recorded for the regression guard.
+            // indexRemainingPages may elide the DB fetch via freshness/isLoaded checks depending
+            // on implementation; an explicit read on the dense page (150 blocks) is always a
+            // real DB query and directly reproduces the v0.33.0 slow-scan scenario.
+            val densePage = repoSet.pageRepository.getPageByName("Dense Page").first().getOrNull()
+            assertNotNull(densePage, "Dense Page must be indexed before blocks:select guard — " +
+                "if null, indexRemainingPages did not complete or the page name changed")
+            repoSet.blockRepository.getBlocksForPage(densePage.uuid).first()
 
             // Flush and assert blocks:select p99. If the query stats repository is wired,
             // the stat MUST be present — silently passing when stats aren't flushed masks
@@ -595,10 +622,13 @@ class GraphLoadTimingTest {
         }
 
         val tempDir = BenchmarkGraphUtils.copyGraphToTempDir(graphPath, "stelekit-jank-real")
-        val dbFile = Files.createTempFile("stelekit-jank-real", ".db").toFile().also { it.deleteOnExit() }
+        val cacheBase = File(System.getProperty("user.home"), ".cache/stelekit-benchmarks")
+        cacheBase.mkdirs()
+        val dbFile = Files.createTempFile(cacheBase.toPath(), "stelekit-jank-real", ".db").toFile()
         val scope  = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        var factory: RepositoryFactoryImpl? = null
         try {
-            val factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite:${dbFile.absolutePath}")
+            factory = RepositoryFactoryImpl(DriverFactory(), "jdbc:sqlite:${dbFile.absolutePath}")
             val repoSet = factory.createRepositorySet(GraphBackend.SQLDELIGHT, scope)
             val actor   = repoSet.writeActor ?: run {
                 println("[jank/real] SKIPPED — no write actor")
@@ -609,10 +639,10 @@ class GraphLoadTimingTest {
 
             val results = runWriteLatencyBenchmark(tempDir.absolutePath, actor, loader, "real graph")
             printWriteLatencyReport("real graph", results)
-            factory.close()
         } finally {
             scope.cancel()
-            dbFile.delete()
+            runCatching { factory?.close() }
+            for (suffix in listOf("", "-wal", "-shm")) java.io.File("${dbFile.absolutePath}$suffix").delete()
             tempDir.deleteRecursively()
         }
     }

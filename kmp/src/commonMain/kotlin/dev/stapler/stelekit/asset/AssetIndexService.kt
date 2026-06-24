@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.asset
 
 import arrow.core.Either
+import arrow.core.right
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
@@ -29,7 +30,6 @@ class AssetIndexService(
     )
 
     @Suppress("UnusedParameter")
-    @OptIn(DirectRepositoryWrite::class)
     suspend fun registerAsset(
         filePath: String,
         graphRoot: String,
@@ -38,19 +38,33 @@ class AssetIndexService(
         writeActor: DatabaseWriteActor?,
         fileSystem: FileSystem,
     ): Either<DomainError, AssetEntry> {
+        val entry = buildAssetEntry(filePath, mimeHint, pageUuid, fileSystem)
+        val result = if (writeActor != null) {
+            writeActor.execute { @OptIn(DirectRepositoryWrite::class) assetRepository.saveAsset(entry) }
+        } else {
+            @OptIn(DirectRepositoryWrite::class) assetRepository.saveAsset(entry)
+        }
+        return result.map { entry }
+    }
+
+    private fun buildAssetEntry(
+        filePath: String,
+        mimeHint: String? = null,
+        pageUuid: String? = null,
+        fileSystem: FileSystem,
+    ): AssetEntry {
         val filename = filePath.substringAfterLast('/')
         val fileBytes = try {
             fileSystem.readFileBytes(filePath)
-        } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+        } catch (_: Exception) { null }
         val bytes = fileBytes?.take(16)?.toByteArray() ?: ByteArray(0)
         val mime = mimeHint ?: MimeTypeDetector.detect(bytes, filename)
         val mediaType = AssetMediaType.fromMimeType(mime)
         val subfolder = AssetStoragePathResolver.resolveSubfolder(mime)
         val relativePath = AssetStoragePathResolver.relativeMarkdownPath(subfolder, filename)
         val sizeBytes = fileBytes?.size?.toLong() ?: 0L
-        val uuid = AssetUuid(UuidGenerator.generateV7())
-        val entry = AssetEntry(
-            uuid = uuid,
+        return AssetEntry(
+            uuid = AssetUuid(UuidGenerator.generateV7()),
             filePath = filePath,
             relativePath = relativePath,
             mediaType = mediaType,
@@ -69,12 +83,6 @@ class AssetIndexService(
             isOrphan = false,
             mlTagsSource = "NONE",
         )
-        val result = if (writeActor != null) {
-            writeActor.execute { assetRepository.saveAsset(entry) }
-        } else {
-            assetRepository.saveAsset(entry)
-        }
-        return result.map { entry }
     }
 
     /**
@@ -111,7 +119,7 @@ class AssetIndexService(
         var offset = 0
         while (offset < allFiles.size) {
             val batch = allFiles.subList(offset, minOf(offset + BACKFILL_BATCH_SIZE, allFiles.size))
-            processBatch(batch, graphRoot, writeActor, fileSystem)
+            processBatch(batch, writeActor, fileSystem)
             offset += BACKFILL_BATCH_SIZE
             yield()
         }
@@ -137,24 +145,31 @@ class AssetIndexService(
 
     private suspend fun processBatch(
         filePaths: List<String>,
-        graphRoot: String,
         writeActor: DatabaseWriteActor?,
         fileSystem: FileSystem,
     ) {
+        // Build all entries first (file IO + mime detection), then save in one actor round-trip
+        val entries = mutableListOf<AssetEntry>()
         for (filePath in filePaths) {
             try {
-                registerAsset(
-                    filePath = filePath,
-                    graphRoot = graphRoot,
-                    mimeHint = null,
-                    pageUuid = null,
-                    writeActor = writeActor,
-                    fileSystem = fileSystem,
-                )
+                entries.add(buildAssetEntry(filePath, null, null, fileSystem))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
-                logger.error("Failed to index asset '$filePath': ${e.message}")
+                logger.error("Failed to build asset entry for '$filePath': ${e.message}")
+            }
+        }
+        if (entries.isEmpty()) return
+        if (writeActor != null) {
+            writeActor.execute {
+                @OptIn(DirectRepositoryWrite::class)
+                for (entry in entries) assetRepository.saveAsset(entry)
+                Unit.right()
+            }.onLeft { e -> logger.error("Batch asset save failed (${entries.size} entries): ${e.message}") }
+        } else {
+            for (entry in entries) {
+                @OptIn(DirectRepositoryWrite::class)
+                assetRepository.saveAsset(entry)
             }
         }
     }

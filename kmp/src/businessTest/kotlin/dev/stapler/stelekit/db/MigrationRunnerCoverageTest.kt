@@ -43,12 +43,10 @@ class MigrationRunnerCoverageTest {
     @Test fun metadata_table_is_covered() = assertTableCovered("metadata")
     @Test fun operations_table_is_covered() = assertTableCovered("operations")
     @Test fun logical_clock_table_is_covered() = assertTableCovered("logical_clock")
-    @Test fun spans_table_is_covered() = assertTableCovered("spans")
     @Test fun page_visits_table_is_covered() = assertTableCovered("page_visits")
-    @Test fun perf_histogram_buckets_table_is_covered() = assertTableCovered("perf_histogram_buckets")
-    @Test fun debug_flags_table_is_covered() = assertTableCovered("debug_flags")
-    @Test fun query_stats_table_is_covered() = assertTableCovered("query_stats")
     @Test fun git_config_table_is_covered() = assertTableCovered("git_config")
     @Test fun image_annotations_table_is_covered() = assertTableCovered("image_annotations")
     @Test fun measurement_annotations_table_is_covered() = assertTableCovered("measurement_annotations")
+    // spans, perf_histogram_buckets, debug_flags, query_stats moved to TelemetryDatabase —
+    // their entries in MigrationRunner.all are DROP TABLE cleanup migrations, not CREATE TABLE.
 }

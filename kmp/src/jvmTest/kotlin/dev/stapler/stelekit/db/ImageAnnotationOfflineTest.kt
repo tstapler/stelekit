@@ -11,6 +11,7 @@ import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSource
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.MeasurementAnnotation
 import dev.stapler.stelekit.model.MeasurementUnit
 import dev.stapler.stelekit.model.NormalizedPoint
@@ -90,7 +91,7 @@ class ImageAnnotationOfflineTest {
             val result = service.import(
                 tempFile = tempFile,
                 graphPath = "/graph",
-                pageUuid = "page-001",
+                pageUuid = PageUuid("page-001"),
                 source = ImageSource.FILE,
                 insertToJournalPage = false,
             )

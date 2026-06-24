@@ -36,7 +36,7 @@ class DslEvaluatorTest {
         uuid: String,
         pageUuid: String,
         content: String,
-        position: Int = 0,
+        position: String = "a0",
         properties: Map<String, String> = emptyMap(),
     ) = Block(
         uuid = BlockUuid(uuid),
@@ -74,7 +74,7 @@ class DslEvaluatorTest {
     fun evaluator_applies_property_to_matching_blocks(): Unit = runBlocking {
         val page = makePage("page-1", "TestPage")
         val matchingBlock = makeBlock("block-match", "page-1", "has tag:kotlin")
-        val otherBlock   = makeBlock("block-other", "page-1", "no tag here", position = 1)
+        val otherBlock   = makeBlock("block-other", "page-1", "no tag here", position = "a1")
 
         val repoSet = buildRepoSet(pages = listOf(page), blocks = listOf(matchingBlock, otherBlock))
         val evaluator = DslEvaluator(repoSet)

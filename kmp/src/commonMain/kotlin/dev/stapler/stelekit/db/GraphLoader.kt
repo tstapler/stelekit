@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -165,6 +166,17 @@ class GraphLoader(
     /** Job for the activePageFilePaths collector. Cancelled and replaced by each [setActivePageUuids] call. */
     private var activePageFilePathsJob: Job? = null
 
+    /**
+     * Derived set of file paths for pages with unsaved block edits. Populated from
+     * [setUnsavedPageUuids]. The watcher guards only this set from auto-reload — pages
+     * that are open but not being edited (e.g. the journals page being viewed) are excluded
+     * and will be reloaded when an external change arrives.
+     */
+    @Volatile private var unsavedPageFilePaths: Set<FilePath> = emptySet()
+
+    /** Job for the unsavedPageFilePaths collector. */
+    private var unsavedPageFilePathsJob: Job? = null
+
     override fun setActivePageUuids(uuids: StateFlow<Set<String>>?) {
         activePageUuids = uuids
         // Cancel any existing collector before starting a new one to prevent coroutine leaks
@@ -182,6 +194,22 @@ class GraphLoader(
             }
         } else {
             activePageFilePaths = emptySet()
+        }
+    }
+
+    override fun setUnsavedPageUuids(uuids: StateFlow<Set<String>>?) {
+        unsavedPageFilePathsJob?.cancel()
+        unsavedPageFilePathsJob = null
+        if (uuids != null) {
+            unsavedPageFilePathsJob = parallelScope.launch {
+                uuids.collectLatest { uuidSet ->
+                    unsavedPageFilePaths = uuidSet.mapNotNull { uuid ->
+                        pageRepository.getPageByUuid(PageUuid(uuid)).first().getOrNull()?.filePath?.let { FilePath(it) }
+                    }.toSet()
+                }
+            }
+        } else {
+            unsavedPageFilePaths = emptySet()
         }
     }
 
@@ -305,9 +333,9 @@ class GraphLoader(
         // Suspend lambda: called directly from checkDirectoryForChanges (already suspend) to
         // guarantee dirty flag is set before onReloadFile is called — no ordering race possible.
         onDirtyFile = { filePath -> addDirty(FilePath(filePath)) },
-        // Lambda returning the current set of file paths for actively-edited pages.
-        // Resolved by GraphLoader (which has PageRepository access); watcher never imports it.
-        activePageFilePaths = { activePageFilePaths.map { it.value }.toSet() },
+        // Guard only pages with unsaved block edits — not all open pages. Open-but-unedited
+        // pages (e.g. the journals page being viewed) must still be reloaded on external change.
+        activePageFilePaths = { unsavedPageFilePaths.map { it.value }.toSet() },
     )
 
     // Tracks the in-flight background indexing job so it can be cancelled under memory pressure.
@@ -334,9 +362,38 @@ class GraphLoader(
     /**
      * Called by GraphWriter after it writes a file, so the watcher doesn't treat
      * our own write as an external change.
+     *
+     * [FileRegistry.markWrittenByUs] updates the content hash synchronously (reads file
+     * content, no getLastModifiedTime SAF IPC). A background launch then fires getLastModifiedTime
+     * to replace the temporary modTimes=0 (for .md) or sentinel (for .md.stek) with the real
+     * post-write mtime, eliminating extra readFile calls on the next watcher poll.
      */
     suspend fun markFileWrittenByUs(filePath: String) {
         fileRegistry.markWrittenByUs(filePath)
+        // Fire-and-forget: set real post-write mtime so subsequent watcher polls
+        // see modTime == lastKnown and skip the file without calling readFile.
+        parallelScope.launch {
+            val modTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
+            if (modTime != 0L) fileRegistry.updateModTime(filePath, modTime)
+        }
+    }
+
+    /**
+     * Called before a write-behind SAF flush begins. Sets the [Long.MAX_VALUE] sentinel in
+     * [FileRegistry] so that any concurrent [FileRegistry.detectChanges] poll skips this path
+     * during the write window. Paired with [clearFilePendingWrite] on failure or replaced by
+     * [markFileWrittenByUs] on success.
+     */
+    suspend fun preMarkFileWrite(filePath: String) {
+        fileRegistry.preMarkPendingWrite(FilePath(filePath))
+    }
+
+    /**
+     * Called when a write-behind SAF flush fails after [preMarkFileWrite] was called.
+     * Removes the [Long.MAX_VALUE] sentinel so the file is not permanently suppressed.
+     */
+    suspend fun clearFilePendingWrite(filePath: String) {
+        fileRegistry.clearPendingWrite(FilePath(filePath))
     }
 
     /**
@@ -521,7 +578,7 @@ class GraphLoader(
                         // Failure is non-fatal: proceed with potentially stale shadow rather than
                         // aborting the reconcile entirely.
                         invalidateStaleShadowNonFatal(graphPath, "warm reconcile")
-                        loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress)
+                        loadJournalsImmediate(journalsDir, immediateJournalCount, onProgress, DatabaseWriteActor.Priority.LOW)
                         coroutineScope {
                             launch { loadRemainingJournals(journalsDir, immediateJournalCount, onProgress) }
                             launch { loadDirectory(pagesDir, onProgress, ParseMode.METADATA_ONLY) }
@@ -698,14 +755,7 @@ class GraphLoader(
                 }
             }
             logger.info("Background indexing complete.")
-            // One controlled FTS merge pass after the full batch, not per-page-save.
-            // saveBlocks intentionally skips ftsMerge to avoid reading a large index on every
-            // navigation; bulk callers compact once here when all inserts are done.
-            @OptIn(DirectRepositoryWrite::class)
-            writeActor.execute(DatabaseWriteActor.Priority.LOW) {
-                blockRepository.compactFtsIndex()
-                Unit.right()
-            }
+            compactFtsAfterBulkIndex()
         } finally {
             backgroundIndexJob = null
             PerformanceMonitor.endTrace("indexRemainingPages")
@@ -723,6 +773,17 @@ class GraphLoader(
      * HIGH requests can still preempt between pages (after each Execute completes),
      * giving sub-page granularity rather than the old sub-chunk (10-page) granularity.
      */
+    // One controlled FTS merge pass after the full bulk-index batch, not per-page-save.
+    // saveBlocks intentionally skips ftsMerge to avoid reading a large index on every
+    // navigation; bulk callers compact once here when all inserts are done.
+    @OptIn(DirectRepositoryWrite::class)
+    private suspend fun compactFtsAfterBulkIndex() {
+        writeActor.execute(DatabaseWriteActor.Priority.LOW) {
+            blockRepository.compactFtsIndex()
+            Unit.right()
+        }
+    }
+
     @OptIn(DirectRepositoryWrite::class)
     private suspend fun flushChunkWritesPreemptible(
         pagesToSave: List<Page>,
@@ -916,7 +977,8 @@ class GraphLoader(
     private suspend fun loadJournalsImmediate(
         journalsDir: String,
         count: Int,
-        onProgress: (String) -> Unit
+        onProgress: (String) -> Unit,
+        priority: DatabaseWriteActor.Priority = DatabaseWriteActor.Priority.HIGH,
     ): Int {
         PerformanceMonitor.startTrace("loadJournalsImmediate")
         try {
@@ -931,7 +993,7 @@ class GraphLoader(
                 fileSystem.invalidateShadow(entry.filePath)
                 val content = readFileDecrypted(entry.filePath) ?: continue
                 try {
-                    parseAndSavePage(FilePath(entry.filePath), content, ParseMode.FULL)
+                    parseAndSavePage(FilePath(entry.filePath), content, ParseMode.FULL, priority)
                     loadedCount++
                 } catch (e: CancellationException) {
                     throw e
@@ -966,7 +1028,7 @@ class GraphLoader(
                             fileSystem.invalidateShadow(entry.filePath)
                             val content = readFileDecrypted(entry.filePath) ?: return@count false
                             try {
-                                parseAndSavePage(FilePath(entry.filePath), content, ParseMode.METADATA_ONLY)
+                                parseAndSavePage(FilePath(entry.filePath), content, ParseMode.METADATA_ONLY, DatabaseWriteActor.Priority.LOW)
                                 true
                             } catch (e: CancellationException) {
                                 throw e
@@ -1402,23 +1464,34 @@ class GraphLoader(
 
     /**
      * Handles the METADATA_ONLY write path: creates stub blocks and dispatches them to
-     * the write actor.
+     * the write actor in a single execute (savePage + deleteBlocksForPage + saveBlocks = 1 RT).
      */
+    @OptIn(DirectRepositoryWrite::class)
     private suspend fun saveMetadataOnlyBlocks(
         filePath: String,
-        pageUuid: PageUuid,
-        updatedAt: kotlin.time.Instant,
+        page: Page,
         rootBlocks: List<ParsedBlock>,
         priority: DatabaseWriteActor.Priority,
+        traceId: String,
+        parentSpanId: String,
     ) {
+        val pageUuid = page.uuid
         val stubs = mutableListOf<Block>()
-        createStubBlocks(rootBlocks, filePath, pageUuid, null, 0, updatedAt, stubs)
-        if (stubs.isNotEmpty()) {
-            writeActor.deleteBlocksForPage(pageUuid, priority)
-            writeActor.saveBlocks(stubs, priority).onLeft { e ->
-                logger.warn("saveBlocks (stubs) failed for $filePath (${stubs.size} blocks): ${e.message}")
-                _writeErrors.tryEmit(WriteError(filePath, stubs.size, e))
+        createStubBlocks(rootBlocks, filePath, pageUuid, null, 0, page.updatedAt, stubs)
+        writeActor.execute(priority) {
+            val span = Span("db.saveMetadata", traceId, parentSpanId)
+            val result = run {
+                val r = pageRepository.savePage(page)
+                if (r.isLeft()) return@run r
+                blockRepository.deleteBlocksForPage(pageUuid)
+                if (stubs.isNotEmpty()) blockRepository.saveBlocks(stubs)
+                Unit.right()
             }
+            span.finish(if (result.isLeft()) "ERROR" else "OK", "stub.count" to stubs.size.toString())
+            result
+        }.onLeft { e ->
+            logger.warn("saveMetadata failed for $filePath (${stubs.size} stubs): ${e.message}")
+            _writeErrors.tryEmit(WriteError(filePath, stubs.size, e))
         }
     }
 
@@ -1477,43 +1550,48 @@ class GraphLoader(
                     "to.insert" to diff.toInsert.size.toString(),
                     "to.delete" to diff.toDelete.size.toString()
                 )
-                // Deletions run before the composite write to avoid UNIQUE constraint violations
-                // (a block being re-inserted at a new position must be deleted first).
-                diff.toDelete.forEach { uuid ->
-                    writeActor.deleteBlock(uuid).onLeft { e ->
-                        logger.warn("deleteBlock failed for $uuid in $filePath: ${e.message}")
-                    }
-                }
                 val blocksToInsert = diff.toInsert
                 val blocksToUpdate = diff.toUpdate
-                if (blocksToInsert.isNotEmpty() || blocksToUpdate.isNotEmpty()) {
-                    val saveBlocksSpan = Span("db.saveBlocks", traceId, parentSpanId)
-                    // Single actor.execute { } for savePage + saveBlocks — eliminates 2 await() suspensions
-                    val compositeResult = writeActor.execute(priority) {
+                // Single actor round-trip: deletes + savePage + inserts/updates.
+                // Batching eliminates N separate deleteBlock round-trips (was N+1 actor
+                // enqueues; now always 1). Deletions run before inserts inside the execute
+                // to avoid UNIQUE constraint violations on position reuse.
+                // Span is created inside execute so it measures SQL execution time only,
+                // not actor queue wait — queue wait is recorded separately as db.queue_wait.
+                val writeResult = writeActor.execute(priority) {
+                    val writeBlocksSpan = Span("db.writeBlocks", traceId, parentSpanId)
+                    val result = run {
+                        diff.toDelete.forEach { uuid ->
+                            blockRepository.deleteBlock(uuid).onLeft { e ->
+                                logger.warn("deleteBlock failed for $uuid in $filePath: ${e.message}")
+                            }
+                        }
                         val pageResult = pageRepository.savePage(page)
-                        if (pageResult.isLeft()) return@execute pageResult
+                        if (pageResult.isLeft()) return@run pageResult
                         if (blocksToInsert.isNotEmpty()) {
                             val r = blockRepository.saveBlocks(blocksToInsert)
-                            if (r.isLeft()) return@execute r
+                            if (r.isLeft()) return@run r
                         }
                         if (blocksToUpdate.isNotEmpty()) {
                             val r = blockRepository.saveBlocksUpdate(blocksToUpdate)
-                            if (r.isLeft()) return@execute r
+                            if (r.isLeft()) return@run r
                         }
                         Unit.right()
                     }
-                    compositeResult.onLeft { e ->
-                        logger.warn("composite savePage+saveBlocks failed for $filePath: ${e.message}")
-                        _writeErrors.tryEmit(WriteError(filePath, blocksToInsert.size + blocksToUpdate.size, e))
-                    }
-                    saveBlocksSpan.finish("OK", "block.count" to (blocksToInsert.size + blocksToUpdate.size).toString())
+                    writeBlocksSpan.finish(
+                        if (result.isLeft()) "ERROR" else "OK",
+                        "delete.count" to diff.toDelete.size.toString(),
+                        "insert.count" to blocksToInsert.size.toString(),
+                        "update.count" to blocksToUpdate.size.toString()
+                    )
+                    result
+                }
+                writeResult.onLeft { e ->
+                    logger.warn("composite delete+savePage+saveBlocks failed for $filePath: ${e.message}")
+                    _writeErrors.tryEmit(WriteError(filePath, blocksToInsert.size + blocksToUpdate.size, e))
+                }
+                if (blocksToInsert.isNotEmpty() || blocksToUpdate.isNotEmpty()) {
                     (blockRepository as? dev.stapler.stelekit.repository.SqlDelightBlockRepository)?.evictHierarchyForPage(pageUuid.value)
-                } else {
-                    // No block changes — still need to save the page (e.g. metadata update)
-                    writeActor.savePage(page, priority).onLeft { e ->
-                        logger.warn("savePage (no blocks) failed for $filePath: ${e.message}")
-                        _writeErrors.tryEmit(WriteError(filePath, 0, e))
-                    }
                 }
             }
         }
@@ -1595,28 +1673,26 @@ class GraphLoader(
 
                 // For METADATA_ONLY, save page + lightweight stub blocks and return.
                 if (mode == ParseMode.METADATA_ONLY) {
-                    val savePageSpan = Span("db.savePage", traceId, rootSpan.spanId)
-                    val savePageResult = writeActor.savePage(page, priority)
-                    savePageSpan.finish()
-                    if (savePageResult.isLeft()) {
-                        val e = savePageResult.leftOrNull()!!
-                        logger.warn("savePage failed for $filePathStr — skipping block writes to prevent FK violation: ${e.message}")
-                        _writeErrors.tryEmit(WriteError(filePathStr, 0, e))
-                        return@withLock
-                    }
-                    saveMetadataOnlyBlocks(filePathStr, pageUuid, updatedAt, rootBlocks, priority)
+                    saveMetadataOnlyBlocks(filePathStr, page, rootBlocks, priority, traceId, rootSpan.spanId)
                     return@withLock
                 }
 
                 // FULL mode: fetch existing blocks (may already be cached from freshness check)
                 val existingBlocks = lookup.cachedBlocks
-                    ?: blockRepository.getBlocksForPage(pageUuid).first().getOrNull() ?: emptyList()
+                    ?: run {
+                        val uncachedBlocksSpan = Span("db.getBlocks", traceId, rootSpan.spanId)
+                        val blocks = blockRepository.getBlocksForPage(pageUuid).first().getOrNull() ?: emptyList()
+                        uncachedBlocksSpan.finish("OK", "block.count" to blocks.size.toString(), "cached" to "false")
+                        blocks
+                    }
                 val existingVersions = existingBlocks.associate { it.uuid to it.version }
                 val existingContent = existingBlocks.associate { it.uuid to it.content }
 
                 // Load sidecar for content-hash → UUID recovery (e.g. after a git pull that reordered blocks)
                 val pageSlug = FileUtils.sanitizeFileName(name)
+                val sidecarReadSpan = Span("sidecar.read", traceId, rootSpan.spanId)
                 val sidecarMap = sidecarManager?.read(pageSlug)
+                sidecarReadSpan.finish("OK", "has_sidecar" to (sidecarMap != null).toString())
 
                 val blocksToSave = mutableListOf<Block>()
                 val processBlocksSpan = Span("parse.processBlocks", traceId, rootSpan.spanId)
@@ -1638,12 +1714,6 @@ class GraphLoader(
                 dispatchFullBlockWrites(
                     filePathStr, content, existingBlocks, blocksToSave, page, priority, traceId, rootSpan.spanId
                 )
-
-                // Update mod time in watcher cache so we don't re-trigger from our own write
-                val updatedModTime = fileSystem.getLastModifiedTime(filePathStr) ?: 0L
-                if (updatedModTime != 0L) {
-                    fileRegistry.updateModTime(filePathStr, updatedModTime)
-                }
             } finally {
                 CurrentSpanContext.set(null)
                 rootSpan.finish("OK", "file.path" to filePathStr.redactPath())

@@ -76,7 +76,7 @@ fun ConflictResolutionScreen(
                 title = { Text("Resolve Merge Conflicts") },
                 actions = {
                     TextButton(
-                        onClick = { if (onAbortMerge != null) showAbortConfirm = true else onDismiss() },
+                        onClick = { showAbortConfirm = true },
                         enabled = !resolving,
                     ) { Text("Cancel") }
                 },

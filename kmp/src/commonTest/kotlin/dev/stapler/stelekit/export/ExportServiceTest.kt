@@ -25,7 +25,7 @@ class ExportServiceTest {
         uuid: String,
         content: String,
         level: Int = 0,
-        position: Int = 0,
+        position: String = "a0",
         parentUuid: String? = null,
         pageUuid: String = "page-test"
     ) = Block(
@@ -94,10 +94,10 @@ class ExportServiceTest {
     @Test
     fun uES04_subtreeBlocks_singleRootReturnsRootAndAllDescendants() {
         val service = serviceWith()
-        val root = block("root", "Root", level = 0, position = 0)
-        val child = block("child", "Child", level = 1, position = 0, parentUuid = "root")
-        val grandchild = block("grand", "Grandchild", level = 2, position = 0, parentUuid = "child")
-        val sibling = block("sibling", "Sibling", level = 0, position = 1)
+        val root = block("root", "Root", level = 0, position = "a0")
+        val child = block("child", "Child", level = 1, position = "a0", parentUuid = "root")
+        val grandchild = block("grand", "Grandchild", level = 2, position = "a0", parentUuid = "child")
+        val sibling = block("sibling", "Sibling", level = 0, position = "a1")
 
         val allBlocks = listOf(root, child, grandchild, sibling)
         val result = service.subtreeBlocks(allBlocks, setOf("root"))
@@ -117,8 +117,8 @@ class ExportServiceTest {
     @Test
     fun uES05_subtreeBlocks_leafRootReturnsOnlyThatBlock() {
         val service = serviceWith()
-        val root = block("root", "Root", level = 0, position = 0)
-        val leaf = block("leaf", "Leaf", level = 1, position = 0, parentUuid = "root")
+        val root = block("root", "Root", level = 0, position = "a0")
+        val leaf = block("leaf", "Leaf", level = 1, position = "a0", parentUuid = "root")
 
         val result = service.subtreeBlocks(listOf(root, leaf), setOf("leaf"))
         val resultUuids = result.map { it.uuid.value }.toSet()
@@ -135,11 +135,11 @@ class ExportServiceTest {
     @Test
     fun uES06_subtreeBlocks_twoNonAdjacentRootsReturnsBothSubtreesMerged() {
         val service = serviceWith()
-        val rootA = block("rootA", "Root A", level = 0, position = 0)
-        val childA = block("childA", "Child A", level = 1, position = 0, parentUuid = "rootA")
-        val rootB = block("rootB", "Root B", level = 0, position = 1)
-        val childB = block("childB", "Child B", level = 1, position = 0, parentUuid = "rootB")
-        val unrelated = block("unrelated", "Unrelated", level = 0, position = 2)
+        val rootA = block("rootA", "Root A", level = 0, position = "a0")
+        val childA = block("childA", "Child A", level = 1, position = "a0", parentUuid = "rootA")
+        val rootB = block("rootB", "Root B", level = 0, position = "a1")
+        val childB = block("childB", "Child B", level = 1, position = "a0", parentUuid = "rootB")
+        val unrelated = block("unrelated", "Unrelated", level = 0, position = "a2")
 
         val result = service.subtreeBlocks(
             listOf(rootA, childA, rootB, childB, unrelated),

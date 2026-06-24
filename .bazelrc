@@ -41,6 +41,14 @@ build --incompatible_strict_action_env
 # CI: xvfb-run --auto-servernum creates the socket before bazel runs.
 test --sandbox_add_mount_pair=/tmp/.X11-unix
 
+# ── Output legibility ─────────────────────────────────────────────────────────
+build --show_timestamps
+build --noshow_loading_progress
+
+# ── CI profile ────────────────────────────────────────────────────────────────
+build:ci --color=no
+build:ci --curses=no
+
 # ── CI caching ────────────────────────────────────────────────────────────────
 # Bazel caching in CI is handled entirely by bazel-contrib/setup-bazel@0.19.0
 # (disk-cache, repository-cache, external-cache inputs) which uses GitHub Actions

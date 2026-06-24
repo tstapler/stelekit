@@ -40,7 +40,7 @@ class OperationLogger(
     data class BlockSnapshot(
         val uuid: String,
         val content: String,
-        val position: Int,
+        val position: String,
         val parentUuid: String?,
         val leftUuid: String?,
         val properties: Map<String, String> = emptyMap(),

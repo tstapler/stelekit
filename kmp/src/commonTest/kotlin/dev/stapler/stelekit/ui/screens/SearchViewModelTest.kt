@@ -50,7 +50,7 @@ class SearchViewModelTest {
                     uuid = BlockUuid("uuid-2"),
                     pageUuid = PageUuid("uuid-1"),
                     content = "This is a test block",
-                    position = 0,
+                    position = "a0",
                     createdAt = Clock.System.now(),
                     updatedAt = Clock.System.now()
                 )

@@ -37,6 +37,11 @@ stelekit:
                '**/iosMain/**', '**/buildSrc/**']
   IndexWithoutAnalyze:
     active: true
+  ActorWriteInLoop:
+    active: true
+  MissingHelpPageAnnotation:
+    active: true
+    excludes: ['**/buildSrc/**', '**/*Test.kt', '**/test/**']
 
 # Compose Multiplatform rules (io.nlopez.compose.rules)
 Compose:

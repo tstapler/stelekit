@@ -1,0 +1,48 @@
+# Android cross-compilation:
+# bazel build //:stelekit_libsql --platforms=@rules_android_ndk//:arm64-v8a
+# Output: bazel-bin/native/libsql/libstelekit_libsql.so
+#
+# JNI libs directory layout:
+#   androidApp/src/main/jniLibs/arm64-v8a/libstelekit_libsql.so
+#   androidApp/src/main/jniLibs/x86_64/libstelekit_libsql.so
+#
+# NDK requirement: r25c minimum (ANDROID_NDK_HOME must be set)
+# libgcc/libunwind workaround for NDK r23+: add -C link-arg=-lunwind to rustflags
+
+load("@rules_rust//rust:defs.bzl", "rust_shared_library")
+# Requires: cmake libclang-dev (apt-get install cmake libclang-dev)
+load("@crates//:defs.bzl", "all_crate_deps")
+
+# Builds the libsql JNI bridge as a shared library for the host platform.
+#
+# Cross-compile for a specific target with:
+#   bazel build //native/libsql:stelekit_libsql \
+#     --platforms=@rules_rust//rust/platform:aarch64-apple-darwin
+#
+# The resulting library must be placed in kmp/src/jvmMain/resources/native/<os-arch>/
+# so the JVM can find and load it at runtime via NativeLibLoader.
+#
+# Supported cross-compilation targets (toolchains registered in MODULE.bazel):
+#   aarch64-apple-darwin     → macOS Apple Silicon
+#   x86_64-apple-darwin      → macOS Intel
+#   x86_64-unknown-linux-gnu → Linux x86-64
+#   x86_64-pc-windows-msvc   → Windows x86-64
+#   aarch64-linux-android    → Android arm64-v8a
+#   x86_64-linux-android     → Android x86_64
+rust_shared_library(
+    name = "stelekit_libsql",
+    srcs = ["src/lib.rs"],
+    edition = "2021",
+    deps = all_crate_deps(normal = True),
+    visibility = ["//visibility:public"],
+)
+
+# Filegroup exposing the Cargo manifest for MODULE.bazel crates_repository setup.
+filegroup(
+    name = "cargo_manifests",
+    srcs = [
+        "Cargo.toml",
+        "Cargo.lock",
+    ],
+    visibility = ["//visibility:public"],
+)

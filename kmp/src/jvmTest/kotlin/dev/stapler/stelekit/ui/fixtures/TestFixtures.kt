@@ -37,7 +37,7 @@ object TestFixtures {
                 pageUuid = pageUuid,
                 content = "**Bold text** in journal entry",
                 level = 0,
-                position = 0,
+                position = "a0",
                 createdAt = now,
                 updatedAt = now
             ),
@@ -46,7 +46,7 @@ object TestFixtures {
                 pageUuid = pageUuid,
                 content = "TODO A task to complete",
                 level = 0,
-                position = 1,
+                position = "a1",
                 createdAt = now,
                 updatedAt = now
             ),
@@ -55,7 +55,7 @@ object TestFixtures {
                 pageUuid = pageUuid,
                 content = "See also [[Another Page]]",
                 level = 0,
-                position = 2,
+                position = "a2",
                 createdAt = now,
                 updatedAt = now
             ),
@@ -65,7 +65,7 @@ object TestFixtures {
                 parentUuid = uuid(baseId),
                 content = "Child block content",
                 level = 1,
-                position = 0,
+                position = "a0",
                 createdAt = now,
                 updatedAt = now
             )
@@ -91,7 +91,7 @@ object TestFixtures {
                 pageUuid = pageUuid,
                 content = "Introduction paragraph with regular text",
                 level = 0,
-                position = 0,
+                position = "a0",
                 createdAt = now,
                 updatedAt = now
             ),
@@ -100,7 +100,7 @@ object TestFixtures {
                 pageUuid = pageUuid,
                 content = "Second block with **bold** and *italic*",
                 level = 0,
-                position = 1,
+                position = "a1",
                 createdAt = now,
                 updatedAt = now
             )

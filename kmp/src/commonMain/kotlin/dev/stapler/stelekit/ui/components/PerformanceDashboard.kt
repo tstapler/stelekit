@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import dev.stapler.stelekit.performance.PerfExporter
 import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.PerformanceMonitor
+import dev.stapler.stelekit.performance.QueryPlanEntry
 import dev.stapler.stelekit.performance.QueryPlanRepository
 import dev.stapler.stelekit.performance.QueryPlanRow
 import dev.stapler.stelekit.performance.QueryStat
@@ -857,7 +858,7 @@ private fun QueryPlansTab(
         return
     }
 
-    var plans by remember { mutableStateOf<Map<String, List<QueryPlanRow>>>(emptyMap()) }
+    var plans by remember { mutableStateOf<Map<String, QueryPlanEntry>>(emptyMap()) }
     var loading by remember { mutableStateOf(false) }
     var selectedKey by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -906,7 +907,8 @@ private fun QueryPlansTab(
                 contentPadding = PaddingValues(vertical = 4.dp)
             ) {
                 items(plans.keys.sorted()) { key ->
-                    val rows = plans[key] ?: emptyList()
+                    val entry = plans[key]
+                    val rows = entry?.rows ?: emptyList()
                     val hasScan = rows.any { it.detail.startsWith("SCAN ") && !it.detail.contains("USING") }
                     val bg = if (selectedKey == key) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
                     Surface(
@@ -928,7 +930,8 @@ private fun QueryPlansTab(
             VerticalDivider()
             val key = selectedKey
             if (key != null) {
-                val rows = plans[key] ?: emptyList()
+                val entry = plans[key]
+                val rows = entry?.rows ?: emptyList()
                 LazyColumn(
                     modifier = Modifier.weight(0.6f).fillMaxHeight(),
                     contentPadding = PaddingValues(16.dp),
@@ -939,6 +942,26 @@ private fun QueryPlansTab(
                             modifier = Modifier.padding(bottom = 8.dp))
                         HorizontalDivider()
                         Spacer(Modifier.height(8.dp))
+                    }
+                    if (entry?.sql != null) {
+                        item {
+                            Text("SQL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(bottom = 4.dp))
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = MaterialTheme.shapes.small,
+                            ) {
+                                Text(
+                                    entry.sql,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    modifier = Modifier.padding(8.dp),
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            HorizontalDivider()
+                            Spacer(Modifier.height(8.dp))
+                        }
                     }
                     items(rows) { row ->
                         PlanRowItem(row)

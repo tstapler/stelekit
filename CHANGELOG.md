@@ -1,5 +1,229 @@
 # Changelog
 
+## [0.55.0](https://github.com/tstapler/stelekit/compare/v0.54.0...v0.55.0) (2026-06-23)
+
+
+### Features
+
+* **imagemeter:** loupe magnifier, ripple, context hints, toolbar UX overhaul ([#183](https://github.com/tstapler/stelekit/issues/183)) ([1cc2b99](https://github.com/tstapler/stelekit/commit/1cc2b998cb765b9865edaa01defd34ecd03ef8f3))
+
+## [0.54.0](https://github.com/tstapler/stelekit/compare/v0.53.1...v0.54.0) (2026-06-22)
+
+
+### Features
+
+* **sensor:** wire AndroidMotionSensorProvider and OnnxMonocularDepthEstimator at startup ([7883861](https://github.com/tstapler/stelekit/commit/78838612444110b9e0a347e45dcb9c7cb3ad1f53))
+
+
+### Bug Fixes
+
+* **calibration:** correct 1000× unit mismatch in ARCore and LiDAR depth providers ([1fcfbfe](https://github.com/tstapler/stelekit/commit/1fcfbfe2786f27844f358a1d297b1e261c207452))
+* **capture:** show loading state while import runs, block premature dismiss ([54e9e55](https://github.com/tstapler/stelekit/commit/54e9e55fbdb6ce71a056ff9b9b03ef54a564db8e))
+* **git-sync:** triad review fixes — schema, nav, UX, accessibility ([533fbba](https://github.com/tstapler/stelekit/commit/533fbbae030dd2e3f679fc376a900fb34b121b9a))
+* **imagemeter:** repair three broken image behaviors on Android SAF graphs ([66ce7ca](https://github.com/tstapler/stelekit/commit/66ce7cab522b5c0469fb537076a6cae2f84c4e96))
+* **journals:** provide LocalGraphRootPath inside JournalsView for image rendering ([d6dc254](https://github.com/tstapler/stelekit/commit/d6dc254cef8e227253d1061df94a0370d7de749e))
+* **sensor:** enforce correctness structurally after reflect-and-fix ([db540fb](https://github.com/tstapler/stelekit/commit/db540fbb910c118bef73524c6741d7a0fb28d540))
+
+## [0.53.1](https://github.com/tstapler/stelekit/compare/v0.53.0...v0.53.1) (2026-06-22)
+
+
+### Bug Fixes
+
+* **android:** fix SAF image display and gallery attachment ([#181](https://github.com/tstapler/stelekit/issues/181)) ([009857d](https://github.com/tstapler/stelekit/commit/009857d258a68b93ad9f845f52c7bb67e113d60f))
+* **test:** time the hot-read path in GraphLoadTimingTest, not the cold write ([da309b0](https://github.com/tstapler/stelekit/commit/da309b01fbb0e15c6d7c293bcc24b8168d6d4519))
+
+## [0.53.0](https://github.com/tstapler/stelekit/compare/v0.52.2...v0.53.0) (2026-06-21)
+
+
+### Features
+
+* **android:** switch to bundled SQLite with pluggable driver provider ([5a191f4](https://github.com/tstapler/stelekit/commit/5a191f48ad60a86120b22c81f2152e1852941ae0))
+
+
+### Bug Fixes
+
+* **android:** handle FTS5-unavailable devices on fresh install ([7b76394](https://github.com/tstapler/stelekit/commit/7b7639460db21adacf5eff23693f997366437a87))
+* **ci:** remove backslash line continuations in android-benchmark script ([850a84a](https://github.com/tstapler/stelekit/commit/850a84a6502aafb7a002b57e7fa72b8a200c1329))
+* **test:** include required created_at/updated_at in SqliteCapabilityTest INSERTs ([3299f8d](https://github.com/tstapler/stelekit/commit/3299f8d2b3884adbcd08845aa6cbb704df80d669))
+* **test:** use spaced page name in FTS5 end-to-end test ([a87011d](https://github.com/tstapler/stelekit/commit/a87011d12c3ff27b09062a087d33ca956aad0ccd))
+
+## [0.52.2](https://github.com/tstapler/stelekit/compare/v0.52.1...v0.52.2) (2026-06-21)
+
+
+### Bug Fixes
+
+* **db:** drop stale FTS5 triggers programmatically on FTS5-unavailable devices ([dcdffa5](https://github.com/tstapler/stelekit/commit/dcdffa5992d4894855de35e7ee5c537e166c423c))
+* **db:** guard FTS5 triggers with WHEN clause to prevent crashes on devices lacking FTS5 ([7b08455](https://github.com/tstapler/stelekit/commit/7b084556ed654646c6677f1a82d9e1b15cb3f147))
+
+## [0.52.1](https://github.com/tstapler/stelekit/compare/v0.52.0...v0.52.1) (2026-06-21)
+
+
+### Bug Fixes
+
+* **watcher:** remove racy mtime update from parseAndSavePage ([295fd1a](https://github.com/tstapler/stelekit/commit/295fd1afab820a8bf296eaa160c7f221ff048a4e))
+
+## [0.52.0](https://github.com/tstapler/stelekit/compare/v0.51.0...v0.52.0) (2026-06-21)
+
+
+### Features
+
+* **db:** add libsql JNI driver with MVCC support for JVM and Android ([#171](https://github.com/tstapler/stelekit/issues/171)) ([18d8250](https://github.com/tstapler/stelekit/commit/18d8250cf3f6141fce243c4bca57ce7151797090))
+* **db:** migrate wikilink_references to WITHOUT ROWID (Epic 5) ([3cdd025](https://github.com/tstapler/stelekit/commit/3cdd025078247c2dff219139e3315f05d5dcfbe3))
+* **model:** BlockType sealed class with Unknown(raw) fallback (Epic 2) ([9393b9a](https://github.com/tstapler/stelekit/commit/9393b9aef0fce6f737004b1931429baf19defa47))
+
+
+### Bug Fixes
+
+* **android:** call enableWriteAheadLogging() to unlock SQLiteConnectionPool multi-reader ([6fb248c](https://github.com/tstapler/stelekit/commit/6fb248cfd3959e8c5311d2b4e1ae0c5b6ba55ac1))
+* **android:** update CaptureViewModel to use fractional position; remove unused logger ([7f11b70](https://github.com/tstapler/stelekit/commit/7f11b705c6521b8e46e4d59950bf7b4630c14458))
+* **bench:** pass benchConfig as Gradle project property not JVM system property ([db008d2](https://github.com/tstapler/stelekit/commit/db008d229dca7b2984331b6dae1393eac4b8b81a))
+* post-merge compile errors — blockTypeFromString in splitBlock, CancellationException rethrow ([4e0521d](https://github.com/tstapler/stelekit/commit/4e0521d3ee0545e65defa43d0069ee03f6ad37e3))
+* **test:** update PhotoInsertAndroidTest to compare BlockType sealed class not String ([fc8167e](https://github.com/tstapler/stelekit/commit/fc8167e15138542107866994854ebc72d8dfa74d))
+
+
+### Performance Improvements
+
+* **android:** eliminate SAF getLastModifiedTime from own-write path ([f6ba685](https://github.com/tstapler/stelekit/commit/f6ba6851685b63a2042822982ea1d6eef2ae5d6c))
+* **android:** fire-and-forget SAF modtime update after parseAndSavePage ([5c599c6](https://github.com/tstapler/stelekit/commit/5c599c6fe9871242636f6f2efc621997137b9ec4))
+* **android:** replace Requery with FrameworkSQLiteOpenHelperFactory (Epic 7) ([08bb18b](https://github.com/tstapler/stelekit/commit/08bb18b5f6e77c53735bf5c27bfd46dc926e5503))
+* **android:** separate WAL read connection eliminates read/write lock contention ([a6eda9f](https://github.com/tstapler/stelekit/commit/a6eda9f0d0fabf6cf2b6ec917ed6cf154270e64e))
+* **android:** yield DB connection between saveBlocks chunks to unblock reads ([6a93847](https://github.com/tstapler/stelekit/commit/6a9384711b75798f062ec44c6c0ca2bc295c8540))
+* **db:** batch wikilink inserts — N individual INSERTs → 1 multi-row (Epic 4) ([a593c93](https://github.com/tstapler/stelekit/commit/a593c937715f549d9f2a046b602e5fa89f527451))
+* **db:** eliminate O(n) sibling position shifts and N-call backlink recomputes ([83155e5](https://github.com/tstapler/stelekit/commit/83155e51769f34f23ae0c1c5ab86e86916e29a39))
+* **db:** fix Android editor lag — separate wikilink index pass from block inserts ([a904b5d](https://github.com/tstapler/stelekit/commit/a904b5d03d1aca8d6e244ba2117e896794979dd8))
+* **db:** fractional string positions for zero-shift block insertion (Epic 6) ([4d843be](https://github.com/tstapler/stelekit/commit/4d843be3f0ca347f2f205a19bd483f735c2b2aca))
+* **db:** O(1) move/merge/delete-subtree — batch wikilink collection ([4c24d7a](https://github.com/tstapler/stelekit/commit/4c24d7a29a7fa84d47dbfa71b4d6ef2c9a5808cf))
+* **db:** replace getBlockHierarchy BFS with WITH RECURSIVE CTE (Epic 3) ([80b4e33](https://github.com/tstapler/stelekit/commit/80b4e33e2dcfc2322e861046687f23ccea1bb21b))
+* **editor:** zero DB reads for hot-path block writes (Phase 3 push events) ([4eeb68b](https://github.com/tstapler/stelekit/commit/4eeb68bcf9062f9f2dc07cd83202e230a22f8180))
+
+## [0.51.0](https://github.com/tstapler/stelekit/compare/v0.50.0...v0.51.0) (2026-06-19)
+
+
+### Features
+
+* **docs:** enforce documentation coverage for all user-facing screens ([f2194b5](https://github.com/tstapler/stelekit/commit/f2194b568efafb93dbb36b460ca64eaf17316a34))
+
+
+### Bug Fixes
+
+* **android:** wire camera permission request and binary JPEG copy ([#175](https://github.com/tstapler/stelekit/issues/175)) ([173af54](https://github.com/tstapler/stelekit/commit/173af54028f664e3b8b78affcd48e065f04bea9a))
+* **compose:** add missing remember keys for constructor-capturing lambdas ([47cc022](https://github.com/tstapler/stelekit/commit/47cc02296283dc5d72a455f2ab9f74d922f01e31))
+* **demo:** suppress false git-detection banner; expand web and resource demo content ([c3015a7](https://github.com/tstapler/stelekit/commit/c3015a70be7c17a29315e4970e0851996017b9d6))
+* **detekt:** repair broken PSI visitor recursion in 2 custom rules ([8da2b97](https://github.com/tstapler/stelekit/commit/8da2b972909aa0016de508bba2a3a3e62b195989))
+
+## [0.50.0](https://github.com/tstapler/stelekit/compare/v0.49.2...v0.50.0) (2026-06-19)
+
+
+### Features
+
+* **db:** add BlockUpdateEvent sealed class and blockInvalidations SharedFlow ([1d998b2](https://github.com/tstapler/stelekit/commit/1d998b258e3c3e5a49cfc46b0a043685927167db))
+* **release:** ad-hoc codesign macOS app bundle before DMG packaging ([844271c](https://github.com/tstapler/stelekit/commit/844271c167e18ef3a7c516e2e161bee6555be141))
+
+
+### Bug Fixes
+
+* **review:** address code review findings from /code:review ([00c9b5e](https://github.com/tstapler/stelekit/commit/00c9b5e675ceaf867204c1ef5ebeb87dd9766ccf))
+
+
+### Performance Improvements
+
+* **android:** reduce editing latency — debounce observer fanout, eliminate hot-path FTS merges, fix journal title nav ([05b5978](https://github.com/tstapler/stelekit/commit/05b597844ce62ee342f510fd7d6fb9ad66e77f01))
+* **db:** add wikilink_references index for O(1) backlink counting ([386ffe9](https://github.com/tstapler/stelekit/commit/386ffe9a55ce889fbd0f3935cf3c1bec50673898))
+* **db:** Phase 2 push payload — zero DB re-query for hot-path in-app block edits (ADR-012 Epic 3) ([667715a](https://github.com/tstapler/stelekit/commit/667715a4b90e01acf5a5f9755df08bcca9fc5e5d))
+* **db:** replace reactive block subscriptions with page-scoped invalidation (ADR-012 Phase 1) ([fb16c1b](https://github.com/tstapler/stelekit/commit/fb16c1b4a80ee1bfafb5d0ae6952b5db1376edb4))
+
+## [0.49.2](https://github.com/tstapler/stelekit/compare/v0.49.1...v0.49.2) (2026-06-18)
+
+
+### Bug Fixes
+
+* **db:** eliminate SQLITE_BUSY_SNAPSHOT by using BEGIN IMMEDIATE for all JVM transactions ([e341140](https://github.com/tstapler/stelekit/commit/e3411409d01149d69026db2d2ed13637a889fb13))
+
+
+### Performance Improvements
+
+* **db:** move FTS merge from per-save to post-bulk-index ([ea67faa](https://github.com/tstapler/stelekit/commit/ea67faac97c99d7cb708f5e8ae2b58084613d444))
+
+## [0.49.1](https://github.com/tstapler/stelekit/compare/v0.49.0...v0.49.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **detekt:** suppress UnusedPrivateProperty on for-loop signal variable ([ed87003](https://github.com/tstapler/stelekit/commit/ed87003129acd2f4128e1ec31ba6e46c680f55c0))
+* **wasm:** extract pragmaOptimizeAndClose expect/actual; debounce QueryStatsCollector ([77c7bbe](https://github.com/tstapler/stelekit/commit/77c7bbe723aa43dd5e73b2e583a99ad14e343596))
+
+
+### Performance Improvements
+
+* **telemetry:** batch telemetry writes — drain channel, coalesce histograms, single-transaction spans ([8f85ed7](https://github.com/tstapler/stelekit/commit/8f85ed74c78454fc0e4a1f4a41df187d00e3c83e))
+
+## [0.49.0](https://github.com/tstapler/stelekit/compare/v0.48.3...v0.49.0) (2026-06-18)
+
+
+### Features
+
+* **db:** split telemetry tables into dedicated TelemetryDatabase ([91de722](https://github.com/tstapler/stelekit/commit/91de722edb9486405868dfcc2c406b5cd68f5a64))
+
+## [0.48.3](https://github.com/tstapler/stelekit/compare/v0.48.2...v0.48.3) (2026-06-18)
+
+
+### Bug Fixes
+
+* **db:** correct PRAGMA optimize mask and call site per SQLite docs ([65ad04c](https://github.com/tstapler/stelekit/commit/65ad04cce8f57faada1e858e0ac62d2bffeb5d70))
+
+
+### Performance Improvements
+
+* **db:** fix write-actor priority flooding, span placement, and WAL autocheckpoint ([83cf1e8](https://github.com/tstapler/stelekit/commit/83cf1e8227149a297fe6637794b6b16652a11fb5))
+* **db:** reduce busy_timeout and Android cache_size per pragma audit ([85e1f3f](https://github.com/tstapler/stelekit/commit/85e1f3f419cc7325e5c214fa3f1b7be37eab308e))
+
+## [0.48.2](https://github.com/tstapler/stelekit/compare/v0.48.1...v0.48.2) (2026-06-18)
+
+
+### Bug Fixes
+
+* **git:** wire JvmGitRepository on desktop and keep OAuth code visible during polling ([#166](https://github.com/tstapler/stelekit/issues/166)) ([00df575](https://github.com/tstapler/stelekit/commit/00df5755bae06b88b7428fd3fc22740abbdb2f7d))
+* **watcher:** journals page live refresh + Android detection reliability ([#165](https://github.com/tstapler/stelekit/issues/165)) ([27bf06d](https://github.com/tstapler/stelekit/commit/27bf06d3a37eea47d186272a560e707877628891))
+
+## [0.48.1](https://github.com/tstapler/stelekit/compare/v0.48.0...v0.48.1) (2026-06-17)
+
+
+### Performance Improvements
+
+* **db:** batch actor writes, add telemetry spans, and enforce with lint ([637dd41](https://github.com/tstapler/stelekit/commit/637dd416a59061fcfc18dad064ba96d29065f2f3))
+
+## [0.48.0](https://github.com/tstapler/stelekit/compare/v0.47.2...v0.48.0) (2026-06-17)
+
+
+### Features
+
+* **ci:** serve fdroid APKs via GitHub Releases redirect on Cloudflare Pages ([11da29b](https://github.com/tstapler/stelekit/commit/11da29b91b241ba7a25e0143c287d90029096b88))
+* **perf:** show triggering SQL in Query Plans tab; persist samples across drain cycles ([82771b7](https://github.com/tstapler/stelekit/commit/82771b7e893f72fbf1c31bae0b235a6c6e6c5a78))
+
+
+### Bug Fixes
+
+* **ci:** fix release workflow — build demo on release, reduce APK set, drop deprecations ([2f7dfbb](https://github.com/tstapler/stelekit/commit/2f7dfbb6f95b5277c7d4f4e8067b3353239de079))
+* **db:** add SchemaRunner start/complete log lines to db.MigrationRunner ([5918da3](https://github.com/tstapler/stelekit/commit/5918da31d29752b8b8d11d25213249d7ed74bfbb))
+
+
+### Performance Improvements
+
+* **db:** run ANALYZE blocks/pages unconditionally on every startup ([a81c0c1](https://github.com/tstapler/stelekit/commit/a81c0c1ac1ad48ee84d92addd9fe399941248c71))
+
+## [0.47.2](https://github.com/tstapler/stelekit/compare/v0.47.1...v0.47.2) (2026-06-16)
+
+
+### Bug Fixes
+
+* **formula:** remove openjdk JVM swap on macOS to fix Empty installation error ([ed5398b](https://github.com/tstapler/stelekit/commit/ed5398bdac07069712ef20eef0c110fe446454c4))
+* **ui:** enforce non-null BlockUuid for onAttachImage callback ([1a5b853](https://github.com/tstapler/stelekit/commit/1a5b85370348653f317ddba09b934baf72db5e25))
+
+
+### Performance Improvements
+
+* **db:** fix SCAN blocks regression, 0-byte export, and reduce write overhead ([e52607f](https://github.com/tstapler/stelekit/commit/e52607f60a0f3bb40088540374040b3f2302451a))
+
 ## [0.47.1](https://github.com/tstapler/stelekit/compare/v0.47.0...v0.47.1) (2026-06-16)
 
 

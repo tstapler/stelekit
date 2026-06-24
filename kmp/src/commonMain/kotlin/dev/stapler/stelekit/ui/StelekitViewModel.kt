@@ -339,7 +339,8 @@ class StelekitViewModel(
             isLoading = true,
             onboardingCompleted = platformSettings.getBoolean("onboardingCompleted", false),
             currentGraphPath = platformSettings.getString("lastGraphPath", ""),
-            isLeftHanded = platformSettings.getBoolean("isLeftHanded", false)
+            isLeftHanded = platformSettings.getBoolean("isLeftHanded", false),
+            isLibsqlDriverEnabled = platformSettings.getBoolean("db.libsql.enabled", false),
         )
     )
     val uiState: StateFlow<AppState> = _uiState.asStateFlow()
@@ -349,6 +350,7 @@ class StelekitViewModel(
 
     init {
         blockStateManager?.let { graphLoader.setActivePageUuids(it.activePageUuids) }
+        blockStateManager?.let { graphLoader.setUnsavedPageUuids(it.dirtyPageUuids) }
 
         updateCommands()
         observeSyncState()
@@ -736,7 +738,7 @@ class StelekitViewModel(
     }
 
     @OptIn(DirectRepositoryWrite::class)
-    fun moveBlock(blockUuid: String, newParentUuid: String?, newPosition: Int) {
+    fun moveBlock(blockUuid: String, newParentUuid: String?, newPosition: String) {
         scope.launch {
             blockRepository.moveBlock(BlockUuid(blockUuid), newParentUuid?.let { BlockUuid(it) }, newPosition)
         }
@@ -799,7 +801,7 @@ class StelekitViewModel(
             val topLevelBlocks = blocks.filter { it.parentUuid == null }.sortedBy { it.position }
             val lastBlock = topLevelBlocks.lastOrNull()
             
-            val newPosition = (lastBlock?.position ?: 0) + 1
+            val newPosition = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(lastBlock?.position, null)
             val now = kotlin.time.Clock.System.now()
             
             val newBlock = Block(
@@ -1483,11 +1485,12 @@ class StelekitViewModel(
             graphLoader.parseAndSavePage(FilePath(conflict.filePath), conflict.diskContent, dev.stapler.stelekit.parsing.ParseMode.FULL)
             // Then append the user's content as a new block
             val now = kotlin.time.Clock.System.now()
+            val lastBlockPos = blockRepository.getBlocksForPage(PageUuid(conflict.pageUuid)).first().getOrNull()?.maxByOrNull { it.position }?.position
             val newBlock = dev.stapler.stelekit.model.Block(
                 uuid = BlockUuid(dev.stapler.stelekit.util.UuidGenerator.generateV7()),
                 pageUuid = PageUuid(conflict.pageUuid),
                 content = conflict.localContent,
-                position = Int.MAX_VALUE,
+                position = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(lastBlockPos, null),
                 createdAt = now,
                 updatedAt = now
             )
@@ -1798,6 +1801,11 @@ class StelekitViewModel(
     fun setLeftHanded(value: Boolean) {
         platformSettings.putBoolean("isLeftHanded", value)
         _uiState.update { it.copy(isLeftHanded = value) }
+    }
+
+    fun setLibsqlDriverEnabled(value: Boolean) {
+        platformSettings.putBoolean("db.libsql.enabled", value)
+        _uiState.update { it.copy(isLibsqlDriverEnabled = value) }
     }
 
     fun showDebugMenu() {

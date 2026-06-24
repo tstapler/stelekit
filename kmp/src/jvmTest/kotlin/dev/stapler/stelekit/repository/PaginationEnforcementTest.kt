@@ -9,6 +9,7 @@ import app.cash.sqldelight.db.SqlPreparedStatement
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
@@ -182,13 +183,13 @@ class PaginationEnforcementTest {
             leftUuid = null,
             content = content,
             level = 0,
-            position = idx,
+            position = idx.toString().padStart(11, '0'),
             createdAt = now,
             updatedAt = now,
             properties = emptyMap(),
             version = 0,
             contentHash = null,
-            blockType = "bullet",
+            blockType = BlockType.Bullet,
         )
         blockRepo.saveBlock(block)
         return block

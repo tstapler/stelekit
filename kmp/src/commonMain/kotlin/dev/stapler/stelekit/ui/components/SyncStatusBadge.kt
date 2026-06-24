@@ -267,7 +267,7 @@ private fun SyncStateBadge(
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
                     contentDescription = "Sync complete",
-                    tint = Color(0xFF10B981), // emerald-500
+                    tint = Color(0xFF047857), // emerald-500
                     modifier = modifier.size(16.dp),
                 )
             }

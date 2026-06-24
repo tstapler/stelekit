@@ -13,6 +13,7 @@ import dev.stapler.stelekit.domain.TopicEnricher
 import dev.stapler.stelekit.domain.TopicSuggestion
 import dev.stapler.stelekit.domain.UrlFetcher
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
@@ -424,33 +425,38 @@ class ImportViewModel(
         // Determine content to split into blocks
         val htmlBlocks = currentState.rawHtml?.let { HtmlBlockConverter.convert(it) }
 
+        var prevImportPosition: String? = null
         val blocks = if (htmlBlocks != null) {
-            htmlBlocks.mapIndexed { index, rawBlock ->
+            htmlBlocks.map { rawBlock ->
+                val pos = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(prevImportPosition, null)
+                prevImportPosition = pos
                 Block(
                     uuid = BlockUuid(UuidGenerator.generateV7()),
                     pageUuid = PageUuid(pageUuid),
                     content = rawBlock.content.trim(),
                     level = rawBlock.level,
-                    position = index,
+                    position = pos,
                     createdAt = now,
                     updatedAt = now,
-                    blockType = "paragraph",
+                    blockType = BlockType.Paragraph,
                 )
             }
         } else {
             finalText
                 .split("\n\n")
                 .filter { it.isNotBlank() }
-                .mapIndexed { index, paragraph ->
+                .map { paragraph ->
+                    val pos = dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(prevImportPosition, null)
+                    prevImportPosition = pos
                     Block(
                         uuid = BlockUuid(UuidGenerator.generateV7()),
                         pageUuid = PageUuid(pageUuid),
                         content = paragraph.trim(),
                         level = 0,
-                        position = index,
+                        position = pos,
                         createdAt = now,
                         updatedAt = now,
-                        blockType = "paragraph",
+                        blockType = BlockType.Paragraph,
                     )
                 }
         }

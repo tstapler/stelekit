@@ -23,7 +23,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -39,7 +39,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -59,7 +59,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -75,7 +75,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -99,7 +99,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -115,7 +115,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -138,7 +138,7 @@ public class SteleDatabaseQueries(
       left_uuid: String?,
       content: String,
       level: Long,
-      position: Long,
+      position: String,
       created_at: Long,
       updated_at: Long,
       properties: String?,
@@ -155,7 +155,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -178,7 +178,7 @@ public class SteleDatabaseQueries(
       left_uuid: String?,
       content: String,
       level: Long,
-      position: Long,
+      position: String,
       created_at: Long,
       updated_at: Long,
       properties: String?,
@@ -195,7 +195,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -219,7 +219,7 @@ public class SteleDatabaseQueries(
       left_uuid: String?,
       content: String,
       level: Long,
-      position: Long,
+      position: String,
       created_at: Long,
       updated_at: Long,
       properties: String?,
@@ -236,7 +236,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -268,7 +268,7 @@ public class SteleDatabaseQueries(
       left_uuid: String?,
       content: String,
       level: Long,
-      position: Long,
+      position: String,
       created_at: Long,
       updated_at: Long,
       properties: String?,
@@ -285,7 +285,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -313,7 +313,7 @@ public class SteleDatabaseQueries(
       left_uuid: String?,
       content: String,
       level: Long,
-      position: Long,
+      position: String,
       created_at: Long,
       updated_at: Long,
       properties: String?,
@@ -330,7 +330,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -362,7 +362,7 @@ public class SteleDatabaseQueries(
       left_uuid: String?,
       content: String,
       level: Long,
-      position: Long,
+      position: String,
       created_at: Long,
       updated_at: Long,
       properties: String?,
@@ -379,7 +379,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -403,7 +403,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -419,7 +419,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -439,7 +439,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -455,7 +455,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -479,7 +479,7 @@ public class SteleDatabaseQueries(
       left_uuid: String?,
       content: String,
       level: Long,
-      position: Long,
+      position: String,
       created_at: Long,
       updated_at: Long,
       properties: String?,
@@ -496,7 +496,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -524,7 +524,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -540,7 +540,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -560,7 +560,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -576,7 +576,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -588,6 +588,44 @@ public class SteleDatabaseQueries(
 
   public fun selectBlocksByParentUuids(parent_uuid: Collection<String?>): Query<Blocks> = selectBlocksByParentUuids(parent_uuid, ::Blocks)
 
+  public fun <T : Any> selectBlockHierarchyRecursive(uuid: String, mapper: (
+    id: Long,
+    uuid: String,
+    page_uuid: String,
+    parent_uuid: String?,
+    left_uuid: String?,
+    content: String,
+    level: Long,
+    position: String,
+    created_at: Long,
+    updated_at: Long,
+    properties: String?,
+    version: Long,
+    content_hash: String?,
+    block_type: String,
+    depth: Long,
+  ) -> T): Query<T> = SelectBlockHierarchyRecursiveQuery(uuid) { cursor ->
+    mapper(
+      cursor.getLong(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3),
+      cursor.getString(4),
+      cursor.getString(5)!!,
+      cursor.getLong(6)!!,
+      cursor.getString(7)!!,
+      cursor.getLong(8)!!,
+      cursor.getLong(9)!!,
+      cursor.getString(10),
+      cursor.getLong(11)!!,
+      cursor.getString(12),
+      cursor.getString(13)!!,
+      cursor.getLong(14)!!
+    )
+  }
+
+  public fun selectBlockHierarchyRecursive(uuid: String): Query<SelectBlockHierarchyRecursive> = selectBlockHierarchyRecursive(uuid, ::SelectBlockHierarchyRecursive)
+
   public fun <T : Any> selectRootBlocksByPageUuidOrdered(page_uuid: String, mapper: (
     id: Long,
     uuid: String,
@@ -596,7 +634,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -612,7 +650,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -632,7 +670,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -648,7 +686,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -668,7 +706,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -684,7 +722,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -717,7 +755,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -733,7 +771,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -1258,7 +1296,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -1274,7 +1312,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -1294,7 +1332,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -1310,7 +1348,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -1330,7 +1368,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -1350,7 +1388,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -1370,7 +1408,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -1387,7 +1425,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -1485,7 +1523,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -1501,7 +1539,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -1678,7 +1716,7 @@ public class SteleDatabaseQueries(
       left_uuid: String?,
       content: String,
       level: Long,
-      position: Long,
+      position: String,
       created_at: Long,
       updated_at: Long,
       properties: String?,
@@ -1694,7 +1732,7 @@ public class SteleDatabaseQueries(
       cursor.getString(3),
       cursor.getString(4)!!,
       cursor.getLong(5)!!,
-      cursor.getLong(6)!!,
+      cursor.getString(6)!!,
       cursor.getLong(7)!!,
       cursor.getLong(8)!!,
       cursor.getString(9),
@@ -1722,7 +1760,7 @@ public class SteleDatabaseQueries(
       left_uuid: String?,
       content: String,
       level: Long,
-      position: Long,
+      position: String,
       created_at: Long,
       updated_at: Long,
       properties: String?,
@@ -1738,7 +1776,7 @@ public class SteleDatabaseQueries(
       cursor.getString(3),
       cursor.getString(4)!!,
       cursor.getLong(5)!!,
-      cursor.getLong(6)!!,
+      cursor.getString(6)!!,
       cursor.getLong(7)!!,
       cursor.getLong(8)!!,
       cursor.getString(9),
@@ -1859,7 +1897,7 @@ public class SteleDatabaseQueries(
       left_uuid: String?,
       content: String,
       level: Long,
-      position: Long,
+      position: String,
       created_at: Long,
       updated_at: Long,
       properties: String?,
@@ -1875,7 +1913,7 @@ public class SteleDatabaseQueries(
       cursor.getString(3),
       cursor.getString(4)!!,
       cursor.getLong(5)!!,
-      cursor.getLong(6)!!,
+      cursor.getString(6)!!,
       cursor.getLong(7)!!,
       cursor.getLong(8)!!,
       cursor.getString(9),
@@ -1921,46 +1959,6 @@ public class SteleDatabaseQueries(
 
   public fun selectPageVisitByUuid(page_uuid: String): Query<SelectPageVisitByUuid> = selectPageVisitByUuid(page_uuid, ::SelectPageVisitByUuid)
 
-  public fun <T : Any> selectHistogramForOperation(operation_name: String, mapper: (bucket_ms: Long, count: Long) -> T): Query<T> = SelectHistogramForOperationQuery(operation_name) { cursor ->
-    mapper(
-      cursor.getLong(0)!!,
-      cursor.getLong(1)!!
-    )
-  }
-
-  public fun selectHistogramForOperation(operation_name: String): Query<SelectHistogramForOperation> = selectHistogramForOperation(operation_name, ::SelectHistogramForOperation)
-
-  public fun selectAllHistogramOperations(): Query<String> = Query(-11_535_700, arrayOf("perf_histogram_buckets"), driver, "SteleDatabase.sq", "selectAllHistogramOperations", "SELECT DISTINCT operation_name FROM perf_histogram_buckets ORDER BY operation_name") { cursor ->
-    cursor.getString(0)!!
-  }
-
-  public fun <T : Any> selectAllHistogramBuckets(mapper: (
-    operation_name: String,
-    bucket_ms: Long,
-    count: Long,
-  ) -> T): Query<T> = Query(592_431_369, arrayOf("perf_histogram_buckets"), driver, "SteleDatabase.sq", "selectAllHistogramBuckets", "SELECT operation_name, bucket_ms, count FROM perf_histogram_buckets ORDER BY operation_name, bucket_ms") { cursor ->
-    mapper(
-      cursor.getString(0)!!,
-      cursor.getLong(1)!!,
-      cursor.getLong(2)!!
-    )
-  }
-
-  public fun selectAllHistogramBuckets(): Query<SelectAllHistogramBuckets> = selectAllHistogramBuckets(::SelectAllHistogramBuckets)
-
-  public fun selectDebugFlag(key: String): Query<Long> = SelectDebugFlagQuery(key) { cursor ->
-    cursor.getLong(0)!!
-  }
-
-  public fun <T : Any> selectAllDebugFlags(mapper: (key: String, value_: Long) -> T): Query<T> = Query(213_515_832, arrayOf("debug_flags"), driver, "SteleDatabase.sq", "selectAllDebugFlags", "SELECT key, value FROM debug_flags ORDER BY key") { cursor ->
-    mapper(
-      cursor.getString(0)!!,
-      cursor.getLong(1)!!
-    )
-  }
-
-  public fun selectAllDebugFlags(): Query<SelectAllDebugFlags> = selectAllDebugFlags(::SelectAllDebugFlags)
-
   public fun countBlocksWithWikilink(pageName: String): Query<Long> = CountBlocksWithWikilinkQuery(pageName) { cursor ->
     cursor.getLong(0)!!
   }
@@ -1973,7 +1971,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -1989,7 +1987,7 @@ public class SteleDatabaseQueries(
       cursor.getString(4),
       cursor.getString(5)!!,
       cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
+      cursor.getString(7)!!,
       cursor.getLong(8)!!,
       cursor.getLong(9)!!,
       cursor.getString(10),
@@ -2018,6 +2016,18 @@ public class SteleDatabaseQueries(
     cursor.getLong(0)!!
   }
 
+  public fun selectWikilinkPageNamesForBlock(block_uuid: String): Query<String> = SelectWikilinkPageNamesForBlockQuery(block_uuid) { cursor ->
+    cursor.getString(0)!!
+  }
+
+  public fun selectWikilinkPageNamesForBlocks(block_uuid: Collection<String>): Query<String> = SelectWikilinkPageNamesForBlocksQuery(block_uuid) { cursor ->
+    cursor.getString(0)!!
+  }
+
+  public fun selectWikilinkPageNamesForPage(page_uuid: String): Query<String> = SelectWikilinkPageNamesForPageQuery(page_uuid) { cursor ->
+    cursor.getString(0)!!
+  }
+
   public fun selectMetadata(key: String): Query<String> = SelectMetadataQuery(key) { cursor ->
     cursor.getString(0)!!
   }
@@ -2034,7 +2044,7 @@ public class SteleDatabaseQueries(
   public fun <T : Any> selectAllBlocksWithPagePath(mapper: (
     uuid: String,
     parent_uuid: String?,
-    position: Long,
+    position: String,
     content: String,
     file_path: String,
   ) -> T): Query<T> = Query(557_803_812, arrayOf("blocks", "pages"), driver, "SteleDatabase.sq", "selectAllBlocksWithPagePath", """
@@ -2046,7 +2056,7 @@ public class SteleDatabaseQueries(
     mapper(
       cursor.getString(0)!!,
       cursor.getString(1),
-      cursor.getLong(2)!!,
+      cursor.getString(2)!!,
       cursor.getString(3)!!,
       cursor.getString(4)!!
     )
@@ -2254,221 +2264,6 @@ public class SteleDatabaseQueries(
 
   public fun selectAllMigrationsForGraph(graph_id: String): Query<Migration_changelog> = selectAllMigrationsForGraph(graph_id, ::Migration_changelog)
 
-  public fun <T : Any> selectRecentSpans(`value`: Long, mapper: (
-    id: Long,
-    trace_id: String,
-    span_id: String,
-    parent_span_id: String,
-    name: String,
-    start_epoch_ms: Long,
-    end_epoch_ms: Long,
-    duration_ms: Long,
-    attributes_json: String,
-    status_code: String,
-    app_version: String,
-    commit_hash: String,
-  ) -> T): Query<T> = SelectRecentSpansQuery(value) { cursor ->
-    mapper(
-      cursor.getLong(0)!!,
-      cursor.getString(1)!!,
-      cursor.getString(2)!!,
-      cursor.getString(3)!!,
-      cursor.getString(4)!!,
-      cursor.getLong(5)!!,
-      cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
-      cursor.getString(8)!!,
-      cursor.getString(9)!!,
-      cursor.getString(10)!!,
-      cursor.getString(11)!!
-    )
-  }
-
-  public fun selectRecentSpans(value_: Long): Query<Spans> = selectRecentSpans(value_, ::Spans)
-
-  public fun <T : Any> selectSlowSpansByVersionAndName(
-    app_version: String,
-    name: String,
-    `value`: Long,
-    mapper: (
-      id: Long,
-      trace_id: String,
-      span_id: String,
-      parent_span_id: String,
-      name: String,
-      start_epoch_ms: Long,
-      end_epoch_ms: Long,
-      duration_ms: Long,
-      attributes_json: String,
-      status_code: String,
-      app_version: String,
-      commit_hash: String,
-    ) -> T,
-  ): Query<T> = SelectSlowSpansByVersionAndNameQuery(app_version, name, value) { cursor ->
-    mapper(
-      cursor.getLong(0)!!,
-      cursor.getString(1)!!,
-      cursor.getString(2)!!,
-      cursor.getString(3)!!,
-      cursor.getString(4)!!,
-      cursor.getLong(5)!!,
-      cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
-      cursor.getString(8)!!,
-      cursor.getString(9)!!,
-      cursor.getString(10)!!,
-      cursor.getString(11)!!
-    )
-  }
-
-  public fun selectSlowSpansByVersionAndName(
-    app_version: String,
-    name: String,
-    value_: Long,
-  ): Query<Spans> = selectSlowSpansByVersionAndName(app_version, name, value_, ::Spans)
-
-  public fun selectDistinctVersionsWithSpans(): Query<String> = Query(799_650_447, arrayOf("spans"), driver, "SteleDatabase.sq", "selectDistinctVersionsWithSpans", "SELECT DISTINCT app_version FROM spans WHERE app_version != '' ORDER BY app_version DESC") { cursor ->
-    cursor.getString(0)!!
-  }
-
-  public fun <T : Any> selectQueryStatsByVersion(app_version: String, mapper: (
-    app_version: String,
-    table_name: String,
-    operation: String,
-    calls: Long,
-    errors: Long,
-    total_ms: Long,
-    min_ms: Long,
-    max_ms: Long,
-    b1: Long,
-    b5: Long,
-    b16: Long,
-    b50: Long,
-    b100: Long,
-    b500: Long,
-    b_inf: Long,
-    first_seen: Long,
-    last_seen: Long,
-  ) -> T): Query<T> = SelectQueryStatsByVersionQuery(app_version) { cursor ->
-    mapper(
-      cursor.getString(0)!!,
-      cursor.getString(1)!!,
-      cursor.getString(2)!!,
-      cursor.getLong(3)!!,
-      cursor.getLong(4)!!,
-      cursor.getLong(5)!!,
-      cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
-      cursor.getLong(8)!!,
-      cursor.getLong(9)!!,
-      cursor.getLong(10)!!,
-      cursor.getLong(11)!!,
-      cursor.getLong(12)!!,
-      cursor.getLong(13)!!,
-      cursor.getLong(14)!!,
-      cursor.getLong(15)!!,
-      cursor.getLong(16)!!
-    )
-  }
-
-  public fun selectQueryStatsByVersion(app_version: String): Query<Query_stats> = selectQueryStatsByVersion(app_version, ::Query_stats)
-
-  public fun <T : Any> selectTopQueryStatsByTotalMs(
-    app_version: String,
-    `value`: Long,
-    mapper: (
-      app_version: String,
-      table_name: String,
-      operation: String,
-      calls: Long,
-      errors: Long,
-      total_ms: Long,
-      min_ms: Long,
-      max_ms: Long,
-      b1: Long,
-      b5: Long,
-      b16: Long,
-      b50: Long,
-      b100: Long,
-      b500: Long,
-      b_inf: Long,
-      first_seen: Long,
-      last_seen: Long,
-    ) -> T,
-  ): Query<T> = SelectTopQueryStatsByTotalMsQuery(app_version, value) { cursor ->
-    mapper(
-      cursor.getString(0)!!,
-      cursor.getString(1)!!,
-      cursor.getString(2)!!,
-      cursor.getLong(3)!!,
-      cursor.getLong(4)!!,
-      cursor.getLong(5)!!,
-      cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
-      cursor.getLong(8)!!,
-      cursor.getLong(9)!!,
-      cursor.getLong(10)!!,
-      cursor.getLong(11)!!,
-      cursor.getLong(12)!!,
-      cursor.getLong(13)!!,
-      cursor.getLong(14)!!,
-      cursor.getLong(15)!!,
-      cursor.getLong(16)!!
-    )
-  }
-
-  public fun selectTopQueryStatsByTotalMs(app_version: String, value_: Long): Query<Query_stats> = selectTopQueryStatsByTotalMs(app_version, value_, ::Query_stats)
-
-  public fun <T : Any> selectTopQueryStatsByCalls(
-    app_version: String,
-    `value`: Long,
-    mapper: (
-      app_version: String,
-      table_name: String,
-      operation: String,
-      calls: Long,
-      errors: Long,
-      total_ms: Long,
-      min_ms: Long,
-      max_ms: Long,
-      b1: Long,
-      b5: Long,
-      b16: Long,
-      b50: Long,
-      b100: Long,
-      b500: Long,
-      b_inf: Long,
-      first_seen: Long,
-      last_seen: Long,
-    ) -> T,
-  ): Query<T> = SelectTopQueryStatsByCallsQuery(app_version, value) { cursor ->
-    mapper(
-      cursor.getString(0)!!,
-      cursor.getString(1)!!,
-      cursor.getString(2)!!,
-      cursor.getLong(3)!!,
-      cursor.getLong(4)!!,
-      cursor.getLong(5)!!,
-      cursor.getLong(6)!!,
-      cursor.getLong(7)!!,
-      cursor.getLong(8)!!,
-      cursor.getLong(9)!!,
-      cursor.getLong(10)!!,
-      cursor.getLong(11)!!,
-      cursor.getLong(12)!!,
-      cursor.getLong(13)!!,
-      cursor.getLong(14)!!,
-      cursor.getLong(15)!!,
-      cursor.getLong(16)!!
-    )
-  }
-
-  public fun selectTopQueryStatsByCalls(app_version: String, value_: Long): Query<Query_stats> = selectTopQueryStatsByCalls(app_version, value_, ::Query_stats)
-
-  public fun selectAllQueryStatVersions(): Query<String> = Query(-639_506_637, arrayOf("query_stats"), driver, "SteleDatabase.sq", "selectAllQueryStatVersions", "SELECT DISTINCT app_version FROM query_stats ORDER BY app_version DESC") { cursor ->
-    cursor.getString(0)!!
-  }
-
   public fun <T : Any> selectGitConfig(graph_id: String, mapper: (
     graph_id: String,
     repo_root: String,
@@ -2479,6 +2274,7 @@ public class SteleDatabaseQueries(
     ssh_key_path: String?,
     ssh_key_passphrase_key: String?,
     https_token_key: String?,
+    oauth_token_key: String?,
     poll_interval_minutes: Long,
     auto_commit: Long,
     commit_message_template: String,
@@ -2493,9 +2289,10 @@ public class SteleDatabaseQueries(
       cursor.getString(6),
       cursor.getString(7),
       cursor.getString(8),
-      cursor.getLong(9)!!,
+      cursor.getString(9),
       cursor.getLong(10)!!,
-      cursor.getString(11)!!
+      cursor.getLong(11)!!,
+      cursor.getString(12)!!
     )
   }
 
@@ -3051,14 +2848,14 @@ public class SteleDatabaseQueries(
    */
   public suspend fun updateBlockParentPositionAndLevel(
     parent_uuid: String?,
-    position: Long,
+    position: String,
     level: Long,
     uuid: String,
   ): Long {
     val result = driver.execute(-1_913_429_373, """UPDATE blocks SET parent_uuid = ?, position = ?, level = ? WHERE uuid = ?""", 4) {
           var parameterIndex = 0
           bindString(parameterIndex++, parent_uuid)
-          bindLong(parameterIndex++, position)
+          bindString(parameterIndex++, position)
           bindLong(parameterIndex++, level)
           bindString(parameterIndex++, uuid)
         }.await()
@@ -3074,7 +2871,7 @@ public class SteleDatabaseQueries(
   public suspend fun updateBlockHierarchy(
     parent_uuid: String?,
     left_uuid: String?,
-    position: Long,
+    position: String,
     level: Long,
     uuid: String,
   ): Long {
@@ -3082,7 +2879,7 @@ public class SteleDatabaseQueries(
           var parameterIndex = 0
           bindString(parameterIndex++, parent_uuid)
           bindString(parameterIndex++, left_uuid)
-          bindLong(parameterIndex++, position)
+          bindString(parameterIndex++, position)
           bindLong(parameterIndex++, level)
           bindString(parameterIndex++, uuid)
         }.await()
@@ -3095,13 +2892,49 @@ public class SteleDatabaseQueries(
   /**
    * @return The number of rows updated.
    */
-  public suspend fun updateBlockPositionOnly(position: Long, uuid: String): Long {
+  public suspend fun updateBlockPositionOnly(position: String, uuid: String): Long {
     val result = driver.execute(1_997_868_472, """UPDATE blocks SET position = ? WHERE uuid = ?""", 2) {
           var parameterIndex = 0
-          bindLong(parameterIndex++, position)
+          bindString(parameterIndex++, position)
           bindString(parameterIndex++, uuid)
         }.await()
     notifyQueries(1_997_868_472) { emit ->
+      emit("blocks")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun shiftRootBlockPositionsFrom(page_uuid: String, position: String): Long {
+    val result = driver.execute(-2_055_563_862, """
+        |UPDATE blocks SET position = position + 1
+        |WHERE page_uuid = ? AND parent_uuid IS NULL AND position >= ?
+        """.trimMargin(), 2) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, page_uuid)
+          bindString(parameterIndex++, position)
+        }.await()
+    notifyQueries(-2_055_563_862) { emit ->
+      emit("blocks")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun shiftChildBlockPositionsFrom(parent_uuid: String?, position: String): Long {
+    val result = driver.execute(null, """
+        |UPDATE blocks SET position = position + 1
+        |WHERE parent_uuid ${ if (parent_uuid == null) "IS" else "=" } ? AND position >= ?
+        """.trimMargin(), 2) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, parent_uuid)
+          bindString(parameterIndex++, position)
+        }.await()
+    notifyQueries(-1_085_809_534) { emit ->
       emit("blocks")
     }
     return result
@@ -3139,7 +2972,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     updated_at: Long,
     properties: String?,
     content_hash: String?,
@@ -3159,7 +2992,7 @@ public class SteleDatabaseQueries(
           bindString(parameterIndex++, left_uuid)
           bindString(parameterIndex++, content)
           bindLong(parameterIndex++, level)
-          bindLong(parameterIndex++, position)
+          bindString(parameterIndex++, position)
           bindLong(parameterIndex++, updated_at)
           bindString(parameterIndex++, properties)
           bindString(parameterIndex++, content_hash)
@@ -3231,6 +3064,7 @@ public class SteleDatabaseQueries(
       emit("blocks")
       emit("blocks_fts")
       emit("properties")
+      emit("wikilink_references")
     }
     return result
   }
@@ -3248,6 +3082,7 @@ public class SteleDatabaseQueries(
       emit("blocks")
       emit("blocks_fts")
       emit("properties")
+      emit("wikilink_references")
     }
     return result
   }
@@ -3262,6 +3097,7 @@ public class SteleDatabaseQueries(
       emit("blocks")
       emit("blocks_fts")
       emit("properties")
+      emit("wikilink_references")
     }
     return result
   }
@@ -3279,6 +3115,7 @@ public class SteleDatabaseQueries(
       emit("blocks")
       emit("blocks_fts")
       emit("properties")
+      emit("wikilink_references")
     }
     return result
   }
@@ -3299,6 +3136,7 @@ public class SteleDatabaseQueries(
       emit("blocks")
       emit("blocks_fts")
       emit("properties")
+      emit("wikilink_references")
     }
     return result
   }
@@ -3313,7 +3151,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     created_at: Long,
     updated_at: Long,
     properties: String?,
@@ -3332,7 +3170,7 @@ public class SteleDatabaseQueries(
           bindString(parameterIndex++, left_uuid)
           bindString(parameterIndex++, content)
           bindLong(parameterIndex++, level)
-          bindLong(parameterIndex++, position)
+          bindString(parameterIndex++, position)
           bindLong(parameterIndex++, created_at)
           bindLong(parameterIndex++, updated_at)
           bindString(parameterIndex++, properties)
@@ -3356,7 +3194,7 @@ public class SteleDatabaseQueries(
     left_uuid: String?,
     content: String,
     level: Long,
-    position: Long,
+    position: String,
     updated_at: Long,
     properties: String?,
     version: Long,
@@ -3376,7 +3214,7 @@ public class SteleDatabaseQueries(
           bindString(parameterIndex++, left_uuid)
           bindString(parameterIndex++, content)
           bindLong(parameterIndex++, level)
-          bindLong(parameterIndex++, position)
+          bindString(parameterIndex++, position)
           bindLong(parameterIndex++, updated_at)
           bindString(parameterIndex++, properties)
           bindLong(parameterIndex++, version)
@@ -3771,90 +3609,6 @@ public class SteleDatabaseQueries(
   /**
    * @return The number of rows updated.
    */
-  public suspend fun insertHistogramBucketIfAbsent(
-    operation_name: String,
-    bucket_ms: Long,
-    recorded_at: Long,
-  ): Long {
-    val result = driver.execute(-212_282_134, """
-        |INSERT OR IGNORE INTO perf_histogram_buckets (operation_name, bucket_ms, count, recorded_at)
-        |VALUES (?, ?, 0, ?)
-        """.trimMargin(), 3) {
-          var parameterIndex = 0
-          bindString(parameterIndex++, operation_name)
-          bindLong(parameterIndex++, bucket_ms)
-          bindLong(parameterIndex++, recorded_at)
-        }.await()
-    notifyQueries(-212_282_134) { emit ->
-      emit("perf_histogram_buckets")
-    }
-    return result
-  }
-
-  /**
-   * @return The number of rows updated.
-   */
-  public suspend fun incrementHistogramBucketCount(
-    recorded_at: Long,
-    operation_name: String,
-    bucket_ms: Long,
-  ): Long {
-    val result = driver.execute(-438_417_937, """
-        |UPDATE perf_histogram_buckets
-        |SET count = count + 1, recorded_at = ?
-        |WHERE operation_name = ? AND bucket_ms = ?
-        """.trimMargin(), 3) {
-          var parameterIndex = 0
-          bindLong(parameterIndex++, recorded_at)
-          bindString(parameterIndex++, operation_name)
-          bindLong(parameterIndex++, bucket_ms)
-        }.await()
-    notifyQueries(-438_417_937) { emit ->
-      emit("perf_histogram_buckets")
-    }
-    return result
-  }
-
-  /**
-   * @return The number of rows updated.
-   */
-  public suspend fun deleteOldHistogramRows(recorded_at: Long): Long {
-    val result = driver.execute(-994_534_270, """DELETE FROM perf_histogram_buckets WHERE recorded_at < ?""", 1) {
-          var parameterIndex = 0
-          bindLong(parameterIndex++, recorded_at)
-        }.await()
-    notifyQueries(-994_534_270) { emit ->
-      emit("perf_histogram_buckets")
-    }
-    return result
-  }
-
-  /**
-   * @return The number of rows updated.
-   */
-  public suspend fun upsertDebugFlag(
-    key: String,
-    value_: Long,
-    updated_at: Long,
-  ): Long {
-    val result = driver.execute(1_041_055_951, """
-        |INSERT OR REPLACE INTO debug_flags (key, value, updated_at)
-        |VALUES (?, ?, ?)
-        """.trimMargin(), 3) {
-          var parameterIndex = 0
-          bindString(parameterIndex++, key)
-          bindLong(parameterIndex++, value_)
-          bindLong(parameterIndex++, updated_at)
-        }.await()
-    notifyQueries(1_041_055_951) { emit ->
-      emit("debug_flags")
-    }
-    return result
-  }
-
-  /**
-   * @return The number of rows updated.
-   */
   public suspend fun recomputeBacklinkCountForPage(name: String): Long {
     val result = driver.execute(1_594_896_973, """
         |UPDATE pages SET backlink_count = (
@@ -3882,6 +3636,103 @@ public class SteleDatabaseQueries(
         }.await()
     notifyQueries(1_739_125_790) { emit ->
       emit("pages")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun insertWikilinkReference(block_uuid: String, page_name: String): Long {
+    val result = driver.execute(1_899_879_143, """INSERT OR IGNORE INTO wikilink_references (block_uuid, page_name) VALUES (?, ?)""", 2) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, block_uuid)
+          bindString(parameterIndex++, page_name)
+        }.await()
+    notifyQueries(1_899_879_143) { emit ->
+      emit("wikilink_references")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteWikilinkReferencesForBlock(block_uuid: String): Long {
+    val result = driver.execute(1_887_875_138, """DELETE FROM wikilink_references WHERE block_uuid = ?""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, block_uuid)
+        }.await()
+    notifyQueries(1_887_875_138) { emit ->
+      emit("wikilink_references")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun deleteWikilinkReferencesForPageName(page_name: String): Long {
+    val result = driver.execute(615_443_941, """DELETE FROM wikilink_references WHERE page_name = ? COLLATE NOCASE""", 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, page_name)
+        }.await()
+    notifyQueries(615_443_941) { emit ->
+      emit("wikilink_references")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun recomputeBacklinkCountFromIndex(name: String): Long {
+    val result = driver.execute(-1_528_089_251, """
+        |UPDATE pages SET backlink_count = (
+        |    SELECT COUNT(*) FROM wikilink_references WHERE page_name = pages.name COLLATE NOCASE
+        |) WHERE pages.name = ?
+        """.trimMargin(), 1) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, name)
+        }.await()
+    notifyQueries(-1_528_089_251) { emit ->
+      emit("pages")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun recomputeBacklinkCountsForPages(name: Collection<String>): Long {
+    val nameIndexes = createArguments(count = name.size)
+    val result = driver.execute(null, """
+        |UPDATE pages SET backlink_count = (
+        |    SELECT COUNT(*) FROM wikilink_references WHERE page_name = pages.name COLLATE NOCASE
+        |) WHERE pages.name IN $nameIndexes
+        """.trimMargin(), name.size) {
+          var parameterIndex = 0
+          name.forEach { name_ ->
+            bindString(parameterIndex++, name_)
+          }
+        }.await()
+    notifyQueries(-484_178_877) { emit ->
+      emit("pages")
+    }
+    return result
+  }
+
+  /**
+   * @return The number of rows updated.
+   */
+  public suspend fun updateWikilinkPageNameForRename(newName: String, oldName: String): Long {
+    val result = driver.execute(738_521_177, """UPDATE OR IGNORE wikilink_references SET page_name = ? WHERE page_name = ? COLLATE NOCASE""", 2) {
+          var parameterIndex = 0
+          bindString(parameterIndex++, newName)
+          bindString(parameterIndex++, oldName)
+        }.await()
+    notifyQueries(738_521_177) { emit ->
+      emit("wikilink_references")
     }
     return result
   }
@@ -4161,187 +4012,6 @@ public class SteleDatabaseQueries(
   /**
    * @return The number of rows updated.
    */
-  public suspend fun insertSpan(
-    trace_id: String,
-    span_id: String,
-    parent_span_id: String,
-    name: String,
-    start_epoch_ms: Long,
-    end_epoch_ms: Long,
-    duration_ms: Long,
-    attributes_json: String,
-    status_code: String,
-    app_version: String,
-    commit_hash: String,
-  ): Long {
-    val result = driver.execute(-1_038_766_748, """
-        |INSERT INTO spans (trace_id, span_id, parent_span_id, name, start_epoch_ms, end_epoch_ms, duration_ms, attributes_json, status_code, app_version, commit_hash)
-        |VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """.trimMargin(), 11) {
-          var parameterIndex = 0
-          bindString(parameterIndex++, trace_id)
-          bindString(parameterIndex++, span_id)
-          bindString(parameterIndex++, parent_span_id)
-          bindString(parameterIndex++, name)
-          bindLong(parameterIndex++, start_epoch_ms)
-          bindLong(parameterIndex++, end_epoch_ms)
-          bindLong(parameterIndex++, duration_ms)
-          bindString(parameterIndex++, attributes_json)
-          bindString(parameterIndex++, status_code)
-          bindString(parameterIndex++, app_version)
-          bindString(parameterIndex++, commit_hash)
-        }.await()
-    notifyQueries(-1_038_766_748) { emit ->
-      emit("spans")
-    }
-    return result
-  }
-
-  /**
-   * @return The number of rows updated.
-   */
-  public suspend fun deleteSpansOlderThan(end_epoch_ms: Long): Long {
-    val result = driver.execute(-1_376_925_320, """DELETE FROM spans WHERE end_epoch_ms < ?""", 1) {
-          var parameterIndex = 0
-          bindLong(parameterIndex++, end_epoch_ms)
-        }.await()
-    notifyQueries(-1_376_925_320) { emit ->
-      emit("spans")
-    }
-    return result
-  }
-
-  /**
-   * @return The number of rows updated.
-   */
-  public suspend fun deleteExcessSpans(`value`: Long): Long {
-    val result = driver.execute(1_788_250_216, """DELETE FROM spans WHERE id NOT IN (SELECT id FROM spans ORDER BY start_epoch_ms DESC LIMIT ?)""", 1) {
-          var parameterIndex = 0
-          bindLong(parameterIndex++, value)
-        }.await()
-    notifyQueries(1_788_250_216) { emit ->
-      emit("spans")
-    }
-    return result
-  }
-
-  /**
-   * @return The number of rows updated.
-   */
-  public suspend fun deleteAllSpans(): Long {
-    val result = driver.execute(1_640_771_412, """DELETE FROM spans""", 0).await()
-    notifyQueries(1_640_771_412) { emit ->
-      emit("spans")
-    }
-    return result
-  }
-
-  /**
-   * @return The number of rows updated.
-   */
-  public suspend fun insertQueryStatIfAbsent(
-    app_version: String,
-    table_name: String,
-    operation: String,
-    first_seen: Long,
-    last_seen: Long,
-  ): Long {
-    val result = driver.execute(1_909_304_888, """
-        |INSERT OR IGNORE INTO query_stats (app_version, table_name, operation, calls, errors, total_ms, min_ms, max_ms, b1, b5, b16, b50, b100, b500, b_inf, first_seen, last_seen)
-        |VALUES (?, ?, ?, 0, 0, 0, 9999999, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?)
-        """.trimMargin(), 5) {
-          var parameterIndex = 0
-          bindString(parameterIndex++, app_version)
-          bindString(parameterIndex++, table_name)
-          bindString(parameterIndex++, operation)
-          bindLong(parameterIndex++, first_seen)
-          bindLong(parameterIndex++, last_seen)
-        }.await()
-    notifyQueries(1_909_304_888) { emit ->
-      emit("query_stats")
-    }
-    return result
-  }
-
-  /**
-   * @return The number of rows updated.
-   */
-  public suspend fun mergeQueryStat(
-    calls: Long,
-    errors: Long,
-    total_ms: Long,
-    `value`: Long?,
-    value_: Long?,
-    b1: Long,
-    b5: Long,
-    b16: Long,
-    b50: Long,
-    b100: Long,
-    b500: Long,
-    b_inf: Long,
-    value__: Long?,
-    app_version: String,
-    table_name: String,
-    operation: String,
-  ): Long {
-    val result = driver.execute(2_023_646_501, """
-        |UPDATE query_stats SET
-        |    calls    = calls    + ?,
-        |    errors   = errors   + ?,
-        |    total_ms = total_ms + ?,
-        |    min_ms   = MIN(min_ms,  ?),
-        |    max_ms   = MAX(max_ms,  ?),
-        |    b1       = b1    + ?,
-        |    b5       = b5    + ?,
-        |    b16      = b16   + ?,
-        |    b50      = b50   + ?,
-        |    b100     = b100  + ?,
-        |    b500     = b500  + ?,
-        |    b_inf    = b_inf + ?,
-        |    last_seen = MAX(last_seen, ?)
-        |WHERE app_version = ? AND table_name = ? AND operation = ?
-        """.trimMargin(), 16) {
-          var parameterIndex = 0
-          bindLong(parameterIndex++, calls)
-          bindLong(parameterIndex++, errors)
-          bindLong(parameterIndex++, total_ms)
-          bindLong(parameterIndex++, value)
-          bindLong(parameterIndex++, value_)
-          bindLong(parameterIndex++, b1)
-          bindLong(parameterIndex++, b5)
-          bindLong(parameterIndex++, b16)
-          bindLong(parameterIndex++, b50)
-          bindLong(parameterIndex++, b100)
-          bindLong(parameterIndex++, b500)
-          bindLong(parameterIndex++, b_inf)
-          bindLong(parameterIndex++, value__)
-          bindString(parameterIndex++, app_version)
-          bindString(parameterIndex++, table_name)
-          bindString(parameterIndex++, operation)
-        }.await()
-    notifyQueries(2_023_646_501) { emit ->
-      emit("query_stats")
-    }
-    return result
-  }
-
-  /**
-   * @return The number of rows updated.
-   */
-  public suspend fun deleteQueryStatsForVersion(app_version: String): Long {
-    val result = driver.execute(876_124_146, """DELETE FROM query_stats WHERE app_version = ?""", 1) {
-          var parameterIndex = 0
-          bindString(parameterIndex++, app_version)
-        }.await()
-    notifyQueries(876_124_146) { emit ->
-      emit("query_stats")
-    }
-    return result
-  }
-
-  /**
-   * @return The number of rows updated.
-   */
   public suspend fun insertOrReplaceGitConfig(
     graph_id: String,
     repo_root: String,
@@ -4352,6 +4022,7 @@ public class SteleDatabaseQueries(
     ssh_key_path: String?,
     ssh_key_passphrase_key: String?,
     https_token_key: String?,
+    oauth_token_key: String?,
     poll_interval_minutes: Long,
     auto_commit: Long,
     commit_message_template: String,
@@ -4359,10 +4030,10 @@ public class SteleDatabaseQueries(
     val result = driver.execute(66_633_213, """
         |INSERT OR REPLACE INTO git_config(
         |    graph_id, repo_root, wiki_subdir, remote_name, remote_branch,
-        |    auth_type, ssh_key_path, ssh_key_passphrase_key, https_token_key,
+        |    auth_type, ssh_key_path, ssh_key_passphrase_key, https_token_key, oauth_token_key,
         |    poll_interval_minutes, auto_commit, commit_message_template
-        |) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """.trimMargin(), 12) {
+        |) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """.trimMargin(), 13) {
           var parameterIndex = 0
           bindString(parameterIndex++, graph_id)
           bindString(parameterIndex++, repo_root)
@@ -4373,6 +4044,7 @@ public class SteleDatabaseQueries(
           bindString(parameterIndex++, ssh_key_path)
           bindString(parameterIndex++, ssh_key_passphrase_key)
           bindString(parameterIndex++, https_token_key)
+          bindString(parameterIndex++, oauth_token_key)
           bindLong(parameterIndex++, poll_interval_minutes)
           bindLong(parameterIndex++, auto_commit)
           bindString(parameterIndex++, commit_message_template)
@@ -5299,6 +4971,46 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectBlocksByParentUuids"
+  }
+
+  private inner class SelectBlockHierarchyRecursiveQuery<out T : Any>(
+    public val uuid: String,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("blocks", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("blocks", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-999_229_715, """
+    |WITH RECURSIVE subtree(
+    |    id, uuid, page_uuid, parent_uuid, left_uuid, content, level, position,
+    |    created_at, updated_at, properties, version, content_hash, block_type, depth
+    |) AS (
+    |    SELECT b.id, b.uuid, b.page_uuid, b.parent_uuid, b.left_uuid, b.content,
+    |           b.level, b.position, b.created_at, b.updated_at, b.properties,
+    |           b.version, b.content_hash, b.block_type, 0 AS depth
+    |    FROM blocks b
+    |    WHERE b.uuid = ?
+    |    UNION ALL
+    |    SELECT b.id, b.uuid, b.page_uuid, b.parent_uuid, b.left_uuid, b.content,
+    |           b.level, b.position, b.created_at, b.updated_at, b.properties,
+    |           b.version, b.content_hash, b.block_type, s.depth + 1
+    |    FROM blocks b
+    |    INNER JOIN subtree s ON b.parent_uuid = s.uuid
+    |    WHERE s.depth < 100
+    |)
+    |SELECT subtree.id, subtree.uuid, subtree.page_uuid, subtree.parent_uuid, subtree.left_uuid, subtree.content, subtree.level, subtree.position, subtree.created_at, subtree.updated_at, subtree.properties, subtree.version, subtree.content_hash, subtree.block_type, subtree.depth FROM subtree
+    |ORDER BY depth, parent_uuid, position
+    """.trimMargin(), mapper, 1) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, uuid)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectBlockHierarchyRecursive"
   }
 
   private inner class SelectRootBlocksByPageUuidOrderedQuery<out T : Any>(
@@ -6391,46 +6103,6 @@ public class SteleDatabaseQueries(
     override fun toString(): String = "SteleDatabase.sq:selectPageVisitByUuid"
   }
 
-  private inner class SelectHistogramForOperationQuery<out T : Any>(
-    public val operation_name: String,
-    mapper: (SqlCursor) -> T,
-  ) : Query<T>(mapper) {
-    override fun addListener(listener: Query.Listener) {
-      driver.addListener("perf_histogram_buckets", listener = listener)
-    }
-
-    override fun removeListener(listener: Query.Listener) {
-      driver.removeListener("perf_histogram_buckets", listener = listener)
-    }
-
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_589_019, """SELECT bucket_ms, count FROM perf_histogram_buckets WHERE operation_name = ? ORDER BY bucket_ms""", mapper, 1) {
-      var parameterIndex = 0
-      bindString(parameterIndex++, operation_name)
-    }
-
-    override fun toString(): String = "SteleDatabase.sq:selectHistogramForOperation"
-  }
-
-  private inner class SelectDebugFlagQuery<out T : Any>(
-    public val key: String,
-    mapper: (SqlCursor) -> T,
-  ) : Query<T>(mapper) {
-    override fun addListener(listener: Query.Listener) {
-      driver.addListener("debug_flags", listener = listener)
-    }
-
-    override fun removeListener(listener: Query.Listener) {
-      driver.removeListener("debug_flags", listener = listener)
-    }
-
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_764_549_726, """SELECT value FROM debug_flags WHERE key = ?""", mapper, 1) {
-      var parameterIndex = 0
-      bindString(parameterIndex++, key)
-    }
-
-    override fun toString(): String = "SteleDatabase.sq:selectDebugFlag"
-  }
-
   private inner class CountBlocksWithWikilinkQuery<out T : Any>(
     public val pageName: String,
     mapper: (SqlCursor) -> T,
@@ -6538,6 +6210,74 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectPageBacklinkCount"
+  }
+
+  private inner class SelectWikilinkPageNamesForBlockQuery<out T : Any>(
+    public val block_uuid: String,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("wikilink_references", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("wikilink_references", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_490_472_214, """SELECT page_name FROM wikilink_references WHERE block_uuid = ?""", mapper, 1) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, block_uuid)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectWikilinkPageNamesForBlock"
+  }
+
+  private inner class SelectWikilinkPageNamesForBlocksQuery<out T : Any>(
+    public val block_uuid: Collection<String>,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("wikilink_references", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("wikilink_references", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> {
+      val block_uuidIndexes = createArguments(count = block_uuid.size)
+      return driver.executeQuery(null, """SELECT DISTINCT page_name FROM wikilink_references WHERE block_uuid IN $block_uuidIndexes""", mapper, block_uuid.size) {
+            var parameterIndex = 0
+            block_uuid.forEach { block_uuid_ ->
+              bindString(parameterIndex++, block_uuid_)
+            }
+          }
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectWikilinkPageNamesForBlocks"
+  }
+
+  private inner class SelectWikilinkPageNamesForPageQuery<out T : Any>(
+    public val page_uuid: String,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("wikilink_references", "blocks", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("wikilink_references", "blocks", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-367_155_994, """
+    |SELECT DISTINCT page_name FROM wikilink_references
+    |WHERE block_uuid IN (SELECT uuid FROM blocks WHERE page_uuid = ?)
+    """.trimMargin(), mapper, 1) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, page_uuid)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectWikilinkPageNamesForPage"
   }
 
   private inner class SelectMetadataQuery<out T : Any>(
@@ -6746,114 +6486,6 @@ public class SteleDatabaseQueries(
     override fun toString(): String = "SteleDatabase.sq:selectAllMigrationsForGraph"
   }
 
-  private inner class SelectRecentSpansQuery<out T : Any>(
-    public val `value`: Long,
-    mapper: (SqlCursor) -> T,
-  ) : Query<T>(mapper) {
-    override fun addListener(listener: Query.Listener) {
-      driver.addListener("spans", listener = listener)
-    }
-
-    override fun removeListener(listener: Query.Listener) {
-      driver.removeListener("spans", listener = listener)
-    }
-
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(681_519_953, """SELECT spans.id, spans.trace_id, spans.span_id, spans.parent_span_id, spans.name, spans.start_epoch_ms, spans.end_epoch_ms, spans.duration_ms, spans.attributes_json, spans.status_code, spans.app_version, spans.commit_hash FROM spans ORDER BY start_epoch_ms DESC LIMIT ?""", mapper, 1) {
-      var parameterIndex = 0
-      bindLong(parameterIndex++, value)
-    }
-
-    override fun toString(): String = "SteleDatabase.sq:selectRecentSpans"
-  }
-
-  private inner class SelectSlowSpansByVersionAndNameQuery<out T : Any>(
-    public val app_version: String,
-    public val name: String,
-    public val `value`: Long,
-    mapper: (SqlCursor) -> T,
-  ) : Query<T>(mapper) {
-    override fun addListener(listener: Query.Listener) {
-      driver.addListener("spans", listener = listener)
-    }
-
-    override fun removeListener(listener: Query.Listener) {
-      driver.removeListener("spans", listener = listener)
-    }
-
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(629_842_828, """SELECT spans.id, spans.trace_id, spans.span_id, spans.parent_span_id, spans.name, spans.start_epoch_ms, spans.end_epoch_ms, spans.duration_ms, spans.attributes_json, spans.status_code, spans.app_version, spans.commit_hash FROM spans WHERE app_version = ? AND name = ? ORDER BY duration_ms DESC LIMIT ?""", mapper, 3) {
-      var parameterIndex = 0
-      bindString(parameterIndex++, app_version)
-      bindString(parameterIndex++, name)
-      bindLong(parameterIndex++, value)
-    }
-
-    override fun toString(): String = "SteleDatabase.sq:selectSlowSpansByVersionAndName"
-  }
-
-  private inner class SelectQueryStatsByVersionQuery<out T : Any>(
-    public val app_version: String,
-    mapper: (SqlCursor) -> T,
-  ) : Query<T>(mapper) {
-    override fun addListener(listener: Query.Listener) {
-      driver.addListener("query_stats", listener = listener)
-    }
-
-    override fun removeListener(listener: Query.Listener) {
-      driver.removeListener("query_stats", listener = listener)
-    }
-
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(542_632_205, """SELECT query_stats.app_version, query_stats.table_name, query_stats.operation, query_stats.calls, query_stats.errors, query_stats.total_ms, query_stats.min_ms, query_stats.max_ms, query_stats.b1, query_stats.b5, query_stats.b16, query_stats.b50, query_stats.b100, query_stats.b500, query_stats.b_inf, query_stats.first_seen, query_stats.last_seen FROM query_stats WHERE app_version = ? ORDER BY total_ms DESC""", mapper, 1) {
-      var parameterIndex = 0
-      bindString(parameterIndex++, app_version)
-    }
-
-    override fun toString(): String = "SteleDatabase.sq:selectQueryStatsByVersion"
-  }
-
-  private inner class SelectTopQueryStatsByTotalMsQuery<out T : Any>(
-    public val app_version: String,
-    public val `value`: Long,
-    mapper: (SqlCursor) -> T,
-  ) : Query<T>(mapper) {
-    override fun addListener(listener: Query.Listener) {
-      driver.addListener("query_stats", listener = listener)
-    }
-
-    override fun removeListener(listener: Query.Listener) {
-      driver.removeListener("query_stats", listener = listener)
-    }
-
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(-1_979_761_980, """SELECT query_stats.app_version, query_stats.table_name, query_stats.operation, query_stats.calls, query_stats.errors, query_stats.total_ms, query_stats.min_ms, query_stats.max_ms, query_stats.b1, query_stats.b5, query_stats.b16, query_stats.b50, query_stats.b100, query_stats.b500, query_stats.b_inf, query_stats.first_seen, query_stats.last_seen FROM query_stats WHERE app_version = ? ORDER BY total_ms DESC LIMIT ?""", mapper, 2) {
-      var parameterIndex = 0
-      bindString(parameterIndex++, app_version)
-      bindLong(parameterIndex++, value)
-    }
-
-    override fun toString(): String = "SteleDatabase.sq:selectTopQueryStatsByTotalMs"
-  }
-
-  private inner class SelectTopQueryStatsByCallsQuery<out T : Any>(
-    public val app_version: String,
-    public val `value`: Long,
-    mapper: (SqlCursor) -> T,
-  ) : Query<T>(mapper) {
-    override fun addListener(listener: Query.Listener) {
-      driver.addListener("query_stats", listener = listener)
-    }
-
-    override fun removeListener(listener: Query.Listener) {
-      driver.removeListener("query_stats", listener = listener)
-    }
-
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(410_865_423, """SELECT query_stats.app_version, query_stats.table_name, query_stats.operation, query_stats.calls, query_stats.errors, query_stats.total_ms, query_stats.min_ms, query_stats.max_ms, query_stats.b1, query_stats.b5, query_stats.b16, query_stats.b50, query_stats.b100, query_stats.b500, query_stats.b_inf, query_stats.first_seen, query_stats.last_seen FROM query_stats WHERE app_version = ? ORDER BY calls DESC LIMIT ?""", mapper, 2) {
-      var parameterIndex = 0
-      bindString(parameterIndex++, app_version)
-      bindLong(parameterIndex++, value)
-    }
-
-    override fun toString(): String = "SteleDatabase.sq:selectTopQueryStatsByCalls"
-  }
-
   private inner class SelectGitConfigQuery<out T : Any>(
     public val graph_id: String,
     mapper: (SqlCursor) -> T,
@@ -6866,7 +6498,7 @@ public class SteleDatabaseQueries(
       driver.removeListener("git_config", listener = listener)
     }
 
-    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_451_609_335, """SELECT git_config.graph_id, git_config.repo_root, git_config.wiki_subdir, git_config.remote_name, git_config.remote_branch, git_config.auth_type, git_config.ssh_key_path, git_config.ssh_key_passphrase_key, git_config.https_token_key, git_config.poll_interval_minutes, git_config.auto_commit, git_config.commit_message_template FROM git_config WHERE graph_id = ?""", mapper, 1) {
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(1_451_609_335, """SELECT git_config.graph_id, git_config.repo_root, git_config.wiki_subdir, git_config.remote_name, git_config.remote_branch, git_config.auth_type, git_config.ssh_key_path, git_config.ssh_key_passphrase_key, git_config.https_token_key, git_config.oauth_token_key, git_config.poll_interval_minutes, git_config.auto_commit, git_config.commit_message_template FROM git_config WHERE graph_id = ?""", mapper, 1) {
       var parameterIndex = 0
       bindString(parameterIndex++, graph_id)
     }

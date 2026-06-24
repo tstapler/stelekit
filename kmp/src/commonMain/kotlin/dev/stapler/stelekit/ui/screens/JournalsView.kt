@@ -31,6 +31,7 @@ import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.ui.components.BlockList
 import dev.stapler.stelekit.ui.components.EditorCapabilities
 import dev.stapler.stelekit.ui.components.EditorToolbar
+import dev.stapler.stelekit.ui.components.LocalGraphRootPath
 import dev.stapler.stelekit.ui.components.asLazyKey
 import dev.stapler.stelekit.ui.components.SuggestionItem
 import dev.stapler.stelekit.ui.components.typedItems
@@ -50,6 +51,7 @@ fun JournalsView(
     viewModel: JournalsViewModel,
     isDebugMode: Boolean,
     onLinkClick: (String) -> Unit,
+    graphPath: String = "",
     searchViewModel: SearchViewModel? = null,
     onSearchPages: (String) -> kotlinx.coroutines.flow.Flow<List<SearchResultItem>> = { kotlinx.coroutines.flow.emptyFlow() },
     suggestionMatcher: AhoCorasickMatcher? = null,
@@ -103,6 +105,7 @@ fun JournalsView(
 
     val toolbarHeightDp = with(LocalDensity.current) { toolbarHeight.toDp() }
 
+    CompositionLocalProvider(LocalGraphRootPath provides graphPath.ifEmpty { null }) {
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -133,6 +136,7 @@ fun JournalsView(
                     isLoading = !page.isContentLoaded || page.uuid.value in loadingPageUuids,
                     isDebugMode = isDebugMode,
                     hasConflict = page.filePath in conflictFilePaths,
+                    onTitleClick = { onLinkClick(page.name) },
                     editingBlockUuid = editingBlockUuid?.value,
                     editingCursorIndex = editingCursorIndex,
                     collapsedBlocks = collapsedBlockUuids,
@@ -183,14 +187,6 @@ fun JournalsView(
                         )
                     },
                     onOpenAnnotationEditor = onOpenAnnotationEditor,
-                    onRequestTagSuggestions = if (tagSuggestionViewModel != null) { blockUuid, content ->
-                        val alreadyLinked = WikiLinkExtractor.extractPageNames(content)
-                        tagSuggestionViewModel.requestSuggestions(
-                            blockUuid = blockUuid,
-                            blockContent = content,
-                            alreadyLinkedTerms = alreadyLinked,
-                        )
-                    } else null,
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -250,6 +246,16 @@ fun JournalsView(
             capabilities = capabilities,
             searchViewModel = searchViewModel,
             isLeftHanded = isLeftHanded,
+            onSuggestTags = if (tagSuggestionViewModel != null) { blockUuid, content ->
+                if (content.isNotBlank()) {
+                    val alreadyLinked = WikiLinkExtractor.extractPageNames(content)
+                    tagSuggestionViewModel.requestSuggestions(
+                        blockUuid = blockUuid,
+                        blockContent = content,
+                        alreadyLinkedTerms = alreadyLinked,
+                    )
+                }
+            } else null,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .onSizeChanged { toolbarHeight = it.height },
@@ -267,6 +273,7 @@ fun JournalsView(
             )
         }
     }
+    } // CompositionLocalProvider(LocalGraphRootPath)
 }
 
 /**
@@ -279,6 +286,7 @@ private fun JournalEntry(
     isLoading: Boolean,
     isDebugMode: Boolean,
     hasConflict: Boolean = false,
+    onTitleClick: () -> Unit,
     editingBlockUuid: String?,
     editingCursorIndex: Int?,
     collapsedBlocks: Set<String>,
@@ -312,14 +320,15 @@ private fun JournalEntry(
     onNavigateAllSuggestions: ((List<SuggestionItem>) -> Unit)? = null,
     onBlockSelectionChange: ((blockUuid: String, range: IntRange?) -> Unit)? = null,
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
-    onRequestTagSuggestions: ((blockUuid: String, content: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
         // Journal date header with optional conflict indicator
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(bottom = 16.dp, top = 8.dp)
+            modifier = Modifier
+                .clickable { onTitleClick() }
+                .padding(bottom = 16.dp, top = 8.dp)
         ) {
             Text(
                 text = formatJournalDate(page.name),
@@ -403,7 +412,6 @@ private fun JournalEntry(
                 onNavigateAllSuggestions = onNavigateAllSuggestions,
                 onBlockSelectionChange = onBlockSelectionChange,
                 onOpenAnnotationEditor = onOpenAnnotationEditor,
-                onRequestTagSuggestions = onRequestTagSuggestions,
             )
 
             // Clickable area below blocks to append new block

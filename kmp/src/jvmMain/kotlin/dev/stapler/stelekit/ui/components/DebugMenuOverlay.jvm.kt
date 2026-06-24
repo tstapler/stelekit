@@ -9,6 +9,9 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.performance.DebugMenuState
 
 @Composable
+actual fun SearchDialogWindowEffect() { /* Desktop uses sidebar, no IME to manage */ }
+
+@Composable
 actual fun DebugMenuOverlay(
     state: DebugMenuState,
     onStateChange: (DebugMenuState) -> Unit,

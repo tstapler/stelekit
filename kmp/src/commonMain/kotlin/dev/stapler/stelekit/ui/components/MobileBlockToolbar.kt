@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.automirrored.filled.FormatIndentDecrease
 import androidx.compose.material.icons.automirrored.filled.FormatIndentIncrease
@@ -38,6 +39,7 @@ fun MobileBlockToolbar(
     onRedo: () -> Unit = {},
     onFormat: (FormatAction) -> Unit = {},
     onLinkPicker: (() -> Unit)? = null,
+    onSuggestTags: (() -> Unit)? = null,
     onAttachImage: (() -> Unit)? = null,
     onCaptureImage: (() -> Unit)? = null,
     isInSelectionMode: Boolean = false,
@@ -188,6 +190,14 @@ fun MobileBlockToolbar(
                                 "[[]]", fontSize = 14.sp,
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                             )
+                        }
+                        if (onSuggestTags != null) {
+                            IconButton(
+                                onClick = onSuggestTags,
+                                modifier = Modifier.semantics { contentDescription = "Suggest tags" }
+                            ) {
+                                Icon(Icons.Default.Label, contentDescription = null)
+                            }
                         }
                         if (onAttachImage != null) {
                             IconButton(

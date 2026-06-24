@@ -8,7 +8,6 @@ import android.provider.OpenableColumns
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 
@@ -38,6 +37,11 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     private val knownExistingFiles: MutableSet<String> = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap())
     private val knownExistingDirs: MutableSet<String> = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap())
 
+    // Cached result of StorageManager.getStorageVolumes() — avoids Binder IPC on repeated calls.
+    // Keyed by treeRootDocId since the volume root is stable within a graph session.
+    private var cachedVolumeRoot: java.io.File? = null
+    private var cachedVolumeDocId: String? = null
+
     // Write-behind queue — non-null when MANAGE_EXTERNAL_STORAGE is not granted.
     private var writeBehindQueue: WriteBehindQueue? = null
 
@@ -45,11 +49,6 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         private const val TAG = "PlatformFileSystem"
         const val PREFS_NAME = "stelekit_prefs"
         const val KEY_SAF_TREE_URI = "saf_tree_uri"
-
-        // Set to false after the first invalidateStaleShadow call in this process.
-        // Allows a full shadow purge on cold start so external writes (e.g. Termux)
-        // are always picked up rather than served from the stale on-device cache.
-        private val freshProcess = AtomicBoolean(true)
 
         fun toSafRoot(treeUri: Uri): String = "saf://${Uri.encode(Uri.decode(treeUri.toString()))}"
 
@@ -271,10 +270,17 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val volumeRoot: java.io.File = if (volumeName == "primary") {
             android.os.Environment.getExternalStorageDirectory()
         } else {
-            val ctx = context ?: return null
-            val sm = ctx.getSystemService(android.os.storage.StorageManager::class.java) ?: return null
-            sm.storageVolumes.firstOrNull { it.uuid?.equals(volumeName, ignoreCase = true) == true }
-                ?.directory ?: return null
+            if (cachedVolumeDocId == docId && cachedVolumeRoot != null) {
+                cachedVolumeRoot!!
+            } else {
+                val ctx = context ?: return null
+                val sm = ctx.getSystemService(android.os.storage.StorageManager::class.java) ?: return null
+                val root = sm.storageVolumes.firstOrNull { it.uuid?.equals(volumeName, ignoreCase = true) == true }
+                    ?.directory ?: return null
+                cachedVolumeRoot = root
+                cachedVolumeDocId = docId
+                root
+            }
         }
         // saf://... path: strip "saf://{encodedTreeUri}/{relativePath}"; relativePath is everything after first '/'
         val withoutScheme = safPath.removePrefix("saf://")
@@ -287,6 +293,18 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     // -------------------------------------------------------------------------
     // FileSystem implementation — SAF paths
     // -------------------------------------------------------------------------
+
+    override fun resolveAssetUri(graphRoot: String, relativePath: String): String? {
+        if (!graphRoot.startsWith("saf://")) return null
+        val fullPath = "$graphRoot/$relativePath"
+        if (isDirectAccess()) {
+            val realPath = resolveToRealPath(fullPath)
+            if (realPath != null) return "file://$realPath"
+        }
+        return try {
+            parseDocumentUri(fullPath).toString()
+        } catch (_: Exception) { null }
+    }
 
     actual override fun readFile(path: String): String? {
         if (!path.startsWith("saf://")) return legacyReadFile(path)
@@ -321,6 +339,66 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val withoutScheme = safPath.removePrefix("saf://")
         val slashIdx = withoutScheme.indexOf('/')
         return if (slashIdx >= 0) withoutScheme.substring(slashIdx + 1) else ""
+    }
+
+    override fun readFileBytes(path: String): ByteArray? {
+        if (!path.startsWith("saf://")) return legacyReadFileBytes(path)
+        if (isDirectAccess()) {
+            val realPath = resolveToRealPath(path)
+            if (realPath != null) return legacyReadFileBytes(realPath)
+        }
+        return try {
+            val docUri = parseDocumentUri(path)
+            context?.contentResolver?.openInputStream(docUri)?.use { it.readBytes() }
+        } catch (e: Exception) { null }
+    }
+
+    override fun writeFileBytes(path: String, data: ByteArray): Boolean {
+        if (path.startsWith("content://")) {
+            return try {
+                val ctx = context ?: return false
+                val uri = Uri.parse(path)
+                val stream = ctx.contentResolver.openOutputStream(uri, "wt") ?: return false
+                stream.use { it.write(data); it.flush() }
+                true
+            } catch (e: SecurityException) { Log.w(TAG, "writeFileBytes: permission denied for $path", e); false }
+            catch (e: Exception) { Log.w(TAG, "writeFileBytes: error writing to $path", e); false }
+        }
+        if (!path.startsWith("saf://")) return legacyWriteFileBytes(path, data)
+        if (isDirectAccess()) {
+            val realPath = resolveToRealPath(path)
+            if (realPath != null) return legacyWriteFileBytes(realPath, data)
+        }
+        return try {
+            var docUri = parseDocumentUri(path)
+            val ctx = context ?: return false
+            if (path !in knownExistingFiles) {
+                val docFile = DocumentFile.fromSingleUri(ctx, docUri)
+                if (docFile == null || !docFile.exists()) {
+                    val fileName = path.substringAfterLast('/')
+                    val parentPath = path.substring(0, path.lastIndexOf('/'))
+                    if (parentPath !in knownExistingDirs && !directoryExists(parentPath)) {
+                        if (!createDirectory(parentPath)) return false
+                    }
+                    knownExistingDirs.add(parentPath)
+                    val parentDocUri = parseDocumentUri(parentPath)
+                    val mimeType = when (fileName.substringAfterLast('.').lowercase()) {
+                        "jpg", "jpeg" -> "image/jpeg"
+                        "png" -> "image/png"
+                        "webp" -> "image/webp"
+                        else -> "application/octet-stream"
+                    }
+                    docUri = DocumentsContract.createDocument(
+                        ctx.contentResolver, parentDocUri, mimeType, fileName
+                    ) ?: return false
+                }
+            }
+            ctx.contentResolver.openOutputStream(docUri, "w")?.use { stream ->
+                stream.write(data)
+            }
+            knownExistingFiles.add(path)
+            true
+        } catch (e: Exception) { false }
     }
 
     actual override fun writeFile(path: String, content: String): Boolean {
@@ -366,34 +444,6 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         catch (e: Exception) { Log.w(TAG, "writeFile: unexpected error for $path", e); false }
     }
 
-    override fun writeFileBytes(path: String, data: ByteArray): Boolean {
-        if (path.startsWith("content://")) {
-            return try {
-                val ctx = context ?: return false
-                val uri = Uri.parse(path)
-                // Return false (not true) when openOutputStream is null — the provider refused
-                // the write, and the file stays 0 B. Returning true here would let check(ok)
-                // pass and show a success snackbar while the export file is actually empty.
-                val stream = ctx.contentResolver.openOutputStream(uri, "wt") ?: return false
-                stream.use { it.write(data); it.flush() }
-                true
-            } catch (e: SecurityException) { Log.w(TAG, "writeFileBytes: permission denied for $path", e); false }
-            catch (e: Exception) { Log.w(TAG, "writeFileBytes: error writing to $path", e); false }
-        }
-        return try {
-            val expandedPath = expandTilde(path)
-            val validatedPath = validateLegacyPath(expandedPath)
-            val file = File(validatedPath)
-            val parentDir = file.parentFile
-            if (parentDir != null && !parentDir.exists()) parentDir.mkdirs()
-            file.writeBytes(data)
-            true
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            false
-        }
-    }
 
     actual override fun listFiles(path: String): List<String> {
         if (!path.startsWith("saf://")) return legacyListFiles(path)
@@ -651,6 +701,38 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         writeBehindQueue = queue
     }
 
+    private var onFlushComplete: (suspend (String) -> Unit)? = null
+    private var onFlushPreWrite: (suspend (String) -> Unit)? = null
+    private var onFlushFailed: (suspend (String) -> Unit)? = null
+
+    /**
+     * Registers a callback invoked after each successful write-behind SAF flush.
+     * Used to call [dev.stapler.stelekit.db.GraphLoader.markFileWrittenByUs] so the
+     * FileRegistry records the post-flush SAF mtime and suppresses the subsequent poll event
+     * (critical for encrypted .md.stek files where the content-hash guard is disabled).
+     */
+    override fun setOnFlushComplete(callback: (suspend (String) -> Unit)?) {
+        onFlushComplete = callback
+    }
+
+    /**
+     * Registers a callback invoked before each write-behind SAF write begins.
+     * Used to call [dev.stapler.stelekit.db.GraphLoader.preMarkFileWrite] to set the
+     * Long.MAX_VALUE sentinel, closing the race window for encrypted .md.stek files.
+     */
+    override fun setOnFlushPreWrite(callback: (suspend (String) -> Unit)?) {
+        onFlushPreWrite = callback
+    }
+
+    /**
+     * Registers a callback invoked when a write-behind SAF write fails.
+     * Used to call [dev.stapler.stelekit.db.GraphLoader.clearFilePendingWrite] to remove
+     * the Long.MAX_VALUE sentinel so the file is not permanently suppressed.
+     */
+    override fun setOnFlushFailed(callback: (suspend (String) -> Unit)?) {
+        onFlushFailed = callback
+    }
+
     override fun markDirty(path: String, content: String): Boolean {
         val queue = writeBehindQueue ?: return false
         if (!path.startsWith("saf://")) return false
@@ -663,20 +745,25 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     override suspend fun flushPendingWrites() {
         val queue = writeBehindQueue ?: return
         val cache = shadowCache ?: return
-        ShadowFlushActor(this, cache, queue).flush()
+        ShadowFlushActor(
+            this, cache, queue,
+            onPreFlush = onFlushPreWrite,
+            onFlushed = onFlushComplete,
+            onFlushFailed = onFlushFailed,
+        ).flush()
     }
 
     override suspend fun invalidateStaleShadow(graphPath: String) {
         val cache = shadowCache ?: return
         if (!graphPath.startsWith("saf://")) return
 
-        // On the first call in this process, purge the entire shadow directory.
-        // External tools (e.g. Termux) can write files while the app is dead; the
-        // SAF provider may return stale metadata on cold start, making mtime-based
-        // invalidation unreliable. A full purge guarantees freshness at the cost of
-        // one SAF-backed startup for each cold-start cycle.
-        if (freshProcess.getAndSet(false)) {
-            Log.d(TAG, "invalidateStaleShadow: first call after process start — purging shadow for $graphPath")
+        // On the first access of this cache instance (per graph, not per process), purge
+        // the entire shadow directory. External tools (e.g. Termux) can write files while
+        // the app is dead; the SAF provider may return stale metadata on startup, making
+        // mtime-based invalidation unreliable. A full purge guarantees freshness.
+        // Scoped per-instance so graph switches also trigger a full purge for the new graph.
+        if (cache.isFirstAccess()) {
+            Log.d(TAG, "invalidateStaleShadow: first access for this graph — purging shadow for $graphPath")
             cache.deleteAll()
             return
         }
@@ -729,6 +816,15 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         val journalsMods = listFilesWithModTimes(journalsPath)
         cache.syncFromSaf("pages", pagesMods) { fileName -> safReadContent("$pagesPath/$fileName") }
         cache.syncFromSaf("journals", journalsMods) { fileName -> safReadContent("$journalsPath/$fileName") }
+    }
+
+    override fun resolveLoadableUri(path: String): String? {
+        if (path.startsWith("saf://")) {
+            return try {
+                parseDocumentUri(path).toString()
+            } catch (_: Exception) { null }
+        }
+        return super.resolveLoadableUri(path)
     }
 
     override fun hasStoragePermission(): Boolean {
@@ -825,6 +921,44 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         } catch (e: Exception) {
             null
         }
+    }
+
+    private fun legacyReadFileBytes(path: String): ByteArray? {
+        return try {
+            val expandedPath = expandTilde(path)
+            val canonicalPath = File(expandedPath).canonicalPath
+            val homePath = File(homeDir).canonicalPath
+            val ctx = context
+            val allowedPrefixes = buildList {
+                add(homePath)
+                if (ctx != null) {
+                    add(ctx.cacheDir.canonicalPath)
+                    add(ctx.filesDir.canonicalPath)
+                    ctx.externalCacheDir?.canonicalPath?.let { add(it) }
+                }
+            }
+            require(allowedPrefixes.any { canonicalPath.startsWith(it) }) {
+                "Path must be within an allowed directory"
+            }
+            val file = File(canonicalPath)
+            if (!file.exists() || !file.isFile) return null
+            if (file.length() > maxFileSize) return null
+            file.readBytes()
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { null }
+    }
+
+    private fun legacyWriteFileBytes(path: String, data: ByteArray): Boolean {
+        return try {
+            val expandedPath = expandTilde(path)
+            val validatedPath = validateLegacyPath(expandedPath)
+            val file = File(validatedPath)
+            val parentDir = file.parentFile
+            if (parentDir != null && !parentDir.exists()) parentDir.mkdirs()
+            file.writeBytes(data)
+            true
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) { false }
     }
 
     private fun legacyWriteFile(path: String, content: String): Boolean {

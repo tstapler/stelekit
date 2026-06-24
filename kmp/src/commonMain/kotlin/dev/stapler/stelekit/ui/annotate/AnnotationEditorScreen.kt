@@ -1,9 +1,14 @@
 package dev.stapler.stelekit.ui.annotate
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,16 +44,17 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.runtime.Composable
 import dev.stapler.stelekit.ui.PlatformBackHandler
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -56,7 +62,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
@@ -64,6 +72,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import dev.stapler.stelekit.model.AnnotationType
+import dev.stapler.stelekit.model.Calibration
 import dev.stapler.stelekit.model.CalibrationMethod
 import dev.stapler.stelekit.model.ImageAnnotation
 import dev.stapler.stelekit.model.ImageSensorData
@@ -139,6 +148,7 @@ fun AnnotationEditorScreen(
      * ViewModel's [AnnotationEditorState.depthMap] via [AnnotationEditorViewModel.runDepthEstimation].
      */
     onEstimateDepth: (() -> Unit)? = null,
+    peerCalibration: Pair<String, Calibration>? = null,
 ) {
     val state by viewModel.state.collectAsState()
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
@@ -149,6 +159,8 @@ fun AnnotationEditorScreen(
     }
     val canUndoCalibration by viewModel.canUndoCalibration.collectAsState()
     val calibrationMessage by viewModel.calibrationChangeMessage.collectAsState()
+    val canUndo by viewModel.canUndo.collectAsState()
+    val canRedo by viewModel.canRedo.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     // UnsavedChanges tracking
@@ -160,6 +172,9 @@ fun AnnotationEditorScreen(
 
     // Delete annotation confirmation
     var pendingDeleteUuid by remember { mutableStateOf<String?>(null) }
+    var loupeOffset by remember { mutableStateOf<Offset?>(null) }
+    val rippleAlpha = remember { Animatable(0f) }
+    var rippleCanvasOffset by remember { mutableStateOf<Offset?>(null) }
 
     // Coach marks
     var showDistanceCoachMark by remember { mutableStateOf(false) }
@@ -213,6 +228,14 @@ fun AnnotationEditorScreen(
         }
     }
 
+    LaunchedEffect(rippleCanvasOffset) {
+        if (rippleCanvasOffset != null) {
+            rippleAlpha.snapTo(0.7f)
+            rippleAlpha.animateTo(0f, animationSpec = tween(durationMillis = 300))
+            rippleCanvasOffset = null
+        }
+    }
+
     // Show UnsavedChangesDialog when user tries to back-navigate with unsaved changes
     PlatformBackHandler(enabled = hasUnsavedChanges) {
         showUnsavedChangesDialog = true
@@ -258,7 +281,8 @@ fun AnnotationEditorScreen(
 
         // "No calibration" nudge banner
         val isCalibrated = viewModel.isCalibrated()
-        if (!isCalibrated) {
+        val hasStartedAnnotating = state.inProgressPoints.isNotEmpty() || state.committedAnnotations.isNotEmpty()
+        if (!isCalibrated && !hasStartedAnnotating) {
             CalibrationNudgeBanner(
                 isFirstUse = isFirstCalibrationUse,
                 onCalibrateClick = {
@@ -270,9 +294,12 @@ fun AnnotationEditorScreen(
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
-        } else {
-            // Once calibrated, mark first-use as done and persist across sessions
-            LaunchedEffect(Unit) {
+        }
+        // Once calibrated, mark first-use as done and persist across sessions.
+        // Keyed on isCalibrated so it only fires when the user has actually calibrated,
+        // not merely when hasStartedAnnotating becomes true.
+        LaunchedEffect(isCalibrated) {
+            if (isCalibrated) {
                 isFirstCalibrationUse = false
                 platformSettings?.putBoolean("image_meter_calibrated_before", true)
             }
@@ -332,8 +359,12 @@ fun AnnotationEditorScreen(
             // We use Coil AsyncImage which handles subsampling for large images.
             // Zoom/pan is achieved via graphicsLayer transform so the Canvas layers are
             // not recomposed on gesture updates.
+            val fileSystem = dev.stapler.stelekit.ui.components.LocalFileSystem.current
+            val imageUri = remember(imageAnnotation.filePath) {
+                fileSystem?.resolveLoadableUri(imageAnnotation.filePath) ?: imageAnnotation.filePath
+            }
             AsyncImage(
-                model = imageAnnotation.filePath,
+                model = imageUri,
                 contentDescription = "Annotated image",
                 modifier = Modifier
                     .fillMaxSize()
@@ -359,7 +390,30 @@ fun AnnotationEditorScreen(
                         viewModel.addPoint(normalized)
                     }
                 },
+                onLoupeOffset = { offset -> loupeOffset = offset },
+                onRipple = { screenOffset -> rippleCanvasOffset = screenOffset },
             )
+
+            val currentLoupeOffset = loupeOffset
+            if (currentLoupeOffset != null && canvasSize != IntSize.Zero) {
+                LoupeOverlay(
+                    imageUri = imageUri,
+                    touchOffset = currentLoupeOffset,
+                    canvasSize = canvasSize,
+                )
+            }
+            val currentRippleOffset = rippleCanvasOffset
+            val currentRippleAlpha = rippleAlpha.value
+            if (currentRippleOffset != null && currentRippleAlpha > 0f) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawCircle(
+                        color = Color(0xFF4CAF50).copy(alpha = currentRippleAlpha),
+                        radius = 20.dp.toPx(),
+                        center = currentRippleOffset,
+                        style = Stroke(width = 2.dp.toPx()),
+                    )
+                }
+            }
 
             // Layer 4: Measurement label overlay
             MeasurementLabelOverlay(
@@ -402,11 +456,40 @@ fun AnnotationEditorScreen(
             }
 
 
+            val contextHint: String? = when {
+                state.currentTool == AnnotationTool.SELECT -> null
+                state.currentTool == AnnotationTool.AREA && state.inProgressPoints.size >= 3 ->
+                    "Tap near start to close, or tap to add vertex"
+                state.currentTool == AnnotationTool.AREA && state.inProgressPoints.size == 1 ->
+                    "Tap to add more vertices"
+                state.currentTool == AnnotationTool.AREA ->
+                    "Tap to place first vertex"
+                state.currentTool == AnnotationTool.ANGLE && state.inProgressPoints.size == 1 ->
+                    "Tap to place vertex"
+                state.currentTool == AnnotationTool.ANGLE && state.inProgressPoints.size == 2 ->
+                    "Tap to complete angle"
+                state.inProgressPoints.isEmpty() -> "Tap to place start point"
+                state.inProgressPoints.size == 1 -> "Tap to place end point"
+                else -> null
+            }
+            if (contextHint != null) {
+                Box(modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp)) {
+                    Surface(color = Color(0xCC000000), shape = MaterialTheme.shapes.small) {
+                        Text(
+                            text = contextHint,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        )
+                    }
+                }
+            }
+
             // Layer 5: Annotation toolbar (bottom)
             AnnotationToolbar(
                 currentTool = state.currentTool,
-                canUndo = viewModel.canUndo.collectAsState().value,
-                canRedo = viewModel.canRedo.collectAsState().value,
+                canUndo = canUndo,
+                canRedo = canRedo,
                 displayUnit = state.imageAnnotation?.unit,
                 onToolSelect = { viewModel.selectTool(it) },
                 onUndo = { viewModel.undo() },
@@ -514,6 +597,11 @@ fun AnnotationEditorScreen(
                 onUseBle = {
                     showCalibrationSheet = false
                     showBleDevicePanel = true
+                },
+                peerCalibration = peerCalibration,
+                onUsePeerCalibration = { calibration ->
+                    showCalibrationSheet = false
+                    viewModel.updateCalibration(calibration)
                 },
             )
         }
@@ -749,7 +837,7 @@ private fun DrawScope.drawAnnotation(
 // ── Layer 3: In-progress Canvas ───────────────────────────────────────────────
 
 /**
- * Transparent Canvas that captures taps via [detectTapGestures] and draws the
+ * Transparent Canvas that captures taps via [awaitEachGesture] and draws the
  * in-progress annotation preview.
  *
  * PERFORMANCE: recomposition of this layer is driven only by [inProgressPoints] changes,
@@ -762,13 +850,43 @@ private fun InProgressAnnotationCanvas(
     canvasSize: IntSize,
     onTap: (Offset) -> Unit,
     modifier: Modifier = Modifier,
+    onLoupeOffset: ((Offset?) -> Unit)? = null,
+    onRipple: ((Offset) -> Unit)? = null,
 ) {
+    DisposableEffect(currentTool) {
+        onDispose { onLoupeOffset?.invoke(null) }
+    }
+    val tapThresholdPx = with(LocalDensity.current) { 16.dp.toPx() }
     Canvas(
         modifier = modifier
             .fillMaxSize()
             .semantics { contentDescription = "Annotation canvas — tap to place points" }
             .pointerInput(currentTool) {
-                detectTapGestures { offset -> onTap(offset) }
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val downPos = down.position
+                    if (currentTool != AnnotationTool.SELECT) {
+                        down.consume()
+                        onLoupeOffset?.invoke(downPos)
+                    }
+                    var lastPos = downPos
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull() ?: break
+                        lastPos = change.position
+                        if (currentTool != AnnotationTool.SELECT) {
+                            change.consume()
+                            onLoupeOffset?.invoke(lastPos)
+                        }
+                        if (!change.pressed) break
+                    }
+                    val isTap = (lastPos - downPos).getDistance() < tapThresholdPx
+                    onLoupeOffset?.invoke(null)
+                    if (isTap) {
+                        if (currentTool != AnnotationTool.SELECT) { onRipple?.invoke(lastPos) }
+                        onTap(lastPos)
+                    }
+                }
             },
     ) {
         if (canvasSize == IntSize.Zero || inProgressPoints.isEmpty()) return@Canvas
@@ -1255,6 +1373,73 @@ internal fun DepthEstimationPanel(
                     color = Color(0xFFEF5350),
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun LoupeOverlay(
+    imageUri: String,
+    touchOffset: Offset,
+    canvasSize: IntSize,
+) {
+    val density = LocalDensity.current.density
+    val zoomFactor = 3f
+    val loupeSizeDp = 120.dp
+    val loupeSizePx = with(LocalDensity.current) { loupeSizeDp.toPx() }
+    val marginPx = with(LocalDensity.current) { 16.dp.toPx() }
+    val topThresholdPx = with(LocalDensity.current) { 140.dp.toPx() }
+    val gapPx = with(LocalDensity.current) { 16.dp.toPx() }
+    val loupeYPx = (if (touchOffset.y > topThresholdPx) {
+        touchOffset.y - loupeSizePx - gapPx
+    } else {
+        touchOffset.y + gapPx
+    }).coerceIn(marginPx, canvasSize.height - loupeSizePx - marginPx)
+    val loupeXPx = (touchOffset.x - loupeSizePx / 2f)
+        .coerceIn(marginPx, canvasSize.width - loupeSizePx - marginPx)
+    val innerWidthDp = (canvasSize.width * zoomFactor / density).dp
+    val innerHeightDp = (canvasSize.height * zoomFactor / density).dp
+    val innerOffsetXPx = loupeSizePx / 2f - touchOffset.x * zoomFactor
+    val innerOffsetYPx = loupeSizePx / 2f - touchOffset.y * zoomFactor
+    Box(
+        modifier = Modifier
+            .offset { IntOffset(loupeXPx.toInt(), loupeYPx.toInt()) }
+            .size(loupeSizeDp)
+    ) {
+        // Clipped inner area: zoomed image + crosshair
+        Box(modifier = Modifier.fillMaxSize().clip(CircleShape)) {
+            AsyncImage(
+                model = imageUri,
+                contentDescription = null,
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier
+                    .size(innerWidthDp, innerHeightDp)
+                    .offset { IntOffset(innerOffsetXPx.toInt(), innerOffsetYPx.toInt()) },
+            )
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val halfX = size.width / 2f
+                val halfY = size.height / 2f
+                val shadowColor = Color.Black.copy(alpha = 0.6f)
+                val lineColor = Color.White
+                val stroke = 1.dp.toPx()
+                drawLine(shadowColor, Offset(0f, halfY + 0.5f), Offset(size.width, halfY + 0.5f), stroke * 1.5f)
+                drawLine(shadowColor, Offset(halfX + 0.5f, 0f), Offset(halfX + 0.5f, size.height), stroke * 1.5f)
+                drawLine(lineColor, Offset(0f, halfY), Offset(size.width, halfY), stroke)
+                drawLine(lineColor, Offset(halfX, 0f), Offset(halfX, size.height), stroke)
+            }
+        }
+        // Border ring drawn outside the clip so it appears around the loupe edge
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawCircle(
+                color = Color.Black.copy(alpha = 0.3f),
+                radius = size.width / 2f + 1.dp.toPx(),
+                style = Stroke(width = 3.dp.toPx()),
+            )
+            drawCircle(
+                color = Color.White,
+                radius = size.width / 2f - 0.5f.dp.toPx(),
+                style = Stroke(width = 1.5f.dp.toPx()),
+            )
         }
     }
 }

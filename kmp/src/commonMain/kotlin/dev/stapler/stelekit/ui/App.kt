@@ -61,7 +61,6 @@ import dev.stapler.stelekit.performance.PlatformJankStatsEffect
 import dev.stapler.stelekit.performance.SpanRecorder
 import dev.stapler.stelekit.platform.*
 import dev.stapler.stelekit.db.DriverFactory
-import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.repository.*
 import dev.stapler.stelekit.ui.components.*
 import dev.stapler.stelekit.ui.components.git.GitDetectionBanner
@@ -126,6 +125,7 @@ import dev.stapler.stelekit.error.toUiMessage
 import dev.stapler.stelekit.model.ImageSource
 import dev.stapler.stelekit.platform.sensor.CameraProvider
 import dev.stapler.stelekit.platform.sensor.SensorModule
+import dev.stapler.stelekit.platform.sensor.PlatformImageFile
 
 internal suspend fun executeCaptureAndImport(
     imageImportService: ImageImportService?,
@@ -154,7 +154,7 @@ internal suspend fun executeCaptureAndImport(
             val result = service.import(
                 tempFile = captured.value,
                 graphPath = graphPath,
-                pageUuid = pageUuid,
+                pageUuid = dev.stapler.stelekit.model.PageUuid(pageUuid),
                 source = ImageSource.CAMERA,
                 insertToJournalPage = false,
             )
@@ -226,6 +226,7 @@ fun StelekitApp(
      * When null (default), the panel is rendered but the buttons are no-ops.
      */
     googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
+    requestCameraPermission: (suspend () -> Boolean)? = null,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -234,7 +235,7 @@ fun StelekitApp(
     remember { registerAllMigrations() }
 
     // Create GraphManager - this owns all graph lifecycle
-    val graphManager = graphManager ?: remember {
+    val graphManager = graphManager ?: remember(platformSettings, fileSystem) {
         GraphManager(platformSettings, DriverFactory(), fileSystem)
     }
     LaunchedEffect(graphManager) { onGraphManagerReady?.invoke(graphManager) }
@@ -388,6 +389,7 @@ fun StelekitApp(
             cryptoEngine = cryptoEngine,
             attachmentService = attachmentService,
             googleAuthManager = googleAuthManager,
+            requestCameraPermission = requestCameraPermission,
         )
     }
 }
@@ -421,8 +423,12 @@ private fun GraphContent(
     cryptoEngine: dev.stapler.stelekit.vault.CryptoEngine? = null,
     attachmentService: dev.stapler.stelekit.service.MediaAttachmentService? = null,
     googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
+    requestCameraPermission: (suspend () -> Boolean)? = null,
 ) {
-    CompositionLocalProvider(LocalSpanRecorder provides spanRecorder) {
+    CompositionLocalProvider(
+        LocalSpanRecorder provides spanRecorder,
+        LocalFileSystem provides fileSystem,
+    ) {
     val scope = rememberCoroutineScope()
     val graphContentLogger = remember { Logger("GraphContent") }
     val composeClipboard = LocalClipboardManager.current
@@ -446,7 +452,7 @@ private fun GraphContent(
         )
     }
 
-    var vaultManager by remember {
+    var vaultManager by remember(isParanoidMode, cryptoEngine, fileSystem) {
         androidx.compose.runtime.mutableStateOf(
             if (!isParanoidMode || cryptoEngine == null) null
             else dev.stapler.stelekit.vault.VaultManager(
@@ -469,11 +475,11 @@ private fun GraphContent(
         graphManager.registerVaultCredentialStore(vaultCredentialStore)
     }
 
-    val sidecarManager = remember {
+    val sidecarManager = remember(activeGraphPath, fileSystem) {
         val graphPath = activeGraphPath.ifEmpty { null }
         if (graphPath != null) SidecarManager(fileSystem, graphPath) else null
     }
-    val imageSidecarManager = remember {
+    val imageSidecarManager = remember(activeGraphPath, fileSystem) {
         if (activeGraphPath.isNotEmpty()) dev.stapler.stelekit.db.sidecar.ImageSidecarManager(fileSystem) else null
     }
     val imageImportService = remember(imageSidecarManager) {
@@ -506,27 +512,28 @@ private fun GraphContent(
             }
         }
     }
-    val graphLoader = remember {
-        GraphLoader(
-            fileSystem,
-            repos.pageRepository,
-            repos.blockRepository,
-            repos.journalService,
-            externalWriteActor = repos.writeActor,
-            backgroundPageRepository = repos.backgroundPageRepository,
-            sidecarManager = sidecarManager,
-            histogramWriter = repos.histogramWriter,
-            spanRepository = repos.spanRepository,
-        ).also { it.onBulkImportComplete = repos.onBulkImportComplete }
+    val graphLoader = remember(fileSystem, repos, sidecarManager) {
+        repos.createGraphLoader(fileSystem, sidecarManager = sidecarManager)
     }
-    val graphWriter = remember {
+    // Wire write-behind flush callbacks so FileRegistry correctly tracks SAF write windows.
+    // - onFlushPreWrite: sets Long.MAX_VALUE sentinel before write, closing the mtime race
+    //   window where a concurrent detectChanges poll emits a spurious event for .md.stek files.
+    // - onFlushComplete: replaces sentinel with post-flush mtime after successful write.
+    // - onFlushFailed: removes sentinel when write fails so the file is not permanently suppressed.
+    remember(graphLoader) {
+        fileSystem.setOnFlushPreWrite(graphLoader::preMarkFileWrite)
+        fileSystem.setOnFlushComplete(graphLoader::markFileWrittenByUs)
+        fileSystem.setOnFlushFailed(graphLoader::clearFilePendingWrite)
+    }
+
+    val graphWriter = remember(fileSystem, repos, graphLoader, sidecarManager) {
         GraphWriter(
             fileSystem,
             repos.writeActor,
             onFileWritten = graphLoader::markFileWrittenByUs,
             sidecarManager = sidecarManager,
-            onPreWrite = { filePath -> graphLoader.fileRegistry.preMarkPendingWrite(dev.stapler.stelekit.model.FilePath(filePath)) },
-            onClearPendingWrite = { filePath -> graphLoader.fileRegistry.clearPendingWrite(dev.stapler.stelekit.model.FilePath(filePath)) },
+            onPreWrite = { filePath -> graphLoader.preMarkFileWrite(filePath) },
+            onClearPendingWrite = { filePath -> graphLoader.clearFilePendingWrite(filePath) },
             checkPreWriteConflict = { filePath, diskContent ->
                 val lastKnown = graphLoader.fileRegistry.getContentHash(dev.stapler.stelekit.model.FilePath(filePath))
                 lastKnown != null && diskContent.hashCode() != lastKnown
@@ -569,18 +576,21 @@ private fun GraphContent(
     // created first with a lazy lambda that resolves viewModel after both are initialised.
     var viewModelRef: StelekitViewModel? = null
 
-    val blockStateManager = remember {
+    val blockStateManager = remember(repos, graphLoader, graphWriter) {
         dev.stapler.stelekit.ui.state.BlockStateManager(
             blockRepository = repos.blockRepository,
             graphLoader = graphLoader,
             graphWriter = graphWriter,
             pageRepository = repos.pageRepository,
             graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" },
-            histogramWriter = repos.histogramWriter
+            histogramWriter = repos.histogramWriter,
+            writeActor = repos.writeActor,
+            invalidationSource = repos.writeActor?.blockInvalidations,
+            pushSource = repos.writeActor?.blocksPushed,
         )
     }
 
-    val exportService = remember {
+    val exportService = remember(clipboardProvider, repos) {
         ExportService(
             exporters = listOf(
                 MarkdownExporter(),
@@ -599,7 +609,7 @@ private fun GraphContent(
     // ViewModel scope must NOT be rememberCoroutineScope() — that scope is cancelled when the
     // composable leaves the composition, which would cancel all ViewModel coroutines on pause.
     val viewModelScope = remember { kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default) }
-    val viewModel = remember {
+    val viewModel = remember(fileSystem, repos, platformSettings, graphLoader, graphWriter, blockStateManager, exportService, graphManager, viewModelScope) {
         StelekitViewModel(
             StelekitViewModelDependencies(
                 fileSystem = fileSystem,
@@ -966,7 +976,7 @@ private fun GraphContent(
         }
     }
 
-    val journalsViewModel = remember {
+    val journalsViewModel = remember(repos, blockStateManager) {
         JournalsViewModel(repos.journalService, blockStateManager)
     }
 
@@ -1033,7 +1043,7 @@ private fun GraphContent(
     val allPagesViewModel = remember {
         AllPagesViewModel(repos.pageRepository, repos.blockRepository)
     }
-    val libraryStatsViewModel = remember {
+    val libraryStatsViewModel = remember(libraryStatsProvider, graphManager) {
         LibraryStatsViewModel(libraryStatsProvider, graphManager.getActiveGraphInfo()?.path ?: "")
     }
     val searchViewModel = remember {
@@ -1131,7 +1141,8 @@ private fun GraphContent(
 
                     CompositionLocalProvider(
                         LocalWindowSizeClass provides windowSizeClass,
-                        LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) }
+                        LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) },
+                        LocalFileSystem provides fileSystem,
                     ) {
 
                     // Auto-manage sidebar based on layout: open on desktop, closed on mobile.
@@ -1260,6 +1271,9 @@ private fun GraphContent(
                         content = {
                             val cameraImportEnabled =
                                 imageImportService != null && SensorModule.cameraProvider.isAvailable
+                            var pendingCaptureFile by remember { mutableStateOf<PlatformImageFile?>(null) }
+                            var pendingCapturePageUuid by remember { mutableStateOf<String?>(null) }
+                            var isCaptureImporting by remember { mutableStateOf(false) }
                             val activeGraphInfo2 = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }
                             val showGitBanner = activeGraphInfo2?.detectedRepoRoot != null &&
                                 appState.gitConfig == null &&
@@ -1369,6 +1383,13 @@ private fun GraphContent(
                                     onCaptureImage = if (cameraImportEnabled) {
                                         {
                                             scope.launch {
+                                                if (requestCameraPermission != null) {
+                                                    val granted = requestCameraPermission.invoke()
+                                                    if (!granted) {
+                                                        viewModel.sendSnackbar("Camera permission denied — enable it in Settings to take photos")
+                                                        return@launch
+                                                    }
+                                                }
                                                 // Resolve page UUID before capturing — camera suspends for seconds,
                                                 // so we snapshot navigation state at button-tap time, not return time.
                                                 val pageUuid: String? =
@@ -1376,15 +1397,16 @@ private fun GraphContent(
                                                         ?: appState.currentPage?.uuid?.value
                                                 val resolvedPageUuid = pageUuid
                                                     ?: repos.journalService.ensureTodayJournal().uuid.value
-                                                executeCaptureAndImport(
-                                                    imageImportService = imageImportService,
-                                                    getActiveGraphPath = { graphManager.getActiveGraphInfo()?.path },
-                                                    pageUuid = resolvedPageUuid,
-                                                    navigateAfterImport = false,
-                                                    onSnackbar = { viewModel.sendSnackbar(it) },
-                                                    onNavigate = { annUuid, pgUuid -> viewModel.navigateToAnnotationEditor(annUuid, pgUuid) },
-                                                    onWarn = { graphContentLogger.warn(it) },
-                                                )
+                                                when (val captured = SensorModule.cameraProvider.capturePhoto()) {
+                                                    is Either.Left -> {
+                                                        graphContentLogger.warn("Camera capture failed: ${captured.value.message}")
+                                                        viewModel.sendSnackbar(captured.value.toUiMessage())
+                                                    }
+                                                    is Either.Right -> {
+                                                        pendingCapturePageUuid = resolvedPageUuid
+                                                        pendingCaptureFile = captured.value
+                                                    }
+                                                }
                                             }
                                         }
                                     } else null,
@@ -1392,6 +1414,13 @@ private fun GraphContent(
                                 onImportImage = if (cameraImportEnabled) {
                                     {
                                         scope.launch {
+                                            if (requestCameraPermission != null) {
+                                                val granted = requestCameraPermission.invoke()
+                                                if (!granted) {
+                                                    viewModel.sendSnackbar("Camera permission denied — enable it in Settings to take photos")
+                                                    return@launch
+                                                }
+                                            }
                                             val page = repos.journalService.ensureTodayJournal()
                                             executeCaptureAndImport(
                                                 imageImportService = imageImportService,
@@ -1412,6 +1441,46 @@ private fun GraphContent(
                                 perfQueryStats = perfQueryStats,
                                 tagSuggestionViewModel = tagSuggestionViewModel,
                             )
+                            val captureFile = pendingCaptureFile
+                            val capturePageUuid = pendingCapturePageUuid
+                            if (captureFile != null && capturePageUuid != null) {
+                                CapturePreviewDialog(
+                                    imagePath = captureFile.path,
+                                    isImporting = isCaptureImporting,
+                                    onSave = {
+                                        val file = captureFile
+                                        val pageUuid = capturePageUuid
+                                        isCaptureImporting = true
+                                        scope.launch {
+                                            val graphPath = graphManager.getActiveGraphInfo()?.path
+                                            if (graphPath == null) {
+                                                isCaptureImporting = false
+                                                pendingCaptureFile = null
+                                                pendingCapturePageUuid = null
+                                                return@launch
+                                            }
+                                            val result = imageImportService?.import(
+                                                tempFile = file,
+                                                graphPath = graphPath,
+                                                pageUuid = dev.stapler.stelekit.model.PageUuid(pageUuid),
+                                                source = ImageSource.CAMERA,
+                                                insertToJournalPage = false,
+                                            )
+                                            result?.onLeft { err ->
+                                                graphContentLogger.warn("Camera image import failed: ${err.message}")
+                                                viewModel.sendSnackbar(err.toUiMessage())
+                                            }
+                                            isCaptureImporting = false
+                                            pendingCaptureFile = null
+                                            pendingCapturePageUuid = null
+                                        }
+                                    },
+                                    onDiscard = {
+                                        pendingCaptureFile = null
+                                        pendingCapturePageUuid = null
+                                    },
+                                )
+                            }
                             } // Box
                             } // Column
                         },
@@ -1451,6 +1520,7 @@ private fun GraphContent(
                                     closeSidebarIfMobile()
                                 },
                                 onSearch = { viewModel.setSearchDialogVisible(true) },
+                                onToggleSidebar = { viewModel.toggleSidebar() },
                                 isLeftHanded = appState.isLeftHanded,
                                 voiceCaptureButton = {
                                     VoiceCaptureButton(
@@ -1528,7 +1598,7 @@ private fun GraphContent(
             }
         }
     }
-    } // CompositionLocalProvider(LocalSpanRecorder)
+    } // CompositionLocalProvider(LocalSpanRecorder, LocalFileSystem)
 }
 
 /**

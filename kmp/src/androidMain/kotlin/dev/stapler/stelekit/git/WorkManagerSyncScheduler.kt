@@ -31,9 +31,7 @@ class WorkManagerSyncScheduler(
     private val graphId: String,
 ) : BackgroundSyncScheduler {
 
-    companion object {
-        private const val WORK_NAME = "stelekit_git_sync"
-    }
+    private val workName get() = "stelekit_git_sync_$graphId"
 
     override fun schedule(intervalMinutes: Int) {
         val repeatInterval = maxOf(intervalMinutes.toLong(), 15L)
@@ -52,14 +50,14 @@ class WorkManagerSyncScheduler(
             .build()
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            WORK_NAME,
+            workName,
             ExistingPeriodicWorkPolicy.UPDATE,
             request,
         )
     }
 
     override fun cancel() {
-        WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+        WorkManager.getInstance(context).cancelUniqueWork(workName)
     }
 }
 
@@ -139,6 +137,7 @@ private fun dev.stapler.stelekit.db.Git_config.toGitConfig() =
         sshKeyPath = ssh_key_path,
         sshKeyPassphraseKey = ssh_key_passphrase_key,
         httpsTokenKey = https_token_key,
+        oauthTokenKey = oauth_token_key,
         pollIntervalMinutes = poll_interval_minutes.toInt(),
         autoCommit = auto_commit != 0L,
         commitMessageTemplate = commit_message_template,

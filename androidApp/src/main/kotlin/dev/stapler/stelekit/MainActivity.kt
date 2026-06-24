@@ -259,7 +259,7 @@ class MainActivity : ComponentActivity() {
             }
             val spanRecorder = remember { createAndroidSpanRecorder() }
             val gitRepository = remember { AndroidGitRepository() }
-            val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity)
+            val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
 
             // Keep GitSyncServiceRegistry in sync so GitSyncWorker can reach the active service
             // even when the process was revived by WorkManager without the UI being foregrounded.
@@ -294,6 +294,7 @@ class MainActivity : ComponentActivity() {
                 onGraphManagerReady = { gm -> graphManager = gm },
                 onMemoryPressure = { handler -> onMemoryPressureHandler = handler },
                 attachmentService = attachmentService,
+                requestCameraPermission = ::requestCameraPermission,
             )
         }
     }
@@ -358,6 +359,7 @@ class MainActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
         ) return true
+        pendingCameraPermission?.let { return it.await() }
         val deferred = CompletableDeferred<Boolean>()
         pendingCameraPermission = deferred
         runOnUiThread { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }

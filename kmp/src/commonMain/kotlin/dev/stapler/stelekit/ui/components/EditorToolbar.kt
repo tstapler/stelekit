@@ -20,6 +20,7 @@ fun EditorToolbar(
     searchViewModel: SearchViewModel?,
     isLeftHanded: Boolean,
     modifier: Modifier = Modifier,
+    onSuggestTags: ((blockUuid: String, content: String) -> Unit)? = null,
 ) {
     val editingBlockUuid by blockStateManager.editingBlockUuid.collectAsState()
     val editingCursorIndex by blockStateManager.editingCursorIndex.collectAsState()
@@ -70,12 +71,24 @@ fun EditorToolbar(
         onUndo = { blockStateManager.undo() },
         onRedo = { blockStateManager.redo() },
         onFormat = { action -> blockStateManager.requestFormat(action) },
-        onAttachImage = if (capabilities.onAttachImage != null) {
-            {
-                val uuid = editingBlockUuid
-                if (uuid != null) capabilities.onAttachImage.invoke(uuid)
-            }
-        } else null,
+        onAttachImage = run {
+            val attachFn = capabilities.onAttachImage
+            val targetUuid = editingBlockUuid
+            if (attachFn != null && targetUuid != null) {
+                { attachFn.invoke(targetUuid) }
+            } else null
+        },
+        onSuggestTags = run {
+            val suggestFn = onSuggestTags
+            val targetUuid = editingBlockUuid
+            if (suggestFn != null && targetUuid != null) {
+                {
+                    val block = allBlocks.values.flatten().find { it.uuid == targetUuid }
+                    val content = block?.content ?: ""
+                    suggestFn(targetUuid.value, content)
+                }
+            } else null
+        },
         onCaptureImage = capabilities.onCaptureImage,
         onLinkPicker = if (searchViewModel != null) {
             {

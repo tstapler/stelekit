@@ -3,6 +3,7 @@ package dev.stapler.stelekit.repository
 
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
+import dev.stapler.stelekit.util.FractionalIndexing
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.Property
@@ -238,19 +239,20 @@ class InMemoryBlockRepository : BlockRepository {
             .filter { it.pageUuid.value == pageUuid && it.parentUuid == parentUuid }
             .sortedBy { it.position }
 
-        var expectedPosition = 0
+        var prevPosition: String? = null
         for (sibling in siblings) {
+            val expectedPosition = FractionalIndexing.generateKeyBetween(prevPosition, null)
             if (sibling.position != expectedPosition) {
                 current[sibling.uuid.value] = sibling.copy(position = expectedPosition)
             }
-            expectedPosition++
+            prevPosition = expectedPosition
         }
     }
 
     override suspend fun moveBlock(
         blockUuid: BlockUuid,
         newParentUuid: BlockUuid?,
-        newPosition: Int
+        newPosition: String
     ): Either<DomainError, Unit> {
         val current = blocks.value.toMutableMap()
         val block = current[blockUuid.value] ?: return Unit.right()
@@ -286,7 +288,8 @@ class InMemoryBlockRepository : BlockRepository {
 
         val prevSibling = siblings[blockIndex - 1]
         val prevSiblingChildren = current.values.filter { it.parentUuid == prevSibling.uuid.value }
-        val newPosition = if (prevSiblingChildren.isEmpty()) 0 else (prevSiblingChildren.maxOfOrNull { it.position } ?: -1) + 1
+        val lastPrevSiblingChild = prevSiblingChildren.maxByOrNull { it.position }
+        val newPosition = FractionalIndexing.generateKeyBetween(lastPrevSiblingChild?.position, null)
 
         val updatedBlock = block.copy(parentUuid = prevSibling.uuid.value, level = block.level + 1, position = newPosition)
         current[block.uuid.value] = updatedBlock
@@ -310,14 +313,10 @@ class InMemoryBlockRepository : BlockRepository {
             .sortedBy { it.position }
 
         val parentInGrandchildren = grandparentChildren.find { it.uuid.value == parentUuid }
-        val newPosition = (parentInGrandchildren?.position ?: -1) + 1
-
-        // Shift grandparent's children at or after newPosition to make room
-        for (sibling in grandparentChildren) {
-            if (sibling.position >= newPosition) {
-                current[sibling.uuid.value] = sibling.copy(position = sibling.position + 1)
-            }
+        val nextOfParent = grandparentChildren.firstOrNull {
+            it.uuid.value != parentUuid && it.position > (parentInGrandchildren?.position ?: "")
         }
+        val newPosition = FractionalIndexing.generateKeyBetween(parentInGrandchildren?.position, nextOfParent?.position)
 
         val updatedBlock = block.copy(parentUuid = grandParentUuid, level = parent.level, position = newPosition)
         current[block.uuid.value] = updatedBlock
@@ -380,15 +379,17 @@ class InMemoryBlockRepository : BlockRepository {
         // 2. Reparent children of block B to block A
         val childrenOfB = current.values.filter { it.parentUuid == blockB.uuid.value }.sortedBy { it.position }
         val lastChildOfA = current.values.filter { it.parentUuid == blockA.uuid.value }.maxByOrNull { it.position }
-        var nextPosition = (lastChildOfA?.position ?: -1) + 1
+        var nextPrevPosition: String? = lastChildOfA?.position
 
         val targetLevelForChildren = blockA.level + 1
 
         for (child in childrenOfB) {
             val levelDelta = targetLevelForChildren - child.level
+            val nextChildPosition = FractionalIndexing.generateKeyBetween(nextPrevPosition, null)
+            nextPrevPosition = nextChildPosition
             val updatedChild = child.copy(
                 parentUuid = blockA.uuid.value,
-                position = nextPosition++,
+                position = nextChildPosition,
                 level = targetLevelForChildren
             )
             current[child.uuid.value] = updatedChild

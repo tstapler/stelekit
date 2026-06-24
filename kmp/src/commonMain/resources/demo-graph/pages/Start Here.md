@@ -10,13 +10,14 @@
 	- [[Page Linking]] — connect pages with `[[double bracket]]` wiki links
 	- [[Backlinks]] — the References Panel and bidirectional linking model
 	- [[Properties]] — add structured `key:: value` metadata to pages and blocks
+	- [[Tags & Highlight]] — `#tag-name` inline tags and `==highlighted text==`
 	- [[Daily Notes]] — the Journals view and navigating between dates
 	- [[Search]] — full-text search with Cmd+K / Ctrl+K
 	- [[All Pages]] — browse every non-journal page alphabetically
 	- [[Flashcards]] — mark blocks for spaced-repetition review
-	- [[Markdown Formatting]] — bold, italic, code, headings, and more
-	- [[Tables]] — GFM pipe-table syntax (planned feature)
-	- [[Tasks]] — TODO/DONE markers and checkbox syntax
+	- [[Markdown Formatting]] — bold, italic, highlight, blockquotes, code, headings, and more
+	- [[Tables]] — GFM pipe-table syntax
+	- [[Tasks]] — TODO/DOING/DONE markers and scheduled/deadline timestamps
 	- [[Images]] — embed images with `![alt](path)` syntax
 	- [[Keyboard Shortcuts]] — full shortcut reference organized by category
 	- [[About SteleKit]] — what SteleKit is and how it relates to Logseq
@@ -24,4 +25,5 @@
 	- Open [[Block Editing]] to learn the fundamentals.
 	- Then visit [[Page Linking]] to see how the graph grows as you connect ideas.
 	- Check [[Daily Notes]] to start a daily journaling habit.
+	- Try [[Tags & Highlight]] to quickly categorize and emphasize content.
 - This page is your home base. Bookmark it or link to it from your own pages.

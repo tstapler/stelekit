@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOf
+import dev.stapler.stelekit.util.FractionalIndexing
 import kotlin.time.Clock
 import kotlinx.datetime.LocalDate
 
@@ -252,7 +253,7 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         return Unit.right()
     }
 
-    override suspend fun moveBlock(blockUuid: BlockUuid, newParentUuid: BlockUuid?, newPosition: Int): Either<DomainError, Unit> {
+    override suspend fun moveBlock(blockUuid: BlockUuid, newParentUuid: BlockUuid?, newPosition: String): Either<DomainError, Unit> {
         val current = _blocks.value.toMutableMap()
         val block = current[blockUuid.value] ?: return Unit.right()
 
@@ -284,7 +285,8 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
 
         val prevSibling = siblings[blockIndex - 1]
         val prevSiblingChildren = current.values.filter { it.parentUuid == prevSibling.uuid.value }
-        val newPosition = if (prevSiblingChildren.isEmpty()) 0 else prevSiblingChildren.maxOf { it.position } + 1
+        val lastChildPosition = prevSiblingChildren.maxByOrNull { it.position }?.position
+        val newPosition = FractionalIndexing.generateKeyBetween(lastChildPosition, null)
 
         current[block.uuid.value] = block.copy(parentUuid = prevSibling.uuid.value, level = block.level + 1, position = newPosition)
 
@@ -309,13 +311,11 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
             .sortedBy { it.position }
 
         val parentInGrandchildren = grandparentChildren.find { it.uuid.value == parentUuid }
-        val newPosition = (parentInGrandchildren?.position ?: -1) + 1
-
-        for (sibling in grandparentChildren) {
-            if (sibling.position >= newPosition) {
-                current[sibling.uuid.value] = sibling.copy(position = sibling.position + 1)
-            }
-        }
+        val parentPosition = parentInGrandchildren?.position
+        val nextSiblingPosition = grandparentChildren
+            .filter { parentPosition == null || it.position > parentPosition }
+            .minByOrNull { it.position }?.position
+        val newPosition = FractionalIndexing.generateKeyBetween(parentPosition, nextSiblingPosition)
 
         current[block.uuid.value] = block.copy(parentUuid = grandParentUuid, level = parent.level, position = newPosition)
 
@@ -369,11 +369,13 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
 
         val childrenOfB = current.values.filter { it.parentUuid == blockB.uuid.value }.sortedBy { it.position }
         val lastChildOfA = current.values.filter { it.parentUuid == blockA.uuid.value }.maxByOrNull { it.position }
-        var nextPos = (lastChildOfA?.position ?: -1) + 1
+        var lastPos: String? = lastChildOfA?.position
         val levelDelta = blockA.level + 1 - blockB.level
 
         for (child in childrenOfB) {
-            val updated = child.copy(parentUuid = blockA.uuid.value, position = nextPos++, level = child.level + levelDelta)
+            val newPos = FractionalIndexing.generateKeyBetween(lastPos, null)
+            val updated = child.copy(parentUuid = blockA.uuid.value, position = newPos, level = child.level + levelDelta)
+            lastPos = newPos
             current[child.uuid.value] = updated
             val updates = mutableMapOf<String, Block>()
             adjustDescendantLevels(child.uuid.value, levelDelta, current, updates)
@@ -390,10 +392,10 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         val firstPart = block.content.substring(0, cursorPosition).trim()
         val secondPart = block.content.substring(cursorPosition).trim()
 
-        val newPos = block.position + 1
-        current.values.filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid && it.position >= newPos }.forEach {
-            current[it.uuid.value] = it.copy(position = it.position + 1)
-        }
+        val nextSiblingPos = current.values
+            .filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid && it.position > block.position }
+            .minByOrNull { it.position }?.position
+        val newPos = FractionalIndexing.generateKeyBetween(block.position, nextSiblingPos)
 
         current[blockUuid.value] = block.copy(content = firstPart)
         val newBlock = block.copy(
@@ -478,7 +480,7 @@ class PopulatedFakeBlockRepository : FakeBlockRepository() {
                 uuid = BlockUuid("block-1"),
                 pageUuid = PageUuid("page-1"),
                 content = "Block 1",
-                position = 0,
+                position = "a0",
                 createdAt = now,
                 updatedAt = now
             ),
@@ -486,7 +488,7 @@ class PopulatedFakeBlockRepository : FakeBlockRepository() {
                 uuid = BlockUuid("block-2"),
                 pageUuid = PageUuid("page-1"),
                 content = "Block 2",
-                position = 1,
+                position = "a1",
                 createdAt = now,
                 updatedAt = now
             )

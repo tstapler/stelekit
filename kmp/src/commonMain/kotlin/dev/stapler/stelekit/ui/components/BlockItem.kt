@@ -19,8 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
 import dev.stapler.stelekit.model.Block
-import dev.stapler.stelekit.model.BlockTypes
-import dev.stapler.stelekit.model.BlockTypes.IMAGE_ANNOTATION
+import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.screens.FormatAction
 import dev.stapler.stelekit.ui.screens.SearchResultItem
@@ -89,8 +88,6 @@ internal fun BlockItem(
     onArchiveUrl: ((url: String, blockUuid: String) -> Unit)? = null,
     /** Called when user taps an image_annotation block thumbnail; receives the image annotation UUID. */
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
-    /** Called when the user requests tag suggestions for this block via context menu. */
-    onRequestTagSuggestions: ((blockUuid: String, content: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -353,13 +350,13 @@ internal fun BlockItem(
             } else {
                 // View mode — dispatch on block type
                 when (block.blockType) {
-                    IMAGE_ANNOTATION -> ImageAnnotationBlockItem(
+                    is BlockType.ImageAnnotation -> ImageAnnotationBlockItem(
                         block = block,
                         onOpenAnnotationEditor = onOpenAnnotationEditor,
                         onStartEditing = onStartEditing,
                         modifier = Modifier.weight(1f),
                     )
-                    BlockTypes.HEADING -> HeadingBlock(
+                    is BlockType.Heading -> HeadingBlock(
                         content = block.content,
                         level = headingLevelFromContent(block.content),
                         linkColor = linkColor,
@@ -367,24 +364,24 @@ internal fun BlockItem(
                         onLinkClick = onLinkClick,
                         modifier = Modifier.weight(1f),
                     )
-                    BlockTypes.THEMATIC_BREAK -> ThematicBreakBlock(
+                    is BlockType.ThematicBreak -> ThematicBreakBlock(
                         onStartEditing = onStartEditing,
                         modifier = Modifier.weight(1f),
                     )
-                    BlockTypes.CODE_FENCE -> CodeFenceBlock(
+                    is BlockType.CodeFence -> CodeFenceBlock(
                         content = block.content,
                         language = codeFenceLanguage(block.content),
                         onStartEditing = onStartEditing,
                         modifier = Modifier.weight(1f),
                     )
-                    BlockTypes.BLOCKQUOTE -> BlockquoteBlock(
+                    is BlockType.Blockquote -> BlockquoteBlock(
                         content = block.content,
                         linkColor = linkColor,
                         onStartEditing = onStartEditing,
                         onLinkClick = onLinkClick,
                         modifier = Modifier.weight(1f),
                     )
-                    BlockTypes.ORDERED_LIST_ITEM -> OrderedListItemBlock(
+                    is BlockType.OrderedListItem -> OrderedListItemBlock(
                         content = block.content,
                         number = orderedListNumber(block.content),
                         linkColor = linkColor,
@@ -392,7 +389,7 @@ internal fun BlockItem(
                         onLinkClick = onLinkClick,
                         modifier = Modifier.weight(1f),
                     )
-                    BlockTypes.TABLE -> TableBlock(
+                    is BlockType.Table -> TableBlock(
                         content = block.content,
                         onStartEditing = onStartEditing,
                         modifier = Modifier.weight(1f),
@@ -495,25 +492,6 @@ internal fun BlockItem(
                     onNavigateAllSuggestions?.invoke()
                 },
             )
-        }
-
-        // Render "Suggest tags" dropdown (shown when onRequestTagSuggestions is wired)
-        if (onRequestTagSuggestions != null) {
-            var tagMenuExpanded by remember { mutableStateOf(false) }
-            Box {
-                DropdownMenu(
-                    expanded = tagMenuExpanded,
-                    onDismissRequest = { tagMenuExpanded = false },
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Suggest tags") },
-                        onClick = {
-                            tagMenuExpanded = false
-                            onRequestTagSuggestions(block.uuid.value, block.content)
-                        },
-                    )
-                }
-            }
         }
 
         // Render Autocomplete Menu

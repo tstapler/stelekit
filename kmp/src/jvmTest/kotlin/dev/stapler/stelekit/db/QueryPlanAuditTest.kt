@@ -2,6 +2,7 @@ package dev.stapler.stelekit.db
 
 import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
@@ -31,7 +32,7 @@ class QueryPlanAuditTest {
         // No WHERE clause — full traversal by design
         "selectAllBlocks", "selectAllBlocksPaginated", "countBlocks",
         "selectAllPagesPaginated", "countPages", "selectPageNameEntries",
-        "selectAllMetadata", "selectAllDebugFlags",
+        "selectAllMetadata",
         // content LIKE — no index on content; FTS handles production full-text search
         "selectBlocksWithContentLike", "selectBlocksWithContentLikePaginated",
         "countBlocksWithWikilink", "selectBlocksWithWikilink", "countLinkedReferencesForPage",
@@ -52,6 +53,12 @@ class QueryPlanAuditTest {
         "selectAllPendingMoves",
         // SQLite reports "SCAN CONSTANT ROW" for rowid helpers with no FROM clause — not a real scan
         "selectLastInsertRowId",
+        // WITH RECURSIVE CTE — SQLite's recursive implementation always scans the CTE working
+        // table (SCAN s) and the outer sort result (SCAN subtree). The anchor step uses the
+        // unique-index lookup on uuid and the recursive step uses idx_blocks_parent_position
+        // when real hierarchical data is present (ANALYZE-verified). The SCAN lines in the plan
+        // reflect CTE plumbing, not an unindexed table scan on production data.
+        "selectBlockHierarchyRecursive",
     )
 
     // ── All SELECT queries from SteleDatabase.sq, parameters replaced with literals ──────────
@@ -97,6 +104,26 @@ class QueryPlanAuditTest {
             "SELECT * FROM blocks WHERE parent_uuid = 'x' ORDER BY position"),
         AuditQuery("selectBlocksByParentUuids",
             "SELECT * FROM blocks WHERE parent_uuid IN ('x') ORDER BY parent_uuid, position"),
+        AuditQuery("selectBlockHierarchyRecursive",
+            """WITH RECURSIVE subtree(
+    id, uuid, page_uuid, parent_uuid, left_uuid, content, level, position,
+    created_at, updated_at, properties, version, content_hash, block_type, depth
+) AS (
+    SELECT b.id, b.uuid, b.page_uuid, b.parent_uuid, b.left_uuid, b.content,
+           b.level, b.position, b.created_at, b.updated_at, b.properties,
+           b.version, b.content_hash, b.block_type, 0 AS depth
+    FROM blocks b
+    WHERE b.uuid = 'b0'
+    UNION ALL
+    SELECT b.id, b.uuid, b.page_uuid, b.parent_uuid, b.left_uuid, b.content,
+           b.level, b.position, b.created_at, b.updated_at, b.properties,
+           b.version, b.content_hash, b.block_type, s.depth + 1
+    FROM blocks b
+    INNER JOIN subtree s ON b.parent_uuid = s.uuid
+    WHERE s.depth < 100
+)
+SELECT * FROM subtree
+ORDER BY depth, parent_uuid, position"""),
         AuditQuery("selectRootBlocksByPageUuidOrdered",
             "SELECT * FROM blocks WHERE parent_uuid IS NULL AND page_uuid = 'x' ORDER BY position"),
         AuditQuery("selectBlockByLeftUuid",
@@ -248,21 +275,9 @@ class QueryPlanAuditTest {
         AuditQuery("countLinkedReferencesForPage",
             "SELECT COUNT(*) FROM blocks WHERE content LIKE '%[[TestPage]]%'"),
 
-        // ── perf_histogram_buckets ───────────────────────────────────────────────────────────
-        AuditQuery("selectHistogramForOperation",
-            "SELECT bucket_ms, count FROM perf_histogram_buckets WHERE operation_name = 'x' ORDER BY bucket_ms"),
-        AuditQuery("selectAllHistogramOperations",
-            "SELECT DISTINCT operation_name FROM perf_histogram_buckets ORDER BY operation_name"),
-        AuditQuery("selectAllHistogramBuckets",
-            "SELECT operation_name, bucket_ms, count FROM perf_histogram_buckets ORDER BY operation_name, bucket_ms"),
-
-        // ── debug_flags ──────────────────────────────────────────────────────────────────────
-        AuditQuery("selectDebugFlag",
-            "SELECT value FROM debug_flags WHERE key = 'x'"),
-        AuditQuery("selectAllDebugFlags",
-            "SELECT key, value FROM debug_flags ORDER BY key"),
-
         // ── metadata ─────────────────────────────────────────────────────────────────────────
+        // NOTE: perf_histogram_buckets and debug_flags are in TelemetryDatabase (Telemetry.sq),
+        // not SteleDatabase — they are audited separately and intentionally absent here.
         AuditQuery("selectMetadata",
             "SELECT value FROM metadata WHERE key = 'x'"),
         AuditQuery("selectAllMetadata",
@@ -292,23 +307,8 @@ class QueryPlanAuditTest {
         AuditQuery("selectAllMigrationsForGraph",
             "SELECT * FROM migration_changelog WHERE graph_id = 'x' ORDER BY execution_order"),
 
-        // ── spans ────────────────────────────────────────────────────────────────────────────
-        AuditQuery("selectRecentSpans",
-            "SELECT * FROM spans ORDER BY start_epoch_ms DESC LIMIT 10"),
-        AuditQuery("selectSlowSpansByVersionAndName",
-            "SELECT * FROM spans WHERE app_version = '0.1.0' AND name = 'op_0' ORDER BY duration_ms DESC LIMIT 10"),
-        AuditQuery("selectDistinctVersionsWithSpans",
-            "SELECT DISTINCT app_version FROM spans WHERE app_version != '' ORDER BY app_version DESC"),
-
-        // ── query_stats ────────────────────────────────────────────────────────────────────────
-        AuditQuery("selectQueryStatsByVersion",
-            "SELECT * FROM query_stats WHERE app_version = 'x' ORDER BY total_ms DESC"),
-        AuditQuery("selectTopQueryStatsByTotalMs",
-            "SELECT * FROM query_stats WHERE app_version = 'x' ORDER BY total_ms DESC LIMIT 10"),
-        AuditQuery("selectTopQueryStatsByCalls",
-            "SELECT * FROM query_stats WHERE app_version = 'x' ORDER BY calls DESC LIMIT 10"),
-        AuditQuery("selectAllQueryStatVersions",
-            "SELECT DISTINCT app_version FROM query_stats ORDER BY app_version DESC"),
+        // NOTE: spans and query_stats are in TelemetryDatabase (Telemetry.sq), not SteleDatabase.
+        // Their query-plan audit lives with the telemetry test suite.
 
         // ── git_config ────────────────────────────────────────────────────────────────────────
         AuditQuery("selectGitConfig",
@@ -349,6 +349,14 @@ class QueryPlanAuditTest {
             "SELECT page_uuid, last_visited_at, visit_count FROM page_visits WHERE page_uuid IN ('p0')"),
         AuditQuery("selectPageVisitByUuid",
             "SELECT page_uuid, last_visited_at, visit_count FROM page_visits WHERE page_uuid = 'p0'"),
+
+        // ── wikilink_references ────────────────────────────────────────────────────────────────
+        AuditQuery("selectWikilinkPageNamesForBlock",
+            "SELECT page_name FROM wikilink_references WHERE block_uuid = 'b0'"),
+        AuditQuery("selectWikilinkPageNamesForBlocks",
+            "SELECT DISTINCT page_name FROM wikilink_references WHERE block_uuid IN ('b0')"),
+        AuditQuery("selectWikilinkPageNamesForPage",
+            "SELECT DISTINCT page_name FROM wikilink_references WHERE block_uuid IN (SELECT uuid FROM blocks WHERE page_uuid = 'p0')"),
 
         // ── pending_asset_moves ────────────────────────────────────────────────────────────────
         AuditQuery("selectAllPendingMoves",
@@ -434,16 +442,6 @@ class QueryPlanAuditTest {
                         "'[]','[]','[]',1024,${i * 1000L},0,0,'NONE')"
                     )
                 }
-                // ── spans — needed for selectSlowSpansByVersionAndName / selectDistinctVersions ──
-                repeat(50) { i ->
-                    seed.execute(
-                        "INSERT OR IGNORE INTO spans(" +
-                        "trace_id,span_id,parent_span_id,name,start_epoch_ms,end_epoch_ms," +
-                        "duration_ms,attributes_json,status_code,app_version,commit_hash) " +
-                        "VALUES('t$i','s$i','','op_${i % 5}',${i * 1000L},${i * 1000L + 100L}," +
-                        "100,'{}','OK','0.${i % 10}.0','abc123')"
-                    )
-                }
                 // ── git_config — needed for selectGitConfig ───────────────────────────────────
                 seed.execute(
                     "INSERT OR IGNORE INTO git_config(graph_id,repo_root) VALUES('g1','/repo')"
@@ -487,83 +485,132 @@ class QueryPlanAuditTest {
     }
 
     /**
-     * Regression test for the analyze_blocks migration and PRAGMA optimize startup hook.
+     * Empirically proves the statistics-poisoning root cause behind the SCAN blocks regression.
      *
-     * Root cause: covering_indexes_page_blocks added composite indexes but never called ANALYZE.
-     * Without statistics, SQLite's default heuristics (1M assumed rows, 10 rows/index-entry) can
-     * cause it to choose a full heap scan over idx_blocks_page_position on large graphs, leading
-     * to ~9 s per blocks:select call. QueryPlanAuditTest.no_unexpected_full_table_scans called
-     * ANALYZE manually and therefore masked this gap in CI.
+     * Production failure chain (old code had no unconditional startup ANALYZE):
+     *   1. Fresh install (or upgrade where analyze_blocks migration was new):
+     *      `analyze_blocks` migration runs `ANALYZE blocks` on an EMPTY table.
+     *      SQLite writes NOTHING to sqlite_stat1 — ANALYZE on an empty table produces no rows.
+     *   2. User imports their graph: blocks grows to 50 000+ rows.
+     *   3. App restarts: MigrationRunner skips `analyze_blocks` (already applied/hash-matched).
+     *      No ANALYZE runs. No PRAGMA optimize (old code didn't call it either).
+     *   4. sqlite_stat1 still has no entry for blocks → query planner uses default heuristics →
+     *      on Android SQLite the planner chooses a full heap SCAN (~1.5 s/query).
      *
-     * This test verifies two things:
-     * 1. On a large unanalyzed blocks table, ANALYZE is necessary to get the correct plan.
-     * 2. After ANALYZE, the composite covering index is always chosen.
+     * This test uses raw JDBC (no DriverFactory, no migrations, no unconditional startup ANALYZE)
+     * to reproduce the exact pre-fix production state with hard assertions at every step.
      *
-     * If the analyze_blocks migration or PRAGMA optimize startup hook is removed, the main
-     * audit test would still pass (it calls ANALYZE manually), but production databases would
-     * regress. This test documents the regression and should surface changes to ANALYZE coverage.
+     * Hard assertions (deterministic across all SQLite versions):
+     *   - sqlite_stat1 has NO entry for blocks after ANALYZE on empty table.
+     *   - sqlite_stat1 still has NO entry for blocks after data is loaded (no ANALYZE ran).
+     *   - sqlite_stat1 gains correct entries only after explicit ANALYZE on the loaded table.
+     *   - EXPLAIN QUERY PLAN uses the composite index after ANALYZE.
+     *
+     * Soft observation (SQLite-version-dependent):
+     *   - Whether the absent statistics cause an actual SCAN depends on the SQLite version's
+     *     default heuristics. The JVM SQLite JDBC may use the index anyway; Android SQLite ~3.39
+     *     chose SCAN. The statistics state is the deterministic root cause regardless.
      */
     @Test
-    fun `large blocks table uses composite index after ANALYZE, may scan without it`() {
-        val driver = DriverFactory().createDriver("jdbc:sqlite::memory:")
-        val sqliteDriver = driver as PooledJdbcSqliteDriver
-        val conn = sqliteDriver.getConnection()
+    fun `analyze_blocks migration poisons statistics on fresh install - no stats means planner has no baseline`() {
+        // Use raw JDBC — bypasses DriverFactory's unconditional startup ANALYZE so we can
+        // reproduce the exact pre-fix production state at each step.
+        val conn = java.sql.DriverManager.getConnection("jdbc:sqlite::memory:")
         try {
-            conn.createStatement().use { seed ->
-                // 50 000 blocks across 1 000 pages — comparable to a large production graph.
-                // Insert AFTER schema+migration setup. Since migrations ran on an empty DB, the
-                // analyze_blocks migration's ANALYZE saw 0 rows; statistics are now stale.
-                // This reproduces the production state: index exists, data exists, no current stats.
-                repeat(1000) { i ->
-                    seed.execute(
-                        "INSERT OR IGNORE INTO pages(uuid,name,namespace,file_path,created_at,updated_at," +
-                        "properties,version,is_favorite,is_journal,journal_date,is_content_loaded,backlink_count) " +
-                        "VALUES('pp$i','LargePage $i',NULL,NULL,${i * 1000L},${i * 1000L + 500L},NULL,0,0,0,NULL,1,0)"
+            conn.createStatement().use { ddl ->
+                ddl.execute("""
+                    CREATE TABLE blocks (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        uuid        TEXT NOT NULL UNIQUE,
+                        page_uuid   TEXT NOT NULL,
+                        parent_uuid TEXT,
+                        position    INTEGER NOT NULL DEFAULT 0,
+                        content     TEXT
                     )
-                }
-                repeat(50_000) { i ->
-                    seed.execute(
-                        "INSERT OR IGNORE INTO blocks(uuid,page_uuid,parent_uuid,left_uuid,content," +
-                        "level,position,created_at,updated_at,properties,version,content_hash,block_type) " +
-                        "VALUES('bb$i','pp${i % 1000}',NULL,NULL,'content $i',0,${i % 50},${i * 100L},${i * 100L + 50L},NULL,0,'lhash$i','bullet')"
-                    )
-                }
-                // Do NOT call ANALYZE here — this is the unanalyzed production state.
+                """.trimIndent())
+                // The composite indexes that covering_indexes_page_blocks adds.
+                ddl.execute("CREATE INDEX idx_blocks_page_position   ON blocks(page_uuid, position)")
+                ddl.execute("CREATE INDEX idx_blocks_parent_position ON blocks(parent_uuid, position)")
             }
 
-            fun planLines(sql: String): List<String> =
-                conn.createStatement().use { stmt ->
-                    val rs = stmt.executeQuery("EXPLAIN QUERY PLAN $sql")
-                    buildList { while (rs.next()) add(rs.getString("detail") ?: "") }.also { rs.close() }
-                }
-
-            val criticalSql = "SELECT * FROM blocks WHERE page_uuid = 'pp0' ORDER BY position"
-
-            // Before ANALYZE: document whether the regression manifests. SQLite behaviour
-            // differs between versions and is not stable enough to assert here, but on
-            // versions where the default heuristics trigger a full scan this will print.
-            val planBefore = planLines(criticalSql)
-            val hadScanBefore = planBefore.any { it.startsWith("SCAN blocks") && !it.contains("USING") }
-            if (hadScanBefore) {
-                println("[QueryPlanAuditTest] Confirmed: SCAN blocks on 50k-row table without ANALYZE — regression reproduced on this SQLite version")
+            fun statRows(): Map<String, String> = conn.createStatement().use { s ->
+                try {
+                    val rs = s.executeQuery("SELECT idx, stat FROM sqlite_stat1 WHERE tbl = 'blocks'")
+                    buildMap { while (rs.next()) put(rs.getString("idx") ?: "", rs.getString("stat") ?: "") }
+                        .also { rs.close() }
+                } catch (_: Exception) { emptyMap() }
             }
 
-            // After ANALYZE: the composite index must be chosen on every SQLite version.
-            // This is what analyze_blocks migration and PRAGMA optimize guarantee for users.
+            fun planLines(sql: String): List<String> = conn.createStatement().use { s ->
+                val rs = s.executeQuery("EXPLAIN QUERY PLAN $sql")
+                buildList { while (rs.next()) add(rs.getString("detail") ?: "") }.also { rs.close() }
+            }
+
+            // ── Step 1: analyze_blocks migration — ANALYZE on empty table ─────────────────────
+            // This is what runs on a fresh install or when the migration is new.
             conn.createStatement().use { it.execute("ANALYZE blocks") }
 
-            val planAfter = planLines(criticalSql)
-            val usesIndexAfter = planAfter.any { it.contains("USING") }
-            if (!usesIndexAfter) {
-                fail(buildString {
-                    appendLine("After ANALYZE blocks, page_uuid lookup must use composite index — heap scan detected.")
-                    appendLine("  Before ANALYZE: $planBefore")
-                    append("  After  ANALYZE: $planAfter")
-                })
+            val statsAfterEmptyAnalyze = statRows()
+            // KEY FACT: ANALYZE on an empty table writes NOTHING to sqlite_stat1.
+            // There is no "0-row" entry — the table is simply absent from sqlite_stat1.
+            assertTrue(statsAfterEmptyAnalyze.isEmpty(),
+                "ANALYZE on an empty table must write nothing to sqlite_stat1. " +
+                "Got: $statsAfterEmptyAnalyze — if this has rows, this SQLite version changed " +
+                "behaviour and the root-cause analysis needs updating.")
+
+            // ── Step 2: Graph import — 50 000 blocks, no ANALYZE ─────────────────────────────
+            conn.autoCommit = false
+            conn.prepareStatement(
+                "INSERT INTO blocks(uuid,page_uuid,parent_uuid,position,content) VALUES(?,?,NULL,?,?)"
+            ).use { ps ->
+                repeat(50_000) { i ->
+                    ps.setString(1, "bb$i"); ps.setString(2, "pp${i % 1000}")
+                    ps.setInt(3, i % 50);   ps.setString(4, "content $i")
+                    ps.addBatch()
+                    if (i % 1000 == 999) ps.executeBatch()
+                }
+                ps.executeBatch()
             }
+            conn.commit()
+            conn.autoCommit = true
+
+            // ── Step 3: Subsequent startup — old code only ran migrations (already applied) ───
+            // Neither ANALYZE nor PRAGMA optimize was called by the old startup path.
+            // sqlite_stat1 is still empty for blocks.
+            val statsAfterDataLoad = statRows()
+            assertTrue(statsAfterDataLoad.isEmpty(),
+                "After graph import with no ANALYZE, sqlite_stat1 must still have no entry for " +
+                "blocks — this is the exact pre-fix state: 50 000 rows, zero statistics. " +
+                "Got: $statsAfterDataLoad")
+
+            // ── Soft observation: EXPLAIN QUERY PLAN without any statistics ───────────────────
+            // The planner's choice depends on the SQLite version's default cardinality heuristics.
+            // Android SQLite ~3.39 chose SCAN blocks (~1.5 s). JVM SQLite may use the index.
+            val criticalSql = "SELECT * FROM blocks WHERE page_uuid = 'pp0' ORDER BY position"
+            val planWithNoStats = planLines(criticalSql)
+            val isScan = planWithNoStats.any { it.startsWith("SCAN blocks") && !it.contains("USING") }
+            println(
+                "[BlocksScanRegression] Plan WITHOUT statistics on this SQLite version " +
+                "(${if (isScan) "SCAN — regression reproduced" else "index used — version avoids SCAN"}): $planWithNoStats"
+            )
+
+            // ── Step 4: Fix — ANALYZE blocks after data exists (unconditional startup ANALYZE) ─
+            conn.createStatement().use { it.execute("ANALYZE blocks") }
+
+            val statsAfterFix = statRows()
+            val estimatedRows = statsAfterFix.values
+                .mapNotNull { it.trim().split(" ").firstOrNull()?.toIntOrNull() }
+            assertTrue(estimatedRows.any { it > 10_000 },
+                "After ANALYZE with 50 000 rows, sqlite_stat1 must show an estimated row count " +
+                "> 10 000 for at least one blocks index. Got: $statsAfterFix")
+
+            // ── Hard assertion: fix produces the correct query plan ───────────────────────────
+            val planAfterFix = planLines(criticalSql)
+            assertTrue(planAfterFix.any { it.contains("USING") },
+                "After ANALYZE with real data, the page_uuid lookup must use the composite index. " +
+                "Heap scan still detected after fix. Plan: $planAfterFix")
         } finally {
-            sqliteDriver.closeConnection(conn)
-            driver.close()
+            conn.close()
         }
     }
 
@@ -608,9 +655,10 @@ class QueryPlanAuditTest {
         val sqContent = File(sqFilePath).readText()
 
         // Named query format in SQLDelight: "queryName:\nSELECT ..."
-        // The regex matches a word followed by ':' at line start, then SELECT on the next line.
+        // The regex matches a word followed by ':' at line start, then SELECT (or WITH RECURSIVE
+        // CTE queries that are read-only) on the next line.
         val selectNamesInSq: Set<String> = Regex(
-            """^(\w+):\s*\n\s*SELECT""",
+            """^(\w+):\s*\n\s*(?:SELECT|WITH\s+RECURSIVE)""",
             setOf(RegexOption.MULTILINE, RegexOption.IGNORE_CASE)
         ).findAll(sqContent).map { it.groupValues[1] }.toSet()
 

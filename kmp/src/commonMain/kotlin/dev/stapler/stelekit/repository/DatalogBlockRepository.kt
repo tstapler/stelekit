@@ -311,7 +311,7 @@ class DatalogBlockRepository : BlockRepository {
     override suspend fun moveBlock(
         blockUuid: BlockUuid,
         newParentUuid: BlockUuid?,
-        newPosition: Int
+        newPosition: String
     ): Either<DomainError, Unit> {
         return writeMutex.withLock {
             try {
@@ -328,12 +328,12 @@ class DatalogBlockRepository : BlockRepository {
                     .sortedBy { it.position }
 
                 val newSiblings = if (oldParentUuid == newParentUuid?.value) {
-                    oldSiblings.toMutableList().apply { add(newPosition.coerceIn(0, size), block) }
+                    oldSiblings.toMutableList().apply { add(block.copy(position = newPosition)) }
                 } else {
                     currentBlocks.values
                         .filter { it.parentUuid == newParentUuid?.value }
                         .sortedBy { it.position }
-                        .toMutableList().apply { add(newPosition.coerceIn(0, size), block) }
+                        .toMutableList().apply { add(block.copy(position = newPosition)) }
                 }
 
                 val updatedBlocks = mutableMapOf<String, Block>()

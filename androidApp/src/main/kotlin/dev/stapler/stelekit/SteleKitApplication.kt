@@ -13,7 +13,9 @@ import dev.stapler.stelekit.app.R
 import dev.stapler.stelekit.performance.BuildInfo
 import dev.stapler.stelekit.platform.measurement.MeasurementDeviceRegistry
 import dev.stapler.stelekit.platform.measurement.ble.KableBleScanner
+import dev.stapler.stelekit.platform.ml.OnnxMonocularDepthEstimator
 import dev.stapler.stelekit.platform.sensor.AndroidCameraProvider
+import dev.stapler.stelekit.platform.sensor.AndroidMotionSensorProvider
 import dev.stapler.stelekit.platform.sensor.ARCoreDepthProvider
 import dev.stapler.stelekit.platform.sensor.SensorModule
 import kotlinx.coroutines.CompletableDeferred
@@ -62,6 +64,8 @@ class SteleKitApplication : Application() {
             CredentialStore.init(this)
             SensorModule.cameraProvider = AndroidCameraProvider(applicationContext)
             SensorModule.depthSensorProvider = ARCoreDepthProvider(applicationContext)
+            SensorModule.motionSensorProvider = AndroidMotionSensorProvider(applicationContext)
+            SensorModule.monocularDepthEstimator = OnnxMonocularDepthEstimator(applicationContext)
             MeasurementDeviceRegistry.register(KableBleScanner(applicationContext))
             fileSystem = PlatformFileSystem().apply { init(applicationContext) }
             // Activate write-behind when MANAGE_EXTERNAL_STORAGE is not granted.
