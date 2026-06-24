@@ -363,22 +363,19 @@ class GraphLoader(
      * Called by GraphWriter after it writes a file, so the watcher doesn't treat
      * our own write as an external change.
      *
-     * [FileRegistry.markWrittenByUs] updates the content hash synchronously (reads file
-     * content, no getLastModifiedTime SAF IPC). A background launch then fires getLastModifiedTime
-     * to replace the temporary modTimes=0 (for .md) or sentinel (for .md.stek) with the real
-     * post-write mtime, eliminating extra readFile calls on the next watcher poll.
+     * [FileRegistry.markWrittenByUs] sets modTimes to 0 (the own-write sentinel) and stores
+     * the content hash synchronously. The next [detectChanges] poll will see modTime > 0,
+     * read the file, find a matching hash, suppress it as our own write, and update modTimes
+     * to the real mtime — so only ONE extra readFile call occurs before the file is stable.
+     *
+     * A previous implementation tried to eliminate that extra readFile by firing a background
+     * getLastModifiedTime coroutine. This introduced a race: if an external write occurred
+     * between our write and the coroutine's getLastModifiedTime call, the coroutine would
+     * store the EXTERNAL file's mtime. detectChanges would then see modTime == lastKnown
+     * and silently skip the external change. Correctness beats the one-readFile optimization.
      */
     suspend fun markFileWrittenByUs(filePath: String) {
         fileRegistry.markWrittenByUs(filePath)
-        // Fire-and-forget: set real post-write mtime so subsequent watcher polls
-        // see modTime == lastKnown and skip the file without calling readFile.
-        // Uses updateModTimeIfSentinel so that if detectChanges already ran and updated
-        // modTimes (either suppressing our write or recording an external change), the
-        // background coroutine does not overwrite that value with a potentially-stale mtime.
-        parallelScope.launch {
-            val modTime = fileSystem.getLastModifiedTime(filePath) ?: 0L
-            if (modTime != 0L) fileRegistry.updateModTimeIfSentinel(filePath, modTime)
-        }
     }
 
     /**
