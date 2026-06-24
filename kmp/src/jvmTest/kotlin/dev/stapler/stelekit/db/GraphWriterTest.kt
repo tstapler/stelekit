@@ -26,13 +26,13 @@ class GraphWriterTest {
             val fileSystem = PlatformFileSystem()
             val writer = GraphWriter(fileSystem)
             
-            // createTempDirectory inside user.home so the path falls inside JvmFileSystemBase's whitelist.
             val tempDir = java.nio.file.Files.createTempDirectory(
-                java.nio.file.Paths.get(System.getProperty("user.home")),
+                java.nio.file.Paths.get(System.getProperty("java.io.tmpdir")),
                 "stelekit_test_",
             ).toFile()
             val graphPath = tempDir.absolutePath
-            
+            fileSystem.registerGraphRoot(graphPath)
+
             val now = Clock.System.now()
             
             try {
@@ -178,7 +178,7 @@ class GraphWriterTest {
     @Test
     fun `PlatformFileSystem writeFile logs exception when write fails`() {
         val tempDir = java.nio.file.Files.createTempDirectory(
-            java.nio.file.Paths.get(System.getProperty("user.home")),
+            java.nio.file.Paths.get(System.getProperty("java.io.tmpdir")),
             "stelekit_test_fs_",
         ).toFile()
         // Create a directory with the same name as the target file — forces an IOException
@@ -188,6 +188,7 @@ class GraphWriterTest {
 
         try {
             val fileSystem = PlatformFileSystem()
+            fileSystem.registerGraphRoot(tempDir.absolutePath)
 
             LogManager.clearLogs()
 

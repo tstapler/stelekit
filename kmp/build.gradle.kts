@@ -253,8 +253,8 @@ kotlin {
                 // Model (~100MB) is downloaded on first use via DepthModelDownloader, not bundled.
                 implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
 
-                // JGit 5.13.x — Android git operations (Android-safe; Java 11 APIs with desugaring)
-                implementation("org.eclipse.jgit:org.eclipse.jgit:5.13.3.202401111512-r")
+                // JGit 7.x — Android git operations (matches Bazel-resolved version; desugaring handles Java 11 APIs)
+                implementation("org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r")
                 // JGit SSH/JSch integration module (provides JschConfigSessionFactory)
                 // Excludes com.jcraft:jsch so the mwiede fork below is the sole jsch on classpath
                 implementation("org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:5.13.3.202401111512-r") {

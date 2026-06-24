@@ -1,0 +1,103 @@
+"""
+kmp/ package — top-level developer-facing aliases.
+
+Developer commands:
+  bazel run  //kmp:desktop_app          # Launch SteleKit desktop UI
+  bazel build //kmp:android_app         # Build Android APK
+  bazel test  //kmp:jvm_tests           # Run JVM (desktop + shared) test suite
+  bazel test  //kmp:business_tests      # Run business-logic only tests (no UI)
+  bazel mobile-install //kmp:android_app  # Install APK on connected device
+
+See CLAUDE.md for the full Gradle → Bazel command equivalence table.
+"""
+
+load("@rules_android//rules:rules.bzl", "android_library")
+
+# ── Android KMP resources ─────────────────────────────────────────────────────
+# res/ lives in the kmp/ Bazel package (no BUILD in src/androidMain/), so the
+# android_library that exposes R must be defined here.
+android_library(
+    name = "kmp_android_resources",
+    manifest = "src/androidMain/AndroidManifest.xml",
+    resource_files = glob(["src/androidMain/res/**"]),
+    custom_package = "dev.stapler.stelekit",
+    visibility = ["//kmp/src/androidMain/kotlin:__pkg__"],
+)
+
+# ── JVM / Desktop ─────────────────────────────────────────────────────────────
+
+alias(
+    name = "desktop_app",
+    actual = "//kmp/src/jvmMain/kotlin:desktop_app",
+    visibility = ["//visibility:public"],
+)
+
+# ── Android ───────────────────────────────────────────────────────────────────
+
+alias(
+    name = "android_app",
+    actual = "//androidApp:android_app",
+    visibility = ["//visibility:public"],
+)
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+
+test_suite(
+    name = "jvm_tests",
+    tests = ["//kmp/src/jvmTest/kotlin:jvm_tests"],
+    visibility = ["//visibility:public"],
+)
+
+test_suite(
+    name = "business_tests",
+    tests = ["//kmp/src/businessTest/kotlin:business_tests"],
+    visibility = ["//visibility:public"],
+)
+
+# ── Web / WASM-JS ─────────────────────────────────────────────────────────────
+#
+# Kotlin/WASM is not yet supported by rules_kotlin (tracking: rules_kotlin#567).
+# This genrule wraps the Gradle wasmJsBrowserDistribution task so the web bundle
+# is addressable as a Bazel target today.  When rules_kotlin ships native WASM
+# support the genrule can be replaced with kt_wasm_library + bundler rules.
+#
+# The target runs without sandboxing (tags = ["local"]) because Gradle manages
+# its own dependency resolution and the hermetic Bazel sandbox would block it.
+# Gradle's own incremental cache provides action-level caching in the interim.
+#
+# Build: bazel build //kmp:web_app
+# Output: bazel-bin/kmp/web_dist.tar.gz  (unpack to serve the browser bundle)
+genrule(
+    name = "web_dist",
+    srcs = [],
+    outs = ["web_dist.tar.gz"],
+    cmd = """
+        WORKSPACE=$$(dirname $$(realpath gradlew)) && \
+        "$$WORKSPACE/gradlew" :kmp:wasmJsBrowserDistribution \
+          --project-dir "$$WORKSPACE" \
+          -PenableJs=true --no-daemon --quiet && \
+        tar -czf $(OUTS) -C "$$WORKSPACE/kmp/build/dist/wasmJs/productionExecutable" .
+    """,
+    tags = ["local"],
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "web_app",
+    actual = ":web_dist",
+    visibility = ["//visibility:public"],
+)
+
+# ── Detekt linting ────────────────────────────────────────────────────────────
+# Option A (plan.md §6.1.1): Detekt runs as a standalone CI step via the Gradle
+# wrapper — not a Bazel target — because Bazel caching does not benefit a fast
+# linter that already has its own incremental cache.
+#
+# CI invocation (in .github/workflows/ci.yml, existing job):
+#   ./gradlew :kmp:detekt
+#
+# The buildSrc custom ruleset (buildSrc.jar) is picked up automatically by the
+# Gradle detekt task. No Bazel rule needed for Detekt at this time (see plan ADR).
+#
+# If Detekt becomes a bottleneck, switch to Option B: genrule that downloads
+# the Detekt CLI JAR via rules_jvm_external and runs it against source directories.

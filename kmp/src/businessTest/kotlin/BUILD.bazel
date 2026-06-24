@@ -1,0 +1,24 @@
+"""
+businessTest — business logic tests (no UI dependencies).
+
+This source set compiles against jvm_main_lib; it has no Compose or platform
+dependencies, making it fast to run in CI.
+"""
+
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library", "kt_jvm_test")
+
+# Runnable test target — bazel test //kmp:business_tests
+kt_jvm_test(
+    name = "business_tests",
+    srcs = glob(["**/*.kt"]),
+    test_class = "dev.stapler.stelekit.AllBusinessTests",
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    associates = ["//kmp/src/jvmMain/kotlin:jvm_main_lib"],
+    deps = [
+        "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+)

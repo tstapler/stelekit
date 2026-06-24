@@ -1,0 +1,166 @@
+"""
+androidMain — Android-specific source files (Activity, SQLite driver, etc.).
+
+Compiled together with commonMain and jvmCommonMain in a single kt_android_library
+so that Kotlin Multiplatform expect/actual resolution works under Bazel.
+This mirrors how jvm_main_lib combines commonMain + jvmCommonMain + jvmMain for JVM.
+
+Note on JGit versioning: rules_jvm_external cannot resolve the same
+groupId:artifactId at two different versions. The JGit 5.13.x ssh.jsch
+module (org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:5.13.3) has a different
+artifactId than the 7.x ssh.apache module, so both can co-exist in the
+artifact list. However org.eclipse.jgit:org.eclipse.jgit:7.3.0 is the
+resolved version — Android code calling JGit 5.13.x APIs must be aware
+that the 7.x JAR is on the compile classpath.
+"""
+
+load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
+
+kt_android_library(
+    name = "android_main",
+    srcs = [
+        "//kmp/src/commonMain/kotlin:kt_srcs",
+        "//kmp/src/jvmCommonMain/kotlin:kt_srcs",
+    ] + glob(["**/*.kt"]),
+    common_srcs = [
+        "//kmp/src/commonMain/kotlin:kt_srcs",
+        "//kmp/src/jvmCommonMain/kotlin:kt_expect_srcs",
+    ],
+    kotlinc_opts = "//:kmp_android_kotlinc_opts",
+    plugins = [
+        "//:compose_compiler_plugin",
+        "//:serialization_compiler_plugin",
+    ],
+    custom_package = "dev.stapler.stelekit",
+    deps = [
+        # Android string resources (R.string.no_graph_*) — defined in kmp/ package
+        # because kmp/src/androidMain/res/ has no own BUILD file.
+        "//kmp:kmp_android_resources",
+
+        # SQLDelight (from commonMain)
+        "//kmp/src/generated/sqldelight:sqldelight_generated_jvm",
+        "//kmp/src/generated/sqldelight-telemetry:sqldelight_generated_telemetry_jvm",
+        "@maven//:app_cash_sqldelight_runtime_jvm",
+        "@maven//:app_cash_sqldelight_coroutines_extensions_jvm",
+        "@maven//:app_cash_sqldelight_async_extensions_jvm",
+
+        # SQLDelight Android driver (from androidMain)
+        "@maven//:app_cash_sqldelight_android_driver",
+        "@maven//:com_github_requery_sqlite_android",
+
+        # Arrow (from commonMain)
+        "@maven//:io_arrow_kt_arrow_core_jvm",
+        "@maven//:io_arrow_kt_arrow_optics_jvm",
+        "@maven//:io_arrow_kt_arrow_fx_coroutines_jvm",
+        "@maven//:io_arrow_kt_arrow_resilience_jvm",
+
+        # Kotlinx (from commonMain)
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_datetime_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
+
+        # Kotlin coroutines Android (from androidMain)
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_android",
+
+        # Markdown (from commonMain)
+        "@maven//:org_jetbrains_markdown_jvm",
+
+        # Jetpack Compose Android (from commonMain)
+        "@maven//:androidx_compose_ui_ui",
+        "@maven//:androidx_compose_ui_ui_graphics",
+        "@maven//:androidx_compose_material3_material3",
+
+        # AndroidX (from androidMain)
+        "@maven//:androidx_activity_activity_compose",
+        "@maven//:androidx_appcompat_appcompat",
+        "@maven//:androidx_core_core_ktx",
+        "@maven//:androidx_documentfile_documentfile",
+
+        # Lifecycle (from commonMain)
+        "@maven//:org_jetbrains_androidx_lifecycle_lifecycle_runtime_compose",
+        "@maven//:org_jetbrains_androidx_lifecycle_lifecycle_viewmodel_compose",
+
+        # Coil (from commonMain)
+        "@maven//:io_coil_kt_coil3_coil_compose_jvm",
+        "@maven//:io_coil_kt_coil3_coil_network_ktor3_jvm",
+
+        # Ktor (from commonMain)
+        "@maven//:io_ktor_ktor_client_core_jvm",
+        "@maven//:io_ktor_ktor_client_content_negotiation_jvm",
+        "@maven//:io_ktor_ktor_serialization_kotlinx_json_jvm",
+
+        # Ktor OkHttp engine (from androidMain)
+        "@maven//:io_ktor_ktor_client_okhttp_jvm",
+
+        # OpenTelemetry API (from jvmCommonMain) + SDK (from androidMain)
+        "@maven//:io_opentelemetry_opentelemetry_api",
+        "@maven//:io_opentelemetry_opentelemetry_sdk",
+        "@maven//:io_opentelemetry_opentelemetry_exporter_logging",
+
+        # Ksoup (from commonMain)
+        "@maven//:com_fleeksoft_ksoup_ksoup_jvm",
+
+        # Kotlin Multiplatform Diff (from commonMain)
+        "@maven//:io_github_petertrr_kotlin_multiplatform_diff_jvm",
+
+        # JankStats (from androidMain)
+        "@maven//:androidx_metrics_metrics_performance",
+
+        # Security-crypto (from androidMain)
+        "@maven//:androidx_security_security_crypto",
+
+        # MLKit on-device LLM (from androidMain)
+        "@maven//:com_google_mlkit_genai_prompt",
+
+        # MLKit Image Labeling (from androidMain)
+        "@maven//:com_google_mlkit_image_labeling",
+
+        # MLKit Text Recognition (from androidMain)
+        "@maven//:com_google_mlkit_text_recognition",
+
+        # ARCore Depth API (from androidMain)
+        "@maven//:com_google_ar_core",
+
+        # CameraX (from androidMain)
+        "@maven//:androidx_camera_camera_core",
+        "@maven//:androidx_camera_camera_camera2",
+        "@maven//:androidx_camera_camera_lifecycle",
+
+        # Lifecycle process (required by CameraX camera-lifecycle; from androidMain)
+        "@maven//:androidx_lifecycle_lifecycle_process",
+
+        # ONNX Runtime Android (from androidMain)
+        "@maven//:com_microsoft_onnxruntime_onnxruntime_android",
+
+        # ExifInterface (from androidMain)
+        "@maven//:androidx_exifinterface_exifinterface",
+
+        # PDFBox Android (from androidMain)
+        "@maven//:com_tom_roush_pdfbox_android",
+
+        # Kable BLE Android (from androidMain)
+        "@maven//:com_juul_kable_core_android",
+
+        # Okio — cross-platform file I/O (from commonMain)
+        "@maven//:com_squareup_okio_okio_jvm",
+
+        # Compose material icons extended (Android — JVM uses -desktop variant)
+        "@maven//:androidx_compose_material_material_icons_extended",
+
+        # Glance (from androidMain)
+        "@maven//:androidx_glance_glance_appwidget",
+        "@maven//:androidx_glance_glance_material3",
+
+        # WorkManager (from androidMain)
+        "@maven//:androidx_work_work_runtime_ktx",
+
+        # JGit (from androidMain — see note above about version conflict)
+        "@maven//:org_eclipse_jgit_org_eclipse_jgit",
+        "@maven//:org_eclipse_jgit_org_eclipse_jgit_ssh_jsch",
+        "@maven//:com_github_mwiede_jsch",
+
+        # Kotlin stdlib
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+    visibility = ["//kmp:__subpackages__", "//androidApp:__subpackages__"],
+)

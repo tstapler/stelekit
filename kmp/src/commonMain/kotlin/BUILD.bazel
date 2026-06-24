@@ -1,0 +1,26 @@
+"""
+commonMain sources for JVM and Android compilation.
+
+JVM: sources are exported via the kt_srcs filegroup and compiled together with
+jvmCommonMain and jvmMain sources in //kmp/src/jvmMain/kotlin:jvm_main_lib.
+Compiling commonMain alone for JVM is not possible because expect declarations
+require their actual implementations to be present in the same compilation unit.
+
+Android: sources are exported via the kt_srcs filegroup and compiled together with
+jvmCommonMain and androidMain sources in //kmp/src/androidMain/kotlin:android_main.
+This mirrors the JVM pattern so expect/actual resolution works under Bazel.
+
+See ADR-005 for the double-compilation trade-off.
+"""
+
+# ── JVM and Android flavor ────────────────────────────────────────────────────
+# Sources exported for inclusion in:
+#   - //kmp/src/jvmMain/kotlin:jvm_main_lib (JVM)
+#   - //kmp/src/androidMain/kotlin:android_main (Android)
+# Both combine commonMain + jvmCommonMain + platform-specific sources into a
+# single compilation unit so expect/actual declarations resolve correctly.
+filegroup(
+    name = "kt_srcs",
+    srcs = glob(["**/*.kt"]),
+    visibility = ["//kmp:__subpackages__"],
+)

@@ -1,7 +1,404 @@
+"""
+SteleKit — MODULE.bazel
+Bzlmod-only (no WORKSPACE). JVM/Desktop + Android targets in scope.
+iOS and WASM remain Gradle-only until rules_kotlin adds Kotlin/Native support.
+"""
+
 module(
     name = "stelekit",
-    version = "0.1",
+    version = "0.0.0",
 )
+
+###############################################################################
+# Core Bazel rules
+###############################################################################
+
+bazel_dep(name = "rules_kotlin", version = "2.3.20")
+
+# Patch rules_kotlin to add common_srcs support for Kotlin Multiplatform (KMP) compilation.
+# common_srcs enables -Xcommon-sources, allowing expect/actual to work when commonMain and
+# jvmMain sources are compiled together in a single kt_jvm_library.
+single_version_override(
+    module_name = "rules_kotlin",
+    patches = ["//third_party/patches:rules_kotlin_kmp.patch"],
+    patch_strip = 1,
+)
+bazel_dep(name = "rules_cc", version = "0.1.1")
+bazel_dep(name = "rules_android", version = "0.7.1")
+bazel_dep(name = "rules_jvm_external", version = "6.9")
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
+bazel_dep(name = "rules_java", version = "9.3.0")
+# rules_robolectric is available in BCR and provides @rules_robolectric//bazel:android-all
+# which carries the robolectric-deps.properties file needed by android_local_test at runtime.
+# Version 4.16.1 matches our org.robolectric:robolectric:4.16 Maven artifact.
+# rules_android 0.7.1 depends on rules_robolectric 4.14.1.2; we declare 4.16.1 so Bzlmod
+# selects the higher version, compatible with our Maven 4.16 Robolectric test runner.
+bazel_dep(name = "rules_robolectric", version = "4.16.1")
+
+###############################################################################
+# Android SDK
+###############################################################################
+
+android_sdk_repository_extension = use_extension(
+    "@rules_android//rules/android_sdk_repository:rule.bzl",
+    "android_sdk_repository_extension",
+)
+android_sdk_repository_extension.configure(
+    api_level = 36,
+    build_tools_version = "35.0.0",
+)
+
+###############################################################################
+# InfoZip unzip — built from source by Bazel.
+# rules_android's aar_import extracts AAR manifests using an `unzip` tool; by
+# building it here we avoid any system-level unzip dependency.  The resulting
+# binary is exposed via a custom android_toolchain registered in BUILD.bazel.
+###############################################################################
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+http_archive(
+    name = "unzip_src",
+    urls = ["https://downloads.sourceforge.net/infozip/unzip60.tar.gz"],
+    sha256 = "036d96991646d0449ed0aa952e4fbe21b476ce994abc276e49d30e686708bd37",
+    strip_prefix = "unzip60",
+    build_file = "//:third_party/unzip.BUILD",
+    # InfoZip 6.0 has K&R-style time declarations that conflict with modern
+    # glibc headers.  Guard them so they only apply on truly ancient platforms.
+    patch_cmds = [
+        "sed -i 's/   struct tm \\*gmtime(), \\*localtime();/#if !defined(__GLIBC__) \\&\\& !defined(linux)\\n   struct tm *gmtime(), *localtime();\\n#endif/' unix/unxcfg.h",
+    ],
+)
+
+###############################################################################
+# Maven artifacts
+#
+# KMP classifier notes (Task 1.2.1):
+#
+# Library                              JVM artifact                            Android artifact
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# app.cash.sqldelight:runtime          runtime-jvm (JVM SQLite driver)         android-driver (Android)
+# app.cash.sqldelight:coroutines-ext   coroutines-extensions-jvm               coroutines-extensions-jvm
+# app.cash.sqldelight:async-ext        async-extensions-jvm                    async-extensions-jvm
+# io.arrow-kt:arrow-core               arrow-core-jvm (explicit -jvm suffix)   arrow-core-jvm
+# io.arrow-kt:arrow-optics             arrow-optics-jvm                        arrow-optics-jvm
+# io.arrow-kt:arrow-fx-coroutines      arrow-fx-coroutines-jvm                 arrow-fx-coroutines-jvm
+# io.arrow-kt:arrow-resilience         arrow-resilience-jvm                    arrow-resilience-jvm
+# org.jetbrains.kotlinx:coroutines     kotlinx-coroutines-core-jvm             kotlinx-coroutines-core-jvm
+# io.ktor:ktor-client-core             ktor-client-core-jvm                    ktor-client-core-jvm
+# io.coil-kt.coil3:coil-compose        coil-compose-jvm                        coil-compose-jvm (+ android below)
+# io.github.petertrr:km-diff           kotlin-multiplatform-diff-jvm           kotlin-multiplatform-diff-jvm
+# com.fleeksoft.ksoup:ksoup            ksoup-jvm                               ksoup-jvm
+# org.jetbrains:markdown               markdown-jvm                            markdown-jvm
+# org.jetbrains.androidx.lifecycle     lifecycle-runtime-compose (no -jvm)     lifecycle-runtime-compose
+# org.eclipse.jgit (desktop 7.x)       declared separately; Android uses 5.13.x
+#   NOTE: rules_jvm_external does not allow the same groupId:artifactId at two
+#   versions. The JVM target uses jgit 7.x; Android target falls back to
+#   the higher-versioned resolution (7.x) which is safe for JVM. The Android
+#   target is documented in androidMain/BUILD.bazel with a note about this
+#   version pinning constraint.
+###############################################################################
+
+# ── Maven resolution memory note ──────────────────────────────────────────────
+# The full Compose Multiplatform + AndroidX + KMP dependency graph contains
+# ~300+ direct artifacts with a deep transitive graph (~4000+ targets after
+# rules_jvm_external expansion). On memory-constrained machines (<12 GB free),
+# the Bazel analysis phase may OOM.
+#
+# Workaround for developers on constrained machines:
+#   echo "startup --host_jvm_args=-Xmx8g" >> ~/.bazelrc
+#   bazel shutdown
+#
+# On CI (GitHub Actions ubuntu-latest with 16 GB RAM), this resolves cleanly.
+#
+# To regenerate the lockfile after adding/removing Maven deps:
+#   bazel run @maven//:pin
+# Then commit rules_jvm_external++maven+maven_install.json.
+# ──────────────────────────────────────────────────────────────────────────────
+
+maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
+
+maven.install(
+    name = "maven",
+    # Generated by: bazel run @maven//:pin  (Bzlmod naming convention)
+    lock_file = "//:rules_jvm_external++maven+maven_install.json",
+    known_contributing_modules = ["protobuf", "stelekit"],
+    # aar_import is no longer a native Bazel rule in Bazel 8+. With
+    # use_starlark_android_rules = True, the generated @maven BUILD loads
+    # aar_import from rules_android instead of using the removed native rule.
+    use_starlark_android_rules = True,
+    aar_import_bzl_label = "@rules_android//android:rules.bzl",
+    # Use "pinned" strategy so coursier picks the highest compatible version
+    # rather than failing on conflicting version constraints from transitive deps
+    # (Compose Multiplatform and AndroidX have many cross-cutting version constraints).
+    version_conflict_policy = "pinned",
+    # Do not generate compat (underscore-to-dot) alias targets — reduces the
+    # total number of targets from ~8000 to ~4000, which helps with Bazel
+    # analysis-phase memory on constrained hosts.
+    generate_compat_repositories = False,
+    # Skip source JARs — halves the number of Coursier fetch operations.
+    # Source JARs are only useful for IDE navigation, not for builds.
+    fetch_sources = False,
+    artifacts = [
+        # ── Kotlin stdlib (required by rules_kotlin kt_jvm_library) ──────────
+        "org.jetbrains.kotlin:kotlin-stdlib:2.3.21",
+        "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.3.21",
+        "org.jetbrains.kotlin:kotlin-reflect:2.3.21",
+        "org.jetbrains.kotlin:kotlin-test-junit:2.3.21",
+
+        # ── Compiler plugins (embeddable — used as kt_compiler_plugin deps) ────
+        "org.jetbrains.kotlin:kotlin-compose-compiler-plugin-embeddable:2.3.21",
+        "org.jetbrains.kotlin:kotlin-serialization-compiler-plugin-embeddable:2.3.21",
+
+        # ── Arrow 2.2.1.1 (KMP — use -jvm classifier) ───────────────────────
+        "io.arrow-kt:arrow-core-jvm:2.2.1.1",
+        "io.arrow-kt:arrow-optics-jvm:2.2.1.1",
+        "io.arrow-kt:arrow-fx-coroutines-jvm:2.2.1.1",
+        "io.arrow-kt:arrow-resilience-jvm:2.2.1.1",
+
+        # ── Kotlinx ──────────────────────────────────────────────────────────
+        "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-test-jvm:1.10.2",
+        "org.jetbrains.kotlinx:kotlinx-datetime-jvm:0.7.1",
+        "org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:1.10.0",
+
+        # ── Jetbrains markdown (KMP — use -jvm classifier) ───────────────────
+        "org.jetbrains:markdown-jvm:0.7.3",
+
+        # ── SQLDelight 2.3.2 ──────────────────────────────────────────────────
+        "app.cash.sqldelight:runtime-jvm:2.3.2",
+        "app.cash.sqldelight:coroutines-extensions-jvm:2.3.2",
+        "app.cash.sqldelight:async-extensions-jvm:2.3.2",
+        "app.cash.sqldelight:sqlite-driver:2.3.2",          # JVM SQLite driver
+        "app.cash.sqldelight:android-driver:2.3.2",         # Android SQLite driver
+        "com.github.requery:sqlite-android:3.49.0",         # Android custom SQLite
+
+        # ── Compose Desktop (JVM) — correct group IDs verified on Maven Central ─
+        # Skiko AWT runtime is a transitive dep; pin to match Gradle resolutionStrategy
+        "org.jetbrains.skiko:skiko-awt-runtime-linux-x64:0.9.37.4",
+        "org.jetbrains.skiko:skiko-awt-runtime-macos-arm64:0.9.37.4",
+        "org.jetbrains.skiko:skiko-awt-runtime-macos-x64:0.9.37.4",
+        "org.jetbrains.skiko:skiko-awt-runtime-windows-x64:0.9.37.4",
+
+        # Compose Multiplatform — exact versions as resolved by Gradle (from Gradle resolution analysis)
+        # Note: compose.material3 1.10.3 does not exist on Maven Central; Gradle resolves to 1.9.0.
+        # compose.material:material-icons-extended resolves to 1.7.3 with -desktop suffix.
+        "org.jetbrains.compose.runtime:runtime-desktop:1.10.3",
+        "org.jetbrains.compose.foundation:foundation-desktop:1.10.3",
+        "org.jetbrains.compose.material3:material3-desktop:1.9.0",  # 1.10.3 not on Maven Central; 1.9.0 resolved by Gradle
+        "org.jetbrains.compose.material:material-icons-extended-desktop:1.7.3",  # Gradle-resolved version
+        "org.jetbrains.compose.components:components-resources-desktop:1.10.3",
+        "org.jetbrains.compose.desktop:desktop-jvm-linux-x64:1.10.3",
+        "org.jetbrains.compose.ui:ui-test-junit4-desktop:1.10.3",
+
+        # ── Jetpack lifecycle (KMP — no -jvm suffix; correct IDs verified on Maven Central) ───
+        # Compose 1.10.3 (org.jetbrains.compose.ui:ui) requires lifecycle 2.9.6.
+        # lifecycle-runtime-compose:2.8.4 has a hard constraint [lifecycle-runtime:2.8.4]
+        # which conflicts. Gradle silently upgrades to 2.9.6; we must match that.
+        "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose:2.9.6",
+        "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose:2.9.6",
+
+        # ── Coil 3 (KMP — use -jvm classifier) ───────────────────────────────
+        "io.coil-kt.coil3:coil-compose-jvm:3.2.0",
+        "io.coil-kt.coil3:coil-network-ktor3-jvm:3.2.0",
+
+        # ── Ktor 3.1.3 (KMP — use -jvm classifier) ────────────────────────────
+        "io.ktor:ktor-client-core-jvm:3.1.3",
+        "io.ktor:ktor-client-content-negotiation-jvm:3.1.3",
+        "io.ktor:ktor-serialization-kotlinx-json-jvm:3.1.3",
+        "io.ktor:ktor-client-okhttp-jvm:3.1.3",
+        "io.ktor:ktor-client-mock-jvm:3.1.3",
+
+        # ── Ksoup (KMP — use -jvm classifier) ────────────────────────────────
+        "com.fleeksoft.ksoup:ksoup-jvm:0.2.6",
+
+        # ── Kotlin Multiplatform Diff (KMP — use -jvm classifier) ─────────────
+        "io.github.petertrr:kotlin-multiplatform-diff-jvm:1.3.0",
+
+        # ── OpenTelemetry (JVM/Android shared) ───────────────────────────────
+        "io.opentelemetry:opentelemetry-api:1.43.0",
+        "io.opentelemetry:opentelemetry-sdk:1.43.0",
+        "io.opentelemetry:opentelemetry-exporter-logging:1.43.0",
+
+        # ── BouncyCastle ──────────────────────────────────────────────────────
+        "org.bouncycastle:bcprov-jdk18on:1.80",
+
+        # ── PDFBox — PDF text extraction for asset OCR pipeline (JVM only) ───
+        "org.apache.pdfbox:pdfbox:3.0.4",
+
+        # ── JGit — one version per groupId:artifactId (rules_jvm_external constraint)
+        # Desktop uses 7.x; Android also resolves to 7.x (version conflict
+        # resolved to higher version). See CLAUDE.md note on version pinning.
+        "org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r",
+        "org.eclipse.jgit:org.eclipse.jgit.ssh.apache:7.3.0.202506031305-r",
+        # JGit SSH/JSch for Android (5.13.x group; artifactId is different)
+        "org.eclipse.jgit:org.eclipse.jgit.ssh.jsch:5.13.3.202401111512-r",
+        "com.github.mwiede:jsch:0.2.21",
+
+        # ── Transitive version conflict pins ─────────────────────────────────
+        # This project mixes two Compose stacks: JetBrains Compose 1.10.3
+        # (built against AndroidX Compose 1.10.5) and AndroidX Compose
+        # (used directly on Android). Coursier fails on the hard-range conflicts
+        # these two stacks generate. Strategy: pin all common AndroidX transitives
+        # at the highest version Gradle resolves, so Coursier's "pinned wins"
+        # policy overrides the hard ranges from older transitive POMs.
+        # Versions are taken from: ./gradlew :kmp:dependencies
+        # --configuration debugRuntimeClasspath (Android resolved versions, highest wins).
+
+        # Compose runtime — align to 1.10.5 (what JetBrains Compose 1.10.3 expects)
+        "androidx.compose.runtime:runtime-annotation:1.10.5",
+
+        # collection — Glance 1.1.1 constrains [1.4.2]; pin at 1.5.0 (Gradle resolves 1.5.0)
+        "androidx.collection:collection:1.5.0",
+        "androidx.collection:collection-jvm:1.5.0",
+
+        # emoji2 — MLKit common → appcompat:1.6.1 → [emoji2:1.2.0]; pin at 1.4.0
+        "androidx.emoji2:emoji2:1.4.0",
+        "androidx.emoji2:emoji2-views-helper:1.4.0",
+
+        # lifecycle — various old artifacts constrain older versions; pin at 2.9.4
+        "androidx.lifecycle:lifecycle-common:2.9.4",
+        "androidx.lifecycle:lifecycle-common-java8:2.9.4",
+        "androidx.lifecycle:lifecycle-runtime:2.9.4",
+        "androidx.lifecycle:lifecycle-runtime-ktx:2.9.4",
+        "androidx.lifecycle:lifecycle-viewmodel:2.9.4",
+        "androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.4",
+        "androidx.lifecycle:lifecycle-viewmodel-savedstate:2.9.4",
+        "androidx.lifecycle:lifecycle-livedata-core:2.9.4",
+        "androidx.lifecycle:lifecycle-livedata-core-ktx:2.9.4",
+        "androidx.lifecycle:lifecycle-livedata:2.9.4",
+        "androidx.lifecycle:lifecycle-process:2.9.4",
+        "androidx.lifecycle:lifecycle-service:2.9.4",
+
+        # savedstate — lifecycle/activity transitives constrain older versions; pin at 1.3.3
+        "androidx.savedstate:savedstate:1.3.3",
+        "androidx.savedstate:savedstate-ktx:1.3.3",
+
+        # customview — older Glance UI transitives
+        "androidx.customview:customview:1.1.0",
+        "androidx.customview:customview-poolingcontainer:1.0.0",
+
+        # core — MLKit and older Glance/Compat pull 1.13.0; pin at 1.16.0
+        "androidx.core:core:1.16.0",
+
+        # annotation — various old artifacts constrain older versions
+        "androidx.annotation:annotation:1.9.1",
+        "androidx.annotation:annotation-jvm:1.9.1",
+
+        # Test infrastructure — ui-test-junit4 → espresso-core:3.5.0 → runner:1.5.0
+        # runner:1.5.0 has hard constraint [monitor:1.6.0]; pin everything at latest
+        "androidx.test:monitor:1.8.0",
+        "androidx.test:runner:1.6.2",
+        "androidx.test:rules:1.6.0",
+        "androidx.test.services:storage:1.6.0",
+        "androidx.test.espresso:espresso-core:3.6.0",
+        "androidx.test.espresso:espresso-idling-resource:3.6.0",
+
+        # Fragment — activity and espresso pull older versions with hard ranges
+        "androidx.fragment:fragment:1.8.5",
+        "androidx.fragment:fragment-ktx:1.8.5",
+
+        # Window — Glance and newer compose pull different versions
+        "androidx.window:window:1.5.0",
+        "androidx.window:window-core:1.5.0",
+
+        # Tracing — compose and old APIs conflict
+        "androidx.tracing:tracing:1.3.0",
+
+        # startup — ProfileInstaller and others have constraints
+        "androidx.startup:startup-runtime:1.2.0",
+
+        # profileinstaller — Compose pulls this transitively
+        "androidx.profileinstaller:profileinstaller:1.4.0",
+
+        # ── AndroidX ─────────────────────────────────────────────────────────
+        "androidx.activity:activity-compose:1.9.2",
+        "androidx.appcompat:appcompat:1.7.0",
+        "androidx.core:core-ktx:1.15.0",
+        "androidx.documentfile:documentfile:1.0.1",
+        "androidx.metrics:metrics-performance:1.0.0-beta02",
+        "androidx.security:security-crypto:1.1.0-alpha06",
+        "androidx.glance:glance-appwidget:1.1.1",
+        "androidx.glance:glance-material3:1.1.1",
+        "androidx.work:work-runtime-ktx:2.9.1",
+        "androidx.arch.core:core-testing:2.2.0",
+        "androidx.glance:glance-appwidget-testing:1.1.1",
+
+        # ── Jetpack Compose (Android) ─────────────────────────────────────────
+        # Pinned at 1.10.5 to match the AndroidX Compose version that JetBrains
+        # Compose Multiplatform 1.10.3 was compiled against.
+        "androidx.compose.ui:ui:1.10.5",
+        "androidx.compose.ui:ui-graphics:1.10.5",
+        "androidx.compose.material3:material3:1.4.0",
+        "androidx.compose.ui:ui-test-junit4:1.10.5",
+        "androidx.compose.ui:ui-test-manifest:1.10.5",
+
+        # ── MLKit (Android) ───────────────────────────────────────────────────
+        "com.google.mlkit:genai-prompt:1.0.0-beta2",
+        "com.google.mlkit:image-labeling:17.0.9",
+        "com.google.mlkit:text-recognition:16.0.1",
+
+        # ── ARCore (Android) ─────────────────────────────────────────────────
+        "com.google.ar:core:1.46.0",
+
+        # ── CameraX (Android) ────────────────────────────────────────────────
+        "androidx.camera:camera-core:1.4.1",
+        "androidx.camera:camera-camera2:1.4.1",
+        "androidx.camera:camera-lifecycle:1.4.1",
+
+        # ── ONNX Runtime Android ──────────────────────────────────────────────
+        "com.microsoft.onnxruntime:onnxruntime-android:1.20.0",
+
+        # ── ExifInterface (Android) ───────────────────────────────────────────
+        "androidx.exifinterface:exifinterface:1.3.7",
+
+        # ── PDFBox Android ────────────────────────────────────────────────────
+        "com.tom-roush:pdfbox-android:2.0.27.0",
+
+        # ── Kable BLE (Android) ───────────────────────────────────────────────
+        "com.juul.kable:core-android:0.32.0",
+
+        # ── Okio (KMP — used by commonMain for cross-platform file I/O) ───────
+        "com.squareup.okio:okio-jvm:3.17.0",
+
+        # ── Compose material icons extended (Android) ─────────────────────────
+        # JVM (desktop) uses material-icons-extended-desktop:1.7.3 (already pinned above).
+        # Android compilation needs the Jetpack AAR. 1.10.5 doesn't exist on Google Maven;
+        # the latest Jetpack release is 1.7.8 — use that.
+        "androidx.compose.material:material-icons-extended:1.7.8",
+
+
+        # ── Test dependencies ─────────────────────────────────────────────────
+        "junit:junit:4.13.2",
+        "org.robolectric:robolectric:4.16",
+        "androidx.test:core:1.6.1",
+        "androidx.test.ext:junit:1.2.1",
+
+        # ── BlockHound ────────────────────────────────────────────────────────
+        "io.projectreactor.tools:blockhound:1.0.9.RELEASE",
+
+        # ── Core library desugaring (Android) ────────────────────────────────
+        "com.android.tools:desugar_jdk_libs:2.1.4",
+    ],
+    repositories = [
+        "https://repo1.maven.org/maven2",
+        "https://maven.google.com",
+        "https://jitpack.io",
+        "https://oss.sonatype.org/content/repositories/snapshots",
+        "https://maven.pkg.jetbrains.space/public/p/compose/dev",
+    ],
+)
+
+use_repo(maven, "maven")
+
+# Custom android toolchain that uses the Bazel-built unzip (registered before
+# the rules_android default so it wins toolchain resolution for aar_import).
+register_toolchains("//:stelekit_android_toolchain")
+
+###############################################################################
+# Rust (native libsql JNI driver)
+###############################################################################
 
 bazel_dep(name = "rules_rust", version = "0.70.0")
 

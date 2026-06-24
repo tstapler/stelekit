@@ -1,17 +1,15 @@
 package dev.stapler.stelekit.docs
 
+import dev.stapler.stelekit.testing.getClasspathDirectory
 import dev.stapler.stelekit.ui.Screen
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertTrue
-import kotlin.test.fail
 
 class DemoGraphCoverageTest {
 
     private val demoGraphPagesDir: File by lazy {
-        val url = javaClass.classLoader.getResource("demo-graph/pages")
-            ?: fail("demo-graph/pages not found in classpath")
-        File(url.toURI())
+        File(getClasspathDirectory(javaClass.classLoader, "demo-graph"), "pages")
     }
 
     private fun pageExists(title: String): Boolean =

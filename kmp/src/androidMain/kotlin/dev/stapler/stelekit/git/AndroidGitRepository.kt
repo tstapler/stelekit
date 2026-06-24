@@ -81,6 +81,8 @@ class AndroidGitRepository(
                     override fun update(completed: Int) {}
                     override fun endTask() {}
                     override fun isCancelled() = job?.isCancelled == true
+                    // showDuration added in JGit 7.x; Bazel resolves to 7.x on Android too
+                    override fun showDuration(enabled: Boolean) {}
                 })
 
             configureAuth(cmd, auth, preResolvedToken)

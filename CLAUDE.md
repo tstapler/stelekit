@@ -6,7 +6,51 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SteleKit is a Kotlin Multiplatform (KMP) migration of Logseq — a Markdown-based outliner/note-taking app. It targets Desktop (JVM), Android, iOS, and Web from a single shared codebase in the `kmp/` module.
 
-## Build & Run Commands
+## Bazel Build Commands
+
+**Bazel is the canonical build system.** Use Bazel for all JVM/Desktop, Android, and Web
+work. Gradle is kept only for iOS (no Bazel KMP support yet), screenshot tests
+(Roborazzi), and benchmarks until those are migrated (Epic 7).
+
+| Gradle (legacy) | Bazel (canonical) |
+|--------|-------|
+| `./gradlew run` | `bazel run //kmp:desktop_app` |
+| `./gradlew jvmTest` | `bazel test //kmp:jvm_tests` |
+| `./gradlew allTests` | `bazel test //...` |
+| `./gradlew ciCheck` | `bazel test //... --config=ci` |
+| `./gradlew installAndroid` | `bazel mobile-install //kmp:android_app --config=android` |
+| `./gradlew packageDistributionForCurrentOS` | _(Gradle only — see Future Epic D)_ |
+| `./gradlew testDebugUnitTest` | `bazel test //kmp/src/androidUnitTest/kotlin:android_unit_tests --config=android` |
+| `./gradlew wasmJsBrowserDistribution` | `bazel build //kmp:web_app` |
+
+```bash
+# Launch desktop app
+bazel run //kmp:desktop_app
+
+# Run all JVM tests (excluding screenshot tests which remain Gradle-only)
+bazel test //kmp:jvm_tests
+
+# Run only business-logic tests (no UI, fastest)
+bazel test //kmp:business_tests
+
+# Build Android APK (requires ANDROID_HOME to be set)
+bazel build //kmp:android_app --config=android
+
+# Build web (WASM/JS) bundle — output: bazel-bin/kmp/web_dist.tar.gz
+# Note: delegates to Gradle internally until rules_kotlin#567 lands
+bazel build //kmp:web_app
+
+# Run all Bazel tests
+bazel test //...
+
+# Re-generate SQLDelight sources (when .sq files change)
+./gradlew :kmp:generateCommonMainSteleDatabase
+rsync -a kmp/build/generated/sqldelight/code/SteleDatabase/commonMain/ kmp/src/generated/sqldelight/
+./gradlew :kmp:generateCommonMainTelemetryDatabase
+rsync -a kmp/build/generated/sqldelight/code/TelemetryDatabase/commonMain/ kmp/src/generated/sqldelight-telemetry/
+```
+
+## Gradle Build & Run Commands
 
 **Always use `./gradlew`, never the system `gradle` command.** The wrapper pins Gradle 9.5.0; the system install is 9.3.1 and cannot share daemons with wrapper builds — using it silently doubles the daemon count and memory footprint.
 

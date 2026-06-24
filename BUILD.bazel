@@ -1,0 +1,86 @@
+"""
+Root BUILD.bazel — Kotlin toolchain + Compose compiler plugin + Android toolchain.
+All sub-packages reference //:compose_compiler_plugin and the toolchain
+registered here.
+"""
+
+load("@rules_kotlin//kotlin:core.bzl", "define_kt_toolchain", "kt_compiler_plugin", "kt_kotlinc_options")
+load("@rules_android//toolchains/android:toolchain.bzl", "android_toolchain")
+
+# ── Kotlinc options for KMP JVM targets ───────────────────────────────────────
+# KMP source sets (commonMain + jvmCommonMain + jvmMain) are compiled together
+# in one kt_jvm_library.  This requires:
+#   -Xmulti-platform   → allows expect/actual declarations in the compilation
+#   -opt-in            → matches Gradle's freeCompilerArgs in kmp/build.gradle.kts
+kt_kotlinc_options(
+    name = "kmp_jvm_kotlinc_opts",
+    jvm_target = "21",
+    x_multi_platform = True,
+    x_optin = ["kotlin.time.ExperimentalTime"],
+    visibility = ["//visibility:public"],
+)
+
+# ── Kotlinc options for KMP Android targets ───────────────────────────────────
+# KMP source sets (commonMain + jvmCommonMain + androidMain) are compiled together
+# in one kt_android_library. Same requirements as JVM but Android-targeted.
+kt_kotlinc_options(
+    name = "kmp_android_kotlinc_opts",
+    x_multi_platform = True,
+    x_optin = ["kotlin.time.ExperimentalTime"],
+    visibility = ["//visibility:public"],
+)
+
+# ── Kotlin JVM toolchain ───────────────────────────────────────────────────────
+define_kt_toolchain(
+    name = "kotlin_toolchain",
+    api_version = "2.1",
+    jvm_target = "21",
+    language_version = "2.1",
+)
+
+# ── Compose compiler plugin ────────────────────────────────────────────────────
+# Uses the embeddable compiler plugin jar from Maven.
+# suppressKotlinVersionCompatibilityCheck is required because the Compose
+# compiler plugin may not yet list Kotlin 2.3.21 as a known-compatible version
+# (see ADR-004 and rules_kotlin issue #1388).
+kt_compiler_plugin(
+    name = "compose_compiler_plugin",
+    id = "androidx.compose.compiler.plugins.kotlin",
+    target_embedded_compiler = True,
+    visibility = ["//visibility:public"],
+    options = {
+        "suppressKotlinVersionCompatibilityCheck": "2.3.21",
+        "sourceInformation": "true",
+    },
+    deps = ["@maven//:org_jetbrains_kotlin_kotlin_compose_compiler_plugin_embeddable"],
+)
+
+# ── kotlinx.serialization compiler plugin ─────────────────────────────────────
+# Required for @Serializable code generation (UndoManager, JsonExporter, etc.).
+# Matches the kotlin("plugin.serialization") applied globally in build.gradle.kts.
+kt_compiler_plugin(
+    name = "serialization_compiler_plugin",
+    id = "org.jetbrains.kotlinx.serialization",
+    target_embedded_compiler = True,
+    visibility = ["//visibility:public"],
+    deps = ["@maven//:org_jetbrains_kotlin_kotlin_serialization_compiler_plugin_embeddable"],
+)
+
+# ── Android toolchain — Bazel-built unzip ─────────────────────────────────────
+# rules_android's aar_import uses an `unzip` tool to extract AAR manifests.
+# The default wrapper calls bare `unzip` which fails when the action env is
+# cleared (exec env -).  This custom toolchain swaps in the InfoZip unzip 6.0
+# binary built from source via @unzip_src (declared in MODULE.bazel).
+# Registered before the rules_android default so it wins toolchain resolution.
+android_toolchain(
+    name = "stelekit_android_toolchain_impl",
+    unzip_tool = "@unzip_src//:unzip",
+    visibility = ["//visibility:public"],
+)
+
+toolchain(
+    name = "stelekit_android_toolchain",
+    toolchain = ":stelekit_android_toolchain_impl",
+    toolchain_type = "@rules_android//toolchains/android:toolchain_type",
+    visibility = ["//visibility:public"],
+)

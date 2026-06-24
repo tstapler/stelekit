@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bazel-only manifest stub. Gradle uses src/main/AndroidManifest.xml instead.
+     AGP 8.13.2 rejects package= in the main manifest; Bazel requires it. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.stapler.stelekit">
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
+</manifest>

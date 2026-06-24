@@ -1,0 +1,128 @@
+"""
+jvmMain — Desktop entry point library and runnable binary.
+
+jvm_main_lib compiles commonMain + jvmCommonMain + jvmMain sources in a single
+compilation unit, which is required for Kotlin Multiplatform expect/actual
+resolution under Bazel. Gradle does the same by combining all three source sets
+into one kotlinc invocation when targeting JVM.
+"""
+
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_binary", "kt_jvm_library")
+
+# Desktop library — all JVM sources compiled together (commonMain + jvmCommonMain + jvmMain).
+# common_srcs marks the expect side of each expect/actual pair:
+#   - commonMain: expect declarations resolved by jvmCommonMain actuals (e.g. PlatformCacheConfig)
+#                 AND by jvmMain actuals (e.g. platform-specific things without a jvmCommon tier)
+#   - jvmCommonMain kt_expect_srcs: ONLY the files in jvmCommonMain that themselves contain
+#     `expect` declarations (currently just LibsqlNativeLoader), resolved by jvmMain actuals.
+# The rest of jvmCommonMain (actuals for commonMain expects) stays in srcs but NOT common_srcs —
+# putting both an expect and its actual in common_srcs causes a "same module" compile error.
+kt_jvm_library(
+    name = "jvm_main_lib",
+    srcs = [
+        "//kmp/src/commonMain/kotlin:kt_srcs",
+        "//kmp/src/jvmCommonMain/kotlin:kt_srcs",
+    ] + glob(
+        ["**/*.kt"],
+        exclude = ["**/benchmarks/**"],  # JMH benchmarks — Gradle-only (jmh plugin)
+    ),
+    common_srcs = [
+        "//kmp/src/commonMain/kotlin:kt_srcs",
+        "//kmp/src/jvmCommonMain/kotlin:kt_expect_srcs",
+    ],
+    kotlinc_opts = "//:kmp_jvm_kotlinc_opts",
+    plugins = [
+        "//:compose_compiler_plugin",
+        "//:serialization_compiler_plugin",
+    ],
+    deps = [
+        # Resources (demo-graph, icons) from commonMain/resources
+        "//kmp/src/commonMain/resources:common_resources",
+
+        # SQLDelight generated code + runtime (from commonMain)
+        "//kmp/src/generated/sqldelight:sqldelight_generated_jvm",
+        "//kmp/src/generated/sqldelight-telemetry:sqldelight_generated_telemetry_jvm",
+        "@maven//:app_cash_sqldelight_runtime_jvm",
+        "@maven//:app_cash_sqldelight_coroutines_extensions_jvm",
+        "@maven//:app_cash_sqldelight_async_extensions_jvm",
+        "@maven//:app_cash_sqldelight_sqlite_driver",
+
+        # Arrow (from commonMain)
+        "@maven//:io_arrow_kt_arrow_core_jvm",
+        "@maven//:io_arrow_kt_arrow_optics_jvm",
+        "@maven//:io_arrow_kt_arrow_fx_coroutines_jvm",
+        "@maven//:io_arrow_kt_arrow_resilience_jvm",
+
+        # Kotlinx (from commonMain)
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_datetime_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
+
+        # Markdown (from commonMain)
+        "@maven//:org_jetbrains_markdown_jvm",
+
+        # Compose Desktop (from commonMain + jvmMain)
+        "@maven//:org_jetbrains_compose_runtime_runtime_desktop",
+        "@maven//:org_jetbrains_compose_foundation_foundation_desktop",
+        "@maven//:org_jetbrains_compose_material3_material3_desktop",
+        "@maven//:org_jetbrains_compose_material_material_icons_extended_desktop",
+        "@maven//:org_jetbrains_compose_components_components_resources_desktop",
+        "@maven//:org_jetbrains_compose_desktop_desktop_jvm_linux_x64",
+
+        # Lifecycle (from commonMain)
+        "@maven//:org_jetbrains_androidx_lifecycle_lifecycle_runtime_compose",
+        "@maven//:org_jetbrains_androidx_lifecycle_lifecycle_viewmodel_compose",
+
+        # Coil (from commonMain)
+        "@maven//:io_coil_kt_coil3_coil_compose_jvm",
+        "@maven//:io_coil_kt_coil3_coil_network_ktor3_jvm",
+
+        # Ktor (from commonMain + jvmMain)
+        "@maven//:io_ktor_ktor_client_core_jvm",
+        "@maven//:io_ktor_ktor_client_content_negotiation_jvm",
+        "@maven//:io_ktor_ktor_serialization_kotlinx_json_jvm",
+        "@maven//:io_ktor_ktor_client_okhttp_jvm",
+
+        # Ksoup (from commonMain)
+        "@maven//:com_fleeksoft_ksoup_ksoup_jvm",
+
+        # Kotlin Multiplatform Diff (from commonMain)
+        "@maven//:io_github_petertrr_kotlin_multiplatform_diff_jvm",
+
+        # OpenTelemetry API (from jvmCommonMain) + SDK (from jvmMain)
+        "@maven//:io_opentelemetry_opentelemetry_api",
+        "@maven//:io_opentelemetry_opentelemetry_sdk",
+        "@maven//:io_opentelemetry_opentelemetry_exporter_logging",
+
+        # Kotlinx Swing dispatcher (from jvmMain)
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_swing",
+
+        # JGit 7.x (from jvmMain)
+        "@maven//:org_eclipse_jgit_org_eclipse_jgit",
+        "@maven//:org_eclipse_jgit_org_eclipse_jgit_ssh_apache",
+
+        # BouncyCastle (from jvmMain)
+        "@maven//:org_bouncycastle_bcprov_jdk18on",
+
+        # PDFBox — PDF text extraction for asset OCR pipeline (from jvmMain)
+        "@maven//:org_apache_pdfbox_pdfbox",
+
+        # Kotlin stdlib
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+)
+
+# Desktop application binary
+kt_jvm_binary(
+    name = "desktop_app",
+    main_class = "dev.stapler.stelekit.desktop.MainKt",
+    runtime_deps = [":jvm_main_lib"],
+    jvm_flags = [
+        # Required for JVM attach (async-profiler + JFR)
+        "-Djdk.attach.allowAttachSelf=true",
+        # Required by Compose Desktop for reflection into java.lang
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+    ],
+    visibility = ["//visibility:public"],
+)

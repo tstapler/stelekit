@@ -1,14 +1,67 @@
-# Disk cache — persisted between builds by CI (setup-bazel or actions/cache).
-# Local developers get caching in ~/.cache/bazel-disk-cache automatically.
-build --disk_cache=~/.cache/bazel-disk-cache
+# SteleKit .bazelrc
+# All Bazel flags for local and CI builds.
+#
+# Machine-specific overrides (ANDROID_HOME path, extra tool paths, etc.) go in
+# .bazelrc.user — that file is gitignored and imported below.  Copy
+# .bazelrc.user.example to .bazelrc.user and edit for your machine.
+try-import %workspace%/.bazelrc.user
 
-# Optimised output (equivalent to cargo --release).
-build --compilation_mode=opt
+# ── Bazel server JVM heap ─────────────────────────────────────────────────────
+# Caps the Bazel server at 6 GB so Maven resolution doesn't OOM the host.
+# Coursier's transitive graph for Compose+AndroidX is large; capping forces GC
+# before the machine swaps out.  Increase to -Xmx8g on 32 GB machines.
+startup --host_jvm_args=-Xmx6g
 
-# Make progress output legible in CI logs.
+# ── JVM toolchain ─────────────────────────────────────────────────────────────
+build --java_runtime_version=21
+build --tool_java_runtime_version=21
+
+# ── Android SDK ───────────────────────────────────────────────────────────────
+# android_sdk_repository_extension runs at repo-loading time (before config
+# flags), so ANDROID_HOME must be a global repo_env, not scoped to :android.
+# The value is supplied by .bazelrc.user locally and by the CI environment on
+# GitHub Actions (android-actions/setup-android sets ANDROID_HOME).
+build --repo_env=ANDROID_HOME
+
+# --android_sdk and the toolchain flag are kept in :android so that JVM-only
+# targets (business_tests, desktop_app) do not trigger Android toolchain
+# resolution.  Pass --config=android when building Android targets.
+build:android --android_sdk=@androidsdk//:sdk
+
+# ── Correctness / hermetic sandbox ────────────────────────────────────────────
+build --sandbox_default_allow_network=false
+build --incompatible_strict_action_env
+
+# ── X11 socket access for Compose Desktop tests ───────────────────────────────
+# Compose Desktop tests require an X display.  The Linux sandbox creates a new
+# mount namespace and does not include /tmp/.X11-unix by default, so the X11
+# socket (DISPLAY=:N → /tmp/.X11-unix/XN) is inaccessible even when DISPLAY is
+# inherited.  Mount the X11 socket directory into every test sandbox.
+# Locally: use whatever X server is running.
+# CI: xvfb-run --auto-servernum creates the socket before bazel runs.
+test --sandbox_add_mount_pair=/tmp/.X11-unix
+
+# ── Output legibility ─────────────────────────────────────────────────────────
 build --show_timestamps
 build --noshow_loading_progress
 
-# CI profile: quieter output, no colour codes in log files.
+# ── CI profile ────────────────────────────────────────────────────────────────
 build:ci --color=no
 build:ci --curses=no
+# Retry transient network errors (e.g. 503 from android.googlesource.com) up to 5 times
+# before failing a repository fetch. Default is 2; 5 covers most GCS/Gerrit blips.
+build:ci --experimental_repository_downloader_retries=5
+
+# ── CI caching ────────────────────────────────────────────────────────────────
+# Bazel caching in CI is handled entirely by bazel-contrib/setup-bazel@0.19.0
+# (disk-cache, repository-cache, external-cache inputs) which uses GitHub Actions
+# native cache — no third-party service required.  See .github/workflows/bazel-ci.yml.
+
+# ── Remote HTTP cache (bazel-cache-proxy) ─────────────────────────────────────
+# Enable with --config=remote-cache.  CI starts bazel-cache-proxy on port 9090
+# backed by the GHA cache API; all jobs on the same PR share the cache.
+# PRs write to their own scoped namespace so main's cache is never polluted.
+# Local use: start `bazel-cache-proxy serve` with a disk backend, then pass
+# --config=remote-cache to any bazel command.
+build:remote-cache --remote_cache=http://127.0.0.1:9090
+build:remote-cache --remote_upload_local_results

@@ -1,0 +1,36 @@
+"""
+jvmCommonMain — shared JVM/Android sources (OpenTelemetry API layer).
+
+This source set is shared between Desktop (JVM) and Android targets.
+
+JVM: sources exported via kt_srcs filegroup for inclusion in the combined
+jvm_main_lib compilation at //kmp/src/jvmMain/kotlin:jvm_main_lib.
+
+Android: sources exported via kt_srcs filegroup for inclusion in the combined
+android_main compilation at //kmp/src/androidMain/kotlin:android_main.
+This mirrors the JVM pattern so expect/actual resolution works under Bazel.
+"""
+
+# ── JVM and Android flavor ────────────────────────────────────────────────────
+# Sources exported for inclusion in:
+#   - //kmp/src/jvmMain/kotlin:jvm_main_lib (JVM)
+#   - //kmp/src/androidMain/kotlin:android_main (Android)
+filegroup(
+    name = "kt_srcs",
+    srcs = glob(["**/*.kt"]),
+    visibility = ["//kmp:__subpackages__"],
+)
+
+# Files in jvmCommonMain that contain `expect` declarations (for jvmMain/androidMain actuals).
+# These must be passed as common_srcs so the Kotlin compiler treats them as the expect side
+# of the jvmCommonMain→jvmMain/androidMain expect/actual pair.
+# The remaining jvmCommonMain files contain `actual` implementations of commonMain expects and
+# must NOT appear in common_srcs (doing so puts both the expect and the actual in "common",
+# which the compiler rejects with "expect and actual declared in the same module").
+filegroup(
+    name = "kt_expect_srcs",
+    srcs = [
+        "dev/stapler/stelekit/db/libsql/LibsqlNativeLoader.kt",
+    ],
+    visibility = ["//kmp:__subpackages__"],
+)

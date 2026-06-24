@@ -9,9 +9,9 @@ import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.SteleKitContext
 import dev.stapler.stelekit.platform.WriteBehindQueue
-import dev.stapler.stelekit.platform.measurement.MeasurementDeviceRegistry
-import dev.stapler.stelekit.app.BuildConfig
+import dev.stapler.stelekit.app.R
 import dev.stapler.stelekit.performance.BuildInfo
+import dev.stapler.stelekit.platform.measurement.MeasurementDeviceRegistry
 import dev.stapler.stelekit.platform.measurement.ble.KableBleScanner
 import dev.stapler.stelekit.platform.ml.OnnxMonocularDepthEstimator
 import dev.stapler.stelekit.platform.sensor.AndroidCameraProvider
@@ -57,8 +57,8 @@ class SteleKitApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         try {
-            BuildInfo.commitHash = BuildConfig.GIT_COMMIT_HASH
-            BuildInfo.appVersion = BuildConfig.VERSION_NAME
+            BuildInfo.commitHash = getString(R.string.git_commit_hash)
+            BuildInfo.appVersion = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
             SteleKitContext.init(this)
             DriverFactory.setContext(this)
             CredentialStore.init(this)

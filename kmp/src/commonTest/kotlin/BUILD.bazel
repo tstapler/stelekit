@@ -1,0 +1,21 @@
+"""
+common_test_fixtures — shared test utilities compiled for JVM.
+
+FakeFileSystem lives in commonTest/ so it compiles on all KMP platforms, but it
+is also referenced by jvmTest sources (e.g. ImageAnnotationOfflineTest).  This
+kt_jvm_library exposes just the fixture files needed by jvmTest without pulling
+in the full commonTest suite.  Add files here as jvmTest grows its cross-source-
+set fixture usage.
+"""
+
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
+
+kt_jvm_library(
+    name = "common_test_fixtures",
+    srcs = ["dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt"],
+    deps = [
+        "//kmp/src/jvmMain/kotlin:jvm_main_lib",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+    visibility = ["//kmp/src:__subpackages__"],
+)

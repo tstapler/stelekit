@@ -178,5 +178,15 @@ kmp/src/wasmJsMain/kotlin/dev/stapler/stelekit/platform/DemoFileSystem.kt
 *.rej
 *.bak
 *.tmp
-*.tempuploads/
+*.temp
 uploads/
+
+# --------------------
+# Bazel
+# --------------------
+/bazel-bin
+/bazel-out
+/bazel-testlogs
+/bazel-*
+# Machine-specific overrides (ANDROID_HOME, tool paths) — see .bazelrc.user.example
+.bazelrc.user

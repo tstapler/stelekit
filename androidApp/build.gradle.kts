@@ -32,7 +32,7 @@ android {
         versionCode = computedVersionCode
         versionName = appVersionStr
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "GIT_COMMIT_HASH", "\"$gitCommitHash\"")
+        resValue("string", "git_commit_hash", gitCommitHash)
     }
 
     signingConfigs {
@@ -79,7 +79,6 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = true
     }
 
     lint {

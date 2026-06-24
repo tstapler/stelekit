@@ -4,12 +4,12 @@ import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.repository.DatalogBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
+import dev.stapler.stelekit.testing.getClasspathDirectory
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertTrue
-import kotlin.test.fail
 
 /**
  * Integration tests for the bundled demo graph. Loads the demo graph from the
@@ -23,9 +23,7 @@ class DemoGraphIntegrationTest {
 
     private fun loadDemoGraph(): Triple<List<dev.stapler.stelekit.model.Page>, InMemoryPageRepository, DatalogBlockRepository> =
         runBlocking {
-            val url = javaClass.classLoader.getResource("demo-graph")
-                ?: fail("demo-graph not found in classpath")
-            val graphDir = File(url.toURI())
+            val graphDir = getClasspathDirectory(javaClass.classLoader, "demo-graph")
 
             val fileSystem = PlatformFileSystem()
             val pageRepository = InMemoryPageRepository()
@@ -106,13 +104,9 @@ class DemoGraphIntegrationTest {
 
     @Test
     fun `demo graph has expected page count`() = runBlocking {
-        val pagesUrl = javaClass.classLoader.getResource("demo-graph/pages")
-            ?: fail("demo-graph/pages not found in classpath")
-        val journalsUrl = javaClass.classLoader.getResource("demo-graph/journals")
-            ?: fail("demo-graph/journals not found in classpath")
-
-        val pagesDir = File(pagesUrl.toURI())
-        val journalsDir = File(journalsUrl.toURI())
+        val demoGraph = getClasspathDirectory(javaClass.classLoader, "demo-graph")
+        val pagesDir = File(demoGraph, "pages")
+        val journalsDir = File(demoGraph, "journals")
 
         val onDiskCount = (pagesDir.listFiles { f -> f.name.endsWith(".md") && f.name != ".gitkeep" }?.size ?: 0) +
             (journalsDir.listFiles { f -> f.name.endsWith(".md") && f.name != ".gitkeep" }?.size ?: 0)
