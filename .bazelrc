@@ -48,6 +48,9 @@ build --noshow_loading_progress
 # ── CI profile ────────────────────────────────────────────────────────────────
 build:ci --color=no
 build:ci --curses=no
+# Retry transient network errors (e.g. 503 from android.googlesource.com) up to 5 times
+# before failing a repository fetch. Default is 2; 5 covers most GCS/Gerrit blips.
+build:ci --experimental_repository_downloader_retries=5
 
 # ── CI caching ────────────────────────────────────────────────────────────────
 # Bazel caching in CI is handled entirely by bazel-contrib/setup-bazel@0.19.0

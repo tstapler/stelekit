@@ -126,7 +126,10 @@ jobs:
           disk-cache: android
           repository-cache: true
           external-cache: true
-          cache-save: ${{ github.event_name != 'pull_request' }}
+          # Always save repository cache (includes the dalvik tarball from android.googlesource.com)
+          # so PR re-runs hit cache rather than re-downloading. Disk-cache writes on PRs are
+          # harmless — GHA scopes PR caches to the branch, not main.
+          cache-save: true
 
       - name: Build Android APK
         run: bazel build //kmp:android_app --config=android --config=remote-cache
