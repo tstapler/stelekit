@@ -1,6 +1,6 @@
 # Paranoid Mode — Implementation Plan
 
-## Status: Draft
+## Status: Revised — Blockers Resolved
 ## Target Platforms: Desktop JVM + Web/WASM (v1)
 ## Requirements: `../requirements.md`
 ## Research: `../research/`
@@ -52,9 +52,10 @@ Offset  Size    Field
 17+N    16      Poly1305 auth tag (appended by JDK/libsodium inside ciphertext block)
 ```
 
-**Subkey derivation**: `HKDF-SHA256(ikm=DEK, salt=file_path_utf8, info="stelekit-file-v1", len=32)`
+**Subkey derivation**: `HKDF-SHA256(ikm=DEK, salt=nonce_bytes, info=file_path_utf8, len=32)`
 
-- The file path (relative to graph root) is both the HKDF salt and the AEAD additional data (AAD). This binds the ciphertext to its location — moving a file and re-reading it will fail authentication, preventing silent relocation attacks.
+- The 12-byte random nonce (already in the file header, fresh per write) is used as the HKDF salt. The file path (relative to graph root) is the HKDF `info` parameter **and** the AEAD additional data (AAD). This design ensures every write to the same file path produces an independent (subkey, nonce) pair — even if two writes produce the same nonce by birthday coincidence, HKDF derives a different subkey because the salt differs. The file path as AAD still binds the ciphertext to its location, preventing silent relocation attacks.
+- **Why this ordering matters**: Using `salt=file_path` (the old design) means all writes to the same file share the same subkey, reducing security to 96-bit random nonce safety alone (~1% collision probability after 2^46 writes). Using `salt=nonce` means the (subkey, nonce) domain is as large as the nonce domain itself — each write is cryptographically independent.
 - On-disk filename: `{original_name}.md.stek` (preserves directory structure; extension signals format to the app).
 
 ### 2b. Vault Header File (`.stele-vault`)
@@ -91,7 +92,9 @@ Offset  Size    Field
 
 **All 8 slots have identical binary length regardless of state.** Unused slots are indistinguishable from active ones (random bytes throughout). The MAC on the encrypted DEK blob is the only oracle for "is this slot active?"
 
-**Hidden volume namespace design**: Slots 0–3 are tried for the outer namespace; slots 4–7 for the hidden namespace. However, this division is not written anywhere in the header — it is a protocol convention. The app tries all 8 slots and infers namespace from the `namespace_tag` byte inside the successfully decrypted DEK blob. Because an adversary cannot decrypt any slot without the passphrase, the namespace assignment is not observable.
+**Hidden volume namespace design**: There is **no fixed slot-range convention**. All 8 slots are tried in a uniform random order on every unlock attempt, regardless of whether a hidden volume exists. The `namespace_tag` byte inside the successfully decrypted DEK blob is the **only** oracle for which namespace (outer vs. hidden) is active. Slot assignment at vault creation is randomized: hidden-volume keyslots may occupy any of the 8 slot indices; the assignment is not correlated with slot index. An adversary who inspects the source code sees no range split and cannot enumerate outer vs. hidden slot indices without successfully decrypting a slot.
+
+The random trial order is derived fresh on each unlock via `SecureRandom` permutation of `[0..7]`; this eliminates even timing side-channels from a fixed-order scan.
 
 **Timing safety**: All 8 slots are always attempted in constant time regardless of which slot(s) succeed. Results are collected, then the valid one is selected post-loop. MAC comparison uses constant-time routines (`MessageDigest.isEqual()` on JVM; `crypto.subtle.verify()` on WASM).
 
@@ -132,13 +135,19 @@ kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/
 
 ### 3b. Integration with Existing Architecture
 
-**GraphLoader** receives an optional `CryptoLayer?` parameter. When non-null, every `fileSystem.readFile(path)` result is passed through `cryptoLayer.decrypt(path, bytes)` before parsing. The `ExternalFileChange` flow also passes raw bytes through decryption — if the `CryptoLayer` is null (graph locked), the change is queued and emitted only after unlock.
+**GraphLoader** receives a `CryptoLayer?` via constructor at `RepositorySet` construction time (see below). When non-null, every `fileSystem.readFile(path)` result is passed through `cryptoLayer.decrypt(path, bytes)` before parsing. The `ExternalFileChange` flow also passes raw bytes through decryption — if the `CryptoLayer` is null (graph locked), the change is queued and emitted only after unlock.
 
-**GraphWriter** receives an optional `CryptoLayer?` parameter. Inside `savePageInternal`, the `content` string is encrypted via `cryptoLayer.encrypt(filePath, content.toByteArray())` before calling `fileSystem.writeFile(filePath, encryptedBytes)`. The existing Arrow Saga rollback path restores the old encrypted bytes on failure.
+**GraphWriter** receives a `CryptoLayer?` via constructor at `RepositorySet` construction time. Inside `savePageInternal`, the `content` string is encrypted via `cryptoLayer.encrypt(filePath, content.toByteArray())` before calling `fileSystem.writeFile(filePath, encryptedBytes)`. The existing Arrow Saga rollback path restores the old encrypted bytes on failure.
 
 **GraphManager.addGraph/switchGraph** detects the `.stele-vault` file at the graph root. If present, it sets `GraphInfo.isParanoidMode = true` and emits a `VaultLocked` state on `activeRepositorySet` before constructing the `RepositorySet`. The `StelekitViewModel` observes this and pushes the `VaultUnlockScreen`.
 
 **VaultManager** owns the in-memory DEK as a `ByteArray`. It is injected into `CryptoLayer` at unlock time. On lock, `VaultManager.lock()` zero-fills the DEK array, clears the `CryptoLayer` reference in `GraphLoader` and `GraphWriter`, and emits a lock event to the ViewModel.
+
+**`namespace_tag` memory safety**: The `namespace_tag` byte lives inside the decrypted DEK blob only transiently. Immediately after the namespace branch (`if (dekBlob[32] == 0x01.toByte()) { /* hidden */ } else { /* outer */ }`), the tag byte at index 32 is zeroed (`dekBlob[32] = 0`). This zeroing must happen **before** any `suspend` point or coroutine boundary so the tag is never observable in a heap dump captured after the unlock coroutine suspends. The DEK itself (bytes 0–31 of the blob) is retained as normal.
+
+**`CryptoLayer` reference atomicity**: `GraphLoader` and `GraphWriter` receive their `CryptoLayer` through constructor injection when the `RepositorySet` is built, not via a mutable field that can be swapped at runtime. This is the same pattern as `GraphManager.switchGraph()` — on unlock, a **new `RepositorySet`** is constructed with the new `CryptoLayer`; the old instances are discarded. This eliminates the race condition where `lock()` could clear a `CryptoLayer` reference while in-flight I/O coroutines from the old `GraphLoader`/`GraphWriter` instances are still executing. `VaultManager.lock()` signals the old `RepositorySet` to shut down (draining in-flight Sagas), then rebuilds from scratch at next unlock. A `kotlinx.coroutines.Mutex` in `VaultManager` guards the lock/unlock transition itself to prevent concurrent unlock attempts.
+
+**`namespace_tag` memory safety**: The `namespace_tag` byte lives inside the decrypted DEK blob only transiently. Immediately after the namespace branch (`if (dekBlob[32] == 0x01.toByte()) { /* hidden */ } else { /* outer */ }`), the tag byte at index 32 is zeroed (`dekBlob[32] = 0`). This zeroing must happen **before** any `suspend` point or coroutine boundary so the tag is never observable in a heap dump captured after the unlock coroutine suspends. The DEK itself (bytes 0–31 of the blob) is retained as normal.
 
 **Error handling**: All vault operations return `Either<VaultError, T>` where `VaultError` is a new sealed subtype of `DomainError`. Existing call sites use `.onLeft`, `.fold`, or `.getOrNull()` — no existing error handling patterns change.
 
@@ -165,8 +174,9 @@ kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/
 **Story 1.2 — JVM implementation**
 - T1.2.1: Implement `JvmCryptoEngine.encryptAEAD` using `javax.crypto.Cipher("ChaCha20-Poly1305")` with SunJCE provider; fresh `Cipher` instance per call
 - T1.2.2: Implement `JvmCryptoEngine.decryptAEAD` — verify Poly1305 tag, propagate `BadPaddingException` as `VaultError.AuthenticationFailed`
-- T1.2.3: Implement `JvmCryptoEngine.hkdfSha256` using BouncyCastle `HKDFBytesGenerator`
+- T1.2.3: Implement `JvmCryptoEngine.hkdfSha256` using BouncyCastle `HKDFBytesGenerator`; signature: `hkdfSha256(ikm, salt, info, outputLen)` — caller supplies all four parameters explicitly. For per-file subkey derivation, callers MUST pass `salt=nonce_bytes` and `info=file_path_utf8` (see section 2a); the engine imposes no convention.
 - T1.2.4: Implement `JvmCryptoEngine.argon2id` using `Argon2BytesGenerator`; accept `memory`, `iterations`, `parallelism` params
+- T1.2.4a: Unit test: HKDF subkey correctness — verify that `hkdfSha256(DEK, salt=nonce1, info=path, 32) != hkdfSha256(DEK, salt=nonce2, info=path, 32)` for two distinct random nonces on the same path (enforces per-write key independence)
 - T1.2.5: Implement `JvmCryptoEngine.secureRandom` using `java.security.SecureRandom`
 
 **Story 1.3 — WASM implementation**
@@ -201,15 +211,20 @@ kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/
 
 **Story 2.3 — VaultManager core**
 - T2.3.1: Implement `VaultManager.createVault(path, initialProvider)`: generate DEK, wrap in first keyslot, write `.stele-vault`
-- T2.3.2: Implement `VaultManager.unlock(path, provider)`: read header, iterate all 8 keyslots in constant time, return `Either<VaultError, DEK>`; verify header MAC after DEK recovery
+- T2.3.2: Implement `VaultManager.unlock(path, provider)`: read header, iterate all 8 keyslots in **uniform random order** (SecureRandom permutation of [0..7]), attempt AEAD decryption for each; after a slot decrypts successfully, branch on `namespace_tag` byte to determine namespace, **immediately zero-fill the `namespace_tag` byte** in the decrypted buffer before any `suspend` point, then return `Either<VaultError, DEK>`; verify header MAC after DEK recovery
+- T2.3.2a: Test: `VaultManager.unlock()` — the `namespace_tag` byte (index 32 of the decrypted DEK buffer) is zeroed after namespace inference; assert it equals `0` after unlock returns
 - T2.3.3: Implement `VaultManager.lock()`: zero-fill DEK array, emit `VaultLocked` event, clear `CryptoLayer` reference
-- T2.3.4: Implement `VaultManager.addKeyslot(provider, dek)`: wrap DEK with new provider, write to empty slot
+- T2.3.4: Implement `VaultManager.addKeyslot(provider, dek)`: wrap DEK with new provider, write to a randomly chosen empty slot index (SecureRandom permutation enforced — no fixed slot ordering)
 - T2.3.5: Implement `VaultManager.removeKeyslot(slotIndex)`: overwrite slot bytes with random, rewrite header
-- T2.3.6: Implement `VaultManager.rotateKeyslots(newProviders, dek)`: re-wrap DEK in all specified providers atomically
 
 **Story 2.4 — Key rotation (FR-8)**
 - T2.4.1: Implement provider-rotation (passphrase change): derive new keyslot_key, re-encrypt DEK in that slot only
-- T2.4.2: Implement full DEK rotation: generate new DEK, re-encrypt all vault files, wrap in all current keyslots, update header atomically
+- T2.4.2: Implement full DEK rotation using a two-phase commit protocol:
+  1. **Phase 1 — Stage**: Write a rotation manifest to `_rotation_staging/.manifest` listing every file to be rotated (old path → staging path). Re-encrypt each file under the new DEK and write to `_rotation_staging/{original_relative_path}`. On crash here, the vault is untouched (old DEK still valid).
+  2. **Phase 2 — Commit**: Atomically rename each staged file to its final path (file-level `Files.move(ATOMIC_MOVE)` on JVM; equivalent on WASM). Only after **all** renames succeed, write the new vault header (the header update is the durable commit point). On crash here, resume logic applies (see below).
+  3. **Crash recovery on next open**: If `_rotation_staging/` is non-empty, read the manifest. If the header still contains the old DEK version, the rotation is incomplete — resume by finishing remaining renames and then committing the header. If the header already contains the new DEK version, the rotation succeeded and `_rotation_staging/` is a stale artifact — delete it. In either case, no data is lost.
+- T2.4.2a: Test: Mid-rotation crash simulation — create a staging directory with a partially-completed set of renamed files, open the vault, assert recovery completes without data loss and `_rotation_staging/` is cleaned up
+- T2.4.3: Implement `VaultManager.rotateKeyslots(newProviders, dek)`: re-wrap DEK in all specified providers atomically
 
 **Story 2.5 — VaultManager tests**
 - T2.5.1: Create vault, unlock with passphrase → success
@@ -225,7 +240,7 @@ kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/
 *Goal: GraphLoader and GraphWriter transparently encrypt/decrypt without structural changes.*
 
 **Story 3.1 — CryptoLayer implementation**
-- T3.1.1: Implement `CryptoLayer.encrypt(filePath: String, plaintext: ByteArray): ByteArray` — HKDF subkey, random nonce, STEK header prepend
+- T3.1.1: Implement `CryptoLayer.encrypt(filePath: String, plaintext: ByteArray): ByteArray` — generate fresh random nonce (12 bytes), derive subkey as `HKDF-SHA256(ikm=DEK, salt=nonce_bytes, info=file_path_utf8, len=32)`, encrypt with ChaCha20-Poly1305(subkey, nonce, plaintext, aad=file_path_utf8), prepend STEK header (magic + version + nonce + ciphertext)
 - T3.1.2: Implement `CryptoLayer.decrypt(filePath: String, raw: ByteArray): Either<VaultError, ByteArray>` — magic check, nonce extract, AEAD decrypt
 - T3.1.3: Handle non-STEK files gracefully: if magic does not match, return `VaultError.NotEncrypted` (allows reading plaintext graphs alongside encrypted ones during migration)
 - T3.1.4: Add `DomainError.FileSystemError.CorruptedFile` for tampered/corrupted AEAD failures
@@ -262,7 +277,7 @@ kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/
 **Story 4.2 — StelekitViewModel unlock flow**
 - T4.2.1: Add `VaultState` sealed class (`Locked`, `Unlocking`, `Unlocked`, `Error`) to `AppState`
 - T4.2.2: Observe `VaultState` in `StelekitViewModel`; on `Locked`, push `VaultUnlockScreen`
-- T4.2.3: On unlock success: inject `CryptoLayer` into `GraphLoader` and `GraphWriter`, proceed with `loadGraph`
+- T4.2.3: On unlock success: construct a new `RepositorySet` (including new `GraphLoader` and `GraphWriter` instances) with the unlocked `CryptoLayer` passed via constructor — do **not** mutate a live `GraphLoader`/`GraphWriter` instance; follow the `switchGraph()` rebuild pattern to avoid data races with in-flight I/O coroutines
 - T4.2.4: On unlock failure: surface error, remain on unlock screen (no rate limiting — Argon2id is the rate limiter)
 - T4.2.5: Expose `lockGraph()` action: calls `VaultManager.lock()`, clears DEK, navigates to unlock screen
 
@@ -303,8 +318,8 @@ kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/
 *Goal: Two-passphrase plausible deniability with no UI indication of hidden volume existence.*
 
 **Story 6.1 — HiddenVolumeManager**
-- T6.1.1: Implement `HiddenVolumeManager.createHiddenVolume(path, hiddenProvider, reserveSizeMb)`: pre-fill `_hidden_reserve/` with CSPRNG bytes, create hidden-namespace keyslots (slots 4–7)
-- T6.1.2: Implement hidden volume unlock path: `VaultManager.unlock` detects `namespace_tag = 0x01`, routes graph load to hidden-volume virtual archive
+- T6.1.1: Implement `HiddenVolumeManager.createHiddenVolume(path, hiddenProvider, reserveSizeMb)`: pre-fill `_hidden_reserve/` with CSPRNG bytes; create hidden-namespace keyslots by writing `namespace_tag = 0x01` into the DEK blob and assigning them to **randomly chosen** slot indices (using `SecureRandom` to pick from available empty slots — no fixed slot-range convention). The resulting vault header is indistinguishable from one with no hidden volume.
+- T6.1.2: Implement hidden volume unlock path: `VaultManager.unlock` iterates all 8 slots in random order; after successful AEAD decryption, reads `namespace_tag` to determine which namespace is active (0x00 = outer, 0x01 = hidden), routes graph load accordingly, then immediately zeros the `namespace_tag` byte in the decrypted buffer (see Blocker 3 fix)
 - T6.1.3: Implement hidden-volume virtual archive: single encrypted `.stek` archive within `_hidden_reserve/`; in-memory virtual filesystem for hidden pages/blocks
 - T6.1.4: Ensure no UI text ever exposes "outer" or "hidden" — graph name and all UI elements are identical regardless of namespace
 
@@ -330,10 +345,12 @@ kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/
 - T7.2.2: Never reuse a `Cipher` instance across multiple encryptions — create fresh instance per call
 - T7.2.3: Add `jvmTest` asserting that 10,000 `secureRandom(12)` calls produce no collisions (probabilistic; documents intent)
 
-**Story 7.3 — Vault header integrity**
+**Story 7.3 — Vault header integrity and lock/unlock concurrency safety**
 - T7.3.1: Include all header bytes (bytes 0–2572) as input to the HMAC-SHA256 header MAC
 - T7.3.2: Verify header MAC immediately after DEK recovery; fail with `VaultError.HeaderTampered` on mismatch
 - T7.3.3: Document evil-maid attack vector in user-facing help: recommend secure boot + OS FDE for full protection
+- T7.3.4: Add `Mutex` to `VaultManager` to guard the lock/unlock transition: `lock()` and `unlock()` acquire this mutex exclusively before rebuilding or tearing down the `RepositorySet`; concurrent unlock attempts are serialized (second caller waits) rather than racing
+- T7.3.5: Concurrency test: start a `GraphWriter` Saga, call `VaultManager.lock()` concurrently, assert either the Saga completes atomically (if lock waits for the current `RepositorySet` to drain) or the Saga rolls back cleanly with no data loss — no partial write should survive
 
 **Story 7.4 — Filesystem metadata mitigations (partial)**
 - T7.4.1: Set fixed modification timestamp (epoch zero) on all `.stek` files after write to reduce timestamp fingerprinting
@@ -433,3 +450,24 @@ Requirements mark iOS/macOS/Android as out of scope for v1. The `CryptoEngine` i
 | Open questions requiring decision | 3 |
 
 The single highest-priority action before coding begins: **prototype WASM/libsodium.js interop** (RISK-1) to confirm the `CryptoEngine` interface design is achievable on the WASM target without architectural revision.
+
+---
+
+## Appendix A — Blockers Resolved
+
+The following BLOCKER-level issues identified in `adversarial-review.md` (dated 2026-06-24) have been patched in this revision.
+
+### Blocker 1 — Nonce reuse via static HKDF subkey [RESOLVED]
+**Fix**: Subkey derivation formula changed from `HKDF-SHA256(DEK, salt=file_path_utf8, info="stelekit-file-v1", len=32)` to `HKDF-SHA256(DEK, salt=nonce_bytes, info=file_path_utf8, len=32)`. The per-write random nonce is now the HKDF salt, ensuring each write to the same file path produces an independent (subkey, nonce) pair. Updated in: section 2a (file format spec), T1.2.3 (hkdf signature note), T1.2.4a (new per-write independence test), T3.1.1 (CryptoLayer.encrypt implementation spec).
+
+### Blocker 2 — Hidden volume slot-range convention is detectable [RESOLVED]
+**Fix**: Removed the fixed slot-range convention (slots 0–3 outer, slots 4–7 hidden). All 8 slots are now tried in a uniform random order (SecureRandom permutation) on every unlock. Hidden-volume keyslots are written to randomly chosen slot indices at vault creation. The `namespace_tag` byte in the successfully decrypted DEK blob is the only namespace oracle. Updated in: section 2b (vault header / keyslot layout), T2.3.2 (VaultManager.unlock spec), T2.3.4 (addKeyslot random slot assignment), T6.1.1 (HiddenVolumeManager creation spec), section 3b (integration notes).
+
+### Blocker 3 — `namespace_tag` leaks in memory [RESOLVED]
+**Fix**: The `namespace_tag` byte is zeroed immediately after namespace inference in `VaultManager.unlock()`, before any `suspend` point or coroutine boundary. Updated in: section 3b (VaultManager integration notes with zero-on-use protocol), T2.3.2 (unlock implementation spec), T2.3.2a (new test asserting zero after unlock), T6.1.2 (hidden volume unlock path spec).
+
+### Blocker 4 — DEK rotation has no atomic crash-recovery story [RESOLVED]
+**Fix**: T2.4.2 now defines a two-phase commit protocol: (1) stage all re-encrypted files in `_rotation_staging/` with a manifest, (2) atomically rename each to final path, (3) update vault header as commit point. Crash recovery on next open detects incomplete rotation via `_rotation_staging/` and either resumes (if header not yet updated) or cleans up stale staging (if header already updated). Added recovery test T2.4.2a.
+
+### Blocker 5 — `CryptoLayer` reference swap is not atomic under concurrent I/O [RESOLVED]
+**Fix**: `GraphLoader` and `GraphWriter` receive `CryptoLayer` via constructor injection in a newly built `RepositorySet` at unlock time — there is no mutable reference swap on live instances. This follows the existing `switchGraph()` rebuild pattern. `VaultManager.lock()` drains the old `RepositorySet` before tearing it down. A `kotlinx.coroutines.Mutex` in `VaultManager` serializes concurrent lock/unlock transitions. Updated in: section 3b (CryptoLayer reference atomicity), T4.2.3 (RepositorySet rebuild on unlock), T7.3.4 (Mutex task), T7.3.5 (concurrency test for lock() during active Saga).
