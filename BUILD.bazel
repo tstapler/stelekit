@@ -67,10 +67,10 @@ kt_compiler_plugin(
 )
 
 # ── Android toolchain — Bazel-built unzip ─────────────────────────────────────
-# rules_android's aar_import uses an `unzip` tool to extract AAR manifests.
-# The default wrapper calls bare `unzip` which fails when the action env is
-# cleared (exec env -).  This custom toolchain swaps in the InfoZip unzip 6.0
-# binary built from source via @unzip_src (declared in MODULE.bazel).
+# Custom android toolchain that replaces the bare `unzip` and `zip` wrappers
+# with InfoZip binaries built from source via @unzip_src / @zip_src.
+# The default wrappers call system tools which fail in hermetic sandboxes.
+# Both tools are patched in rules_android via single_version_override in MODULE.bazel.
 # Registered before the rules_android default so it wins toolchain resolution.
 android_toolchain(
     name = "stelekit_android_toolchain_impl",

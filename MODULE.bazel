@@ -25,6 +25,15 @@ single_version_override(
 )
 bazel_dep(name = "rules_cc", version = "0.1.1")
 bazel_dep(name = "rules_android", version = "0.7.1")
+single_version_override(
+    module_name = "rules_android",
+    patches = [
+        "//third_party/patches:rules_android_unzip.patch",
+        "//third_party/patches:rules_android_zip.patch",
+        "//third_party/patches:rules_android_zip_action.patch",
+    ],
+    patch_strip = 1,
+)
 bazel_dep(name = "rules_jvm_external", version = "6.9")
 bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "rules_java", version = "9.3.0")
@@ -67,6 +76,20 @@ http_archive(
     patch_cmds = [
         "sed -i 's/   struct tm \\*gmtime(), \\*localtime();/#if !defined(__GLIBC__) \\&\\& !defined(linux)\\n   struct tm *gmtime(), *localtime();\\n#endif/' unix/unxcfg.h",
     ],
+)
+
+###############################################################################
+# InfoZip zip — built from source by Bazel.
+# rules_android's android_local_test uses a `zip` tool to assemble test JARs;
+# building it here avoids any system-level zip dependency.
+###############################################################################
+
+http_archive(
+    name = "zip_src",
+    urls = ["https://downloads.sourceforge.net/infozip/zip30.tar.gz"],
+    sha256 = "f0e8bb1f9b7eb0b01285495a2699df3a4b766784c1765a8f1aeedf63c0806369",
+    strip_prefix = "zip30",
+    build_file = "//:third_party/zip.BUILD",
 )
 
 ###############################################################################

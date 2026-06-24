@@ -1,1 +1,6 @@
-exports_files(["rules_kotlin_kmp.patch"])
+exports_files([
+    "rules_kotlin_kmp.patch",
+    "rules_android_unzip.patch",
+    "rules_android_zip.patch",
+    "rules_android_zip_action.patch",
+])
