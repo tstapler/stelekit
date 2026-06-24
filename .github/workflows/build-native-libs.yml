@@ -122,7 +122,7 @@ jobs:
             //native/libsql:stelekit_libsql)
           echo "outfile=$OUTFILE" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43f776f3b
+      - uses: actions/upload-artifact@v4
         with:
           name: native-jvm-${{ matrix.resource-dir }}
           path: ${{ env.outfile }}
@@ -167,7 +167,7 @@ jobs:
             //native/libsql:stelekit_libsql)
           echo "outfile=$OUTFILE" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43f776f3b
+      - uses: actions/upload-artifact@v4
         with:
           name: native-jvm-${{ matrix.resource-dir }}
           path: ${{ env.outfile }}
@@ -201,7 +201,7 @@ jobs:
             //native/libsql:stelekit_libsql)
           echo "outfile=$OUTFILE" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43f776f3b
+      - uses: actions/upload-artifact@v4
         with:
           name: native-jvm-windows-x86_64
           # Windows output: stelekit_libsql.dll (no "lib" prefix — matches System.mapLibraryName)
@@ -249,7 +249,7 @@ jobs:
         run: cargo ndk --target ${{ matrix.abi }} --platform 26 -- build --release
         working-directory: native/libsql
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43f776f3b
+      - uses: actions/upload-artifact@v4
         with:
           name: native-android-${{ matrix.abi }}
           path: native/libsql/target/${{ matrix.rust-target }}/release/libstelekit_libsql.so

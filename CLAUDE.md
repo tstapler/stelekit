@@ -46,6 +46,8 @@ bazel test //...
 # Re-generate SQLDelight sources (when .sq files change)
 ./gradlew :kmp:generateCommonMainSteleDatabase
 rsync -a kmp/build/generated/sqldelight/code/SteleDatabase/commonMain/ kmp/src/generated/sqldelight/
+./gradlew :kmp:generateCommonMainTelemetryDatabase
+rsync -a kmp/build/generated/sqldelight/code/TelemetryDatabase/commonMain/ kmp/src/generated/sqldelight-telemetry/
 ```
 
 ## Gradle Build & Run Commands

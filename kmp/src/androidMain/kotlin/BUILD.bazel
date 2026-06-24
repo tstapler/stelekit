@@ -36,6 +36,7 @@ kt_android_library(
 
         # SQLDelight (from commonMain)
         "//kmp/src/generated/sqldelight:sqldelight_generated_jvm",
+        "//kmp/src/generated/sqldelight-telemetry:sqldelight_generated_telemetry_jvm",
         "@maven//:app_cash_sqldelight_runtime_jvm",
         "@maven//:app_cash_sqldelight_coroutines_extensions_jvm",
         "@maven//:app_cash_sqldelight_async_extensions_jvm",
