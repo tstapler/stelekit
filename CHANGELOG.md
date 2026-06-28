@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.56.0](https://github.com/tstapler/stelekit/compare/v0.55.0...v0.56.0) (2026-06-24)
+
+
+### Features
+
+* **bazel:** migrate build system to Bazel with full CI ([#149](https://github.com/tstapler/stelekit/issues/149)) ([8b4cb25](https://github.com/tstapler/stelekit/commit/8b4cb25af002a4c2021c37fe0c6943dd67c686fc))
+* **tags:** wire Suggest Tags button to MobileBlockToolbar ([#185](https://github.com/tstapler/stelekit/issues/185)) ([fb0ddc0](https://github.com/tstapler/stelekit/commit/fb0ddc053a90affd59a01fd45d02a6754902fe57))
+
 ## [0.55.0](https://github.com/tstapler/stelekit/compare/v0.54.0...v0.55.0) (2026-06-23)
 
 
