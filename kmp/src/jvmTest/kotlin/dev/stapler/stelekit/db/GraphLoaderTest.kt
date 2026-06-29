@@ -20,7 +20,7 @@ class GraphLoaderTest {
 
     /** Creates a minimal fixture graph and returns its root path. Caller must delete it. */
     private fun createFixtureGraph(): File {
-        val tempDir = kotlin.io.path.createTempDirectory("graphloader_test_").toFile()
+        val tempDir = java.nio.file.Files.createTempDirectory(java.nio.file.Path.of(System.getProperty("user.home")), "graphloader_test_").toFile()
         val pagesDir = File(tempDir, "pages").also { it.mkdirs() }
         val journalsDir = File(tempDir, "journals").also { it.mkdirs() }
 
