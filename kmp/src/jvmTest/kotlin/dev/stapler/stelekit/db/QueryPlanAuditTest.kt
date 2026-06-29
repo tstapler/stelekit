@@ -59,6 +59,18 @@ class QueryPlanAuditTest {
         // when real hierarchical data is present (ANALYZE-verified). The SCAN lines in the plan
         // reflect CTE plumbing, not an unindexed table scan on production data.
         "selectBlockHierarchyRecursive",
+        // asset_index LIKE search across multiple unindexed text columns (file_path wildcards,
+        // tags JSON, auto_labels, ocr_text); FTS5 can cover structured search but these fields
+        // require separate infrastructure
+        "selectAssetsBySearchByDateKeyset",
+        // is_orphan has no index — orphan browsing is a rare admin path; bounded by LIMIT
+        "selectOrphanedAssets", "countOrphanedAssets",
+        // tags JSON column has no structural index; full-scan for tag aggregation is acceptable
+        // (cold admin / export path)
+        "selectAllTagsJson",
+        // size_bytes has no index — size-sorted browsing is an uncommon path; add
+        // idx_asset_size if it becomes a hot read pattern
+        "selectAssetsBySizeKeyset", "selectAssetsByMediaTypeBySizeKeyset",
     )
 
     // ── All SELECT queries from SteleDatabase.sq, parameters replaced with literals ──────────
@@ -343,6 +355,26 @@ ORDER BY depth, parent_uuid, position"""),
             "SELECT COUNT(*) FROM asset_index WHERE ml_processed = 0 AND ml_failed = 0"),
         AuditQuery("countAssets",
             "SELECT COUNT(*) FROM asset_index"),
+        AuditQuery("selectAssetsByDateKeyset",
+            "SELECT * FROM asset_index WHERE imported_at_ms < COALESCE(9999999999999, 9999999999999) ORDER BY imported_at_ms DESC, uuid DESC LIMIT 10"),
+        AuditQuery("selectAssetsByMediaTypeByDateKeyset",
+            "SELECT * FROM asset_index WHERE media_type = 'image/png' AND imported_at_ms < COALESCE(9999999999999, 9999999999999) ORDER BY imported_at_ms DESC, uuid DESC LIMIT 10"),
+        AuditQuery("selectAssetsBySearchByDateKeyset",
+            "SELECT * FROM asset_index WHERE (file_path LIKE '%test%' OR tags LIKE '%test%' OR auto_labels LIKE '%test%' OR ocr_text LIKE '%test%') AND imported_at_ms < COALESCE(9999999999999, 9999999999999) ORDER BY imported_at_ms DESC, uuid DESC LIMIT 10"),
+        AuditQuery("selectAssetsByNameKeyset",
+            "SELECT * FROM asset_index WHERE (file_path > COALESCE('', '') OR (file_path = '' AND uuid > COALESCE('', ''))) ORDER BY file_path ASC, uuid ASC LIMIT 10"),
+        AuditQuery("selectAssetsByMediaTypeByNameKeyset",
+            "SELECT * FROM asset_index WHERE media_type = 'image/png' AND (file_path > COALESCE('', '') OR (file_path = '' AND uuid > COALESCE('', ''))) ORDER BY file_path ASC, uuid ASC LIMIT 10"),
+        AuditQuery("selectAssetsBySizeKeyset",
+            "SELECT * FROM asset_index WHERE (size_bytes < COALESCE(9223372036854775807, 9223372036854775807) OR (size_bytes = 9223372036854775807 AND uuid > COALESCE('', ''))) ORDER BY size_bytes DESC, uuid ASC LIMIT 10"),
+        AuditQuery("selectAssetsByMediaTypeBySizeKeyset",
+            "SELECT * FROM asset_index WHERE media_type = 'image/png' AND (size_bytes < COALESCE(9223372036854775807, 9223372036854775807) OR (size_bytes = 9223372036854775807 AND uuid > COALESCE('', ''))) ORDER BY size_bytes DESC, uuid ASC LIMIT 10"),
+        AuditQuery("selectOrphanedAssets",
+            "SELECT * FROM asset_index WHERE is_orphan = 1 AND imported_at_ms < COALESCE(9999999999999, 9999999999999) ORDER BY imported_at_ms DESC, uuid DESC LIMIT 10"),
+        AuditQuery("countOrphanedAssets",
+            "SELECT COUNT(*) FROM asset_index WHERE is_orphan = 1"),
+        AuditQuery("selectAllTagsJson",
+            "SELECT tags FROM asset_index WHERE tags IS NOT NULL AND tags != '' AND tags != '[]'"),
 
         // ── page_visits ────────────────────────────────────────────────────────────────────────
         AuditQuery("selectPageVisitsByUuids",
