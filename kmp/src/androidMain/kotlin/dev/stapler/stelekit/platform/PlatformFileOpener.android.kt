@@ -33,15 +33,17 @@ private class AndroidPlatformFileOpener(private val context: Context) : Platform
         }
     }
 
-    private fun resolveUri(path: String): Uri? = when {
-        path.startsWith("content://") -> Uri.parse(path)
-        path.startsWith("file://") -> Uri.parse(path)
-        path.startsWith("saf://") -> safToContentUri(path) ?: copyToCache(File(path.substringAfterLast('/')))?.let { providerUri(it) }
-        else -> {
-            // Legacy absolute POSIX path — copy to share_export cache and serve via FileProvider
-            val src = File(path)
-            if (!src.exists()) return null
-            copyToCache(src)?.let { providerUri(it) }
+    private fun resolveUri(path: String): Uri? {
+        return when {
+            path.startsWith("content://") -> Uri.parse(path)
+            path.startsWith("file://") -> Uri.parse(path)
+            path.startsWith("saf://") -> safToContentUri(path) ?: copyToCache(File(path.substringAfterLast('/')))?.let { providerUri(it) }
+            else -> {
+                // Legacy absolute POSIX path — copy to share_export cache and serve via FileProvider
+                val src = File(path)
+                if (!src.exists()) return null
+                copyToCache(src)?.let { providerUri(it) }
+            }
         }
     }
 
