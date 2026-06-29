@@ -109,6 +109,7 @@ fun EditorToolbar(
         } else null,
         isInSelectionMode = isInSelectionMode,
         selectedCount = selectedBlockUuids.size,
+        onCopySelected = { blockStateManager.copySelectedBlocks("") },
         onDeleteSelected = { blockStateManager.deleteSelectedBlocks() },
         onClearSelection = { blockStateManager.clearSelection() },
         isLeftHanded = isLeftHanded,

@@ -98,6 +98,8 @@ fun PageView(
     val loadingPageUuids by blockStateManager.loadingPageUuids.collectAsState()
     val suggestionMatcher by viewModel.suggestionMatcher.collectAsState()
 
+    val blockClipboard by blockStateManager.blockClipboard.collectAsState()
+
     val tagSuggestionState by tagSuggestionViewModel?.state?.collectAsState()
         ?: remember { mutableStateOf(TagSuggestionState.Idle) }
 
@@ -142,6 +144,14 @@ fun PageView(
             }
             event.key == Key.Escape && isInSelectionMode -> {
                 blockStateManager.clearSelection()
+                true
+            }
+            event.key == Key.C && event.isCtrlPressed && isInSelectionMode && selectedBlockUuids.isNotEmpty() -> {
+                blockStateManager.copySelectedBlocks("")
+                true
+            }
+            event.key == Key.V && event.isCtrlPressed && !isInSelectionMode && editingBlockUuid != null && !blockClipboard.isEmpty -> {
+                editingBlockUuid?.let { blockStateManager.pasteBlocks(it) }
                 true
             }
             event.key == Key.E && event.isCtrlPressed && event.isShiftPressed -> {

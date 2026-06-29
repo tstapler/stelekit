@@ -17,6 +17,12 @@ data class BlockClipboard(val entries: List<ClipboardBlock> = emptyList()) {
     fun withBlock(block: Block, operation: ClipboardOperation, graphUuid: String): BlockClipboard =
         BlockClipboard(listOf(ClipboardBlock(block, operation, graphUuid)))
 
+    fun withBlocks(
+        blocks: List<Block>,
+        operation: ClipboardOperation,
+        graphUuid: String,
+    ): BlockClipboard = BlockClipboard(blocks.map { ClipboardBlock(it, operation, graphUuid) })
+
     fun clear(): BlockClipboard = BlockClipboard()
 
     val isCut: Boolean get() = entries.firstOrNull()?.operation == ClipboardOperation.CUT

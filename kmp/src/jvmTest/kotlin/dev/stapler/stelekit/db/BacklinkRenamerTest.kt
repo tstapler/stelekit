@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION", "DEPRECATION_ERROR")
+
 package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.model.Block
