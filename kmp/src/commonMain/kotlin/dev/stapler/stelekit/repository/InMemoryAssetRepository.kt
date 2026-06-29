@@ -224,11 +224,13 @@ class InMemoryAssetRepository : AssetRepository {
     }
 
     @Suppress("InMemoryPagination")
-    override fun getOrphanedAssets(cursorMs: Long?, limit: Int): Flow<Either<DomainError, List<AssetEntry>>> =
+    override fun getOrphanedAssets(cursorMs: Long?, cursorUuid: String?, limit: Int): Flow<Either<DomainError, List<AssetEntry>>> =
         store.map { map ->
             val cursor = cursorMs ?: Long.MAX_VALUE
             map.values
-                .filter { it.isOrphan && it.importedAtMs < cursor }
+                .filter { it.isOrphan &&
+                    (it.importedAtMs < cursor ||
+                     (it.importedAtMs == cursor && cursorUuid != null && it.uuid.value < cursorUuid)) }
                 .sortedWith(compareByDescending<AssetEntry> { it.importedAtMs }.thenByDescending { it.uuid.value })
                 .take(limit)
                 .right()

@@ -29,7 +29,7 @@ interface AssetRepository {
         limit: Int,
     ): Flow<Either<DomainError, List<AssetEntry>>>
 
-    fun getOrphanedAssets(cursorMs: Long?, limit: Int): Flow<Either<DomainError, List<AssetEntry>>>
+    fun getOrphanedAssets(cursorMs: Long?, cursorUuid: String?, limit: Int): Flow<Either<DomainError, List<AssetEntry>>>
     suspend fun countOrphanedAssets(): Either<DomainError, Long>
     suspend fun getDistinctTags(): Either<DomainError, List<String>>
 

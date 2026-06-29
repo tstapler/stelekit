@@ -258,7 +258,9 @@ fun AssetBrowserScreen(
                             fileOpener.openFile(actionAsset.filePath, mimeTypeFor(actionAsset.mediaType))
                         }
                     }
-                    else -> viewModel.dismissActionMenu()
+                    is AssetAction.Rename -> viewModel.dismissActionMenu()
+                    is AssetAction.MoveToFolder -> viewModel.dismissActionMenu()
+                    is AssetAction.EditTags -> viewModel.dismissActionMenu()
                 }
             },
         )

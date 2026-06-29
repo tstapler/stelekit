@@ -278,26 +278,26 @@ class SqlDelightAssetRepository(
                     .replace("\\", "\\\\")
                     .replace("%", "\\%")
                     .replace("_", "\\_")
-                queries.selectAssetsBySearchByDateKeyset("%$escaped%", cursorMs, lim)
+                queries.selectAssetsBySearchByDateKeyset("%$escaped%", cursorMs, cursorUuid, lim)
             }
             mediaType != null -> when (sortOrder) {
                 AssetSortOrder.BY_DATE_ADDED ->
-                    queries.selectAssetsByMediaTypeByDateKeyset(mediaType.name, cursorMs, lim)
+                    queries.selectAssetsByMediaTypeByDateKeyset(mediaType.name, cursorMs, cursorUuid, lim)
                 AssetSortOrder.BY_NAME ->
                     queries.selectAssetsByMediaTypeByNameKeyset(mediaType.name, cursorName, cursorUuid, lim)
                 AssetSortOrder.BY_SIZE ->
                     queries.selectAssetsByMediaTypeBySizeKeyset(mediaType.name, cursorSize, cursorUuid, lim)
             }
             else -> when (sortOrder) {
-                AssetSortOrder.BY_DATE_ADDED -> queries.selectAssetsByDateKeyset(cursorMs, lim)
+                AssetSortOrder.BY_DATE_ADDED -> queries.selectAssetsByDateKeyset(cursorMs, cursorUuid, lim)
                 AssetSortOrder.BY_NAME -> queries.selectAssetsByNameKeyset(cursorName, cursorUuid, lim)
                 AssetSortOrder.BY_SIZE -> queries.selectAssetsBySizeKeyset(cursorSize, cursorUuid, lim)
             }
         }.asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
     }
 
-    override fun getOrphanedAssets(cursorMs: Long?, limit: Int): Flow<Either<DomainError, List<AssetEntry>>> =
-        queries.selectOrphanedAssets(cursorMs, limit.toLong())
+    override fun getOrphanedAssets(cursorMs: Long?, cursorUuid: String?, limit: Int): Flow<Either<DomainError, List<AssetEntry>>> =
+        queries.selectOrphanedAssets(cursorMs, cursorUuid, limit.toLong())
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override suspend fun countOrphanedAssets(): Either<DomainError, Long> =
@@ -315,12 +315,7 @@ class SqlDelightAssetRepository(
             try {
                 val rawList = queries.selectAllTagsJson().executeAsList()
                 val tags = rawList
-                    .flatMap { tagsJson ->
-                        tagsJson
-                            .split(",")
-                            .map { it.trim().trim('[', ']', '"') }
-                            .filter { it.isNotBlank() }
-                    }
+                    .flatMap { tagsJson -> tagsJson.fromJsonList() }
                     .distinct()
                     .sorted()
                 tags.right()

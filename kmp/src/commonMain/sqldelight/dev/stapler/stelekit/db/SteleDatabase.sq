@@ -1117,21 +1117,24 @@ DELETE FROM asset_index WHERE uuid = :uuid;
 
 selectAssetsByDateKeyset:
 SELECT * FROM asset_index
-WHERE imported_at_ms < COALESCE(:cursorMs, 9999999999999)
+WHERE (imported_at_ms < COALESCE(:cursorMs, 9999999999999)
+    OR (imported_at_ms = :cursorMs AND uuid < COALESCE(:cursorUuid, '')))
 ORDER BY imported_at_ms DESC, uuid DESC
 LIMIT :limit;
 
 selectAssetsByMediaTypeByDateKeyset:
 SELECT * FROM asset_index
 WHERE media_type = :mediaType
-AND imported_at_ms < COALESCE(:cursorMs, 9999999999999)
+AND (imported_at_ms < COALESCE(:cursorMs, 9999999999999)
+    OR (imported_at_ms = :cursorMs AND uuid < COALESCE(:cursorUuid, '')))
 ORDER BY imported_at_ms DESC, uuid DESC
 LIMIT :limit;
 
 selectAssetsBySearchByDateKeyset:
 SELECT * FROM asset_index
 WHERE (file_path LIKE :query ESCAPE '\' OR tags LIKE :query ESCAPE '\' OR auto_labels LIKE :query ESCAPE '\' OR ocr_text LIKE :query ESCAPE '\')
-AND imported_at_ms < COALESCE(:cursorMs, 9999999999999)
+AND (imported_at_ms < COALESCE(:cursorMs, 9999999999999)
+    OR (imported_at_ms = :cursorMs AND uuid < COALESCE(:cursorUuid, '')))
 ORDER BY imported_at_ms DESC, uuid DESC
 LIMIT :limit;
 
@@ -1172,7 +1175,8 @@ LIMIT :limit;
 selectOrphanedAssets:
 SELECT * FROM asset_index
 WHERE is_orphan = 1
-AND imported_at_ms < COALESCE(:cursorMs, 9999999999999)
+AND (imported_at_ms < COALESCE(:cursorMs, 9999999999999)
+    OR (imported_at_ms = :cursorMs AND uuid < COALESCE(:cursorUuid, '')))
 ORDER BY imported_at_ms DESC, uuid DESC
 LIMIT :limit;
 

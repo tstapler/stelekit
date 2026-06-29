@@ -255,7 +255,7 @@ internal fun ScreenRouter(
             is Screen.AssetBrowser -> {
                 NavigationTracingEffect("AssetBrowser")
                 val assetBrowserViewModel = remember {
-                    dev.stapler.stelekit.ui.assets.AssetBrowserViewModel(repos.assetRepository)
+                    dev.stapler.stelekit.ui.assets.AssetBrowserViewModel(assetRepository = repos.assetRepository, writeActor = repos.writeActor)
                 }
                 dev.stapler.stelekit.ui.assets.AssetBrowserScreen(
                     viewModel = assetBrowserViewModel,

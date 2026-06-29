@@ -53,6 +53,7 @@ class AssetBrowserViewModel(
 
     private var searchDebounceJob: Job? = null
     private var loadJob: Job? = null
+    private var loadMoreJob: Job? = null
     private var tagsJob: Job? = null
 
     companion object {
@@ -65,6 +66,7 @@ class AssetBrowserViewModel(
     }
 
     fun setFilter(filter: AssetFilter) {
+        loadMoreJob?.cancel()
         _uiState.update {
             it.copy(
                 selectedFilter = filter,
@@ -79,6 +81,7 @@ class AssetBrowserViewModel(
     }
 
     fun setSearch(query: String) {
+        loadMoreJob?.cancel()
         _uiState.update {
             it.copy(
                 searchQuery = query,
@@ -97,6 +100,7 @@ class AssetBrowserViewModel(
     }
 
     fun setSort(sort: AssetSortOrder) {
+        loadMoreJob?.cancel()
         _uiState.update {
             it.copy(
                 sortOrder = sort,
@@ -119,6 +123,7 @@ class AssetBrowserViewModel(
     }
 
     fun refresh() {
+        loadMoreJob?.cancel()
         _uiState.update {
             it.copy(
                 assets = emptyList(),
@@ -139,13 +144,14 @@ class AssetBrowserViewModel(
         val s = _uiState.value
         if (s.isLoadingMore || !s.hasMore) return
         _uiState.update { it.copy(isLoadingMore = true) }
-        scope.launch {
+        loadMoreJob = scope.launch {
             try {
                 val state = _uiState.value
                 val flow = when {
                     state.selectedFilter == AssetFilter.ORPHANED ->
                         assetRepository.getOrphanedAssets(
                             cursorMs = state.cursorMs,
+                            cursorUuid = state.cursorUuid,
                             limit = PAGE_SIZE,
                         )
                     state.selectedFilter is AssetFilter.TAG ->
@@ -185,7 +191,7 @@ class AssetBrowserViewModel(
                                 cursorMs = if (st.sortOrder == AssetSortOrder.BY_DATE_ADDED) last?.importedAtMs else null,
                                 cursorName = if (st.sortOrder == AssetSortOrder.BY_NAME) last?.filePath else null,
                                 cursorSize = if (st.sortOrder == AssetSortOrder.BY_SIZE) last?.sizeBytes else null,
-                                cursorUuid = if (st.sortOrder != AssetSortOrder.BY_DATE_ADDED) last?.uuid?.value else null,
+                                cursorUuid = last?.uuid?.value,
                             )
                         }
                     }
@@ -224,6 +230,7 @@ class AssetBrowserViewModel(
                     state.selectedFilter == AssetFilter.ORPHANED ->
                         assetRepository.getOrphanedAssets(
                             cursorMs = state.cursorMs,
+                            cursorUuid = state.cursorUuid,
                             limit = PAGE_SIZE,
                         )
                     state.selectedFilter is AssetFilter.TAG ->
@@ -249,27 +256,25 @@ class AssetBrowserViewModel(
                             limit = PAGE_SIZE,
                         )
                 }
-                flow.collect { result ->
-                    result.fold(
-                        ifLeft = { err ->
-                            _uiState.update { it.copy(isLoading = false, error = err.message) }
-                        },
-                        ifRight = { page ->
-                            val last = page.lastOrNull()
-                            _uiState.update { st ->
-                                st.copy(
-                                    isLoading = false,
-                                    assets = page,
-                                    hasMore = page.size == PAGE_SIZE,
-                                    cursorMs = if (st.sortOrder == AssetSortOrder.BY_DATE_ADDED) last?.importedAtMs else null,
-                                    cursorName = if (st.sortOrder == AssetSortOrder.BY_NAME) last?.filePath else null,
-                                    cursorSize = if (st.sortOrder == AssetSortOrder.BY_SIZE) last?.sizeBytes else null,
-                                    cursorUuid = if (st.sortOrder != AssetSortOrder.BY_DATE_ADDED) last?.uuid?.value else null,
-                                )
-                            }
+                flow.first().fold(
+                    ifLeft = { err ->
+                        _uiState.update { it.copy(isLoading = false, error = err.message) }
+                    },
+                    ifRight = { page ->
+                        val last = page.lastOrNull()
+                        _uiState.update { st ->
+                            st.copy(
+                                isLoading = false,
+                                assets = page,
+                                hasMore = page.size == PAGE_SIZE,
+                                cursorMs = if (st.sortOrder == AssetSortOrder.BY_DATE_ADDED) last?.importedAtMs else null,
+                                cursorName = if (st.sortOrder == AssetSortOrder.BY_NAME) last?.filePath else null,
+                                cursorSize = if (st.sortOrder == AssetSortOrder.BY_SIZE) last?.sizeBytes else null,
+                                cursorUuid = last?.uuid?.value,
+                            )
                         }
-                    )
-                }
+                    }
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -295,11 +300,10 @@ class AssetBrowserViewModel(
             } else {
                 assetRepository.deleteAsset(asset.uuid)
             }
-            result.onLeft { err ->
-                _uiState.update { it.copy(error = err.message) }
-            }
-            // Optimistic update: remove from the visible list immediately.
-            _uiState.update { state -> state.copy(assets = state.assets.filter { it.uuid != asset.uuid }) }
+            result.fold(
+                ifLeft = { err -> _uiState.update { it.copy(error = err.message) } },
+                ifRight = { _uiState.update { state -> state.copy(assets = state.assets.filter { it.uuid != asset.uuid }) } },
+            )
         }
     }
 

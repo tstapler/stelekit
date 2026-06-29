@@ -70,12 +70,12 @@ private fun AssetGridItem(
                 onLongClick = onLongPress,
             ),
     ) {
+        val imageLoader = rememberSteleKitImageLoader()
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
         ) {
             if (asset.mediaType == AssetMediaType.IMAGE) {
-                val imageLoader = rememberSteleKitImageLoader()
                 AsyncImage(
                     model = asset.relativePath,
                     contentDescription = asset.filePath.substringAfterLast('/'),
@@ -134,8 +134,8 @@ private fun AssetListItem(
     ) {
         ListItem(
             leadingContent = {
+                val imageLoader = rememberSteleKitImageLoader()
                 if (asset.mediaType == AssetMediaType.IMAGE) {
-                    val imageLoader = rememberSteleKitImageLoader()
                     AsyncImage(
                         model = asset.relativePath,
                         contentDescription = null,
