@@ -5,6 +5,7 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.asset.AssetEntry
 import dev.stapler.stelekit.asset.AssetMediaType
+import dev.stapler.stelekit.asset.AssetSortOrder
 import dev.stapler.stelekit.asset.AssetUuid
 import dev.stapler.stelekit.error.DomainError
 import kotlinx.coroutines.flow.Flow
@@ -161,4 +162,85 @@ class InMemoryAssetRepository : AssetRepository {
         store.value = store.value - uuid.value
         return Unit.right()
     }
+
+    @Suppress("InMemoryPagination")
+    override fun getAssetPage(
+        mediaType: AssetMediaType?,
+        searchQuery: String,
+        sortOrder: AssetSortOrder,
+        cursorMs: Long?,
+        cursorName: String?,
+        cursorSize: Long?,
+        cursorUuid: String?,
+        limit: Int,
+    ): Flow<Either<DomainError, List<AssetEntry>>> = store.map { map ->
+        var list = map.values.toList()
+
+        if (mediaType != null) list = list.filter { it.mediaType == mediaType }
+
+        if (searchQuery.isNotBlank()) {
+            val q = searchQuery.lowercase()
+            list = list.filter { asset ->
+                asset.filePath.lowercase().contains(q) ||
+                    asset.tags.any { it.lowercase().contains(q) } ||
+                    asset.autoLabels.any { it.lowercase().contains(q) } ||
+                    asset.ocrText?.lowercase()?.contains(q) == true
+            }
+        }
+
+        list = when (sortOrder) {
+            AssetSortOrder.BY_DATE_ADDED ->
+                list.sortedWith(compareByDescending<AssetEntry> { it.importedAtMs }.thenByDescending { it.uuid.value })
+            AssetSortOrder.BY_NAME ->
+                list.sortedWith(compareBy<AssetEntry> { it.filePath }.thenBy { it.uuid.value })
+            AssetSortOrder.BY_SIZE ->
+                list.sortedWith(compareByDescending<AssetEntry> { it.sizeBytes }.thenBy { it.uuid.value })
+        }
+
+        // Apply keyset cursor — mirrors the COALESCE sentinel logic in the SQL queries.
+        list = when (sortOrder) {
+            AssetSortOrder.BY_DATE_ADDED -> {
+                val cursor = cursorMs ?: Long.MAX_VALUE
+                list.filter { it.importedAtMs < cursor }
+            }
+            AssetSortOrder.BY_NAME -> {
+                val cName = cursorName ?: ""
+                val cUuid = cursorUuid ?: ""
+                // COALESCE('') ensures file_path > '' is true for all real paths (first page).
+                list.filter { asset ->
+                    asset.filePath > cName || (asset.filePath == cName && asset.uuid.value > cUuid)
+                }
+            }
+            AssetSortOrder.BY_SIZE -> {
+                val cSize = cursorSize ?: Long.MAX_VALUE
+                val cUuid = cursorUuid ?: ""
+                list.filter { asset ->
+                    asset.sizeBytes < cSize || (asset.sizeBytes == cSize && asset.uuid.value > cUuid)
+                }
+            }
+        }
+
+        list.take(limit).right()
+    }
+
+    @Suppress("InMemoryPagination")
+    override fun getOrphanedAssets(cursorMs: Long?, limit: Int): Flow<Either<DomainError, List<AssetEntry>>> =
+        store.map { map ->
+            val cursor = cursorMs ?: Long.MAX_VALUE
+            map.values
+                .filter { it.isOrphan && it.importedAtMs < cursor }
+                .sortedWith(compareByDescending<AssetEntry> { it.importedAtMs }.thenByDescending { it.uuid.value })
+                .take(limit)
+                .right()
+        }
+
+    override suspend fun countOrphanedAssets(): Either<DomainError, Long> =
+        store.value.values.count { it.isOrphan }.toLong().right()
+
+    override suspend fun getDistinctTags(): Either<DomainError, List<String>> =
+        store.value.values
+            .flatMap { it.tags }
+            .distinct()
+            .sorted()
+            .right()
 }

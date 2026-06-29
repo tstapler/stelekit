@@ -260,6 +260,22 @@ internal fun ScreenRouter(
                 dev.stapler.stelekit.ui.assets.AssetBrowserScreen(
                     viewModel = assetBrowserViewModel,
                     onNavigateBack = { viewModel.goBack() },
+                    onNavigateToAsset = { uuid -> viewModel.navigateTo(Screen.AssetDetail(uuid)) },
+                )
+            }
+
+            is Screen.AssetDetail -> {
+                NavigationTracingEffect("AssetDetail")
+                val assetDetailViewModel = remember(currentScreen.assetUuid) {
+                    dev.stapler.stelekit.ui.assets.AssetDetailViewModel(
+                        assetRepository = repos.assetRepository,
+                        assetUuid = currentScreen.assetUuid,
+                    )
+                }
+                dev.stapler.stelekit.ui.assets.AssetDetailScreen(
+                    viewModel = assetDetailViewModel,
+                    onNavigateBack = { viewModel.goBack() },
+                    onNavigateToPage = { pageUuid -> viewModel.navigateToPageByUuid(pageUuid) },
                 )
             }
 

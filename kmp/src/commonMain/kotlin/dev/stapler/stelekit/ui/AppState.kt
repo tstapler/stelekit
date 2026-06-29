@@ -14,6 +14,7 @@ import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.vault.VaultError
 import dev.stapler.stelekit.vault.VaultNamespace
+import dev.stapler.stelekit.asset.AssetUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.ui.i18n.Language
@@ -67,6 +68,10 @@ sealed class Screen {
     /** Asset browser for viewing and managing all graph assets. */
     @HelpExempt(reason = "Asset management surface; power-user feature not in primary nav")
     data object AssetBrowser : Screen()
+
+    /** Detail view for a single asset. */
+    @HelpExempt(reason = "Opened by tapping an asset in the browser; not a primary nav destination")
+    data class AssetDetail(val assetUuid: AssetUuid) : Screen()
 
     /**
      * Annotation editor for a single image annotation.
