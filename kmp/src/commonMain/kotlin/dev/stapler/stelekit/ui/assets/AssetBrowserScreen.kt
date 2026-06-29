@@ -66,8 +66,8 @@ import kotlinx.coroutines.launch
 fun AssetBrowserScreen(
     viewModel: AssetBrowserViewModel,
     onNavigateBack: () -> Unit,
-    onNavigateToAsset: (AssetUuid) -> Unit = {},
     modifier: Modifier = Modifier,
+    onNavigateToAsset: (AssetUuid) -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showNewGroupDialog by remember { mutableStateOf(false) }
