@@ -49,6 +49,7 @@ internal suspend fun readOpfsFile(fileHandle: JsAny): String? = try {
 
 private fun fileHandleCreateWritable(handle: JsAny): kotlin.js.Promise<JsAny> = js("handle.createWritable()")
 private fun writableWrite(writable: JsAny, content: String): kotlin.js.Promise<JsAny> = js("writable.write(content)")
+private fun writableWriteBuffer(writable: JsAny, buffer: JsAny): kotlin.js.Promise<JsAny> = js("writable.write(buffer)")
 private fun writableClose(writable: JsAny): kotlin.js.Promise<JsAny> = js("writable.close()")
 private fun dirRemoveEntry(dir: JsAny, name: String): kotlin.js.Promise<JsAny> = js("dir.removeEntry(name)")
 
@@ -67,6 +68,33 @@ internal suspend fun opfsWriteFile(path: String, content: String) {
         @Suppress("UNUSED_VARIABLE") val _close: JsAny = writableClose(writable).await()
     } catch (e: Throwable) {
         println("[SteleKit] OPFS write failed for $path: ${e.message}")
+    }
+}
+
+internal fun createObjectUrlFromFile(file: JsAny): String = js("URL.createObjectURL(file)")
+
+internal suspend fun readOpfsFileAsObjectUrl(fileHandle: JsAny): String? = try {
+    val file: JsAny = fileHandleGetFile(fileHandle).await()
+    createObjectUrlFromFile(file)
+} catch (e: Throwable) {
+    null
+}
+
+internal suspend fun opfsWriteFileBytes(path: String, data: JsAny) {
+    try {
+        val root = getOpfsRoot()
+        val parts = path.removePrefix("/").split("/")
+        var dir: JsAny = root
+        for (part in parts.dropLast(1)) {
+            dir = getDirectoryHandle(dir, part, true)
+        }
+        val fileHandle = getFileHandle(dir, parts.last(), true)
+        val writable: JsAny = fileHandleCreateWritable(fileHandle).await()
+        @Suppress("UNUSED_VARIABLE") val _write: JsAny = writableWriteBuffer(writable, data).await()
+        @Suppress("UNUSED_VARIABLE") val _close: JsAny = writableClose(writable).await()
+    } catch (e: Throwable) {
+        println("[SteleKit] OPFS binary write failed for $path: ${e.message}")
+        throw e
     }
 }
 

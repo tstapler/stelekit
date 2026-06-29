@@ -98,3 +98,61 @@ test('SteleKit OPFS: data persists across page reload', async ({ page }) => {
 
   expect(errors, `Uncaught JS errors: ${errors.join(' | ')}`).toHaveLength(0);
 });
+
+test('SteleKit WASM: graph dialog mode is active (no native file picker)', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', err => errors.push(err.message));
+
+  await page.goto('/');
+  await page.waitForFunction(
+    () => (window as any).__stelekit_ready === true,
+    { timeout: 30_000 },
+  );
+
+  const dialogMode = await page.evaluate(() => (window as any).__stelekit_native_graph_picker);
+  expect(dialogMode, '__stelekit_native_graph_picker must be false on WASM (no native file picker)').toBe(false);
+
+  expect(errors, `Uncaught JS errors: ${errors.join(' | ')}`).toHaveLength(0);
+});
+
+test('SteleKit WASM: named OPFS graph opens via localStorage test override', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', err => errors.push(err.message));
+
+  // Set test override before page load so Main.kt reads it
+  await page.addInitScript(() => {
+    window.localStorage.setItem('__stelekit_test_graph', 'e2e-named-graph');
+  });
+
+  await page.goto('/');
+  await page.waitForFunction(
+    () => (window as any).__stelekit_ready === true,
+    { timeout: 30_000 },
+  );
+
+  // The named graph OPFS directory should exist after initialization.
+  // Skip the directory check if the SQLite driver fell back to :memory: (no OPFS writes occur in that mode).
+  const { hasNamedGraph, driverMode } = await page.evaluate(async () => {
+    const mode = (window as any).__stelekit_driver_backend ?? 'unknown';
+    try {
+      const root = await navigator.storage.getDirectory();
+      const stelekit = await root.getDirectoryHandle('stelekit', { create: false });
+      await stelekit.getDirectoryHandle('e2e-named-graph', { create: false });
+      return { hasNamedGraph: true, driverMode: mode };
+    } catch {
+      return { hasNamedGraph: false, driverMode: mode };
+    }
+  });
+  if (driverMode !== 'memory') {
+    expect(hasNamedGraph, `OPFS /stelekit/e2e-named-graph must exist (driver=${driverMode})`).toBe(true);
+  }
+
+  // Reload to verify the same graph is re-opened (persistence)
+  await page.reload();
+  await page.waitForFunction(
+    () => (window as any).__stelekit_ready === true,
+    { timeout: 30_000 },
+  );
+
+  expect(errors, `Uncaught JS errors: ${errors.join(' | ')}`).toHaveLength(0);
+});

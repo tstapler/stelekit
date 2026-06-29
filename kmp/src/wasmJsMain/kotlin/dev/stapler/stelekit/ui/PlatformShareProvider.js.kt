@@ -8,23 +8,40 @@ import arrow.core.Either
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.export.ShareProvider
+import kotlinx.coroutines.await
 
 @Composable
 actual fun rememberShareProvider(): ShareProvider = remember { WasmJsShareProvider() }
 
-/** No-op [ShareProvider] for WASM/JS target. */
 class WasmJsShareProvider : ShareProvider {
     override suspend fun shareText(content: String, mimeType: String) {
-        // No-op: WASM/JS target
+        if (hasNavigatorShare()) {
+            try { navigatorShareText(content).await() } catch (_: Throwable) { }
+        }
     }
 
     override suspend fun shareHtml(html: String, plainFallback: String) {
-        // No-op: WASM/JS target
+        shareText(plainFallback, "text/plain")
     }
 
     override suspend fun saveToFile(
         content: String,
         suggestedName: String,
-        extension: String
-    ): Either<DomainError, Boolean> = false.right()
+        extension: String,
+    ): Either<DomainError, Boolean> {
+        triggerBlobDownload(content, "$suggestedName.$extension")
+        return true.right()
+    }
 }
+
+private fun hasNavigatorShare(): Boolean = js("typeof navigator.share === 'function'")
+private fun navigatorShareText(text: String): kotlin.js.Promise<JsAny> = js("navigator.share({ text: text })")
+private fun triggerBlobDownload(content: String, filename: String): Unit =
+    js("""(function() {
+        var blob = new Blob([content], { type: 'text/plain' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+    })()""")

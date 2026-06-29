@@ -135,16 +135,24 @@ private fun GraphSelectionStep(
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = {
-                    scope.launch {
-                        val path = fileSystem.pickDirectoryAsync()
-                        if (path != null) {
-                            selectedPath = path
-                            onGraphSelected(path)
+                if (fileSystem.supportsNativeDirectoryPicker) {
+                    Button(onClick = {
+                        scope.launch {
+                            val path = fileSystem.pickDirectoryAsync()
+                            if (path != null) {
+                                selectedPath = path
+                                onGraphSelected(path)
+                            }
                         }
+                    }) {
+                        Text("Select Graph Directory")
                     }
-                }) {
-                    Text("Select Graph Directory")
+                } else {
+                    Text(
+                        "Graph stored in browser private storage.",
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

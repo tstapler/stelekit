@@ -14,6 +14,7 @@ interface FileSystem {
     fun createDirectory(path: String): Boolean
     fun deleteFile(path: String): Boolean
     fun pickDirectory(): String?
+    val supportsNativeDirectoryPicker: Boolean get() = true
     suspend fun pickDirectoryAsync(): String? = pickDirectory()
     fun getLastModifiedTime(path: String): Long?
 
@@ -149,6 +150,13 @@ interface FileSystem {
      * to fall through to the default `file://` construction in the caller.
      */
     fun resolveAssetUri(graphRoot: String, relativePath: String): String? = null
+
+    /**
+     * Registers a blob/object URL for [path] so platforms that can't serve files via
+     * `file://` URLs (e.g. WASM/browser) can still return a loadable URL from
+     * [resolveAssetUri]. No-op on platforms that use native file paths.
+     */
+    fun registerBlobUrl(path: String, url: String) {}
 
     /**
      * Converts a raw file [path] (absolute or saf://) to a URI string that Coil can load.
