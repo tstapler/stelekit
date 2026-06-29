@@ -1127,6 +1127,7 @@ private fun GraphContent(
                     val windowSizeClass = windowSizeClassFor(maxWidth)
                     val isMobile = windowSizeClass.isMobile
                     val snackbarHostState = remember { SnackbarHostState() }
+                    var showAddGraphDialog by remember { mutableStateOf(false) }
                     LaunchedEffect(Unit) {
                         viewModel.snackbarEvents.collect { msg ->
                             try {
@@ -1232,12 +1233,16 @@ private fun GraphContent(
                                     closeSidebarIfMobile()
                                 },
                                 onAddGraph = {
-                                    val selectedPath = fileSystem.pickDirectory()
-                                    if (selectedPath != null) {
-                                        scope.launch {
-                                            val newGraphId = graphManager.addGraph(selectedPath)
-                                            newGraphId?.let { graphManager.switchGraph(it) }
+                                    if (fileSystem.supportsNativeDirectoryPicker) {
+                                        val selectedPath = fileSystem.pickDirectory()
+                                        if (selectedPath != null) {
+                                            scope.launch {
+                                                val newGraphId = graphManager.addGraph(selectedPath)
+                                                newGraphId?.let { graphManager.switchGraph(it) }
+                                            }
                                         }
+                                    } else {
+                                        showAddGraphDialog = true
                                     }
                                     closeSidebarIfMobile()
                                 },
@@ -1592,6 +1597,24 @@ private fun GraphContent(
                         selectedBlockUuids = blockStateManager.selectedBlockUuids.collectAsState().value,
                     )
 
+                    if (showAddGraphDialog) {
+                        AddGraphDialog(
+                            onConfirm = { name ->
+                                val path = "/stelekit/$name"
+                                scope.launch {
+                                    val newGraphId = graphManager.addGraph(path)
+                                    showAddGraphDialog = false
+                                    if (newGraphId != null) {
+                                        graphManager.switchGraph(newGraphId)
+                                    } else {
+                                        snackbarHostState.showSnackbar("Failed to open graph \"$name\"")
+                                    }
+                                }
+                            },
+                            onDismiss = { showAddGraphDialog = false },
+                        )
+                    }
+
                     } // CompositionLocalProvider(LocalWindowSizeClass)
                 }
                 } // vault unlocked else
@@ -1705,4 +1728,39 @@ private fun StatusBarContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+@Composable
+private fun AddGraphDialog(
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Open Graph") },
+        text = {
+            Column {
+                Text("Enter a name for the graph. It will be stored in your browser's private storage.")
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it.trim() },
+                    label = { Text("Graph name") },
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (name.isNotEmpty()) onConfirm(name) },
+                enabled = name.isNotEmpty(),
+            ) {
+                Text("Open")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
