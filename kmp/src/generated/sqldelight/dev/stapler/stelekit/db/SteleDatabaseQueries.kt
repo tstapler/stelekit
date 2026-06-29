@@ -2802,6 +2802,446 @@ public class SteleDatabaseQueries(
     cursor.getLong(0)!!
   }
 
+  public fun <T : Any> selectAssetsByDateKeyset(
+    cursorMs: Long?,
+    cursorUuid: String?,
+    limit: Long,
+    mapper: (
+      uuid: String,
+      file_path: String,
+      relative_path: String,
+      media_type: String,
+      subfolder: String,
+      tags: String,
+      auto_labels: String,
+      ocr_text: String?,
+      cloud_description: String?,
+      page_uuids: String,
+      size_bytes: Long,
+      imported_at_ms: Long,
+      ml_processed: Long,
+      ml_attempted_at: Long?,
+      ml_failed: Long,
+      content_hash: String?,
+      is_orphan: Long,
+      ml_tags_source: String,
+    ) -> T,
+  ): Query<T> = SelectAssetsByDateKeysetQuery(cursorMs, cursorUuid, limit) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getString(8),
+      cursor.getString(9)!!,
+      cursor.getLong(10)!!,
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getLong(13),
+      cursor.getLong(14)!!,
+      cursor.getString(15),
+      cursor.getLong(16)!!,
+      cursor.getString(17)!!
+    )
+  }
+
+  public fun selectAssetsByDateKeyset(
+    cursorMs: Long?,
+    cursorUuid: String?,
+    limit: Long,
+  ): Query<Asset_index> = selectAssetsByDateKeyset(cursorMs, cursorUuid, limit, ::Asset_index)
+
+  public fun <T : Any> selectAssetsByMediaTypeByDateKeyset(
+    mediaType: String,
+    cursorMs: Long?,
+    cursorUuid: String?,
+    limit: Long,
+    mapper: (
+      uuid: String,
+      file_path: String,
+      relative_path: String,
+      media_type: String,
+      subfolder: String,
+      tags: String,
+      auto_labels: String,
+      ocr_text: String?,
+      cloud_description: String?,
+      page_uuids: String,
+      size_bytes: Long,
+      imported_at_ms: Long,
+      ml_processed: Long,
+      ml_attempted_at: Long?,
+      ml_failed: Long,
+      content_hash: String?,
+      is_orphan: Long,
+      ml_tags_source: String,
+    ) -> T,
+  ): Query<T> = SelectAssetsByMediaTypeByDateKeysetQuery(mediaType, cursorMs, cursorUuid, limit) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getString(8),
+      cursor.getString(9)!!,
+      cursor.getLong(10)!!,
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getLong(13),
+      cursor.getLong(14)!!,
+      cursor.getString(15),
+      cursor.getLong(16)!!,
+      cursor.getString(17)!!
+    )
+  }
+
+  public fun selectAssetsByMediaTypeByDateKeyset(
+    mediaType: String,
+    cursorMs: Long?,
+    cursorUuid: String?,
+    limit: Long,
+  ): Query<Asset_index> = selectAssetsByMediaTypeByDateKeyset(mediaType, cursorMs, cursorUuid, limit, ::Asset_index)
+
+  public fun <T : Any> selectAssetsBySearchByDateKeyset(
+    query: String,
+    cursorMs: Long?,
+    cursorUuid: String?,
+    limit: Long,
+    mapper: (
+      uuid: String,
+      file_path: String,
+      relative_path: String,
+      media_type: String,
+      subfolder: String,
+      tags: String,
+      auto_labels: String,
+      ocr_text: String?,
+      cloud_description: String?,
+      page_uuids: String,
+      size_bytes: Long,
+      imported_at_ms: Long,
+      ml_processed: Long,
+      ml_attempted_at: Long?,
+      ml_failed: Long,
+      content_hash: String?,
+      is_orphan: Long,
+      ml_tags_source: String,
+    ) -> T,
+  ): Query<T> = SelectAssetsBySearchByDateKeysetQuery(query, cursorMs, cursorUuid, limit) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getString(8),
+      cursor.getString(9)!!,
+      cursor.getLong(10)!!,
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getLong(13),
+      cursor.getLong(14)!!,
+      cursor.getString(15),
+      cursor.getLong(16)!!,
+      cursor.getString(17)!!
+    )
+  }
+
+  public fun selectAssetsBySearchByDateKeyset(
+    query: String,
+    cursorMs: Long?,
+    cursorUuid: String?,
+    limit: Long,
+  ): Query<Asset_index> = selectAssetsBySearchByDateKeyset(query, cursorMs, cursorUuid, limit, ::Asset_index)
+
+  public fun <T : Any> selectAssetsByNameKeyset(
+    cursorName: String?,
+    cursorUuid: String?,
+    limit: Long,
+    mapper: (
+      uuid: String,
+      file_path: String,
+      relative_path: String,
+      media_type: String,
+      subfolder: String,
+      tags: String,
+      auto_labels: String,
+      ocr_text: String?,
+      cloud_description: String?,
+      page_uuids: String,
+      size_bytes: Long,
+      imported_at_ms: Long,
+      ml_processed: Long,
+      ml_attempted_at: Long?,
+      ml_failed: Long,
+      content_hash: String?,
+      is_orphan: Long,
+      ml_tags_source: String,
+    ) -> T,
+  ): Query<T> = SelectAssetsByNameKeysetQuery(cursorName, cursorUuid, limit) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getString(8),
+      cursor.getString(9)!!,
+      cursor.getLong(10)!!,
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getLong(13),
+      cursor.getLong(14)!!,
+      cursor.getString(15),
+      cursor.getLong(16)!!,
+      cursor.getString(17)!!
+    )
+  }
+
+  public fun selectAssetsByNameKeyset(
+    cursorName: String?,
+    cursorUuid: String?,
+    limit: Long,
+  ): Query<Asset_index> = selectAssetsByNameKeyset(cursorName, cursorUuid, limit, ::Asset_index)
+
+  public fun <T : Any> selectAssetsByMediaTypeByNameKeyset(
+    mediaType: String,
+    cursorName: String?,
+    cursorUuid: String?,
+    limit: Long,
+    mapper: (
+      uuid: String,
+      file_path: String,
+      relative_path: String,
+      media_type: String,
+      subfolder: String,
+      tags: String,
+      auto_labels: String,
+      ocr_text: String?,
+      cloud_description: String?,
+      page_uuids: String,
+      size_bytes: Long,
+      imported_at_ms: Long,
+      ml_processed: Long,
+      ml_attempted_at: Long?,
+      ml_failed: Long,
+      content_hash: String?,
+      is_orphan: Long,
+      ml_tags_source: String,
+    ) -> T,
+  ): Query<T> = SelectAssetsByMediaTypeByNameKeysetQuery(mediaType, cursorName, cursorUuid, limit) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getString(8),
+      cursor.getString(9)!!,
+      cursor.getLong(10)!!,
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getLong(13),
+      cursor.getLong(14)!!,
+      cursor.getString(15),
+      cursor.getLong(16)!!,
+      cursor.getString(17)!!
+    )
+  }
+
+  public fun selectAssetsByMediaTypeByNameKeyset(
+    mediaType: String,
+    cursorName: String?,
+    cursorUuid: String?,
+    limit: Long,
+  ): Query<Asset_index> = selectAssetsByMediaTypeByNameKeyset(mediaType, cursorName, cursorUuid, limit, ::Asset_index)
+
+  public fun <T : Any> selectAssetsBySizeKeyset(
+    cursorSize: Long?,
+    cursorUuid: String?,
+    limit: Long,
+    mapper: (
+      uuid: String,
+      file_path: String,
+      relative_path: String,
+      media_type: String,
+      subfolder: String,
+      tags: String,
+      auto_labels: String,
+      ocr_text: String?,
+      cloud_description: String?,
+      page_uuids: String,
+      size_bytes: Long,
+      imported_at_ms: Long,
+      ml_processed: Long,
+      ml_attempted_at: Long?,
+      ml_failed: Long,
+      content_hash: String?,
+      is_orphan: Long,
+      ml_tags_source: String,
+    ) -> T,
+  ): Query<T> = SelectAssetsBySizeKeysetQuery(cursorSize, cursorUuid, limit) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getString(8),
+      cursor.getString(9)!!,
+      cursor.getLong(10)!!,
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getLong(13),
+      cursor.getLong(14)!!,
+      cursor.getString(15),
+      cursor.getLong(16)!!,
+      cursor.getString(17)!!
+    )
+  }
+
+  public fun selectAssetsBySizeKeyset(
+    cursorSize: Long?,
+    cursorUuid: String?,
+    limit: Long,
+  ): Query<Asset_index> = selectAssetsBySizeKeyset(cursorSize, cursorUuid, limit, ::Asset_index)
+
+  public fun <T : Any> selectAssetsByMediaTypeBySizeKeyset(
+    mediaType: String,
+    cursorSize: Long?,
+    cursorUuid: String?,
+    limit: Long,
+    mapper: (
+      uuid: String,
+      file_path: String,
+      relative_path: String,
+      media_type: String,
+      subfolder: String,
+      tags: String,
+      auto_labels: String,
+      ocr_text: String?,
+      cloud_description: String?,
+      page_uuids: String,
+      size_bytes: Long,
+      imported_at_ms: Long,
+      ml_processed: Long,
+      ml_attempted_at: Long?,
+      ml_failed: Long,
+      content_hash: String?,
+      is_orphan: Long,
+      ml_tags_source: String,
+    ) -> T,
+  ): Query<T> = SelectAssetsByMediaTypeBySizeKeysetQuery(mediaType, cursorSize, cursorUuid, limit) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getString(8),
+      cursor.getString(9)!!,
+      cursor.getLong(10)!!,
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getLong(13),
+      cursor.getLong(14)!!,
+      cursor.getString(15),
+      cursor.getLong(16)!!,
+      cursor.getString(17)!!
+    )
+  }
+
+  public fun selectAssetsByMediaTypeBySizeKeyset(
+    mediaType: String,
+    cursorSize: Long?,
+    cursorUuid: String?,
+    limit: Long,
+  ): Query<Asset_index> = selectAssetsByMediaTypeBySizeKeyset(mediaType, cursorSize, cursorUuid, limit, ::Asset_index)
+
+  public fun <T : Any> selectOrphanedAssets(
+    cursorMs: Long?,
+    cursorUuid: String?,
+    limit: Long,
+    mapper: (
+      uuid: String,
+      file_path: String,
+      relative_path: String,
+      media_type: String,
+      subfolder: String,
+      tags: String,
+      auto_labels: String,
+      ocr_text: String?,
+      cloud_description: String?,
+      page_uuids: String,
+      size_bytes: Long,
+      imported_at_ms: Long,
+      ml_processed: Long,
+      ml_attempted_at: Long?,
+      ml_failed: Long,
+      content_hash: String?,
+      is_orphan: Long,
+      ml_tags_source: String,
+    ) -> T,
+  ): Query<T> = SelectOrphanedAssetsQuery(cursorMs, cursorUuid, limit) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2)!!,
+      cursor.getString(3)!!,
+      cursor.getString(4)!!,
+      cursor.getString(5)!!,
+      cursor.getString(6)!!,
+      cursor.getString(7),
+      cursor.getString(8),
+      cursor.getString(9)!!,
+      cursor.getLong(10)!!,
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getLong(13),
+      cursor.getLong(14)!!,
+      cursor.getString(15),
+      cursor.getLong(16)!!,
+      cursor.getString(17)!!
+    )
+  }
+
+  public fun selectOrphanedAssets(
+    cursorMs: Long?,
+    cursorUuid: String?,
+    limit: Long,
+  ): Query<Asset_index> = selectOrphanedAssets(cursorMs, cursorUuid, limit, ::Asset_index)
+
+  public fun countOrphanedAssets(): Query<Long> = Query(-1_050_358_312, arrayOf("asset_index"), driver, "SteleDatabase.sq", "countOrphanedAssets", "SELECT COUNT(*) FROM asset_index WHERE is_orphan = 1") { cursor ->
+    cursor.getLong(0)!!
+  }
+
+  public fun selectAllTagsJson(): Query<String> = Query(2_142_714_853, arrayOf("asset_index"), driver, "SteleDatabase.sq", "selectAllTagsJson", "SELECT tags FROM asset_index WHERE tags IS NOT NULL AND tags != '' AND tags != '[]'") { cursor ->
+    cursor.getString(0)!!
+  }
+
   public fun <T : Any> selectAllPendingMoves(mapper: (
     id: Long,
     asset_uuid: String,
@@ -6699,5 +7139,265 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectUnprocessedAssets"
+  }
+
+  private inner class SelectAssetsByDateKeysetQuery<out T : Any>(
+    public val cursorMs: Long?,
+    public val cursorUuid: String?,
+    public val limit: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(null, """
+    |SELECT asset_index.uuid, asset_index.file_path, asset_index.relative_path, asset_index.media_type, asset_index.subfolder, asset_index.tags, asset_index.auto_labels, asset_index.ocr_text, asset_index.cloud_description, asset_index.page_uuids, asset_index.size_bytes, asset_index.imported_at_ms, asset_index.ml_processed, asset_index.ml_attempted_at, asset_index.ml_failed, asset_index.content_hash, asset_index.is_orphan, asset_index.ml_tags_source FROM asset_index
+    |WHERE (imported_at_ms < COALESCE(?, 9999999999999)
+    |    OR (imported_at_ms ${ if (cursorMs == null) "IS" else "=" } ? AND uuid < COALESCE(?, '')))
+    |ORDER BY imported_at_ms DESC, uuid DESC
+    |LIMIT ?
+    """.trimMargin(), mapper, 4) {
+      var parameterIndex = 0
+      bindLong(parameterIndex++, cursorMs)
+      bindLong(parameterIndex++, cursorMs)
+      bindString(parameterIndex++, cursorUuid)
+      bindLong(parameterIndex++, limit)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAssetsByDateKeyset"
+  }
+
+  private inner class SelectAssetsByMediaTypeByDateKeysetQuery<out T : Any>(
+    public val mediaType: String,
+    public val cursorMs: Long?,
+    public val cursorUuid: String?,
+    public val limit: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(null, """
+    |SELECT asset_index.uuid, asset_index.file_path, asset_index.relative_path, asset_index.media_type, asset_index.subfolder, asset_index.tags, asset_index.auto_labels, asset_index.ocr_text, asset_index.cloud_description, asset_index.page_uuids, asset_index.size_bytes, asset_index.imported_at_ms, asset_index.ml_processed, asset_index.ml_attempted_at, asset_index.ml_failed, asset_index.content_hash, asset_index.is_orphan, asset_index.ml_tags_source FROM asset_index
+    |WHERE media_type = ?
+    |AND (imported_at_ms < COALESCE(?, 9999999999999)
+    |    OR (imported_at_ms ${ if (cursorMs == null) "IS" else "=" } ? AND uuid < COALESCE(?, '')))
+    |ORDER BY imported_at_ms DESC, uuid DESC
+    |LIMIT ?
+    """.trimMargin(), mapper, 5) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, mediaType)
+      bindLong(parameterIndex++, cursorMs)
+      bindLong(parameterIndex++, cursorMs)
+      bindString(parameterIndex++, cursorUuid)
+      bindLong(parameterIndex++, limit)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAssetsByMediaTypeByDateKeyset"
+  }
+
+  private inner class SelectAssetsBySearchByDateKeysetQuery<out T : Any>(
+    public val query: String,
+    public val cursorMs: Long?,
+    public val cursorUuid: String?,
+    public val limit: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(null, """
+    |SELECT asset_index.uuid, asset_index.file_path, asset_index.relative_path, asset_index.media_type, asset_index.subfolder, asset_index.tags, asset_index.auto_labels, asset_index.ocr_text, asset_index.cloud_description, asset_index.page_uuids, asset_index.size_bytes, asset_index.imported_at_ms, asset_index.ml_processed, asset_index.ml_attempted_at, asset_index.ml_failed, asset_index.content_hash, asset_index.is_orphan, asset_index.ml_tags_source FROM asset_index
+    |WHERE (file_path LIKE ? ESCAPE '\' OR tags LIKE ? ESCAPE '\' OR auto_labels LIKE ? ESCAPE '\' OR ocr_text LIKE ? ESCAPE '\')
+    |AND (imported_at_ms < COALESCE(?, 9999999999999)
+    |    OR (imported_at_ms ${ if (cursorMs == null) "IS" else "=" } ? AND uuid < COALESCE(?, '')))
+    |ORDER BY imported_at_ms DESC, uuid DESC
+    |LIMIT ?
+    """.trimMargin(), mapper, 8) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, query)
+      bindString(parameterIndex++, query)
+      bindString(parameterIndex++, query)
+      bindString(parameterIndex++, query)
+      bindLong(parameterIndex++, cursorMs)
+      bindLong(parameterIndex++, cursorMs)
+      bindString(parameterIndex++, cursorUuid)
+      bindLong(parameterIndex++, limit)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAssetsBySearchByDateKeyset"
+  }
+
+  private inner class SelectAssetsByNameKeysetQuery<out T : Any>(
+    public val cursorName: String?,
+    public val cursorUuid: String?,
+    public val limit: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(null, """
+    |SELECT asset_index.uuid, asset_index.file_path, asset_index.relative_path, asset_index.media_type, asset_index.subfolder, asset_index.tags, asset_index.auto_labels, asset_index.ocr_text, asset_index.cloud_description, asset_index.page_uuids, asset_index.size_bytes, asset_index.imported_at_ms, asset_index.ml_processed, asset_index.ml_attempted_at, asset_index.ml_failed, asset_index.content_hash, asset_index.is_orphan, asset_index.ml_tags_source FROM asset_index
+    |WHERE (file_path > COALESCE(?, '') OR (file_path ${ if (cursorName == null) "IS" else "=" } ? AND uuid > COALESCE(?, '')))
+    |ORDER BY file_path ASC, uuid ASC
+    |LIMIT ?
+    """.trimMargin(), mapper, 4) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, cursorName)
+      bindString(parameterIndex++, cursorName)
+      bindString(parameterIndex++, cursorUuid)
+      bindLong(parameterIndex++, limit)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAssetsByNameKeyset"
+  }
+
+  private inner class SelectAssetsByMediaTypeByNameKeysetQuery<out T : Any>(
+    public val mediaType: String,
+    public val cursorName: String?,
+    public val cursorUuid: String?,
+    public val limit: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(null, """
+    |SELECT asset_index.uuid, asset_index.file_path, asset_index.relative_path, asset_index.media_type, asset_index.subfolder, asset_index.tags, asset_index.auto_labels, asset_index.ocr_text, asset_index.cloud_description, asset_index.page_uuids, asset_index.size_bytes, asset_index.imported_at_ms, asset_index.ml_processed, asset_index.ml_attempted_at, asset_index.ml_failed, asset_index.content_hash, asset_index.is_orphan, asset_index.ml_tags_source FROM asset_index
+    |WHERE media_type = ?
+    |AND (file_path > COALESCE(?, '') OR (file_path ${ if (cursorName == null) "IS" else "=" } ? AND uuid > COALESCE(?, '')))
+    |ORDER BY file_path ASC, uuid ASC
+    |LIMIT ?
+    """.trimMargin(), mapper, 5) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, mediaType)
+      bindString(parameterIndex++, cursorName)
+      bindString(parameterIndex++, cursorName)
+      bindString(parameterIndex++, cursorUuid)
+      bindLong(parameterIndex++, limit)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAssetsByMediaTypeByNameKeyset"
+  }
+
+  private inner class SelectAssetsBySizeKeysetQuery<out T : Any>(
+    public val cursorSize: Long?,
+    public val cursorUuid: String?,
+    public val limit: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(null, """
+    |SELECT asset_index.uuid, asset_index.file_path, asset_index.relative_path, asset_index.media_type, asset_index.subfolder, asset_index.tags, asset_index.auto_labels, asset_index.ocr_text, asset_index.cloud_description, asset_index.page_uuids, asset_index.size_bytes, asset_index.imported_at_ms, asset_index.ml_processed, asset_index.ml_attempted_at, asset_index.ml_failed, asset_index.content_hash, asset_index.is_orphan, asset_index.ml_tags_source FROM asset_index
+    |WHERE (size_bytes < COALESCE(?, 9223372036854775807) OR (size_bytes ${ if (cursorSize == null) "IS" else "=" } ? AND uuid > COALESCE(?, '')))
+    |ORDER BY size_bytes DESC, uuid ASC
+    |LIMIT ?
+    """.trimMargin(), mapper, 4) {
+      var parameterIndex = 0
+      bindLong(parameterIndex++, cursorSize)
+      bindLong(parameterIndex++, cursorSize)
+      bindString(parameterIndex++, cursorUuid)
+      bindLong(parameterIndex++, limit)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAssetsBySizeKeyset"
+  }
+
+  private inner class SelectAssetsByMediaTypeBySizeKeysetQuery<out T : Any>(
+    public val mediaType: String,
+    public val cursorSize: Long?,
+    public val cursorUuid: String?,
+    public val limit: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(null, """
+    |SELECT asset_index.uuid, asset_index.file_path, asset_index.relative_path, asset_index.media_type, asset_index.subfolder, asset_index.tags, asset_index.auto_labels, asset_index.ocr_text, asset_index.cloud_description, asset_index.page_uuids, asset_index.size_bytes, asset_index.imported_at_ms, asset_index.ml_processed, asset_index.ml_attempted_at, asset_index.ml_failed, asset_index.content_hash, asset_index.is_orphan, asset_index.ml_tags_source FROM asset_index
+    |WHERE media_type = ?
+    |AND (size_bytes < COALESCE(?, 9223372036854775807) OR (size_bytes ${ if (cursorSize == null) "IS" else "=" } ? AND uuid > COALESCE(?, '')))
+    |ORDER BY size_bytes DESC, uuid ASC
+    |LIMIT ?
+    """.trimMargin(), mapper, 5) {
+      var parameterIndex = 0
+      bindString(parameterIndex++, mediaType)
+      bindLong(parameterIndex++, cursorSize)
+      bindLong(parameterIndex++, cursorSize)
+      bindString(parameterIndex++, cursorUuid)
+      bindLong(parameterIndex++, limit)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectAssetsByMediaTypeBySizeKeyset"
+  }
+
+  private inner class SelectOrphanedAssetsQuery<out T : Any>(
+    public val cursorMs: Long?,
+    public val cursorUuid: String?,
+    public val limit: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("asset_index", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("asset_index", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> = driver.executeQuery(null, """
+    |SELECT asset_index.uuid, asset_index.file_path, asset_index.relative_path, asset_index.media_type, asset_index.subfolder, asset_index.tags, asset_index.auto_labels, asset_index.ocr_text, asset_index.cloud_description, asset_index.page_uuids, asset_index.size_bytes, asset_index.imported_at_ms, asset_index.ml_processed, asset_index.ml_attempted_at, asset_index.ml_failed, asset_index.content_hash, asset_index.is_orphan, asset_index.ml_tags_source FROM asset_index
+    |WHERE is_orphan = 1
+    |AND (imported_at_ms < COALESCE(?, 9999999999999)
+    |    OR (imported_at_ms ${ if (cursorMs == null) "IS" else "=" } ? AND uuid < COALESCE(?, '')))
+    |ORDER BY imported_at_ms DESC, uuid DESC
+    |LIMIT ?
+    """.trimMargin(), mapper, 4) {
+      var parameterIndex = 0
+      bindLong(parameterIndex++, cursorMs)
+      bindLong(parameterIndex++, cursorMs)
+      bindString(parameterIndex++, cursorUuid)
+      bindLong(parameterIndex++, limit)
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectOrphanedAssets"
   }
 }
