@@ -84,7 +84,9 @@ data class Page(
     val isJournal: Boolean = false,
     val journalDate: LocalDate? = null,
     /** True when page content (blocks) has been fully loaded from file */
-    val isContentLoaded: Boolean = true
+    val isContentLoaded: Boolean = true,
+    /** Empty string = global (no section). NOT NULL sentinel avoids NULL != NULL UNIQUE issues. */
+    val sectionId: String = "",
 ) {
     init {
         Validation.validateUuid(uuid)

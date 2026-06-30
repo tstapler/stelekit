@@ -54,6 +54,7 @@ class LibsqlFts5IntegrationTest {
             is_journal = 0L,
             journal_date = null,
             is_content_loaded = 1L,
+            section_id = "",
         )
     }
 

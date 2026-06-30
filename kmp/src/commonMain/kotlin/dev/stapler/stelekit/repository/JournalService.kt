@@ -29,6 +29,10 @@ import kotlin.time.Clock
  */
 fun interface JournalDateResolver {
     suspend fun getPageByJournalDate(date: LocalDate): Page?
+
+    /** Section-aware lookup; defaults to global lookup for backward compatibility. */
+    suspend fun getJournalPageByDateAndSection(date: LocalDate, sectionId: String): Page? =
+        getPageByJournalDate(date)
 }
 
 /**
@@ -62,6 +66,9 @@ class JournalService(
         return pageRepository.getPageByName(hyphenName).first().getOrNull()
             ?: pageRepository.getPageByName(underscoreName).first().getOrNull()
     }
+
+    override suspend fun getJournalPageByDateAndSection(date: LocalDate, sectionId: String): Page? =
+        pageRepository.getJournalPageByDateAndSection(date, sectionId).first().getOrNull()
 
     // ---- Journal queries ----
 

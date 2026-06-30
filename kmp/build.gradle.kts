@@ -92,6 +92,9 @@ kotlin {
 
                 // Okio — cross-platform file I/O for asset management
                 implementation("com.squareup.okio:okio:3.17.0")
+
+                // ktoml — TOML parsing for .stele-sections manifest
+                implementation("com.akuleshov7:ktoml-core:0.7.1")
             }
         }
 

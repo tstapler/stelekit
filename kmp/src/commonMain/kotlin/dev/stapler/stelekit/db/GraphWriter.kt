@@ -644,6 +644,51 @@ class GraphWriter(
         }
     }
 
+    /**
+     * Moves a page's file to the directory defined by [newSection] and returns the updated
+     * [Page] model with [sectionId] and [filePath] updated. The caller must persist the
+     * returned page to the repository.
+     *
+     * Returns [DomainError.FileSystemError.WriteFailed] if the file could not be moved.
+     */
+    suspend fun movePageToSection(
+        page: Page,
+        newSectionId: String,
+        newPathPrefix: String,
+    ): Either<DomainError, Page> = withContext(PlatformDispatcher.IO) {
+        try {
+            val oldPath = page.filePath
+            val capturedCryptoLayer = cryptoLayer
+            val extension = if (capturedCryptoLayer != null) ".md.stek" else ".md"
+            val safeName = FileUtils.sanitizeFileName(page.name)
+            val base = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
+            val newPath = "$base$newPathPrefix/$safeName$extension"
+
+            if (oldPath == null || oldPath == newPath) {
+                return@withContext page.copy(sectionId = newSectionId).right()
+            }
+
+            val moved = fileSystem.renameFile(oldPath, newPath)
+            if (!moved) {
+                // renameFile returns false on unsupported platforms — copy+delete fallback
+                val content = fileSystem.readFile(oldPath)
+                    ?: return@withContext DomainError.FileSystemError.ReadFailed(oldPath, "could not read source file").left()
+                if (!fileSystem.writeFile(newPath, content)) {
+                    return@withContext DomainError.FileSystemError.WriteFailed(newPath, "could not write to new path").left()
+                }
+                fileSystem.deleteFile(oldPath)
+            }
+
+            onFileWritten?.invoke(oldPath)
+            onFileWritten?.invoke(newPath)
+            page.copy(sectionId = newSectionId, filePath = newPath).right()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            DomainError.FileSystemError.WriteFailed(page.filePath ?: page.name, e.message ?: "unknown").left()
+        }
+    }
+
     private fun getPageFilePath(page: Page, graphPath: String, layer: CryptoLayer? = cryptoLayer): String {
         val safeName = FileUtils.sanitizeFileName(page.name)
         val basePath = if (graphPath.endsWith("/")) graphPath else "$graphPath/"

@@ -17,4 +17,5 @@ public data class Pages(
   public val journal_date: String?,
   public val is_content_loaded: Long,
   public val backlink_count: Long,
+  public val section_id: String,
 )
