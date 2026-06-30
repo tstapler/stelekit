@@ -454,6 +454,19 @@ class SqlDelightBlockRepository(
                     )
                 }
             }
+            // Wikilink pass: separate transaction to keep the block-insert transaction tight.
+            // Only iterate over toInsert — chainRepair updates existing blocks whose wikilinks don't change.
+            for (chunk in toInsert.chunked(WRITE_CHUNK_SIZE)) {
+                queries.transaction {
+                    chunk.forEach { block ->
+                        val pageNames = extractWikilinks(block.content)
+                        for (name in pageNames) {
+                            @OptIn(DirectSqlWrite::class)
+                            restricted.insertWikilinkReference(block.uuid.value, name)
+                        }
+                    }
+                }
+            }
             ftsAutomergeDefault()
             Unit.right()
         } catch (e: CancellationException) {

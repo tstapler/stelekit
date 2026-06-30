@@ -277,59 +277,37 @@ class BlockStateManager(
         clearSelection()
     }
 
+    private fun snapshotSelectedBlocks(op: ClipboardOperation): Job = scope.launch {
+        val selected = selection.selectedBlockUuids.value
+        if (selected.isEmpty()) return@launch
+
+        val pageUuid = _blocks.value.entries
+            .find { (_, blocks) -> blocks.any { it.uuid.value in selected } }
+            ?.key ?: return@launch
+
+        val roots = subtreeDedup(selected, pageUuid)
+        val allBlocks = _blocks.value[pageUuid] ?: emptyList()
+        val byUuid = BlockTreeAlgorithms.indexByUuid(allBlocks)
+        val childrenByParent = BlockTreeAlgorithms.indexChildren(allBlocks)
+        val sortedRoots = BlockSorter.sort(allBlocks).filter { it.uuid.value in roots }.map { it.uuid.value }
+        val blocksToClip = sortedRoots.flatMap { BlockTreeAlgorithms.collectSubtree(it, byUuid, childrenByParent) }
+
+        _blockClipboard.value = BlockClipboard().withBlocks(blocksToClip, op, "")
+    }
+
     /**
      * Snapshot the selected blocks and their full subtrees (visual order, subtree-deduped)
      * into [_blockClipboard] for a later [pasteBlocks] call.
      *
      * Does NOT clear the selection — the user can paste multiple times.
      */
-    override fun copySelectedBlocks(): Job = scope.launch {
-        val selected = selection.selectedBlockUuids.value
-        if (selected.isEmpty()) return@launch
-
-        val pageUuid = _blocks.value.entries
-            .find { (_, blocks) -> blocks.any { it.uuid.value in selected } }
-            ?.key ?: return@launch
-
-        // Expand selection to include full subtrees of each selected block.
-        // subtreeDedup removes blocks whose ancestor is also selected (avoids duplication);
-        // then we re-expand to collect all descendants.
-        val roots = subtreeDedup(selected, pageUuid)
-        val allBlocks = _blocks.value[pageUuid] ?: emptyList()
-        val byUuid = BlockTreeAlgorithms.indexByUuid(allBlocks)
-        val childrenByParent = BlockTreeAlgorithms.indexChildren(allBlocks)
-        val sortedRoots = BlockSorter.sort(allBlocks).filter { it.uuid.value in roots }.map { it.uuid.value }
-        val blocksToClip = sortedRoots.flatMap { BlockTreeAlgorithms.collectSubtree(it, byUuid, childrenByParent) }
-
-        // Always COPY; CUT is out of scope (avoids silent duplication on failure)
-        _blockClipboard.value = BlockClipboard().withBlocks(
-            blocksToClip,
-            ClipboardOperation.COPY,
-            ""
-        )
-    }
+    override fun copySelectedBlocks(): Job = snapshotSelectedBlocks(ClipboardOperation.COPY)
 
     /**
      * Snapshot selected blocks + subtrees into clipboard with CUT operation.
      * Blocks are NOT removed yet — removal happens when [pasteBlocks] is called.
      */
-    override fun cutSelectedBlocks(): Job = scope.launch {
-        val selected = selection.selectedBlockUuids.value
-        if (selected.isEmpty()) return@launch
-
-        val pageUuid = _blocks.value.entries
-            .find { (_, blocks) -> blocks.any { it.uuid.value in selected } }
-            ?.key ?: return@launch
-
-        val roots = subtreeDedup(selected, pageUuid)
-        val allBlocks = _blocks.value[pageUuid] ?: emptyList()
-        val byUuid = BlockTreeAlgorithms.indexByUuid(allBlocks)
-        val childrenByParent = BlockTreeAlgorithms.indexChildren(allBlocks)
-        val sortedRoots = BlockSorter.sort(allBlocks).filter { it.uuid.value in roots }.map { it.uuid.value }
-        val blocksToClip = sortedRoots.flatMap { BlockTreeAlgorithms.collectSubtree(it, byUuid, childrenByParent) }
-
-        _blockClipboard.value = BlockClipboard().withBlocks(blocksToClip, ClipboardOperation.CUT, "")
-    }
+    override fun cutSelectedBlocks(): Job = snapshotSelectedBlocks(ClipboardOperation.CUT)
 
     /**
      * Paste the clipboard blocks AFTER [afterBlockUuid] on the same page.
@@ -416,18 +394,21 @@ class BlockStateManager(
         // Handle CUT: delete original blocks after successful paste
         if (clip.isCut) {
             val cutUuids = clipBlocks.map { it.uuid }
+            var cutSuccess = true
             writeActor?.execute {
                 blockRepository.deleteBulk(cutUuids, deleteChildren = false)
-                    .onLeft { logger.error("pasteBlocks CUT: delete originals failed: $it") }
+                    .onLeft { logger.error("pasteBlocks CUT: delete originals failed: $it"); cutSuccess = false }
                 Unit.right()
             } ?: blockRepository.deleteBulk(cutUuids, deleteChildren = false)
-                .onLeft { logger.error("pasteBlocks CUT: delete originals failed (no actor): $it") }
+                .onLeft { logger.error("pasteBlocks CUT: delete originals failed (no actor): $it"); cutSuccess = false }
 
-            val cutUuidSet = cutUuids.map { it.value }.toSet()
-            _blocks.update { state ->
-                state.mapValues { (_, blocks) -> blocks.filter { it.uuid.value !in cutUuidSet } }
+            if (cutSuccess) {
+                val cutUuidSet = cutUuids.map { it.value }.toSet()
+                _blocks.update { state ->
+                    state.mapValues { (_, blocks) -> blocks.filter { it.uuid.value !in cutUuidSet } }
+                }
+                _blockClipboard.value = BlockClipboard()
             }
-            _blockClipboard.value = BlockClipboard()
         }
 
         // 8. Record undo

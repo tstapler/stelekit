@@ -15,7 +15,7 @@ object BlockTreeAlgorithms {
         blocks.groupBy { it.parentUuid }
 
     /**
-     * Collect a block and all its descendants in BFS order.
+     * Collect a block and all its descendants in DFS pre-order.
      * [byUuid] and [childrenByParent] are pre-built indexes — callers must provide them
      * to avoid repeated O(n) scans across recursive calls.
      */
@@ -27,26 +27,6 @@ object BlockTreeAlgorithms {
         val root = byUuid[rootUuid] ?: return emptyList()
         val children = childrenByParent[rootUuid] ?: emptyList()
         return listOf(root) + children.flatMap { collectSubtree(it.uuid.value, byUuid, childrenByParent) }
-    }
-
-    /**
-     * Find the minimal set of clipboard roots — blocks whose ancestor is NOT also in the selection.
-     * Input [uuids] is the raw selection; [childrenByParent] is the page-wide child index.
-     */
-    fun findRoots(uuids: Set<String>, childrenByParent: Map<String?, List<Block>>): Set<String> {
-        fun hasSelectedAncestor(block: Block, byUuid: Map<String, Block>): Boolean {
-            var current = block.parentUuid?.let { byUuid[it] }
-            while (current != null) {
-                if (current.uuid.value in uuids) return true
-                current = current.parentUuid?.let { byUuid[it] }
-            }
-            return false
-        }
-        val byUuid = childrenByParent.values.flatten().associateBy { it.uuid.value }
-        return uuids.filter { uuid ->
-            val block = byUuid[uuid] ?: return@filter false
-            !hasSelectedAncestor(block, byUuid)
-        }.toSet()
     }
 
     /**
@@ -71,7 +51,7 @@ object BlockTreeAlgorithms {
         now: Instant,
     ): List<Block> {
         val clipChildrenByParent = clipBlocks.groupBy { it.parentUuid }
-        val minClipLevel = clipBlocks.minOf { it.level }
+        val minClipLevel = clipBlocks.minOfOrNull { it.level } ?: 0
         val insertionLevel = afterBlock.level
 
         val result = mutableListOf<Block>()
