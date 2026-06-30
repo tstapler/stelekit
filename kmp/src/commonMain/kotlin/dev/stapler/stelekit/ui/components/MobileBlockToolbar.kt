@@ -47,8 +47,8 @@ fun MobileBlockToolbar(
     onCaptureImage: (() -> Unit)? = null,
     isInSelectionMode: Boolean = false,
     selectedCount: Int = 0,
-    onCopySelected: () -> Unit = {},
-    onCutSelected: () -> Unit = {},
+    onCopyBlocks: () -> Unit = {},
+    onCutBlocks: () -> Unit = {},
     onDeleteSelected: () -> Unit = {},
     onClearSelection: () -> Unit = {},
     clipboardEmpty: Boolean = true,
@@ -79,10 +79,10 @@ fun MobileBlockToolbar(
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Row {
-                    IconButton(onClick = onCopySelected) {
+                    IconButton(onClick = onCopyBlocks) {
                         Icon(Icons.Default.ContentCopy, contentDescription = "Copy selected")
                     }
-                    IconButton(onClick = onCutSelected) {
+                    IconButton(onClick = onCutBlocks) {
                         Icon(Icons.Default.ContentCut, contentDescription = "Cut selected")
                     }
                     IconButton(onClick = onDeleteSelected) {
