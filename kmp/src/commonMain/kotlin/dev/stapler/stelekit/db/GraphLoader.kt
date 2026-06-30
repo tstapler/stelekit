@@ -74,6 +74,8 @@ class GraphLoader(
     initialCryptoLayer: CryptoLayer? = null,
     /** Poll interval for the file watcher in milliseconds. Override in tests to speed up cycles. */
     private val watcherPollIntervalMs: Long = 5_000L,
+    /** When non-null, files matching the filter's excluded prefixes are skipped during loading. */
+    private val sectionFilter: dev.stapler.stelekit.sections.SectionFilter? = null,
 ) : GraphLoaderPort {
     private val logger = Logger("GraphLoader")
     private val markdownParser = MarkdownParser()

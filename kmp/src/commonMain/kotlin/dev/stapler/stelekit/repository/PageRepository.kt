@@ -41,6 +41,12 @@ interface PageRepository {
      */
     fun getJournalPageByDate(date: kotlinx.datetime.LocalDate): Flow<Either<DomainError, Page?>>
 
+    /** Section-scoped journal page lookup; defaults to global lookup. */
+    fun getJournalPageByDateAndSection(
+        date: kotlinx.datetime.LocalDate,
+        sectionId: String,
+    ): Flow<Either<DomainError, Page?>> = getJournalPageByDate(date)
+
     fun getRecentPages(limit: Int = 50): Flow<Either<DomainError, List<Page>>>
 
     /**
