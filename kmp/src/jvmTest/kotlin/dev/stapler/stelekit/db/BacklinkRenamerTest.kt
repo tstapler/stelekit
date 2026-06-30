@@ -49,7 +49,7 @@ class BacklinkRenamerTest {
         blockRepo: InMemoryBlockRepository,
         graphPath: String
     ): BacklinkRenamer {
-        val fs = PlatformFileSystem()
+        val fs = PlatformFileSystem.withRoot(graphPath)
         val graphWriter = GraphWriter(fs)
         val actor = DatabaseWriteActor(blockRepo, pageRepo)
         return BacklinkRenamer(pageRepo, blockRepo, graphWriter, actor)
