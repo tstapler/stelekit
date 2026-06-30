@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -46,6 +47,7 @@ fun MobileBlockToolbar(
     isInSelectionMode: Boolean = false,
     selectedCount: Int = 0,
     onCopySelected: () -> Unit = {},
+    onCutSelected: () -> Unit = {},
     onDeleteSelected: () -> Unit = {},
     onClearSelection: () -> Unit = {},
     isLeftHanded: Boolean = false,
@@ -75,6 +77,9 @@ fun MobileBlockToolbar(
                 Row {
                     IconButton(onClick = onCopySelected) {
                         Icon(Icons.Default.ContentCopy, contentDescription = "Copy selected")
+                    }
+                    IconButton(onClick = onCutSelected) {
+                        Icon(Icons.Default.ContentCut, contentDescription = "Cut selected")
                     }
                     IconButton(onClick = onDeleteSelected) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete selected")

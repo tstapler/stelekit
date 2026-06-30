@@ -585,3 +585,469 @@ E3/T3.1 → E3/T3.2 → E3/T3.3
 ```
 
 E2 and the E3 chain can start in parallel. E1 smoke test unblocks T1.2 but blocks nothing else.
+
+---
+
+## ✅ Status (post-review additions)
+
+E1 + E2 + E3 are complete. The following epics address findings from the algorithmic/domain-design review.
+
+---
+
+## Epic 4: API Cleanup (graphUuid phantom + CUT orphan)
+
+### Task 4.1 — Remove `graphUuid: String` param from `copySelectedBlocks`
+
+The parameter is always called with `""` from all call sites. `sourceGraphUuid` is stored in `ClipboardBlock` for future cross-graph paste detection, but the caller-supplied value adds no value today and leaks an infrastructure concern into the port interface.
+
+**Files**:
+
+1. `BlockEditorPorts.kt:57` — change signature:
+   ```kotlin
+   // Before
+   fun copySelectedBlocks(graphUuid: String): Job
+   // After
+   fun copySelectedBlocks(): Job
+   ```
+
+2. `BlockStateManager.kt:285` — change signature and replace `graphUuid` usage:
+   ```kotlin
+   // Before
+   override fun copySelectedBlocks(graphUuid: String): Job = scope.launch {
+       ...
+       _blockClipboard.value = BlockClipboard().withBlocks(blocksToClip, ClipboardOperation.COPY, graphUuid)
+   // After
+   override fun copySelectedBlocks(): Job = scope.launch {
+       ...
+       _blockClipboard.value = BlockClipboard().withBlocks(blocksToClip, ClipboardOperation.COPY, "")
+   ```
+
+3. `EditorToolbar.kt:112` — change call:
+   ```kotlin
+   // Before
+   onCopySelected = { blockStateManager.copySelectedBlocks("") },
+   // After
+   onCopySelected = { blockStateManager.copySelectedBlocks() },
+   ```
+
+4. `PageView.kt:150` — change call:
+   ```kotlin
+   // Before
+   blockStateManager.copySelectedBlocks("")
+   // After
+   blockStateManager.copySelectedBlocks()
+   ```
+
+### Task 4.2 — Remove `ClipboardOperation.CUT` and `isCut`
+
+`ClipboardOperation.CUT` is never set in production code. Keeping it creates a phantom case in any future `when` branch. Remove it now; Epic 7 re-introduces it properly when CUT is implemented.
+
+**File**: `ClipboardModels.kt`
+
+```kotlin
+// Before
+enum class ClipboardOperation { CUT, COPY }
+...
+val isCut: Boolean get() = entries.firstOrNull()?.operation == ClipboardOperation.CUT
+
+// After
+enum class ClipboardOperation { COPY }
+// remove isCut entirely — no callers reference it
+```
+
+---
+
+## Epic 5: Extract `BlockTreeAlgorithms`
+
+Extract the pure tree-traversal algorithms from `BlockStateManager` into a testable object. This improves:
+- Unit testability (algorithms take `List<Block>`, return `List<Block>` — no coroutines or state)
+- Benchmarkability (can feed large synthetic trees without instantiating BlockStateManager)
+- Reusability (Epic 7 CUT reuses `collectSubtree`)
+
+### Task 5.1 — Create `clipboard/BlockTreeAlgorithms.kt`
+
+**File**: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/clipboard/BlockTreeAlgorithms.kt`
+
+```kotlin
+package dev.stapler.stelekit.clipboard
+
+import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.util.FractionalIndexing
+import dev.stapler.stelekit.util.UuidGenerator
+import kotlin.time.Instant
+
+object BlockTreeAlgorithms {
+
+    /** Pre-index blocks by UUID for O(1) lookups (replaces allBlocks.find in recursive calls). */
+    fun indexByUuid(blocks: List<Block>): Map<String, Block> =
+        blocks.associateBy { it.uuid.value }
+
+    /** Pre-index blocks by parentUuid for O(1) child lookups. */
+    fun indexChildren(blocks: List<Block>): Map<String?, List<Block>> =
+        blocks.groupBy { it.parentUuid }
+
+    /**
+     * Collect a block and all its descendants in BFS order.
+     * [byUuid] and [childrenByParent] are pre-built indexes — callers must provide them
+     * to avoid repeated O(n) scans across recursive calls.
+     */
+    fun collectSubtree(
+        rootUuid: String,
+        byUuid: Map<String, Block>,
+        childrenByParent: Map<String?, List<Block>>,
+    ): List<Block> {
+        val root = byUuid[rootUuid] ?: return emptyList()
+        val children = childrenByParent[rootUuid] ?: emptyList()
+        return listOf(root) + children.flatMap { collectSubtree(it.uuid.value, byUuid, childrenByParent) }
+    }
+
+    /**
+     * Find the minimal set of clipboard roots — blocks whose ancestor is NOT also in the selection.
+     * Input [uuids] is the raw selection; [childrenByParent] is the page-wide child index.
+     */
+    fun findRoots(uuids: Set<String>, childrenByParent: Map<String?, List<Block>>): Set<String> {
+        // A block is a root if none of its ancestors are in the selection set.
+        // Walk up via parentUuid; stop at null (top of tree).
+        fun hasSelectedAncestor(block: Block, byUuid: Map<String, Block>): Boolean {
+            var current = block.parentUuid?.let { byUuid[it] }
+            while (current != null) {
+                if (current.uuid.value in uuids) return true
+                current = current.parentUuid?.let { byUuid[it] }
+            }
+            return false
+        }
+        // Build byUuid from childrenByParent values
+        val byUuid = childrenByParent.values.flatten().associateBy { it.uuid.value }
+        return uuids.filter { uuid ->
+            val block = byUuid[uuid] ?: return@filter false
+            !hasSelectedAncestor(block, byUuid)
+        }.toSet()
+    }
+
+    /**
+     * Build the list of pasted blocks with new UUIDs, remapped parent/left references,
+     * adjusted positions, and level normalization.
+     *
+     * @param clipBlocks the clipboard blocks (COPY of original blocks)
+     * @param rootBlocks subset of clipBlocks that are paste roots (no parent in clipboard)
+     * @param uuidMap old-uuid → new-uuid remapping (pre-built by caller)
+     * @param afterBlock the destination block (pasted items go after this)
+     * @param insertionParentUuid parentUuid for root pasted blocks
+     * @param nextSiblingPos position of the first sibling after afterBlock (null = afterBlock is last)
+     * @param now timestamp for createdAt/updatedAt
+     */
+    fun buildPastedTree(
+        clipBlocks: List<Block>,
+        rootBlocks: List<Block>,
+        uuidMap: Map<String, String>,
+        afterBlock: Block,
+        insertionParentUuid: String?,
+        nextSiblingPos: String?,
+        now: Instant,
+    ): List<Block> {
+        val clipChildrenByParent = clipBlocks.groupBy { it.parentUuid }
+        val minClipLevel = clipBlocks.minOf { it.level }
+        val insertionLevel = afterBlock.level
+
+        val result = mutableListOf<Block>()
+
+        fun build(original: Block, newParentUuid: String?, position: String, prevLeftUuid: String?) {
+            val newUuid = uuidMap[original.uuid.value] ?: return
+            result.add(
+                original.copy(
+                    uuid = dev.stapler.stelekit.model.BlockUuid(newUuid),
+                    pageUuid = afterBlock.pageUuid,
+                    parentUuid = newParentUuid,
+                    leftUuid = prevLeftUuid,
+                    position = position,
+                    level = original.level - minClipLevel + insertionLevel,
+                    createdAt = now,
+                    updatedAt = now,
+                    isLoaded = true,
+                )
+            )
+            val children = (clipChildrenByParent[original.uuid.value] ?: emptyList())
+                .sortedBy { it.position }
+            var prevChildPos: String? = null
+            var prevChildLeftUuid: String? = null
+            children.forEach { child ->
+                val childPos = FractionalIndexing.generateKeyBetween(prevChildPos, null)
+                prevChildPos = childPos
+                build(child, newUuid, childPos, prevChildLeftUuid)
+                prevChildLeftUuid = uuidMap[child.uuid.value]
+            }
+        }
+
+        var prevRootPos: String? = afterBlock.position
+        var prevRootLeftUuid: String? = afterBlock.uuid.value
+        rootBlocks.forEach { root ->
+            val pos = FractionalIndexing.generateKeyBetween(prevRootPos, nextSiblingPos)
+            prevRootPos = pos
+            build(root, insertionParentUuid, pos, prevRootLeftUuid)
+            prevRootLeftUuid = uuidMap[root.uuid.value]
+        }
+
+        return result
+    }
+}
+```
+
+### Task 5.2 — Refactor `BlockStateManager` to use `BlockTreeAlgorithms`
+
+**File**: `BlockStateManager.kt`
+
+In `copySelectedBlocks()` (~L297–308):
+```kotlin
+// Before
+val childrenByParent = allBlocks.groupBy { it.parentUuid }
+val blockByUuid = allBlocks.associateBy { it.uuid.value }
+fun collectSubtree(uuid: String): List<Block> { ... }
+val sortedRoots = BlockSorter.sort(allBlocks).filter { it.uuid.value in roots }.map { it.uuid.value }
+val blocksToClip = sortedRoots.flatMap { collectSubtree(it) }
+
+// After
+val byUuid = BlockTreeAlgorithms.indexByUuid(allBlocks)
+val childrenByParent = BlockTreeAlgorithms.indexChildren(allBlocks)
+val sortedRoots = BlockSorter.sort(allBlocks).filter { it.uuid.value in roots }.map { it.uuid.value }
+val blocksToClip = sortedRoots.flatMap {
+    BlockTreeAlgorithms.collectSubtree(it, byUuid, childrenByParent)
+}
+```
+
+In `pasteBlocks()` (~L374–406), replace the inline `buildPasted` local function and the code that calls it with:
+```kotlin
+val pastedBlocks = BlockTreeAlgorithms.buildPastedTree(
+    clipBlocks = clipBlocks,
+    rootBlocks = rootBlocks,
+    uuidMap = uuidMap,
+    afterBlock = afterBlock,
+    insertionParentUuid = insertionParentUuid,
+    nextSiblingPos = nextSiblingPos,
+    now = now,
+)
+```
+
+Add import at top of `BlockStateManager.kt`:
+```kotlin
+import dev.stapler.stelekit.clipboard.BlockTreeAlgorithms
+```
+
+---
+
+## Epic 6: Copy/Paste Tests
+
+### Task 6.1 — `BlockTreeAlgorithmsTest.kt` (unit tests for pure algorithms)
+
+**File**: `kmp/src/commonTest/kotlin/dev/stapler/stelekit/clipboard/BlockTreeAlgorithmsTest.kt`
+
+Test cases:
+1. `collectSubtree_single_block_no_children` — single block returns [block]
+2. `collectSubtree_two_level_tree` — root + 2 children returns [root, c1, c2]
+3. `collectSubtree_deep_tree` — 3-level tree returns 7 blocks in BFS order
+4. `collectSubtree_unknown_uuid_returns_empty` — non-existent UUID → empty list
+5. `buildPastedTree_single_block` — single block paste: new UUID, correct position between afterBlock and nextSibling
+6. `buildPastedTree_uuid_uniqueness` — 10-block paste: all 10 new UUIDs are distinct and differ from originals
+7. `buildPastedTree_level_normalization` — nested clipboard (min level 2) pasted at level 0 → levels 0, 1
+8. `buildPastedTree_chain_repair_left_uuid` — pasted root's leftUuid equals afterBlock.uuid; second root's leftUuid equals first root's new UUID
+
+### Task 6.2 — `BlockStateManagerCopyPasteTest.kt` (integration tests through BSM)
+
+**File**: `kmp/src/commonTest/kotlin/dev/stapler/stelekit/ui/state/BlockStateManagerCopyPasteTest.kt`
+
+Test cases:
+1. `copySelectedBlocks_empty_selection_is_noop` — clipboard stays empty
+2. `copySelectedBlocks_single_block` — clipboard contains 1 block with new UUID remapping ready
+3. `copySelectedBlocks_subtree_dedup` — select parent + child → clipboard has parent+child but NOT duplicated
+4. `pasteBlocks_single_block_inserts_correctly` — block appears in _blocks after paste
+5. `pasteBlocks_right_sibling_chain_repair` — existing right sibling's leftUuid updated to last pasted root
+6. `pasteBlocks_nested_hierarchy_preserved` — paste a 2-level subtree; children have correct parentUuid
+7. `pasteBlocks_uuid_uniqueness` — all pasted UUIDs differ from clipboard UUIDs
+
+---
+
+## Epic 7: CUT Implementation (Ctrl+X)
+
+### Design: two-phase approach
+
+- **Phase 1 (Ctrl+X)**: `cutSelectedBlocks()` — snapshots blocks into clipboard with `ClipboardOperation.CUT`. No visual removal yet. UI greys out cut blocks via `blockClipboard.isCut`.
+- **Phase 2 (Ctrl+V)**: `pasteBlocks()` detects `isCut`, inserts new blocks AND deletes originals in a single atomic transaction (Epic 8). Escape or a new copy/cut clears the clipboard.
+
+### Task 7.0 — Re-add `ClipboardOperation.CUT` to enum
+
+Epic 4 removed CUT because it was orphaned. Epic 7 re-introduces it properly.
+
+**File**: `ClipboardModels.kt`
+```kotlin
+enum class ClipboardOperation { COPY, CUT }
+val isCut: Boolean get() = entries.firstOrNull()?.operation == ClipboardOperation.CUT
+```
+
+### Task 7.1 — Add `cutSelectedBlocks()` to `BlockStateManager`
+
+Add after `copySelectedBlocks()`:
+```kotlin
+fun cutSelectedBlocks(): Job = scope.launch {
+    val selected = selection.selectedBlockUuids.value
+    if (selected.isEmpty()) return@launch
+
+    val pageUuid = _blocks.value.entries
+        .find { (_, blocks) -> blocks.any { it.uuid.value in selected } }
+        ?.key ?: return@launch
+
+    val roots = subtreeDedup(selected, pageUuid)
+    val allBlocks = _blocks.value[pageUuid] ?: emptyList()
+    val byUuid = BlockTreeAlgorithms.indexByUuid(allBlocks)
+    val childrenByParent = BlockTreeAlgorithms.indexChildren(allBlocks)
+    val sortedRoots = BlockSorter.sort(allBlocks).filter { it.uuid.value in roots }.map { it.uuid.value }
+    val blocksToClip = sortedRoots.flatMap { BlockTreeAlgorithms.collectSubtree(it, byUuid, childrenByParent) }
+
+    _blockClipboard.value = BlockClipboard().withBlocks(blocksToClip, ClipboardOperation.CUT, "")
+}
+```
+
+Add `fun cutSelectedBlocks(): Job` to `BlockSelectionPort` interface in `BlockEditorPorts.kt`.
+
+### Task 7.2 — Extend `pasteBlocks()` to handle CUT
+
+After writing the pasted blocks (Epic 8 atomic tx), add:
+```kotlin
+if (clip.isCut) {
+    val cutUuids = clipBlocks.map { it.uuid }
+    blockRepository.deleteBulk(cutUuids, deleteChildren = false)
+        .onLeft { logger.error("pasteBlocks CUT: delete originals failed: $it") }
+    // Update in-memory state: remove cut blocks from source page
+    _blocks.update { state ->
+        val cutUuidSet = cutUuids.map { it.value }.toSet()
+        state.mapValues { (_, blocks) -> blocks.filter { it.uuid.value !in cutUuidSet } }
+    }
+    _blockClipboard.value = BlockClipboard()  // clear clipboard after successful CUT
+}
+```
+
+Note: `deleteBulk` already performs chain repair for the deleted blocks.
+
+### Task 7.3 — Ctrl+X keyboard binding in `PageView.kt`
+
+In the `onKeyEvent` handler, add alongside the Ctrl+C branch:
+```kotlin
+event.key == Key.X && event.isCtrlPressed && isInSelectionMode && selectedBlockUuids.isNotEmpty() -> {
+    blockStateManager.cutSelectedBlocks()
+    true
+}
+```
+
+### Task 7.4 — Visual indicator for cut blocks (grey overlay)
+
+In the block rendering composable (wherever blocks are rendered), check `blockClipboard.isCut`:
+```kotlin
+val blockClipboard by blockStateManager.blockClipboard.collectAsState()
+val isCutBlock = blockClipboard.isCut && blockUuid in blockClipboard.entries.map { it.block.uuid.value }
+// Apply alpha = 0.4f or strikethrough style to isCutBlock blocks
+```
+
+---
+
+## Epic 8: Atomic Paste Transaction
+
+### Task 8.1 — Add `saveBlocksAtomicWithChainRepair` to `BlockWriteRepository`
+
+**File**: `BlockWriteRepository.kt`
+
+```kotlin
+/**
+ * Insert [toInsert] and update [chainRepair] in a single SQLite transaction.
+ * Used by paste to atomically insert new blocks and repair the right-sibling's leftUuid.
+ * Default impl uses two separate transactions (correct but non-atomic — safe for now).
+ */
+@DirectRepositoryWrite
+suspend fun saveBlocksAtomicWithChainRepair(
+    toInsert: List<Block>,
+    chainRepair: List<Block>,
+): Either<DomainError, Unit> {
+    val result = saveBlocks(toInsert)
+    if (result.isLeft()) return result
+    return if (chainRepair.isEmpty()) Unit.right() else saveBlocksUpdate(chainRepair)
+}
+```
+
+### Task 8.2 — Override in `SqlDelightBlockRepository`
+
+**File**: `SqlDelightBlockRepository.kt`
+
+```kotlin
+override suspend fun saveBlocksAtomicWithChainRepair(
+    toInsert: List<Block>,
+    chainRepair: List<Block>,
+): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+    if (toInsert.isEmpty() && chainRepair.isEmpty()) return@withContext Unit.right()
+    try {
+        ftsAutomergeOff()
+        queries.transaction {
+            toInsert.forEach { block -> insertBlockRow(block) }
+            chainRepair.forEach { block ->
+                queries.updateBlockFull(
+                    block.pageUuid.value, block.parentUuid, block.leftUuid,
+                    block.content, block.level.toLong(), block.position,
+                    block.updatedAt.toEpochMilliseconds(),
+                    block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
+                    block.contentHash ?: ContentHasher.sha256ForContent(block.content),
+                    block.blockType.toDiscriminatorString(),
+                    block.uuid.value,
+                )
+            }
+        }
+        ftsAutomergeDefault()
+        Unit.right()
+    } catch (e: CancellationException) {
+        runCatching { ftsAutomergeDefault() }
+        throw e
+    } catch (e: Exception) {
+        runCatching { ftsAutomergeDefault() }
+        DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+    }
+}
+```
+
+### Task 8.3 — Refactor `pasteBlocks()` to use atomic method
+
+**File**: `BlockStateManager.kt` in `pasteBlocks()`
+
+Replace the two-call write block (~lines 413–431):
+```kotlin
+// Before: two separate transactions (non-atomic)
+writeActor?.execute {
+    blockRepository.saveBlocks(pastedBlocks)
+        .onLeft { ... }
+    if (success && existingRightSibling != null && lastPastedRootNewUuid != null) {
+        blockRepository.saveBlocksUpdate(...)
+            .onLeft { ... }
+    }
+    Unit.right()
+}
+
+// After: single atomic transaction
+val chainRepair = if (existingRightSibling != null && lastPastedRootNewUuid != null)
+    listOf(existingRightSibling.copy(leftUuid = lastPastedRootNewUuid))
+else emptyList()
+writeActor?.execute {
+    blockRepository.saveBlocksAtomicWithChainRepair(pastedBlocks, chainRepair)
+        .onLeft { logger.error("pasteBlocks: atomic write failed: $it"); success = false }
+    Unit.right()
+} ?: run {
+    blockRepository.saveBlocksAtomicWithChainRepair(pastedBlocks, chainRepair)
+        .onLeft { logger.error("pasteBlocks: atomic write failed: $it"); success = false }
+}
+```
+
+---
+
+## Updated Execution Order
+
+```
+Wave 1 (parallel):
+  Agent A: E4 + E5 + E8  (cleanup + extraction + atomic tx — all touch BlockStateManager.kt)
+  Agent B: E6            (new test files only — no conflicts with A)
+
+Wave 2 (after Wave 1):
+  Agent C: E7            (CUT — depends on E5's BlockTreeAlgorithms + E8's atomic tx)
+```

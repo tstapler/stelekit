@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import arrow.core.right
 import dev.stapler.stelekit.clipboard.BlockClipboard
+import dev.stapler.stelekit.clipboard.BlockTreeAlgorithms
 import dev.stapler.stelekit.clipboard.ClipboardOperation
 
 /**
@@ -282,7 +283,7 @@ class BlockStateManager(
      *
      * Does NOT clear the selection — the user can paste multiple times.
      */
-    override fun copySelectedBlocks(graphUuid: String): Job = scope.launch {
+    override fun copySelectedBlocks(): Job = scope.launch {
         val selected = selection.selectedBlockUuids.value
         if (selected.isEmpty()) return@launch
 
@@ -295,32 +296,47 @@ class BlockStateManager(
         // then we re-expand to collect all descendants.
         val roots = subtreeDedup(selected, pageUuid)
         val allBlocks = _blocks.value[pageUuid] ?: emptyList()
-        val childrenByParent = allBlocks.groupBy { it.parentUuid }
-
-        fun collectSubtree(uuid: String): List<Block> {
-            val block = allBlocks.find { it.uuid.value == uuid } ?: return emptyList()
-            val children = childrenByParent[uuid] ?: emptyList()
-            return listOf(block) + children.flatMap { collectSubtree(it.uuid.value) }
-        }
-
-        // Collect in visual order (roots appear in the visible list order)
-        val visible = getVisibleBlocksForPage(pageUuid)
-        val sortedRoots = visible.filter { it.uuid.value in roots }.map { it.uuid.value }
-        val blocksToClip = sortedRoots.flatMap { collectSubtree(it) }
+        val byUuid = BlockTreeAlgorithms.indexByUuid(allBlocks)
+        val childrenByParent = BlockTreeAlgorithms.indexChildren(allBlocks)
+        val sortedRoots = BlockSorter.sort(allBlocks).filter { it.uuid.value in roots }.map { it.uuid.value }
+        val blocksToClip = sortedRoots.flatMap { BlockTreeAlgorithms.collectSubtree(it, byUuid, childrenByParent) }
 
         // Always COPY; CUT is out of scope (avoids silent duplication on failure)
         _blockClipboard.value = BlockClipboard().withBlocks(
             blocksToClip,
             ClipboardOperation.COPY,
-            graphUuid
+            ""
         )
+    }
+
+    /**
+     * Snapshot selected blocks + subtrees into clipboard with CUT operation.
+     * Blocks are NOT removed yet — removal happens when [pasteBlocks] is called.
+     */
+    override fun cutSelectedBlocks(): Job = scope.launch {
+        val selected = selection.selectedBlockUuids.value
+        if (selected.isEmpty()) return@launch
+
+        val pageUuid = _blocks.value.entries
+            .find { (_, blocks) -> blocks.any { it.uuid.value in selected } }
+            ?.key ?: return@launch
+
+        val roots = subtreeDedup(selected, pageUuid)
+        val allBlocks = _blocks.value[pageUuid] ?: emptyList()
+        val byUuid = BlockTreeAlgorithms.indexByUuid(allBlocks)
+        val childrenByParent = BlockTreeAlgorithms.indexChildren(allBlocks)
+        val sortedRoots = BlockSorter.sort(allBlocks).filter { it.uuid.value in roots }.map { it.uuid.value }
+        val blocksToClip = sortedRoots.flatMap { BlockTreeAlgorithms.collectSubtree(it, byUuid, childrenByParent) }
+
+        _blockClipboard.value = BlockClipboard().withBlocks(blocksToClip, ClipboardOperation.CUT, "")
     }
 
     /**
      * Paste the clipboard blocks AFTER [afterBlockUuid] on the same page.
      * Each pasted block gets a new UUID v7. Internal parent/child relationships
      * within the clipboard are preserved via UUID remapping.
-     * Triggers queueDiskSave. Always COPY — CUT is out of scope.
+     * Triggers queueDiskSave. When the clipboard operation is CUT, originals are
+     * deleted after a successful paste and the clipboard is cleared.
      */
     @OptIn(DirectRepositoryWrite::class)
     override fun pasteBlocks(afterBlockUuid: BlockUuid): Job = scope.launch {
@@ -341,7 +357,6 @@ class BlockStateManager(
         val uuidMap: Map<String, String> = clipBlocks.associate { b ->
             b.uuid.value to UuidGenerator.generateV7()
         }
-
         // 2. Identify root blocks
         val rootBlocks = clipBlocks.filter { b ->
             b.parentUuid == null || b.parentUuid !in clipUuidSet
@@ -351,86 +366,39 @@ class BlockStateManager(
         val siblings = allBlocks
             .filter { it.parentUuid == afterBlock.parentUuid }
             .sortedBy { it.position }
-        val nextSiblingPos = siblings.firstOrNull { it.position > afterBlock.position }?.position
-        val insertionParentUuid = afterBlock.parentUuid
-
-        // BUG 1 fix: capture right-sibling before write so we can repair its leftUuid
         val existingRightSibling = siblings.firstOrNull { it.position > afterBlock.position }
+        val nextSiblingPos = existingRightSibling?.position
+        val insertionParentUuid = afterBlock.parentUuid
         val lastPastedRootNewUuid = uuidMap[rootBlocks.lastOrNull()?.uuid?.value]
 
-        // 4. Assign positions for root blocks sequentially
-        var prevRootPos: String? = afterBlock.position
-        val rootPositions: Map<String, String> = rootBlocks.associate { b ->
-            val pos = FractionalIndexing.generateKeyBetween(prevRootPos, nextSiblingPos)
-            prevRootPos = pos
-            b.uuid.value to pos
-        }
-
-        // BUG 2 fix: level adjustment relative to insertion depth
-        val minClipLevel = clipBlocks.minOf { it.level }
-        val insertionLevel = afterBlock.level
-
         val now = kotlin.time.Clock.System.now()
-        val pastedBlocks = mutableListOf<Block>()
-
-        fun buildPasted(original: Block, newParentUuid: String?, position: String, prevLeftUuid: String?) {
-            val newUuid = uuidMap[original.uuid.value] ?: return
-            pastedBlocks.add(
-                original.copy(
-                    uuid = dev.stapler.stelekit.model.BlockUuid(newUuid),
-                    pageUuid = afterBlock.pageUuid,
-                    parentUuid = newParentUuid,
-                    leftUuid = prevLeftUuid,
-                    position = position,
-                    level = original.level - minClipLevel + insertionLevel,  // BUG 2 fix
-                    createdAt = now,
-                    updatedAt = now,
-                    isLoaded = true,
-                )
-            )
-            val children = clipBlocks
-                .filter { it.parentUuid == original.uuid.value }
-                .sortedBy { it.position }
-            var prevChildPos: String? = null
-            var prevChildLeftUuid: String? = null
-            children.forEach { child ->
-                val childPos = FractionalIndexing.generateKeyBetween(prevChildPos, null)
-                prevChildPos = childPos
-                buildPasted(child, newUuid, childPos, prevChildLeftUuid)
-                prevChildLeftUuid = uuidMap[child.uuid.value]
-            }
-        }
-
-        var prevRootLeftUuid: String? = afterBlockUuid.value
-        rootBlocks.forEach { root ->
-            val pos = rootPositions[root.uuid.value] ?: return@forEach
-            buildPasted(root, insertionParentUuid, pos, prevRootLeftUuid)
-            prevRootLeftUuid = uuidMap[root.uuid.value]
-        }
+        val pastedBlocks = BlockTreeAlgorithms.buildPastedTree(
+            clipBlocks = clipBlocks,
+            rootBlocks = rootBlocks,
+            uuidMap = uuidMap,
+            afterBlock = afterBlock,
+            insertionParentUuid = insertionParentUuid,
+            nextSiblingPos = nextSiblingPos,
+            now = now,
+        )
 
         // BUG 4 fix: register new UUIDs as pending before write so merge doesn't drop them
         val newUuids = uuidMap.values.toSet()
         pendingNewBlockUuids.update { it + newUuids }
 
-        // 6. Write to DB (BUG 5 fix: track success; BUG 1 fix: repair right-sibling leftUuid)
+        // 6. Write to DB atomically (BUG 5 fix: track success; BUG 1 fix: repair right-sibling leftUuid)
+        val chainRepair = if (existingRightSibling != null && lastPastedRootNewUuid != null)
+            listOf(existingRightSibling.copy(leftUuid = lastPastedRootNewUuid))
+        else emptyList()
+
         var success = true
         writeActor?.execute {
-            blockRepository.saveBlocks(pastedBlocks)
-                .onLeft { logger.error("pasteBlocks: saveBlocks failed: $it"); success = false }
-            if (success && existingRightSibling != null && lastPastedRootNewUuid != null) {
-                blockRepository.saveBlocksUpdate(
-                    listOf(existingRightSibling.copy(leftUuid = lastPastedRootNewUuid))
-                ).onLeft { logger.error("pasteBlocks: chain repair failed: $it"); success = false }
-            }
+            blockRepository.saveBlocksAtomicWithChainRepair(pastedBlocks, chainRepair)
+                .onLeft { logger.error("pasteBlocks: atomic write failed: $it"); success = false }
             Unit.right()
         } ?: run {
-            blockRepository.saveBlocks(pastedBlocks)
-                .onLeft { logger.error("pasteBlocks: saveBlocks failed: $it"); success = false }
-            if (success && existingRightSibling != null && lastPastedRootNewUuid != null) {
-                blockRepository.saveBlocksUpdate(
-                    listOf(existingRightSibling.copy(leftUuid = lastPastedRootNewUuid))
-                ).onLeft { logger.error("pasteBlocks: chain repair failed: $it"); success = false }
-            }
+            blockRepository.saveBlocksAtomicWithChainRepair(pastedBlocks, chainRepair)
+                .onLeft { logger.error("pasteBlocks: atomic write failed: $it"); success = false }
         }
 
         // BUG 4 fix: remove pending after write completes
@@ -438,10 +406,29 @@ class BlockStateManager(
 
         if (!success) return@launch  // BUG 5 fix: early exit on DB error
 
-        // 7. Refresh and persist
-        val refreshed = blockRepository.getBlocksForPage(afterBlock.pageUuid).first().getOrNull() ?: emptyList()
-        _blocks.update { state -> state + (pageUuidStr to refreshed) }
+        // 7. Update in-memory state and persist
+        val repairedExisting = if (existingRightSibling != null && lastPastedRootNewUuid != null)
+            allBlocks.map { if (it.uuid == existingRightSibling.uuid) it.copy(leftUuid = lastPastedRootNewUuid) else it }
+        else allBlocks
+        _blocks.update { state -> state + (pageUuidStr to (repairedExisting + pastedBlocks)) }
         queueDiskSave(pageUuidStr)
+
+        // Handle CUT: delete original blocks after successful paste
+        if (clip.isCut) {
+            val cutUuids = clipBlocks.map { it.uuid }
+            writeActor?.execute {
+                blockRepository.deleteBulk(cutUuids, deleteChildren = false)
+                    .onLeft { logger.error("pasteBlocks CUT: delete originals failed: $it") }
+                Unit.right()
+            } ?: blockRepository.deleteBulk(cutUuids, deleteChildren = false)
+                .onLeft { logger.error("pasteBlocks CUT: delete originals failed (no actor): $it") }
+
+            val cutUuidSet = cutUuids.map { it.value }.toSet()
+            _blocks.update { state ->
+                state.mapValues { (_, blocks) -> blocks.filter { it.uuid.value !in cutUuidSet } }
+            }
+            _blockClipboard.value = BlockClipboard()
+        }
 
         // 8. Record undo
         val after = takePageSnapshot(pageUuidStr)
@@ -449,7 +436,6 @@ class BlockStateManager(
             undo = { restorePageToSnapshot(pageUuidStr, before) },
             redo = { restorePageToSnapshot(pageUuidStr, after) }
         )
-        // CUT is out of scope; no isCut branch
     }
 
     /**
@@ -1184,6 +1170,13 @@ class BlockStateManager(
         )
     }
 
+    private fun nextSiblingPositionFor(block: Block, pageUuidStr: String): String? =
+        _blocks.value[pageUuidStr]
+            ?.filter { it.parentUuid == block.parentUuid }
+            ?.sortedBy { it.position }
+            ?.firstOrNull { it.position > block.position }
+            ?.position
+
     override fun addNewBlock(currentBlockUuid: BlockUuid): Job = scope.launch {
         val sourceBlock = _blocks.value.values.flatten().find { it.uuid == currentBlockUuid }
             ?: blockRepository.getBlockByUuid(currentBlockUuid).first().getOrNull()
@@ -1196,12 +1189,7 @@ class BlockStateManager(
         val expectedNewUuid = UuidGenerator.generateV7()
         val expectedNewBlockUuid = BlockUuid(expectedNewUuid)
         val now = kotlin.time.Clock.System.now()
-        val nextSiblingPosition = _blocks.value[pageUuidStr]
-            ?.filter { it.parentUuid == sourceBlock.parentUuid }
-            ?.sortedBy { it.position }
-            ?.firstOrNull { it.position > sourceBlock.position }
-            ?.position
-        val optimisticPosition = FractionalIndexing.generateKeyBetween(sourceBlock.position, nextSiblingPosition)
+        val optimisticPosition = FractionalIndexing.generateKeyBetween(sourceBlock.position, nextSiblingPositionFor(sourceBlock, pageUuidStr))
         val optimisticNew = sourceBlock.copy(
             uuid = expectedNewBlockUuid,
             content = "",
@@ -1253,12 +1241,7 @@ class BlockStateManager(
         val expectedNewUuid = UuidGenerator.generateV7()
         val expectedNewBlockUuid = BlockUuid(expectedNewUuid)
         val now = kotlin.time.Clock.System.now()
-        val nextSiblingPositionForSplit = _blocks.value[pageUuid]
-            ?.filter { it.parentUuid == sourceBlock.parentUuid }
-            ?.sortedBy { it.position }
-            ?.firstOrNull { it.position > sourceBlock.position }
-            ?.position
-        val optimisticSplitPosition = FractionalIndexing.generateKeyBetween(sourceBlock.position, nextSiblingPositionForSplit)
+        val optimisticSplitPosition = FractionalIndexing.generateKeyBetween(sourceBlock.position, nextSiblingPositionFor(sourceBlock, pageUuid))
         val optimisticNew = sourceBlock.copy(
             uuid = expectedNewBlockUuid,
             content = secondPart,

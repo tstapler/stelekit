@@ -147,7 +147,11 @@ fun PageView(
                 true
             }
             event.key == Key.C && event.isCtrlPressed && isInSelectionMode && selectedBlockUuids.isNotEmpty() -> {
-                blockStateManager.copySelectedBlocks("")
+                blockStateManager.copySelectedBlocks()
+                true
+            }
+            event.key == Key.X && event.isCtrlPressed && isInSelectionMode && selectedBlockUuids.isNotEmpty() -> {
+                blockStateManager.cutSelectedBlocks()
                 true
             }
             event.key == Key.V && event.isCtrlPressed && !isInSelectionMode && editingBlockUuid != null && !blockClipboard.isEmpty -> {

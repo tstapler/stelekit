@@ -17,6 +17,8 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.time.Clock
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -97,6 +99,8 @@ class BlockStateManagerReorderTest {
         m.moveBlockDown(BlockUuid("b1")).join()
 
         assertTrue(m.hasPendingDiskWrite(pageUuid), "moveBlockDown must trigger queueDiskSave")
+        val pos = m.blocks.value[pageUuid]?.associate { it.uuid.value to it.position } ?: error("no blocks")
+        assertTrue(pos["b1"]!! > pos["b2"]!!, "b1 must sort after b2 after moveBlockDown(b1)")
     }
 
     @Test
@@ -114,6 +118,8 @@ class BlockStateManagerReorderTest {
         m.indentBlock(BlockUuid("b2")).join()
 
         assertTrue(m.hasPendingDiskWrite(pageUuid), "indentBlock must trigger queueDiskSave")
+        val b2 = m.blocks.value[pageUuid]?.find { it.uuid.value == "b2" } ?: error("b2 not found")
+        assertEquals("b1", b2.parentUuid, "b2 must be a child of b1 after indent")
     }
 
     @Test
@@ -131,6 +137,8 @@ class BlockStateManagerReorderTest {
         m.outdentBlock(BlockUuid("b2")).join()
 
         assertTrue(m.hasPendingDiskWrite(pageUuid), "outdentBlock must trigger queueDiskSave")
+        val b2 = m.blocks.value[pageUuid]?.find { it.uuid.value == "b2" } ?: error("b2 not found")
+        assertNull(b2.parentUuid, "b2 must be at root level after outdent")
     }
 
     @Test

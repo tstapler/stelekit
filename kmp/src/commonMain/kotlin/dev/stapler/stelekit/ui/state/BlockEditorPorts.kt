@@ -54,7 +54,8 @@ interface BlockSelectionPort {
     fun extendSelectionByOne(up: Boolean)
     fun selectAll(pageUuid: PageUuid)
     fun clearSelection()
-    fun copySelectedBlocks(graphUuid: String): Job
+    fun copySelectedBlocks(): Job
+    fun cutSelectedBlocks(): Job
 }
 
 /** Navigation and collapse state. */

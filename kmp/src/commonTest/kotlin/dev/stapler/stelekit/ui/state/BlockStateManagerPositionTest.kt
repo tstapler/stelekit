@@ -15,6 +15,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.time.Clock
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -56,7 +57,7 @@ class BlockStateManagerPositionTest {
 
         pageRepo.savePage(page())
         blockRepo.saveBlock(block("b1", position = "a0"))
-        blockRepo.saveBlock(block("b2", position = "a2"))
+        blockRepo.saveBlock(block("b2", position = "a01"))  // "a01" exposes string-concat bug: "a0"+"1" == "a01"
 
         manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
@@ -68,7 +69,7 @@ class BlockStateManagerPositionTest {
         val newBlock = blocks.find { it.uuid.value != "b1" && it.uuid.value != "b2" }
         assertNotNull(newBlock, "addNewBlock must insert a new block")
         assertTrue(newBlock.position > "a0", "New block must sort after 'a0' (b1)")
-        assertTrue(newBlock.position < "a2", "New block must sort before 'a2' (b2)")
+        assertTrue(newBlock.position < "a01", "New block must sort before 'a01' (b2) — string-concat would produce 'a01' which fails this")
     }
 
     @Test
@@ -90,7 +91,7 @@ class BlockStateManagerPositionTest {
         val blocks = manager.blocks.value[pageUuid] ?: error("no blocks")
         val newBlock = blocks.find { it.uuid.value != "b1" }
         assertNotNull(newBlock, "addNewBlock must insert a new block after the last block")
-        assertTrue(newBlock.position > "a0", "New block must sort after 'a0'")
+        assertEquals("a1", newBlock.position, "generateKeyBetween('a0', null) must be 'a1', not string-concat 'a01'")
     }
 
     @Test
@@ -102,7 +103,7 @@ class BlockStateManagerPositionTest {
 
         pageRepo.savePage(page())
         blockRepo.saveBlock(block("b1", content = "Hello World", position = "a0"))
-        blockRepo.saveBlock(block("b2", position = "a2"))
+        blockRepo.saveBlock(block("b2", position = "a01"))  // "a01" exposes string-concat bug
 
         manager.observePage(PageUuid(pageUuid))
         manager.blocks.first { it.containsKey(pageUuid) }
@@ -114,6 +115,6 @@ class BlockStateManagerPositionTest {
         val splitBlock = blocks.find { it.uuid.value != "b1" && it.uuid.value != "b2" }
         assertNotNull(splitBlock, "splitBlock must create a second block")
         assertTrue(splitBlock.position > "a0", "Split block must sort after b1 at 'a0'")
-        assertTrue(splitBlock.position < "a2", "Split block must sort before b2 at 'a2'")
+        assertTrue(splitBlock.position < "a01", "Split block must sort before b2 at 'a01' — string-concat would produce 'a01' which fails this")
     }
 }
