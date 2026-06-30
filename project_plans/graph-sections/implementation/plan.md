@@ -701,3 +701,389 @@ Epic 1 is merged. Epic 6 stories run in lockstep with the epic they test.
 
 All open questions are now resolved. Epics 2–5 can begin in parallel immediately after
 Epic 1 is merged.
+
+---
+
+## Epic 7 — SyncTransport interface + GitManager rename
+
+**Gate**: Can run in parallel with Epics 2–5. No behavioral change — mechanical rename only.
+**Rationale**: ADR-016. `GitManager` leaks git semantics; every future transport has to fake
+`commit`/`status`/`isDirty`. Transport-neutral interface unblocks Epics 8 and 9.
+
+### Story 7.1 — SyncTransport interface + value types
+
+- [ ] Create `kmp/src/commonMain/kotlin/dev/stapler/stelekit/sync/SyncTransport.kt` with the
+  interface and value types from ADR-016: `SyncTransport`, `TransportCapabilities`,
+  `SyncEndpoint` (sealed: `GitRemote`, `LanPeer`, `WebRtcPeer`, `BastionServer`),
+  `SyncVersion` (`@JvmInline value class`), `SyncCredentials` (sealed: `Token`,
+  `PreSharedKey`, `None`), `RemoteFileEntry`, `SyncedFile`, `LocalFile`. (est: 2h)
+- [ ] Create `kmp/src/commonMain/kotlin/dev/stapler/stelekit/sync/SectionAwareSyncService.kt`
+  skeleton: constructor takes `SyncTransport + DeviceProfile + SectionManifest`; single
+  `suspend fun sync(): Either<DomainError, SyncResult>` that resolves active section prefixes
+  (including `""` for global) and delegates to `transport.listRemote(activePrefixes)`.
+  Stub the rest with `TODO()` — wired fully in Epic 8. (est: 2h)
+
+### Story 7.2 — GitSyncTransport (JVM rename)
+
+- [ ] Rename `GitManager` → `SyncTransport` at the interface level (the interface in
+  `commonMain`). Rename `GitManagerFactory` → `SyncTransportFactory`. (est: 0.5h)
+- [ ] Rename `kmp/src/jvmMain/.../platform/GitManager.kt` to `JvmGitSyncTransport.kt`;
+  rename the class `JvmGitManager` → `JvmGitSyncTransport`. Map existing git operations to
+  the new interface methods: `pushFiles` → `git commit + push`, `pullFiles` → `git pull`,
+  `listRemote` → `git ls-remote --heads` (stub returning empty for now — remote listing
+  is not used by `GitSyncService` today). Return `SyncVersion(commitSha)` from `pushFiles`.
+  (est: 3h)
+- [ ] Rename `GitSyncService` → `SyncCoordinator`. Update all callers
+  (`StelekitViewModel`, `GraphManager`, sync status UI state). No logic changes — callers
+  use `SyncTransport` interface methods only. (est: 2h)
+
+### Story 7.3 — GitHubRestTransport (WASM rename)
+
+- [ ] Rename `kmp/src/wasmJsMain/.../platform/GitManager.kt` → `GitHubRestTransport.kt`;
+  rename `JsGitManager` → `GitHubRestTransport`. Methods continue to return
+  `DomainError.NetworkError.HttpError(501, NOT_SUPPORTED)` until ADR-013/ADR-015
+  implementation lands (BUG-005 Phase 1 status quo preserved). (est: 1h)
+
+### Story 7.4 — SyncTransport tests
+
+- [ ] Unit test `SectionAwareSyncService` prefix resolution: with `defaultSection = "acme-work"`
+  active and `"personal"` removed, `activePrefixes` contains `"pages/acme-work"`,
+  `"journals/acme-work"`, and `""` (global), but NOT `"pages/personal"`. Fake
+  `SyncTransport` in test. (est: 2h)
+
+---
+
+## Epic 8 — LAN-HTTP transport (pure Kotlin)
+
+**Gate**: Epic 7 complete (needs `SyncTransport` interface).
+**Goal**: Two SteleKit devices on the same WiFi network sync directly — no GitHub, no cloud.
+Desktop↔Desktop and Desktop↔Android covered. ~500 LOC, no Rust, no new binary blobs.
+**Dependency**: `io.ktor:ktor-server-netty` (JVM only — already on classpath if Ktor client
+is present; verify and add if not). `javax.jmdns:jmdns:3.5.9` (250KB pure Java, JVM +
+Android only — no iOS/WASM; those platforms skip mDNS discovery and use QR code pairing).
+
+### Story 8.1 — JmDNS service advertisement + discovery
+
+- [ ] Create `kmp/src/jvmMain/.../sync/lan/MdnsAdvertiser.kt`. Registers a
+  `_stelekit._tcp.local.` mDNS service via `JmDNS.create()` on graph open; deregisters on
+  graph close. Service TXT record: `{"v":"1","graphId":"<uuid>","port":"<port>"}`.
+  `graphId` is the stable graph UUID from `PlatformSettings` (generated once at first open).
+  (est: 3h)
+- [ ] Create `kmp/src/jvmMain/.../sync/lan/MdnsDiscovery.kt`. Listens for
+  `_stelekit._tcp.local.` services; emits `Flow<LanPeer>` of discovered peers. Filters out
+  self (matches `graphId`). (est: 2h)
+- [ ] Add `jmdns:3.5.9` to `jvmMain.dependencies` in `kmp/build.gradle.kts`. Confirm
+  `bazel build //kmp:desktop_app` passes. (est: 0.5h)
+
+### Story 8.2 — LAN-HTTP server (file-serving side)
+
+- [ ] Create `kmp/src/jvmMain/.../sync/lan/LanSyncServer.kt`. Ktor embedded server
+  (Netty) on a random port. Routes:
+  - `GET /.stele-manifest` — returns JSON: `{"version":"<SyncVersion.opaque>","files":[{"path":"…","sha256":"…","size":N}]}`.
+    Version token = SHA-256 of sorted `(path, sha256)` pairs. Filtered to caller's
+    `?prefixes=pages/acme-work,journals/acme-work` query param.
+  - `GET /files/{path}` — returns raw file bytes. Checks auth header before serving.
+  - `PUT /files/{path}` — writes file to local graph via `FileSystem.writeFile()`. Returns
+    `204`. Triggers `GraphLoader` reload of affected page.
+  - Auth: `Authorization: Bearer <peerToken>` on every request. `peerToken` is a 32-byte
+    random hex string generated at graph open, shared via QR code or NFC at pairing time.
+  (est: 6h)
+- [ ] Start server on graph open in `GraphManager`; stop on shutdown. Store `port` in
+  `PlatformSettings` (changes each run — that's fine, pairing re-discovers via mDNS).
+  (est: 1h)
+
+### Story 8.3 — LanHttpTransport (client side)
+
+- [ ] Create `kmp/src/jvmMain/.../sync/lan/LanHttpTransport.kt` implementing `SyncTransport`.
+  - `connect(LanPeer, Token)`: store host/port/token; verify with `GET /.stele-manifest`.
+  - `listRemote(sectionPrefixes)`: `GET /.stele-manifest?prefixes=…`; parse JSON into
+    `List<RemoteFileEntry>`. `SyncVersion = manifest.version` field.
+  - `pullFiles(paths)`: parallel `GET /files/{path}` up to `capabilities.maxConcurrentPulls`
+    (= 8). Write each to local `FileSystem`.
+  - `pushFiles(files, message)`: sequential `PUT /files/{path}` for each dirty file. Returns
+    new `SyncVersion` from re-fetched manifest after all PUTs. (`message` is stored as a
+    `.stele-sync-log` entry — no git commit on LAN sync.)
+  - `hasRemoteChanges(knownVersion)`: `GET /.stele-manifest` → compare `version` field.
+  - `capabilities`: `supportsOfflineRead=false, requiresServer=false, maxConcurrentPulls=8,
+    isBootstrapOnly=false`.
+  (est: 6h)
+
+### Story 8.4 — QR code pairing
+
+- [ ] Generate pairing QR code payload: `{"endpoint":"http://<localIp>:<port>","token":"<peerToken>","graphId":"<uuid>"}`.
+  Display as a scannable QR code in Settings → Sync → Pair Device using a KMP-compatible
+  QR library (`io.github.alexzhirkevich:qrose:1.0.1` — Compose Multiplatform). (est: 4h)
+- [ ] On the receiving device: scan QR (system camera intent / `AVFoundation` on iOS — use
+  `expect/actual` wrapper). Parse payload. Store `LanPeer` endpoint + token in
+  `PlatformSettings` as a paired device entry. Initiate first sync. (est: 4h)
+
+### Story 8.5 — NFC bootstrap (Android only)
+
+- [ ] Create `kmp/src/androidMain/.../sync/lan/NfcPairingTransport.kt` implementing
+  `SyncTransport` with `capabilities.isBootstrapOnly = true`. Uses `android.nfc.NfcAdapter`
+  NDEF push to transfer the same pairing payload as the QR code (Story 8.4). On successful
+  read, calls `SyncCoordinator.adoptEndpoint(LanPeer)` which hands off to
+  `LanHttpTransport`. Returns `DomainError.NotSupported` on devices without NFC. (est: 4h)
+- [ ] iOS: NFC bootstrap is QR code only (CoreNFC reader mode, no HCE). `expect/actual`
+  stub for `NfcPairingTransport` on iOS returns `isBootstrapOnly=true` and delegates
+  immediately to QR flow. (est: 1h)
+
+### Story 8.5b — Wi-Fi Direct bootstrap (Android)
+
+Wi-Fi Direct creates a direct device-to-device WiFi link with no router — one device
+becomes a soft AP, the other connects, and normal TCP/IP runs on top. The group owner
+always gets IP `192.168.49.1`; the client gets a DHCP-assigned address. Once the link
+exists, `LanHttpTransport` handles sync identically to the router case. This is
+`isBootstrapOnly = true`: Wi-Fi Direct negotiation yields a `LanPeer`, then hands off.
+
+- [ ] Create `kmp/src/androidMain/.../sync/lan/WifiDirectBootstrapTransport.kt` implementing
+  `SyncTransport` with `capabilities.isBootstrapOnly = true`. Uses `WifiP2pManager`
+  (`android.net.wifi.p2p`):
+  - Discover peers via `discoverPeers()` + `WIFI_P2P_PEERS_CHANGED_ACTION` broadcast.
+  - Emit discovered peers as `Flow<WifiP2pDevice>` — display in Settings → Sync → Pair Device
+    as a "Nearby Devices" list (no QR code required).
+  - Connect via `connect(WifiP2pConfig)`. On `WIFI_P2P_CONNECTION_CHANGED_ACTION`:
+    extract group owner IP (`WifiP2pInfo.groupOwnerAddress`) and the local role (owner vs.
+    client).
+  - Exchange pairing payload (same JSON as QR code — `{token, graphId}`) over a short-lived
+    TCP socket on port 42101 immediately after the P2P link is established. Owner listens;
+    client connects. This bootstraps `peerToken` without a QR scan.
+  - Call `SyncCoordinator.adoptEndpoint(LanPeer(groupOwnerIp, serverPort, peerToken))`.
+    `LanSyncServer` (Story 8.2) is already bound to `0.0.0.0` — it answers on the Wi-Fi
+    Direct interface automatically.
+  - On disconnect or `DomainError`: call `WifiP2pManager.removeGroup()` to tear down the
+    soft AP and release the channel.
+  (est: 6h)
+- [ ] Register `WifiDirectBootstrapTransport` as a connection option in the Pair Device UI
+  alongside QR code and NFC. Show as "Connect nearby Android device". (est: 1h)
+- [ ] `expect/actual` stub for non-Android targets returns
+  `DomainError.NotSupported("Wi-Fi Direct not available on this platform")`. (est: 0.5h)
+
+### Story 8.5c — MultipeerConnectivity bootstrap (iOS + macOS)
+
+Apple's MultipeerConnectivity (MCSession) abstracts over Bluetooth, AWDL (Apple's
+Wi-Fi Direct variant used by AirDrop), and infrastructure WiFi. It handles discovery and
+connection automatically — no mDNS, no manual IP resolution needed. On Apple platforms
+this replaces both mDNS discovery and the Wi-Fi Direct negotiation with a single API.
+
+- [ ] Create `kmp/src/iosMain/.../sync/lan/MultipeerBootstrapTransport.kt` (`expect/actual`
+  shell) with the iOS actual delegating to a Swift helper via Kotlin/Native `@ObjCClass`
+  interop:
+  - `MCNearbyServiceAdvertiser` — advertises `serviceType = "stelekit-sync"` with
+    discovery info `{"graphId": "<uuid>"}`. Accepts incoming invitations automatically
+    (the peerToken exchange happens inside the session, not in the invitation).
+  - `MCNearbyServiceBrowser` — discovers peers advertising `stelekit-sync`. Emits
+    `Flow<MCPeerID>` of nearby SteleKit instances.
+  - On session connected: exchange pairing payload (token + port) as the first MCSession
+    data message. Both sides then switch to `LanHttpTransport` over the MCSession's
+    underlying IP address (obtainable via `MCSession` connected peer info + `getifaddrs`).
+  - `capabilities.isBootstrapOnly = true`. Hands off to `LanHttpTransport` after pairing.
+  (est: 8h — Swift interop layer ~3h, Kotlin wrapper ~2h, pairing handshake ~3h)
+- [ ] Display nearby Apple devices in Settings → Sync → Pair Device under "Nearby Apple
+  Devices" section. No QR code required for Apple↔Apple pairing. (est: 1h)
+- [ ] `expect/actual` stub for non-iOS/macOS targets returns `DomainError.NotSupported`. (est: 0.5h)
+- [ ] `macosMain` actual: same MCSession API is available on macOS — reuse the iOS actual
+  via a `commonApple` source set (`iosMain` + `macosMain`). (est: 1h)
+
+### Story 8.5d — WASM LAN fetch transport (browser → desktop, same network)
+
+The WASM side needs its own `LanHttpTransport` that uses `fetch()` instead of Ktor
+`HttpClient`. Discovery is via QR code (Story 8.4 — browser scans desktop's QR code to
+get IP + port + token). This covers the common case: both devices on the same WiFi and
+SteleKit WASM served over HTTP, or installed as a PWA (home screen install removes the
+mixed-content restriction on many browsers).
+
+- [ ] Add `Access-Control-Allow-Private-Network: true` and appropriate `Access-Control-Allow-Origin`
+  CORS headers to all `LanSyncServer` (Story 8.2) route handlers. Required for Chrome 104+
+  to permit browser→local-IP requests from any origin. (est: 0.5h)
+- [ ] Create `kmp/src/wasmJsMain/.../sync/lan/WasmLanHttpTransport.kt` implementing
+  `SyncTransport`. Uses `kotlinx.browser.window.fetch()` (already available in WASM stdlib)
+  with `Authorization: Bearer <peerToken>` header:
+  - `listRemote(sectionPrefixes)`: `fetch("http://$host:$port/.stele-manifest?prefixes=…")` →
+    parse JSON `RemoteFileEntry` list.
+  - `pullFiles(paths)`: parallel `fetch` calls (Promise.all via Kotlin coroutine bridge, max
+    8 concurrent). Write results to OPFS via `PlatformFileSystem`.
+  - `pushFiles(files, message)`: sequential `fetch` PUT for each dirty OPFS file.
+  - `hasRemoteChanges(knownVersion)`: `fetch` manifest → compare version field.
+  - `capabilities`: `supportsOfflineRead=true` (OPFS cache), `requiresServer=false,
+    maxConcurrentPulls=8, isBootstrapOnly=false`.
+  (est: 4h)
+- [ ] Wire `WasmLanHttpTransport` into the WASM `SyncTransportFactory` actual. When a
+  `LanPeer` endpoint is configured in `PlatformSettings` (stored after QR scan), use
+  `WasmLanHttpTransport`; otherwise fall back to `GitHubRestTransport`. (est: 1h)
+- [ ] Document the HTTPS limitation in a `ponytail:` comment on the transport: mixed content
+  blocks `http://` fetch from `https://` pages. Workarounds in priority order: (1) install
+  as PWA, (2) use Epic 9 relay (already HTTPS), (3) Story 8.5e WebRTC. (est: 0h — comment
+  only)
+
+### Story 8.5e — WebRTC data channels (WASM ↔ Desktop, HTTPS-safe)
+
+WebRTC data channels bypass the HTTPS/mixed-content restriction entirely — `RTCPeerConnection`
+uses DTLS cert pinning via SDP fingerprints, not the browser's cert trust store. This makes
+it the correct path for a WASM app served from HTTPS that needs to connect to a desktop on
+the local network.
+
+WASM side: native `RTCPeerConnection` (no library, built into every modern browser).
+Desktop side (JVM): DTLS via Bouncy Castle (JVM built-in) + SCTP for data channel framing.
+SCTP is the hard part — use `jitsi-sctp` (`org.jitsi:jitsi-sctp:1.0`) which wraps the
+battle-tested `usrsctp` C library via JNI. This is the one JNI dependency in the otherwise
+pure-Kotlin transport stack. If `jitsi-sctp` becomes a maintenance liability, the interface
+allows swapping to a pure-Kotlin SCTP implementation without touching callers.
+
+Signaling (SDP exchange) is done via QR code for LAN discovery: desktop generates an SDP
+offer as a QR code, browser scans it and sends back the SDP answer (displayed as a second
+QR or pasted as text). For subsequent connections the SDP can be stored in `PlatformSettings`
+and the ICE host candidates re-negotiated automatically (ICE restart). For cross-network
+connections the relay WebSocket from Epic 9 Story 9.3 carries the SDP instead of QR codes.
+
+- [ ] Add `org.jitsi:jitsi-sctp:1.0` to `jvmMain.dependencies` in `kmp/build.gradle.kts`.
+  Confirm `bazel build //kmp:desktop_app` passes (JNI libs are bundled in the JAR). (est: 1h)
+- [ ] Create `kmp/src/jvmMain/.../sync/webrtc/DesktopWebRtcTransport.kt`. Implements
+  `SyncTransport`. On `connect()`:
+  - Generate X25519 DTLS keypair (Bouncy Castle). Compute certificate fingerprint (SHA-256).
+  - Build SDP offer: ICE ufrag/pwd (random), host candidate (local IP + port from JmDNS
+    listener), DTLS fingerprint, `m=application` data channel line.
+  - Display SDP offer as QR code in Settings → Sync → Pair Device (reuse `qrose`).
+  - Wait for browser's SDP answer (scanned QR or relay). Parse ICE candidates + remote
+    fingerprint. Perform DTLS handshake over UDP. Open SCTP association via `jitsi-sctp`.
+  Sync protocol on top of the SCTP data channel: same framing as `LanHttpTransport` —
+  JSON manifest exchange, then chunked binary file transfer. Reuse `LanSyncServer` request
+  handlers by wrapping the SCTP data channel in a `ByteReadChannel`/`ByteWriteChannel` pair.
+  `capabilities`: `supportsOfflineRead=false, requiresServer=false, maxConcurrentPulls=4,
+  isBootstrapOnly=false`. (est: 12h)
+- [ ] Create `kmp/src/wasmJsMain/.../sync/webrtc/WasmWebRtcTransport.kt`. On `connect()`:
+  - Receive SDP offer (from QR scan or relay).
+  - Create `RTCPeerConnection` via `external fun` JS interop. Set remote description.
+  - Generate SDP answer. Display as QR or send via relay.
+  - On `ondatachannel`: wrap the `RTCDataChannel` in coroutine-friendly send/receive
+    wrappers. Run the same manifest+file-transfer framing as `WasmLanHttpTransport`.
+  `capabilities`: same as `DesktopWebRtcTransport`. (est: 8h)
+- [ ] Unit test `DesktopWebRtcTransport` SDP generation: offer contains host candidate,
+  DTLS fingerprint, correct `m=application` line. (est: 2h)
+- [ ] Integration test (JVM only, loopback): two `DesktopWebRtcTransport` instances, one
+  as offerer one as answerer, DTLS handshake on loopback UDP, SCTP data channel opens,
+  manifest JSON round-trips. (est: 4h)
+
+### Story 8.6 — LAN transport tests
+
+- [ ] Integration test `LanSyncServerTest`: start server on loopback, `GET /.stele-manifest`
+  with valid token returns file list; with no token returns 401; `GET /files/{path}` returns
+  bytes; `PUT /files/{path}` writes to in-memory `FileSystem`. (est: 3h)
+- [ ] Unit test `LanHttpTransport`: mock server via `MockEngine` (Ktor test util);
+  `listRemote` parses manifest JSON; `pullFiles` parallelizes up to 8. (est: 2h)
+- [ ] Unit test `MdnsDiscovery`: mock JmDNS event; flow emits `LanPeer` with correct
+  host/port; self-discovery (same `graphId`) is filtered out. (est: 2h)
+- [ ] Unit test `WifiDirectBootstrapTransport`: mock `WifiP2pManager` callbacks; peer
+  discovery emits `Flow<WifiP2pDevice>`; connection yields correct `LanPeer` with group
+  owner IP `192.168.49.1`. (est: 2h)
+
+---
+
+## Epic 9 — Custom P2P sync protocol (WAN + relay)
+
+**Gate**: Epic 8 complete. Only needed for syncing across NAT (different networks — home to
+coffee shop, etc.). LAN-HTTP (Epic 8) covers same-network cases without any of this.
+**Goal**: Two devices with no shared network sync directly or via a lightweight relay — no
+GitHub account required. Pure Kotlin/KMP: no Rust, no FFI, no binary blobs.
+
+### Story 9.1 — NOISE_XX handshake (encrypted authenticated channels)
+
+- [ ] Add `dev.whyoleg.cryptography:cryptography-core:0.3.1` to `commonMain.dependencies`
+  (KMP-compatible crypto; JVM backend uses JCA, WASM uses WebCrypto). (est: 0.5h)
+- [ ] Create `kmp/src/commonMain/.../sync/noise/NoiseHandshake.kt`. Implement
+  `NOISE_XX` pattern (mutual authentication, both parties present static key):
+  - Key generation: `X25519` keypair via `cryptography-core`.
+  - Handshake messages: `e`, `e, ee, s, es`, `s, se` — three round trips over any
+    `ByteChannel`.
+  - Output: `CipherState` pair (send/receive AES-256-GCM) for the session.
+  Static key pairs are generated once per device and stored in `PlatformSettings`.
+  (est: 8h)
+- [ ] Unit test `NoiseHandshake` on loopback: two coroutines, `ByteChannel` pair, complete
+  handshake, exchange encrypted messages, decrypt correctly. Test that a tampered message
+  fails decryption. (est: 3h)
+
+### Story 9.2 — STUN client (NAT address discovery)
+
+- [ ] Create `kmp/src/commonMain/.../sync/stun/StunClient.kt`. Minimal STUN binding request
+  (RFC 5389): send `Binding Request` to a STUN server (default: `stun.l.google.com:19302`
+  or a self-hosted alternative); parse `Binding Response` to extract `XOR-MAPPED-ADDRESS`
+  (public IP + port). Uses Ktor `UdpSocket` (Ktor 3 multiplatform sockets). (est: 4h)
+- [ ] Unit test `StunClient` with a mock STUN server (loopback UDP). (est: 2h)
+
+### Story 9.3 — Relay server
+
+- [ ] Create a minimal Ktor relay server (separate Gradle/Bazel module:
+  `relay/`). Exposes two endpoints:
+  - `POST /relay/register` — device posts `{"peerId":"<pubkey-hex>","addr":"<stunAddr>"}`;
+    server stores for 60s TTL. Returns `200`.
+  - `GET /relay/peer/{peerId}` — returns the registered peer's STUN address if present,
+    or `404`. Used for signaling (peer A learns peer B's public IP before attempting
+    direct connection).
+  - `CONNECT /relay/tunnel/{peerId}` — WebSocket tunnel fallback: relay forwards bytes
+    between two connected peers when direct UDP hole-punch fails.
+  No auth on register/lookup (peerId is a public key — spoofing it gains nothing without
+  the corresponding private key). TLS terminated by a reverse proxy. (est: 6h)
+- [ ] Dockerize relay (`relay/Dockerfile`). Intended to run on Fly.io free tier or any VPS.
+  One relay can serve multiple unrelated SteleKit users (peerIds are globally unique public
+  keys). (est: 2h)
+
+### Story 9.4 — UDP hole-punching + direct connection
+
+- [ ] Create `kmp/src/commonMain/.../sync/p2p/HolePuncher.kt`. Algorithm:
+  1. Both devices register with relay server (`/relay/register`).
+  2. Device A fetches device B's STUN address from relay (`/relay/peer/{peerId}`).
+  3. Simultaneous UDP packets to each other's public address (hole-punch).
+  4. If packets arrive within 5s: direct UDP channel established. Proceed to NOISE
+     handshake (Story 9.1) over the direct channel.
+  5. If no arrival in 5s: fall back to relay WebSocket tunnel.
+  Implements `Either<DomainError, ByteChannel>`. (est: 8h)
+- [ ] Integration test on loopback (both sides same machine, STUN skipped, direct UDP):
+  hole-punch completes, NOISE handshake succeeds, 1KB message round-trips encrypted.
+  (est: 3h)
+
+### Story 9.5 — P2pTransport
+
+- [ ] Create `kmp/src/commonMain/.../sync/p2p/P2pTransport.kt` implementing `SyncTransport`.
+  Delegates to `HolePuncher` for connection establishment, then `LanHttpTransport` logic
+  (same file-listing + push/pull protocol) over the encrypted `ByteChannel`.
+  `capabilities`: `supportsOfflineRead=false, requiresServer=false, maxConcurrentPulls=4,
+  isBootstrapOnly=false`. (est: 4h)
+
+### Story 9.6 — P2P transport tests
+
+- [ ] End-to-end test `P2pTransportTest`: two in-process `P2pTransport` instances (loopback
+  UDP, no real STUN/relay), share public keys out-of-band, hole-punch, sync three files,
+  verify content on both sides. (est: 4h)
+- [ ] Test relay fallback: block direct UDP packets (mock `HolePuncher` to return timeout);
+  confirm relay WebSocket tunnel is used and files transfer correctly. (est: 2h)
+
+---
+
+## Updated Dependency Graph
+
+```
+Epic 1 (Data model)
+    |
+    +────────────────────┬──────────────────┬────────────────────+
+    v                    v                  v                    v
+Epic 2 (Desktop)    Epic 3 (Journals)  Epic 4 (WASM)       Epic 5 (UI)
+    |                    |                  |                    |
+    +────────────────────+──────────────────+────────────────────+
+                         v
+                  Epic 6 (Tests — stories run after each parallel epic)
+                         |
+                  Epic 7 (SyncTransport interface — can also run parallel with Epics 2–5)
+                         |
+                  Epic 8 (LAN-HTTP transport — same network sync, no cloud)
+                         |
+                  Epic 9 (Custom P2P + relay — cross-network, no cloud)
+```
+
+Epics 7–9 are independent of the Graph Sections feature (Epics 1–6) and can ship as
+separate PRs. Epic 7 is a rename-only refactor with zero behavior change — safe to merge
+at any time after Epic 1. Epic 8 is self-contained; Epic 9 depends only on Epic 8's
+`LanHttpTransport` sync protocol (reused over the encrypted P2P channel).
+
+All three transport epics are pure Kotlin/KMP. If a specific component (NAT traversal,
+NOISE crypto) proves fragile in the Kotlin implementation, it can be replaced by a Rust
+crate exposed via UniFFI without touching the `SyncTransport` interface or any caller.
