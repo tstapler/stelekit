@@ -27,6 +27,7 @@ fun EditorToolbar(
     val isInSelectionMode by blockStateManager.isInSelectionMode.collectAsState()
     val selectedBlockUuids by blockStateManager.selectedBlockUuids.collectAsState()
     val allBlocks by blockStateManager.blocks.collectAsState()
+    val blockClipboard by blockStateManager.blockClipboard.collectAsState()
 
     var showLinkPicker by remember { mutableStateOf(false) }
     var linkPickerBlockUuid by remember { mutableStateOf<BlockUuid?>(null) }
@@ -113,6 +114,9 @@ fun EditorToolbar(
         onCutSelected = { blockStateManager.cutSelectedBlocks() },
         onDeleteSelected = { blockStateManager.deleteSelectedBlocks() },
         onClearSelection = { blockStateManager.clearSelection() },
+        clipboardEmpty = blockClipboard.isEmpty,
+        onPaste = { editingBlockUuid?.let { blockStateManager.pasteBlocks(it) } },
+        onClearClipboard = { blockStateManager.clearClipboard() },
         isLeftHanded = isLeftHanded,
         modifier = modifier,
     )

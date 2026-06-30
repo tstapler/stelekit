@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -50,6 +51,9 @@ fun MobileBlockToolbar(
     onCutSelected: () -> Unit = {},
     onDeleteSelected: () -> Unit = {},
     onClearSelection: () -> Unit = {},
+    clipboardEmpty: Boolean = true,
+    onPaste: () -> Unit = {},
+    onClearClipboard: () -> Unit = {},
     isLeftHanded: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -263,6 +267,14 @@ fun MobileBlockToolbar(
                         }
                         IconButton(onClick = { onAddBlock(editingBlockId) }) {
                             Icon(Icons.Default.Add, contentDescription = "New Block")
+                        }
+                    }
+                    if (!clipboardEmpty) {
+                        IconButton(onClick = onPaste) {
+                            Icon(Icons.Default.ContentPaste, contentDescription = "Paste")
+                        }
+                        IconButton(onClick = onClearClipboard) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear clipboard")
                         }
                     }
                 }

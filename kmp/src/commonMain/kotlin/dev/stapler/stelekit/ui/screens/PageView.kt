@@ -108,6 +108,7 @@ fun PageView(
     var navigatorIndex by remember { mutableStateOf(0) }
 
     val blocks = allBlocks[page.uuid.value] ?: emptyList()
+    val cutBlockUuids = if (blockClipboard.isCut) blockClipboard.entries.map { it.block.uuid.value }.toSet() else emptySet()
 
     // Start observing this page's blocks on enter, stop on leave
     DisposableEffect(page.uuid.value) {
@@ -372,6 +373,7 @@ fun PageView(
                         onOpenAnnotationEditor = { uuid ->
                             viewModel.navigateToAnnotationEditor(uuid, page.uuid.value)
                         },
+                        cutBlockUuids = cutBlockUuids,
                     )
 
                     Box(

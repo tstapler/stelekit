@@ -56,6 +56,7 @@ interface BlockSelectionPort {
     fun clearSelection()
     fun copySelectedBlocks(): Job
     fun cutSelectedBlocks(): Job
+    fun clearClipboard()
 }
 
 /** Navigation and collapse state. */

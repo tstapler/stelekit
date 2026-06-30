@@ -310,6 +310,13 @@ class BlockStateManager(
     override fun cutSelectedBlocks(): Job = snapshotSelectedBlocks(ClipboardOperation.CUT)
 
     /**
+     * Clear the clipboard. Used on mobile to cancel a pending CUT without pasting.
+     */
+    override fun clearClipboard() {
+        _blockClipboard.value = BlockClipboard()
+    }
+
+    /**
      * Paste the clipboard blocks AFTER [afterBlockUuid] on the same page.
      * Each pasted block gets a new UUID v7. Internal parent/child relationships
      * within the clipboard are preserved via UUID remapping.
