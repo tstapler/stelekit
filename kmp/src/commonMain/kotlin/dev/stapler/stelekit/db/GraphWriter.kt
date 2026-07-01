@@ -651,7 +651,7 @@ class GraphWriter(
      *
      * Returns [DomainError.FileSystemError.WriteFailed] if the file could not be moved.
      */
-    suspend fun movePageToSection(
+    override suspend fun movePageToSection(
         page: Page,
         newSectionId: String,
         newPathPrefix: String,

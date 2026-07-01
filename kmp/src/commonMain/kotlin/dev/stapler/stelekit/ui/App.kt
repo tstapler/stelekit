@@ -1273,6 +1273,9 @@ private fun GraphContent(
                                 onNewSectionJournalEntry = if (activeSectionIds?.size == 1) {
                                     { viewModel.newSectionJournalForToday(activeSectionIds[0]) }
                                 } else null,
+                                sectionManifest = appState.currentManifest,
+                                defaultSection = appState.defaultSection,
+                                onSectionIndicatorClick = { viewModel.setSectionQuickToggleVisible(true) },
                             )
                         },
                         rightSidebar = {

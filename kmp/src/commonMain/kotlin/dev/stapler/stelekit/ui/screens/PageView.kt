@@ -40,10 +40,12 @@ import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.ui.state.BlockStateManager
 import dev.stapler.stelekit.ui.StelekitViewModel
 import androidx.compose.runtime.CompositionLocalProvider
+import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.ui.components.BlockList
 import dev.stapler.stelekit.ui.components.EditorCapabilities
 import dev.stapler.stelekit.ui.components.EditorToolbar
 import dev.stapler.stelekit.ui.components.LocalGraphRootPath
+import dev.stapler.stelekit.ui.components.SectionBadge
 import dev.stapler.stelekit.ui.components.parseMarkdownWithStyling
 import dev.stapler.stelekit.ui.components.pageDropTarget
 import dev.stapler.stelekit.ui.components.ReferencesPanel
@@ -78,6 +80,8 @@ fun PageView(
     onReloadFromDisk: (() -> Unit)? = null,
     isExporting: Boolean = false,
     tagSuggestionViewModel: TagSuggestionViewModel? = null,
+    currentManifest: SectionManifest? = null,
+    onSectionBadgeClick: (() -> Unit)? = null,
 ) {
     NavigationTracingEffect("PageView/${page.name}")
     val focusManager = LocalFocusManager.current
@@ -269,6 +273,19 @@ fun PageView(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+
+                // Section badge — shown when page belongs to a section and the manifest is available
+                if (page.sectionId.isNotEmpty() && currentManifest != null) {
+                    val section = currentManifest.sections.find { it.id == page.sectionId }
+                    if (section != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        SectionBadge(
+                            section = section,
+                            // Disable click for journal pages (FR-14 / story constraint)
+                            onClick = if (!page.isJournal) onSectionBadgeClick else null,
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

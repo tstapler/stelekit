@@ -15,6 +15,8 @@ import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.vault.VaultError
 import dev.stapler.stelekit.vault.VaultNamespace
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.sections.SectionManifest
+import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.ui.i18n.Language
 
@@ -157,6 +159,15 @@ data class AppState(
     val shareIsGoogleAuthenticated: Boolean = false,
     val shareGoogleEmail: String? = null,
     val isExportingToDrive: Boolean = false,
+    // Section support
+    val currentManifest: SectionManifest? = null,
+    val currentSectionStates: Map<String, SectionState> = emptyMap(),
+    val defaultSection: String = "",
+    val deviceSetupComplete: Boolean = false,
+    val sectionPickerVisible: Boolean = false,
+    val sectionPickerPage: Page? = null,
+    val deviceSetupWizardVisible: Boolean = false,
+    val sectionQuickToggleVisible: Boolean = false,
 ) {
     val canGoBack: Boolean get() = historyIndex > 0
     val canGoForward: Boolean get() = historyIndex < navigationHistory.size - 1
