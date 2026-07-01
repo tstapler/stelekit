@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.58.0](https://github.com/tstapler/stelekit/compare/v0.57.0...v0.58.0) (2026-07-01)
+
+
+### Features
+
+* **assets:** fully implement asset browser — thumbnails, detail, sort, pagination, tags, orphan, empty state + camera fix ([#188](https://github.com/tstapler/stelekit/issues/188)) ([02daad2](https://github.com/tstapler/stelekit/commit/02daad284c7d1074d4f219be72b534c6daa70a06))
+* **wasm:** close browser platform gaps — image picker, share, file download, graph dialog ([#191](https://github.com/tstapler/stelekit/issues/191)) ([c10dd8c](https://github.com/tstapler/stelekit/commit/c10dd8cf9e14844a5021d59f21f6680363a69787))
+
 ## [0.57.0](https://github.com/tstapler/stelekit/compare/v0.56.0...v0.57.0) (2026-07-01)
 
 
