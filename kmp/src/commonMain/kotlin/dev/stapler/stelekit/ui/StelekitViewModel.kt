@@ -1990,21 +1990,19 @@ class StelekitViewModel(
                     )
                 }
 
-                val activeSections = platformSettings.getSectionStates()
-                    .filterValues { it == SectionState.ACTIVE }.keys
-                for (sectionId in activeSections) {
-                    legacyCommands += Command(
-                        id = "journal.new.$sectionId",
-                        label = "New $sectionId journal for today",
-                        shortcut = null,
-                        action = { newSectionJournalForToday(sectionId) }
-                    )
-                }
                 val manifestForCmd = _uiState.value.currentManifest
                 if (manifestForCmd != null && manifestForCmd.sections.isNotEmpty()) {
                     val sectionStatesForCmd = _uiState.value.currentSectionStates
                     val activeSectionsForSwitch = manifestForCmd.sections.filter { section ->
                         (sectionStatesForCmd[section.id] ?: SectionState.ACTIVE) == SectionState.ACTIVE
+                    }
+                    for (section in activeSectionsForSwitch) {
+                        legacyCommands += Command(
+                            id = "journal.new.${section.id}",
+                            label = "New ${section.displayName} journal for today",
+                            shortcut = null,
+                            action = { newSectionJournalForToday(section.id) }
+                        )
                     }
                     if (activeSectionsForSwitch.isNotEmpty()) {
                         legacyCommands += Command(

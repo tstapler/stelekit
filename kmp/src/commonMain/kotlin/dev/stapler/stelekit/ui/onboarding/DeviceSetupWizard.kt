@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.sections.SectionDefinition
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.sections.SectionState
 
@@ -35,10 +36,11 @@ fun DeviceSetupWizard(
     manifest: SectionManifest,
     onComplete: (defaultSection: String, sectionStates: Map<String, SectionState>) -> Unit,
     onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var mode by remember { mutableStateOf<SetupMode?>(null) }
-    var primarySection by remember { mutableStateOf(manifest.sections.firstOrNull()?.id ?: "") }
-    var customStates by remember {
+    var primarySection by remember(manifest) { mutableStateOf(manifest.sections.firstOrNull()?.id ?: "") }
+    var customStates by remember(manifest) {
         mutableStateOf(manifest.sections.associate { it.id to SectionState.ACTIVE })
     }
     var customDefaultSection by remember { mutableStateOf("") }
@@ -142,7 +144,7 @@ private fun WorkModeContent(
 
 @Composable
 private fun CustomModeContent(
-    sections: List<dev.stapler.stelekit.sections.SectionDefinition>,
+    sections: List<SectionDefinition>,
     customStates: Map<String, SectionState>,
     onStateChange: (String, SectionState) -> Unit,
     customDefaultSection: String,

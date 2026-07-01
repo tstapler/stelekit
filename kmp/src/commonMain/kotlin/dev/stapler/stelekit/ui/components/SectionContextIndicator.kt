@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,14 +32,18 @@ fun SectionContextIndicator(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val section = if (defaultSection.isNotEmpty()) manifest.sections.find { it.id == defaultSection } else null
+    val section = remember(defaultSection, manifest) {
+        if (defaultSection.isNotEmpty()) manifest.sections.find { it.id == defaultSection } else null
+    }
 
-    val dotColor = section?.color?.let {
-        try { Color(it.trimStart('#').toLong(16) or 0xFF000000L) }
-        catch (_: NumberFormatException) { MaterialTheme.colorScheme.secondary }
-    } ?: MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+    val dotColor = remember(section?.color) {
+        section?.color?.let {
+            try { Color(it.trimStart('#').toLong(16) or 0xFF000000L) }
+            catch (_: NumberFormatException) { null }
+        }
+    } ?: if (section != null) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
 
-    val label = section?.displayName ?: "All sections"
+    val label = remember(section) { section?.displayName ?: "All sections" }
 
     Row(
         modifier = modifier

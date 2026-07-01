@@ -709,6 +709,9 @@ object MigrationRunner {
             // drop old, rename. FTS5 triggers (pages_ai/ad/au) are recreated by
             // ensureFts5TriggerState() after applyAll() completes.
             statements = listOf(
+                // PRAGMA foreign_keys=OFF/ON is included for consistency with other copy-alter migrations
+                // in this file, even though pages has no FK references from other tables. The BEGIN/COMMIT
+                // make the rename atomic (rollback on crash); foreign_keys=OFF avoids trigger conflicts.
                 "PRAGMA foreign_keys=OFF",
                 // BEGIN makes the copy-alter sequence atomic: if interrupted between DROP TABLE
                 // pages and RENAME pages_new, SQLite rolls back on next open instead of leaving
@@ -747,6 +750,12 @@ object MigrationRunner {
                 "COMMIT",
                 "PRAGMA foreign_keys=ON",
                 "ANALYZE pages",
+            )
+        ),
+        Migration(
+            name = "idx_pages_section_id",
+            statements = listOf(
+                "CREATE INDEX IF NOT EXISTS idx_pages_section_id ON pages(section_id, name)",
             )
         ),
     )

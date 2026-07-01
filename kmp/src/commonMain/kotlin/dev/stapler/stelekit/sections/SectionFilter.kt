@@ -21,18 +21,20 @@ class SectionFilter(
         }
     }
 
+    private val sectionIdByPrefix: Map<String, String> = buildMap {
+        for (section in manifest.sections) {
+            put(section.pagePathPrefix, section.id)
+            put(section.journalPathPrefix, section.id)
+        }
+    }
+
     fun excludes(filePath: String): Boolean =
         excludedPrefixes.any { prefix -> filePath.startsWithPathPrefix(prefix) }
 
-    fun sectionIdForPath(filePath: String): String {
-        for (section in manifest.sections) {
-            if (filePath.startsWithPathPrefix(section.pagePathPrefix) ||
-                filePath.startsWithPathPrefix(section.journalPathPrefix)) {
-                return section.id
-            }
-        }
-        return ""
-    }
+    fun sectionIdForPath(filePath: String): String =
+        sectionIdByPrefix.entries.firstOrNull { (prefix, _) ->
+            filePath.startsWithPathPrefix(prefix)
+        }?.value ?: ""
 
     /** Sections whose content is on-device (ACTIVE or HIDDEN); excludes REMOVED. */
     fun subscribedSectionIds(): Set<String> = buildSet {
@@ -42,11 +44,10 @@ class SectionFilter(
         }
     }
 
-    val activeSectionIds: List<String>
-        get() = manifest.sections.mapNotNull { section ->
-            val state = sectionStates[section.id] ?: SectionState.ACTIVE
-            if (state == SectionState.ACTIVE) section.id else null
-        }
+    val activeSectionIds: List<String> = manifest.sections.mapNotNull { section ->
+        val state = sectionStates[section.id] ?: SectionState.ACTIVE
+        if (state == SectionState.ACTIVE) section.id else null
+    }
 }
 
 // Matches "…/pages/acme-work/foo.md" against prefix "pages/acme-work" but NOT "…/pages/acme-works/foo.md".

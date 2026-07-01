@@ -161,7 +161,8 @@ fun LeftSidebar(
             // Primary — daily-use screens
             NavigationItem("Journals", Icons.Default.DateRange, currentScreen is Screen.Journals) { onNavigate(Screen.Journals) }
             if (onNewSectionJournalEntry != null) {
-                NavigationItem("New Work Journal", Icons.Default.DateRange, false) { onNewSectionJournalEntry() }
+                val sectionLabel = sectionManifest?.sections?.find { it.id == defaultSection }?.displayName ?: "Work"
+                NavigationItem("New $sectionLabel Journal", Icons.Default.DateRange, false) { onNewSectionJournalEntry() }
             }
             NavigationItem("All Pages", Icons.AutoMirrored.Filled.List, currentScreen is Screen.AllPages) { onNavigate(Screen.AllPages) }
             NavigationItem("Flashcards", Icons.Default.Style, currentScreen is Screen.Flashcards) { onNavigate(Screen.Flashcards) }

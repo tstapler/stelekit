@@ -19,6 +19,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,14 +35,13 @@ import dev.stapler.stelekit.sections.SectionState
  */
 @Composable
 fun SectionQuickTogglePanel(
-    visible: Boolean,
     manifest: SectionManifest,
     sectionStates: Map<String, SectionState>,
     onToggleSection: (sectionId: String, newState: SectionState) -> Unit,
     onManageSections: () -> Unit,
     onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    if (!visible) return
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -53,9 +53,11 @@ fun SectionQuickTogglePanel(
                     // Never expose REMOVED sections from this panel
                     if (state == SectionState.REMOVED) return@forEach
 
-                    val dotColor = section.color?.let {
-                        try { Color(it.trimStart('#').toLong(16) or 0xFF000000L) }
-                        catch (_: NumberFormatException) { MaterialTheme.colorScheme.secondary }
+                    val dotColor = remember(section.color) {
+                        section.color?.let {
+                            try { Color(it.trimStart('#').toLong(16) or 0xFF000000L) }
+                            catch (_: NumberFormatException) { null }
+                        }
                     } ?: MaterialTheme.colorScheme.secondary
 
                     Row(

@@ -89,36 +89,36 @@ class WasmSectionSyncService(private val pageRepository: PageRepository) {
                 null
             }
         }
+
+        private fun jsFetchWithToken(url: String, token: String): kotlin.js.Promise<JsAny> =
+            js("""fetch(url, { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json' } })""")
+
+        private fun jsFetchAnon(url: String): kotlin.js.Promise<JsAny> =
+            js("""fetch(url, { headers: { 'Accept': 'application/vnd.github+json' } })""")
+
+        private fun jsFetch(url: String, token: String?): kotlin.js.Promise<JsAny> =
+            if (token != null) jsFetchWithToken(url, token) else jsFetchAnon(url)
+
+        private fun jsResponseStatus(response: JsAny): Int = js("response.status | 0")
+        private fun jsResponseHeader(response: JsAny, name: String): String? =
+            js("response.headers.get(name) || null")
+        private fun jsResponseText(response: JsAny): kotlin.js.Promise<JsAny> = js("response.text()")
+        private fun jsStringValue(v: JsAny): String = js("String(v)")
+
+        private fun extractTreePaths(json: String): List<String> {
+            val results = mutableListOf<String>()
+            var i = json.indexOf("\"path\"")
+            while (i != -1) {
+                val colon = json.indexOf(':', i)
+                if (colon == -1) break
+                val q1 = json.indexOf('"', colon + 1)
+                if (q1 == -1) break
+                val q2 = json.indexOf('"', q1 + 1)
+                if (q2 == -1) break
+                results.add(json.substring(q1 + 1, q2))
+                i = json.indexOf("\"path\"", q2 + 1)
+            }
+            return results
+        }
     }
-}
-
-private fun jsFetchWithToken(url: String, token: String): kotlin.js.Promise<JsAny> =
-    js("""fetch(url, { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json' } })""")
-
-private fun jsFetchAnon(url: String): kotlin.js.Promise<JsAny> =
-    js("""fetch(url, { headers: { 'Accept': 'application/vnd.github+json' } })""")
-
-private fun jsFetch(url: String, token: String?): kotlin.js.Promise<JsAny> =
-    if (token != null) jsFetchWithToken(url, token) else jsFetchAnon(url)
-
-private fun jsResponseStatus(response: JsAny): Int = js("response.status | 0")
-private fun jsResponseHeader(response: JsAny, name: String): String? =
-    js("response.headers.get(name) || null")
-private fun jsResponseText(response: JsAny): kotlin.js.Promise<JsAny> = js("response.text()")
-private fun jsStringValue(v: JsAny): String = js("String(v)")
-
-private fun extractTreePaths(json: String): List<String> {
-    val results = mutableListOf<String>()
-    var i = json.indexOf("\"path\"")
-    while (i != -1) {
-        val colon = json.indexOf(':', i)
-        if (colon == -1) break
-        val q1 = json.indexOf('"', colon + 1)
-        if (q1 == -1) break
-        val q2 = json.indexOf('"', q1 + 1)
-        if (q2 == -1) break
-        results.add(json.substring(q1 + 1, q2))
-        i = json.indexOf("\"path\"", q2 + 1)
-    }
-    return results
 }

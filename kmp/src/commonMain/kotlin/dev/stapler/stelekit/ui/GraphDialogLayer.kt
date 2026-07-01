@@ -289,11 +289,12 @@ internal fun GraphDialogLayer(
         val pickerPage = appState.sectionPickerPage
         // Only ACTIVE sections are offered as move targets — hidden/removed sections are not
         // reachable on this device so moving a page there would make it disappear immediately.
-        val activeSections = manifest.sections.filter { section ->
-            (appState.currentSectionStates[section.id] ?: SectionState.ACTIVE) == SectionState.ACTIVE
+        val activeSections = remember(manifest, appState.currentSectionStates) {
+            manifest.sections.filter { section ->
+                (appState.currentSectionStates[section.id] ?: SectionState.ACTIVE) == SectionState.ACTIVE
+            }
         }
         SectionPickerDialog(
-            visible = true,
             sections = activeSections,
             currentSectionId = pickerPage?.sectionId ?: "",
             onSelect = { sectionId ->
@@ -306,7 +307,6 @@ internal fun GraphDialogLayer(
     // Section quick-toggle panel
     if (appState.sectionQuickToggleVisible && manifest != null) {
         SectionQuickTogglePanel(
-            visible = true,
             manifest = manifest,
             sectionStates = appState.currentSectionStates,
             onToggleSection = { id, state -> viewModel.setSectionState(id, state) },

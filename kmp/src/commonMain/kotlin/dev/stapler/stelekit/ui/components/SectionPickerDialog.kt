@@ -31,13 +31,12 @@ import dev.stapler.stelekit.sections.SectionDefinition
  */
 @Composable
 fun SectionPickerDialog(
-    visible: Boolean,
     sections: List<SectionDefinition>,
     currentSectionId: String,
     onSelect: (sectionId: String) -> Unit,
     onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    if (!visible) return
 
     var selected by remember(currentSectionId) { mutableStateOf(currentSectionId) }
 

@@ -49,6 +49,7 @@ fun SectionsSettings(
     onCreateSection: (id: String, displayName: String, color: String?, pagePathPrefix: String, journalPathPrefix: String) -> Unit,
     onRenameSection: (id: String, newDisplayName: String) -> Unit,
     onDeleteSection: (id: String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
     var sectionToRename by remember { mutableStateOf<SectionDefinition?>(null) }
@@ -134,6 +135,7 @@ fun DeviceSubscriptionsPanel(
     manifest: SectionManifest,
     sectionStates: Map<String, SectionState>,
     onToggleSection: (sectionId: String, newState: SectionState) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var showRestartBanner by remember { mutableStateOf(false) }
 
@@ -183,9 +185,11 @@ private fun SectionRow(
     onRename: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    val dotColor = section.color?.let {
-        try { Color(it.trimStart('#').toLong(16) or 0xFF000000L) }
-        catch (_: NumberFormatException) { MaterialTheme.colorScheme.secondary }
+    val dotColor = remember(section.color) {
+        section.color?.let {
+            try { Color(it.trimStart('#').toLong(16) or 0xFF000000L) }
+            catch (_: NumberFormatException) { null }
+        }
     } ?: MaterialTheme.colorScheme.secondary
 
     Row(

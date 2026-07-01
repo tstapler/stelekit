@@ -1822,7 +1822,7 @@ class GraphLoader(
             }
         }
 
-        val fileContent = readFileDecrypted(filePath) ?: ""
+        val fileContent = readFileDecryptedSuspend(filePath) ?: ""
         parseAndSavePage(FilePath(filePath), fileContent, ParseMode.FULL)
 
         return pageRepository.getJournalPageByDateAndSection(date, sectionId).first().flatMap { page ->

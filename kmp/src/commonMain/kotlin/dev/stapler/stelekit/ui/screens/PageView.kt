@@ -55,6 +55,7 @@ import dev.stapler.stelekit.ui.i18n.t
 import dev.stapler.stelekit.tags.TagSuggestionViewModel
 import dev.stapler.stelekit.tags.TagSuggestionState
 import dev.stapler.stelekit.tags.WikiLinkExtractor
+import kotlinx.coroutines.flow.map
 import dev.stapler.stelekit.ui.components.tags.SuggestionBottomSheet
 
 /**
@@ -102,7 +103,9 @@ fun PageView(
     val loadingPageUuids by blockStateManager.loadingPageUuids.collectAsState()
     val suggestionMatcher by viewModel.suggestionMatcher.collectAsState()
     val localPageNames by viewModel.localPageNames.collectAsState()
-    val appState by viewModel.uiState.collectAsState()
+    val hasSectionFilter by remember(viewModel) {
+        viewModel.uiState.map { it.hasSectionFilter }
+    }.collectAsState(initial = false)
 
     val tagSuggestionState by tagSuggestionViewModel?.state?.collectAsState()
         ?: remember { mutableStateOf(TagSuggestionState.Idle) }
@@ -377,7 +380,7 @@ fun PageView(
                         onOpenAnnotationEditor = { uuid ->
                             viewModel.navigateToAnnotationEditor(uuid, page.uuid.value)
                         },
-                        hasSectionFilter = appState.hasSectionFilter,
+                        hasSectionFilter = hasSectionFilter,
                         localPageNames = localPageNames,
                     )
 
