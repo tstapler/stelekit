@@ -5,6 +5,7 @@ package dev.stapler.stelekit.ui
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import arrow.core.Either
+import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.export.ShareProvider
@@ -29,8 +30,12 @@ class WasmJsShareProvider : ShareProvider {
         suggestedName: String,
         extension: String,
     ): Either<DomainError, Boolean> {
-        triggerBlobDownload(content, "$suggestedName.$extension")
-        return true.right()
+        return try {
+            triggerBlobDownload(content, "$suggestedName.$extension")
+            true.right()
+        } catch (e: Throwable) {
+            DomainError.ExportError.ShareFailed(e.message ?: "download failed").left()
+        }
     }
 }
 

@@ -1763,7 +1763,7 @@ private fun AddGraphDialog(
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it.trim() },
+                    onValueChange = { name = it },
                     label = { Text("Graph name") },
                     singleLine = true,
                 )
@@ -1771,8 +1771,8 @@ private fun AddGraphDialog(
         },
         confirmButton = {
             Button(
-                onClick = { if (name.isNotEmpty()) onConfirm(name) },
-                enabled = name.isNotEmpty(),
+                onClick = { if (name.trim().isNotEmpty()) onConfirm(name.trim()) },
+                enabled = name.trim().isNotEmpty(),
             ) {
                 Text("Open")
             }

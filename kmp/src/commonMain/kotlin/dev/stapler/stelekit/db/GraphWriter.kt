@@ -670,11 +670,20 @@ class GraphWriter(
 
             val moved = fileSystem.renameFile(oldPath, newPath)
             if (!moved) {
-                // renameFile returns false on unsupported platforms — copy+delete fallback
-                val content = fileSystem.readFile(oldPath)
-                    ?: return@withContext DomainError.FileSystemError.ReadFailed(oldPath, "could not read source file").left()
-                if (!fileSystem.writeFile(newPath, content)) {
-                    return@withContext DomainError.FileSystemError.WriteFailed(newPath, "could not write to new path").left()
+                // renameFile returns false on unsupported platforms — copy+delete fallback.
+                // Encrypted files (.md.stek) must use byte-level IO; String round-trip corrupts ciphertext.
+                if (capturedCryptoLayer != null) {
+                    val bytes = fileSystem.readFileBytes(oldPath)
+                        ?: return@withContext DomainError.FileSystemError.ReadFailed(oldPath, "could not read source file").left()
+                    if (!fileSystem.writeFileBytes(newPath, bytes)) {
+                        return@withContext DomainError.FileSystemError.WriteFailed(newPath, "could not write to new path").left()
+                    }
+                } else {
+                    val content = fileSystem.readFile(oldPath)
+                        ?: return@withContext DomainError.FileSystemError.ReadFailed(oldPath, "could not read source file").left()
+                    if (!fileSystem.writeFile(newPath, content)) {
+                        return@withContext DomainError.FileSystemError.WriteFailed(newPath, "could not write to new path").left()
+                    }
                 }
                 if (!fileSystem.deleteFile(oldPath)) {
                     logger.warn("copy+delete fallback: could not delete source file $oldPath after copying to $newPath")
