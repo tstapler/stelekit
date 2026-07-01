@@ -1,6 +1,6 @@
 package dev.stapler.stelekit.sections
 
-import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.platform.Settings
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -9,7 +9,7 @@ import kotlinx.serialization.json.jsonPrimitive
 
 private const val KEY_SECTION_STATES = "section_states"
 
-fun PlatformSettings.getSectionStates(): Map<String, SectionState> {
+fun Settings.getSectionStates(): Map<String, SectionState> {
     val raw = getString(KEY_SECTION_STATES, "")
     if (raw.isBlank()) return emptyMap()
     return try {
@@ -27,7 +27,7 @@ fun PlatformSettings.getSectionStates(): Map<String, SectionState> {
     }
 }
 
-fun PlatformSettings.putSectionStates(states: Map<String, SectionState>) {
+fun Settings.putSectionStates(states: Map<String, SectionState>) {
     val obj = buildJsonObject {
         for ((id, state) in states) put(id, JsonPrimitive(state.name.lowercase()))
     }

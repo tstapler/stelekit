@@ -120,6 +120,8 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import arrow.core.Either
+import dev.stapler.stelekit.sections.SectionState
+import dev.stapler.stelekit.sections.getSectionStates
 import dev.stapler.stelekit.db.ImageImportService
 import dev.stapler.stelekit.error.toUiMessage
 import dev.stapler.stelekit.model.ImageSource
@@ -976,8 +978,14 @@ private fun GraphContent(
         }
     }
 
-    val journalsViewModel = remember(repos, blockStateManager) {
-        JournalsViewModel(repos.journalService, blockStateManager)
+    val activeSectionIds = remember(platformSettings) {
+        val states = platformSettings.getSectionStates()
+        if (states.isEmpty()) null
+        else states.filterValues { it == SectionState.ACTIVE }.keys.toList()
+    }
+
+    val journalsViewModel = remember(repos, blockStateManager, activeSectionIds) {
+        JournalsViewModel(repos.journalService, blockStateManager, activeSectionIds = activeSectionIds)
     }
 
     val tagSettings = remember(platformSettings) { TagSettings(platformSettings) }
@@ -1262,6 +1270,9 @@ private fun GraphContent(
                                 onAuthError = { viewModel.openGitSetupForCredentials() },
                                 onCloneGraph = { viewModel.openGitSetupForClone() },
                                 gitSyncedGraphId = if (appState.gitConfig != null) activeGraphId else null,
+                                onNewSectionJournalEntry = if (activeSectionIds?.size == 1) {
+                                    { viewModel.newSectionJournalForToday(activeSectionIds[0]) }
+                                } else null,
                             )
                         },
                         rightSidebar = {

@@ -39,4 +39,10 @@ class SectionFilter(
             if (state != SectionState.HIDDEN && state != SectionState.REMOVED) add(section.id)
         }
     }
+
+    val activeSectionIds: List<String>
+        get() = manifest.sections.mapNotNull { section ->
+            val state = sectionStates[section.id] ?: SectionState.ACTIVE
+            if (state == SectionState.ACTIVE) section.id else null
+        }
 }

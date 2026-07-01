@@ -1327,7 +1327,8 @@ class GraphLoader(
         val updatedAt = fileModTime?.let { Instant.fromEpochMilliseconds(it) } ?: Clock.System.now()
 
         val existingPage = if (isJournal && journalDate != null) {
-            journalDateResolver.getPageByJournalDate(journalDate)
+            val sectionId = sectionFilter?.sectionIdForPath(filePath) ?: ""
+            journalDateResolver.getJournalPageByDateAndSection(journalDate, sectionId)
         } else {
             pageRepository.getPageByName(name).first().getOrNull()
         }
@@ -1369,7 +1370,8 @@ class GraphLoader(
             properties = properties,
             isJournal = isJournal,
             journalDate = journalDate,
-            isContentLoaded = isLoaded
+            isContentLoaded = isLoaded,
+            sectionId = sectionFilter?.sectionIdForPath(filePath) ?: ""
         )
         
         // For METADATA_ONLY, create lightweight stub blocks (isLoaded = false)
@@ -1440,7 +1442,8 @@ class GraphLoader(
     ): PageLookupResult {
         val lookupSpan = Span("db.lookupPage", traceId, parentSpanId)
         val existingPage = if (isJournal && journalDate != null) {
-            journalDateResolver.getPageByJournalDate(journalDate)
+            val sectionId = sectionFilter?.sectionIdForPath(filePath) ?: ""
+            journalDateResolver.getJournalPageByDateAndSection(journalDate, sectionId)
         } else {
             pageRepository.getPageByName(name).first().getOrNull()
         }
@@ -1783,6 +1786,33 @@ class GraphLoader(
         existingContent = existingContent,
         sidecarMap = sidecarMap,
     )
+
+    override suspend fun createSectionJournalPage(
+        sectionId: String,
+        date: kotlinx.datetime.LocalDate,
+    ): Either<DomainError, Page> {
+        val graphPath = currentGraphPath
+        if (graphPath.isEmpty()) {
+            return DomainError.DatabaseError.WriteFailed("No graph loaded").left()
+        }
+        val journalDir = if (sectionId.isBlank()) "$graphPath/journals" else "$graphPath/journals/$sectionId"
+        val filePath = "$journalDir/$date.md"
+
+        if (!fileSystem.directoryExists(journalDir)) {
+            fileSystem.createDirectory(journalDir)
+        }
+        if (!fileSystem.fileExists(filePath)) {
+            fileSystem.writeFile(filePath, "")
+        }
+
+        val fileContent = readFileDecrypted(filePath) ?: ""
+        parseAndSavePage(FilePath(filePath), fileContent, ParseMode.FULL)
+
+        return pageRepository.getJournalPageByDateAndSection(date, sectionId).first().getOrNull()
+            ?.right()
+            ?: DomainError.DatabaseError.WriteFailed("Failed to find created section journal page").left()
+    }
+
 
     private fun createStubBlocks(
         parsedBlocks: List<ParsedBlock>,

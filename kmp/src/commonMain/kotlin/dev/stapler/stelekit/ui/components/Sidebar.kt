@@ -78,7 +78,8 @@ fun LeftSidebar(
     onAuthError: (() -> Unit)? = null,
     onCloneGraph: () -> Unit = {},
     gitSyncedGraphId: String? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onNewSectionJournalEntry: (() -> Unit)? = null,
 ) {
     val isMobile = LocalWindowSizeClass.current.isMobile
 
@@ -144,6 +145,9 @@ fun LeftSidebar(
             )
             // Primary — daily-use screens
             NavigationItem("Journals", Icons.Default.DateRange, currentScreen is Screen.Journals) { onNavigate(Screen.Journals) }
+            if (onNewSectionJournalEntry != null) {
+                NavigationItem("New Work Journal", Icons.Default.DateRange, false) { onNewSectionJournalEntry() }
+            }
             NavigationItem("All Pages", Icons.AutoMirrored.Filled.List, currentScreen is Screen.AllPages) { onNavigate(Screen.AllPages) }
             NavigationItem("Flashcards", Icons.Default.Style, currentScreen is Screen.Flashcards) { onNavigate(Screen.Flashcards) }
 

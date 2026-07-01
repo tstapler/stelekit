@@ -15,6 +15,7 @@ import dev.stapler.stelekit.util.FractionalIndexing
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.LocalDate
@@ -77,6 +78,18 @@ class JournalService(
 
     fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         pageRepository.getJournalPages(limit, offset)
+
+    fun getJournalPagesBySections(
+        activeSectionIds: List<String>,
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<Page>>> {
+        if (activeSectionIds.isEmpty()) return pageRepository.getJournalPages(limit, offset)
+        val allowedIds = buildSet { add(""); addAll(activeSectionIds) }
+        return pageRepository.getJournalPages(limit, offset).map { result ->
+            result.map { pages -> pages.filter { it.sectionId in allowedIds } }
+        }
+    }
 
     // ---- Today's journal creation ----
 

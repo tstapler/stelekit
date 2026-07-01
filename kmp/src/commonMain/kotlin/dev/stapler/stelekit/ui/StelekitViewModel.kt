@@ -75,6 +75,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
+import dev.stapler.stelekit.sections.SectionState
+import dev.stapler.stelekit.sections.getSectionStates
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.plus
@@ -1880,6 +1882,14 @@ class StelekitViewModel(
         return commandManager.getAvailableCommands(context)
     }
 
+    fun newSectionJournalForToday(sectionId: String) {
+        scope.launch {
+            val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+            val result = graphLoader.createSectionJournalPage(sectionId, today)
+            result.onRight { page -> navigateTo(Screen.PageView(page)) }
+        }
+    }
+
     private fun updateCommands() {
         scope.launch {
             try {
@@ -1945,6 +1955,17 @@ class StelekitViewModel(
                         label = "Import text as new page",
                         shortcut = null,
                         action = { navigateTo(Screen.Import) }
+                    )
+                }
+
+                val activeSections = platformSettings.getSectionStates()
+                    .filterValues { it == SectionState.ACTIVE }.keys
+                for (sectionId in activeSections) {
+                    legacyCommands += Command(
+                        id = "journal.new.$sectionId",
+                        label = "New $sectionId journal for today",
+                        shortcut = null,
+                        action = { newSectionJournalForToday(sectionId) }
                     )
                 }
 
