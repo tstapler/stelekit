@@ -86,6 +86,7 @@ data class AppState(
     val rightSidebarExpanded: Boolean = false,
     val settingsVisible: Boolean = false,
     val isLoading: Boolean = false,
+    val isContentFetching: Boolean = false,
     val isFullyLoaded: Boolean = false,  // True when all background loading is complete
     val themeMode: StelekitThemeMode = StelekitThemeMode.SYSTEM,
     val language: Language = Language.ENGLISH,

@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.platform
 
+import dev.stapler.stelekit.sync.WasmSectionSyncService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -62,6 +63,22 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         if (path.startsWith("~")) path.replaceFirst("~", homeDir) else path
 
     actual override fun readFile(path: String): String? = cache[path]
+
+    override suspend fun readFileSuspend(path: String): String? {
+        cache[path]?.let { return it }
+        val owner = githubOwner.ifEmpty { return null }
+        val repo = githubRepo.ifEmpty { return null }
+        val branch = githubBranch
+        val token = githubToken
+        // Convert absolute OPFS path back to a repo-relative path.
+        // OPFS paths look like /stelekit/<graphId>/<repo-relative-path>
+        val repoRelative = path.removePrefix("/stelekit/").substringAfter("/")
+        val rawUrl = "https://raw.githubusercontent.com/$owner/$repo/$branch/$repoRelative"
+        val content = WasmSectionSyncService.githubFetch(rawUrl, token) ?: return null
+        cache[path] = content
+        scope.launch { opfsWriteFile(path, content) }
+        return content
+    }
     actual override fun fileExists(path: String): Boolean = cache.containsKey(path) || blobUrlCache.containsKey(path)
     actual override fun listFiles(path: String): List<String> =
         cache.keys
@@ -111,6 +128,10 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     companion object {
         private const val DOWNLOAD_PREFIX = "/_wasm_dl_/"
+        var githubOwner: String = ""
+        var githubRepo: String = ""
+        var githubBranch: String = "main"
+        var githubToken: String? = null
     }
 }
 

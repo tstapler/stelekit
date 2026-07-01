@@ -158,6 +158,10 @@ class SqlDelightPageRepository(
         queries.selectUnloadedPagesPaginated(limit.toLong(), offset.toLong())
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
+    override fun getUnloadedPagesBySection(sectionIds: Collection<String>, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        queries.selectUnloadedPagesBySection(sectionIds, limit.toLong(), offset.toLong())
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+
     override suspend fun countUnloadedPages(): Either<DomainError, Long> = withContext(PlatformDispatcher.DB) {
         try {
             queries.countUnloadedPages().executeAsOne().right()

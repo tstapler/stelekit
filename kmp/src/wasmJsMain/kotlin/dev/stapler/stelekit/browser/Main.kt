@@ -13,6 +13,7 @@ import dev.stapler.stelekit.platform.DemoFileSystem
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.sync.WasmSectionSyncService
 import dev.stapler.stelekit.repository.GraphBackend
 import dev.stapler.stelekit.service.WasmMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
@@ -39,6 +40,22 @@ fun main() {
 
         val opfsFileSystem = PlatformFileSystem()
         opfsFileSystem.preload(opfsGraphPath)
+
+        // Wire GitHub config for section sync and lazy content fetching.
+        // Keys stored in localStorage by the web host (e.g. embed script).
+        val ghSettings = PlatformSettings()
+        val ghOwner = ghSettings.getString("githubOwner", "")
+        val ghRepo = ghSettings.getString("githubRepo", "")
+        val ghBranch = ghSettings.getString("githubBranch", "main")
+        val ghToken = ghSettings.getString("githubToken", "").ifEmpty { null }
+        PlatformFileSystem.githubOwner = ghOwner
+        PlatformFileSystem.githubRepo = ghRepo
+        PlatformFileSystem.githubBranch = ghBranch
+        PlatformFileSystem.githubToken = ghToken
+        WasmSectionSyncService.githubOwner = ghOwner
+        WasmSectionSyncService.githubRepo = ghRepo
+        WasmSectionSyncService.githubBranch = ghBranch
+        WasmSectionSyncService.githubToken = ghToken
 
         val driverFactory = DriverFactory()
         var useDemoFallback = false

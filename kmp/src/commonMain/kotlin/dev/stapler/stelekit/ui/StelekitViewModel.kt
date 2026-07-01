@@ -678,8 +678,13 @@ class StelekitViewModel(
         val currentScreen = _uiState.value.currentScreen
         if (currentScreen is Screen.PageView) {
             scope.launch {
-                graphLoader.loadFullPage(currentScreen.page.uuid.value, force = true)
-                refreshCurrentPage()
+                _uiState.update { it.copy(isContentFetching = true) }
+                try {
+                    graphLoader.loadFullPage(currentScreen.page.uuid.value, force = true)
+                    refreshCurrentPage()
+                } finally {
+                    _uiState.update { it.copy(isContentFetching = false) }
+                }
             }
         }
     }
@@ -983,9 +988,14 @@ class StelekitViewModel(
             // and loading from disk would overwrite them before the conflict dialog appears.
             if (!checkAndShowPendingConflict(screen)) {
                 scope.launch {
-                    // Re-read from disk on every navigation so stale in-memory copies are evicted.
-                    // Uses the mtime guard internally so this is cheap when nothing changed.
-                    graphLoader.loadFullPage(screen.page.uuid.value)
+                    _uiState.update { it.copy(isContentFetching = true) }
+                    try {
+                        // Re-read from disk on every navigation so stale in-memory copies are evicted.
+                        // Uses the mtime guard internally so this is cheap when nothing changed.
+                        graphLoader.loadFullPage(screen.page.uuid.value)
+                    } finally {
+                        _uiState.update { it.copy(isContentFetching = false) }
+                    }
                 }
             }
             // Fire-and-forget visit tracking — does not block navigation

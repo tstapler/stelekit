@@ -23,4 +23,20 @@ class SectionFilter(
 
     fun excludes(filePath: String): Boolean =
         excludedPrefixes.any { prefix -> filePath.contains(prefix) }
+
+    fun sectionIdForPath(filePath: String): String {
+        for (section in manifest.sections) {
+            if (filePath.contains(section.pagePathPrefix) || filePath.contains(section.journalPathPrefix)) {
+                return section.id
+            }
+        }
+        return ""
+    }
+
+    fun subscribedSectionIds(): Set<String> = buildSet {
+        for (section in manifest.sections) {
+            val state = sectionStates[section.id] ?: SectionState.ACTIVE
+            if (state != SectionState.HIDDEN && state != SectionState.REMOVED) add(section.id)
+        }
+    }
 }
