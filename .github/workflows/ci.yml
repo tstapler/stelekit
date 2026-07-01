@@ -117,6 +117,40 @@ jobs:
           path: '**/build/test-results/testDebugUnitTest/**/*.xml'
           retention-days: 7
 
+  # ── SQLDelight generated sources staleness check ─────────────────────────
+  sqldelight-sync:
+    name: SQLDelight generated sources
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Regenerate SQLDelight sources and check for drift
+        run: |
+          ./gradlew :kmp:generateCommonMainSteleDatabase :kmp:generateCommonMainTelemetryDatabase --no-daemon --build-cache
+          rsync -a kmp/build/generated/sqldelight/code/SteleDatabase/commonMain/ kmp/src/generated/sqldelight/
+          rsync -a kmp/build/generated/sqldelight/code/TelemetryDatabase/commonMain/ kmp/src/generated/sqldelight-telemetry/
+          if ! git diff --exit-code kmp/src/generated/sqldelight/ kmp/src/generated/sqldelight-telemetry/; then
+            echo ""
+            echo "SQLDelight generated sources are out of sync with the .sq schema files."
+            echo "Run the following and commit the result:"
+            echo "  ./gradlew :kmp:generateCommonMainSteleDatabase"
+            echo "  rsync -a kmp/build/generated/sqldelight/code/SteleDatabase/commonMain/ kmp/src/generated/sqldelight/"
+            echo "  ./gradlew :kmp:generateCommonMainTelemetryDatabase"
+            echo "  rsync -a kmp/build/generated/sqldelight/code/TelemetryDatabase/commonMain/ kmp/src/generated/sqldelight-telemetry/"
+            exit 1
+          fi
+
   # ── README sync check ─────────────────────────────────────────────────────
   readme-sync:
     name: README sync

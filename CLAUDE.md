@@ -43,11 +43,16 @@ bazel build //kmp:web_app
 # Run all Bazel tests
 bazel test //...
 
-# Re-generate SQLDelight sources (when .sq files change)
+# MANDATORY: Re-generate SQLDelight sources whenever any .sq file changes.
+# Bazel uses the committed generated sources in kmp/src/generated/sqldelight/ directly
+# (it does NOT run codegen at build time). Forgetting this step causes unresolved reference
+# errors in Bazel CI even though Gradle builds succeed (Gradle regenerates at build time).
 ./gradlew :kmp:generateCommonMainSteleDatabase
 rsync -a kmp/build/generated/sqldelight/code/SteleDatabase/commonMain/ kmp/src/generated/sqldelight/
 ./gradlew :kmp:generateCommonMainTelemetryDatabase
 rsync -a kmp/build/generated/sqldelight/code/TelemetryDatabase/commonMain/ kmp/src/generated/sqldelight-telemetry/
+# Then commit kmp/src/generated/sqldelight/ and kmp/src/generated/sqldelight-telemetry/
+# The CI job "SQLDelight generated sources" in ci.yml enforces this automatically.
 ```
 
 ## Gradle Build & Run Commands

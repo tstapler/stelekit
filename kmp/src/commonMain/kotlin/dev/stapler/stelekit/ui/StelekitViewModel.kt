@@ -961,6 +961,7 @@ class StelekitViewModel(
                     is Screen.VaultUnlock -> "Vault locked"
                     is Screen.Gallery -> "Opened Gallery"
                     is Screen.AssetBrowser -> "Opened Asset Browser"
+                    is Screen.AssetDetail -> "Opened Asset: ${screen.assetUuid.value}"
                     is Screen.AnnotationEditor -> "Opened Annotation Editor"
                 }
             )

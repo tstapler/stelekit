@@ -14,6 +14,7 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.ImageSensorData
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
@@ -102,6 +103,7 @@ class AndroidCameraProvider(
                 CameraSelector.DEFAULT_BACK_CAMERA,
                 imageCapture,
             )
+            delay(400L)
 
             // 5. Prepare output file: cacheDir/captures/<uuid>.jpg
             val capturesDir = File(context.cacheDir, "captures").also { it.mkdirs() }
