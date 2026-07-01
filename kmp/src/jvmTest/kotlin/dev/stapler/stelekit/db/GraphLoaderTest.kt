@@ -62,7 +62,7 @@ class GraphLoaderTest {
     fun testLoadDemoGraph() = runBlocking {
         val graphDir = createFixtureGraph()
         try {
-            val fileSystem = PlatformFileSystem()
+            val fileSystem = PlatformFileSystem.withRoot(graphDir.absolutePath)
             val pageRepository = InMemoryPageRepository()
             val blockRepository = DatalogBlockRepository()
             val graphLoader = GraphLoader(fileSystem, pageRepository, blockRepository)
@@ -89,7 +89,7 @@ class GraphLoaderTest {
     fun testLoadGraphProgressive() = runBlocking {
         val graphDir = createFixtureGraph()
         try {
-            val fileSystem = PlatformFileSystem()
+            val fileSystem = PlatformFileSystem.withRoot(graphDir.absolutePath)
             val pageRepository = InMemoryPageRepository()
             val blockRepository = DatalogBlockRepository()
             val graphLoader = GraphLoader(fileSystem, pageRepository, blockRepository)

@@ -421,21 +421,18 @@ class InMemoryBlockRepository : BlockRepository {
         val secondPart = block.content.substring(cursorPosition).trim()
 
         val updatedBlock = block.copy(content = firstPart)
-        val newPosition = block.position + 1
-
-        // Shift following siblings
-        val siblings = current.values.filter { it.pageUuid == block.pageUuid && it.parentUuid == block.parentUuid }
-        for (sibling in siblings) {
-            if (sibling.position >= newPosition) {
-                current[sibling.uuid.value] = sibling.copy(position = sibling.position + 1)
-            }
-        }
+        val nextSiblingPosition = current.values
+            .filter { it.pageUuid == block.pageUuid && it.parentUuid == block.parentUuid }
+            .sortedBy { it.position }
+            .firstOrNull { it.position > block.position }
+            ?.position
+        val newPosition = FractionalIndexing.generateKeyBetween(block.position, nextSiblingPosition)
 
         val newBlock = block.copy(
             uuid = newBlockUuid ?: BlockUuid(dev.stapler.stelekit.util.UuidGenerator.generateV7()),
             content = secondPart,
             position = newPosition,
-            level = block.level // New block must be at the same level
+            level = block.level
         )
 
         current[blockUuid.value] = updatedBlock

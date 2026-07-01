@@ -433,6 +433,51 @@ class SqlDelightBlockRepository(
         }
     }
 
+    override suspend fun saveBlocksAtomicWithChainRepair(
+        toInsert: List<Block>,
+        chainRepair: List<Block>,
+    ): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
+        if (toInsert.isEmpty() && chainRepair.isEmpty()) return@withContext Unit.right()
+        try {
+            ftsAutomergeOff()
+            queries.transaction {
+                toInsert.forEach { block -> insertBlockRow(block) }
+                chainRepair.forEach { block ->
+                    queries.updateBlockFull(
+                        block.pageUuid.value, block.parentUuid, block.leftUuid,
+                        block.content, block.level.toLong(), block.position,
+                        block.updatedAt.toEpochMilliseconds(),
+                        block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
+                        block.contentHash ?: ContentHasher.sha256ForContent(block.content),
+                        block.blockType.toDiscriminatorString(),
+                        block.uuid.value,
+                    )
+                }
+            }
+            // Wikilink pass: separate transaction to keep the block-insert transaction tight.
+            // Only iterate over toInsert — chainRepair updates existing blocks whose wikilinks don't change.
+            for (chunk in toInsert.chunked(WRITE_CHUNK_SIZE)) {
+                queries.transaction {
+                    chunk.forEach { block ->
+                        val pageNames = extractWikilinks(block.content)
+                        for (name in pageNames) {
+                            @OptIn(DirectSqlWrite::class)
+                            restricted.insertWikilinkReference(block.uuid.value, name)
+                        }
+                    }
+                }
+            }
+            ftsAutomergeDefault()
+            Unit.right()
+        } catch (e: CancellationException) {
+            runCatching { ftsAutomergeDefault() }
+            throw e
+        } catch (e: Exception) {
+            runCatching { ftsAutomergeDefault() }
+            DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+        }
+    }
+
     override suspend fun saveBlock(block: Block): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
             queries.insertBlock(

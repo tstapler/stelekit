@@ -98,6 +98,8 @@ fun PageView(
     val loadingPageUuids by blockStateManager.loadingPageUuids.collectAsState()
     val suggestionMatcher by viewModel.suggestionMatcher.collectAsState()
 
+    val blockClipboard by blockStateManager.blockClipboard.collectAsState()
+
     val tagSuggestionState by tagSuggestionViewModel?.state?.collectAsState()
         ?: remember { mutableStateOf(TagSuggestionState.Idle) }
 
@@ -106,6 +108,7 @@ fun PageView(
     var navigatorIndex by remember { mutableStateOf(0) }
 
     val blocks = allBlocks[page.uuid.value] ?: emptyList()
+    val cutBlockUuids = if (blockClipboard.isCut) blockClipboard.entries.map { it.block.uuid.value }.toSet() else emptySet()
 
     // Start observing this page's blocks on enter, stop on leave
     DisposableEffect(page.uuid.value) {
@@ -142,6 +145,18 @@ fun PageView(
             }
             event.key == Key.Escape && isInSelectionMode -> {
                 blockStateManager.clearSelection()
+                true
+            }
+            event.key == Key.C && event.isCtrlPressed && isInSelectionMode && selectedBlockUuids.isNotEmpty() -> {
+                blockStateManager.copySelectedBlocks()
+                true
+            }
+            event.key == Key.X && event.isCtrlPressed && isInSelectionMode && selectedBlockUuids.isNotEmpty() -> {
+                blockStateManager.cutSelectedBlocks()
+                true
+            }
+            event.key == Key.V && event.isCtrlPressed && !isInSelectionMode && editingBlockUuid != null && !blockClipboard.isEmpty -> {
+                editingBlockUuid?.let { blockStateManager.pasteBlocks(it) }
                 true
             }
             event.key == Key.E && event.isCtrlPressed && event.isShiftPressed -> {
@@ -358,6 +373,7 @@ fun PageView(
                         onOpenAnnotationEditor = { uuid ->
                             viewModel.navigateToAnnotationEditor(uuid, page.uuid.value)
                         },
+                        cutBlockUuids = cutBlockUuids,
                     )
 
                     Box(

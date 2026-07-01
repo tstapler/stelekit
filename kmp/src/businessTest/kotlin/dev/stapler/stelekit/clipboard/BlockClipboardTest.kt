@@ -44,7 +44,7 @@ class BlockClipboardTest {
         val block2 = makeBlock("block-2", "second")
         val clipboard = BlockClipboard()
             .withBlock(block1, ClipboardOperation.COPY, "graph-1")
-            .withBlock(block2, ClipboardOperation.CUT, "graph-1")
+            .withBlock(block2, ClipboardOperation.COPY, "graph-1")
         assertEquals(1, clipboard.entries.size)
         assertEquals(block2, clipboard.entries.first().block)
     }
@@ -52,10 +52,31 @@ class BlockClipboardTest {
     @Test
     fun withBlock_storesOperationAndGraphUuid() {
         val block = makeBlock("block-1")
-        val clipboard = BlockClipboard().withBlock(block, ClipboardOperation.CUT, "graph-42")
+        val clipboard = BlockClipboard().withBlock(block, ClipboardOperation.COPY, "graph-42")
         val entry = clipboard.entries.first()
-        assertEquals(ClipboardOperation.CUT, entry.operation)
+        assertEquals(ClipboardOperation.COPY, entry.operation)
         assertEquals("graph-42", entry.sourceGraphUuid)
+    }
+
+    // ── isCut ─────────────────────────────────────────────────────────────────
+
+    @Test
+    fun clipboard_isCut_true_when_operation_is_CUT() {
+        val block = makeBlock("block-1")
+        val clipboard = BlockClipboard().withBlock(block, ClipboardOperation.CUT, "")
+        assertTrue(clipboard.isCut)
+    }
+
+    @Test
+    fun clipboard_isCut_false_when_operation_is_COPY() {
+        val block = makeBlock("block-1")
+        val clipboard = BlockClipboard().withBlock(block, ClipboardOperation.COPY, "")
+        assertFalse(clipboard.isCut)
+    }
+
+    @Test
+    fun clipboard_isCut_false_when_empty() {
+        assertFalse(BlockClipboard().isCut)
     }
 
     // ── clear ─────────────────────────────────────────────────────────────────
@@ -67,24 +88,5 @@ class BlockClipboardTest {
             .clear()
         assertTrue(clipboard.isEmpty)
         assertEquals(0, clipboard.entries.size)
-    }
-
-    // ── isCut ─────────────────────────────────────────────────────────────────
-
-    @Test
-    fun isCut_trueWhenTopmostEntryIsCut() {
-        val clipboard = BlockClipboard().withBlock(makeBlock("block-1"), ClipboardOperation.CUT, "graph-1")
-        assertTrue(clipboard.isCut)
-    }
-
-    @Test
-    fun isCut_falseWhenTopmostEntryIsCopy() {
-        val clipboard = BlockClipboard().withBlock(makeBlock("block-1"), ClipboardOperation.COPY, "graph-1")
-        assertFalse(clipboard.isCut)
-    }
-
-    @Test
-    fun isCut_falseOnEmptyClipboard() {
-        assertFalse(BlockClipboard().isCut)
     }
 }

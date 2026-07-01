@@ -45,6 +45,20 @@ interface BlockWriteRepository {
         saveBlocks(toInsert + toUpdate)
 
     /**
+     * Insert [toInsert] and update [chainRepair] in a single SQLite transaction.
+     * Default impl uses two separate calls (correct but non-atomic).
+     */
+    @DirectRepositoryWrite
+    suspend fun saveBlocksAtomicWithChainRepair(
+        toInsert: List<Block>,
+        chainRepair: List<Block>,
+    ): Either<DomainError, Unit> {
+        val result = saveBlocks(toInsert)
+        if (result.isLeft()) return result
+        return if (chainRepair.isEmpty()) Unit.right() else saveBlocksUpdate(chainRepair)
+    }
+
+    /**
      * Fold WAL frames into the main DB file. Call after bulk imports to prevent WAL bloat
      * from slowing subsequent reads. No-op by default (non-SQLite backends).
      */
