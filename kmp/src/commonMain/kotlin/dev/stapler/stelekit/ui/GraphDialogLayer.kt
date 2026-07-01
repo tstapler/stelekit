@@ -45,6 +45,7 @@ import dev.stapler.stelekit.ui.components.SearchDialog
 import dev.stapler.stelekit.ui.components.ShareDialog
 import dev.stapler.stelekit.db.isLibsqlDriverSupported
 import dev.stapler.stelekit.tags.TagSettings
+import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.ui.components.SectionPickerDialog
 import dev.stapler.stelekit.ui.components.SectionQuickTogglePanel
 import dev.stapler.stelekit.ui.components.settings.SettingsDialog
@@ -286,9 +287,14 @@ internal fun GraphDialogLayer(
     val manifest = appState.currentManifest
     if (appState.sectionPickerVisible && manifest != null) {
         val pickerPage = appState.sectionPickerPage
+        // Only ACTIVE sections are offered as move targets — hidden/removed sections are not
+        // reachable on this device so moving a page there would make it disappear immediately.
+        val activeSections = manifest.sections.filter { section ->
+            (appState.currentSectionStates[section.id] ?: SectionState.ACTIVE) == SectionState.ACTIVE
+        }
         SectionPickerDialog(
             visible = true,
-            sections = manifest.sections,
+            sections = activeSections,
             currentSectionId = pickerPage?.sectionId ?: "",
             onSelect = { sectionId ->
                 pickerPage?.let { viewModel.movePageToSection(it, sectionId) }

@@ -171,6 +171,9 @@ data class AppState(
 ) {
     val canGoBack: Boolean get() = historyIndex > 0
     val canGoForward: Boolean get() = historyIndex < navigationHistory.size - 1
+    val hasSectionFilter: Boolean
+        get() = currentManifest?.sections?.isNotEmpty() == true &&
+            currentSectionStates.values.any { it != SectionState.ACTIVE }
 }
 
 /** Opens the global search dialog pre-filled with the given text. */

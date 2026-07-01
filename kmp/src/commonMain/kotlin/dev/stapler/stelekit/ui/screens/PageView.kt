@@ -101,6 +101,8 @@ fun PageView(
     val isInSelectionMode by blockStateManager.isInSelectionMode.collectAsState()
     val loadingPageUuids by blockStateManager.loadingPageUuids.collectAsState()
     val suggestionMatcher by viewModel.suggestionMatcher.collectAsState()
+    val localPageNames by viewModel.localPageNames.collectAsState()
+    val appState by viewModel.uiState.collectAsState()
 
     val tagSuggestionState by tagSuggestionViewModel?.state?.collectAsState()
         ?: remember { mutableStateOf(TagSuggestionState.Idle) }
@@ -375,6 +377,8 @@ fun PageView(
                         onOpenAnnotationEditor = { uuid ->
                             viewModel.navigateToAnnotationEditor(uuid, page.uuid.value)
                         },
+                        hasSectionFilter = appState.hasSectionFilter,
+                        localPageNames = localPageNames,
                     )
 
                     Box(

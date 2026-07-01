@@ -89,6 +89,9 @@ fun BlockList(
     onBlockSelectionChange: ((blockUuid: String, range: IntRange?) -> Unit)? = null,
     /** Called when the user taps an image_annotation block thumbnail to open the annotation editor. */
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
+    hasSectionFilter: Boolean = false,
+    localPageNames: Set<String> = emptySet(),
+    onUnavailableLinkTap: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (isDebugMode) {
@@ -302,6 +305,9 @@ fun BlockList(
                     onSelectionChange = if (onBlockSelectionChange != null) {
                         { range -> onBlockSelectionChange(block.uuid.value, range) }
                     } else null,
+                    hasSectionFilter = hasSectionFilter,
+                    localPageNames = localPageNames,
+                    onUnavailableLinkTap = onUnavailableLinkTap,
                     modifier = Modifier.onGloballyPositioned { coords ->
                         val top = coords.positionInParent().y
                         blockBounds = blockBounds + (block.uuid.value to Pair(top, top + coords.size.height))

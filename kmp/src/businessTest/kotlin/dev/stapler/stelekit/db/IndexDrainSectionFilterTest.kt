@@ -99,7 +99,7 @@ class IndexDrainSectionFilterTest {
             pagePathPrefix = "pages/personal",
             journalPathPrefix = "journals/personal",
         )
-        // personal is HIDDEN — only acme-work is subscribed
+        // personal is HIDDEN — ACTIVE + HIDDEN are both subscribed (content is on-device)
         val sectionFilter = SectionFilter(
             SectionManifest(sections = listOf(acmeSection, personalSection)),
             mapOf("acme-work" to SectionState.ACTIVE, "personal" to SectionState.HIDDEN),
@@ -112,8 +112,11 @@ class IndexDrainSectionFilterTest {
             stubPage("diary",       sectionId = "personal"),
         ))
 
-        assertEquals(setOf("acme-work"), sectionFilter.subscribedSectionIds(),
-            "only non-hidden sections are subscribed")
+        // HIDDEN sections are subscribed (content is on-device, just invisible in UI).
+        // REMOVED sections would be excluded. In practice, HIDDEN pages never get INDEX_ONLY
+        // stubs (they're excluded from directory loading), but the DB filter is correct either way.
+        assertEquals(setOf("acme-work", "personal"), sectionFilter.subscribedSectionIds(),
+            "ACTIVE and HIDDEN sections are both subscribed; only REMOVED is excluded")
 
         // Mirror what indexRemainingPages builds: subscribedIds + ""
         val drainIds = sectionFilter.subscribedSectionIds() + setOf("")
@@ -123,8 +126,8 @@ class IndexDrainSectionFilterTest {
 
         assertTrue("work-note" in drainedNames, "acme-work stub must be drained")
         assertTrue("global-note" in drainedNames, "global (sectionId='') stub must be drained")
-        assertTrue("diary" !in drainedNames, "personal stub must NOT be drained (section HIDDEN)")
-        assertEquals(2, drained.size)
+        assertTrue("diary" in drainedNames, "personal stub (HIDDEN) is on-device — included in drain")
+        assertEquals(3, drained.size)
     }
 
     // ── TC-6.4-B ─────────────────────────────────────────────────────────────

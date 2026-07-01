@@ -710,6 +710,10 @@ object MigrationRunner {
             // ensureFts5TriggerState() after applyAll() completes.
             statements = listOf(
                 "PRAGMA foreign_keys=OFF",
+                // BEGIN makes the copy-alter sequence atomic: if interrupted between DROP TABLE
+                // pages and RENAME pages_new, SQLite rolls back on next open instead of leaving
+                // a corrupted (missing) pages table.
+                "BEGIN",
                 "DROP TABLE IF EXISTS pages_new",
                 """
                 CREATE TABLE IF NOT EXISTS pages_new (
@@ -740,6 +744,7 @@ object MigrationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_pages_favorite ON pages(name) WHERE is_favorite = 1",
                 "CREATE INDEX IF NOT EXISTS idx_pages_unloaded ON pages(uuid) WHERE is_content_loaded = 0",
                 "CREATE INDEX IF NOT EXISTS idx_pages_journal_section ON pages(is_journal, journal_date, section_id)",
+                "COMMIT",
                 "PRAGMA foreign_keys=ON",
                 "ANALYZE pages",
             )

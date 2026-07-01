@@ -93,4 +93,19 @@ class SectionFilterTest {
         val f = filter("acme-work" to SectionState.ACTIVE, "personal" to SectionState.ACTIVE)
         assertEquals("", f.sectionIdForPath("/graph/attachments/photo.png"))
     }
+
+    // ── path-boundary edge cases ─────────────────────────────────────────────
+
+    @Test
+    fun `excludes does not match sibling directory that shares prefix substring`() {
+        // "pages/acme-work" must NOT match "pages/acme-works/" (different section)
+        val f = filter("acme-work" to SectionState.REMOVED, "personal" to SectionState.ACTIVE)
+        assertFalse(f.excludes("/graph/pages/acme-works/Some Other Page.md"))
+    }
+
+    @Test
+    fun `sectionIdForPath does not assign section to sibling directory sharing prefix substring`() {
+        val f = filter("acme-work" to SectionState.ACTIVE, "personal" to SectionState.ACTIVE)
+        assertEquals("", f.sectionIdForPath("/graph/pages/acme-works/Some Other Page.md"))
+    }
 }

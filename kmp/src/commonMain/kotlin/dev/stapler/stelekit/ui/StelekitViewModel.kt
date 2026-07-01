@@ -346,6 +346,11 @@ class StelekitViewModel(
     /** Pre-built matcher for the current graph's page names. Null until pages are loaded. */
     val suggestionMatcher: StateFlow<AhoCorasickMatcher?> = pageNameIndex.matcher
 
+    /** Local page names for cross-section link rendering (FR-14). Derived from the autocomplete matcher index. */
+    val localPageNames: StateFlow<Set<String>> = pageNameIndex.matcher
+        .map { pageNameIndex.vocabularyNames().toHashSet() }
+        .stateIn(scope, SharingStarted.Lazily, emptySet())
+
     private val sectionManifestParser = SectionManifestParser(fileSystem)
     private val sectionManifestWriter = SectionManifestWriter(fileSystem)
 

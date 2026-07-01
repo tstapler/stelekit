@@ -22,21 +22,23 @@ class SectionFilter(
     }
 
     fun excludes(filePath: String): Boolean =
-        excludedPrefixes.any { prefix -> filePath.contains(prefix) }
+        excludedPrefixes.any { prefix -> filePath.startsWithPathPrefix(prefix) }
 
     fun sectionIdForPath(filePath: String): String {
         for (section in manifest.sections) {
-            if (filePath.contains(section.pagePathPrefix) || filePath.contains(section.journalPathPrefix)) {
+            if (filePath.startsWithPathPrefix(section.pagePathPrefix) ||
+                filePath.startsWithPathPrefix(section.journalPathPrefix)) {
                 return section.id
             }
         }
         return ""
     }
 
+    /** Sections whose content is on-device (ACTIVE or HIDDEN); excludes REMOVED. */
     fun subscribedSectionIds(): Set<String> = buildSet {
         for (section in manifest.sections) {
             val state = sectionStates[section.id] ?: SectionState.ACTIVE
-            if (state != SectionState.HIDDEN && state != SectionState.REMOVED) add(section.id)
+            if (state != SectionState.REMOVED) add(section.id)
         }
     }
 
@@ -46,3 +48,8 @@ class SectionFilter(
             if (state == SectionState.ACTIVE) section.id else null
         }
 }
+
+// Matches "…/pages/acme-work/foo.md" against prefix "pages/acme-work" but NOT "…/pages/acme-works/foo.md".
+// Uses "/" boundaries so a prefix "docs" never matches a sibling directory "docs-archive/".
+private fun String.startsWithPathPrefix(prefix: String): Boolean =
+    this.contains("/$prefix/") || this.endsWith("/$prefix")
