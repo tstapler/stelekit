@@ -86,7 +86,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
-import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.sections.getSectionStates
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
