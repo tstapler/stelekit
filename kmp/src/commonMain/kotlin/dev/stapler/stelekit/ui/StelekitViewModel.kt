@@ -87,6 +87,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import dev.stapler.stelekit.sections.getSectionStates
+import dev.stapler.stelekit.sections.putSectionStates
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.plus
@@ -129,6 +130,7 @@ class StelekitViewModel(
     private val activeGitSyncService: StateFlow<GitSyncService?> = deps.activeGitSyncService
     private val activeGraphIdProvider: () -> String? = deps.activeGraphIdProvider
     private val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = deps.onDismissGitDetection
+    private val onSectionsLoaded = deps.onSectionsLoaded
     private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(deps.ringBuffer)
     // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
     // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
@@ -354,31 +356,6 @@ class StelekitViewModel(
     private val sectionManifestParser = SectionManifestParser(fileSystem)
     private val sectionManifestWriter = SectionManifestWriter(fileSystem)
 
-    private fun readSectionStates(): Map<String, SectionState> {
-        val raw = platformSettings.getString("section_states", "")
-        if (raw.isBlank()) return emptyMap()
-        return try {
-            val obj = Json.decodeFromString(JsonObject.serializer(), raw)
-            buildMap {
-                for ((id, value) in obj) {
-                    val state = SectionState.entries.find {
-                        it.name.equals(value.jsonPrimitive.content, ignoreCase = true)
-                    }
-                    if (state != null) put(id, state)
-                }
-            }
-        } catch (_: Exception) {
-            emptyMap()
-        }
-    }
-
-    private fun writeSectionStates(states: Map<String, SectionState>) {
-        val obj = buildJsonObject {
-            for ((id, state) in states) put(id, JsonPrimitive(state.name.lowercase()))
-        }
-        platformSettings.putString("section_states", obj.toString())
-    }
-
     private val _uiState = MutableStateFlow(
         AppState(
             isLoading = true,
@@ -388,7 +365,7 @@ class StelekitViewModel(
             isLibsqlDriverEnabled = platformSettings.getBoolean("db.libsql.enabled", false),
             defaultSection = platformSettings.getString("defaultSection", ""),
             deviceSetupComplete = platformSettings.getBoolean("deviceSetupComplete", false),
-            currentSectionStates = readSectionStates(),
+            currentSectionStates = platformSettings.getSectionStates(),
         )
     )
     val uiState: StateFlow<AppState> = _uiState.asStateFlow()
@@ -2286,14 +2263,21 @@ class StelekitViewModel(
 
     // ===== Section Management =====
 
-    private fun loadSectionManifest(graphPath: String) {
+    private suspend fun loadSectionManifest(graphPath: String) {
         val manifest = sectionManifestParser.parse(graphPath).getOrNull() ?: SectionManifest()
         _uiState.update { it.copy(currentManifest = manifest) }
+        // Wire section filter so GraphLoader assigns sectionId to page paths on disk
+        val states = _uiState.value.currentSectionStates
+        if (manifest.sections.isNotEmpty()) {
+            graphLoader.updateSectionFilter(dev.stapler.stelekit.sections.SectionFilter(manifest, states))
+        }
         // Show device setup wizard on first load when sections exist and setup not complete
         val setupComplete = _uiState.value.deviceSetupComplete
         if (!setupComplete && manifest.sections.isNotEmpty()) {
             _uiState.update { it.copy(deviceSetupWizardVisible = true) }
         }
+        // Platform-specific sync (WASM: seed INDEX_ONLY stubs from GitHub tree)
+        onSectionsLoaded?.invoke(manifest, states)
     }
 
     @OptIn(DirectRepositoryWrite::class)
@@ -2376,7 +2360,7 @@ class StelekitViewModel(
                 ifLeft = { err -> logger.error("deleteSection write failed: ${err.message}") },
                 ifRight = {
                     val newStates = _uiState.value.currentSectionStates - id
-                    writeSectionStates(newStates)
+                    platformSettings.putSectionStates(newStates)
                     _uiState.update { it.copy(currentManifest = updated, currentSectionStates = newStates) }
                 },
             )
@@ -2390,19 +2374,19 @@ class StelekitViewModel(
 
     fun setSectionState(sectionId: String, state: SectionState) {
         val newStates = _uiState.value.currentSectionStates + (sectionId to state)
-        writeSectionStates(newStates)
+        platformSettings.putSectionStates(newStates)
         _uiState.update { it.copy(currentSectionStates = newStates) }
     }
 
     fun setSectionStates(states: Map<String, SectionState>) {
-        writeSectionStates(states)
+        platformSettings.putSectionStates(states)
         _uiState.update { it.copy(currentSectionStates = states) }
     }
 
     fun completeDeviceSetup(defaultSection: String, sectionStates: Map<String, SectionState>) {
         platformSettings.putBoolean("deviceSetupComplete", true)
         platformSettings.putString("defaultSection", defaultSection)
-        writeSectionStates(sectionStates)
+        platformSettings.putSectionStates(sectionStates)
         _uiState.update {
             it.copy(
                 deviceSetupComplete = true,

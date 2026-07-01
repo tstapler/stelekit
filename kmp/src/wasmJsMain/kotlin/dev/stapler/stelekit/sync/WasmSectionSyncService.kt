@@ -43,7 +43,7 @@ class WasmSectionSyncService(private val pageRepository: PageRepository) {
             if (!inSection) continue
             val isJournal = path.startsWith(section.journalPathPrefix)
             val name = path.substringAfterLast("/").removeSuffix(".md")
-            val fullPath = "/stelekit/default/$path"
+            val fullPath = "/stelekit/$graphId/$path"
             val stubPage = Page(
                 uuid = PageUuid(UuidGenerator.generateV7()),
                 name = name,
@@ -65,6 +65,8 @@ class WasmSectionSyncService(private val pageRepository: PageRepository) {
         var githubRepo: String = ""
         var githubBranch: String = "main"
         var githubToken: String? = null
+        var graphId: String = "default"
+        private val companionLogger = Logger("WasmSectionSync")
 
         suspend fun githubFetch(url: String, token: String?, retryCount: Int = 0): String? {
             return try {
@@ -77,13 +79,13 @@ class WasmSectionSyncService(private val pageRepository: PageRepository) {
                         delay(retryAfter * 1000L)
                         return githubFetch(url, token, retryCount + 1)
                     }
-                    Logger("WasmSectionSync").error("Rate limit exhausted for $url after ${retryCount + 1} retries")
+                    companionLogger.error("Rate limit exhausted for $url after ${retryCount + 1} retries")
                     return null
                 }
                 if (status < 200 || status >= 300) return null
                 jsStringValue(jsResponseText(response).await<JsAny>())
             } catch (e: Throwable) {
-                Logger("WasmSectionSync").error("fetch error for $url: ${e.message}")
+                companionLogger.error("fetch error for $url: ${e.message}")
                 null
             }
         }

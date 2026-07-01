@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import arrow.core.Either
+import arrow.core.flatMap
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
@@ -75,7 +76,7 @@ class GraphLoader(
     /** Poll interval for the file watcher in milliseconds. Override in tests to speed up cycles. */
     private val watcherPollIntervalMs: Long = 5_000L,
     /** When non-null, files matching the filter's excluded prefixes are skipped during loading. */
-    private val sectionFilter: dev.stapler.stelekit.sections.SectionFilter? = null,
+    @Volatile var sectionFilter: dev.stapler.stelekit.sections.SectionFilter? = null,
 ) : GraphLoaderPort {
     private val logger = Logger("GraphLoader")
     private val markdownParser = MarkdownParser()
@@ -158,6 +159,10 @@ class GraphLoader(
     override fun setCryptoLayer(layer: CryptoLayer?) { cryptoLayer = layer }
 
     override fun closeAndClearCryptoLayer() { cryptoLayer?.close(); cryptoLayer = null }
+
+    override fun updateSectionFilter(filter: dev.stapler.stelekit.sections.SectionFilter?) {
+        sectionFilter = filter
+    }
 
     /**
      * Backing field for page UUIDs currently open in an active edit session.
@@ -1807,18 +1812,22 @@ class GraphLoader(
         val filePath = "$journalDir/$date.md"
 
         if (!fileSystem.directoryExists(journalDir)) {
-            fileSystem.createDirectory(journalDir)
+            if (!fileSystem.createDirectory(journalDir)) {
+                return DomainError.FileSystemError.WriteFailed(journalDir, "could not create journals directory").left()
+            }
         }
         if (!fileSystem.fileExists(filePath)) {
-            fileSystem.writeFile(filePath, "")
+            if (!fileSystem.writeFile(filePath, "")) {
+                return DomainError.FileSystemError.WriteFailed(filePath, "could not create empty journal file").left()
+            }
         }
 
         val fileContent = readFileDecrypted(filePath) ?: ""
         parseAndSavePage(FilePath(filePath), fileContent, ParseMode.FULL)
 
-        return pageRepository.getJournalPageByDateAndSection(date, sectionId).first().getOrNull()
-            ?.right()
-            ?: DomainError.DatabaseError.WriteFailed("Failed to find created section journal page").left()
+        return pageRepository.getJournalPageByDateAndSection(date, sectionId).first().flatMap { page ->
+            page?.right() ?: DomainError.DatabaseError.WriteFailed("Failed to find created section journal page").left()
+        }
     }
 
 

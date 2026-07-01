@@ -611,6 +611,9 @@ private fun GraphContent(
     // ViewModel scope must NOT be rememberCoroutineScope() — that scope is cancelled when the
     // composable leaves the composition, which would cancel all ViewModel coroutines on pause.
     val viewModelScope = remember { kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default) }
+    val onSectionsLoaded = remember(repos) {
+        dev.stapler.stelekit.sections.platformSectionSyncCallback(repos.pageRepository)
+    }
     val viewModel = remember(fileSystem, repos, platformSettings, graphLoader, graphWriter, blockStateManager, exportService, graphManager, viewModelScope) {
         StelekitViewModel(
             StelekitViewModelDependencies(
@@ -633,6 +636,7 @@ private fun GraphContent(
                 activeGitSyncService = graphManager.activeGitSyncService,
                 activeGraphIdProvider = { graphManager.getActiveGraphId() },
                 onDismissGitDetection = { graphId -> graphManager.setGitDetectionDismissed(graphId, true) },
+                onSectionsLoaded = onSectionsLoaded,
                 scope = viewModelScope,
             )
         ).also {

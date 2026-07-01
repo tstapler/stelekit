@@ -7,6 +7,7 @@ import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageName
 import dev.stapler.stelekit.parsing.ParseMode
+import dev.stapler.stelekit.sections.SectionFilter
 import dev.stapler.stelekit.vault.CryptoLayer
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -107,4 +108,10 @@ interface GraphLoaderPort {
         sectionId: String,
         date: LocalDate,
     ): Either<DomainError, Page> = DomainError.DatabaseError.WriteFailed("not implemented").left()
+
+    /**
+     * Updates the section filter used for section-aware path assignment and drain filtering.
+     * Called after the section manifest and states are loaded. Pass null to disable filtering.
+     */
+    fun updateSectionFilter(filter: SectionFilter?) {}
 }

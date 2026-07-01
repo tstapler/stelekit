@@ -56,6 +56,7 @@ fun main() {
         WasmSectionSyncService.githubRepo = ghRepo
         WasmSectionSyncService.githubBranch = ghBranch
         WasmSectionSyncService.githubToken = ghToken
+        WasmSectionSyncService.graphId = graphId
 
         val driverFactory = DriverFactory()
         var useDemoFallback = false
