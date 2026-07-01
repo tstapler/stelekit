@@ -676,7 +676,9 @@ class GraphWriter(
                 if (!fileSystem.writeFile(newPath, content)) {
                     return@withContext DomainError.FileSystemError.WriteFailed(newPath, "could not write to new path").left()
                 }
-                fileSystem.deleteFile(oldPath)
+                if (!fileSystem.deleteFile(oldPath)) {
+                    logger.warn("copy+delete fallback: could not delete source file $oldPath after copying to $newPath")
+                }
             }
 
             onFileWritten?.invoke(oldPath)

@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.sync
 
+import arrow.core.onLeft
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.outliner.JournalUtils
@@ -19,6 +21,8 @@ import kotlin.time.Clock
  */
 class WasmSectionSyncService(private val pageRepository: PageRepository) {
 
+    private val logger = Logger("WasmSectionSync")
+
     @OptIn(DirectRepositoryWrite::class)
     suspend fun syncSection(section: SectionDefinition) {
         val owner = githubOwner.ifEmpty { return }
@@ -28,7 +32,7 @@ class WasmSectionSyncService(private val pageRepository: PageRepository) {
 
         val treeUrl = "https://api.github.com/repos/$owner/$repo/git/trees/$branch?recursive=1"
         val treeJson = githubFetch(treeUrl, token) ?: run {
-            println("[WasmSectionSync] Failed to fetch tree for section ${section.id}")
+            logger.error("Failed to fetch tree for section ${section.id}")
             return
         }
 
@@ -52,6 +56,7 @@ class WasmSectionSyncService(private val pageRepository: PageRepository) {
                 sectionId = section.id,
             )
             pageRepository.savePage(stubPage)
+                .onLeft { logger.error("Failed to save stub for $fullPath: ${it.message}") }
         }
     }
 
@@ -72,12 +77,13 @@ class WasmSectionSyncService(private val pageRepository: PageRepository) {
                         delay(retryAfter * 1000L)
                         return githubFetch(url, token, retryCount + 1)
                     }
+                    Logger("WasmSectionSync").error("Rate limit exhausted for $url after ${retryCount + 1} retries")
                     return null
                 }
                 if (status < 200 || status >= 300) return null
                 jsStringValue(jsResponseText(response).await<JsAny>())
             } catch (e: Throwable) {
-                println("[WasmSectionSync] fetch error for $url: ${e.message}")
+                Logger("WasmSectionSync").error("fetch error for $url: ${e.message}")
                 null
             }
         }
