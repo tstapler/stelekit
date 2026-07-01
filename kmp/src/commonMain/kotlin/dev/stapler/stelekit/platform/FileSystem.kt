@@ -6,6 +6,7 @@ interface FileSystem {
     fun getDefaultGraphPath(): String
     fun expandTilde(path: String): String
     fun readFile(path: String): String?
+    suspend fun readFileSuspend(path: String): String? = readFile(path)
     fun writeFile(path: String, content: String): Boolean
     fun listFiles(path: String): List<String>
     fun listDirectories(path: String): List<String>

@@ -4,7 +4,8 @@ import dev.stapler.stelekit.parsing.ast.*
 
 enum class ParseMode {
     FULL,           // Parse structure and inline content
-    METADATA_ONLY   // Parse structure only, keep content as raw string
+    METADATA_ONLY,  // Parse structure only, keep content as raw string
+    INDEX_ONLY,     // Skip file read entirely — derive metadata from path only
 }
 
 /**

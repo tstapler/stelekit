@@ -64,6 +64,17 @@ interface PageRepository {
     fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>>
 
     /**
+     * Section-scoped variant of [getUnloadedPages]. Only returns pages whose section_id is in
+     * [sectionIds]. Always include "" in [sectionIds] to pick up global (no-section) pages.
+     * Default delegates to [getUnloadedPages] (all sections) for non-SQL backends.
+     */
+    fun getUnloadedPagesBySection(
+        sectionIds: Collection<String>,
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<Page>>> = getUnloadedPages(limit, offset)
+
+    /**
      * Count of not-yet-content-loaded pages — O(1) progress denominator for indexing.
      * Default drains [getUnloadedPages] in bounded batches; SQL-backed repositories
      * override with `SELECT COUNT(*)`.

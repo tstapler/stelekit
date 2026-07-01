@@ -135,6 +135,17 @@ class GraphLoader(
         }
     }
 
+    /**
+     * Suspend variant of [readFileDecrypted]. On WASM this allows [FileSystem.readFileSuspend]
+     * to fetch content from GitHub on a cache miss; on other platforms it falls through to
+     * the synchronous read (no-op overhead).
+     * Paranoid mode falls back to the synchronous path since CryptoLayer decryption is not async.
+     */
+    private suspend fun readFileDecryptedSuspend(filePath: String): String? {
+        if (cryptoLayer == null) return fileSystem.readFileSuspend(filePath)
+        return readFileDecrypted(filePath) // paranoid mode: CryptoLayer is synchronous
+    }
+
     /** Called after a full bulk import completes. Used to trigger WAL checkpoint. */
     var onBulkImportComplete: (suspend () -> Unit)? = null
 
@@ -689,6 +700,10 @@ class GraphLoader(
 
             logger.info("Background indexing $total pages... (${heapSummary()})")
 
+            val sectionDrainIds: Collection<String>? = sectionFilter?.let { f ->
+                f.subscribedSectionIds() + setOf("")
+            }
+
             coroutineScope {
                 var processed = 0L
                 // Drain in bounded batches instead of materializing every unloaded Page up
@@ -703,9 +718,11 @@ class GraphLoader(
                 val attempted = HashSet<String>()
                 var offset = 0
                 while (true) {
-                    val batch = pageRepository
-                        .getUnloadedPages(INDEX_BATCH_SIZE, offset)
-                        .first().getOrNull().orEmpty()
+                    val batch = if (sectionDrainIds != null) {
+                        pageRepository.getUnloadedPagesBySection(sectionDrainIds, INDEX_BATCH_SIZE, offset)
+                    } else {
+                        pageRepository.getUnloadedPages(INDEX_BATCH_SIZE, offset)
+                    }.first().getOrNull().orEmpty()
                     if (batch.isEmpty()) break
 
                     val fresh = batch.filter { attempted.add(it.uuid.value) }
@@ -927,7 +944,7 @@ class GraphLoader(
             fileSystem.invalidateShadow(filePath)
             val fileReadTraceId = genId()
             val fileReadSpan = Span("file.read", fileReadTraceId, "")
-            val content = readFileDecrypted(filePath)
+            val content = readFileDecryptedSuspend(filePath)
             if (content == null) {
                 fileReadSpan.finish("ERROR", "file.path" to filePath.redactPath())
                 logger.warn("Failed to read file: $filePath")
@@ -953,7 +970,7 @@ class GraphLoader(
         val storedHash = fileRegistry.getContentHash(FilePath(filePath)) ?: return false // No stored hash → fall through
         // Read the file once for the hash comparison.
         fileSystem.invalidateShadow(filePath)
-        val diskContent = fileSystem.readFile(filePath)
+        val diskContent = fileSystem.readFileSuspend(filePath)
         if (diskContent != null && diskContent.hashCode() == storedHash) {
             logger.debug("Skipping loadFullPage, content hash unchanged: $filePath")
             return true
@@ -1188,6 +1205,23 @@ class GraphLoader(
                                 }
 
                                 if (isPriorityFile(filePath)) return@count true
+
+                                if (mode == ParseMode.INDEX_ONLY) {
+                                    if (existingPage != null && existingPage.isContentLoaded) return@count true
+                                    val sectId = sectionFilter?.sectionIdForPath(filePath) ?: ""
+                                    val stubPage = Page(
+                                        uuid = existingPage?.uuid ?: PageUuid(UuidGenerator.generateV7()),
+                                        name = name, filePath = filePath,
+                                        createdAt = existingPage?.createdAt ?: Clock.System.now(),
+                                        updatedAt = Clock.System.now(),
+                                        version = existingPage?.version ?: 0L,
+                                        isJournal = isJournalFile,
+                                        journalDate = if (isJournalFile) JournalUtils.parseJournalDate(name) else null,
+                                        isContentLoaded = false, sectionId = sectId,
+                                    )
+                                    pagesToSave.add(stubPage)
+                                    return@count true
+                                }
 
                                 // Always drop any stale shadow before reading so the reconcile
                                 // cannot serve old cached content for files it has determined

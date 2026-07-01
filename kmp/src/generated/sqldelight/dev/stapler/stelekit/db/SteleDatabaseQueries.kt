@@ -952,6 +952,47 @@ public class SteleDatabaseQueries(
 
   public fun selectUnloadedPagesPaginated(value_: Long, value__: Long): Query<Pages> = selectUnloadedPagesPaginated(value_, value__, ::Pages)
 
+  public fun <T : Any> selectUnloadedPagesBySection(
+    section_id: Collection<String>,
+    `value`: Long,
+    value_: Long,
+    mapper: (
+      uuid: String,
+      name: String,
+      namespace: String?,
+      file_path: String?,
+      created_at: Long,
+      updated_at: Long,
+      properties: String?,
+      version: Long,
+      is_favorite: Long?,
+      is_journal: Long?,
+      journal_date: String?,
+      is_content_loaded: Long,
+      backlink_count: Long,
+      section_id: String,
+    ) -> T,
+  ): Query<T> = SelectUnloadedPagesBySectionQuery(section_id, value, value_) { cursor ->
+    mapper(
+      cursor.getString(0)!!,
+      cursor.getString(1)!!,
+      cursor.getString(2),
+      cursor.getString(3),
+      cursor.getLong(4)!!,
+      cursor.getLong(5)!!,
+      cursor.getString(6),
+      cursor.getLong(7)!!,
+      cursor.getLong(8),
+      cursor.getLong(9),
+      cursor.getString(10),
+      cursor.getLong(11)!!,
+      cursor.getLong(12)!!,
+      cursor.getString(13)!!
+    )
+  }
+
+  public fun selectUnloadedPagesBySection(section_id: Collection<String>, value_: Long, value__: Long): Query<Pages> = selectUnloadedPagesBySection(section_id, value_, value__, ::Pages)
+
   public fun countUnloadedPages(): Query<Long> = Query(-58_485_640, arrayOf("pages"), driver, "SteleDatabase.sq", "countUnloadedPages", "SELECT COUNT(*) FROM pages WHERE is_content_loaded = 0") { cursor ->
     cursor.getLong(0)!!
   }
@@ -5383,6 +5424,35 @@ public class SteleDatabaseQueries(
     }
 
     override fun toString(): String = "SteleDatabase.sq:selectUnloadedPagesPaginated"
+  }
+
+  private inner class SelectUnloadedPagesBySectionQuery<out T : Any>(
+    public val section_id: Collection<String>,
+    public val `value`: Long,
+    public val value_: Long,
+    mapper: (SqlCursor) -> T,
+  ) : Query<T>(mapper) {
+    override fun addListener(listener: Query.Listener) {
+      driver.addListener("pages", listener = listener)
+    }
+
+    override fun removeListener(listener: Query.Listener) {
+      driver.removeListener("pages", listener = listener)
+    }
+
+    override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> {
+      val section_idIndexes = createArguments(count = section_id.size)
+      return driver.executeQuery(null, """SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count, pages.section_id FROM pages WHERE is_content_loaded = 0 AND section_id IN $section_idIndexes ORDER BY uuid LIMIT ? OFFSET ?""", mapper, section_id.size + 2) {
+            var parameterIndex = 0
+            section_id.forEach { section_id_ ->
+              bindString(parameterIndex++, section_id_)
+            }
+            bindLong(parameterIndex++, value)
+            bindLong(parameterIndex++, value_)
+          }
+    }
+
+    override fun toString(): String = "SteleDatabase.sq:selectUnloadedPagesBySection"
   }
 
   private inner class SelectPagesByNamesQuery<out T : Any>(
