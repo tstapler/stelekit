@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.57.0](https://github.com/tstapler/stelekit/compare/v0.56.0...v0.57.0) (2026-07-01)
+
+
+### Features
+
+* **clipboard:** block reorder persistence, copy-paste with CUT support, and algorithm extraction ([#192](https://github.com/tstapler/stelekit/issues/192)) ([5b7f639](https://github.com/tstapler/stelekit/commit/5b7f63979d3c0e8b739f7585c4c53ec0f7297511))
+
 ## [0.56.0](https://github.com/tstapler/stelekit/compare/v0.55.0...v0.56.0) (2026-06-24)
 
 
