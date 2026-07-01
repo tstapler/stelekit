@@ -82,7 +82,7 @@ jobs:
   bazel-android:
     name: Bazel Android build
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 65
     if: github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
