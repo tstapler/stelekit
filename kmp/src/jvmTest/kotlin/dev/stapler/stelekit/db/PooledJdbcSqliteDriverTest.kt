@@ -290,6 +290,7 @@ class PooledJdbcSqliteDriverTest {
                         is_journal = 0,
                         journal_date = null,
                         is_content_loaded = 0,
+                        section_id = "",
                     )
                 }
             }

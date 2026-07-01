@@ -173,9 +173,10 @@ class RestrictedDatabaseQueries(
         is_journal: Long?,
         journal_date: String?,
         is_content_loaded: Long,
+        section_id: String,
     ): Long = queries.insertPage(
         uuid, name, namespace, file_path, created_at, updated_at,
-        properties, version, is_favorite, is_journal, journal_date, is_content_loaded,
+        properties, version, is_favorite, is_journal, journal_date, is_content_loaded, section_id,
     )
 
     @DirectSqlWrite
@@ -189,10 +190,11 @@ class RestrictedDatabaseQueries(
         is_journal: Long?,
         journal_date: String?,
         is_content_loaded: Long,
+        section_id: String,
         uuid: String,
     ): Long = queries.updatePage(
         namespace, file_path, updated_at, properties, version,
-        is_favorite, is_journal, journal_date, is_content_loaded, uuid,
+        is_favorite, is_journal, journal_date, is_content_loaded, section_id, uuid,
     )
 
     @DirectSqlWrite

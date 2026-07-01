@@ -8,24 +8,22 @@ actual object GitManagerFactory {
     actual fun create(): GitManager = JsGitManager()
 }
 
+// ponytail: all ops fail visibly; full impl requires isomorphic-git (Epic-level)
+private const val NOT_SUPPORTED = "Git sync is not available on the web platform"
+
 class JsGitManager : GitManager {
-    override suspend fun commit(message: String): GitResult<String> {
-        return GitResult.Success("Commit not supported on Web")
-    }
+    override suspend fun commit(message: String): GitResult<String> =
+        GitResult.Error(NOT_SUPPORTED)
 
-    override suspend fun push(): Either<DomainError, Unit> {
-        return DomainError.NetworkError.HttpError(501, "Push not supported on Web").left()
-    }
+    override suspend fun push(): Either<DomainError, Unit> =
+        DomainError.NetworkError.HttpError(501, NOT_SUPPORTED).left()
 
-    override suspend fun pull(): Either<DomainError, Unit> {
-        return DomainError.NetworkError.HttpError(501, "Pull not supported on Web").left()
-    }
+    override suspend fun pull(): Either<DomainError, Unit> =
+        DomainError.NetworkError.HttpError(501, NOT_SUPPORTED).left()
 
-    override suspend fun status(): GitResult<String> {
-        return GitResult.Success("Clean")
-    }
+    override suspend fun status(): GitResult<String> =
+        GitResult.Error(NOT_SUPPORTED)
 
-    override suspend fun isDirty(): GitResult<Boolean> {
-        return GitResult.Success(false)
-    }
+    override suspend fun isDirty(): GitResult<Boolean> =
+        GitResult.Error(NOT_SUPPORTED)
 }

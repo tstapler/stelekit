@@ -45,7 +45,11 @@ import dev.stapler.stelekit.ui.components.SearchDialog
 import dev.stapler.stelekit.ui.components.ShareDialog
 import dev.stapler.stelekit.db.isLibsqlDriverSupported
 import dev.stapler.stelekit.tags.TagSettings
+import dev.stapler.stelekit.sections.SectionState
+import dev.stapler.stelekit.ui.components.SectionPickerDialog
+import dev.stapler.stelekit.ui.components.SectionQuickTogglePanel
 import dev.stapler.stelekit.ui.components.settings.SettingsDialog
+import dev.stapler.stelekit.ui.onboarding.DeviceSetupWizard
 import dev.stapler.stelekit.ui.screens.SearchViewModel
 import dev.stapler.stelekit.voice.VoiceSettings
 
@@ -155,6 +159,14 @@ internal fun GraphDialogLayer(
         hasLlmKey = hasLlmKey,
         isLibsqlDriverEnabled = appState.isLibsqlDriverEnabled,
         onLibsqlDriverToggle = if (isLibsqlDriverSupported) { { viewModel.setLibsqlDriverEnabled(it) } } else null,
+        sectionManifest = appState.currentManifest,
+        sectionStates = appState.currentSectionStates,
+        onCreateSection = { id, name, color, pagePfx, journalPfx ->
+            viewModel.createSection(id, name, color, pagePfx, journalPfx)
+        },
+        onRenameSection = { id, newName -> viewModel.renameSection(id, newName) },
+        onDeleteSection = { id -> viewModel.deleteSection(id) },
+        onToggleSectionState = { id, state -> viewModel.setSectionState(id, state) },
     )
 
     // key(gitSetupVisible) resets composition — and the remember inside — each time the dialog
@@ -257,6 +269,52 @@ internal fun GraphDialogLayer(
             driveClient = driveClient,
             googleAuthManager = shareGoogleAuthManager,
             onDismiss = { viewModel.hideShareDialog() },
+        )
+    }
+
+    // Device setup wizard — shown once when a graph with sections is first opened
+    if (appState.deviceSetupWizardVisible && appState.currentManifest != null) {
+        DeviceSetupWizard(
+            manifest = appState.currentManifest,
+            onComplete = { defaultSection, sectionStates ->
+                viewModel.completeDeviceSetup(defaultSection, sectionStates)
+            },
+            onDismiss = { viewModel.completeDeviceSetup("", emptyMap()) },
+        )
+    }
+
+    // Section picker dialog — opened when the SectionBadge is tapped on a non-journal page
+    val manifest = appState.currentManifest
+    if (appState.sectionPickerVisible && manifest != null) {
+        val pickerPage = appState.sectionPickerPage
+        // Only ACTIVE sections are offered as move targets — hidden/removed sections are not
+        // reachable on this device so moving a page there would make it disappear immediately.
+        val activeSections = remember(manifest, appState.currentSectionStates) {
+            manifest.sections.filter { section ->
+                (appState.currentSectionStates[section.id] ?: SectionState.ACTIVE) == SectionState.ACTIVE
+            }
+        }
+        SectionPickerDialog(
+            sections = activeSections,
+            currentSectionId = pickerPage?.sectionId ?: "",
+            onSelect = { sectionId ->
+                pickerPage?.let { viewModel.movePageToSection(it, sectionId) }
+            },
+            onDismiss = { viewModel.dismissSectionPicker() },
+        )
+    }
+
+    // Section quick-toggle panel
+    if (appState.sectionQuickToggleVisible && manifest != null) {
+        SectionQuickTogglePanel(
+            manifest = manifest,
+            sectionStates = appState.currentSectionStates,
+            onToggleSection = { id, state -> viewModel.setSectionState(id, state) },
+            onManageSections = {
+                viewModel.setSectionQuickToggleVisible(false)
+                viewModel.setSettingsVisible(true)
+            },
+            onDismiss = { viewModel.setSectionQuickToggleVisible(false) },
         )
     }
 

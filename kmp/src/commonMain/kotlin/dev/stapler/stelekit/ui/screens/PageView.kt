@@ -40,10 +40,12 @@ import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.ui.state.BlockStateManager
 import dev.stapler.stelekit.ui.StelekitViewModel
 import androidx.compose.runtime.CompositionLocalProvider
+import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.ui.components.BlockList
 import dev.stapler.stelekit.ui.components.EditorCapabilities
 import dev.stapler.stelekit.ui.components.EditorToolbar
 import dev.stapler.stelekit.ui.components.LocalGraphRootPath
+import dev.stapler.stelekit.ui.components.SectionBadge
 import dev.stapler.stelekit.ui.components.parseMarkdownWithStyling
 import dev.stapler.stelekit.ui.components.pageDropTarget
 import dev.stapler.stelekit.ui.components.ReferencesPanel
@@ -53,6 +55,7 @@ import dev.stapler.stelekit.ui.i18n.t
 import dev.stapler.stelekit.tags.TagSuggestionViewModel
 import dev.stapler.stelekit.tags.TagSuggestionState
 import dev.stapler.stelekit.tags.WikiLinkExtractor
+import kotlinx.coroutines.flow.map
 import dev.stapler.stelekit.ui.components.tags.SuggestionBottomSheet
 
 /**
@@ -78,6 +81,8 @@ fun PageView(
     onReloadFromDisk: (() -> Unit)? = null,
     isExporting: Boolean = false,
     tagSuggestionViewModel: TagSuggestionViewModel? = null,
+    currentManifest: SectionManifest? = null,
+    onSectionBadgeClick: (() -> Unit)? = null,
 ) {
     NavigationTracingEffect("PageView/${page.name}")
     val focusManager = LocalFocusManager.current
@@ -97,6 +102,10 @@ fun PageView(
     val isInSelectionMode by blockStateManager.isInSelectionMode.collectAsState()
     val loadingPageUuids by blockStateManager.loadingPageUuids.collectAsState()
     val suggestionMatcher by viewModel.suggestionMatcher.collectAsState()
+    val localPageNames by viewModel.localPageNames.collectAsState()
+    val hasSectionFilter by remember(viewModel) {
+        viewModel.uiState.map { it.hasSectionFilter }
+    }.collectAsState(initial = false)
 
     val blockClipboard by blockStateManager.blockClipboard.collectAsState()
 
@@ -286,6 +295,19 @@ fun PageView(
                     )
                 }
 
+                // Section badge — shown when page belongs to a section and the manifest is available
+                if (page.sectionId.isNotEmpty() && currentManifest != null) {
+                    val section = currentManifest.sections.find { it.id == page.sectionId }
+                    if (section != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        SectionBadge(
+                            section = section,
+                            // Disable click for journal pages (FR-14 / story constraint)
+                            onClick = if (!page.isJournal) onSectionBadgeClick else null,
+                        )
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(16.dp))
@@ -373,6 +395,8 @@ fun PageView(
                         onOpenAnnotationEditor = { uuid ->
                             viewModel.navigateToAnnotationEditor(uuid, page.uuid.value)
                         },
+                        hasSectionFilter = hasSectionFilter,
+                        localPageNames = localPageNames,
                         cutBlockUuids = cutBlockUuids,
                     )
 

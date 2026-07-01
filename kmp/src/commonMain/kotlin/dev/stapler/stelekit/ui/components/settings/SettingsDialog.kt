@@ -17,6 +17,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import arrow.core.Either
 import dev.stapler.stelekit.performance.getDeviceInfo
+import dev.stapler.stelekit.sections.SectionManifest
+import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.ui.i18n.Language
 import dev.stapler.stelekit.tags.TagSettings
@@ -61,6 +63,13 @@ fun SettingsDialog(
     // Developer settings
     isLibsqlDriverEnabled: Boolean = false,
     onLibsqlDriverToggle: ((Boolean) -> Unit)? = null,
+    // Section settings
+    sectionManifest: SectionManifest? = null,
+    sectionStates: Map<String, SectionState> = emptyMap(),
+    onCreateSection: ((id: String, displayName: String, color: String?, pagePathPrefix: String, journalPathPrefix: String) -> Unit)? = null,
+    onRenameSection: ((id: String, newDisplayName: String) -> Unit)? = null,
+    onDeleteSection: ((id: String) -> Unit)? = null,
+    onToggleSectionState: ((sectionId: String, newState: SectionState) -> Unit)? = null,
 ) {
     if (visible) {
         Dialog(
@@ -95,13 +104,15 @@ fun SettingsDialog(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        val visibleCategories = remember(onConnectGoogle, audiobookNotesSettingsContent, tagSettings, onLibsqlDriverToggle) {
+                        val visibleCategories = remember(onConnectGoogle, audiobookNotesSettingsContent, tagSettings, onLibsqlDriverToggle, sectionManifest) {
                             SettingsCategory.entries.filter { category ->
                                 when (category) {
                                     SettingsCategory.GOOGLE_ACCOUNT -> onConnectGoogle != null
                                     SettingsCategory.AUDIOBOOK_NOTES -> audiobookNotesSettingsContent != null
                                     SettingsCategory.TAG_SUGGESTIONS -> tagSettings != null
                                     SettingsCategory.DEVELOPER -> onLibsqlDriverToggle != null
+                                    SettingsCategory.SECTIONS -> sectionManifest != null
+                                    SettingsCategory.DEVICE_SUBSCRIPTIONS -> sectionManifest != null
                                     else -> true
                                 }
                             }
@@ -203,6 +214,25 @@ fun SettingsDialog(
                                         onLibsqlDriverToggle = onLibsqlDriverToggle,
                                     )
                                 }
+                                SettingsCategory.SECTIONS -> if (sectionManifest != null &&
+                                    onCreateSection != null && onRenameSection != null && onDeleteSection != null
+                                ) {
+                                    SectionsSettings(
+                                        manifest = sectionManifest,
+                                        onCreateSection = onCreateSection,
+                                        onRenameSection = onRenameSection,
+                                        onDeleteSection = onDeleteSection,
+                                    )
+                                }
+                                SettingsCategory.DEVICE_SUBSCRIPTIONS -> if (sectionManifest != null &&
+                                    onToggleSectionState != null
+                                ) {
+                                    DeviceSubscriptionsPanel(
+                                        manifest = sectionManifest,
+                                        sectionStates = sectionStates,
+                                        onToggleSection = onToggleSectionState,
+                                    )
+                                }
                             }
                         }
                     }
@@ -254,6 +284,8 @@ enum class SettingsCategory(val label: String, val icon: ImageVector) {
     AUDIOBOOK_NOTES("Audiobook Notes", Icons.Default.Book),
     GOOGLE_ACCOUNT("Google Account", Icons.Default.Cloud),
     VAULT("Vault", Icons.Default.Lock),
+    SECTIONS("Sections", Icons.Default.Folder),
+    DEVICE_SUBSCRIPTIONS("Device Subscriptions", Icons.Default.Notifications),
     DEVELOPER("Developer", Icons.Default.BugReport),
 }
 

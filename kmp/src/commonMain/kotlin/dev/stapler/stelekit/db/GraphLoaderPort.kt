@@ -1,12 +1,17 @@
 package dev.stapler.stelekit.db
 
+import arrow.core.Either
+import arrow.core.left
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageName
 import dev.stapler.stelekit.parsing.ParseMode
+import dev.stapler.stelekit.sections.SectionFilter
 import dev.stapler.stelekit.vault.CryptoLayer
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.datetime.LocalDate
 
 /**
  * Port interface for [GraphLoader] used by [dev.stapler.stelekit.ui.StelekitViewModel].
@@ -94,4 +99,19 @@ interface GraphLoaderPort {
         mode: ParseMode = ParseMode.FULL,
         priority: DatabaseWriteActor.Priority = DatabaseWriteActor.Priority.HIGH,
     )
+
+    /**
+     * Creates (or re-parses) the journal file for [sectionId] on [date] and returns the Page.
+     * Creates the directory and empty file if absent. sectionId = "" for the global journal.
+     */
+    suspend fun createSectionJournalPage(
+        sectionId: String,
+        date: LocalDate,
+    ): Either<DomainError, Page> = DomainError.DatabaseError.WriteFailed("not implemented").left()
+
+    /**
+     * Updates the section filter used for section-aware path assignment and drain filtering.
+     * Called after the section manifest and states are loaded. Pass null to disable filtering.
+     */
+    fun updateSectionFilter(filter: SectionFilter?) {}
 }

@@ -16,6 +16,8 @@ import dev.stapler.stelekit.vault.VaultError
 import dev.stapler.stelekit.vault.VaultNamespace
 import dev.stapler.stelekit.asset.AssetUuid
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.sections.SectionManifest
+import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.ui.i18n.Language
 
@@ -91,6 +93,7 @@ data class AppState(
     val rightSidebarExpanded: Boolean = false,
     val settingsVisible: Boolean = false,
     val isLoading: Boolean = false,
+    val isContentFetching: Boolean = false,
     val isFullyLoaded: Boolean = false,  // True when all background loading is complete
     val themeMode: StelekitThemeMode = StelekitThemeMode.SYSTEM,
     val language: Language = Language.ENGLISH,
@@ -161,9 +164,21 @@ data class AppState(
     val shareIsGoogleAuthenticated: Boolean = false,
     val shareGoogleEmail: String? = null,
     val isExportingToDrive: Boolean = false,
+    // Section support
+    val currentManifest: SectionManifest? = null,
+    val currentSectionStates: Map<String, SectionState> = emptyMap(),
+    val defaultSection: String = "",
+    val deviceSetupComplete: Boolean = false,
+    val sectionPickerVisible: Boolean = false,
+    val sectionPickerPage: Page? = null,
+    val deviceSetupWizardVisible: Boolean = false,
+    val sectionQuickToggleVisible: Boolean = false,
 ) {
     val canGoBack: Boolean get() = historyIndex > 0
     val canGoForward: Boolean get() = historyIndex < navigationHistory.size - 1
+    val hasSectionFilter: Boolean
+        get() = currentManifest?.sections?.isNotEmpty() == true &&
+            currentSectionStates.values.any { it != SectionState.ACTIVE }
 }
 
 /** Opens the global search dialog pre-filled with the given text. */

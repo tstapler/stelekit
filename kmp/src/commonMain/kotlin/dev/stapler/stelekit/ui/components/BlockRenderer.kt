@@ -82,6 +82,9 @@ fun BlockRenderer(
     dropBelow: Boolean = false,
     dropAsChild: Boolean = false,
     onSelectionChange: ((IntRange?) -> Unit)? = null,
+    hasSectionFilter: Boolean = false,
+    localPageNames: Set<String> = emptySet(),
+    onUnavailableLinkTap: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     BlockItem(
@@ -128,6 +131,9 @@ fun BlockRenderer(
         dropBelow = dropBelow,
         dropAsChild = dropAsChild,
         onSelectionChange = onSelectionChange,
+        hasSectionFilter = hasSectionFilter,
+        localPageNames = localPageNames,
+        onUnavailableLinkTap = onUnavailableLinkTap,
         modifier = modifier
     )
 }

@@ -46,7 +46,8 @@ class JournalsViewModel(
     val blockStateManager: BlockStateManager,
     // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
     // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
-    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val activeSectionIds: List<String>? = null,
 ) {
     private val scope = scope
     private val logger = Logger("JournalsViewModel")
@@ -89,7 +90,13 @@ class JournalsViewModel(
     private fun startPaginationObserver() {
         paginationJob?.cancel()
         paginationJob = scope.launch {
-            journalService.getJournalPages(totalVisibleCount, 0).collect { result ->
+            val sectionsFlow = activeSectionIds
+            val journalFlow = if (sectionsFlow != null) {
+                journalService.getJournalPagesBySections(sectionsFlow, totalVisibleCount, 0)
+            } else {
+                journalService.getJournalPages(totalVisibleCount, 0)
+            }
+            journalFlow.collect { result ->
                 val journals = result.getOrNull() ?: emptyList()
 
                 _uiState.update { it.copy(

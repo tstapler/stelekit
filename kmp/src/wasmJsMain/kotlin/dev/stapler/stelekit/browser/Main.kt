@@ -13,7 +13,9 @@ import dev.stapler.stelekit.platform.DemoFileSystem
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.sync.WasmSectionSyncService
 import dev.stapler.stelekit.repository.GraphBackend
+import dev.stapler.stelekit.service.WasmMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
 import kotlinx.browser.localStorage
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -21,6 +23,8 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 
 private fun markSteleKitReady(): Unit = js("window.__stelekit_ready = true")
+private fun markGraphDialogCapable(): Unit = js("window.__stelekit_native_graph_picker = false")
+private fun markDriverBackend(backend: String): Unit = js("window.__stelekit_driver_backend = backend")
 
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
@@ -29,11 +33,30 @@ fun main() {
         println("[SteleKit] Fatal startup error: ${throwable.message}")
         // ComposeViewport will not be mounted — the loading overlay remains visible
     }) {
-        val graphId = "default"
+        // Allow E2E tests to open a named OPFS graph via localStorage override.
+        // Tests set window.localStorage['__stelekit_test_graph'] = 'name' before loading.
+        val graphId = localStorage.getItem("__stelekit_test_graph") ?: "default"
         val opfsGraphPath = "/stelekit/$graphId"
 
         val opfsFileSystem = PlatformFileSystem()
         opfsFileSystem.preload(opfsGraphPath)
+
+        // Wire GitHub config for section sync and lazy content fetching.
+        // Keys stored in localStorage by the web host (e.g. embed script).
+        val ghSettings = PlatformSettings()
+        val ghOwner = ghSettings.getString("githubOwner", "")
+        val ghRepo = ghSettings.getString("githubRepo", "")
+        val ghBranch = ghSettings.getString("githubBranch", "main")
+        val ghToken = ghSettings.getString("githubToken", "").ifEmpty { null }
+        PlatformFileSystem.githubOwner = ghOwner
+        PlatformFileSystem.githubRepo = ghRepo
+        PlatformFileSystem.githubBranch = ghBranch
+        PlatformFileSystem.githubToken = ghToken
+        WasmSectionSyncService.githubOwner = ghOwner
+        WasmSectionSyncService.githubRepo = ghRepo
+        WasmSectionSyncService.githubBranch = ghBranch
+        WasmSectionSyncService.githubToken = ghToken
+        WasmSectionSyncService.graphId = graphId
 
         val driverFactory = DriverFactory()
         var useDemoFallback = false
@@ -42,13 +65,16 @@ fun main() {
             if (driver.actualBackend == "memory") {
                 // OPFS VFS unavailable — SQLite in-memory still works, show demo content.
                 println("[SteleKit] OPFS worker fell back to :memory: — loading demo graph")
+                markDriverBackend("memory")
                 useDemoFallback = true
                 GraphBackend.SQLDELIGHT
             } else {
+                markDriverBackend("opfs")
                 GraphBackend.SQLDELIGHT
             }
         } catch (e: Throwable) {
             println("[SteleKit] SQLite driver init failed, loading demo graph: ${e.message}")
+            markDriverBackend("memory")
             useDemoFallback = true
             GraphBackend.IN_MEMORY
         }
@@ -80,12 +106,14 @@ fun main() {
         )
 
         markSteleKitReady()
+        markGraphDialogCapable()
 
         ComposeViewport(document.body!!) {
             StelekitApp(
                 fileSystem = fileSystem,
                 graphPath = graphPath,
                 graphManager = graphManager,
+                attachmentService = WasmMediaAttachmentService(fileSystem),
             )
         }
     }

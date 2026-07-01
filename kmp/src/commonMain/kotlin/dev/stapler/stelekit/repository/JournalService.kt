@@ -15,6 +15,7 @@ import dev.stapler.stelekit.util.FractionalIndexing
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.LocalDate
@@ -29,6 +30,10 @@ import kotlin.time.Clock
  */
 fun interface JournalDateResolver {
     suspend fun getPageByJournalDate(date: LocalDate): Page?
+
+    /** Section-aware lookup; defaults to global lookup for backward compatibility. */
+    suspend fun getJournalPageByDateAndSection(date: LocalDate, sectionId: String): Page? =
+        getPageByJournalDate(date)
 }
 
 /**
@@ -63,6 +68,9 @@ class JournalService(
             ?: pageRepository.getPageByName(underscoreName).first().getOrNull()
     }
 
+    override suspend fun getJournalPageByDateAndSection(date: LocalDate, sectionId: String): Page? =
+        pageRepository.getJournalPageByDateAndSection(date, sectionId).first().getOrNull()
+
     // ---- Journal queries ----
 
     fun getJournalPageByDate(date: LocalDate): Flow<Either<DomainError, Page?>> =
@@ -70,6 +78,19 @@ class JournalService(
 
     fun getJournalPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         pageRepository.getJournalPages(limit, offset)
+
+    fun getJournalPagesBySections(
+        activeSectionIds: List<String>,
+        limit: Int,
+        offset: Int,
+    ): Flow<Either<DomainError, List<Page>>> {
+        if (activeSectionIds.isEmpty()) return pageRepository.getJournalPages(limit, offset)
+        // "" is the sentinel sectionId for global pages (not assigned to any section).
+        val allowedIds = buildSet { add(""); addAll(activeSectionIds) }
+        return pageRepository.getJournalPages(limit, offset).map { result ->
+            result.map { pages -> pages.filter { it.sectionId in allowedIds } }
+        }
+    }
 
     // ---- Today's journal creation ----
 

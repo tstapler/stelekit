@@ -30,7 +30,7 @@ private class SteleDatabaseImpl(
       driver.execute(null, """
           |CREATE TABLE pages (
           |    uuid TEXT NOT NULL PRIMARY KEY,
-          |    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+          |    name TEXT NOT NULL COLLATE NOCASE,
           |    namespace TEXT,
           |    file_path TEXT,
           |    created_at INTEGER NOT NULL,
@@ -41,7 +41,9 @@ private class SteleDatabaseImpl(
           |    is_journal INTEGER DEFAULT 0,
           |    journal_date TEXT,
           |    is_content_loaded INTEGER NOT NULL DEFAULT 1,
-          |    backlink_count INTEGER NOT NULL DEFAULT 0
+          |    backlink_count INTEGER NOT NULL DEFAULT 0,
+          |    section_id TEXT NOT NULL DEFAULT '',
+          |    UNIQUE(name, section_id)
           |)
           """.trimMargin(), 0).await()
       driver.execute(null, """
@@ -263,6 +265,7 @@ private class SteleDatabaseImpl(
       driver.execute(null, "CREATE INDEX idx_pages_updated_at ON pages(updated_at DESC)", 0).await()
       driver.execute(null, "CREATE INDEX idx_pages_created_at ON pages(created_at DESC)", 0).await()
       driver.execute(null, "CREATE INDEX idx_pages_favorite ON pages(name) WHERE is_favorite = 1", 0).await()
+      driver.execute(null, "CREATE INDEX idx_pages_journal_section ON pages(is_journal, journal_date, section_id)", 0).await()
       driver.execute(null, "CREATE INDEX idx_changelog_graph_status ON migration_changelog(graph_id, status)", 0).await()
       driver.execute(null, "CREATE INDEX idx_changelog_applied_at ON migration_changelog(graph_id, applied_at)", 0).await()
       driver.execute(null, """

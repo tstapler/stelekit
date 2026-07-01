@@ -336,6 +336,14 @@ private fun JournalEntry(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
             )
+            if (page.sectionId.isNotBlank()) {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "[${page.sectionId}]",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             if (hasConflict) {
                 Spacer(Modifier.width(8.dp))
                 Icon(

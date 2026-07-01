@@ -12,10 +12,15 @@ load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 
 kt_jvm_library(
     name = "common_test_fixtures",
-    srcs = ["dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt"],
+    srcs = [
+        "dev/stapler/stelekit/db/sidecar/FakeFileSystem.kt",
+        "dev/stapler/stelekit/sections/SectionFilterTest.kt",
+        "dev/stapler/stelekit/sections/SectionManifestParserTest.kt",
+    ],
     deps = [
         "//kmp/src/jvmMain/kotlin:jvm_main_lib",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_jetbrains_kotlin_kotlin_test_junit",
     ],
     visibility = ["//kmp/src:__subpackages__"],
 )

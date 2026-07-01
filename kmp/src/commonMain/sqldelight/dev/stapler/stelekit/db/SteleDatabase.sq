@@ -3,7 +3,7 @@
 
 CREATE TABLE pages (
     uuid TEXT NOT NULL PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    name TEXT NOT NULL COLLATE NOCASE,
     namespace TEXT,
     file_path TEXT,
     created_at INTEGER NOT NULL,
@@ -14,7 +14,9 @@ CREATE TABLE pages (
     is_journal INTEGER DEFAULT 0,
     journal_date TEXT,
     is_content_loaded INTEGER NOT NULL DEFAULT 1,
-    backlink_count INTEGER NOT NULL DEFAULT 0
+    backlink_count INTEGER NOT NULL DEFAULT 0,
+    section_id TEXT NOT NULL DEFAULT '',
+    UNIQUE(name, section_id)
 );
 
 CREATE TABLE blocks (
@@ -85,6 +87,8 @@ CREATE INDEX idx_pages_journal ON pages(is_journal, journal_date DESC);
 CREATE INDEX idx_pages_updated_at ON pages(updated_at DESC);
 CREATE INDEX idx_pages_created_at ON pages(created_at DESC);
 CREATE INDEX idx_pages_favorite ON pages(name) WHERE is_favorite = 1;
+CREATE INDEX idx_pages_journal_section ON pages(is_journal, journal_date, section_id);
+CREATE INDEX idx_pages_section_id ON pages(section_id, name);
 
 -- Migration Framework Changelog
 CREATE TABLE migration_changelog (
@@ -383,6 +387,10 @@ SELECT * FROM pages ORDER BY name LIMIT ? OFFSET ?;
 selectUnloadedPagesPaginated:
 SELECT * FROM pages WHERE is_content_loaded = 0 ORDER BY uuid LIMIT ? OFFSET ?;
 
+-- Caller must chunk sectionIds into batches of ≤500 (SQLITE_MAX_VARIABLE_NUMBER=999 on Android API < 30).
+selectUnloadedPagesBySection:
+SELECT * FROM pages WHERE is_content_loaded = 0 AND section_id IN ? ORDER BY uuid LIMIT ? OFFSET ?;
+
 countUnloadedPages:
 SELECT COUNT(*) FROM pages WHERE is_content_loaded = 0;
 
@@ -434,7 +442,8 @@ UPDATE pages SET
     is_favorite = ?,
     is_journal = ?,
     journal_date = ?,
-    is_content_loaded = ?
+    is_content_loaded = ?,
+    section_id = ?
 WHERE uuid = ?;
 
 countPages:
@@ -444,13 +453,20 @@ deletePageByUuid:
 DELETE FROM pages WHERE uuid = ?;
 
 insertPage:
-INSERT OR IGNORE INTO pages (uuid, name, namespace, file_path, created_at, updated_at, properties, version, is_favorite, is_journal, journal_date, is_content_loaded)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR IGNORE INTO pages (uuid, name, namespace, file_path, created_at, updated_at, properties, version, is_favorite, is_journal, journal_date, is_content_loaded, section_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
 selectJournalPages:
 SELECT * FROM pages WHERE is_journal = 1 AND journal_date IS NOT NULL ORDER BY journal_date DESC LIMIT ? OFFSET ?;
 
 selectJournalPageByDate:
 SELECT * FROM pages WHERE is_journal = 1 AND journal_date = ? LIMIT 1;
+
+selectJournalPageByDateAndSection:
+SELECT * FROM pages WHERE is_journal = 1 AND journal_date = ? AND section_id = ? LIMIT 1;
+
+selectPagesBySectionId:
+SELECT * FROM pages WHERE section_id = ? ORDER BY name ASC LIMIT ? OFFSET ?;
 
 updatePageFavorite:
 UPDATE pages SET is_favorite = ? WHERE uuid = ?;

@@ -143,12 +143,23 @@ class SqlDelightPageRepository(
         queries.selectJournalPageByDate(date.toString())
             .asDbFlowOrNull(PlatformDispatcher.DB) { it.toModel() }
 
+    override fun getJournalPageByDateAndSection(
+        date: kotlinx.datetime.LocalDate,
+        sectionId: String,
+    ): Flow<Either<DomainError, Page?>> =
+        queries.selectJournalPageByDateAndSection(date.toString(), sectionId)
+            .asDbFlowOrNull(PlatformDispatcher.DB) { it.toModel() }
+
     override fun getRecentPages(limit: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectRecentlyUpdatedPages(limit.toLong())
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override fun getUnloadedPages(limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
         queries.selectUnloadedPagesPaginated(limit.toLong(), offset.toLong())
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+
+    override fun getUnloadedPagesBySection(sectionIds: Collection<String>, limit: Int, offset: Int): Flow<Either<DomainError, List<Page>>> =
+        queries.selectUnloadedPagesBySection(sectionIds, limit.toLong(), offset.toLong())
             .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
 
     override suspend fun countUnloadedPages(): Either<DomainError, Long> = withContext(PlatformDispatcher.DB) {
@@ -253,7 +264,8 @@ class SqlDelightPageRepository(
             is_favorite = if (page.isFavorite) 1L else 0L,
             is_journal = if (page.isJournal) 1L else 0L,
             journal_date = page.journalDate?.toString(),
-            is_content_loaded = if (page.isContentLoaded) 1L else 0L
+            is_content_loaded = if (page.isContentLoaded) 1L else 0L,
+            section_id = page.sectionId,
         )
         queries.updatePage(
             namespace = page.namespace,
@@ -265,7 +277,8 @@ class SqlDelightPageRepository(
             is_journal = if (page.isJournal) 1L else 0L,
             journal_date = page.journalDate?.toString(),
             is_content_loaded = if (page.isContentLoaded) 1L else 0L,
-            uuid = page.uuid.value
+            section_id = page.sectionId,
+            uuid = page.uuid.value,
         )
     }
 
@@ -349,7 +362,8 @@ class SqlDelightPageRepository(
             }?.filter { it.key.isNotBlank() } ?: emptyMap(),
             isJournal = this.is_journal == 1L,
             journalDate = this.journal_date?.let { kotlinx.datetime.LocalDate.parse(it) },
-            isContentLoaded = this.is_content_loaded == 1L
+            isContentLoaded = this.is_content_loaded == 1L,
+            sectionId = this.section_id,
         )
     }
 
@@ -370,7 +384,8 @@ class SqlDelightPageRepository(
             }?.filter { it.key.isNotBlank() } ?: emptyMap(),
             isJournal = this.is_journal == 1L,
             journalDate = kotlinx.datetime.LocalDate.parse(this.journal_date),
-            isContentLoaded = this.is_content_loaded == 1L
+            isContentLoaded = this.is_content_loaded == 1L,
+            sectionId = this.section_id,
         )
     }
 }

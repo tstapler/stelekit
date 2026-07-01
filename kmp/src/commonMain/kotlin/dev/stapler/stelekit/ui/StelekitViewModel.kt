@@ -10,7 +10,18 @@ import dev.stapler.stelekit.db.RenameResult
 import dev.stapler.stelekit.db.UndoManager
 import arrow.core.Either
 import arrow.core.left
+import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.sections.SectionDefinition
+import dev.stapler.stelekit.sections.SectionManifest
+import dev.stapler.stelekit.sections.SectionManifestParser
+import dev.stapler.stelekit.sections.SectionManifestWriter
+import dev.stapler.stelekit.sections.SectionState
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import dev.stapler.stelekit.error.DomainError.ExportError
 import dev.stapler.stelekit.export.ClipboardProvider
 import dev.stapler.stelekit.export.ExportService
@@ -75,6 +86,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
+import dev.stapler.stelekit.sections.getSectionStates
+import dev.stapler.stelekit.sections.putSectionStates
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.plus
@@ -117,6 +130,7 @@ class StelekitViewModel(
     private val activeGitSyncService: StateFlow<GitSyncService?> = deps.activeGitSyncService
     private val activeGraphIdProvider: () -> String? = deps.activeGraphIdProvider
     private val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = deps.onDismissGitDetection
+    private val onSectionsLoaded = deps.onSectionsLoaded
     private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(deps.ringBuffer)
     // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
     // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
@@ -334,6 +348,14 @@ class StelekitViewModel(
     /** Pre-built matcher for the current graph's page names. Null until pages are loaded. */
     val suggestionMatcher: StateFlow<AhoCorasickMatcher?> = pageNameIndex.matcher
 
+    /** Local page names for cross-section link rendering (FR-14). Derived from the autocomplete matcher index. */
+    val localPageNames: StateFlow<Set<String>> = pageNameIndex.matcher
+        .map { pageNameIndex.vocabularyNames().toHashSet() }
+        .stateIn(scope, SharingStarted.Lazily, emptySet())
+
+    private val sectionManifestParser = SectionManifestParser(fileSystem)
+    private val sectionManifestWriter = SectionManifestWriter(fileSystem)
+
     private val _uiState = MutableStateFlow(
         AppState(
             isLoading = true,
@@ -341,6 +363,9 @@ class StelekitViewModel(
             currentGraphPath = platformSettings.getString("lastGraphPath", ""),
             isLeftHanded = platformSettings.getBoolean("isLeftHanded", false),
             isLibsqlDriverEnabled = platformSettings.getBoolean("db.libsql.enabled", false),
+            defaultSection = platformSettings.getString("defaultSection", ""),
+            deviceSetupComplete = platformSettings.getBoolean("deviceSetupComplete", false),
+            currentSectionStates = platformSettings.getSectionStates(),
         )
     )
     val uiState: StateFlow<AppState> = _uiState.asStateFlow()
@@ -574,6 +599,9 @@ class StelekitViewModel(
                                 // journals list. No navigation — the list updates reactively.
                                 scope.launch { journalService.ensureTodayJournal() }
 
+                                // Load the section manifest from disk.
+                                scope.launch { loadSectionManifest(path) }
+
                                 startMidnightBoundaryWatcher()
                             },
                             onFullyLoaded = {
@@ -678,8 +706,13 @@ class StelekitViewModel(
         val currentScreen = _uiState.value.currentScreen
         if (currentScreen is Screen.PageView) {
             scope.launch {
-                graphLoader.loadFullPage(currentScreen.page.uuid.value, force = true)
-                refreshCurrentPage()
+                _uiState.update { it.copy(isContentFetching = true) }
+                try {
+                    graphLoader.loadFullPage(currentScreen.page.uuid.value, force = true)
+                    refreshCurrentPage()
+                } finally {
+                    _uiState.update { it.copy(isContentFetching = false) }
+                }
             }
         }
     }
@@ -984,9 +1017,14 @@ class StelekitViewModel(
             // and loading from disk would overwrite them before the conflict dialog appears.
             if (!checkAndShowPendingConflict(screen)) {
                 scope.launch {
-                    // Re-read from disk on every navigation so stale in-memory copies are evicted.
-                    // Uses the mtime guard internally so this is cheap when nothing changed.
-                    graphLoader.loadFullPage(screen.page.uuid.value)
+                    _uiState.update { it.copy(isContentFetching = true) }
+                    try {
+                        // Re-read from disk on every navigation so stale in-memory copies are evicted.
+                        // Uses the mtime guard internally so this is cheap when nothing changed.
+                        graphLoader.loadFullPage(screen.page.uuid.value)
+                    } finally {
+                        _uiState.update { it.copy(isContentFetching = false) }
+                    }
                 }
             }
             // Fire-and-forget visit tracking — does not block navigation
@@ -1149,7 +1187,8 @@ class StelekitViewModel(
     }
 
     /**
-     * Create a new page with the given name
+     * Create a new page with the given name. If a non-empty [defaultSection] is set in AppState
+     * and the page is not a journal, the page is assigned to that section (Story 5.8).
      */
     @OptIn(DirectRepositoryWrite::class)
     private suspend fun createPage(pageName: String): Page? {
@@ -1160,6 +1199,10 @@ class StelekitViewModel(
             // Detect if this is a journal page (matches date patterns like 2026-01-21 or 2026_01_21)
             val isJournal = pageName.matches(Regex("^\\d{4}[-_]\\d{2}[-_]\\d{2}$"))
 
+            // Story 5.8: assign new non-journal pages to the default section when set
+            val currentDefaultSection = _uiState.value.defaultSection
+            val sectionId = if (!isJournal && currentDefaultSection.isNotEmpty()) currentDefaultSection else ""
+
             val newPage = Page(
                 uuid = PageUuid(uuid),
                 name = pageName,
@@ -1169,7 +1212,8 @@ class StelekitViewModel(
                 updatedAt = now,
                 properties = emptyMap(),
                 isFavorite = false,
-                isJournal = isJournal
+                isJournal = isJournal,
+                sectionId = sectionId,
             )
 
             if (writeActor != null) {
@@ -1871,6 +1915,14 @@ class StelekitViewModel(
         return commandManager.getAvailableCommands(context)
     }
 
+    fun newSectionJournalForToday(sectionId: String) {
+        scope.launch {
+            val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+            val result = graphLoader.createSectionJournalPage(sectionId, today)
+            result.onRight { page -> navigateTo(Screen.PageView(page)) }
+        }
+    }
+
     private fun updateCommands() {
         scope.launch {
             try {
@@ -1937,6 +1989,30 @@ class StelekitViewModel(
                         shortcut = null,
                         action = { navigateTo(Screen.Import) }
                     )
+                }
+
+                val manifestForCmd = _uiState.value.currentManifest
+                if (manifestForCmd != null && manifestForCmd.sections.isNotEmpty()) {
+                    val sectionStatesForCmd = _uiState.value.currentSectionStates
+                    val activeSectionsForSwitch = manifestForCmd.sections.filter { section ->
+                        (sectionStatesForCmd[section.id] ?: SectionState.ACTIVE) == SectionState.ACTIVE
+                    }
+                    for (section in activeSectionsForSwitch) {
+                        legacyCommands += Command(
+                            id = "journal.new.${section.id}",
+                            label = "New ${section.displayName} journal for today",
+                            shortcut = null,
+                            action = { newSectionJournalForToday(section.id) }
+                        )
+                    }
+                    if (activeSectionsForSwitch.isNotEmpty()) {
+                        legacyCommands += Command(
+                            id = "journal.switch-context",
+                            label = "Switch journal context",
+                            shortcut = null,
+                            action = { _uiState.update { it.copy(sectionQuickToggleVisible = true) } }
+                        )
+                    }
                 }
 
                 _uiState.update { it.copy(commands = legacyCommands) }
@@ -2182,6 +2258,154 @@ class StelekitViewModel(
                 }
             }
         }
+    }
+
+    // ===== Section Management =====
+
+    private suspend fun loadSectionManifest(graphPath: String) {
+        val manifest = sectionManifestParser.parse(graphPath).getOrNull() ?: SectionManifest()
+        _uiState.update { it.copy(currentManifest = manifest) }
+        // Wire section filter so GraphLoader assigns sectionId to page paths on disk
+        val states = _uiState.value.currentSectionStates
+        if (manifest.sections.isNotEmpty()) {
+            graphLoader.updateSectionFilter(dev.stapler.stelekit.sections.SectionFilter(manifest, states))
+        }
+        // Show device setup wizard on first load when sections exist and setup not complete
+        val setupComplete = _uiState.value.deviceSetupComplete
+        if (!setupComplete && manifest.sections.isNotEmpty()) {
+            _uiState.update { it.copy(deviceSetupWizardVisible = true) }
+        }
+        // Platform-specific sync (WASM: seed INDEX_ONLY stubs from GitHub tree)
+        onSectionsLoaded?.invoke(manifest, states)
+    }
+
+    @OptIn(DirectRepositoryWrite::class)
+    fun movePageToSection(page: Page, sectionId: String) {
+        val manifest = _uiState.value.currentManifest ?: return
+        val section = if (sectionId.isEmpty()) null else manifest.sections.find { it.id == sectionId }
+        val pathPrefix = section?.pagePathPrefix ?: "pages"
+        scope.launch {
+            graphWriter.movePageToSection(page, sectionId, pathPrefix).fold(
+                ifLeft = { err ->
+                    logger.error("movePageToSection failed: ${err.message}")
+                    sendSnackbar("Failed to move page: ${err.message}")
+                },
+                ifRight = { updatedPage ->
+                    if (writeActor != null) {
+                        writeActor.execute { pageRepository.savePage(updatedPage) }
+                    } else {
+                        pageRepository.savePage(updatedPage)
+                    }
+                    _uiState.update { state ->
+                        state.copy(
+                            currentPage = if (state.currentPage?.uuid == page.uuid) updatedPage else state.currentPage,
+                            currentScreen = if (state.currentScreen is Screen.PageView &&
+                                state.currentScreen.page.uuid == page.uuid
+                            ) Screen.PageView(updatedPage) else state.currentScreen,
+                            sectionPickerVisible = false,
+                            sectionPickerPage = null,
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    fun createSection(
+        id: String,
+        displayName: String,
+        color: String?,
+        pagePathPrefix: String,
+        journalPathPrefix: String,
+    ) {
+        val manifest = _uiState.value.currentManifest ?: SectionManifest()
+        val graphPath = _uiState.value.currentGraphPath
+        val newSection = SectionDefinition(
+            id = id,
+            displayName = displayName,
+            color = color,
+            pagePathPrefix = pagePathPrefix,
+            journalPathPrefix = journalPathPrefix,
+        )
+        val updated = manifest.copy(sections = manifest.sections + newSection)
+        scope.launch {
+            sectionManifestWriter.write(graphPath, updated).fold(
+                ifLeft = { err -> logger.error("createSection write failed: ${err.message}") },
+                ifRight = { _uiState.update { it.copy(currentManifest = updated) } },
+            )
+        }
+    }
+
+    fun renameSection(id: String, newDisplayName: String) {
+        val manifest = _uiState.value.currentManifest ?: return
+        val graphPath = _uiState.value.currentGraphPath
+        val updated = manifest.copy(
+            sections = manifest.sections.map { if (it.id == id) it.copy(displayName = newDisplayName) else it }
+        )
+        scope.launch {
+            sectionManifestWriter.write(graphPath, updated).fold(
+                ifLeft = { err -> logger.error("renameSection write failed: ${err.message}") },
+                ifRight = { _uiState.update { it.copy(currentManifest = updated) } },
+            )
+        }
+    }
+
+    fun deleteSection(id: String) {
+        val manifest = _uiState.value.currentManifest ?: return
+        val graphPath = _uiState.value.currentGraphPath
+        val updated = manifest.copy(sections = manifest.sections.filter { it.id != id })
+        scope.launch {
+            sectionManifestWriter.write(graphPath, updated).fold(
+                ifLeft = { err -> logger.error("deleteSection write failed: ${err.message}") },
+                ifRight = {
+                    val newStates = _uiState.value.currentSectionStates - id
+                    platformSettings.putSectionStates(newStates)
+                    _uiState.update { it.copy(currentManifest = updated, currentSectionStates = newStates) }
+                },
+            )
+        }
+    }
+
+    fun setDefaultSection(sectionId: String) {
+        platformSettings.putString("defaultSection", sectionId)
+        _uiState.update { it.copy(defaultSection = sectionId) }
+    }
+
+    fun setSectionState(sectionId: String, state: SectionState) {
+        val newStates = _uiState.value.currentSectionStates + (sectionId to state)
+        platformSettings.putSectionStates(newStates)
+        _uiState.update { it.copy(currentSectionStates = newStates) }
+    }
+
+    fun setSectionStates(states: Map<String, SectionState>) {
+        platformSettings.putSectionStates(states)
+        _uiState.update { it.copy(currentSectionStates = states) }
+    }
+
+    fun completeDeviceSetup(defaultSection: String, sectionStates: Map<String, SectionState>) {
+        platformSettings.putBoolean("deviceSetupComplete", true)
+        platformSettings.putString("defaultSection", defaultSection)
+        platformSettings.putSectionStates(sectionStates)
+        _uiState.update {
+            it.copy(
+                deviceSetupComplete = true,
+                defaultSection = defaultSection,
+                currentSectionStates = sectionStates,
+                deviceSetupWizardVisible = false,
+            )
+        }
+    }
+
+    fun showSectionPicker(page: Page) {
+        _uiState.update { it.copy(sectionPickerVisible = true, sectionPickerPage = page) }
+    }
+
+    fun dismissSectionPicker() {
+        _uiState.update { it.copy(sectionPickerVisible = false, sectionPickerPage = null) }
+    }
+
+    fun setSectionQuickToggleVisible(visible: Boolean) {
+        _uiState.update { it.copy(sectionQuickToggleVisible = visible) }
     }
 
     companion object {

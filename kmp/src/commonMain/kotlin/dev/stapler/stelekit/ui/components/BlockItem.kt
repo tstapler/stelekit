@@ -88,6 +88,9 @@ internal fun BlockItem(
     onArchiveUrl: ((url: String, blockUuid: String) -> Unit)? = null,
     /** Called when user taps an image_annotation block thumbnail; receives the image annotation UUID. */
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
+    hasSectionFilter: Boolean = false,
+    localPageNames: Set<String> = emptySet(),
+    onUnavailableLinkTap: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -423,6 +426,9 @@ internal fun BlockItem(
                                     contextMenuState = SuggestionState(canonicalName, contentStart, contentEnd, block.content)
                                 },
                                 onUrlRightClick = onArchiveUrl?.let { archive -> { url -> archive(url, block.uuid.value) } },
+                                hasSectionFilter = hasSectionFilter,
+                                localPageNames = localPageNames,
+                                onUnavailableLinkTap = onUnavailableLinkTap,
                             )
                         }
                     }

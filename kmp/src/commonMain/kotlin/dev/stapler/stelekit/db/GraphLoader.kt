@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.db
 
 import arrow.core.Either
+import arrow.core.flatMap
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
@@ -74,6 +75,8 @@ class GraphLoader(
     initialCryptoLayer: CryptoLayer? = null,
     /** Poll interval for the file watcher in milliseconds. Override in tests to speed up cycles. */
     private val watcherPollIntervalMs: Long = 5_000L,
+    /** When non-null, files matching the filter's excluded prefixes are skipped during loading. */
+    @Volatile var sectionFilter: dev.stapler.stelekit.sections.SectionFilter? = null,
 ) : GraphLoaderPort {
     private val logger = Logger("GraphLoader")
     private val markdownParser = MarkdownParser()
@@ -133,6 +136,17 @@ class GraphLoader(
         }
     }
 
+    /**
+     * Suspend variant of [readFileDecrypted]. On WASM this allows [FileSystem.readFileSuspend]
+     * to fetch content from GitHub on a cache miss; on other platforms it falls through to
+     * the synchronous read (no-op overhead).
+     * Paranoid mode falls back to the synchronous path since CryptoLayer decryption is not async.
+     */
+    private suspend fun readFileDecryptedSuspend(filePath: String): String? {
+        if (cryptoLayer == null) return fileSystem.readFileSuspend(filePath)
+        return readFileDecrypted(filePath) // paranoid mode: CryptoLayer is synchronous
+    }
+
     /** Called after a full bulk import completes. Used to trigger WAL checkpoint. */
     var onBulkImportComplete: (suspend () -> Unit)? = null
 
@@ -145,6 +159,10 @@ class GraphLoader(
     override fun setCryptoLayer(layer: CryptoLayer?) { cryptoLayer = layer }
 
     override fun closeAndClearCryptoLayer() { cryptoLayer?.close(); cryptoLayer = null }
+
+    override fun updateSectionFilter(filter: dev.stapler.stelekit.sections.SectionFilter?) {
+        sectionFilter = filter
+    }
 
     /**
      * Backing field for page UUIDs currently open in an active edit session.
@@ -687,6 +705,10 @@ class GraphLoader(
 
             logger.info("Background indexing $total pages... (${heapSummary()})")
 
+            val sectionDrainIds: Collection<String>? = sectionFilter?.let { f ->
+                f.subscribedSectionIds() + setOf("")
+            }
+
             coroutineScope {
                 var processed = 0L
                 // Drain in bounded batches instead of materializing every unloaded Page up
@@ -701,9 +723,11 @@ class GraphLoader(
                 val attempted = HashSet<String>()
                 var offset = 0
                 while (true) {
-                    val batch = pageRepository
-                        .getUnloadedPages(INDEX_BATCH_SIZE, offset)
-                        .first().getOrNull().orEmpty()
+                    val batch = if (sectionDrainIds != null) {
+                        pageRepository.getUnloadedPagesBySection(sectionDrainIds, INDEX_BATCH_SIZE, offset)
+                    } else {
+                        pageRepository.getUnloadedPages(INDEX_BATCH_SIZE, offset)
+                    }.first().getOrNull().orEmpty()
                     if (batch.isEmpty()) break
 
                     val fresh = batch.filter { attempted.add(it.uuid.value) }
@@ -925,7 +949,7 @@ class GraphLoader(
             fileSystem.invalidateShadow(filePath)
             val fileReadTraceId = genId()
             val fileReadSpan = Span("file.read", fileReadTraceId, "")
-            val content = readFileDecrypted(filePath)
+            val content = readFileDecryptedSuspend(filePath)
             if (content == null) {
                 fileReadSpan.finish("ERROR", "file.path" to filePath.redactPath())
                 logger.warn("Failed to read file: $filePath")
@@ -951,7 +975,7 @@ class GraphLoader(
         val storedHash = fileRegistry.getContentHash(FilePath(filePath)) ?: return false // No stored hash → fall through
         // Read the file once for the hash comparison.
         fileSystem.invalidateShadow(filePath)
-        val diskContent = fileSystem.readFile(filePath)
+        val diskContent = fileSystem.readFileSuspend(filePath)
         if (diskContent != null && diskContent.hashCode() == storedHash) {
             logger.debug("Skipping loadFullPage, content hash unchanged: $filePath")
             return true
@@ -1088,7 +1112,7 @@ class GraphLoader(
         }
     }
 
-    private suspend fun loadDirectory(path: String, onProgress: (String) -> Unit, mode: ParseMode = ParseMode.METADATA_ONLY) {
+    internal suspend fun loadDirectory(path: String, onProgress: (String) -> Unit, mode: ParseMode = ParseMode.METADATA_ONLY) {
         PerformanceMonitor.startTrace("loadDirectory")
         try {
             if (!fileSystem.directoryExists(path)) return
@@ -1186,6 +1210,23 @@ class GraphLoader(
                                 }
 
                                 if (isPriorityFile(filePath)) return@count true
+
+                                if (mode == ParseMode.INDEX_ONLY) {
+                                    if (existingPage != null && existingPage.isContentLoaded) return@count true
+                                    val sectId = sectionFilter?.sectionIdForPath(filePath) ?: ""
+                                    val stubPage = Page(
+                                        uuid = existingPage?.uuid ?: PageUuid(UuidGenerator.generateV7()),
+                                        name = name, filePath = filePath,
+                                        createdAt = existingPage?.createdAt ?: Clock.System.now(),
+                                        updatedAt = Clock.System.now(),
+                                        version = existingPage?.version ?: 0L,
+                                        isJournal = isJournalFile,
+                                        journalDate = if (isJournalFile) JournalUtils.parseJournalDate(name) else null,
+                                        isContentLoaded = false, sectionId = sectId,
+                                    )
+                                    pagesToSave.add(stubPage)
+                                    return@count true
+                                }
 
                                 // Always drop any stale shadow before reading so the reconcile
                                 // cannot serve old cached content for files it has determined
@@ -1291,7 +1332,8 @@ class GraphLoader(
         val updatedAt = fileModTime?.let { Instant.fromEpochMilliseconds(it) } ?: Clock.System.now()
 
         val existingPage = if (isJournal && journalDate != null) {
-            journalDateResolver.getPageByJournalDate(journalDate)
+            val sectionId = sectionFilter?.sectionIdForPath(filePath) ?: ""
+            journalDateResolver.getJournalPageByDateAndSection(journalDate, sectionId)
         } else {
             pageRepository.getPageByName(name).first().getOrNull()
         }
@@ -1333,7 +1375,8 @@ class GraphLoader(
             properties = properties,
             isJournal = isJournal,
             journalDate = journalDate,
-            isContentLoaded = isLoaded
+            isContentLoaded = isLoaded,
+            sectionId = sectionFilter?.sectionIdForPath(filePath) ?: ""
         )
         
         // For METADATA_ONLY, create lightweight stub blocks (isLoaded = false)
@@ -1404,7 +1447,8 @@ class GraphLoader(
     ): PageLookupResult {
         val lookupSpan = Span("db.lookupPage", traceId, parentSpanId)
         val existingPage = if (isJournal && journalDate != null) {
-            journalDateResolver.getPageByJournalDate(journalDate)
+            val sectionId = sectionFilter?.sectionIdForPath(filePath) ?: ""
+            journalDateResolver.getJournalPageByDateAndSection(journalDate, sectionId)
         } else {
             pageRepository.getPageByName(name).first().getOrNull()
         }
@@ -1663,8 +1707,16 @@ class GraphLoader(
                 val parsedPage = markdownParser.parsePage(content)
                 parseSpan.finish("OK", "content.bytes" to content.length.toString())
 
-                val (page, firstBlockSkipped) = buildPageModel(
+                val (rawPage, firstBlockSkipped) = buildPageModel(
                     filePathStr, name, isJournal, journalDate, existingPage, now, mode, parsedPage
+                )
+                // Propagate section membership derived from file path (mirrors parsePageWithoutSaving).
+                // existingPage?.sectionId preserves a section assignment already in the DB so that
+                // re-parsing a page on the warm path (file watcher hit) does not clear the field.
+                val page = rawPage.copy(
+                    sectionId = existingPage?.sectionId?.takeIf { it.isNotEmpty() }
+                        ?: sectionFilter?.sectionIdForPath(filePathStr)
+                        ?: ""
                 )
                 val pageUuid = page.uuid
                 val updatedAt = page.updatedAt
@@ -1747,6 +1799,37 @@ class GraphLoader(
         existingContent = existingContent,
         sidecarMap = sidecarMap,
     )
+
+    override suspend fun createSectionJournalPage(
+        sectionId: String,
+        date: kotlinx.datetime.LocalDate,
+    ): Either<DomainError, Page> {
+        val graphPath = currentGraphPath
+        if (graphPath.isEmpty()) {
+            return DomainError.DatabaseError.WriteFailed("No graph loaded").left()
+        }
+        val journalDir = if (sectionId.isBlank()) "$graphPath/journals" else "$graphPath/journals/$sectionId"
+        val filePath = "$journalDir/$date.md"
+
+        if (!fileSystem.directoryExists(journalDir)) {
+            if (!fileSystem.createDirectory(journalDir)) {
+                return DomainError.FileSystemError.WriteFailed(journalDir, "could not create journals directory").left()
+            }
+        }
+        if (!fileSystem.fileExists(filePath)) {
+            if (!fileSystem.writeFile(filePath, "")) {
+                return DomainError.FileSystemError.WriteFailed(filePath, "could not create empty journal file").left()
+            }
+        }
+
+        val fileContent = readFileDecryptedSuspend(filePath) ?: ""
+        parseAndSavePage(FilePath(filePath), fileContent, ParseMode.FULL)
+
+        return pageRepository.getJournalPageByDateAndSection(date, sectionId).first().flatMap { page ->
+            page?.right() ?: DomainError.DatabaseError.WriteFailed("Failed to find created section journal page").left()
+        }
+    }
+
 
     private fun createStubBlocks(
         parsedBlocks: List<ParsedBlock>,
