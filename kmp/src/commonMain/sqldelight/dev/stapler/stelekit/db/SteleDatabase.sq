@@ -1128,6 +1128,82 @@ UPDATE asset_index SET page_uuids = :pageUuids WHERE uuid = :uuid;
 deleteAsset:
 DELETE FROM asset_index WHERE uuid = :uuid;
 
+-- Keyset pagination queries — BY_DATE_ADDED (single imported_at_ms cursor)
+-- cursorMs=NULL means first page; COALESCE sentinel ensures all rows pass the predicate.
+
+selectAssetsByDateKeyset:
+SELECT * FROM asset_index
+WHERE (imported_at_ms < COALESCE(:cursorMs, 9999999999999)
+    OR (imported_at_ms = :cursorMs AND uuid < COALESCE(:cursorUuid, '')))
+ORDER BY imported_at_ms DESC, uuid DESC
+LIMIT :limit;
+
+selectAssetsByMediaTypeByDateKeyset:
+SELECT * FROM asset_index
+WHERE media_type = :mediaType
+AND (imported_at_ms < COALESCE(:cursorMs, 9999999999999)
+    OR (imported_at_ms = :cursorMs AND uuid < COALESCE(:cursorUuid, '')))
+ORDER BY imported_at_ms DESC, uuid DESC
+LIMIT :limit;
+
+selectAssetsBySearchByDateKeyset:
+SELECT * FROM asset_index
+WHERE (file_path LIKE :query ESCAPE '\' OR tags LIKE :query ESCAPE '\' OR auto_labels LIKE :query ESCAPE '\' OR ocr_text LIKE :query ESCAPE '\')
+AND (imported_at_ms < COALESCE(:cursorMs, 9999999999999)
+    OR (imported_at_ms = :cursorMs AND uuid < COALESCE(:cursorUuid, '')))
+ORDER BY imported_at_ms DESC, uuid DESC
+LIMIT :limit;
+
+-- Keyset pagination queries — BY_NAME (compound file_path, uuid cursor)
+-- cursorName=NULL means first page; COALESCE('') satisfies file_path > '' for all real paths.
+
+selectAssetsByNameKeyset:
+SELECT * FROM asset_index
+WHERE (file_path > COALESCE(:cursorName, '') OR (file_path = :cursorName AND uuid > COALESCE(:cursorUuid, '')))
+ORDER BY file_path ASC, uuid ASC
+LIMIT :limit;
+
+selectAssetsByMediaTypeByNameKeyset:
+SELECT * FROM asset_index
+WHERE media_type = :mediaType
+AND (file_path > COALESCE(:cursorName, '') OR (file_path = :cursorName AND uuid > COALESCE(:cursorUuid, '')))
+ORDER BY file_path ASC, uuid ASC
+LIMIT :limit;
+
+-- Keyset pagination queries — BY_SIZE (compound size_bytes DESC, uuid ASC cursor)
+-- cursorSize=NULL means first page; COALESCE(Long.MAX_VALUE) ensures all rows pass.
+
+selectAssetsBySizeKeyset:
+SELECT * FROM asset_index
+WHERE (size_bytes < COALESCE(:cursorSize, 9223372036854775807) OR (size_bytes = :cursorSize AND uuid > COALESCE(:cursorUuid, '')))
+ORDER BY size_bytes DESC, uuid ASC
+LIMIT :limit;
+
+selectAssetsByMediaTypeBySizeKeyset:
+SELECT * FROM asset_index
+WHERE media_type = :mediaType
+AND (size_bytes < COALESCE(:cursorSize, 9223372036854775807) OR (size_bytes = :cursorSize AND uuid > COALESCE(:cursorUuid, '')))
+ORDER BY size_bytes DESC, uuid ASC
+LIMIT :limit;
+
+-- Orphaned assets — keyset paginated (imported_at_ms cursor, same sentinel pattern)
+
+selectOrphanedAssets:
+SELECT * FROM asset_index
+WHERE is_orphan = 1
+AND (imported_at_ms < COALESCE(:cursorMs, 9999999999999)
+    OR (imported_at_ms = :cursorMs AND uuid < COALESCE(:cursorUuid, '')))
+ORDER BY imported_at_ms DESC, uuid DESC
+LIMIT :limit;
+
+countOrphanedAssets:
+SELECT COUNT(*) FROM asset_index WHERE is_orphan = 1;
+
+-- Tags projection for Kotlin-side dedup; excludes empty/null JSON arrays.
+
+selectAllTagsJson:
+SELECT tags FROM asset_index WHERE tags IS NOT NULL AND tags != '' AND tags != '[]';
+
 -- pending_asset_moves WAL table: holds in-flight moves for crash recovery
 -- This table is expected to hold <= a handful of rows at any time -- unbounded reads are safe.
 CREATE TABLE IF NOT EXISTS pending_asset_moves (

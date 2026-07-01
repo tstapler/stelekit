@@ -5,6 +5,7 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.asset.AssetEntry
 import dev.stapler.stelekit.asset.AssetMediaType
+import dev.stapler.stelekit.asset.AssetSortOrder
 import dev.stapler.stelekit.asset.AssetUuid
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.SteleDatabase
@@ -257,6 +258,70 @@ class SqlDelightAssetRepository(
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 DomainError.DatabaseError.WriteFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    override fun getAssetPage(
+        mediaType: AssetMediaType?,
+        searchQuery: String,
+        sortOrder: AssetSortOrder,
+        cursorMs: Long?,
+        cursorName: String?,
+        cursorSize: Long?,
+        cursorUuid: String?,
+        limit: Int,
+    ): Flow<Either<DomainError, List<AssetEntry>>> {
+        val lim = limit.toLong()
+        return when {
+            searchQuery.isNotBlank() -> {
+                val escaped = searchQuery
+                    .replace("\\", "\\\\")
+                    .replace("%", "\\%")
+                    .replace("_", "\\_")
+                queries.selectAssetsBySearchByDateKeyset("%$escaped%", cursorMs, cursorUuid, lim)
+            }
+            mediaType != null -> when (sortOrder) {
+                AssetSortOrder.BY_DATE_ADDED ->
+                    queries.selectAssetsByMediaTypeByDateKeyset(mediaType.name, cursorMs, cursorUuid, lim)
+                AssetSortOrder.BY_NAME ->
+                    queries.selectAssetsByMediaTypeByNameKeyset(mediaType.name, cursorName, cursorUuid, lim)
+                AssetSortOrder.BY_SIZE ->
+                    queries.selectAssetsByMediaTypeBySizeKeyset(mediaType.name, cursorSize, cursorUuid, lim)
+            }
+            else -> when (sortOrder) {
+                AssetSortOrder.BY_DATE_ADDED -> queries.selectAssetsByDateKeyset(cursorMs, cursorUuid, lim)
+                AssetSortOrder.BY_NAME -> queries.selectAssetsByNameKeyset(cursorName, cursorUuid, lim)
+                AssetSortOrder.BY_SIZE -> queries.selectAssetsBySizeKeyset(cursorSize, cursorUuid, lim)
+            }
+        }.asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+    }
+
+    override fun getOrphanedAssets(cursorMs: Long?, cursorUuid: String?, limit: Int): Flow<Either<DomainError, List<AssetEntry>>> =
+        queries.selectOrphanedAssets(cursorMs, cursorUuid, limit.toLong())
+            .asDbFlowList(PlatformDispatcher.DB) { it.toModel() }
+
+    override suspend fun countOrphanedAssets(): Either<DomainError, Long> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                queries.countOrphanedAssets().executeAsOne().right()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
+            }
+        }
+
+    override suspend fun getDistinctTags(): Either<DomainError, List<String>> =
+        withContext(PlatformDispatcher.DB) {
+            try {
+                val rawList = queries.selectAllTagsJson().executeAsList()
+                val tags = rawList
+                    .flatMap { tagsJson -> tagsJson.fromJsonList() }
+                    .distinct()
+                    .sorted()
+                tags.right()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
             }
         }
 }

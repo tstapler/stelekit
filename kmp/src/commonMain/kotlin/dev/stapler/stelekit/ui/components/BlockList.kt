@@ -2,6 +2,7 @@ package dev.stapler.stelekit.ui.components
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -92,6 +93,8 @@ fun BlockList(
     hasSectionFilter: Boolean = false,
     localPageNames: Set<String> = emptySet(),
     onUnavailableLinkTap: () -> Unit = {},
+    /** UUIDs of blocks that are pending a CUT-paste; rendered at reduced alpha. */
+    cutBlockUuids: Set<String> = emptySet(),
     modifier: Modifier = Modifier
 ) {
     if (isDebugMode) {
@@ -197,6 +200,8 @@ fun BlockList(
                 val isCollapsed = block.uuid.value in collapsedBlocks
 
                 val isDropTarget = dragState != null && dropTargetUuid == block.uuid.value
+                val isCutBlock = cutBlockUuids.isNotEmpty() && block.uuid.value in cutBlockUuids
+                Box(modifier = if (isCutBlock) Modifier.graphicsLayer { alpha = 0.4f } else Modifier) {
                 BlockRenderer(
                     block = block,
                     isDebugMode = isDebugMode,
@@ -313,6 +318,7 @@ fun BlockList(
                         blockBounds = blockBounds + (block.uuid.value to Pair(top, top + coords.size.height))
                     },
                 )
+                } // end Box (cut block alpha wrapper)
             }
         }
         } // end Column

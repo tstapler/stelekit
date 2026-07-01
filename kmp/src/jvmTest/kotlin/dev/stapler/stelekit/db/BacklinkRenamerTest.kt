@@ -49,7 +49,7 @@ class BacklinkRenamerTest {
         blockRepo: InMemoryBlockRepository,
         graphPath: String
     ): BacklinkRenamer {
-        val fs = PlatformFileSystem()
+        val fs = PlatformFileSystem.withRoot(graphPath)
         val graphWriter = GraphWriter(fs)
         val actor = DatabaseWriteActor(blockRepo, pageRepo)
         return BacklinkRenamer(pageRepo, blockRepo, graphWriter, actor)
@@ -59,7 +59,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_with_no_backlinks_succeeds(): Unit = runBlocking {
-        val tempDir = java.nio.file.Files.createTempDirectory(java.nio.file.Path.of(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
+        val tempDir = kotlin.io.path.createTempDirectory(kotlin.io.path.Path(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
         tempDir.mkdirs()
         try {
             // Create a markdown file for the page to be renamed
@@ -90,7 +90,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_rewrites_backlinks_in_other_pages(): Unit = runBlocking {
-        val tempDir = java.nio.file.Files.createTempDirectory(java.nio.file.Path.of(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
+        val tempDir = kotlin.io.path.createTempDirectory(kotlin.io.path.Path(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
         tempDir.mkdirs()
         try {
             val pagesDir = File(tempDir, "pages")
@@ -126,7 +126,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_rewrites_multiple_backlinks_in_same_block(): Unit = runBlocking {
-        val tempDir = java.nio.file.Files.createTempDirectory(java.nio.file.Path.of(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
+        val tempDir = kotlin.io.path.createTempDirectory(kotlin.io.path.Path(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
         tempDir.mkdirs()
         try {
             val pagesDir = File(tempDir, "pages")
@@ -159,7 +159,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_rewrites_aliased_backlinks_end_to_end(): Unit = runBlocking {
-        val tempDir = java.nio.file.Files.createTempDirectory(java.nio.file.Path.of(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
+        val tempDir = kotlin.io.path.createTempDirectory(kotlin.io.path.Path(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
         tempDir.mkdirs()
         try {
             val pagesDir = File(tempDir, "pages")
@@ -195,7 +195,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_returns_failure_when_page_not_found_in_repo(): Unit = runBlocking {
-        val tempDir = java.nio.file.Files.createTempDirectory(java.nio.file.Path.of(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
+        val tempDir = kotlin.io.path.createTempDirectory(kotlin.io.path.Path(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
         tempDir.mkdirs()
         try {
             val pageRepo = InMemoryPageRepository()
@@ -244,7 +244,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_rewrites_hashtag_references_end_to_end(): Unit = runBlocking {
-        val tempDir = java.nio.file.Files.createTempDirectory(java.nio.file.Path.of(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
+        val tempDir = kotlin.io.path.createTempDirectory(kotlin.io.path.Path(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
         tempDir.mkdirs()
         try {
             val pagesDir = File(tempDir, "pages")
@@ -279,7 +279,7 @@ class BacklinkRenamerTest {
 
     @Test
     fun rename_returns_failure_when_page_has_no_file_path(): Unit = runBlocking {
-        val tempDir = java.nio.file.Files.createTempDirectory(java.nio.file.Path.of(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
+        val tempDir = kotlin.io.path.createTempDirectory(kotlin.io.path.Path(System.getProperty("user.home")), "stelekit_renamer_test_").toFile()
         tempDir.mkdirs()
         try {
             val pageRepo = InMemoryPageRepository()

@@ -1296,6 +1296,7 @@ private fun GraphContent(
                                 imageImportService != null && SensorModule.cameraProvider.isAvailable
                             var pendingCaptureFile by remember { mutableStateOf<PlatformImageFile?>(null) }
                             var pendingCapturePageUuid by remember { mutableStateOf<String?>(null) }
+                            var pendingCaptureBlockUuid by remember { mutableStateOf<dev.stapler.stelekit.model.BlockUuid?>(null) }
                             var isCaptureImporting by remember { mutableStateOf(false) }
                             val activeGraphInfo2 = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }
                             val showGitBanner = activeGraphInfo2?.detectedRepoRoot != null &&
@@ -1413,13 +1414,14 @@ private fun GraphContent(
                                                         return@launch
                                                     }
                                                 }
-                                                // Resolve page UUID before capturing — camera suspends for seconds,
-                                                // so we snapshot navigation state at button-tap time, not return time.
+                                                // Resolve page UUID and editing block UUID before capturing —
+                                                // camera suspends for seconds, so we snapshot state at button-tap time.
                                                 val pageUuid: String? =
                                                     (appState.currentScreen as? Screen.PageView)?.page?.uuid?.value
                                                         ?: appState.currentPage?.uuid?.value
                                                 val resolvedPageUuid = pageUuid
                                                     ?: repos.journalService.ensureTodayJournal().uuid.value
+                                                val capturedBlockUuid = blockStateManager.editingBlockUuid.value
                                                 when (val captured = SensorModule.cameraProvider.capturePhoto()) {
                                                     is Either.Left -> {
                                                         graphContentLogger.warn("Camera capture failed: ${captured.value.message}")
@@ -1427,6 +1429,7 @@ private fun GraphContent(
                                                     }
                                                     is Either.Right -> {
                                                         pendingCapturePageUuid = resolvedPageUuid
+                                                        pendingCaptureBlockUuid = capturedBlockUuid
                                                         pendingCaptureFile = captured.value
                                                     }
                                                 }
@@ -1473,6 +1476,7 @@ private fun GraphContent(
                                     onSave = {
                                         val file = captureFile
                                         val pageUuid = capturePageUuid
+                                        val captureBlockUuid = pendingCaptureBlockUuid
                                         isCaptureImporting = true
                                         scope.launch {
                                             val graphPath = graphManager.getActiveGraphInfo()?.path
@@ -1480,6 +1484,7 @@ private fun GraphContent(
                                                 isCaptureImporting = false
                                                 pendingCaptureFile = null
                                                 pendingCapturePageUuid = null
+                                                pendingCaptureBlockUuid = null
                                                 return@launch
                                             }
                                             val result = imageImportService?.import(
@@ -1493,14 +1498,24 @@ private fun GraphContent(
                                                 graphContentLogger.warn("Camera image import failed: ${err.message}")
                                                 viewModel.sendSnackbar(err.toUiMessage())
                                             }
+                                            result?.onRight { annotation ->
+                                                val filename = annotation.filePath.substringAfterLast("/")
+                                                val safePath = "../assets/images/$filename".replace(")", "\\)")
+                                                val markdown = "![]($safePath)"
+                                                if (captureBlockUuid != null) {
+                                                    blockStateManager.insertTextAtCursor(captureBlockUuid, markdown)
+                                                }
+                                            }
                                             isCaptureImporting = false
                                             pendingCaptureFile = null
                                             pendingCapturePageUuid = null
+                                            pendingCaptureBlockUuid = null
                                         }
                                     },
                                     onDiscard = {
                                         pendingCaptureFile = null
                                         pendingCapturePageUuid = null
+                                        pendingCaptureBlockUuid = null
                                     },
                                 )
                             }

@@ -8,6 +8,11 @@ import javax.swing.SwingUtilities
 
 actual class PlatformFileSystem actual constructor() : JvmFileSystemBase(), FileSystem {
 
+    companion object {
+        /** Creates a [PlatformFileSystem] with [root] pre-registered in the security whitelist. */
+        fun withRoot(root: String): PlatformFileSystem = PlatformFileSystem().also { it.registerGraphRoot(root) }
+    }
+
     actual override fun getDefaultGraphPath(): String = super.getDefaultGraphPath()
 
     actual override fun expandTilde(path: String): String = super.expandTilde(path)
