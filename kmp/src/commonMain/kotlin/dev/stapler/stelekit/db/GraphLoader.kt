@@ -1107,7 +1107,7 @@ class GraphLoader(
         }
     }
 
-    private suspend fun loadDirectory(path: String, onProgress: (String) -> Unit, mode: ParseMode = ParseMode.METADATA_ONLY) {
+    internal suspend fun loadDirectory(path: String, onProgress: (String) -> Unit, mode: ParseMode = ParseMode.METADATA_ONLY) {
         PerformanceMonitor.startTrace("loadDirectory")
         try {
             if (!fileSystem.directoryExists(path)) return
@@ -1702,8 +1702,16 @@ class GraphLoader(
                 val parsedPage = markdownParser.parsePage(content)
                 parseSpan.finish("OK", "content.bytes" to content.length.toString())
 
-                val (page, firstBlockSkipped) = buildPageModel(
+                val (rawPage, firstBlockSkipped) = buildPageModel(
                     filePathStr, name, isJournal, journalDate, existingPage, now, mode, parsedPage
+                )
+                // Propagate section membership derived from file path (mirrors parsePageWithoutSaving).
+                // existingPage?.sectionId preserves a section assignment already in the DB so that
+                // re-parsing a page on the warm path (file watcher hit) does not clear the field.
+                val page = rawPage.copy(
+                    sectionId = existingPage?.sectionId?.takeIf { it.isNotEmpty() }
+                        ?: sectionFilter?.sectionIdForPath(filePathStr)
+                        ?: ""
                 )
                 val pageUuid = page.uuid
                 val updatedAt = page.updatedAt

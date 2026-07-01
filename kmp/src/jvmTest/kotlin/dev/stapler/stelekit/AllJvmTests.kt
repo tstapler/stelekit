@@ -16,7 +16,10 @@ import dev.stapler.stelekit.db.ExternalChangeConflictTest
 import dev.stapler.stelekit.db.FileRegistryTest
 import dev.stapler.stelekit.db.GraphLoaderIntegrationTest
 import dev.stapler.stelekit.db.GraphLoaderProgressiveTest
+import dev.stapler.stelekit.db.GraphLoaderSectionFilterTest
 import dev.stapler.stelekit.db.GraphLoaderTest
+import dev.stapler.stelekit.sections.SectionFilterTest
+import dev.stapler.stelekit.sections.SectionManifestParserTest
 import dev.stapler.stelekit.db.GraphLoaderWatcherTest
 import dev.stapler.stelekit.db.GraphWriterTest
 import dev.stapler.stelekit.db.MigrationRunnerApplyAllTest
@@ -108,7 +111,10 @@ import org.junit.runners.Suite
     FileRegistryTest::class,
     GraphLoaderIntegrationTest::class,
     GraphLoaderProgressiveTest::class,
+    GraphLoaderSectionFilterTest::class,
     GraphLoaderTest::class,
+    SectionFilterTest::class,
+    SectionManifestParserTest::class,
     GraphLoaderWatcherTest::class,
     GraphWriterTest::class,
     MigrationRunnerApplyAllTest::class,

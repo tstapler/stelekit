@@ -83,6 +83,9 @@ kt_jvm_library(
         "@maven//:io_ktor_ktor_serialization_kotlinx_json_jvm",
         "@maven//:io_ktor_ktor_client_okhttp_jvm",
 
+        # ktoml — TOML parsing for .stele-sections manifest (from commonMain)
+        "@maven//:com_akuleshov7_ktoml_core_jvm",
+
         # Ksoup (from commonMain)
         "@maven//:com_fleeksoft_ksoup_ksoup_jvm",
 

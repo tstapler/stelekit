@@ -45,6 +45,12 @@ internal fun BlockViewer(
     onSuggestionClick: (canonicalName: String, contentStart: Int, contentEnd: Int) -> Unit = { _, _, _ -> },
     onSuggestionRightClick: (canonicalName: String, contentStart: Int, contentEnd: Int) -> Unit = { _, _, _ -> },
     onUrlRightClick: ((String) -> Unit)? = null,
+    /** Page names in the local DB; used for FR-14 cross-section link rendering. */
+    localPageNames: Set<String> = emptySet(),
+    /** When true, wikilinks absent from [localPageNames] render as "?" badges. */
+    hasSectionFilter: Boolean = false,
+    /** Called when the user taps a cross-section unavailable link (FR-14). */
+    onUnavailableLinkTap: () -> Unit = {},
 ) {
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     WikiLinkText(
@@ -68,6 +74,9 @@ internal fun BlockViewer(
         onSuggestionClick = onSuggestionClick,
         onSuggestionRightClick = onSuggestionRightClick,
         onUrlRightClick = onUrlRightClick,
+        localPageNames = localPageNames,
+        hasSectionFilter = hasSectionFilter,
+        onUnavailableLinkTap = onUnavailableLinkTap,
     )
 }
 
@@ -89,6 +98,12 @@ fun WikiLinkText(
     onSuggestionClick: (canonicalName: String, contentStart: Int, contentEnd: Int) -> Unit = { _, _, _ -> },
     onSuggestionRightClick: (canonicalName: String, contentStart: Int, contentEnd: Int) -> Unit = { _, _, _ -> },
     onUrlRightClick: ((String) -> Unit)? = null,
+    /** Page names in the local DB; used for FR-14 cross-section link rendering. */
+    localPageNames: Set<String> = emptySet(),
+    /** When true, wikilinks absent from [localPageNames] render as "?" badges. */
+    hasSectionFilter: Boolean = false,
+    /** Called when the user taps a cross-section unavailable link (FR-14). */
+    onUnavailableLinkTap: () -> Unit = {},
 ) {
     val blockRefBg = StelekitTheme.colors.blockRefBackground
     val codeBg = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
@@ -104,7 +119,7 @@ fun WikiLinkText(
             extractSuggestions(text, suggestionMatcher)
         }
     }
-    val annotatedString = remember(text, linkColor, textColor, resolvedRefs, blockRefBg, codeBg, suggestionSpans) {
+    val annotatedString = remember(text, linkColor, textColor, resolvedRefs, blockRefBg, codeBg, suggestionSpans, localPageNames, hasSectionFilter) {
         parseMarkdownWithStyling(
             text = text,
             linkColor = linkColor,
@@ -114,6 +129,8 @@ fun WikiLinkText(
             codeBackground = codeBg,
             suggestionSpans = suggestionSpans,
             suggestionColor = linkColor,
+            localPageNames = localPageNames,
+            hasSectionFilter = hasSectionFilter,
         )
     }
 
@@ -155,8 +172,9 @@ fun WikiLinkText(
                         val offset = layout.getOffsetForPosition(tapOffset)
                         val annotations = annotatedString.getStringAnnotations(start = offset, end = offset)
 
-                        // Priority: Wiki Link > Tag > Page Suggestion > Markdown Link > URL > Image > Default
+                        // Priority: Wiki Link > Cross-section Unavailable > Tag > Page Suggestion > Markdown Link > URL > Image > Default
                         val wikiLink = annotations.firstOrNull { it.tag == WIKI_LINK_TAG }
+                        val crossSectionUnavailable = annotations.firstOrNull { it.tag == CROSS_SECTION_UNAVAILABLE_TAG }
                         val tag = annotations.firstOrNull { it.tag == TAG_TAG }
                         val suggestion = annotations.firstOrNull { it.tag == PAGE_SUGGESTION_TAG }
                         val link = annotations.firstOrNull { it.tag == "link" }
@@ -165,6 +183,8 @@ fun WikiLinkText(
 
                         when {
                             wikiLink != null -> onLinkClick(wikiLink.item)
+                            // FR-14: unavailable cross-section link — show tooltip, do NOT navigate
+                            crossSectionUnavailable != null -> onUnavailableLinkTap()
                             tag != null -> onLinkClick(tag.item)
                             suggestion != null -> {
                                 val decoded = decodeSuggestionAnnotation(suggestion.item)

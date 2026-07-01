@@ -8,7 +8,10 @@ import dev.stapler.stelekit.flashcard.FlashcardReviewTest
 import dev.stapler.stelekit.performance.HistogramRegressionTest
 import dev.stapler.stelekit.performance.HistogramWriterTest
 import dev.stapler.stelekit.performance.PerfExporterPickerTest
+import dev.stapler.stelekit.db.SplitJournalTest
 import dev.stapler.stelekit.repository.BacklinkRepositoryTest
+import dev.stapler.stelekit.sections.CrossSectionBacklinkRenderTest
+import dev.stapler.stelekit.sections.NewPageAutoAssignmentTest
 import dev.stapler.stelekit.ui.ToolbarActionTest
 import dev.stapler.stelekit.voice.VoiceCaptureViewModelTest
 import dev.stapler.stelekit.voice.VoiceNoteBlockFormatTest
@@ -28,6 +31,9 @@ import org.junit.runners.Suite
     HistogramWriterTest::class,
     PerfExporterPickerTest::class,
     BacklinkRepositoryTest::class,
+    CrossSectionBacklinkRenderTest::class,
+    NewPageAutoAssignmentTest::class,
+    SplitJournalTest::class,
     ToolbarActionTest::class,
     VoiceCaptureViewModelTest::class,
     VoiceNoteBlockFormatTest::class,

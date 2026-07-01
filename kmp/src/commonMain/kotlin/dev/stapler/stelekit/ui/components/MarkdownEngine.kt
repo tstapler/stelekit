@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.em
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
 import dev.stapler.stelekit.parsing.InlineParser
 import dev.stapler.stelekit.parsing.ast.*
+import dev.stapler.stelekit.sections.WikiLinkRenderDecision
 
 /**
  * Markdown patterns retained for the edit-mode styler (applyMarkdownStylingForEditor)
@@ -37,6 +38,14 @@ const val BLOCK_REF_TAG = "BLOCK_REF"
 const val TAG_TAG = "TAG"
 const val PAGE_SUGGESTION_TAG = "PAGE_SUGGESTION"
 
+/**
+ * Annotation tag used for `[[PageName]]` wikilinks whose target page is absent
+ * from the local DB (FR-14 cross-section backlinks).  The annotation value is
+ * always [WikiLinkRenderDecision.UNAVAILABLE_TOOLTIP]; no section metadata is
+ * stored here.
+ */
+const val CROSS_SECTION_UNAVAILABLE_TAG = "CROSS_SECTION_UNAVAILABLE"
+
 // ── Rendering state ────────────────────────────────────────────────────────────
 
 /**
@@ -54,6 +63,10 @@ private class RenderContext(
     val suggestionSpans: List<AhoCorasickMatcher.MatchSpan>,
     val suggestionColor: Color,
     var searchFrom: Int = 0,
+    /** Page names present in the local DB — used for FR-14 cross-section link rendering. */
+    val localPageNames: Set<String> = emptySet(),
+    /** When true, wikilinks absent from [localPageNames] render as unavailable. */
+    val hasSectionFilter: Boolean = false,
 )
 
 // ── AST → AnnotatedString ──────────────────────────────────────────────────────
@@ -167,11 +180,45 @@ private fun AnnotatedString.Builder.renderNode(
             ) { append(node.content) }
 
         is WikiLinkNode -> {
-            val start = length
-            withStyle(SpanStyle(color = ctx.linkColor, fontWeight = FontWeight.Medium)) {
-                append("[[${node.alias ?: node.target}]]")
+            val decision = WikiLinkRenderDecision.resolve(
+                target = node.target,
+                alias = node.alias,
+                localPageNames = ctx.localPageNames,
+                hasSectionFilter = ctx.hasSectionFilter,
+            )
+            when (decision) {
+                is WikiLinkRenderDecision.NavigableLink -> {
+                    val start = length
+                    withStyle(SpanStyle(color = ctx.linkColor, fontWeight = FontWeight.Medium)) {
+                        append("[[${decision.displayName}]]")
+                    }
+                    addStringAnnotation(WIKI_LINK_TAG, node.target, start, length)
+                }
+                is WikiLinkRenderDecision.UnavailableLink -> {
+                    // FR-14: render as plain text + subtle "?" badge.
+                    // No WIKI_LINK_TAG so it is not clickable as a navigation link.
+                    val start = length
+                    // Plain page name — slightly muted to signal it is not navigable
+                    withStyle(SpanStyle(color = ctx.linkColor.copy(alpha = 0.5f))) {
+                        append(decision.displayName)
+                    }
+                    // "?" badge — superscript, grey
+                    withStyle(
+                        SpanStyle(
+                            baselineShift = BaselineShift.Superscript,
+                            fontSize = 0.7.em,
+                            color = Color.Gray,
+                        )
+                    ) { append("?") }
+                    // Annotation carries the fixed tooltip; no section/path metadata.
+                    addStringAnnotation(
+                        CROSS_SECTION_UNAVAILABLE_TAG,
+                        WikiLinkRenderDecision.UNAVAILABLE_TOOLTIP,
+                        start,
+                        length,
+                    )
+                }
             }
-            addStringAnnotation(WIKI_LINK_TAG, node.target, start, length)
         }
 
         is BlockRefNode -> {
@@ -381,6 +428,10 @@ fun parseMarkdownWithStyling(
     codeBackground: Color = Color.Gray.copy(alpha = 0.15f),
     suggestionSpans: List<AhoCorasickMatcher.MatchSpan> = emptyList(),
     suggestionColor: Color = Color.Unspecified,
+    /** Page names present in the local DB; used for FR-14 cross-section link rendering. */
+    localPageNames: Set<String> = emptySet(),
+    /** When true, wikilinks absent from [localPageNames] render as unavailable badges. */
+    hasSectionFilter: Boolean = false,
 ): AnnotatedString {
     val nodes = InlineParser(text).parse()
     val ctx = RenderContext(
@@ -391,6 +442,8 @@ fun parseMarkdownWithStyling(
         codeBackground = codeBackground,
         suggestionSpans = suggestionSpans,
         suggestionColor = suggestionColor,
+        localPageNames = localPageNames,
+        hasSectionFilter = hasSectionFilter,
     )
     return buildAnnotatedString {
         if (textColor != Color.Unspecified) pushStyle(SpanStyle(color = textColor))
