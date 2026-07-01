@@ -1262,6 +1262,9 @@ private fun GraphContent(
                                 onAuthError = { viewModel.openGitSetupForCredentials() },
                                 onCloneGraph = { viewModel.openGitSetupForClone() },
                                 gitSyncedGraphId = if (appState.gitConfig != null) activeGraphId else null,
+                                sectionManifest = appState.currentManifest,
+                                defaultSection = appState.defaultSection,
+                                onSectionIndicatorClick = { viewModel.setSectionQuickToggleVisible(true) },
                             )
                         },
                         rightSidebar = {

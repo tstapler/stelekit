@@ -147,6 +147,8 @@ internal fun ScreenRouter(
                 onReloadFromDisk = { viewModel.reloadCurrentPageFromDisk() },
                 isExporting = appState.isExporting,
                 tagSuggestionViewModel = tagSuggestionViewModel,
+                currentManifest = appState.currentManifest,
+                onSectionBadgeClick = { viewModel.showSectionPicker(currentScreen.page) },
             )
             is Screen.Journals -> JournalsView(
                 viewModel = journalsViewModel,

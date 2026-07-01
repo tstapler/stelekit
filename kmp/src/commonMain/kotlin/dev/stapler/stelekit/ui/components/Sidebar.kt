@@ -45,6 +45,7 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.ui.LocalWindowSizeClass
 import dev.stapler.stelekit.ui.Screen
 import dev.stapler.stelekit.ui.isMobile
@@ -78,6 +79,9 @@ fun LeftSidebar(
     onAuthError: (() -> Unit)? = null,
     onCloneGraph: () -> Unit = {},
     gitSyncedGraphId: String? = null,
+    sectionManifest: SectionManifest? = null,
+    defaultSection: String = "",
+    onSectionIndicatorClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isMobile = LocalWindowSizeClass.current.isMobile
@@ -126,6 +130,17 @@ fun LeftSidebar(
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            // Section context indicator — shown when a manifest with sections exists
+            if (sectionManifest != null && sectionManifest.sections.isNotEmpty()) {
+                SectionContextIndicator(
+                    defaultSection = defaultSection,
+                    manifest = sectionManifest,
+                    onClick = onSectionIndicatorClick,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+            }
 
             SyncStatusBadge(
                 syncState = syncState,

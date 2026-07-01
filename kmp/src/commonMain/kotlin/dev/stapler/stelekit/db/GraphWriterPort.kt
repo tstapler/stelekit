@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.db
 
+import arrow.core.Either
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.vault.CryptoLayer
@@ -55,4 +57,15 @@ interface GraphWriterPort {
      * Returns true if successful, false otherwise.
      */
     suspend fun deletePage(page: Page): Boolean
+
+    /**
+     * Move a page's on-disk file to the directory defined by [newPathPrefix] and return the
+     * updated [Page] with [sectionId] and [filePath] updated. The caller is responsible for
+     * persisting the returned page to the repository.
+     */
+    suspend fun movePageToSection(
+        page: Page,
+        newSectionId: String,
+        newPathPrefix: String,
+    ): Either<DomainError, Page>
 }
