@@ -4,7 +4,6 @@ import android.app.Application
 import android.util.Log
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
-import dev.stapler.stelekit.git.CredentialStore
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.platform.SteleKitContext
@@ -14,6 +13,7 @@ import dev.stapler.stelekit.performance.BuildInfo
 import dev.stapler.stelekit.platform.measurement.MeasurementDeviceRegistry
 import dev.stapler.stelekit.platform.measurement.ble.KableBleScanner
 import dev.stapler.stelekit.platform.ml.OnnxMonocularDepthEstimator
+import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.platform.sensor.AndroidCameraProvider
 import dev.stapler.stelekit.platform.sensor.AndroidMotionSensorProvider
 import dev.stapler.stelekit.platform.sensor.ARCoreDepthProvider

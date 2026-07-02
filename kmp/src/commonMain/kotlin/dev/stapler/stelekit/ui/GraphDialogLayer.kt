@@ -19,6 +19,9 @@ import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.export.ExportService
 import dev.stapler.stelekit.export.ShareProvider
+import dev.stapler.stelekit.llm.LlmCredentialStore
+import dev.stapler.stelekit.llm.LlmProviderRegistry
+import dev.stapler.stelekit.llm.LlmSettings
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.performance.DebugBuildConfig
@@ -48,6 +51,7 @@ import dev.stapler.stelekit.tags.TagSettings
 import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.ui.components.SectionPickerDialog
 import dev.stapler.stelekit.ui.components.SectionQuickTogglePanel
+import dev.stapler.stelekit.ui.components.settings.SettingsCategory
 import dev.stapler.stelekit.ui.components.settings.SettingsDialog
 import dev.stapler.stelekit.ui.onboarding.DeviceSetupWizard
 import dev.stapler.stelekit.ui.screens.SearchViewModel
@@ -67,6 +71,10 @@ internal fun GraphDialogLayer(
     fileSystem: FileSystem,
     frameMetric: StateFlow<FrameMetric>,
     voiceSettings: VoiceSettings? = null,
+    llmCredentialStore: LlmCredentialStore? = null,
+    llmProviderRegistry: LlmProviderRegistry? = null,
+    llmSettings: LlmSettings? = null,
+    onLlmCredentialsChange: () -> Unit = {},
     onRebuildVoicePipeline: (() -> Unit)? = null,
     deviceSttAvailable: Boolean = false,
     deviceLlmAvailable: Boolean = false,
@@ -126,8 +134,11 @@ internal fun GraphDialogLayer(
     )
 
     SettingsDialog(
-        visible = appState.settingsVisible,
-        onDismiss = { viewModel.setSettingsVisible(false) },
+        visible = appState.settingsVisible || appState.llmProviderSettingsVisible,
+        onDismiss = {
+            viewModel.setSettingsVisible(false)
+            viewModel.dismissLlmProviderSettings()
+        },
         currentTheme = appState.themeMode,
         onThemeChange = { viewModel.setThemeMode(it) },
         currentLanguage = appState.language,
@@ -139,6 +150,11 @@ internal fun GraphDialogLayer(
         isLeftHanded = appState.isLeftHanded,
         onLeftHandedChange = { viewModel.setLeftHanded(it) },
         voiceSettings = voiceSettings,
+        llmCredentialStore = llmCredentialStore,
+        llmProviderRegistry = llmProviderRegistry,
+        llmSettings = llmSettings,
+        initialCategory = if (appState.llmProviderSettingsVisible) SettingsCategory.LLM_PROVIDERS else SettingsCategory.GENERAL,
+        onLlmCredentialsChange = onLlmCredentialsChange,
         onRebuildVoicePipeline = onRebuildVoicePipeline,
         deviceSttAvailable = deviceSttAvailable,
         deviceLlmAvailable = deviceLlmAvailable,
@@ -235,6 +251,24 @@ internal fun GraphDialogLayer(
                 onDismiss = { viewModel.abortJournalMerge() },
             )
         }
+    }
+
+    if (appState.llmSuggestionReviewVisible) {
+        val liveSuggestions by viewModel.llmSuggestions.collectAsState()
+        val currentGraphId = appState.currentGraphId
+        val pendingForGraph = if (currentGraphId != null) {
+            liveSuggestions.values.filter { it.graphId == currentGraphId }
+        } else {
+            emptyList()
+        }
+        dev.stapler.stelekit.ui.screens.llm.LlmSuggestionReviewScreen(
+            pending = pendingForGraph,
+            onAccept = { id -> viewModel.acceptLlmSuggestion(id) },
+            onReject = { id -> viewModel.rejectLlmSuggestion(id) },
+            onAcceptAll = { pendingForGraph.forEach { viewModel.acceptLlmSuggestion(it.id) } },
+            onRejectAll = { pendingForGraph.forEach { viewModel.rejectLlmSuggestion(it.id) } },
+            onDismiss = { viewModel.dismissLlmSuggestionReview() },
+        )
     }
 
     appState.diskConflict?.let { conflict ->

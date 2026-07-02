@@ -19,4 +19,8 @@ actual class PlatformSettings actual constructor() : Settings {
     actual override fun putString(key: String, value: String) {
         localStorage.setItem(key, value)
     }
+
+    actual override fun containsKey(key: String): Boolean {
+        return localStorage.getItem(key) != null
+    }
 }

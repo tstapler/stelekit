@@ -54,7 +54,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
-import dev.stapler.stelekit.git.CredentialStore
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitConfigRepository
 import dev.stapler.stelekit.git.GitHubDeviceFlowClient
@@ -63,6 +62,7 @@ import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlin.time.Clock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch

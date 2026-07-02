@@ -16,13 +16,20 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import io.ktor.utils.io.errors.IOException
-import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
 
 class ClaudeLlmFormatterProvider(
     private val httpClient: HttpClient,
     private val apiKey: String,
     private val circuitBreaker: CircuitBreaker = defaultCircuitBreaker(),
+    /**
+     * Epic 8 Story 8.3: when non-null, overrides [LlmProviderSupport.estimateMaxTokens]'s
+     * transcript-length-based estimate (which is clamped to `[512, 4096]` and can never
+     * produce a smaller value). `ClaudeTopicEnricher` needs a fixed `max_tokens: 256` — a
+     * load-bearing wire-compatibility constant for that feature — which the dynamic estimate
+     * cannot express. `null` (the default, used by voice formatting) preserves the existing
+     * dynamic-estimate behavior exactly.
+     */
+    private val maxTokensOverride: Int? = null,
 ) : LlmFormatterProvider {
 
     fun close() = httpClient.close()
@@ -34,25 +41,21 @@ class ClaudeLlmFormatterProvider(
 
         /**
          * Default circuit breaker: opens after 3 consecutive failures, resets after 30 seconds,
-         * with exponential backoff up to 5 minutes.
+         * with exponential backoff up to 5 minutes. Delegates to the shared definition in
+         * [LlmProviderSupport] (MA4) — see that function's kdoc.
          */
-        fun defaultCircuitBreaker(): CircuitBreaker = CircuitBreaker(
-            openingStrategy = CircuitBreaker.OpeningStrategy.Count(maxFailures = 3),
-            resetTimeout = 30.seconds,
-            exponentialBackoffFactor = 2.0,
-            maxResetTimeout = 5.minutes,
-        )
+        fun defaultCircuitBreaker(): CircuitBreaker = LlmProviderSupport.defaultCircuitBreaker()
 
-        fun withDefaults(apiKey: String): ClaudeLlmFormatterProvider {
+        fun withDefaults(apiKey: String, maxTokensOverride: Int? = null): ClaudeLlmFormatterProvider {
             val client = HttpClient {
                 install(ContentNegotiation) { json(LlmProviderSupport.voiceLenientJson) }
             }
-            return ClaudeLlmFormatterProvider(client, apiKey)
+            return ClaudeLlmFormatterProvider(client, apiKey, maxTokensOverride = maxTokensOverride)
         }
     }
 
     override suspend fun format(transcript: String, systemPrompt: String): LlmResult {
-        val maxTokens = LlmProviderSupport.estimateMaxTokens(transcript)
+        val maxTokens = maxTokensOverride ?: LlmProviderSupport.estimateMaxTokens(transcript)
 
         val protectedResult = circuitBreaker.protectEither {
             httpCallInternal(systemPrompt, maxTokens)
@@ -80,7 +83,12 @@ class ClaudeLlmFormatterProvider(
                         model = CLAUDE_MODEL,
                         maxTokens = maxTokens,
                         system = systemPrompt,
-                        messages = listOf(ClaudeMessage(role = "user", content = "Output the formatted Logseq note.")),
+                        // Epic 8 Story 8.3: feature-neutral wording — this provider is now
+                        // reused by ClaudeTopicEnricher (candidate re-ranking), not just voice
+                        // formatting, and the previous "Output the formatted Logseq note."
+                        // wording was voice-specific and would have been a confusing
+                        // instruction for the topic-enrichment prompt.
+                        messages = listOf(ClaudeMessage(role = "user", content = "Follow the instructions in the system prompt.")),
                     )
                 )
             }

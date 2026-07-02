@@ -85,7 +85,7 @@ fun TagSuggestionSettings(
                             else MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = if (!hasLlmKey) "Requires an Anthropic or OpenAI key in Voice Capture settings"
+                    text = if (!hasLlmKey) "Requires a configured provider in Settings → AI Providers (remote key or on-device)"
                            else "Use the configured LLM for deeper tag suggestions",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

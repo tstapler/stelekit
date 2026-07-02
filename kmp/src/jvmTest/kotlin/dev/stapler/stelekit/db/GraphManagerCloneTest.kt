@@ -36,6 +36,7 @@ class GraphManagerCloneTest {
         override fun putBoolean(key: String, value: Boolean) { store[key] = value.toString() }
         override fun getString(key: String, defaultValue: String) = store.getOrDefault(key, defaultValue)
         override fun putString(key: String, value: String) { store[key] = value }
+        override fun containsKey(key: String) = store.containsKey(key)
     }
 
     /** Minimal FileSystem stub — all operations return safe defaults. */
