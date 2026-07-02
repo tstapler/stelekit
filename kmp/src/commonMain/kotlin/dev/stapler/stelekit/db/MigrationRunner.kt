@@ -766,6 +766,10 @@ object MigrationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_pages_favorite ON pages(name) WHERE is_favorite = 1",
                 "CREATE INDEX IF NOT EXISTS idx_pages_unloaded ON pages(uuid) WHERE is_content_loaded = 0",
                 "CREATE INDEX IF NOT EXISTS idx_pages_journal_section ON pages(is_journal, journal_date, section_id)",
+                // Refresh query-planner statistics after rebuilding all pages indexes.
+                // (Was present in the original version of this migration; accidentally dropped
+                // when BEGIN/COMMIT were removed to fix the pooled-connection deadlock.)
+                "ANALYZE pages",
             )
         ),
         Migration(

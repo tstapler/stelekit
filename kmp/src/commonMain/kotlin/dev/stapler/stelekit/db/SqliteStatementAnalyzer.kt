@@ -54,14 +54,16 @@ internal object SqliteStatementAnalyzer {
                 c == '\'' || c == '"' || c == '`' -> break
                 else -> {
                     val start = i
-                    while (i < text.length && !text[i].isWhitespace() &&
-                        text[i] != '(' && text[i] != ';' && text[i] != '=') i++
+                    while (i < text.length && isKeywordChar(text[i])) i++
                     if (i > start) tokens.add(text.substring(start, i).uppercase())
                 }
             }
         }
         return tokens
     }
+
+    /** Returns true when [c] can continue a leading SQL keyword token. */
+    private fun isKeywordChar(c: Char) = !c.isWhitespace() && c != '(' && c != ';' && c != '='
 
     /**
      * Strips single-line (`--`) and multi-line (`/* */`) SQL comments from [sql].
