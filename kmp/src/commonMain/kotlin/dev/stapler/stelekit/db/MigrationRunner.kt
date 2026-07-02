@@ -828,10 +828,22 @@ object MigrationRunner {
         // driver throws when execSQL is called for result-returning statements. It is set in
         // ANDROID_PRAGMAS via the rawQuery path (DriverFactory.android.kt) and in
         // buildMainDbConnectionProps() for JVM so every pool connection inherits it.
-        driver.execute(null, "ANALYZE blocks", 0).await()
-        driver.execute(null, "ANALYZE pages", 0).await()
-        // PRAGMA optimize is still useful for other tables we don't explicitly analyze above.
+        // ponytail: only ANALYZE when stats are absent; PRAGMA optimize handles stale stats
+        if (!hasStats(driver, "blocks")) driver.execute(null, "ANALYZE blocks", 0).await()
+        if (!hasStats(driver, "pages")) driver.execute(null, "ANALYZE pages", 0).await()
         driver.execute(null, "PRAGMA optimize", 0).await()
+    }
+
+    // Returns false if sqlite_stat1 doesn't exist yet or has no row for [table].
+    private suspend fun hasStats(driver: SqlDriver, table: String): Boolean = try {
+        driver.executeQuery(
+            identifier = null,
+            sql = "SELECT count(*) FROM sqlite_stat1 WHERE tbl = '$table'",
+            mapper = { cursor -> cursor.next(); QueryResult.Value((cursor.getLong(0) ?: 0L) > 0L) },
+            parameters = 0
+        ).await()
+    } catch (_: Exception) {
+        false
     }
 
     internal suspend fun applyAll(driver: SqlDriver, migrations: List<Migration>) {
