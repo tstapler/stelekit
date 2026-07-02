@@ -253,6 +253,24 @@ internal fun GraphDialogLayer(
         }
     }
 
+    if (appState.llmSuggestionReviewVisible) {
+        val liveSuggestions by viewModel.llmSuggestions.collectAsState()
+        val currentGraphId = appState.currentGraphId
+        val pendingForGraph = if (currentGraphId != null) {
+            liveSuggestions.values.filter { it.graphId == currentGraphId }
+        } else {
+            emptyList()
+        }
+        dev.stapler.stelekit.ui.screens.llm.LlmSuggestionReviewScreen(
+            pending = pendingForGraph,
+            onAccept = { id -> viewModel.acceptLlmSuggestion(id) },
+            onReject = { id -> viewModel.rejectLlmSuggestion(id) },
+            onAcceptAll = { pendingForGraph.forEach { viewModel.acceptLlmSuggestion(it.id) } },
+            onRejectAll = { pendingForGraph.forEach { viewModel.rejectLlmSuggestion(it.id) } },
+            onDismiss = { viewModel.dismissLlmSuggestionReview() },
+        )
+    }
+
     appState.diskConflict?.let { conflict ->
         DiskConflictDialog(
             conflict = conflict,

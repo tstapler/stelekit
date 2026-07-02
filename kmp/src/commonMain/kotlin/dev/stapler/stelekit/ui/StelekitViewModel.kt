@@ -132,6 +132,13 @@ class StelekitViewModel(
     private val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = deps.onDismissGitDetection
     private val onSectionsLoaded = deps.onSectionsLoaded
     private val spanEmitter = dev.stapler.stelekit.performance.SpanEmitter(deps.ringBuffer)
+    // ── LLM approval-gated edit workflow (Epic 7) ──────────────────────────────
+    private val llmSuggestionInbox: dev.stapler.stelekit.llm.LlmSuggestionInbox =
+        deps.llmSuggestionInbox ?: dev.stapler.stelekit.llm.LlmSuggestionInbox()
+    private val llmSuggestionWriter: dev.stapler.stelekit.llm.LlmSuggestionWriter =
+        deps.llmSuggestionWriter ?: dev.stapler.stelekit.llm.LlmSuggestionWriter(
+            pageRepository, blockRepository, graphWriter,
+        )
     // Default scope owns its lifecycle; callers in remember{} must not pass rememberCoroutineScope()
     // which is cancelled when the composable leaves composition. Tests inject a TestCoroutineScope.
     //
@@ -324,6 +331,77 @@ class StelekitViewModel(
         }
     }
 
+    // --- LLM approval-gated edit workflow (Epic 7) ---
+
+    /** Live pending-suggestion map — exposed for the review screen. */
+    val llmSuggestions: StateFlow<Map<String, dev.stapler.stelekit.llm.PendingLlmSuggestion>> =
+        llmSuggestionInbox.pending
+
+    /**
+     * Observes [llmSuggestionInbox], flipping [AppState.llmSuggestionReviewVisible] to `true`
+     * when the currently active graph gains at least one pending suggestion. Structurally
+     * parallel to [observeSyncState]'s `syncState.collect` — does NOT auto-dismiss when the
+     * inbox becomes empty via accept/reject (those explicitly set visibility, same "do NOT
+     * auto-dismiss" rule as journal-merge review).
+     */
+    private fun observeLlmSuggestions() {
+        scope.launch {
+            llmSuggestionInbox.pending.collect { pending ->
+                val currentGraphId = activeGraphIdProvider() ?: _uiState.value.currentGraphId
+                val hasPendingForCurrentGraph = currentGraphId != null &&
+                    pending.values.any { it.graphId == currentGraphId }
+                if (hasPendingForCurrentGraph) {
+                    _uiState.update { it.copy(llmSuggestionReviewVisible = true) }
+                }
+            }
+        }
+    }
+
+    /** Dismisses the LLM suggestion review screen without accepting or rejecting anything. */
+    fun dismissLlmSuggestionReview() {
+        _uiState.update { it.copy(llmSuggestionReviewVisible = false) }
+    }
+
+    /**
+     * Rejects a pending LLM suggestion. Pure in-memory removal, cannot fail — no confirmation
+     * dialog required at the call site (features research §3's "reject should be a single tap,
+     * no are-you-sure" recommendation).
+     */
+    fun rejectLlmSuggestion(id: String) {
+        llmSuggestionInbox.remove(id)
+    }
+
+    /**
+     * Accepts a pending LLM suggestion: re-validates it is still present and still scoped to
+     * the currently active graph, optimistically removes it from the inbox, then materializes
+     * and writes it via [llmSuggestionWriter] (Story 7.4's staleness re-check + [GraphWriterPort]
+     * call). Errors are surfaced via [sendSnackbar] — never silently swallowed.
+     */
+    fun acceptLlmSuggestion(id: String) {
+        // Re-validate: already resolved/expired — matches abortJournalMerge's "state may have
+        // advanced" guard shape.
+        val suggestion = llmSuggestionInbox.pending.value[id] ?: return
+
+        val currentGraphId = activeGraphIdProvider() ?: _uiState.value.currentGraphId
+        if (suggestion.graphId != currentGraphId) {
+            // Do not apply, and do not remove from the inbox — it's still there if the user
+            // switches back to the graph this suggestion targets.
+            sendSnackbar("Switch back to the graph this suggestion targets to review it")
+            return
+        }
+
+        llmSuggestionInbox.remove(id)
+
+        val graphPath = _uiState.value.currentGraphPath
+        scope.launch {
+            val result = llmSuggestionWriter.materializeAndWrite(suggestion, graphPath)
+            result.onLeft { error ->
+                logger.error("acceptLlmSuggestion failed for id=$id: ${error.message}")
+                sendSnackbar(error.message)
+            }
+        }
+    }
+
     // Track recent pages manually to avoid "recently loaded" issues
     private var recentPageUuids: MutableList<String> = mutableListOf()
 
@@ -389,6 +467,7 @@ class StelekitViewModel(
 
         updateCommands()
         observeSyncState()
+        observeLlmSuggestions()
 
         // Initialize graph if path exists
         val path = _uiState.value.currentGraphPath
