@@ -43,6 +43,12 @@ class LlmTagProvider(
                     is LlmResult.Failure.NetworkError -> DomainError.NetworkError.RequestFailed(
                         "Network error"
                     ).left()
+                    // Reuses the RequestFailed error family (no genuinely distinct UI treatment
+                    // is required yet) but preserves the on-device-specific reason string through
+                    // to the caller rather than collapsing it to a generic message.
+                    is LlmResult.Failure.OnDeviceUnavailable -> DomainError.NetworkError.RequestFailed(
+                        result.reason
+                    ).left()
                 }
             }
         } catch (e: TimeoutCancellationException) {

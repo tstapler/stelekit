@@ -7,6 +7,15 @@ sealed interface LlmResult {
     sealed interface Failure : LlmResult {
         data class ApiError(val code: Int, val message: String) : Failure
         data object NetworkError : Failure
+
+        /**
+         * An on-device provider (ML Kit/Gemini Nano, iOS Foundation Models) is not usable right
+         * now — still downloading, foreground-only constraint violated, per-app quota hit, etc.
+         * Kept distinct from [ApiError] so [reason] can be surfaced to the user verbatim instead
+         * of a generic error string, and so callers can decide whether to retry based on
+         * [retryable].
+         */
+        data class OnDeviceUnavailable(val reason: String, val retryable: Boolean) : Failure
     }
 }
 

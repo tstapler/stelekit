@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.llm
 
-// Temporary placeholder — replaced with the real ML Kit-backed implementation in Epic 4
-// (Story 4.2). This task's job is only to make the project compile on all targets with the
-// new expect/actual in place; it must not block on Epic 4.
-actual fun platformOnDeviceLlmProvider(): LlmProvider? = null
+import dev.stapler.stelekit.voice.MlKitLlmFormatterProvider
+
+// Real ML Kit-backed implementation (Epic 4 Story 4.2). Returns null when the ML Kit library
+// fails to initialise (e.g. unsupported device) — mirrors MlKitLlmFormatterProvider.create()'s
+// existing "capability not available" convention.
+actual fun platformOnDeviceLlmProvider(): LlmProvider? =
+    MlKitLlmFormatterProvider.create()?.let { AndroidOnDeviceLlmProvider(it) }
