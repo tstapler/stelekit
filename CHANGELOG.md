@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.59.0](https://github.com/tstapler/stelekit/compare/v0.58.1...v0.59.0) (2026-07-02)
+
+
+### Features
+
+* **llm:** unified multi-provider LLM abstraction, on-device parity, approval-gated edits ([3bd02fe](https://github.com/tstapler/stelekit/commit/3bd02fe926639ae4c9a154c52c8ba97ad13791a3))
+
+
+### Bug Fixes
+
+* **ci:** split Roborazzi screenshot tests out of Bazel's jvm_tests glob ([97bcda2](https://github.com/tstapler/stelekit/commit/97bcda2a8c6987a0621ac394a1a085d120a3267e))
+
 ## [0.58.1](https://github.com/tstapler/stelekit/compare/v0.58.0...v0.58.1) (2026-07-02)
 
 
