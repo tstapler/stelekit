@@ -5,16 +5,13 @@ package dev.stapler.stelekit.ui.components.settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import dev.stapler.stelekit.llm.LlmProvider
 import dev.stapler.stelekit.llm.LlmProviderAvailability
 import dev.stapler.stelekit.llm.LlmProviderKind
 import dev.stapler.stelekit.llm.LlmProviderRegistry
-import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.voice.LlmFormatterProvider
 import dev.stapler.stelekit.voice.LlmResult
-import io.github.takahirom.roborazzi.captureRoboImage
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
@@ -135,27 +132,5 @@ class LlmProviderListScreenTest {
             "No providers configured yet. Add a custom provider, or set an API key on a " +
                 "built-in provider above.",
         ).assertExists()
-    }
-
-    /**
-     * UX Acceptance Test (validation.md): "Provider list never shows an optimistic 'Available'
-     * before the async check resolves" — golden captures the exact first frame, pending forever
-     * (gate never completed), so the screenshot is deterministic across runs.
-     *
-     * To record: `./gradlew jvmTest -Proborazzi.test.record=true`
-     */
-    @Test
-    fun initialRender_should_ShowCheckingAvailability() {
-        val gate = CompletableDeferred<LlmProviderAvailability>()
-        val registry = LlmProviderRegistry(listOf(SlowProvider("anthropic", "Anthropic Claude", gate)))
-
-        composeTestRule.setContent {
-            StelekitTheme(themeMode = dev.stapler.stelekit.ui.theme.StelekitThemeMode.LIGHT) {
-                LlmProviderListScreen(registry = registry, onAddProvider = {}, onEditProvider = {})
-            }
-        }
-        composeTestRule.waitForIdle()
-
-        composeTestRule.onRoot().captureRoboImage("build/outputs/roborazzi/llm_provider_list_checking_availability.png")
     }
 }

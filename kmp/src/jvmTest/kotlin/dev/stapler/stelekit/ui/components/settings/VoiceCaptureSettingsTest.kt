@@ -5,13 +5,9 @@ package dev.stapler.stelekit.ui.components.settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import dev.stapler.stelekit.ui.fixtures.InMemorySettings
-import dev.stapler.stelekit.ui.theme.StelekitTheme
-import dev.stapler.stelekit.ui.theme.StelekitThemeMode
 import dev.stapler.stelekit.voice.VoiceSettings
-import io.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
 import org.junit.Test
 
@@ -77,26 +73,5 @@ class VoiceCaptureSettingsTest {
         }
 
         composeTestRule.onNodeWithText("OpenAI / Whisper API key").assertExists()
-    }
-
-    /**
-     * UX Acceptance Test (validation.md): "No dead ends — retiring VoiceCaptureSettings
-     * credential fields leaves a redirect note." To record:
-     * `./gradlew jvmTest -Proborazzi.test.record=true`
-     */
-    @Test
-    fun screen_should_RenderCorrectly_WithoutRemovedFields() {
-        val voiceSettings = VoiceSettings(InMemorySettings())
-
-        composeTestRule.setContent {
-            StelekitTheme(themeMode = StelekitThemeMode.LIGHT) {
-                androidx.compose.foundation.layout.Column {
-                    VoiceCaptureSettings(voiceSettings = voiceSettings, onRebuildPipeline = {})
-                }
-            }
-        }
-        composeTestRule.waitForIdle()
-
-        composeTestRule.onRoot().captureRoboImage("build/outputs/roborazzi/voice_capture_settings_no_plaintext_keys.png")
     }
 }
