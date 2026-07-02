@@ -153,6 +153,10 @@ data class AppState(
     val gitSetupOpenForClone: Boolean = false,
     val conflictResolutionVisible: Boolean = false,
     val journalMergeReviewVisible: Boolean = false,
+    // LLM suggestion inbox — mirrors journalMergeReviewVisible's shape. Set true when
+    // LlmSuggestionInbox.pendingForGraph(currentGraphId) becomes non-empty; NOT auto-dismissed
+    // when it becomes empty via accept/reject (same "do NOT auto-dismiss" rule as journal merge).
+    val llmSuggestionReviewVisible: Boolean = false,
     // Export in-flight: true while an exportPage/exportSelectedBlocks coroutine is running
     val isExporting: Boolean = false,
     // Share dialog state

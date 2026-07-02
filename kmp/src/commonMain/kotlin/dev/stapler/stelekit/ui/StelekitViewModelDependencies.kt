@@ -6,6 +6,8 @@ import dev.stapler.stelekit.db.GraphWriterPort
 import dev.stapler.stelekit.db.UndoManager
 import dev.stapler.stelekit.export.ExportService
 import dev.stapler.stelekit.git.GitSyncService
+import dev.stapler.stelekit.llm.LlmSuggestionInbox
+import dev.stapler.stelekit.llm.LlmSuggestionWriter
 import dev.stapler.stelekit.performance.BugReportBuilder
 import dev.stapler.stelekit.performance.DebugFlagRepository
 import dev.stapler.stelekit.performance.HistogramWriter
@@ -77,4 +79,17 @@ data class StelekitViewModelDependencies(
 
     // ── Sections ─────────────────────────────────────────────────────────────
     val onSectionsLoaded: (suspend (dev.stapler.stelekit.sections.SectionManifest, Map<String, dev.stapler.stelekit.sections.SectionState>) -> Unit)? = null,
+
+    // ── LLM approval-gated edit workflow (Epic 7) ───────────────────────────────
+    /**
+     * Session-scoped pending-suggestion store. When null, [StelekitViewModel] constructs a
+     * default instance — matching the [journalService] default-construction pattern.
+     */
+    val llmSuggestionInbox: LlmSuggestionInbox? = null,
+    /**
+     * Resolves accepted suggestions to a `Page + List<Block>` write via [graphWriter]. When
+     * null, [StelekitViewModel] constructs a default instance from [pageRepository],
+     * [blockRepository], and [graphWriter].
+     */
+    val llmSuggestionWriter: LlmSuggestionWriter? = null,
 )

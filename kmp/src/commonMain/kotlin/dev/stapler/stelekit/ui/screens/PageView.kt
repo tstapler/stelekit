@@ -56,6 +56,7 @@ import dev.stapler.stelekit.tags.TagSuggestionViewModel
 import dev.stapler.stelekit.tags.TagSuggestionState
 import dev.stapler.stelekit.tags.WikiLinkExtractor
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import dev.stapler.stelekit.ui.components.tags.SuggestionBottomSheet
 
 /**
@@ -83,10 +84,16 @@ fun PageView(
     tagSuggestionViewModel: TagSuggestionViewModel? = null,
     currentManifest: SectionManifest? = null,
     onSectionBadgeClick: (() -> Unit)? = null,
+    /** Story 7.6 — bounded synthesis proposal generator. Null hides the menu trigger entirely
+     * (mirrors [tagSuggestionViewModel]'s optional-wiring pattern); when present, results are
+     * surfaced via the LLM suggestion inbox StelekitViewModel already observes. */
+    llmSynthesisService: dev.stapler.stelekit.llm.LlmSynthesisService? = null,
+    currentGraphId: String? = null,
 ) {
     NavigationTracingEffect("PageView/${page.name}")
     val focusManager = LocalFocusManager.current
     var toolbarHeight by remember { mutableStateOf(0) }
+    val pageViewScope = androidx.compose.runtime.rememberCoroutineScope()
 
     if (isDebugMode) {
         val recomposeCount = remember { androidx.compose.runtime.mutableIntStateOf(0) }
@@ -280,6 +287,20 @@ fun PageView(
                                             blockContent = pageContent,
                                             alreadyLinkedTerms = alreadyLinked,
                                         )
+                                    }
+                                )
+                            }
+                            if (llmSynthesisService != null && currentGraphId != null) {
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Synthesize suggestions for page") },
+                                    onClick = {
+                                        exportMenuExpanded = false
+                                        val graphIdForRun = currentGraphId
+                                        val blocksForRun = blocks
+                                        pageViewScope.launch {
+                                            llmSynthesisService.synthesizeForPage(graphIdForRun, page, blocksForRun)
+                                        }
                                     }
                                 )
                             }
