@@ -774,8 +774,13 @@ object MigrationRunner {
         ),
         Migration(
             name = "idx_pages_section_id",
+            // allowContentUpdate: ANALYZE pages was added after initial deployment to satisfy
+            // the IndexWithoutAnalyze lint rule. Existing databases already have the index;
+            // the ANALYZE is a no-op safety net for fresh installs going forward.
+            allowContentUpdate = true,
             statements = listOf(
                 "CREATE INDEX IF NOT EXISTS idx_pages_section_id ON pages(section_id, name)",
+                "ANALYZE pages",
             )
         ),
     )
