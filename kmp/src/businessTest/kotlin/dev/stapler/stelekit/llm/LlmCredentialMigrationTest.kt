@@ -193,6 +193,32 @@ class LlmCredentialMigrationTest {
     }
 
     @Test
+    fun `migration should clear plaintext when the new store already has the key — crash-after-write-before-clear recovery (MA8)`() {
+        val voiceSettings = VoiceSettings(MapSettings())
+        voiceSettings.setAnthropicKey("sk-ant-test")
+        voiceSettings.setOpenAiKey("sk-oai-test")
+        val credentialAccess = FakeCredentialAccess()
+        val platformSettings = MapSettings()
+
+        // Simulate a previous run whose durable write to the new store succeeded, but the app
+        // crashed before clearPlaintext() ran (and before KEY_MIGRATED was ever set) — so the
+        // new store already holds the anthropic key, but VoiceSettings' plaintext copy is
+        // still present too.
+        LlmCredentialStore(credentialAccess).setApiKeyBlocking("anthropic", "sk-ant-test")
+
+        migration(voiceSettings, credentialAccess, platformSettings).runIfNeeded()
+
+        assertNull(
+            voiceSettings.getAnthropicKey(),
+            "clearPlaintext() must fire even when the key was already present in the new store from a prior crashed attempt",
+        )
+        assertNull(voiceSettings.getOpenAiKey(), "openai should migrate normally in the same run")
+        assertTrue(platformSettings.getBoolean(LlmCredentialMigration.KEY_MIGRATED, false))
+        assertEquals("sk-ant-test", LlmCredentialStore(credentialAccess).getApiKey("anthropic"))
+        assertEquals("sk-oai-test", LlmCredentialStore(credentialAccess).getApiKey("openai"))
+    }
+
+    @Test
     fun `migration should be a no-op when neither key was ever configured`() {
         val voiceSettings = VoiceSettings(MapSettings())
         val credentialAccess = FakeCredentialAccess()

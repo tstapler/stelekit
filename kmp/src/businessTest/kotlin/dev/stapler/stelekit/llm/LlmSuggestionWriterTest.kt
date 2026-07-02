@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.llm
 
 import arrow.core.Either
+import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.db.GraphWriterPort
 import dev.stapler.stelekit.error.DomainError
@@ -11,6 +12,7 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
+import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.vault.CryptoLayer
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -22,7 +24,10 @@ import kotlinx.coroutines.runBlocking
 
 class LlmSuggestionWriterTest {
 
-    private class SpyGraphWriterPort : GraphWriterPort {
+    private class SpyGraphWriterPort(
+        /** When set, [savePage] returns this failure instead of recording a successful save — models C3's write-failure propagation. */
+        private val failWith: DomainError? = null,
+    ) : GraphWriterPort {
         var savedPage: Page? = null
         var savedBlocks: List<Block>? = null
         var savedGraphPath: String? = null
@@ -34,11 +39,12 @@ class LlmSuggestionWriterTest {
         override fun stopAutoSave() {}
         override suspend fun flush() {}
         override suspend fun renamePage(page: Page, newName: String, graphPath: String) = true
-        override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String) {
+        override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String): Either<DomainError, Unit> {
             saveCallCount++
             savedPage = page
             savedBlocks = blocks
             savedGraphPath = graphPath
+            return failWith?.left() ?: Unit.right()
         }
         override suspend fun deletePage(page: Page) = true
         override suspend fun movePageToSection(
@@ -176,6 +182,63 @@ class LlmSuggestionWriterTest {
         assertNull(secondRoot?.parentUuid)
         assertEquals(0, root?.level)
         assertEquals(1, child?.level)
+    }
+
+    @Test
+    fun materializeAndWrite_should_PropagateFailure_When_GraphWriterSaveFails() = runBlocking {
+        // C3 regression guard: a genuine GraphWriter save failure must be surfaced, not
+        // silently swallowed as success.
+        val (pageRepo, blockRepo, _) = setup()
+        val pageUuid = "page-1"
+        val blockUuid = "block-1"
+        pageRepo.savePage(page(pageUuid))
+        blockRepo.saveBlock(block(blockUuid, pageUuid, "original content"))
+        val failingWriter = SpyGraphWriterPort(failWith = DomainError.DatabaseError.WriteFailed("disk full"))
+
+        val suggestion = PendingLlmSuggestion.BlockEdit(
+            id = "id-1", graphId = "graph-1", sourceProviderId = "anthropic",
+            proposedAtEpochMs = 1L, rationale = null,
+            pageUuid = pageUuid, blockUuid = blockUuid,
+            currentContentSnapshot = "original content",
+            proposedContent = "updated content",
+        )
+
+        val sut = LlmSuggestionWriter(pageRepo, blockRepo, failingWriter)
+        val result = sut.materializeAndWrite(suggestion, graphPath)
+
+        assertTrue(result.isLeft(), "materializeAndWrite must propagate a GraphWriter save failure (C3)")
+        assertIs<DomainError.DatabaseError.WriteFailed>(result.leftOrNull())
+        Unit
+    }
+
+    @Test
+    fun materializeAndWrite_should_AbortWithFailure_When_WikiLinkResolutionReadFails_NewPage() = runBlocking {
+        // MA12: writeNewPage's wiki-link resolution check is best-effort about *absent*
+        // pages (never rejected — normal usage for links to not-yet-created pages) but
+        // guards against the lookup read itself failing (e.g. DB closed mid-accept) — per
+        // LlmSuggestionWriter.writeNewPage's kdoc, a failed read aborts the write rather
+        // than silently proceeding with a reduced link set.
+        val (pageRepo, blockRepo, writer) = setup()
+        val failingPageRepo = object : PageRepository by pageRepo {
+            override suspend fun getPagesByNames(names: Collection<String>): Either<DomainError, List<Page>> =
+                DomainError.DatabaseError.ReadFailed("db closed").left()
+        }
+        val suggestion = PendingLlmSuggestion.NewPage(
+            id = "id-1", graphId = "graph-1", sourceProviderId = "anthropic",
+            proposedAtEpochMs = 1L, rationale = "synthesized",
+            proposedTitle = "New Page With Links",
+            proposedBlocks = listOf(
+                ProposedBlock("see [[Other Page]] for details", depth = 0, order = 0),
+            ),
+        )
+
+        val sut = LlmSuggestionWriter(failingPageRepo, blockRepo, writer)
+        val result = sut.materializeAndWrite(suggestion, graphPath)
+
+        assertTrue(result.isLeft())
+        assertIs<DomainError.DatabaseError.ReadFailed>(result.leftOrNull())
+        assertEquals(0, writer.saveCallCount, "write must not proceed when the wiki-link resolution read fails")
+        Unit
     }
 
     @Test

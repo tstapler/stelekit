@@ -85,21 +85,16 @@ class MlKitLlmFormatterProvider private constructor(
             // AICore-specific error codes get a distinct, actionable message instead of the
             // generic "On-device LLM error: ..." fallback — see pitfalls.md §2.1:
             // foreground-only inference (BACKGROUND_USE_BLOCKED) and per-app quota (BUSY) are
-            // both retryable, expected conditions, not bugs.
-            when (e.errorCode) {
-                GenAiException.ErrorCode.BACKGROUND_USE_BLOCKED -> LlmResult.Failure.OnDeviceUnavailable(
-                    "On-device AI requires the app to be in the foreground",
-                    retryable = true,
-                )
-                GenAiException.ErrorCode.BUSY -> LlmResult.Failure.OnDeviceUnavailable(
-                    "On-device AI is busy — try again shortly",
-                    retryable = true,
-                )
-                else -> {
-                    Log.e(TAG, "On-device inference error", e)
-                    LlmResult.Failure.ApiError(-1, "On-device LLM error: ${e.message}")
-                }
+            // both retryable, expected conditions, not bugs — so those are not logged as errors,
+            // matching the pre-extraction behavior. The actual mapping lives in the pure,
+            // SDK-independent mapGenAiErrorCode() (MA10) so it's testable from
+            // businessTest/jvmTest without an Android SDK dependency — mirrors
+            // mapMlKitFeatureStatus()'s shape for checkAvailability().
+            val failure = mapGenAiErrorCode(e.errorCode, e.message)
+            if (failure !is LlmResult.Failure.OnDeviceUnavailable) {
+                Log.e(TAG, "On-device inference error", e)
             }
+            failure
         } catch (e: Exception) {
             Log.e(TAG, "On-device inference error", e)
             LlmResult.Failure.ApiError(-1, "On-device LLM error: ${e.message}")

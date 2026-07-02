@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.llm
 
 import arrow.core.Either
+import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.db.ExternalFileChange
 import dev.stapler.stelekit.db.GraphLoaderPort
@@ -8,8 +9,10 @@ import dev.stapler.stelekit.db.GraphWriterPort
 import dev.stapler.stelekit.db.WriteError
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.parsing.ParseMode
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
@@ -23,6 +26,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,8 +34,11 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Story 7.3 — visibility/accept/reject wiring, race-guard and multi-graph guards.
@@ -93,7 +100,10 @@ class StelekitViewModelLlmSuggestionTest {
         ) {}
     }
 
-    private class RecordingGraphWriterPort : GraphWriterPort {
+    private class RecordingGraphWriterPort(
+        /** When set, [savePage] returns this failure instead of recording success — models C3's write-failure propagation. */
+        private val failWith: DomainError? = null,
+    ) : GraphWriterPort {
         var saveCallCount = 0
         override fun setCryptoLayer(layer: CryptoLayer?) {}
         override fun closeAndClearCryptoLayer() {}
@@ -101,7 +111,10 @@ class StelekitViewModelLlmSuggestionTest {
         override fun stopAutoSave() {}
         override suspend fun flush() {}
         override suspend fun renamePage(page: Page, newName: String, graphPath: String) = true
-        override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String) { saveCallCount++ }
+        override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String): Either<DomainError, Unit> {
+            saveCallCount++
+            return failWith?.left() ?: Unit.right()
+        }
         override suspend fun deletePage(page: Page) = true
         override suspend fun movePageToSection(
             page: Page,
@@ -115,12 +128,14 @@ class StelekitViewModelLlmSuggestionTest {
         activeGraphId: String? = "graph-1",
         scope: CoroutineScope,
         inbox: LlmSuggestionInbox = LlmSuggestionInbox(),
+        pageRepository: InMemoryPageRepository = InMemoryPageRepository(),
+        blockRepository: InMemoryBlockRepository = InMemoryBlockRepository(),
     ): StelekitViewModel =
         StelekitViewModel(
             StelekitViewModelDependencies(
                 fileSystem = StubFileSystem(),
-                pageRepository = InMemoryPageRepository(),
-                blockRepository = InMemoryBlockRepository(),
+                pageRepository = pageRepository,
+                blockRepository = blockRepository,
                 searchRepository = InMemorySearchRepository(),
                 graphLoader = StubGraphLoaderPort(),
                 graphWriter = graphWriter,
@@ -138,6 +153,24 @@ class StelekitViewModelLlmSuggestionTest {
             pageUuid = "page-1", blockUuid = "block-1",
             currentContentSnapshot = "original", proposedContent = "updated",
         )
+
+    private val now = Clock.System.now()
+
+    private fun testPage(uuid: String = "page-1") = Page(
+        uuid = PageUuid(uuid),
+        name = "Test Page",
+        createdAt = now,
+        updatedAt = now,
+    )
+
+    private fun testBlock(uuid: String = "block-1", pageUuid: String = "page-1", content: String = "original") = Block(
+        uuid = BlockUuid(uuid),
+        pageUuid = PageUuid(pageUuid),
+        content = content,
+        position = "a0",
+        createdAt = now,
+        updatedAt = now,
+    )
 
     @Test
     fun reviewVisible_should_BecomeTrue_When_PendingForCurrentGraphBecomesNonEmpty() = runTest {
@@ -197,6 +230,73 @@ class StelekitViewModelLlmSuggestionTest {
         assertEquals(0, writer.saveCallCount)
         // Still present — not removed, so the user can switch back and review it.
         assertTrue(inbox.pending.value.containsKey("sugg-1"))
+        scope.cancel()
+    }
+
+    // ─── MA9: C3 write-failure propagation coverage ─────────────────────────
+
+    @Test
+    fun acceptLlmSuggestion_should_RemoveFromInbox_NoErrorSnackbar_When_WriteSucceeds() = runTest {
+        val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+        val writer = RecordingGraphWriterPort()
+        val inbox = LlmSuggestionInbox()
+        val pageRepository = InMemoryPageRepository()
+        val blockRepository = InMemoryBlockRepository()
+        pageRepository.savePage(testPage())
+        blockRepository.saveBlock(testBlock())
+        inbox.propose(suggestion(id = "sugg-1", graphId = "graph-1"))
+        val vm = makeViewModel(
+            graphWriter = writer,
+            activeGraphId = "graph-1",
+            scope = scope,
+            inbox = inbox,
+            pageRepository = pageRepository,
+            blockRepository = blockRepository,
+        )
+
+        vm.acceptLlmSuggestion("sugg-1")
+        advanceUntilIdle()
+
+        assertEquals(1, writer.saveCallCount, "a successful accept must write exactly once")
+        assertFalse(inbox.pending.value.containsKey("sugg-1"), "suggestion must be removed from the inbox on success")
+
+        // No error snackbar should have been queued — assert nothing is buffered.
+        val snackbar = withTimeoutOrNull(200) { vm.snackbarEvents.first() }
+        assertEquals(null, snackbar, "a successful accept must not surface an error snackbar")
+        scope.cancel()
+    }
+
+    @Test
+    fun acceptLlmSuggestion_should_SurfaceErrorSnackbar_When_WriteFails() = runTest {
+        val scope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+        val writer = RecordingGraphWriterPort(failWith = DomainError.DatabaseError.WriteFailed("disk full"))
+        val inbox = LlmSuggestionInbox()
+        val pageRepository = InMemoryPageRepository()
+        val blockRepository = InMemoryBlockRepository()
+        pageRepository.savePage(testPage())
+        blockRepository.saveBlock(testBlock())
+        inbox.propose(suggestion(id = "sugg-1", graphId = "graph-1"))
+        val vm = makeViewModel(
+            graphWriter = writer,
+            activeGraphId = "graph-1",
+            scope = scope,
+            inbox = inbox,
+            pageRepository = pageRepository,
+            blockRepository = blockRepository,
+        )
+
+        vm.acceptLlmSuggestion("sugg-1")
+        advanceUntilIdle()
+
+        assertEquals(1, writer.saveCallCount)
+        // ADR-012's optimistic-removal ordering is an intentional, accepted design tradeoff
+        // (mirrors the git-merge-review pattern) — the suggestion is removed from the inbox
+        // BEFORE the write completes, even on failure. This test locks in that ordering; it
+        // does not change it.
+        assertFalse(inbox.pending.value.containsKey("sugg-1"), "optimistic removal happens regardless of write outcome")
+
+        val snackbar = withTimeout(1_000) { vm.snackbarEvents.first() }
+        assertEquals("disk full", snackbar, "a failed accept must surface the write failure via a snackbar")
         scope.cancel()
     }
 }

@@ -6,6 +6,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import dev.stapler.stelekit.llm.LlmProvider
 import dev.stapler.stelekit.llm.LlmProviderAvailability
 import dev.stapler.stelekit.llm.LlmProviderKind
@@ -14,6 +15,8 @@ import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.voice.LlmFormatterProvider
 import dev.stapler.stelekit.voice.LlmResult
 import io.github.takahirom.roborazzi.captureRoboImage
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.Rule
 import org.junit.Test
@@ -74,6 +77,50 @@ class LlmProviderListScreenTest {
         composeTestRule.waitForIdle()
 
         composeTestRule.onNodeWithText("no key configured").assertExists()
+    }
+
+    // MA11: navigation callbacks (row click -> onEditProvider(id), add-button click ->
+    // onAddProvider()) were previously untested — only rendering was covered.
+
+    @Test
+    fun providerRow_should_InvokeOnEditProviderWithCorrectId_When_Clicked() {
+        val gate = CompletableDeferred<LlmProviderAvailability>()
+        val registry = LlmProviderRegistry(listOf(SlowProvider("anthropic", "Anthropic Claude", gate)))
+        var editedProviderId: String? = null
+
+        composeTestRule.setContent {
+            MaterialTheme {
+                LlmProviderListScreen(
+                    registry = registry,
+                    onAddProvider = {},
+                    onEditProvider = { editedProviderId = it },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Anthropic Claude").performClick()
+
+        assertEquals("anthropic", editedProviderId)
+    }
+
+    @Test
+    fun addProviderButton_should_InvokeOnAddProvider_When_Clicked() {
+        val registry = LlmProviderRegistry(emptyList())
+        var addProviderCalled = false
+
+        composeTestRule.setContent {
+            MaterialTheme {
+                LlmProviderListScreen(
+                    registry = registry,
+                    onAddProvider = { addProviderCalled = true },
+                    onEditProvider = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Add provider").performClick()
+
+        assertTrue(addProviderCalled)
     }
 
     @Test

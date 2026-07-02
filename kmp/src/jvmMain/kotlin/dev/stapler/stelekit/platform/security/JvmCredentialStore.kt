@@ -34,6 +34,9 @@ actual class CredentialStore actual constructor() : CredentialAccess {
 
     companion object {
         private const val SALT_BYTES = 16
+
+        /** Matches keys produced by `"git_https_token_$graphId"` (see GraphManager/GitSetupScreen). */
+        private const val GIT_HTTPS_TOKEN_KEY_PREFIX = "git_https_token_"
     }
 
     private val logger = Logger("CredentialStore")
@@ -102,8 +105,16 @@ actual class CredentialStore actual constructor() : CredentialAccess {
         return props
     }
 
-    private fun saveProperties(props: Properties) {
-        try {
+    /**
+     * @return true if the properties file was durably written to disk, false if the write
+     *   failed (e.g. unwritable path, disk full). [store] intentionally ignores this return
+     *   value to preserve its fire-and-forget contract; [storeBlocking] does not — it must
+     *   observe write failures so callers relying on its durability guarantee (see
+     *   [LlmCredentialMigration][dev.stapler.stelekit.llm.LlmCredentialMigration]) don't treat
+     *   a failed disk write as a successful migration.
+     */
+    private fun saveProperties(props: Properties): Boolean {
+        return try {
             storageFile.outputStream().use { props.store(it, "SteleKit Credentials") }
             try {
                 NioFiles.setPosixFilePermissions(
@@ -113,8 +124,10 @@ actual class CredentialStore actual constructor() : CredentialAccess {
             } catch (_: UnsupportedOperationException) {
                 // Non-POSIX filesystem (Windows) — default permissions apply
             }
+            true
         } catch (e: Exception) {
             logger.warn("Failed to save credentials to ${storageFile.path}: ${e.message}")
+            false
         }
     }
 
@@ -151,8 +164,13 @@ actual class CredentialStore actual constructor() : CredentialAccess {
         val props = loadProperties()
         val encoded = props.getProperty(key)
         val decrypted = if (encoded != null) decrypt(encoded) else null
-        // Fall back to STELEKIT_GIT_TOKEN env var for headless/CI usage when no stored credential is found
-        if (decrypted == null) {
+        // Fall back to STELEKIT_GIT_TOKEN env var for headless/CI usage when no stored credential
+        // is found — but ONLY for the git-sync token key itself (see GraphManager/GitSetupScreen's
+        // "git_https_token_$graphId" keying). This store also backs LlmCredentialStore (keys like
+        // "llm.<providerId>.api_key"); without this guard, a user with STELEKIT_GIT_TOKEN set for
+        // git sync but no LLM key configured would have their git PAT silently sent as a Bearer
+        // token to an LLM provider. Do not widen this to "any miss" again.
+        if (decrypted == null && key.startsWith(GIT_HTTPS_TOKEN_KEY_PREFIX)) {
             val envToken = System.getenv("STELEKIT_GIT_TOKEN")
             if (envToken != null) return envToken
         }
@@ -163,5 +181,18 @@ actual class CredentialStore actual constructor() : CredentialAccess {
         val props = loadProperties()
         props.remove(key)
         saveProperties(props)
+    }
+
+    /**
+     * Synchronous, durable-before-return write for migration use only (see
+     * [CredentialAccess.storeBlocking]'s kdoc for the overall contract). Overridden explicitly
+     * — rather than relying on the default interface method's delegation to [store] — because
+     * [store] discards [saveProperties]'s success/failure signal (MA13): the default delegation
+     * would let [storeBlocking] return `true` even when the underlying disk write failed.
+     */
+    override fun storeBlocking(key: String, value: String): Boolean {
+        val props = loadProperties()
+        props.setProperty(key, encrypt(value))
+        return saveProperties(props)
     }
 }
