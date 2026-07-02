@@ -18,11 +18,25 @@ class VoiceSettings(private val platformSettings: Settings) {
     fun setAnthropicKey(key: String) =
         platformSettings.putString(KEY_ANTHROPIC, key.trim())
 
+    /**
+     * Clears the plaintext Anthropic key. Used by [dev.stapler.stelekit.llm.LlmCredentialMigration]
+     * once the value has been durably migrated into `LlmCredentialStore` (ADR-011) — this is
+     * the only intended caller; do not call this before a durable write is confirmed.
+     */
+    fun clearAnthropicKey() = platformSettings.putString(KEY_ANTHROPIC, "")
+
     fun getOpenAiKey(): String? =
         platformSettings.getString(KEY_OPENAI, "").takeIf { it.isNotBlank() }
 
     fun setOpenAiKey(key: String) =
         platformSettings.putString(KEY_OPENAI, key.trim())
+
+    /**
+     * Clears the plaintext OpenAI key. Used by [dev.stapler.stelekit.llm.LlmCredentialMigration]
+     * once the value has been durably migrated into `LlmCredentialStore` (ADR-011) — this is
+     * the only intended caller; do not call this before a durable write is confirmed.
+     */
+    fun clearOpenAiKey() = platformSettings.putString(KEY_OPENAI, "")
 
     fun getLlmEnabled(): Boolean =
         platformSettings.getBoolean(KEY_LLM_ENABLED, true)

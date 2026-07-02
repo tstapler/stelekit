@@ -19,6 +19,7 @@ import dev.stapler.stelekit.git.GitSyncService
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.export.ExportService
 import dev.stapler.stelekit.export.ShareProvider
+import dev.stapler.stelekit.llm.LlmCredentialStore
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.performance.DebugBuildConfig
@@ -67,6 +68,7 @@ internal fun GraphDialogLayer(
     fileSystem: FileSystem,
     frameMetric: StateFlow<FrameMetric>,
     voiceSettings: VoiceSettings? = null,
+    llmCredentialStore: LlmCredentialStore? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
     deviceSttAvailable: Boolean = false,
     deviceLlmAvailable: Boolean = false,
@@ -139,6 +141,7 @@ internal fun GraphDialogLayer(
         isLeftHanded = appState.isLeftHanded,
         onLeftHandedChange = { viewModel.setLeftHanded(it) },
         voiceSettings = voiceSettings,
+        llmCredentialStore = llmCredentialStore,
         onRebuildVoicePipeline = onRebuildVoicePipeline,
         deviceSttAvailable = deviceSttAvailable,
         deviceLlmAvailable = deviceLlmAvailable,

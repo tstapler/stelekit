@@ -436,6 +436,24 @@ private fun GraphContent(
     val composeClipboard = LocalClipboardManager.current
     val clipboardProvider = rememberClipboardProvider(composeClipboard)
 
+    // LLM/voice provider credential store (ADR-011) — not vault-integrated; a plain
+    // CredentialStore() is correct here (unlike git credentials, LLM keys have no
+    // paranoid-mode requirement in this epic).
+    val llmCredentialStore = remember {
+        dev.stapler.stelekit.llm.LlmCredentialStore(dev.stapler.stelekit.platform.security.CredentialStore())
+    }
+    // One-shot migration of VoiceSettings' plaintext Anthropic/OpenAI keys into
+    // llmCredentialStore (Epic 2 Story 2.3). Run synchronously in this remember block —
+    // not LaunchedEffect — so it completes before tagEngine (below) or any other code path
+    // reads voiceSettings/llmCredentialStore for provider selection on the first frame.
+    // runIfNeeded() is idempotent (early-returns once migrated), so re-execution on
+    // recomposition is safe.
+    remember(voiceSettings, platformSettings, llmCredentialStore) {
+        if (voiceSettings != null) {
+            dev.stapler.stelekit.llm.LlmCredentialMigration(voiceSettings, llmCredentialStore, platformSettings).runIfNeeded()
+        }
+    }
+
     val activeGraphInfo = remember { graphManager.getActiveGraphInfo() }
     val activeGraphPath = activeGraphInfo?.path ?: ""
 
@@ -1580,6 +1598,7 @@ private fun GraphContent(
                         notificationManager = notificationManager,
                         fileSystem = fileSystem,
                         voiceSettings = voiceSettings,
+                        llmCredentialStore = llmCredentialStore,
                         onRebuildVoicePipeline = onRebuildVoicePipeline,
                         deviceSttAvailable = deviceSttAvailable,
                         deviceLlmAvailable = deviceLlmAvailable,
