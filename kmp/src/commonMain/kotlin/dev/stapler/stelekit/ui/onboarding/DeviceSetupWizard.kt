@@ -108,16 +108,18 @@ private fun ModeSelectionContent(
     onPersonalMode: () -> Unit,
     onCustomMode: () -> Unit,
 ) {
-    Text("How will you use SteleKit on this device?", style = MaterialTheme.typography.bodyMedium)
-    Spacer(modifier = Modifier.height(8.dp))
-    OutlinedButton(onClick = onWorkMode, modifier = Modifier.fillMaxWidth()) {
-        Text("Work device — primary section only")
-    }
-    OutlinedButton(onClick = onPersonalMode, modifier = Modifier.fillMaxWidth()) {
-        Text("Personal device — all sections active")
-    }
-    OutlinedButton(onClick = onCustomMode, modifier = Modifier.fillMaxWidth()) {
-        Text("Custom")
+    Column {
+        Text("How will you use SteleKit on this device?", style = MaterialTheme.typography.bodyMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(onClick = onWorkMode, modifier = Modifier.fillMaxWidth()) {
+            Text("Work device — primary section only")
+        }
+        OutlinedButton(onClick = onPersonalMode, modifier = Modifier.fillMaxWidth()) {
+            Text("Personal device — all sections active")
+        }
+        OutlinedButton(onClick = onCustomMode, modifier = Modifier.fillMaxWidth()) {
+            Text("Custom")
+        }
     }
 }
 
@@ -150,39 +152,41 @@ private fun CustomModeContent(
     customDefaultSection: String,
     onDefaultChange: (String) -> Unit,
 ) {
-    Text("Section access:", style = MaterialTheme.typography.bodyMedium)
-    sections.forEach { section ->
-        val state = customStates[section.id] ?: SectionState.ACTIVE
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(section.displayName, modifier = Modifier.weight(1f))
-            TextButton(onClick = {
-                val next = when (state) {
-                    SectionState.ACTIVE -> SectionState.HIDDEN
-                    SectionState.HIDDEN -> SectionState.REMOVED
-                    SectionState.REMOVED -> SectionState.ACTIVE
+    Column {
+        Text("Section access:", style = MaterialTheme.typography.bodyMedium)
+        sections.forEach { section ->
+            val state = customStates[section.id] ?: SectionState.ACTIVE
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(section.displayName, modifier = Modifier.weight(1f))
+                TextButton(onClick = {
+                    val next = when (state) {
+                        SectionState.ACTIVE -> SectionState.HIDDEN
+                        SectionState.HIDDEN -> SectionState.REMOVED
+                        SectionState.REMOVED -> SectionState.ACTIVE
+                    }
+                    onStateChange(section.id, next)
+                }) {
+                    Text(state.name.lowercase().replaceFirstChar { it.uppercase() })
                 }
-                onStateChange(section.id, next)
-            }) {
-                Text(state.name.lowercase().replaceFirstChar { it.uppercase() })
             }
         }
-    }
-    Spacer(modifier = Modifier.height(8.dp))
-    Text("Default section (for new pages):", style = MaterialTheme.typography.bodyMedium)
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected = customDefaultSection.isEmpty(), onClick = { onDefaultChange("") })
-        Text("Global", style = MaterialTheme.typography.bodyLarge)
-    }
-    sections.forEach { section ->
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("Default section (for new pages):", style = MaterialTheme.typography.bodyMedium)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(
-                selected = customDefaultSection == section.id,
-                onClick = { onDefaultChange(section.id) },
-            )
-            Text(section.displayName, style = MaterialTheme.typography.bodyLarge)
+            RadioButton(selected = customDefaultSection.isEmpty(), onClick = { onDefaultChange("") })
+            Text("Global", style = MaterialTheme.typography.bodyLarge)
+        }
+        sections.forEach { section ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(
+                    selected = customDefaultSection == section.id,
+                    onClick = { onDefaultChange(section.id) },
+                )
+                Text(section.displayName, style = MaterialTheme.typography.bodyLarge)
+            }
         }
     }
 }

@@ -28,8 +28,8 @@ import dev.stapler.stelekit.sections.SectionDefinition
 @Composable
 fun SectionBadge(
     section: SectionDefinition,
-    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
 ) {
     val dotColor = remember(section.color) {
         section.color?.let {

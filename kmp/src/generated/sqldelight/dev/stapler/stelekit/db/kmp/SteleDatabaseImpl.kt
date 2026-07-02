@@ -266,6 +266,7 @@ private class SteleDatabaseImpl(
       driver.execute(null, "CREATE INDEX idx_pages_created_at ON pages(created_at DESC)", 0).await()
       driver.execute(null, "CREATE INDEX idx_pages_favorite ON pages(name) WHERE is_favorite = 1", 0).await()
       driver.execute(null, "CREATE INDEX idx_pages_journal_section ON pages(is_journal, journal_date, section_id)", 0).await()
+      driver.execute(null, "CREATE INDEX idx_pages_section_id ON pages(section_id, name)", 0).await()
       driver.execute(null, "CREATE INDEX idx_changelog_graph_status ON migration_changelog(graph_id, status)", 0).await()
       driver.execute(null, "CREATE INDEX idx_changelog_applied_at ON migration_changelog(graph_id, applied_at)", 0).await()
       driver.execute(null, """

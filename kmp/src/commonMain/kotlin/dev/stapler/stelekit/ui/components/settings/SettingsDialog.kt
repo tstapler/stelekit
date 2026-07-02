@@ -214,15 +214,18 @@ fun SettingsDialog(
                                         onLibsqlDriverToggle = onLibsqlDriverToggle,
                                     )
                                 }
-                                SettingsCategory.SECTIONS -> if (sectionManifest != null &&
-                                    onCreateSection != null && onRenameSection != null && onDeleteSection != null
-                                ) {
-                                    SectionsSettings(
-                                        manifest = sectionManifest,
-                                        onCreateSection = onCreateSection,
-                                        onRenameSection = onRenameSection,
-                                        onDeleteSection = onDeleteSection,
-                                    )
+                                SettingsCategory.SECTIONS -> {
+                                    val canShowSections = sectionManifest != null &&
+                                        onCreateSection != null && onRenameSection != null &&
+                                        onDeleteSection != null
+                                    if (canShowSections) {
+                                        SectionsSettings(
+                                            manifest = sectionManifest!!,
+                                            onCreateSection = onCreateSection!!,
+                                            onRenameSection = onRenameSection!!,
+                                            onDeleteSection = onDeleteSection!!,
+                                        )
+                                    }
                                 }
                                 SettingsCategory.DEVICE_SUBSCRIPTIONS -> if (sectionManifest != null &&
                                     onToggleSectionState != null
