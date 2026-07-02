@@ -6,15 +6,13 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.CancellationException
-import kotlinx.serialization.serializer
-
 class SectionManifestWriter(private val fileSystem: FileSystem) {
 
     fun write(graphPath: String, manifest: SectionManifest): Either<DomainError, Unit> {
         val base = if (graphPath.endsWith("/")) graphPath else "$graphPath/"
         val path = "$base${SectionManifest.FILENAME}"
         return try {
-            val content = sectionToml.encodeToString(serializer<SectionManifest>(), manifest)
+            val content = encodeSectionManifestToml(manifest)
             if (fileSystem.writeFile(path, content)) Unit.right()
             else DomainError.FileSystemError.WriteFailed(path, "write returned false").left()
         } catch (e: CancellationException) {

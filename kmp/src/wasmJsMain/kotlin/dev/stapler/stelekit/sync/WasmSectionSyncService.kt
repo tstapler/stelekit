@@ -1,6 +1,6 @@
 package dev.stapler.stelekit.sync
 
-import arrow.core.onLeft
+import arrow.core.Either
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
@@ -12,6 +12,22 @@ import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.await
 import kotlinx.coroutines.delay
 import kotlin.time.Clock
+
+// js() calls must be top-level functions in Kotlin/Wasm — not inside a class or companion object.
+private fun jsFetchWithToken(url: String, token: String): kotlin.js.Promise<JsAny> =
+    js("""fetch(url, { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json' } })""")
+
+private fun jsFetchAnon(url: String): kotlin.js.Promise<JsAny> =
+    js("""fetch(url, { headers: { 'Accept': 'application/vnd.github+json' } })""")
+
+private fun jsFetch(url: String, token: String?): kotlin.js.Promise<JsAny> =
+    if (token != null) jsFetchWithToken(url, token) else jsFetchAnon(url)
+
+private fun jsResponseStatus(response: JsAny): Int = js("response.status | 0")
+private fun jsResponseHeader(response: JsAny, name: String): String? =
+    js("response.headers.get(name) || null")
+private fun jsResponseText(response: JsAny): kotlin.js.Promise<JsAny> = js("response.text()")
+private fun jsStringValue(v: JsAny): String = js("String(v)")
 
 /**
  * WASM-only service: fetches a GitHub repo tree for a section and inserts INDEX_ONLY stub pages.
@@ -55,8 +71,10 @@ class WasmSectionSyncService(private val pageRepository: PageRepository) {
                 isContentLoaded = false,
                 sectionId = section.id,
             )
-            pageRepository.savePage(stubPage)
-                .onLeft { logger.error("Failed to save stub for $fullPath: ${it.message}") }
+            val result = pageRepository.savePage(stubPage)
+            if (result is Either.Left) {
+                logger.error("Failed to save stub for $fullPath: ${result.value.message}")
+            }
         }
     }
 
@@ -89,21 +107,6 @@ class WasmSectionSyncService(private val pageRepository: PageRepository) {
                 null
             }
         }
-
-        private fun jsFetchWithToken(url: String, token: String): kotlin.js.Promise<JsAny> =
-            js("""fetch(url, { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json' } })""")
-
-        private fun jsFetchAnon(url: String): kotlin.js.Promise<JsAny> =
-            js("""fetch(url, { headers: { 'Accept': 'application/vnd.github+json' } })""")
-
-        private fun jsFetch(url: String, token: String?): kotlin.js.Promise<JsAny> =
-            if (token != null) jsFetchWithToken(url, token) else jsFetchAnon(url)
-
-        private fun jsResponseStatus(response: JsAny): Int = js("response.status | 0")
-        private fun jsResponseHeader(response: JsAny, name: String): String? =
-            js("response.headers.get(name) || null")
-        private fun jsResponseText(response: JsAny): kotlin.js.Promise<JsAny> = js("response.text()")
-        private fun jsStringValue(v: JsAny): String = js("String(v)")
 
         private fun extractTreePaths(json: String): List<String> {
             val results = mutableListOf<String>()

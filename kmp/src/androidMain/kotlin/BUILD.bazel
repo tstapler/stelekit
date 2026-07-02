@@ -97,6 +97,9 @@ kt_android_library(
         "@maven//:io_opentelemetry_opentelemetry_sdk",
         "@maven//:io_opentelemetry_opentelemetry_exporter_logging",
 
+        # ktoml — TOML parsing for .stele-sections manifest (from commonMain)
+        "@maven//:com_akuleshov7_ktoml_core_jvm",
+
         # Ksoup (from commonMain)
         "@maven//:com_fleeksoft_ksoup_ksoup_jvm",
 

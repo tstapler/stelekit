@@ -991,7 +991,11 @@ public class SteleDatabaseQueries(
     )
   }
 
-  public fun selectUnloadedPagesBySection(section_id: Collection<String>, value_: Long, value__: Long): Query<Pages> = selectUnloadedPagesBySection(section_id, value_, value__, ::Pages)
+  public fun selectUnloadedPagesBySection(
+    section_id: Collection<String>,
+    value_: Long,
+    value__: Long,
+  ): Query<Pages> = selectUnloadedPagesBySection(section_id, value_, value__, ::Pages)
 
   public fun countUnloadedPages(): Query<Long> = Query(-58_485_640, arrayOf("pages"), driver, "SteleDatabase.sq", "countUnloadedPages", "SELECT COUNT(*) FROM pages WHERE is_content_loaded = 0") { cursor ->
     cursor.getLong(0)!!
@@ -5882,7 +5886,7 @@ public class SteleDatabaseQueries(
 
     override fun <R> execute(mapper: (SqlCursor) -> QueryResult<R>): QueryResult<R> {
       val section_idIndexes = createArguments(count = section_id.size)
-      return driver.executeQuery(null, """SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count, pages.section_id FROM pages WHERE is_content_loaded = 0 AND section_id IN $section_idIndexes ORDER BY uuid LIMIT ? OFFSET ?""", mapper, section_id.size + 2) {
+      return driver.executeQuery(null, """SELECT pages.uuid, pages.name, pages.namespace, pages.file_path, pages.created_at, pages.updated_at, pages.properties, pages.version, pages.is_favorite, pages.is_journal, pages.journal_date, pages.is_content_loaded, pages.backlink_count, pages.section_id FROM pages WHERE is_content_loaded = 0 AND section_id IN $section_idIndexes ORDER BY uuid LIMIT ? OFFSET ?""", mapper, 2 + section_id.size) {
             var parameterIndex = 0
             section_id.forEach { section_id_ ->
               bindString(parameterIndex++, section_id_)
