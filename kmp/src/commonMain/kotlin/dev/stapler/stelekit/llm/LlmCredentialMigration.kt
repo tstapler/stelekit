@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.llm
 
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.tags.TagSettings
 import dev.stapler.stelekit.voice.VoiceSettings
@@ -54,6 +55,7 @@ class LlmCredentialMigration(
      */
     private val platformOnDeviceProviderId: () -> String? = { platformOnDeviceLlmProvider()?.id },
 ) {
+    private val logger = Logger("LlmCredentialMigration")
 
     /**
      * Runs all three migration steps (each independently idempotent).
@@ -65,14 +67,21 @@ class LlmCredentialMigration(
      *   install, or the step already ran in a previous session).
      */
     fun runIfNeeded(): Boolean {
+        logger.info("LlmCredentialMigration.runIfNeeded starting")
         migrateCredentialsIfNeeded()
         migrateVoiceDeviceLlmFlagIfNeeded()
-        return migrateTagSuggestionDefaultIfNeeded()
+        val showTagSuggestionNotice = migrateTagSuggestionDefaultIfNeeded()
+        logger.info("LlmCredentialMigration.runIfNeeded complete (showTagSuggestionNotice=$showTagSuggestionNotice)")
+        return showTagSuggestionNotice
     }
 
     private fun migrateCredentialsIfNeeded() {
-        if (platformSettings.getBoolean(KEY_MIGRATED, false)) return
+        if (platformSettings.getBoolean(KEY_MIGRATED, false)) {
+            logger.info("Credential migration: already marked done — skipping")
+            return
+        }
 
+        logger.info("Credential migration: starting")
         val anthropicResolved = migrateKey(
             providerId = "anthropic",
             plaintextValue = voiceSettings.getAnthropicKey(),
@@ -89,6 +98,12 @@ class LlmCredentialMigration(
         // migration done prematurely and permanently strand the second key unmigrated.
         if (anthropicResolved && openAiResolved) {
             platformSettings.putBoolean(KEY_MIGRATED, true)
+            logger.info("Credential migration: complete — all providers resolved")
+        } else {
+            logger.warn(
+                "Credential migration: not marked done (anthropicResolved=$anthropicResolved, " +
+                    "openAiResolved=$openAiResolved) — will retry on next launch",
+            )
         }
     }
 
@@ -103,18 +118,37 @@ class LlmCredentialMigration(
         plaintextValue: String?,
         clearPlaintext: () -> Unit,
     ): Boolean {
-        if (plaintextValue == null) return true // nothing to migrate
-        if (llmCredentialStore.getApiKey(providerId) != null) return true // already migrated
+        if (plaintextValue == null) {
+            logger.info("Credential migration [$providerId]: nothing to migrate")
+            return true // nothing to migrate
+        }
+        if (llmCredentialStore.getApiKey(providerId) != null) {
+            // Already migrated — but we may have crashed after the durable write in a previous
+            // run and before clearPlaintext() ran (MA8). clearPlaintext() is idempotent, so
+            // calling it here unconditionally guarantees the plaintext is eventually cleared
+            // even if an earlier attempt crashed in that exact window.
+            logger.info("Credential migration [$providerId]: already migrated — ensuring plaintext is cleared")
+            clearPlaintext()
+            return true
+        }
 
+        logger.info("Credential migration [$providerId]: writing key to secure store")
         val wroteDurably = llmCredentialStore.setApiKeyBlocking(providerId, plaintextValue)
-        if (!wroteDurably) return false
+        if (!wroteDurably) {
+            logger.warn("Credential migration [$providerId]: durable write failed — plaintext left in place for retry")
+            return false
+        }
 
         // Defense-in-depth: verify the durable write actually round-trips correctly before
         // touching the plaintext source (corrupted-write edge case).
         val readBack = llmCredentialStore.getApiKey(providerId)
-        if (readBack != plaintextValue) return false
+        if (readBack != plaintextValue) {
+            logger.warn("Credential migration [$providerId]: read-back mismatch after write — plaintext left in place for retry")
+            return false
+        }
 
         clearPlaintext()
+        logger.info("Credential migration [$providerId]: migrated successfully, plaintext cleared")
         return true
     }
 
@@ -132,13 +166,22 @@ class LlmCredentialMigration(
      * matching today's effective default behavior (remote-preferred when a key exists).
      */
     private fun migrateVoiceDeviceLlmFlagIfNeeded() {
-        if (platformSettings.getBoolean(KEY_VOICE_DEVICE_LLM_MIGRATED, false)) return
+        if (platformSettings.getBoolean(KEY_VOICE_DEVICE_LLM_MIGRATED, false)) {
+            logger.info("Voice device-LLM flag migration: already marked done — skipping")
+            return
+        }
 
         val hadDeviceLlmEnabled = platformSettings.getBoolean(VoiceSettings.KEY_USE_DEVICE_LLM_LEGACY, false)
         if (hadDeviceLlmEnabled) {
-            platformOnDeviceProviderId()?.let { onDeviceId ->
+            val onDeviceId = platformOnDeviceProviderId()
+            if (onDeviceId != null) {
                 llmSettings.setSelectedProviderId(LlmFeature.VOICE_FORMATTING, onDeviceId)
+                logger.info("Voice device-LLM flag migration: preserved legacy choice as provider '$onDeviceId'")
+            } else {
+                logger.info("Voice device-LLM flag migration: legacy flag was set but no on-device provider for this platform — leaving Auto")
             }
+        } else {
+            logger.info("Voice device-LLM flag migration: legacy flag was not set — nothing to preserve")
         }
 
         platformSettings.putBoolean(KEY_VOICE_DEVICE_LLM_MIGRATED, true)
@@ -158,11 +201,17 @@ class LlmCredentialMigration(
      *   `false` on a fresh install, or on any call after the first (the step is a no-op then).
      */
     private fun migrateTagSuggestionDefaultIfNeeded(): Boolean {
-        if (platformSettings.getBoolean(KEY_TAG_SUGGESTION_DEFAULT_MIGRATED, false)) return false
+        if (platformSettings.getBoolean(KEY_TAG_SUGGESTION_DEFAULT_MIGRATED, false)) {
+            logger.info("Tag suggestion default migration: already marked done — skipping")
+            return false
+        }
 
         val isExistingInstall = platformSettings.containsKey(TagSettings.KEY_LLM_TIER_ENABLED)
         if (isExistingInstall) {
             llmSettings.setSelectedProviderId(LlmFeature.TAG_SUGGESTION, LlmProviderRegistry.DISABLED_SENTINEL)
+            logger.info("Tag suggestion default migration: existing install detected — disabled TAG_SUGGESTION")
+        } else {
+            logger.info("Tag suggestion default migration: fresh install — leaving TAG_SUGGESTION at Auto")
         }
         // Fresh install: leave TAG_SUGGESTION's selection at null ("Auto") — no prior behavior
         // to preserve, so the new on-device-capable Auto resolution applies immediately.

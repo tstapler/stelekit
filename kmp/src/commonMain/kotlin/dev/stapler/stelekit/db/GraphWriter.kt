@@ -197,9 +197,19 @@ class GraphWriter(
 
     /**
      * Immediately save a page (bypasses debouncing).
+     *
+     * Surfaces [savePageInternal]'s actual success/failure (C3) — previously this always
+     * returned success regardless of whether the write landed, silently swallowing genuine
+     * failure paths (AAD/graphPath guard mismatch, decrypt failure, saga step failure — all
+     * only logged inside [savePageInternal]).
      */
-    override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String) {
-        savePageInternal(page, blocks, graphPath)
+    override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String): Either<DomainError, Unit> {
+        val succeeded = savePageInternal(page, blocks, graphPath)
+        return if (succeeded) {
+            Unit.right()
+        } else {
+            DomainError.DatabaseError.WriteFailed("Failed to save page '${page.name}' to $graphPath").left()
+        }
     }
 
     /**

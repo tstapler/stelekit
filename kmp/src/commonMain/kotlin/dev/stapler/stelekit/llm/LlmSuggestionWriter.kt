@@ -4,7 +4,6 @@ package dev.stapler.stelekit.llm
 
 import arrow.core.Either
 import arrow.core.left
-import arrow.core.right
 import dev.stapler.stelekit.db.GraphWriterPort
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
@@ -109,8 +108,7 @@ class LlmSuggestionWriter(
             if (existing.uuid.value == blockUuid) existing.copy(content = newContent) else existing
         }
 
-        graphWriter.savePage(page, updatedBlocks, graphPath)
-        return Unit.right()
+        return graphWriter.savePage(page, updatedBlocks, graphPath)
     }
 
     private suspend fun writeNewPage(
@@ -140,8 +138,7 @@ class LlmSuggestionWriter(
 
         val blocks = buildBlockTree(suggestion.proposedBlocks, newPageUuid, now)
 
-        graphWriter.savePage(page, blocks, graphPath)
-        return Unit.right()
+        return graphWriter.savePage(page, blocks, graphPath)
     }
 
     /**
