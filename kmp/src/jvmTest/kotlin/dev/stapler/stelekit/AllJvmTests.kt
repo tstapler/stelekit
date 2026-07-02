@@ -34,6 +34,7 @@ import dev.stapler.stelekit.export.ExportIntegrationTest
 import dev.stapler.stelekit.export.HtmlExporterTest
 import dev.stapler.stelekit.integration.JournalParseReproTest
 import dev.stapler.stelekit.integration.PipelineReproductionTest
+import dev.stapler.stelekit.llm.RemoteLlmProviderTest
 import dev.stapler.stelekit.migration.ChangeApplierTest
 import dev.stapler.stelekit.migration.DagValidatorTest
 import dev.stapler.stelekit.migration.DryRunTest
@@ -44,6 +45,7 @@ import dev.stapler.stelekit.migration.MigrationRunnerTest
 import dev.stapler.stelekit.migration.MigrationsTest
 import dev.stapler.stelekit.migration.NormalizeJournalNamesMigrationTest
 import dev.stapler.stelekit.migration.RepairTest
+import dev.stapler.stelekit.platform.PlatformSettingsContainsKeyTest
 import dev.stapler.stelekit.repository.CacheInvalidationTest
 import dev.stapler.stelekit.repository.ExactTitleMatchTest
 import dev.stapler.stelekit.repository.FtsRebuildTest
@@ -183,6 +185,8 @@ import org.junit.runners.Suite
     VaultManagerTest::class,
     ClaudeLlmFormatterProviderTest::class,
     OpenAiLlmFormatterProviderTest::class,
+    RemoteLlmProviderTest::class,
     WhisperSpeechToTextProviderTest::class,
+    PlatformSettingsContainsKeyTest::class,
 )
 class AllJvmTests

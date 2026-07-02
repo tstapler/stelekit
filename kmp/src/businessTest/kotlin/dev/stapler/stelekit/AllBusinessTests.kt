@@ -5,6 +5,10 @@ import dev.stapler.stelekit.domain.ImportServiceTest
 import dev.stapler.stelekit.editor.LinkInsertionTest
 import dev.stapler.stelekit.flashcard.FlashcardPropertiesTest
 import dev.stapler.stelekit.flashcard.FlashcardReviewTest
+import dev.stapler.stelekit.llm.LlmProviderAvailabilityTest
+import dev.stapler.stelekit.llm.LlmProviderRegistryFactoryTest
+import dev.stapler.stelekit.llm.LlmProviderRegistryTest
+import dev.stapler.stelekit.llm.LlmSettingsTest
 import dev.stapler.stelekit.performance.HistogramRegressionTest
 import dev.stapler.stelekit.performance.HistogramWriterTest
 import dev.stapler.stelekit.performance.PerfExporterPickerTest
@@ -27,6 +31,10 @@ import org.junit.runners.Suite
     LinkInsertionTest::class,
     FlashcardPropertiesTest::class,
     FlashcardReviewTest::class,
+    LlmProviderAvailabilityTest::class,
+    LlmProviderRegistryFactoryTest::class,
+    LlmProviderRegistryTest::class,
+    LlmSettingsTest::class,
     HistogramRegressionTest::class,
     HistogramWriterTest::class,
     PerfExporterPickerTest::class,

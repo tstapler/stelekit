@@ -55,6 +55,7 @@ class DeviceProfileTest {
         override fun getString(key: String, defaultValue: String): String =
             store.getOrDefault(key, defaultValue)
         override fun putString(key: String, value: String) { store[key] = value }
+        override fun containsKey(key: String) = store.containsKey(key)
     }
 
     private open class StubFileSystem : FileSystem {
