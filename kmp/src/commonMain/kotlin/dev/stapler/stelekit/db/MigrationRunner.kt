@@ -53,8 +53,11 @@ object MigrationRunner {
             // connection A holds the SQLite write lock; subsequent DDL on connection B–N then
             // waits busy_timeout (10 s each) — causing a cascade hang that matches the test
             // timeout exactly. Use auto-committing DDL statements only.
-            val txKeywords = setOf("begin", "commit", "rollback")
-            val bad = statements.filter { it.trim().lowercase() in txKeywords }
+            //
+            // SqliteStatementAnalyzer.isTransactionControl() uses a comment-stripping tokenizer
+            // so "BEGIN TRANSACTION", "-- comment\nBEGIN", etc. are all caught, while "BEGIN"
+            // inside a CREATE TRIGGER body is correctly ignored (first keyword is "CREATE").
+            val bad = statements.filter { SqliteStatementAnalyzer.isTransactionControl(it) }
             require(bad.isEmpty()) {
                 "Migration '$name': raw transaction control statement(s) detected: $bad. " +
                 "These deadlock pooled-connection drivers — use auto-committing DDL only."

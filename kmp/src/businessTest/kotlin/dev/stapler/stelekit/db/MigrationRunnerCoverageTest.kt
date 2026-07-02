@@ -3,6 +3,7 @@ package dev.stapler.stelekit.db
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.db.SqliteStatementAnalyzer
 
 /**
  * Static analysis test: verifies that every table added after the original base schema
@@ -90,13 +91,13 @@ class MigrationRunnerCoverageTest {
     }
 
     @Test fun `no production migration contains raw transaction control`() {
-        // Structural guard: ensure no entry in MigrationRunner.all violates the rule.
+        // Structural guard: uses SqliteStatementAnalyzer so compound forms
+        // (BEGIN TRANSACTION, COMMIT WORK, leading comments, etc.) are also caught.
         // This test would have caught pages_section_id before it reached CI.
-        val txKeywords = setOf("begin", "commit", "rollback")
         val violations = MigrationRunner.all.flatMap { migration ->
             migration.statements
-                .filter { it.trim().lowercase() in txKeywords }
-                .map { "'${migration.name}': $it" }
+                .filter { SqliteStatementAnalyzer.isTransactionControl(it) }
+                .map { "'${migration.name}': ${it.trim().take(80)}" }
         }
         assertTrue(violations.isEmpty(), "Raw transaction control found in migrations: $violations")
     }
