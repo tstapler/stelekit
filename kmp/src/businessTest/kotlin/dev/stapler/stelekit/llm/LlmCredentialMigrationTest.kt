@@ -25,6 +25,7 @@ class LlmCredentialMigrationTest {
         override fun putBoolean(key: String, value: Boolean) { map[key] = value }
         override fun getString(key: String, defaultValue: String) = map[key] as? String ?: defaultValue
         override fun putString(key: String, value: String) { map[key] = value }
+        override fun containsKey(key: String) = key in map
     }
 
     /**
