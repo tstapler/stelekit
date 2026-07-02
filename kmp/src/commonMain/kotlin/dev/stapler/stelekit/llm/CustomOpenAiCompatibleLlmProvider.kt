@@ -7,6 +7,7 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.voice.LlmFormatterProvider
+import dev.stapler.stelekit.voice.LlmProviderSupport
 import dev.stapler.stelekit.voice.OpenAiLlmFormatterProvider
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -23,10 +24,12 @@ import kotlinx.serialization.Serializable
  * OpenRouter, current-generation/v1-GA Azure OpenAI) — covers vendors without one bespoke
  * `LlmProvider` per vendor, per [CustomProviderConfig].
  *
- * [config.baseUrl] is expected to be the API **origin** (e.g. `https://api.openai.com` or
- * `http://localhost:11434`), *not* including a `/v1` suffix — [OpenAiLlmFormatterProvider]
- * (which [formatter] wraps) appends `/v1/chat/completions` itself, and this class appends
- * `/v1/models` for [checkAvailability]/[fetchAvailableModels] using the same convention.
+ * [config.baseUrl] is normalized via [LlmProviderSupport.normalizeBaseUrl] before use, so a
+ * trailing slash or `/v1` suffix (some Settings-UI presets, e.g. Ollama's default
+ * `http://localhost:11434/v1`, include one) doesn't produce a broken `.../v1/v1/...` URL —
+ * [OpenAiLlmFormatterProvider] (which [formatter] wraps) appends `/v1/chat/completions` itself,
+ * and this class appends `/v1/models` for [checkAvailability]/[fetchAvailableModels] using the
+ * same convention.
  *
  * Explicitly **out of scope**: legacy (pre-v1-GA) Azure OpenAI, which uses a
  * deployment-path URL shape plus an `api-version` query parameter and an `api-key` header
@@ -51,7 +54,7 @@ class CustomOpenAiCompatibleLlmProvider(
         allowInsecureHttp = config.allowInsecureHttp,
     )
 
-    private val modelsUrl = "${config.baseUrl}/v1/models"
+    private val modelsUrl = "${LlmProviderSupport.normalizeBaseUrl(config.baseUrl)}/v1/models"
 
     override suspend fun checkAvailability(): LlmProviderAvailability {
         return try {

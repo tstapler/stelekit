@@ -18,22 +18,24 @@ class CustomProviderUrlValidationTest {
         Case("https anywhere is valid", "https://api.openai.com/v1", true),
         Case("http localhost is valid (Ollama default)", "http://localhost:11434/v1", true),
         Case("http 127.0.0.1 is valid (LM Studio default)", "http://127.0.0.1:1234/v1", true),
-        // MA6: isLoopbackHost is an exact-match check against a known loopback-literal set
-        // (mirrors OpenAiLlmFormatterProvider.isLoopbackHttpUrl), not a "127." prefix match —
-        // other addresses in the 127.0.0.0/8 range are intentionally out of scope for this
-        // allowlist, since a prefix match is exactly the bug this fixed (see the
-        // attacker-hostname case below).
-        Case("http 127.x.x.x other than 127.0.0.1 is invalid", "http://127.5.5.5:11434/v1", false),
+        // isLoopbackHost recognizes the full 127.0.0.0/8 range via real dotted-quad IP
+        // parsing (not a "127." string-prefix match) — any genuine 127.x.x.x address is a
+        // valid loopback address per RFC 5735.
+        Case("http 127.x.x.x other than 127.0.0.1 is valid (real loopback IP)", "http://127.5.5.5:11434/v1", true),
         Case("http IPv6 loopback is valid", "http://[::1]:11434/v1", true),
         Case("http non-loopback host is invalid", "http://example.com/v1", false),
         Case("http non-loopback IP is invalid", "http://192.168.1.5:11434/v1", false),
         // MA6 regression: a crafted hostname that merely starts with "127." must not be
-        // treated as loopback — DNS would resolve it to an attacker-controlled server.
+        // treated as loopback — DNS would resolve it to an attacker-controlled server. This is
+        // rejected by real IP parsing (5 dot-separated segments, not 4), not a string-prefix
+        // match, so it stays rejected even though 127.5.5.5-style genuine IPs are now accepted.
         Case(
             "http hostname crafted to look like a loopback IP is invalid (MA6 bypass)",
             "http://127.0.0.1.attacker.example/v1",
             false,
         ),
+        Case("http non-numeric octet is invalid", "http://127.0.0.abc/v1", false),
+        Case("http out-of-range octet is invalid", "http://127.0.0.999/v1", false),
     )
 
     @Test

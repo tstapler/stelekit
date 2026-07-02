@@ -300,6 +300,7 @@ fun PageView(
                                         val blocksForRun = blocks
                                         pageViewScope.launch {
                                             llmSynthesisService.synthesizeForPage(graphIdForRun, page, blocksForRun)
+                                                .onLeft { error -> viewModel.sendSnackbar(error.message) }
                                         }
                                     }
                                 )

@@ -45,7 +45,7 @@ class OpenAiLlmFormatterProvider(
         require(baseUrl.startsWith("https://") || (allowInsecureHttp && isLoopbackHttpUrl(baseUrl))) {
             "baseUrl must use HTTPS, or HTTP to a loopback host with allowInsecureHttp=true"
         }
-        completionsUrl = "$baseUrl/v1/chat/completions"
+        completionsUrl = "${LlmProviderSupport.normalizeBaseUrl(baseUrl)}/v1/chat/completions"
     }
 
     fun close() = httpClient.close()

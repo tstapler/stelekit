@@ -23,11 +23,13 @@ interface CredentialAccess {
     fun isAvailable(): Boolean = true
 
     /**
-     * Synchronous, durable-before-return write. Default implementation delegates to [store],
-     * which is correct as-is for every implementation whose underlying write is already
-     * synchronous (JVM file I/O, iOS Keychain, the wasmJs no-op stub, and the vault-backed
-     * store). Only [AndroidCredentialStore] overrides this with a genuinely different
-     * durability contract — see its kdoc for why.
+     * Synchronous, durable-before-return write. Default implementation delegates to [store]
+     * and then verifies the value round-trips via [retrieve] before reporting success — this
+     * is correct as-is for every implementation whose underlying write is already synchronous
+     * (JVM file I/O, iOS Keychain, the vault-backed store), and it also correctly reports
+     * `false` for a no-op/non-persisting backend (e.g. the wasmJs stub), rather than falsely
+     * claiming durability for a write that never actually happened. Only [AndroidCredentialStore]
+     * overrides this with a genuinely different durability contract — see its kdoc for why.
      *
      * **Migration-only.** Not intended for interactive credential entry call sites, which
      * should continue to use [store]'s fire-and-forget semantics.
@@ -37,6 +39,6 @@ interface CredentialAccess {
      */
     fun storeBlocking(key: String, value: String): Boolean {
         store(key, value)
-        return true
+        return retrieve(key) == value
     }
 }

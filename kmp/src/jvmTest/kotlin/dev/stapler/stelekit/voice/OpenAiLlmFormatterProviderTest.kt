@@ -107,6 +107,18 @@ class OpenAiLlmFormatterProviderTest {
     }
 
     @Test
+    fun `baseUrl with trailing v1 does not double-append v1`() = runTest {
+        var capturedUrl = ""
+        val engine = MockEngine { request ->
+            capturedUrl = request.url.toString()
+            respond(validResponse, HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+        }
+        buildProvider(engine, "http://localhost:11434/v1", allowInsecureHttp = true)
+            .format("transcript", "prompt")
+        assertEquals("http://localhost:11434/v1/chat/completions", capturedUrl)
+    }
+
+    @Test
     fun `request includes Authorization header`() = runTest {
         var capturedAuth = ""
         val engine = MockEngine { request ->

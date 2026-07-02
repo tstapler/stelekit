@@ -62,6 +62,17 @@ class CustomOpenAiCompatibleLlmProviderTest {
     }
 
     @Test
+    fun `checkAvailability_should_NotDoubleAppendV1_When_BaseUrlAlreadyEndsWithV1`() = runTest {
+        var capturedUrl = ""
+        val engine = MockEngine { request ->
+            capturedUrl = request.url.toString()
+            respond("""{"object":"list","data":[]}""", HttpStatusCode.OK, headersOf("Content-Type", "application/json"))
+        }
+        buildProvider(engine, config = config(baseUrl = "http://localhost:11434/v1")).checkAvailability()
+        assertEquals("http://localhost:11434/v1/models", capturedUrl)
+    }
+
+    @Test
     fun `checkAvailability_should_ReturnUnavailableRetryable_When_ConnectionRefused`() = runTest {
         val engine = MockEngine { throw java.io.IOException("Connection refused") }
         val result = buildProvider(engine).checkAvailability()
