@@ -45,6 +45,21 @@ object MigrationRunner {
     ) {
         /** FNV-1a-64 digest of all statements joined with newlines. */
         val hash: String = fnv1a64(statements.joinToString("\n"))
+
+        init {
+            // Raw transaction control (BEGIN/COMMIT/ROLLBACK) cannot be used in migration
+            // statements. MigrationRunner.applyAll() issues each statement via driver.execute(),
+            // which acquires a potentially different pooled connection per call. BEGIN on
+            // connection A holds the SQLite write lock; subsequent DDL on connection B–N then
+            // waits busy_timeout (10 s each) — causing a cascade hang that matches the test
+            // timeout exactly. Use auto-committing DDL statements only.
+            val txKeywords = setOf("begin", "commit", "rollback")
+            val bad = statements.filter { it.trim().lowercase() in txKeywords }
+            require(bad.isEmpty()) {
+                "Migration '$name': raw transaction control statement(s) detected: $bad. " +
+                "These deadlock pooled-connection drivers — use auto-committing DDL only."
+            }
+        }
     }
 
     val all: List<Migration> = listOf(
