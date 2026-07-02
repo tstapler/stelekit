@@ -708,15 +708,16 @@ object MigrationRunner {
             // DROP INDEX sqlite_autoindex_pages_1 is unsafe. Instead: create new table, copy,
             // drop old, rename. FTS5 triggers (pages_ai/ad/au) are recreated by
             // ensureFts5TriggerState() after applyAll() completes.
+            //
+            // Do NOT wrap these statements in raw BEGIN/COMMIT. MigrationRunner executes each
+            // statement via driver.execute(), which acquires a pooled connection per call. A raw
+            // BEGIN on connection A followed by DDL on connection B deadlocks: B waits 10 s for
+            // A's write lock (busy_timeout), causing a cascade that hangs the full migration init.
+            //
+            // allowContentUpdate: original version wrapped statements in BEGIN/COMMIT which
+            // caused the above deadlock; hash was updated to remove that wrapper.
+            allowContentUpdate = true,
             statements = listOf(
-                // PRAGMA foreign_keys=OFF/ON is included for consistency with other copy-alter migrations
-                // in this file, even though pages has no FK references from other tables. The BEGIN/COMMIT
-                // make the rename atomic (rollback on crash); foreign_keys=OFF avoids trigger conflicts.
-                "PRAGMA foreign_keys=OFF",
-                // BEGIN makes the copy-alter sequence atomic: if interrupted between DROP TABLE
-                // pages and RENAME pages_new, SQLite rolls back on next open instead of leaving
-                // a corrupted (missing) pages table.
-                "BEGIN",
                 "DROP TABLE IF EXISTS pages_new",
                 """
                 CREATE TABLE IF NOT EXISTS pages_new (
@@ -747,9 +748,6 @@ object MigrationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_pages_favorite ON pages(name) WHERE is_favorite = 1",
                 "CREATE INDEX IF NOT EXISTS idx_pages_unloaded ON pages(uuid) WHERE is_content_loaded = 0",
                 "CREATE INDEX IF NOT EXISTS idx_pages_journal_section ON pages(is_journal, journal_date, section_id)",
-                "COMMIT",
-                "PRAGMA foreign_keys=ON",
-                "ANALYZE pages",
             )
         ),
         Migration(
