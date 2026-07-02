@@ -43,6 +43,14 @@ class LlmTagProvider(
                     is LlmResult.Failure.NetworkError -> DomainError.NetworkError.RequestFailed(
                         "Network error"
                     ).left()
+                    // Epic 5 (iOS on-device): guardrail content rejection. Tag suggestion has no
+                    // dedicated DomainError case for this yet (contract intentionally unchanged
+                    // — see validation.md's Integration/Regression Tests list) — map to
+                    // RequestFailed like other non-retryable provider failures, preserving the
+                    // reason for diagnostics.
+                    is LlmResult.Failure.ContentRejected -> DomainError.NetworkError.RequestFailed(
+                        "Content rejected: ${result.reason}"
+                    ).left()
                 }
             }
         } catch (e: TimeoutCancellationException) {

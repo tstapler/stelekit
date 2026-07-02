@@ -1,0 +1,15 @@
+# Story 5.2 (Epic 5, llm-service): cinterop smoke-test .def for the no-op PingShim.
+#
+# Binds against PingShim's Clang module (Xcode auto-generates its module map + -Swift.h
+# interface header when the PingShim Xcode framework target builds — see iosApp/README.md
+# for the exact xcodebuild invocation that must run BEFORE this cinterop task). The
+# `-F<path>` framework search path is supplied per-target from kmp/build.gradle.kts's
+# `cinterops { create("PingShim") { compilerOpts(...) } }` block, not hardcoded here, since
+# it differs between iosArm64 (device) and iosSimulatorArm64/iosX64 (simulator) builds.
+#
+# NOT verified in this environment (Linux sandbox, no Xcode/cinterop toolchain available) —
+# see Task 5.2c in iosApp/README.md for the required manual verification.
+
+language = Objective-C
+modules = PingShim
+package = shim.ping
