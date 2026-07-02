@@ -17,8 +17,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import io.ktor.utils.io.errors.IOException
-import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
 
 /**
  * OpenAI-compatible chat-completions provider. Also covers any vendor implementing the same
@@ -55,12 +53,8 @@ class OpenAiLlmFormatterProvider(
     companion object {
         private const val OPENAI_MODEL = "gpt-4o-mini"
 
-        fun defaultCircuitBreaker(): CircuitBreaker = CircuitBreaker(
-            openingStrategy = CircuitBreaker.OpeningStrategy.Count(maxFailures = 3),
-            resetTimeout = 30.seconds,
-            exponentialBackoffFactor = 2.0,
-            maxResetTimeout = 5.minutes,
-        )
+        /** Delegates to the shared definition in [LlmProviderSupport] (MA4) — see that function's kdoc. */
+        fun defaultCircuitBreaker(): CircuitBreaker = LlmProviderSupport.defaultCircuitBreaker()
 
         fun withDefaults(apiKey: String, baseUrl: String = "https://api.openai.com"): OpenAiLlmFormatterProvider {
             val client = HttpClient {
@@ -72,6 +66,9 @@ class OpenAiLlmFormatterProvider(
         /**
          * `true` only for `http://` URLs whose host is a loopback address
          * (`localhost`, `127.0.0.1`, `[::1]`) — never a blanket "any HTTP allowed" check.
+         * Delegates the actual host comparison to [LlmProviderSupport.isLoopbackHost] (MA6) —
+         * the single shared exact-match implementation, also used by
+         * [dev.stapler.stelekit.llm.CustomProviderUrlValidation].
          */
         internal fun isLoopbackHttpUrl(url: String): Boolean {
             if (!url.startsWith("http://")) return false
@@ -81,7 +78,7 @@ class OpenAiLlmFormatterProvider(
             } else {
                 authority.substringBefore(":")
             }
-            return host == "localhost" || host == "127.0.0.1" || host == "::1"
+            return LlmProviderSupport.isLoopbackHost(host)
         }
     }
 

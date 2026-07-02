@@ -66,9 +66,11 @@ sealed interface FetchModelsResult {
  * [fetchModels] both populates the model dropdown and doubles as connectivity validation
  * (Obsidian AI Providers pattern, per features research §1) — resolves requirements Open
  * Question 2. It is injected rather than calling `CustomOpenAiCompatibleLlmProvider` directly
- * because that provider type ships in Epic 3, which has not landed yet; the default
- * implementation below returns a clear "not yet available" failure without blocking manual
- * model-name entry as a fallback (per Story 6.3 acceptance criteria).
+ * so this file stays UI-only and testable without a real HTTP client; production call sites
+ * (`LlmProviderSettings.kt`) wire the real `CustomOpenAiCompatibleLlmProvider.fetchAvailableModels`
+ * implementation through. The default implementation below is only a fallback for callers (and
+ * tests) that don't supply one — it returns a clear "not yet available" failure without
+ * blocking manual model-name entry (per Story 6.3 acceptance criteria).
  */
 @Composable
 fun AddEditLlmProviderDialog(

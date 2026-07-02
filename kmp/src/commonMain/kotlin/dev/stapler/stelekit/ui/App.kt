@@ -448,8 +448,8 @@ private fun GraphContent(
     // the provider list in sync within a session without adding a new observable layer.
     var llmRegistryRefreshToken by remember { androidx.compose.runtime.mutableStateOf(0) }
     val llmSettings = remember(platformSettings) { dev.stapler.stelekit.llm.LlmSettings(platformSettings) }
-    val llmProviderRegistry = remember(llmCredentialStore, llmRegistryRefreshToken) {
-        dev.stapler.stelekit.llm.buildLlmProviderRegistry(llmCredentialStore)
+    val llmProviderRegistry = remember(llmCredentialStore, llmSettings, llmRegistryRefreshToken) {
+        dev.stapler.stelekit.llm.buildLlmProviderRegistry(llmCredentialStore, llmSettings)
     }
 
     // One-shot migrations (Epic 2 Story 2.3 credential migration; Epic 8 Story 8.1b voice

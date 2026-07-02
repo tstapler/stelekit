@@ -36,6 +36,7 @@ class LlmSynthesisService(
     private val registry: LlmProviderRegistry,
     private val contextBuilder: LlmSynthesisContextBuilder,
     private val inbox: LlmSuggestionInbox,
+    private val llmSettings: LlmSettings,
 ) {
     companion object {
         /** Caps proposals surfaced per synthesis run — reduces queue volume at the source
@@ -52,16 +53,29 @@ class LlmSynthesisService(
         currentPageBlocks: List<Block>,
     ): Either<DomainError, Int> {
         val eligibleProviders = registry.availableForFeature(LlmFeature.GRAPH_EDIT_SYNTHESIS, excludeShortFormOnly = true)
-        if (eligibleProviders.isEmpty()) {
-            val anyAvailable = registry.availableProviders()
-            val message = if (anyAvailable.isNotEmpty()) {
-                "On-device models don't support synthesis — configure a remote provider for this feature"
-            } else {
-                "No LLM provider is configured — add one in Settings to use synthesis"
+        // Mirrors App.kt's tag-suggestion resolution and VoicePipelineFactory's voice-formatting
+        // resolution: an explicit Settings-UI selection (including the DISABLED_SENTINEL) always
+        // wins over "Auto" (first eligible provider). DISABLED_SENTINEL must be checked
+        // explicitly — LlmProviderRegistry.find() never resolves it to a real provider, so
+        // without this branch it would silently fall through to Auto.
+        val selectedId = llmSettings.getSelectedProviderId(LlmFeature.GRAPH_EDIT_SYNTHESIS)
+        val provider = when (selectedId) {
+            LlmProviderRegistry.DISABLED_SENTINEL -> null
+            null -> eligibleProviders.firstOrNull()
+            else -> registry.find(selectedId)
+        }
+        if (provider == null) {
+            val message = when {
+                selectedId == LlmProviderRegistry.DISABLED_SENTINEL ->
+                    "Graph-edit synthesis is disabled — enable a provider in Settings to use synthesis"
+                selectedId != null ->
+                    "Selected provider for synthesis is unavailable — choose another in Settings"
+                registry.availableProviders().isNotEmpty() ->
+                    "On-device models don't support synthesis — configure a remote provider for this feature"
+                else -> "No LLM provider is configured — add one in Settings to use synthesis"
             }
             return DomainError.NetworkError.RequestFailed(message).left()
         }
-        val provider = eligibleProviders.first()
 
         val contextResult = contextBuilder.build(currentPage, currentPageBlocks)
         val context = when (contextResult) {

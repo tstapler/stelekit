@@ -48,12 +48,19 @@ suspend fun buildVoicePipeline(
     val llmProvider: LlmFormatterProvider = if (!settings.getLlmEnabled()) {
         NoOpLlmFormatterProvider()
     } else {
-        val selected = llmSettings?.getSelectedProviderId(LlmFeature.VOICE_FORMATTING)
-            ?.let { registry.find(it) }
-            ?: registry.availableForFeature(LlmFeature.VOICE_FORMATTING).let { candidates ->
+        // DISABLED_SENTINEL must be checked explicitly before falling back to "Auto" — per
+        // LlmProviderRegistry.find()'s documented contract, find() never resolves the sentinel
+        // to a real provider, so a naive selected-then-Auto chain would silently re-enable
+        // voice formatting after the user explicitly disabled it. Mirrors App.kt's
+        // tag-suggestion resolution.
+        val selected = when (val selectedId = llmSettings?.getSelectedProviderId(LlmFeature.VOICE_FORMATTING)) {
+            LlmProviderRegistry.DISABLED_SENTINEL -> null
+            null -> registry.availableForFeature(LlmFeature.VOICE_FORMATTING).let { candidates ->
                 candidates.firstOrNull { it.kind == LlmProviderKind.ON_DEVICE }
                     ?: candidates.firstOrNull { it.kind == LlmProviderKind.REMOTE }
             }
+            else -> registry.find(selectedId)
+        }
         selected?.formatter ?: NoOpLlmFormatterProvider()
     }
     return VoicePipelineConfig(

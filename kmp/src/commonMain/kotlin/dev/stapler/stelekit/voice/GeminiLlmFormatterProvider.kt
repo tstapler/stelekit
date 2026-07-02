@@ -16,8 +16,6 @@ import io.ktor.utils.io.errors.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
 
 /**
  * Google Gemini REST provider, following the same raw-Ktor-REST pattern as
@@ -42,14 +40,10 @@ class GeminiLlmFormatterProvider(
 
         /**
          * Default circuit breaker: opens after 3 consecutive failures, resets after 30 seconds,
-         * with exponential backoff up to 5 minutes.
+         * with exponential backoff up to 5 minutes. Delegates to the shared definition in
+         * [LlmProviderSupport] (MA4) — see that function's kdoc.
          */
-        fun defaultCircuitBreaker(): CircuitBreaker = CircuitBreaker(
-            openingStrategy = CircuitBreaker.OpeningStrategy.Count(maxFailures = 3),
-            resetTimeout = 30.seconds,
-            exponentialBackoffFactor = 2.0,
-            maxResetTimeout = 5.minutes,
-        )
+        fun defaultCircuitBreaker(): CircuitBreaker = LlmProviderSupport.defaultCircuitBreaker()
 
         fun withDefaults(apiKey: String, model: String = "gemini-2.0-flash"): GeminiLlmFormatterProvider {
             val client = HttpClient {

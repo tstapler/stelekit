@@ -4,6 +4,7 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
+import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.voice.LlmFormatterProvider
@@ -27,6 +28,18 @@ class LlmSynthesisServiceTest {
         override suspend fun checkAvailability(): LlmProviderAvailability = LlmProviderAvailability.Available
     }
 
+    private class MapSettings : Settings {
+        private val map = mutableMapOf<String, Any>()
+        override fun getBoolean(key: String, defaultValue: Boolean) = map[key] as? Boolean ?: defaultValue
+        override fun putBoolean(key: String, value: Boolean) { map[key] = value }
+        override fun getString(key: String, defaultValue: String) = map[key] as? String ?: defaultValue
+        override fun putString(key: String, value: String) { map[key] = value }
+        override fun containsKey(key: String) = map.containsKey(key)
+    }
+
+    /** "Auto" — no explicit per-feature selection. */
+    private fun autoLlmSettings(): LlmSettings = LlmSettings(MapSettings())
+
     private val now = Clock.System.now()
 
     private fun page(name: String = "Hub") = Page(uuid = PageUuid("hub-uuid"), name = name, createdAt = now, updatedAt = now)
@@ -47,6 +60,7 @@ class LlmSynthesisServiceTest {
             LlmProviderRegistry(listOf(FakeLlmProvider("anthropic"))),
             contextBuilder(),
             LlmSuggestionInbox(),
+            autoLlmSettings(),
         )
         val currentPage = page()
         val currentBlocks = blocks("first block", "second block")
@@ -69,6 +83,7 @@ class LlmSynthesisServiceTest {
             LlmProviderRegistry(listOf(FakeLlmProvider("anthropic"))),
             contextBuilder(),
             LlmSuggestionInbox(),
+            autoLlmSettings(),
         )
         val currentPage = page()
         val currentBlocks = blocks("first block", "second block")
@@ -97,6 +112,7 @@ class LlmSynthesisServiceTest {
             LlmProviderRegistry(listOf(provider)),
             contextBuilder(),
             inbox,
+            autoLlmSettings(),
         )
         val currentPage = page()
         val currentBlocks = blocks("only block")
@@ -115,6 +131,7 @@ class LlmSynthesisServiceTest {
             LlmProviderRegistry(listOf(onDeviceProvider)),
             contextBuilder(),
             LlmSuggestionInbox(),
+            autoLlmSettings(),
         )
         val currentPage = page()
         val currentBlocks = blocks("only block")
@@ -124,5 +141,49 @@ class LlmSynthesisServiceTest {
         assertTrue(result.isLeft())
         val error = (result as arrow.core.Either.Left).value
         assertTrue(error.message.contains("on-device", ignoreCase = true) || error.message.contains("remote", ignoreCase = true))
+    }
+
+    @Test
+    fun synthesizeForPage_should_UseExplicitlySelectedProvider_When_UserHasChosenOneInSettings() = runBlocking {
+        val autoDefault = FakeLlmProvider("anthropic", response = LlmResult.Success("0|ADD:FromAuto|REMOVE:"))
+        val explicitlySelected = FakeLlmProvider("openai", response = LlmResult.Success("0|ADD:FromExplicit|REMOVE:"))
+        val settings = LlmSettings(MapSettings())
+        settings.setSelectedProviderId(LlmFeature.GRAPH_EDIT_SYNTHESIS, "openai")
+        val inbox = LlmSuggestionInbox()
+        val service = LlmSynthesisService(
+            LlmProviderRegistry(listOf(autoDefault, explicitlySelected)),
+            contextBuilder(),
+            inbox,
+            settings,
+        )
+        val currentPage = page()
+        val currentBlocks = blocks("only block")
+
+        val result = service.synthesizeForPage("graph-1", currentPage, currentBlocks)
+
+        assertTrue(result.isRight())
+        val proposal = inbox.pending.value.values.single() as PendingLlmSuggestion.TagChange
+        assertEquals(listOf("FromExplicit"), proposal.addedTerms)
+    }
+
+    @Test
+    fun synthesizeForPage_should_RefuseWithClearMessage_When_FeatureExplicitlyDisabled() = runBlocking {
+        val provider = FakeLlmProvider("anthropic")
+        val settings = LlmSettings(MapSettings())
+        settings.setSelectedProviderId(LlmFeature.GRAPH_EDIT_SYNTHESIS, LlmProviderRegistry.DISABLED_SENTINEL)
+        val service = LlmSynthesisService(
+            LlmProviderRegistry(listOf(provider)),
+            contextBuilder(),
+            LlmSuggestionInbox(),
+            settings,
+        )
+        val currentPage = page()
+        val currentBlocks = blocks("only block")
+
+        val result = service.synthesizeForPage("graph-1", currentPage, currentBlocks)
+
+        assertTrue(result.isLeft())
+        val error = (result as arrow.core.Either.Left).value
+        assertTrue(error.message.contains("disabled", ignoreCase = true))
     }
 }

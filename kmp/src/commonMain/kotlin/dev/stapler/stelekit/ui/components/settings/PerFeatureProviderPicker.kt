@@ -28,6 +28,7 @@ import dev.stapler.stelekit.llm.LlmProviderRegistry
 import dev.stapler.stelekit.llm.LlmSettings
 
 private const val AUTO_LABEL = "Auto (recommended)"
+private const val DISABLED_LABEL = "Disabled"
 
 private fun LlmFeature.displayName(): String = when (this) {
     LlmFeature.VOICE_FORMATTING -> "Voice formatting"
@@ -63,10 +64,14 @@ fun PerFeatureProviderPicker(
         )
     }
 
-    val selectedLabel = availableProviders
-        ?.firstOrNull { it.id == selectedId }
-        ?.displayName
-        ?: AUTO_LABEL
+    // MA5: DISABLED_SENTINEL must be checked explicitly and shown as its own label — without
+    // this branch, a disabled feature falls through to the `?: AUTO_LABEL` default and renders
+    // indistinguishably from "Auto", even though the two are semantically opposite (Auto uses
+    // the first available provider; Disabled uses none).
+    val selectedLabel = when (selectedId) {
+        LlmProviderRegistry.DISABLED_SENTINEL -> DISABLED_LABEL
+        else -> availableProviders?.firstOrNull { it.id == selectedId }?.displayName ?: AUTO_LABEL
+    }
 
     Column(modifier = modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text(feature.displayName(), style = MaterialTheme.typography.bodyLarge)
@@ -82,6 +87,14 @@ fun PerFeatureProviderPicker(
                     onClick = {
                         selectedId = null
                         llmSettings.setSelectedProviderId(feature, null)
+                        expanded = false
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(DISABLED_LABEL) },
+                    onClick = {
+                        selectedId = LlmProviderRegistry.DISABLED_SENTINEL
+                        llmSettings.setSelectedProviderId(feature, LlmProviderRegistry.DISABLED_SENTINEL)
                         expanded = false
                     },
                 )

@@ -26,10 +26,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import dev.stapler.stelekit.llm.CustomOpenAiCompatibleLlmProvider
+import dev.stapler.stelekit.llm.CustomProviderConfig
 import dev.stapler.stelekit.llm.LlmCredentialStore
 import dev.stapler.stelekit.llm.LlmFeature
 import dev.stapler.stelekit.llm.LlmProviderRegistry
 import dev.stapler.stelekit.llm.LlmSettings
+import io.ktor.client.HttpClient
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.serialization.kotlinx.json.json
+import kotlinx.serialization.json.Json
 
 /** Built-in remote provider types eligible for credential entry (Epic 1/2's v1 set). */
 private data class BuiltInProviderCatalogEntry(val id: String, val displayName: String)
@@ -125,6 +131,7 @@ fun LlmProviderSettings(
                 onCredentialsChange()
             },
             onCancel = { showAddCustomProvider = false },
+            fetchModels = ::fetchCustomProviderModels,
         )
     }
 
@@ -138,6 +145,7 @@ fun LlmProviderSettings(
                 onCredentialsChange()
             },
             onCancel = { editingCustomProviderId = null },
+            fetchModels = ::fetchCustomProviderModels,
         )
     }
 
@@ -209,5 +217,33 @@ private fun EditBuiltInProviderKeyDialog(
                 }
             }
         }
+    }
+}
+
+/**
+ * MA3 fix: [AddEditLlmProviderDialog]'s "Fetch models" action used to default to a hardcoded
+ * "not available yet" stub citing an unlanded Epic 3 — that epic has since landed and
+ * [CustomOpenAiCompatibleLlmProvider.fetchAvailableModels] is fully implemented. Both
+ * production call sites above now wire this real implementation through instead of relying on
+ * the dialog's stub default.
+ *
+ * Builds a throwaway [CustomOpenAiCompatibleLlmProvider] from the in-progress form fields
+ * (not yet a persisted [CustomProviderConfig] — the user may still be editing baseUrl/apiKey
+ * before saving) purely to reuse its `/v1/models` probe logic.
+ */
+private suspend fun fetchCustomProviderModels(baseUrl: String, apiKey: String?): FetchModelsResult {
+    val client = HttpClient { install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) } }
+    return try {
+        val provider = CustomOpenAiCompatibleLlmProvider(
+            config = CustomProviderConfig(id = "probe", displayName = "", baseUrl = baseUrl, model = ""),
+            apiKey = apiKey,
+            httpClient = client,
+        )
+        provider.fetchAvailableModels().fold(
+            { error -> FetchModelsResult.Failure(error.message) },
+            { models -> FetchModelsResult.Success(models) },
+        )
+    } finally {
+        client.close()
     }
 }

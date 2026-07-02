@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.llm
 
+import dev.stapler.stelekit.voice.LlmProviderSupport
+
 /**
  * Pure validation for a custom OpenAI-compatible provider's base URL (Epic 6 Story 6.3).
  *
@@ -12,8 +14,6 @@ package dev.stapler.stelekit.llm
  * (Story 6.3 acceptance criteria), rather than a silent `require()` crash deeper in the stack.
  */
 object CustomProviderUrlValidation {
-
-    private val loopbackHosts = setOf("localhost", "127.0.0.1", "::1", "[::1]")
 
     /** Returns `null` if [url] is valid, otherwise a human-readable error message. */
     fun validate(url: String): String? {
@@ -50,6 +50,12 @@ object CustomProviderUrlValidation {
         return host.ifBlank { null }
     }
 
-    private fun isLoopbackHost(host: String): Boolean =
-        host in loopbackHosts || host.startsWith("127.")
+    /**
+     * MA6: delegates to the single shared exact-match implementation in
+     * [LlmProviderSupport.isLoopbackHost] — previously this used a `host.startsWith("127.")`
+     * prefix check, which incorrectly accepted a crafted hostname such as
+     * `127.0.0.1.attacker.example` as "loopback" (DNS would actually resolve it to an
+     * attacker-controlled server).
+     */
+    private fun isLoopbackHost(host: String): Boolean = LlmProviderSupport.isLoopbackHost(host)
 }

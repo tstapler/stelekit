@@ -150,4 +150,21 @@ class VoicePipelineFactoryTest {
         val config = buildVoicePipeline(NoOpAudioRecorder(), settings)
         assertIs<NoOpLlmFormatterProvider>(config.llmProvider)
     }
+
+    @Test
+    fun `DISABLED_SENTINEL does not fall back to Auto`() = runTest {
+        // MA1 regression: LlmProviderRegistry.find() never resolves DISABLED_SENTINEL to a real
+        // provider, so a naive "selected ?: Auto" chain would silently re-enable voice
+        // formatting via Auto's on-device/remote fallback after the user explicitly disabled it.
+        val settings = VoiceSettings(MapSettings())
+        val onDevice = FakeProvider("android-ondevice", LlmProviderKind.ON_DEVICE)
+        val remote = FakeProvider("anthropic", LlmProviderKind.REMOTE)
+        val registry = LlmProviderRegistry(listOf(remote, onDevice))
+        val llmSettings = LlmSettings(MapSettings())
+        llmSettings.setSelectedProviderId(LlmFeature.VOICE_FORMATTING, LlmProviderRegistry.DISABLED_SENTINEL)
+
+        val config = buildVoicePipeline(NoOpAudioRecorder(), settings, registry = registry, llmSettings = llmSettings)
+
+        assertIs<NoOpLlmFormatterProvider>(config.llmProvider)
+    }
 }

@@ -114,4 +114,57 @@ class PerFeatureProviderPickerTest {
 
         assert(llmSettings.getSelectedProviderId(LlmFeature.VOICE_FORMATTING) == "anthropic")
     }
+
+    @Test
+    fun picker_should_ShowDisabledOption_And_PersistSentinel_When_Selected() {
+        // MA5 regression coverage.
+        val remote = FakeProvider("anthropic", "Anthropic Claude")
+        val registry = LlmProviderRegistry(listOf(remote))
+        val llmSettings = LlmSettings(InMemorySettings())
+
+        composeTestRule.setContent {
+            MaterialTheme {
+                PerFeatureProviderPicker(
+                    feature = LlmFeature.VOICE_FORMATTING,
+                    registry = registry,
+                    llmSettings = llmSettings,
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Auto (recommended)").performClick()
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithText("Disabled").performClick()
+        composeTestRule.waitForIdle()
+
+        assert(llmSettings.getSelectedProviderId(LlmFeature.VOICE_FORMATTING) == LlmProviderRegistry.DISABLED_SENTINEL)
+        // The picker's own button label must now read "Disabled", not fall through to "Auto".
+        composeTestRule.onNodeWithText("Disabled").assertExists()
+    }
+
+    @Test
+    fun picker_should_ShowDisabledLabel_When_ReopenedAfterFeatureAlreadyDisabled() {
+        // Distinguishes DISABLED_SENTINEL from Auto on initial composition (not just
+        // immediately after clicking) — e.g. after Story 8.2b's existing-install migration set
+        // the sentinel before this composable was ever mounted.
+        val remote = FakeProvider("anthropic", "Anthropic Claude")
+        val registry = LlmProviderRegistry(listOf(remote))
+        val llmSettings = LlmSettings(InMemorySettings())
+        llmSettings.setSelectedProviderId(LlmFeature.TAG_SUGGESTION, LlmProviderRegistry.DISABLED_SENTINEL)
+
+        composeTestRule.setContent {
+            MaterialTheme {
+                PerFeatureProviderPicker(
+                    feature = LlmFeature.TAG_SUGGESTION,
+                    registry = registry,
+                    llmSettings = llmSettings,
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithText("Disabled").assertExists()
+        composeTestRule.onNodeWithText("Auto (recommended)").assertDoesNotExist()
+    }
 }
