@@ -20,17 +20,33 @@ import io.ktor.utils.io.errors.IOException
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
+/**
+ * OpenAI-compatible chat-completions provider. Also covers any vendor implementing the same
+ * `/v1/chat/completions` wire shape — Ollama, LM Studio, OpenRouter, and current-generation
+ * (v1-GA) Azure OpenAI — via [model] and [baseUrl] ([CustomOpenAiCompatibleLlmProvider] wraps
+ * this class for that use case; legacy pre-v1-GA Azure OpenAI's deployment-path/api-key auth
+ * scheme is out of scope, see that class's kdoc).
+ *
+ * [allowInsecureHttp] relaxes the HTTPS-only guard for loopback hosts only (`localhost`,
+ * `127.0.0.1`, `[::1]`) — e.g. a local Ollama/LM Studio instance. A non-loopback HTTP endpoint
+ * is always rejected, flag or not; this is the security-relevant scope boundary that prevents
+ * leaking an API key over plaintext to a non-local host.
+ */
 class OpenAiLlmFormatterProvider(
     private val httpClient: HttpClient,
     private val apiKey: String,
     baseUrl: String = "https://api.openai.com",
+    private val model: String = OPENAI_MODEL,
+    private val allowInsecureHttp: Boolean = false,
     private val circuitBreaker: CircuitBreaker = defaultCircuitBreaker(),
 ) : LlmFormatterProvider {
 
     private val completionsUrl: String
 
     init {
-        require(baseUrl.startsWith("https://")) { "baseUrl must use HTTPS" }
+        require(baseUrl.startsWith("https://") || (allowInsecureHttp && isLoopbackHttpUrl(baseUrl))) {
+            "baseUrl must use HTTPS, or HTTP to a loopback host with allowInsecureHttp=true"
+        }
         completionsUrl = "$baseUrl/v1/chat/completions"
     }
 
@@ -52,6 +68,21 @@ class OpenAiLlmFormatterProvider(
             }
             return OpenAiLlmFormatterProvider(client, apiKey, baseUrl)
         }
+
+        /**
+         * `true` only for `http://` URLs whose host is a loopback address
+         * (`localhost`, `127.0.0.1`, `[::1]`) — never a blanket "any HTTP allowed" check.
+         */
+        internal fun isLoopbackHttpUrl(url: String): Boolean {
+            if (!url.startsWith("http://")) return false
+            val authority = url.removePrefix("http://").substringBefore("/")
+            val host = if (authority.startsWith("[")) {
+                authority.substringBefore("]").removePrefix("[")
+            } else {
+                authority.substringBefore(":")
+            }
+            return host == "localhost" || host == "127.0.0.1" || host == "::1"
+        }
     }
 
     override suspend fun format(transcript: String, systemPrompt: String): LlmResult {
@@ -67,13 +98,15 @@ class OpenAiLlmFormatterProvider(
     private suspend fun httpCallInternal(systemPrompt: String, maxTokens: Int): LlmResult {
         return try {
             val response = httpClient.post(completionsUrl) {
-                headers {
-                    append(HttpHeaders.Authorization, "Bearer $apiKey")
+                if (apiKey.isNotBlank()) {
+                    headers {
+                        append(HttpHeaders.Authorization, "Bearer $apiKey")
+                    }
                 }
                 contentType(ContentType.Application.Json)
                 setBody(
                     OpenAiRequest(
-                        model = OPENAI_MODEL,
+                        model = model,
                         maxTokens = maxTokens,
                         messages = listOf(
                             // systemPrompt already contains the transcript via {{TRANSCRIPT}} substitution;
