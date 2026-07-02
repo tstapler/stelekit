@@ -562,7 +562,7 @@ private fun GraphContent(
             configRepository = gitConfigRepository,
             networkMonitor = networkMonitor,
             fileSystem = fileSystem,
-            credentialAccessProvider = { vaultCredentialStore ?: dev.stapler.stelekit.git.CredentialStore() },
+            credentialAccessProvider = { vaultCredentialStore ?: dev.stapler.stelekit.platform.security.CredentialStore() },
         )
     }
     DisposableEffect(gitSyncService) {
@@ -712,7 +712,7 @@ private fun GraphContent(
                 graphWriter.closeAndClearCryptoLayer()
                 vaultCredentialStore?.onVaultLocked()
                 // Revert git repository to PBKDF2 fallback store
-                gitRepository?.setCredentialAccess(dev.stapler.stelekit.git.CredentialStore())
+                gitRepository?.setCredentialAccess(dev.stapler.stelekit.platform.security.CredentialStore())
                 vaultState = VaultState.Locked   // show lock/unlock screen; gates graph content
             }
         }
@@ -746,7 +746,7 @@ private fun GraphContent(
                     graphWriter.setCryptoLayer(layer)
                     vaultCredentialStore?.onVaultUnlocked(unlockResult.dek)
                     // Swap git repository credential access to vault store
-                    gitRepository?.setCredentialAccess(vaultCredentialStore ?: dev.stapler.stelekit.git.CredentialStore())
+                    gitRepository?.setCredentialAccess(vaultCredentialStore ?: dev.stapler.stelekit.platform.security.CredentialStore())
                     // CryptoLayer must be injected before vaultState triggers graph load via LaunchedEffect
                     vaultState = VaultState.Unlocked(unlockResult.namespace)
                 }
@@ -777,12 +777,12 @@ private fun GraphContent(
                         graphWriter.setCryptoLayer(layer)
                         vaultCredentialStore?.onVaultUnlocked(unlockResult.dek)
                         // Swap git repository credential access to vault store
-                        gitRepository?.setCredentialAccess(vaultCredentialStore ?: dev.stapler.stelekit.git.CredentialStore())
+                        gitRepository?.setCredentialAccess(vaultCredentialStore ?: dev.stapler.stelekit.platform.security.CredentialStore())
                         // Migrate existing credentials from PBKDF2 store into vault
                         val graphId = graphManager.getActiveGraphId() ?: ""
                         if (graphId.isNotEmpty()) {
                             vaultCredentialStore?.migrateFrom(
-                                source = dev.stapler.stelekit.git.CredentialStore(),
+                                source = dev.stapler.stelekit.platform.security.CredentialStore(),
                                 keys = listOf("git_https_token_$graphId", "git_ssh_passphrase_$graphId"),
                             )
                         }

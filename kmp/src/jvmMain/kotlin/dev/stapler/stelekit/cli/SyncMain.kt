@@ -5,12 +5,12 @@ import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.buildCommitMessage
-import dev.stapler.stelekit.git.CredentialStore
 import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.git.JvmGitRepository
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking

@@ -13,6 +13,8 @@ import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.ConflictHunk
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.platform.security.CredentialAccess
+import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
@@ -32,7 +34,7 @@ import java.time.Instant
  * All I/O runs on PlatformDispatcher.IO.
  */
 class JvmGitRepository(
-    credentialAccess: dev.stapler.stelekit.git.CredentialAccess = CredentialStore(),
+    credentialAccess: CredentialAccess = CredentialStore(),
 ) : GitRepository {
 
     private val logger = Logger("JvmGitRepository")
@@ -42,7 +44,7 @@ class JvmGitRepository(
      * and the vault is unlocked, or back to [CredentialStore] (PBKDF2) when locked.
      * @Volatile ensures visibility across the IO dispatcher thread pool.
      */
-    @Volatile var credentialAccess: dev.stapler.stelekit.git.CredentialAccess = credentialAccess
+    @Volatile var credentialAccess: CredentialAccess = credentialAccess
         internal set
 
     override fun setCredentialAccess(access: CredentialAccess) { credentialAccess = access }
