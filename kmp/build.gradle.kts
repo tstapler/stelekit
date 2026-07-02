@@ -93,8 +93,6 @@ kotlin {
                 // Okio — cross-platform file I/O for asset management
                 implementation("com.squareup.okio:okio:3.17.0")
 
-                // ktoml — TOML parsing for .stele-sections manifest
-                implementation("com.akuleshov7:ktoml-core:0.7.1")
             }
         }
 
@@ -103,6 +101,9 @@ kotlin {
             dependencies {
                 // OpenTelemetry API — JVM/Android only (not available for wasmJs)
                 implementation("io.opentelemetry:opentelemetry-api:1.43.0")
+                // ktoml — TOML parsing for .stele-sections manifest (excluded from wasmJs:
+                // ktoml generates WASM bytecode that fails wasm-opt validation)
+                implementation("com.akuleshov7:ktoml-core:0.7.1")
             }
         }
 
@@ -313,6 +314,10 @@ kotlin {
 
                 // Kable — Kotlin coroutine BLE for iOS/Apple targets (CoreBluetooth wrapper)
                 implementation("com.juul.kable:core:0.32.0")
+
+                // ktoml — TOML parsing for .stele-sections manifest (actual impl for iOS;
+                // excluded from commonMain to avoid invalid WASM bytecode on wasmJs target)
+                implementation("com.akuleshov7:ktoml-core:0.7.1")
             }
         }
 

@@ -3,14 +3,9 @@ package dev.stapler.stelekit.sections
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
-import com.akuleshov7.ktoml.Toml
-import com.akuleshov7.ktoml.TomlInputConfig
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.platform.FileSystem
 import kotlinx.coroutines.CancellationException
-import kotlinx.serialization.serializer
-
-internal val sectionToml = Toml(inputConfig = TomlInputConfig(ignoreUnknownNames = true))
 
 class SectionManifestParser(private val fileSystem: FileSystem) {
 
@@ -23,7 +18,7 @@ class SectionManifestParser(private val fileSystem: FileSystem) {
             ?: return DomainError.FileSystemError.ReadFailed(path, "could not read manifest").left()
 
         return try {
-            sectionToml.decodeFromString(serializer<SectionManifest>(), content).right()
+            (decodeSectionManifestToml(content) ?: SectionManifest()).right()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -31,3 +26,7 @@ class SectionManifestParser(private val fileSystem: FileSystem) {
         }
     }
 }
+
+// ktoml doesn't support Kotlin/Wasm — platform actuals provide real parsing on JVM/iOS,
+// null on WASM (caller falls back to empty SectionManifest).
+internal expect fun decodeSectionManifestToml(content: String): SectionManifest?
