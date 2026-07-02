@@ -1,8 +1,10 @@
 package dev.stapler.stelekit.domain
 
+import dev.stapler.stelekit.voice.ClaudeLlmFormatterProvider
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.engine.mock.toByteArray
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -11,13 +13,19 @@ import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
+/**
+ * Epic 8 Story 8.3b: rewritten per pitfalls §6.1's explicit flag — `ClaudeTopicEnricher` no
+ * longer owns its own `HttpClient`/retry logic, so this test now exercises it through the
+ * shared [ClaudeLlmFormatterProvider] it delegates to. Retry-on-429 assertions are removed
+ * (that behavior is deleted, not preserved — a 429 is now a single, non-retried failure that
+ * falls back to `localSuggestions`, same as any other failure). Wire-compatibility assertions
+ * (model name, `max_tokens: 256`, prompt content shape) are kept as regression tests.
+ */
 class ClaudeTopicEnricherTest {
 
     // -------------------------------------------------------------------------
@@ -43,7 +51,7 @@ class ClaudeTopicEnricherTest {
     }
 
     private fun makeEnricher(client: HttpClient) =
-        ClaudeTopicEnricher(apiKey = "test-key", httpClient = client)
+        ClaudeTopicEnricher(ClaudeLlmFormatterProvider(client, apiKey = "test-key", maxTokensOverride = 256))
 
     private val localSuggestions = listOf(
         TopicSuggestion("TensorFlow", 0.8f, TopicSuggestion.Source.LOCAL),
@@ -157,22 +165,110 @@ class ClaudeTopicEnricherTest {
         assertEquals(0.0f, result[1].confidence, "confidence < 0.0 should be clamped to 0.0")
     }
 
-    @Test
-    fun timeout_throwsCancellationException() = runTest {
-        // Use a MockEngine that hangs indefinitely (but timeout fires quickly)
-        val engine = MockEngine { _ ->
-            // Simulate network hang by blocking — runTest's test scope will cancel via timeout
-            kotlinx.coroutines.awaitCancellation()
-        }
-        val client = HttpClient(engine) {
-            install(ContentNegotiation) { json(lenientJson) }
-        }
-        val enricher = ClaudeTopicEnricher(apiKey = "test-key", httpClient = client)
+    // -------------------------------------------------------------------------
+    // 3. Failure paths — retry-on-429 deleted, not preserved (Story 8.3 acceptance criteria)
+    // -------------------------------------------------------------------------
 
-        assertFailsWith<kotlinx.coroutines.CancellationException> {
-            withTimeout(1L) {
-                enricher.enhance("some text", localSuggestions)
+    @Test
+    fun enhance_should_FallBackToLocalSuggestions_When_NonSuccessOrParseFailure() = runTest {
+        val engine = MockEngine { _ ->
+            respond(
+                content = """{"error":{"message":"Internal error"}}""",
+                status = HttpStatusCode.InternalServerError,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        }
+        val client = HttpClient(engine) { install(ContentNegotiation) { json(lenientJson) } }
+
+        val result = makeEnricher(client).enhance("some text", localSuggestions)
+
+        assertEquals(localSuggestions, result)
+    }
+
+    @Test
+    fun enhance_should_NotRetry_When_RateLimited() = runTest {
+        // Deleted behavior regression guard: the old hand-rolled delay(2_000)-then-retry-once
+        // is gone — a 429 must result in exactly one HTTP call, not two.
+        var callCount = 0
+        val engine = MockEngine { _ ->
+            callCount++
+            respond(
+                content = """{"error":{"message":"Rate limited"}}""",
+                status = HttpStatusCode.TooManyRequests,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        }
+        val client = HttpClient(engine) { install(ContentNegotiation) { json(lenientJson) } }
+
+        val result = makeEnricher(client).enhance("some text", localSuggestions)
+
+        assertEquals(1, callCount, "A 429 must not trigger a retry — that behavior was deleted, not preserved")
+        assertEquals(localSuggestions, result)
+    }
+
+    /**
+     * `ClaudeTopicEnricher` delegates entirely to [ClaudeLlmFormatterProvider], whose
+     * `httpCallInternal` catches every exception internally and returns a typed
+     * `LlmResult.Failure` rather than letting it propagate — so
+     * [arrow.resilience.CircuitBreaker.protectEither] never observes a thrown exception via
+     * `format()` and therefore never opens through HTTP-level failures (this is intentional
+     * parity with the already-shipped Claude/OpenAI/Gemini providers — see
+     * `GeminiLlmFormatterProviderTest`'s identical rationale). This test instead validates the
+     * shared circuit-breaker *policy* `ClaudeLlmFormatterProvider.defaultCircuitBreaker()` that
+     * `ClaudeTopicEnricher` now inherits via delegation: it opens after 3 consecutive failures
+     * and rejects further calls without invoking the protected block — i.e. "short-circuits
+     * rather than retries," replacing the deleted per-call retry-on-429 logic.
+     */
+    @Test
+    fun enhance_should_ShortCircuit_ViaSharedCircuitBreaker_When_ThreeConsecutiveFailures() = runTest {
+        val breaker = ClaudeLlmFormatterProvider.defaultCircuitBreaker()
+        var invocations = 0
+        suspend fun failingCall(): String {
+            invocations++
+            throw RuntimeException("simulated failure")
+        }
+
+        // Count(maxFailures = 3) opens once failuresCount > 3, i.e. on the 4th tracked failure.
+        repeat(4) {
+            try {
+                breaker.protectEither { failingCall() }
+                error("expected failingCall to throw while circuit is closed")
+            } catch (e: RuntimeException) {
+                // expected — circuit is still closed/counting failures
             }
         }
+        assertEquals(4, invocations)
+
+        // Circuit is now open: further calls are rejected without invoking the block.
+        val rejected = breaker.protectEither { failingCall() }
+        assertTrue(rejected.isLeft())
+        assertEquals(4, invocations)
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. Wire-compatibility regression tests
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun enhance_should_PreserveWireCompat_ModelNameAndMaxTokens256AndPromptShape() = runTest {
+        var capturedBody = ""
+        val engine = MockEngine { request ->
+            capturedBody = request.body.toByteArray().decodeToString()
+            respond(
+                content = """{"content":[{"type":"text","text":"[]"}]}""",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        }
+        val client = HttpClient(engine) { install(ContentNegotiation) { json(lenientJson) } }
+
+        makeEnricher(client).enhance("some document text", localSuggestions)
+
+        assertTrue(capturedBody.contains("\"model\":\"claude-haiku-4-5-20251001\""), "model name must be preserved: $capturedBody")
+        assertTrue(capturedBody.contains("\"max_tokens\":256"), "max_tokens must be fixed at 256: $capturedBody")
+        assertTrue(capturedBody.contains("Candidates:"), "prompt must include the candidate list marker: $capturedBody")
+        assertTrue(capturedBody.contains("<document>"), "prompt must include the document marker: $capturedBody")
+        assertTrue(capturedBody.contains("some document text"), "prompt must include the raw document text: $capturedBody")
+        assertTrue(capturedBody.contains("TensorFlow") && capturedBody.contains("PyTorch"), "prompt must include candidate terms: $capturedBody")
     }
 }

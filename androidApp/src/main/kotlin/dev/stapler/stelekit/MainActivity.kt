@@ -16,12 +16,19 @@ import androidx.core.content.ContextCompat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.domain.UrlFetcherAndroid
+import dev.stapler.stelekit.llm.LlmCredentialStore
+import dev.stapler.stelekit.llm.LlmProviderAvailability
+import dev.stapler.stelekit.llm.LlmProviderKind
+import dev.stapler.stelekit.llm.LlmSettings
+import dev.stapler.stelekit.llm.buildLlmProviderRegistry
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
+import dev.stapler.stelekit.platform.security.CredentialStore
 import dev.stapler.stelekit.git.AndroidGitRepository
 import dev.stapler.stelekit.git.GitSyncServiceRegistry
 import dev.stapler.stelekit.service.rememberAndroidMediaAttachmentService
@@ -34,7 +41,7 @@ import dev.stapler.stelekit.performance.OtelProvider
 import dev.stapler.stelekit.performance.createAndroidSpanRecorder
 import dev.stapler.stelekit.voice.AndroidAudioRecorder
 import dev.stapler.stelekit.voice.AndroidSpeechRecognizerProvider
-import dev.stapler.stelekit.voice.MlKitLlmFormatterProvider
+import dev.stapler.stelekit.voice.VoicePipelineConfig
 import dev.stapler.stelekit.voice.VoiceSettings
 import dev.stapler.stelekit.voice.buildVoicePipeline
 import dev.stapler.stelekit.platform.google.AndroidGoogleAuthManager
@@ -242,20 +249,40 @@ class MainActivity : ComponentActivity() {
                     this@MainActivity::requestMicrophonePermission,
                 ) else null
             }
-            val mlKitProvider = remember { MlKitLlmFormatterProvider.create() }
-            var deviceLlmAvailable by remember { mutableStateOf(false) }
-            LaunchedEffect(Unit) {
-                deviceLlmAvailable = mlKitProvider?.checkEligible() ?: false
+            // LLM provider registry + settings (Epic 8) — built the same way ui/App.kt builds
+            // them: a plain (non-vault) CredentialStore-backed LlmCredentialStore, plus
+            // LlmSettings for per-feature provider selection. Constructed once and remembered,
+            // not rebuilt on every recomposition.
+            val llmCredentialStore = remember {
+                LlmCredentialStore(CredentialStore())
             }
-            fun buildPipeline() = buildVoicePipeline(
-                audioRecorder,
-                voiceSettings,
-                if (deviceSttAvailable && voiceSettings.getUseDeviceStt()) deviceSttProvider else null,
-                if (deviceLlmAvailable && voiceSettings.getUseDeviceLlm()) mlKitProvider else null,
-            )
-            var voicePipeline by remember { mutableStateOf(buildPipeline()) }
-            LaunchedEffect(deviceLlmAvailable) {
-                voicePipeline = buildPipeline()
+            val llmSettings = remember { LlmSettings(PlatformSettings()) }
+            val llmProviderRegistry = remember(llmCredentialStore, llmSettings) {
+                buildLlmProviderRegistry(llmCredentialStore, llmSettings)
+            }
+            var deviceLlmAvailable by remember { mutableStateOf(false) }
+            var voicePipeline by remember { mutableStateOf(VoicePipelineConfig()) }
+
+            // buildVoicePipeline is suspend (it live-checks provider availability), so this can
+            // only run from a coroutine. deviceLlmAvailable mirrors the old checkEligible() flag
+            // for VoiceCaptureSettings' informational UI — now derived from the on-device
+            // provider's live LlmProviderAvailability instead of MlKitLlmFormatterProvider
+            // directly, since the registry now owns provider construction.
+            suspend fun rebuildVoicePipeline() {
+                val onDeviceProvider = llmProviderRegistry.all()
+                    .firstOrNull { it.kind == LlmProviderKind.ON_DEVICE }
+                deviceLlmAvailable = onDeviceProvider?.checkAvailability() is LlmProviderAvailability.Available
+                voicePipeline = buildVoicePipeline(
+                    audioRecorder = audioRecorder,
+                    settings = voiceSettings,
+                    directSpeechProvider = if (deviceSttAvailable && voiceSettings.getUseDeviceStt()) deviceSttProvider else null,
+                    registry = llmProviderRegistry,
+                    llmSettings = llmSettings,
+                )
+            }
+            val composeScope = rememberCoroutineScope()
+            LaunchedEffect(llmProviderRegistry) {
+                rebuildVoicePipeline()
             }
             val spanRecorder = remember { createAndroidSpanRecorder() }
             val gitRepository = remember { AndroidGitRepository() }
@@ -286,7 +313,7 @@ class MainActivity : ComponentActivity() {
                 urlFetcher = UrlFetcherAndroid(),
                 voicePipeline = voicePipeline,
                 voiceSettings = voiceSettings,
-                onRebuildVoicePipeline = { voicePipeline = buildPipeline() },
+                onRebuildVoicePipeline = { composeScope.launch { rebuildVoicePipeline() } },
                 deviceSttAvailable = deviceSttAvailable,
                 deviceLlmAvailable = deviceLlmAvailable,
                 spanRecorder = spanRecorder,

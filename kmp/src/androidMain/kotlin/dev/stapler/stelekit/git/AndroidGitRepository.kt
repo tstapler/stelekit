@@ -14,6 +14,8 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.platform.security.CredentialAccess
+import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import org.eclipse.jgit.api.Git
@@ -35,12 +37,12 @@ import java.io.File
  */
 class AndroidGitRepository(
     private val sshKeyProvider: (() -> ByteArray)? = null,
-    credentialAccess: dev.stapler.stelekit.git.CredentialAccess = CredentialStore(),
+    credentialAccess: CredentialAccess = CredentialStore(),
 ) : GitRepository {
 
     private val logger = Logger("AndroidGitRepository")
 
-    @Volatile var credentialAccess: dev.stapler.stelekit.git.CredentialAccess = credentialAccess
+    @Volatile var credentialAccess: CredentialAccess = credentialAccess
         internal set
 
     override fun setCredentialAccess(access: CredentialAccess) { credentialAccess = access }

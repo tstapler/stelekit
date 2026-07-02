@@ -58,6 +58,7 @@ class NewPageAutoAssignmentTest {
         override fun putBoolean(key: String, value: Boolean) { store[key] = value.toString() }
         override fun getString(key: String, defaultValue: String) = store.getOrDefault(key, defaultValue)
         override fun putString(key: String, value: String) { store[key] = value }
+        override fun containsKey(key: String) = store.containsKey(key)
     }
 
     private open class StubFileSystem : FileSystem {
@@ -103,7 +104,7 @@ class NewPageAutoAssignmentTest {
         override fun stopAutoSave() {}
         override suspend fun flush() {}
         override suspend fun renamePage(page: Page, newName: String, graphPath: String) = true
-        override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String) {}
+        override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String): Either<DomainError, Unit> = Unit.right()
         override suspend fun deletePage(page: Page) = true
         override suspend fun movePageToSection(
             page: Page, newSectionId: String, newPathPrefix: String,

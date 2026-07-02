@@ -16,6 +16,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import arrow.core.Either
+import dev.stapler.stelekit.llm.LlmCredentialStore
+import dev.stapler.stelekit.llm.LlmProviderRegistry
+import dev.stapler.stelekit.llm.LlmSettings
 import dev.stapler.stelekit.performance.getDeviceInfo
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.sections.SectionState
@@ -37,9 +40,15 @@ fun SettingsDialog(
     isLeftHanded: Boolean = false,
     onLeftHandedChange: (Boolean) -> Unit = {},
     voiceSettings: VoiceSettings? = null,
+    llmCredentialStore: LlmCredentialStore? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
     deviceSttAvailable: Boolean = false,
     deviceLlmAvailable: Boolean = false,
+    // AI Providers settings (Epic 6) — all three non-null together enable the category.
+    llmProviderRegistry: LlmProviderRegistry? = null,
+    llmSettings: LlmSettings? = null,
+    initialCategory: SettingsCategory = SettingsCategory.GENERAL,
+    onLlmCredentialsChange: () -> Unit = {},
     // Google Account settings (Story 7.2)
     isGoogleAuthenticated: Boolean = false,
     googleConnectedEmail: String? = null,
@@ -84,7 +93,7 @@ fun SettingsDialog(
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 6.dp
             ) {
-                var selectedCategory by remember { mutableStateOf(SettingsCategory.GENERAL) }
+                var selectedCategory by remember { mutableStateOf(initialCategory) }
 
                 Row(modifier = Modifier.fillMaxSize()) {
                     // Sidebar
@@ -104,7 +113,11 @@ fun SettingsDialog(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        val visibleCategories = remember(onConnectGoogle, audiobookNotesSettingsContent, tagSettings, onLibsqlDriverToggle, sectionManifest) {
+                        val visibleCategories = remember(
+                            onConnectGoogle, audiobookNotesSettingsContent, tagSettings,
+                            onLibsqlDriverToggle, sectionManifest, llmProviderRegistry, llmSettings,
+                            llmCredentialStore,
+                        ) {
                             SettingsCategory.entries.filter { category ->
                                 when (category) {
                                     SettingsCategory.GOOGLE_ACCOUNT -> onConnectGoogle != null
@@ -113,6 +126,8 @@ fun SettingsDialog(
                                     SettingsCategory.DEVELOPER -> onLibsqlDriverToggle != null
                                     SettingsCategory.SECTIONS -> sectionManifest != null
                                     SettingsCategory.DEVICE_SUBSCRIPTIONS -> sectionManifest != null
+                                    SettingsCategory.LLM_PROVIDERS ->
+                                        llmProviderRegistry != null && llmSettings != null && llmCredentialStore != null
                                     else -> true
                                 }
                             }
@@ -182,6 +197,7 @@ fun SettingsDialog(
                                         onRebuildPipeline = onRebuildVoicePipeline,
                                         deviceSttAvailable = deviceSttAvailable,
                                         deviceLlmAvailable = deviceLlmAvailable,
+                                        onNavigateToAiProviders = { selectedCategory = SettingsCategory.LLM_PROVIDERS },
                                     )
                                 }
                                 SettingsCategory.AUDIOBOOK_NOTES -> audiobookNotesSettingsContent?.invoke()
@@ -236,6 +252,16 @@ fun SettingsDialog(
                                         onToggleSection = onToggleSectionState,
                                     )
                                 }
+                                SettingsCategory.LLM_PROVIDERS -> if (llmProviderRegistry != null &&
+                                    llmSettings != null && llmCredentialStore != null
+                                ) {
+                                    LlmProviderSettings(
+                                        registry = llmProviderRegistry,
+                                        llmSettings = llmSettings,
+                                        llmCredentialStore = llmCredentialStore,
+                                        onCredentialsChange = onLlmCredentialsChange,
+                                    )
+                                }
                             }
                         }
                     }
@@ -284,6 +310,7 @@ enum class SettingsCategory(val label: String, val icon: ImageVector) {
     ADVANCED("Advanced", Icons.Default.Build),
     VOICE("Voice Capture", Icons.Default.Mic),
     TAG_SUGGESTIONS("Tag Suggestions", Icons.Default.Label),
+    LLM_PROVIDERS("AI Providers", Icons.Default.SmartToy),
     AUDIOBOOK_NOTES("Audiobook Notes", Icons.Default.Book),
     GOOGLE_ACCOUNT("Google Account", Icons.Default.Cloud),
     VAULT("Vault", Icons.Default.Lock),

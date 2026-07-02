@@ -6,6 +6,7 @@ package dev.stapler.stelekit.git
 import arrow.core.Either
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.FileSystem
+import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.vault.CryptoEngine
 import dev.stapler.stelekit.vault.CryptoLayer
 import kotlinx.serialization.encodeToString

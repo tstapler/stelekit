@@ -304,7 +304,7 @@ class GraphManager(
 
         // Clean up git credentials stored for this graph
         try {
-            val cs = dev.stapler.stelekit.git.CredentialStore()
+            val cs = dev.stapler.stelekit.platform.security.CredentialStore()
             cs.delete("git_https_token_$id")
             cs.delete("git_ssh_passphrase_$id")
         } catch (_: Exception) {

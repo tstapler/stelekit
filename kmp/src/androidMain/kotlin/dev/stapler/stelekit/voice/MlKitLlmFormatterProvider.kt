@@ -4,8 +4,10 @@ package dev.stapler.stelekit.voice
 
 import android.util.Log
 import com.google.mlkit.genai.common.FeatureStatus
+import com.google.mlkit.genai.common.GenAiException
 import com.google.mlkit.genai.prompt.Generation
 import com.google.mlkit.genai.prompt.GenerativeModel
+import dev.stapler.stelekit.llm.LlmProviderAvailability
 import kotlinx.coroutines.CancellationException
 
 private const val TAG = "MlKitLlmFormatter"
@@ -31,17 +33,23 @@ class MlKitLlmFormatterProvider private constructor(
         }
     }
 
-    /** Returns true when the device supports on-device inference (model available or will download). */
-    suspend fun checkEligible(): Boolean = runCatching {
-        when (model.checkStatus()) {
-            FeatureStatus.AVAILABLE,
-            FeatureStatus.DOWNLOADABLE,
-            FeatureStatus.DOWNLOADING -> true
-            else -> false
+    /**
+     * Live tri-state availability — see [mapMlKitFeatureStatus] for the
+     * `FeatureStatus` -> [LlmProviderAvailability] mapping (the actual, SDK-independent, testable
+     * logic). This replaces the old boolean `checkEligible()`, which collapsed `DOWNLOADABLE`/
+     * `DOWNLOADING` into "eligible: true" even though [format] treated those same statuses as an
+     * immediate failure.
+     */
+    suspend fun checkAvailability(): LlmProviderAvailability {
+        val statusCode = try {
+            model.checkStatus()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "checkStatus failed", e)
+            null
         }
-    }.getOrElse { e ->
-        Log.w(TAG, "checkStatus failed", e)
-        false
+        return mapMlKitFeatureStatus(statusCode)
     }
 
     override suspend fun format(transcript: String, systemPrompt: String): LlmResult {
@@ -62,9 +70,9 @@ class MlKitLlmFormatterProvider private constructor(
                 FeatureStatus.DOWNLOADING -> {
                     // AICore downloads the model in the background automatically.
                     // Blocking here would take several minutes — return a friendly retry message.
-                    LlmResult.Failure.ApiError(
-                        -1,
-                        "On-device model is downloading — try again in a few minutes"
+                    LlmResult.Failure.OnDeviceUnavailable(
+                        "Model is still downloading",
+                        retryable = true,
                     )
                 }
                 else -> {
@@ -73,6 +81,20 @@ class MlKitLlmFormatterProvider private constructor(
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: GenAiException) {
+            // AICore-specific error codes get a distinct, actionable message instead of the
+            // generic "On-device LLM error: ..." fallback — see pitfalls.md §2.1:
+            // foreground-only inference (BACKGROUND_USE_BLOCKED) and per-app quota (BUSY) are
+            // both retryable, expected conditions, not bugs — so those are not logged as errors,
+            // matching the pre-extraction behavior. The actual mapping lives in the pure,
+            // SDK-independent mapGenAiErrorCode() (MA10) so it's testable from
+            // businessTest/jvmTest without an Android SDK dependency — mirrors
+            // mapMlKitFeatureStatus()'s shape for checkAvailability().
+            val failure = mapGenAiErrorCode(e.errorCode, e.message)
+            if (failure !is LlmResult.Failure.OnDeviceUnavailable) {
+                Log.e(TAG, "On-device inference error", e)
+            }
+            failure
         } catch (e: Exception) {
             Log.e(TAG, "On-device inference error", e)
             LlmResult.Failure.ApiError(-1, "On-device LLM error: ${e.message}")
