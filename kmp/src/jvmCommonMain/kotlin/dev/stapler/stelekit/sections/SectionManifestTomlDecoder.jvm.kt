@@ -8,3 +8,6 @@ private val sectionToml = Toml(inputConfig = TomlInputConfig(ignoreUnknownNames 
 
 internal actual fun decodeSectionManifestToml(content: String): SectionManifest? =
     sectionToml.decodeFromString(serializer<SectionManifest>(), content)
+
+internal actual fun encodeSectionManifestToml(manifest: SectionManifest): String =
+    sectionToml.encodeToString(serializer<SectionManifest>(), manifest)

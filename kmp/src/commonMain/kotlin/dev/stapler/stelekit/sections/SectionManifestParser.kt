@@ -27,6 +27,7 @@ class SectionManifestParser(private val fileSystem: FileSystem) {
     }
 }
 
-// ktoml doesn't support Kotlin/Wasm — platform actuals provide real parsing on JVM/iOS,
-// null on WASM (caller falls back to empty SectionManifest).
+// ktoml doesn't support Kotlin/Wasm — platform actuals provide real parsing/writing on JVM/iOS,
+// stubs on WASM (parser falls back to empty SectionManifest; writer catches the exception).
 internal expect fun decodeSectionManifestToml(content: String): SectionManifest?
+internal expect fun encodeSectionManifestToml(manifest: SectionManifest): String
