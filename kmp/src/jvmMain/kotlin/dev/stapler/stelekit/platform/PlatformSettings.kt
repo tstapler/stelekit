@@ -47,6 +47,8 @@ actual class PlatformSettings actual constructor() : Settings {
         save()
     }
 
+    actual override fun containsKey(key: String): Boolean = props.containsKey(key)
+
     private fun save() {
         try {
             FileOutputStream(prefsFile).use { 

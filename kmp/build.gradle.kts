@@ -169,6 +169,11 @@ kotlin {
             val wasmJsMain by getting {
                 dependencies {
                     implementation(npm("@sqlite.org/sqlite-wasm", "3.46.1-build1"))
+                    // Ktor HTTP engine for wasmJs — required for commonMain HttpClient() construction
+                    // (remote LlmFormatterProviders: Claude/OpenAI today, Gemini/generic-OpenAI-compatible
+                    // in Epic 3) to link on the web target. Every other source set already declares an
+                    // engine (ktor-client-okhttp / ktor-client-darwin); wasmJsMain did not until now.
+                    implementation("io.ktor:ktor-client-js:3.1.3")
                 }
             }
 

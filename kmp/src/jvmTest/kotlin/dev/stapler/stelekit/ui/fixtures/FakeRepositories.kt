@@ -41,6 +41,8 @@ class InMemorySettings : Settings {
     override fun putString(key: String, value: String) {
         store[key] = value
     }
+
+    override fun containsKey(key: String): Boolean = store.containsKey(key)
 }
 
 open class FakeFileSystem : FileSystem {
