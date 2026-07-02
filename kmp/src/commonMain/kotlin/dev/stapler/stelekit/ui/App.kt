@@ -454,6 +454,16 @@ private fun GraphContent(
         }
     }
 
+    // LLM provider registry + settings (Epic 6 Settings UI). llmRegistryRefreshToken forces a
+    // rebuild after the user adds/edits/removes a credential through the new Settings UI —
+    // LlmCredentialStore itself isn't reactive (no Flow), so this is the simplest way to keep
+    // the provider list in sync within a session without adding a new observable layer.
+    var llmRegistryRefreshToken by remember { androidx.compose.runtime.mutableStateOf(0) }
+    val llmSettings = remember(platformSettings) { dev.stapler.stelekit.llm.LlmSettings(platformSettings) }
+    val llmProviderRegistry = remember(llmCredentialStore, llmRegistryRefreshToken) {
+        dev.stapler.stelekit.llm.buildLlmProviderRegistry(llmCredentialStore)
+    }
+
     val activeGraphInfo = remember { graphManager.getActiveGraphInfo() }
     val activeGraphPath = activeGraphInfo?.path ?: ""
 
@@ -1599,6 +1609,9 @@ private fun GraphContent(
                         fileSystem = fileSystem,
                         voiceSettings = voiceSettings,
                         llmCredentialStore = llmCredentialStore,
+                        llmProviderRegistry = llmProviderRegistry,
+                        llmSettings = llmSettings,
+                        onLlmCredentialsChange = { llmRegistryRefreshToken++ },
                         onRebuildVoicePipeline = onRebuildVoicePipeline,
                         deviceSttAvailable = deviceSttAvailable,
                         deviceLlmAvailable = deviceLlmAvailable,
