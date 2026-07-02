@@ -257,6 +257,16 @@ class StelekitViewModel(
         _uiState.update { it.copy(gitSetupVisible = true, gitSetupInitialStep = 3) }
     }
 
+    /** Opens the LLM provider settings surface ("Settings → AI Providers"). */
+    fun openLlmProviderSettings() {
+        _uiState.update { it.copy(llmProviderSettingsVisible = true) }
+    }
+
+    /** Dismisses the LLM provider settings surface. */
+    fun dismissLlmProviderSettings() {
+        _uiState.update { it.copy(llmProviderSettingsVisible = false) }
+    }
+
     /** Opens the git setup wizard in clone-from-URL mode (pre-selects clone, starts at step 2). */
     fun openGitSetupForClone() {
         _uiState.update { it.copy(gitSetupVisible = true, gitSetupInitialStep = 2, gitSetupOpenForClone = true) }

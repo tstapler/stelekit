@@ -151,6 +151,9 @@ data class AppState(
     val gitSetupVisible: Boolean = false,
     val gitSetupInitialStep: Int = 1,
     val gitSetupOpenForClone: Boolean = false,
+    // LLM provider settings — mirrors gitSetupVisible/openGitSetup()/dismissGitSetup() (Epic 6
+    // Story 6.1). Drives direct-open + auto-selection of the "AI Providers" settings category.
+    val llmProviderSettingsVisible: Boolean = false,
     val conflictResolutionVisible: Boolean = false,
     val journalMergeReviewVisible: Boolean = false,
     // Export in-flight: true while an exportPage/exportSelectedBlocks coroutine is running

@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,24 +24,17 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import dev.stapler.stelekit.llm.LlmCredentialStore
 import dev.stapler.stelekit.voice.VoiceSettings
 
 @Composable
 fun VoiceCaptureSettings(
     voiceSettings: VoiceSettings,
-    llmCredentialStore: LlmCredentialStore,
     onRebuildPipeline: () -> Unit,
     deviceSttAvailable: Boolean = false,
     deviceLlmAvailable: Boolean = false,
+    onNavigateToAiProviders: (() -> Unit)? = null,
 ) {
     var whisperKey by remember { mutableStateOf(voiceSettings.getWhisperApiKey() ?: "") }
-    // Anthropic/OpenAI keys read from LlmCredentialStore (ADR-011), not VoiceSettings — the
-    // latter's plaintext accessors are migration-only (Epic 2 Story 2.3) and must not be
-    // written back to by this screen, or the one-shot migration's security fix would be
-    // silently undone the next time a user edits a key here.
-    var anthropicKey by remember { mutableStateOf(llmCredentialStore.getApiKey("anthropic") ?: "") }
-    var openAiKey by remember { mutableStateOf(llmCredentialStore.getApiKey("openai") ?: "") }
     var llmEnabled by remember { mutableStateOf(voiceSettings.getLlmEnabled()) }
     var useDeviceStt by remember { mutableStateOf(voiceSettings.getUseDeviceStt()) }
     var useDeviceLlm by remember { mutableStateOf(voiceSettings.getUseDeviceLlm()) }
@@ -130,30 +124,25 @@ fun VoiceCaptureSettings(
                 }
             }
             if (!deviceLlmAvailable || !useDeviceLlm) {
-                Text(
-                    "Provide one key — Anthropic is used if both are set.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp),
-                )
-                OutlinedTextField(
-                    value = anthropicKey,
-                    onValueChange = { anthropicKey = it; saved = false },
-                    label = { Text("Anthropic (Claude) API key") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = openAiKey,
-                    onValueChange = { openAiKey = it; saved = false },
-                    label = { Text("OpenAI / compatible API key") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                )
+                // Anthropic/OpenAI key entry moved to the unified provider hub (Epic 6 Story
+                // 6.2/6.3) — this screen no longer reads/writes those keys directly (Story
+                // 6.6), so there is exactly one place in the UI to configure them.
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Configure AI provider keys in Settings → AI Providers.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (onNavigateToAiProviders != null) {
+                        TextButton(onClick = onNavigateToAiProviders) {
+                            Text("Open")
+                        }
+                    }
+                }
             }
         }
         Row(
@@ -186,16 +175,6 @@ fun VoiceCaptureSettings(
             Button(
                 onClick = {
                     voiceSettings.setWhisperApiKey(whisperKey)
-                    if (anthropicKey.isBlank()) {
-                        llmCredentialStore.deleteApiKey("anthropic")
-                    } else {
-                        llmCredentialStore.setApiKey("anthropic", anthropicKey)
-                    }
-                    if (openAiKey.isBlank()) {
-                        llmCredentialStore.deleteApiKey("openai")
-                    } else {
-                        llmCredentialStore.setApiKey("openai", openAiKey)
-                    }
                     voiceSettings.setLlmEnabled(llmEnabled)
                     voiceSettings.setUseDeviceStt(useDeviceStt)
                     voiceSettings.setUseDeviceLlm(useDeviceLlm)

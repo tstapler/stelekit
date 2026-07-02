@@ -62,6 +62,7 @@ import dev.stapler.stelekit.ui.KeyboardShortcutTest
 import dev.stapler.stelekit.ui.MigrationReadyLoadingTest
 import dev.stapler.stelekit.ui.OutlinerRegressionTest
 import dev.stapler.stelekit.ui.RecentPagesTest
+import dev.stapler.stelekit.ui.StelekitViewModelLlmSettingsTest
 import dev.stapler.stelekit.ui.StelekitViewModelLoadingTest
 import dev.stapler.stelekit.ui.components.ApplyAutocompleteSelectionTest
 import dev.stapler.stelekit.ui.components.ParseMarkdownWithStylingTest
@@ -70,6 +71,11 @@ import dev.stapler.stelekit.ui.components.SuggestionContextMenuTest
 import dev.stapler.stelekit.ui.components.SuggestionNavigatorPanelTest
 import dev.stapler.stelekit.ui.components.SuggestionRenderBenchmarkTest
 import dev.stapler.stelekit.ui.components.TopBarTest
+import dev.stapler.stelekit.ui.components.settings.AddEditLlmProviderDialogTest
+import dev.stapler.stelekit.ui.components.settings.LlmProviderListScreenTest
+import dev.stapler.stelekit.ui.components.settings.PerFeatureProviderPickerTest
+import dev.stapler.stelekit.ui.components.settings.SettingsDialogTest
+import dev.stapler.stelekit.ui.components.settings.VoiceCaptureSettingsTest
 import dev.stapler.stelekit.ui.layout.DesktopLayoutTest
 import dev.stapler.stelekit.ui.layout.MobileLayoutTest
 import dev.stapler.stelekit.ui.layout.SidebarLoadingStateTest
@@ -172,6 +178,12 @@ import org.junit.runners.Suite
     JournalsViewUITest::class,
     PageViewUITest::class,
     StelekitViewModelLoadingTest::class,
+    StelekitViewModelLlmSettingsTest::class,
+    LlmProviderListScreenTest::class,
+    AddEditLlmProviderDialogTest::class,
+    PerFeatureProviderPickerTest::class,
+    SettingsDialogTest::class,
+    VoiceCaptureSettingsTest::class,
     CryptoEngineTest::class,
     GraphLayerCryptoTest::class,
     VaultRoundTripTest::class,
