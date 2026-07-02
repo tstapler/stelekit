@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.58.1](https://github.com/tstapler/stelekit/compare/v0.58.0...v0.58.1) (2026-07-02)
+
+
+### Bug Fixes
+
+* **ci:** resolve pre-existing CI failures on main ([#198](https://github.com/tstapler/stelekit/issues/198)) ([9bd0280](https://github.com/tstapler/stelekit/commit/9bd028020c6c0bc567fddb3fb2e54b28d64de6d0))
+* **db:** remove raw BEGIN/COMMIT from pages_section_id migration + pool hardening ([#195](https://github.com/tstapler/stelekit/issues/195)) ([24fcbc3](https://github.com/tstapler/stelekit/commit/24fcbc30b4f0acd102d03d23ccebfbcef9ea5221))
+
 ## [0.58.0](https://github.com/tstapler/stelekit/compare/v0.57.0...v0.58.0) (2026-07-01)
 
 
