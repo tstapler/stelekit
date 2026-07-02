@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.db
 
 import kotlin.test.Test
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import dev.stapler.stelekit.db.SqliteStatementAnalyzer
 
 /**
  * Static analysis test: verifies that every table added after the original base schema
@@ -49,4 +51,54 @@ class MigrationRunnerCoverageTest {
     @Test fun measurement_annotations_table_is_covered() = assertTableCovered("measurement_annotations")
     // spans, perf_histogram_buckets, debug_flags, query_stats moved to TelemetryDatabase —
     // their entries in MigrationRunner.all are DROP TABLE cleanup migrations, not CREATE TABLE.
+
+    /**
+     * Regression guard for the pages_section_id deadlock (CI failure 2026-07).
+     *
+     * Raw BEGIN/COMMIT in Migration.statements deadlocks PooledJdbcSqliteDriver: BEGIN on
+     * connection A holds the write lock while DDL on connections B–N waits busy_timeout (10 s)
+     * per statement. Migration.init now rejects this pattern at construction time.
+     *
+     * Must fail against pre-fix code (before the init {} block was added): the Migration
+     * constructed successfully and the deadlock only manifested at runtime.
+     */
+    @Test fun `Migration rejects raw BEGIN in statement list`() {
+        assertFailsWith<IllegalArgumentException>("Migration with raw BEGIN must throw") {
+            MigrationRunner.Migration(
+                name = "bad_migration",
+                statements = listOf("CREATE TABLE foo (id TEXT)", "BEGIN", "DROP TABLE foo"),
+            )
+        }
+    }
+
+    @Test fun `Migration rejects raw COMMIT in statement list`() {
+        assertFailsWith<IllegalArgumentException>("Migration with raw COMMIT must throw") {
+            MigrationRunner.Migration(
+                name = "bad_migration",
+                statements = listOf("BEGIN", "CREATE TABLE foo (id TEXT)", "COMMIT"),
+            )
+        }
+    }
+
+    @Test fun `Migration allows BEGIN inside CREATE TRIGGER body`() {
+        // Trigger SQL contains the keyword BEGIN as part of the trigger body — must NOT be flagged.
+        MigrationRunner.Migration(
+            name = "trigger_migration",
+            statements = listOf(
+                "CREATE TRIGGER foo_ai AFTER INSERT ON foo BEGIN INSERT INTO foo_fts(rowid) VALUES (new.rowid); END"
+            ),
+        ) // must not throw
+    }
+
+    @Test fun `no production migration contains raw transaction control`() {
+        // Structural guard: uses SqliteStatementAnalyzer so compound forms
+        // (BEGIN TRANSACTION, COMMIT WORK, leading comments, etc.) are also caught.
+        // This test would have caught pages_section_id before it reached CI.
+        val violations = MigrationRunner.all.flatMap { migration ->
+            migration.statements
+                .filter { SqliteStatementAnalyzer.isTransactionControl(it) }
+                .map { "'${migration.name}': ${it.trim().take(80)}" }
+        }
+        assertTrue(violations.isEmpty(), "Raw transaction control found in migrations: $violations")
+    }
 }

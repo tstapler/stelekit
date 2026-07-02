@@ -6,6 +6,7 @@ import org.junit.Before
 import org.junit.Test
 import java.io.File
 import java.util.Properties
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -363,5 +364,96 @@ class MigrationRunnerApplyAllTest {
             appliedMigrationNames().contains("create_existing_table"),
             "A migration that hits 'already exists' must still be recorded as applied"
         )
+    }
+
+    // ── Test 5: copy-alter migration completes without deadlock on poolSize=8 ──────
+
+    /**
+     * Regression test for the pages_section_id deadlock.
+     *
+     * Root cause: the original pages_section_id migration contained raw BEGIN/COMMIT statements.
+     * MigrationRunner.applyAll() executes each statement via driver.execute(), which acquires
+     * a DIFFERENT pooled connection per call. BEGIN on connection A held the write lock while
+     * subsequent DDL on connection B waited busy_timeout (10 s) — causing a cascade that
+     * totalled ~60 s until test timeout.
+     *
+     * Post-fix behaviour: migrations use auto-committing DDL only (no raw BEGIN/COMMIT).
+     * A copy-alter sequence (create-new / copy / drop-old / rename) must complete on a
+     * pooled driver with poolSize=8 in well under busy_timeout (i.e., < 5 s).
+     *
+     * Pre-fix behaviour: this test would hang for the full busy_timeout (5 s per blocked
+     * statement) and then fail because the migration is not recorded.
+     */
+    @Test(timeout = 5_000)
+    fun `copy-alter migration completes without deadlock on pooled driver`() = runBlocking {
+        // Use poolSize=8 (production value) so BEGIN on one connection would block subsequent
+        // DDL on other connections — reproducing the original deadlock condition.
+        val pooledDriver = PooledJdbcSqliteDriver(
+            "jdbc:sqlite:${tempFile.absolutePath}",
+            props,
+            poolSize = 8,
+        )
+
+        // Arrange — create a pages-like source table with some data.
+        val conn = pooledDriver.getConnection()
+        try {
+            conn.prepareStatement(
+                "CREATE TABLE schema_migrations (hash TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL DEFAULT 0)"
+            ).execute()
+            conn.prepareStatement(
+                "CREATE TABLE items (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL)"
+            ).execute()
+            conn.prepareStatement("INSERT INTO items VALUES ('a','alpha')").execute()
+            conn.prepareStatement("INSERT INTO items VALUES ('b','beta')").execute()
+        } finally {
+            pooledDriver.closeConnection(conn)
+        }
+
+        // A copy-alter migration that mirrors the pages_section_id pattern — no BEGIN/COMMIT.
+        val copyAlterMigration = MigrationRunner.Migration(
+            name = "items_copy_alter",
+            statements = listOf(
+                "DROP TABLE IF EXISTS items_new",
+                "CREATE TABLE IF NOT EXISTS items_new (id TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL, tag TEXT NOT NULL DEFAULT '')",
+                "INSERT INTO items_new SELECT id, name, '' FROM items",
+                "DROP TABLE items",
+                "ALTER TABLE items_new RENAME TO items",
+            )
+        )
+
+        try {
+            // Act — must finish well within 5 s (5 s is the test timeout above).
+            // Pre-fix code with BEGIN/COMMIT would block for busy_timeout per statement.
+            MigrationRunner.applyAll(pooledDriver, listOf(copyAlterMigration))
+
+            // Assert 1: migration recorded
+            val names = mutableSetOf<String>()
+            val nc = pooledDriver.getConnection()
+            try {
+                val rs = nc.prepareStatement("SELECT name FROM schema_migrations").executeQuery()
+                while (rs.next()) names += rs.getString(1)
+            } finally { pooledDriver.closeConnection(nc) }
+            assertTrue(names.contains("items_copy_alter"), "copy-alter migration must be recorded")
+
+            // Assert 2: data survived
+            val rows = mutableListOf<String>()
+            val rc = pooledDriver.getConnection()
+            try {
+                val rs = rc.prepareStatement("SELECT id FROM items ORDER BY id").executeQuery()
+                while (rs.next()) rows += rs.getString(1)
+            } finally { pooledDriver.closeConnection(rc) }
+            assertEquals(listOf("a", "b"), rows, "All rows must survive the copy-alter migration")
+
+            // Assert 3: new column present
+            val cols = mutableSetOf<String>()
+            val cc = pooledDriver.getConnection()
+            try {
+                val rs = cc.prepareStatement("PRAGMA table_info(items)").executeQuery()
+                while (rs.next()) cols += rs.getString("name")
+            } finally { pooledDriver.closeConnection(cc) }
+            assertTrue(cols.contains("tag"), "New 'tag' column must be present after copy-alter")
+        } finally {
+            pooledDriver.close()
+        }
     }
 }

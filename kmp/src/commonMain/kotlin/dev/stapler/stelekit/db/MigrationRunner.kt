@@ -45,6 +45,24 @@ object MigrationRunner {
     ) {
         /** FNV-1a-64 digest of all statements joined with newlines. */
         val hash: String = fnv1a64(statements.joinToString("\n"))
+
+        init {
+            // Raw transaction control (BEGIN/COMMIT/ROLLBACK) cannot be used in migration
+            // statements. MigrationRunner.applyAll() issues each statement via driver.execute(),
+            // which acquires a potentially different pooled connection per call. BEGIN on
+            // connection A holds the SQLite write lock; subsequent DDL on connection B–N then
+            // waits busy_timeout (10 s each) — causing a cascade hang that matches the test
+            // timeout exactly. Use auto-committing DDL statements only.
+            //
+            // SqliteStatementAnalyzer.isTransactionControl() uses a comment-stripping tokenizer
+            // so "BEGIN TRANSACTION", "-- comment\nBEGIN", etc. are all caught, while "BEGIN"
+            // inside a CREATE TRIGGER body is correctly ignored (first keyword is "CREATE").
+            val bad = statements.filter { SqliteStatementAnalyzer.isTransactionControl(it) }
+            require(bad.isEmpty()) {
+                "Migration '$name': raw transaction control statement(s) detected: $bad. " +
+                "These deadlock pooled-connection drivers — use auto-committing DDL only."
+            }
+        }
     }
 
     val all: List<Migration> = listOf(
@@ -708,15 +726,16 @@ object MigrationRunner {
             // DROP INDEX sqlite_autoindex_pages_1 is unsafe. Instead: create new table, copy,
             // drop old, rename. FTS5 triggers (pages_ai/ad/au) are recreated by
             // ensureFts5TriggerState() after applyAll() completes.
+            //
+            // Do NOT wrap these statements in raw BEGIN/COMMIT. MigrationRunner executes each
+            // statement via driver.execute(), which acquires a pooled connection per call. A raw
+            // BEGIN on connection A followed by DDL on connection B deadlocks: B waits 10 s for
+            // A's write lock (busy_timeout), causing a cascade that hangs the full migration init.
+            //
+            // allowContentUpdate: original version wrapped statements in BEGIN/COMMIT which
+            // caused the above deadlock; hash was updated to remove that wrapper.
+            allowContentUpdate = true,
             statements = listOf(
-                // PRAGMA foreign_keys=OFF/ON is included for consistency with other copy-alter migrations
-                // in this file, even though pages has no FK references from other tables. The BEGIN/COMMIT
-                // make the rename atomic (rollback on crash); foreign_keys=OFF avoids trigger conflicts.
-                "PRAGMA foreign_keys=OFF",
-                // BEGIN makes the copy-alter sequence atomic: if interrupted between DROP TABLE
-                // pages and RENAME pages_new, SQLite rolls back on next open instead of leaving
-                // a corrupted (missing) pages table.
-                "BEGIN",
                 "DROP TABLE IF EXISTS pages_new",
                 """
                 CREATE TABLE IF NOT EXISTS pages_new (
@@ -747,15 +766,21 @@ object MigrationRunner {
                 "CREATE INDEX IF NOT EXISTS idx_pages_favorite ON pages(name) WHERE is_favorite = 1",
                 "CREATE INDEX IF NOT EXISTS idx_pages_unloaded ON pages(uuid) WHERE is_content_loaded = 0",
                 "CREATE INDEX IF NOT EXISTS idx_pages_journal_section ON pages(is_journal, journal_date, section_id)",
-                "COMMIT",
-                "PRAGMA foreign_keys=ON",
+                // Refresh query-planner statistics after rebuilding all pages indexes.
+                // (Was present in the original version of this migration; accidentally dropped
+                // when BEGIN/COMMIT were removed to fix the pooled-connection deadlock.)
                 "ANALYZE pages",
             )
         ),
         Migration(
             name = "idx_pages_section_id",
+            // allowContentUpdate: ANALYZE pages was added after initial deployment to satisfy
+            // the IndexWithoutAnalyze lint rule. Existing databases already have the index;
+            // the ANALYZE is a no-op safety net for fresh installs going forward.
+            allowContentUpdate = true,
             statements = listOf(
                 "CREATE INDEX IF NOT EXISTS idx_pages_section_id ON pages(section_id, name)",
+                "ANALYZE pages",
             )
         ),
     )

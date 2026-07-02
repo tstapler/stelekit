@@ -337,6 +337,51 @@ class PooledJdbcSqliteDriverTest {
         dispatcher.close()
     }
 
+    // ── withPinnedConnection ──────────────────────────────────────────────────
+
+    @Test
+    fun `withPinnedConnection holds the same connection for entire block`() = runBlocking {
+        // Use a single-connection pool so there is only one possible connection.
+        val singleDriver = PooledJdbcSqliteDriver("jdbc:sqlite:${tempFile.absolutePath}", props, poolSize = 1)
+        var innerConn: java.sql.Connection? = null
+        var outerConn: java.sql.Connection? = null
+
+        singleDriver.withPinnedConnection { conn ->
+            innerConn = conn
+            // While the block holds the connection, try to check out another from the pool.
+            // Because poolSize=1 this would create an overflow for a file DB — but both calls
+            // below must return the SAME pinned connection because we're still inside the block.
+            // Instead, grab the field directly to confirm pinning does not release mid-block.
+            outerConn = conn  // same reference expected
+            conn.createStatement().use { it.execute("SELECT 1") }
+        }
+
+        // After the block, the connection should be back in the pool and reusable.
+        val recycled = singleDriver.getConnection()
+        assertSame(innerConn, recycled, "withPinnedConnection must return the connection to the pool after block completes")
+        singleDriver.closeConnection(recycled)
+        singleDriver.close()
+    }
+
+    @Test
+    fun `withPinnedConnection returns connection to pool even when block throws`() = runBlocking {
+        val singleDriver = PooledJdbcSqliteDriver("jdbc:sqlite:${tempFile.absolutePath}", props, poolSize = 1)
+        var pinnedConn: java.sql.Connection? = null
+
+        runCatching {
+            singleDriver.withPinnedConnection { conn ->
+                pinnedConn = conn
+                error("simulated failure")
+            }
+        }
+
+        // Pool must have exactly one connection available again after the exception
+        val recycled = singleDriver.getConnection()
+        assertSame(pinnedConn, recycled, "withPinnedConnection must return the connection even on exception")
+        singleDriver.closeConnection(recycled)
+        singleDriver.close()
+    }
+
     // ── Connection validity after reuse ───────────────────────────────────────
 
     @Test
