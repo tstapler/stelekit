@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Tyler Stapler
 // SPDX-License-Identifier: Elastic-2.0
 
-package dev.stapler.stelekit.git
+package dev.stapler.stelekit.platform.security
 
 import dev.stapler.stelekit.logging.Logger
 import java.io.File
@@ -30,7 +30,7 @@ import javax.crypto.spec.SecretKeySpec
  * Replace with OS keychain integration (SecretService on Linux, DPAPI on Windows,
  * Keychain on macOS) for higher assurance in a future release.
  */
-actual class CredentialStore actual constructor() : dev.stapler.stelekit.git.CredentialAccess {
+actual class CredentialStore actual constructor() : CredentialAccess {
 
     companion object {
         private const val SALT_BYTES = 16

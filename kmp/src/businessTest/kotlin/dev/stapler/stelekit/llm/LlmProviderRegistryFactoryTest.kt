@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 package dev.stapler.stelekit.llm
 
+import dev.stapler.stelekit.platform.security.CredentialAccess
 import dev.stapler.stelekit.voice.LlmFormatterProvider
 import dev.stapler.stelekit.voice.LlmResult
 import kotlin.test.Test
@@ -10,9 +11,15 @@ import kotlin.test.assertTrue
 
 class LlmProviderRegistryFactoryTest {
 
-    private class FakeCredentialStore(private val keys: Map<String, String> = emptyMap()) : LlmCredentialStore {
-        override fun getApiKey(providerId: String): String? = keys[providerId]
+    private class FakeCredentialAccess(keys: Map<String, String> = emptyMap()) : CredentialAccess {
+        private val map = keys.mapKeys { "llm.${it.key}.api_key" }.toMutableMap()
+        override fun retrieve(key: String): String? = map[key]
+        override fun store(key: String, value: String) { map[key] = value }
+        override fun delete(key: String) { map.remove(key) }
     }
+
+    private fun FakeCredentialStore(keys: Map<String, String> = emptyMap()) =
+        LlmCredentialStore(FakeCredentialAccess(keys))
 
     private class FakeOnDeviceProvider : LlmProvider {
         override val id = "android-ondevice"

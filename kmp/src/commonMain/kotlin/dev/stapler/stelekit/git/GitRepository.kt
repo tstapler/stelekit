@@ -7,6 +7,7 @@ import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.platform.security.CredentialAccess
 
 /**
  * Platform-agnostic git operations interface.

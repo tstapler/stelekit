@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Tyler Stapler
 // SPDX-License-Identifier: Elastic-2.0
 
-package dev.stapler.stelekit.git
+package dev.stapler.stelekit.platform.security
 
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
@@ -28,7 +28,7 @@ import platform.Security.kSecReturnData
 import platform.Security.kSecValueData
 
 @OptIn(ExperimentalForeignApi::class)
-actual class CredentialStore actual constructor() : dev.stapler.stelekit.git.CredentialAccess {
+actual class CredentialStore actual constructor() : CredentialAccess {
 
     private val service = "dev.stapler.stelekit.credentials"
 

@@ -23,18 +23,24 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.llm.LlmCredentialStore
 import dev.stapler.stelekit.voice.VoiceSettings
 
 @Composable
 fun VoiceCaptureSettings(
     voiceSettings: VoiceSettings,
+    llmCredentialStore: LlmCredentialStore,
     onRebuildPipeline: () -> Unit,
     deviceSttAvailable: Boolean = false,
     deviceLlmAvailable: Boolean = false,
 ) {
     var whisperKey by remember { mutableStateOf(voiceSettings.getWhisperApiKey() ?: "") }
-    var anthropicKey by remember { mutableStateOf(voiceSettings.getAnthropicKey() ?: "") }
-    var openAiKey by remember { mutableStateOf(voiceSettings.getOpenAiKey() ?: "") }
+    // Anthropic/OpenAI keys read from LlmCredentialStore (ADR-011), not VoiceSettings — the
+    // latter's plaintext accessors are migration-only (Epic 2 Story 2.3) and must not be
+    // written back to by this screen, or the one-shot migration's security fix would be
+    // silently undone the next time a user edits a key here.
+    var anthropicKey by remember { mutableStateOf(llmCredentialStore.getApiKey("anthropic") ?: "") }
+    var openAiKey by remember { mutableStateOf(llmCredentialStore.getApiKey("openai") ?: "") }
     var llmEnabled by remember { mutableStateOf(voiceSettings.getLlmEnabled()) }
     var useDeviceStt by remember { mutableStateOf(voiceSettings.getUseDeviceStt()) }
     var useDeviceLlm by remember { mutableStateOf(voiceSettings.getUseDeviceLlm()) }
@@ -180,8 +186,16 @@ fun VoiceCaptureSettings(
             Button(
                 onClick = {
                     voiceSettings.setWhisperApiKey(whisperKey)
-                    voiceSettings.setAnthropicKey(anthropicKey)
-                    voiceSettings.setOpenAiKey(openAiKey)
+                    if (anthropicKey.isBlank()) {
+                        llmCredentialStore.deleteApiKey("anthropic")
+                    } else {
+                        llmCredentialStore.setApiKey("anthropic", anthropicKey)
+                    }
+                    if (openAiKey.isBlank()) {
+                        llmCredentialStore.deleteApiKey("openai")
+                    } else {
+                        llmCredentialStore.setApiKey("openai", openAiKey)
+                    }
                     voiceSettings.setLlmEnabled(llmEnabled)
                     voiceSettings.setUseDeviceStt(useDeviceStt)
                     voiceSettings.setUseDeviceLlm(useDeviceLlm)

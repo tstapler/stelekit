@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Tyler Stapler
 // SPDX-License-Identifier: Elastic-2.0
 
-package dev.stapler.stelekit.git
+package dev.stapler.stelekit.platform.security
 
 import java.nio.file.Files
 import kotlin.test.Test

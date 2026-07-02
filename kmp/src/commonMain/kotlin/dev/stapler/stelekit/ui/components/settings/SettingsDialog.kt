@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import arrow.core.Either
+import dev.stapler.stelekit.llm.LlmCredentialStore
 import dev.stapler.stelekit.performance.getDeviceInfo
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.sections.SectionState
@@ -37,6 +38,7 @@ fun SettingsDialog(
     isLeftHanded: Boolean = false,
     onLeftHandedChange: (Boolean) -> Unit = {},
     voiceSettings: VoiceSettings? = null,
+    llmCredentialStore: LlmCredentialStore? = null,
     onRebuildVoicePipeline: (() -> Unit)? = null,
     deviceSttAvailable: Boolean = false,
     deviceLlmAvailable: Boolean = false,
@@ -176,9 +178,10 @@ fun SettingsDialog(
                                 SettingsCategory.EDITOR -> EditorSettings()
                                 SettingsCategory.PLUGINS -> PluginsSettings()
                                 SettingsCategory.ADVANCED -> AdvancedSettings(onReindex)
-                                SettingsCategory.VOICE -> if (voiceSettings != null && onRebuildVoicePipeline != null) {
+                                SettingsCategory.VOICE -> if (voiceSettings != null && llmCredentialStore != null && onRebuildVoicePipeline != null) {
                                     VoiceCaptureSettings(
                                         voiceSettings = voiceSettings,
+                                        llmCredentialStore = llmCredentialStore,
                                         onRebuildPipeline = onRebuildVoicePipeline,
                                         deviceSttAvailable = deviceSttAvailable,
                                         deviceLlmAvailable = deviceLlmAvailable,

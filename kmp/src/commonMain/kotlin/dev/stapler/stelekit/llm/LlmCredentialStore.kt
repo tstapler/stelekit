@@ -1,19 +1,39 @@
 // Copyright (c) 2026 Tyler Stapler
 // SPDX-License-Identifier: Elastic-2.0
+
 package dev.stapler.stelekit.llm
 
+import dev.stapler.stelekit.platform.security.CredentialAccess
+
 /**
- * Minimal typed credential accessor for LLM provider API keys, consumed by
- * [buildLlmProviderRegistry].
+ * Typed wrapper over [CredentialAccess] for LLM/voice provider API keys.
  *
- * Epic 1 stub: this interface exists only so the registry composition root (Story 1.6) has
- * something to compile against without blocking on Epic 2. Epic 2 (ADR-011) relocates/
- * consolidates real credential storage onto the existing `CredentialStore` expect/actual
- * (namespaced keys: `llm.anthropic.api_key`, `llm.openai.api_key`, ...) and is expected to
- * implement this same shape — `getApiKey(providerId): String?` — so this call site does not
- * need to change when Epic 2 lands.
+ * Keys are namespaced flat strings consistent with the existing `git_https_token_$id`
+ * convention (ADR-011): `llm.<providerId>.api_key`, e.g. `llm.anthropic.api_key`,
+ * `llm.openai.api_key`, or `llm.custom.<uuid>.api_key` (pass `"custom.<uuid>"` as
+ * [providerId] for the latter — this class does no special-casing of the id shape).
+ *
+ * Non-secret provider configuration (base URL, model name, etc.) is explicitly NOT stored
+ * here — see [dev.stapler.stelekit.llm.LlmSettings] and [CustomProviderConfig].
  */
-interface LlmCredentialStore {
-    /** Returns the stored API key for [providerId], or `null` if none is configured. */
-    fun getApiKey(providerId: String): String?
+class LlmCredentialStore(private val credentialStore: CredentialAccess) {
+
+    fun getApiKey(providerId: String): String? = credentialStore.retrieve(keyFor(providerId))
+
+    fun setApiKey(providerId: String, key: String) = credentialStore.store(keyFor(providerId), key)
+
+    fun deleteApiKey(providerId: String) = credentialStore.delete(keyFor(providerId))
+
+    /**
+     * Synchronous, durable-before-return write. **Migration-only** — the only intended
+     * caller is [dev.stapler.stelekit.llm.LlmCredentialMigration]. Normal credential entry
+     * (Settings UI) should keep using [setApiKey], which is fine to be fire-and-forget since
+     * it isn't immediately followed by clearing a second, only-copy plaintext source.
+     *
+     * @return true if the write is confirmed durable, false otherwise.
+     */
+    fun setApiKeyBlocking(providerId: String, key: String): Boolean =
+        credentialStore.storeBlocking(keyFor(providerId), key)
+
+    private fun keyFor(providerId: String): String = "llm.$providerId.api_key"
 }

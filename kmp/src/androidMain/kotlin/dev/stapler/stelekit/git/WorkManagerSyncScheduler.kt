@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters
 import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.platform.security.CredentialStore
 import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
 
