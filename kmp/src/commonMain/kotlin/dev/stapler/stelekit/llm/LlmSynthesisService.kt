@@ -88,6 +88,8 @@ class LlmSynthesisService(
                 is LlmResult.Failure.ApiError -> DomainError.NetworkError.HttpError(result.code, result.message).left()
                 is LlmResult.Failure.NetworkError -> DomainError.NetworkError.RequestFailed("Network error").left()
                 is LlmResult.Failure.OnDeviceUnavailable -> DomainError.NetworkError.RequestFailed(result.reason).left()
+                is LlmResult.Failure.ContentRejected ->
+                    DomainError.NetworkError.RequestFailed("Content rejected: ${result.reason}").left()
             }
         } catch (e: CancellationException) {
             throw e
