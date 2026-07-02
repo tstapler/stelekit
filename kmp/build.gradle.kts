@@ -43,6 +43,38 @@ kotlin {
     iosArm64()
     iosSimulatorArm64()
 
+    // ── iOS Foundation Models shim scaffolding (Epic 5, llm-service) ───────────────────────
+    // Produces the `kmp.framework` Kotlin/Native output iosApp/ links against (Story 5.1), and
+    // wires cinterop bindings for the hand-authored Swift shims under iosApp/ (Stories 5.2/5.4:
+    // PingShim — the no-op cinterop smoke test — and FoundationModelsShim — the real Apple
+    // Intelligence / FoundationModels wrapper). See iosApp/README.md for the required manual
+    // build order: the Xcode shim framework targets must be built via `xcodebuild` BEFORE these
+    // cinterop tasks can resolve `PingShim`/`FoundationModelsShim`'s generated Clang modules —
+    // this repo's CI cannot run this path today (Gradle #17559 + Kotlin 2.3.x K2/Compose
+    // Multiplatform 1.7.x klib incompatibility block `compileKotlinIos*` entirely; see
+    // project_plans/llm-service/implementation/plan.md's Epic 5 "corrected CI framing").
+    listOf(iosX64(), iosArm64(), iosSimulatorArm64()).forEach { iosTarget ->
+        iosTarget.binaries.framework {
+            baseName = "kmp"
+        }
+
+        // Xcode's DerivedData-style output location the iosApp/README.md-documented xcodebuild
+        // invocation writes the shim frameworks into, keyed by SDK (device vs. simulator).
+        val sdkSuffix = if (iosTarget.name == "iosArm64") "iphoneos" else "iphonesimulator"
+        val shimFrameworkSearchPath = "$rootDir/iosApp/build/DerivedData/Build/Products/Debug-$sdkSuffix"
+
+        iosTarget.compilations.getByName("main").cinterops {
+            create("PingShim") {
+                defFile(project.file("src/nativeInterop/cinterop/PingShim.def"))
+                compilerOpts("-F$shimFrameworkSearchPath")
+            }
+            create("FoundationModelsShim") {
+                defFile(project.file("src/nativeInterop/cinterop/FoundationModelsShim.def"))
+                compilerOpts("-F$shimFrameworkSearchPath")
+            }
+        }
+    }
+
     // Configure source sets
     sourceSets {
         val commonMain by getting {

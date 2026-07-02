@@ -5,6 +5,7 @@ import dev.stapler.stelekit.domain.ImportServiceTest
 import dev.stapler.stelekit.editor.LinkInsertionTest
 import dev.stapler.stelekit.flashcard.FlashcardPropertiesTest
 import dev.stapler.stelekit.flashcard.FlashcardReviewTest
+import dev.stapler.stelekit.llm.IosAvailabilityMappingTest
 import dev.stapler.stelekit.llm.LlmProviderAvailabilityTest
 import dev.stapler.stelekit.llm.LlmProviderRegistryFactoryTest
 import dev.stapler.stelekit.llm.LlmProviderRegistryTest
@@ -31,6 +32,7 @@ import org.junit.runners.Suite
     LinkInsertionTest::class,
     FlashcardPropertiesTest::class,
     FlashcardReviewTest::class,
+    IosAvailabilityMappingTest::class,
     LlmProviderAvailabilityTest::class,
     LlmProviderRegistryFactoryTest::class,
     LlmProviderRegistryTest::class,
