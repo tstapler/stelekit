@@ -43,13 +43,9 @@ class VoiceSettingsTest {
         assertTrue(settings.getUseDeviceStt())
     }
 
-    // --- useDeviceLlm stays false by default (unchanged) ---
-
-    @Test
-    fun `getUseDeviceLlm is false by default`() {
-        val settings = VoiceSettings(MapSettings())
-        assertFalse(settings.getUseDeviceLlm())
-    }
+    // useDeviceLlm getter/setter removed in Epic 8 Story 8.1c — superseded by per-feature
+    // provider selection (LlmSettings/LlmProviderRegistry). Migration-path coverage for the
+    // legacy flag now lives in VoiceDeviceLlmMigrationTest.
 
     // --- llmEnabled stays true by default (unchanged) ---
 

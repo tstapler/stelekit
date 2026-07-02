@@ -50,12 +50,6 @@ class VoiceSettings(private val platformSettings: Settings) {
     fun setUseDeviceStt(enabled: Boolean) =
         platformSettings.putBoolean(KEY_USE_DEVICE_STT, enabled)
 
-    fun getUseDeviceLlm(): Boolean =
-        platformSettings.getBoolean(KEY_USE_DEVICE_LLM, false)
-
-    fun setUseDeviceLlm(enabled: Boolean) =
-        platformSettings.putBoolean(KEY_USE_DEVICE_LLM, enabled)
-
     fun getIncludeRawTranscript(): Boolean =
         platformSettings.getBoolean(KEY_INCLUDE_RAW_TRANSCRIPT, true)
 
@@ -77,7 +71,18 @@ class VoiceSettings(private val platformSettings: Settings) {
         private const val KEY_OPENAI = "voice.openai_key"
         private const val KEY_LLM_ENABLED = "voice.llm_enabled"
         private const val KEY_USE_DEVICE_STT = "voice.use_device_stt"
-        private const val KEY_USE_DEVICE_LLM = "voice.use_device_llm"
+
+        /**
+         * Public (not private) and no longer backed by a getter/setter pair — Epic 8 Story
+         * 8.1c removed [getUseDeviceLlm]/[setUseDeviceLlm] (superseded by per-feature
+         * selection in `LlmSettings`/`LlmProviderRegistry`), but the raw key is kept public
+         * so [dev.stapler.stelekit.llm.LlmCredentialMigration] can perform its one-time,
+         * one-directional read of the legacy flag to preserve an existing user's effective
+         * on-device choice across the upgrade (see that class's migration step). Do not add a
+         * new getter/setter here — that would resurrect the two-systems-disagree risk this
+         * migration exists to close out.
+         */
+        const val KEY_USE_DEVICE_LLM_LEGACY = "voice.use_device_llm"
         private const val KEY_INCLUDE_RAW_TRANSCRIPT = "voice.include_raw_transcript"
         private const val KEY_TRANSCRIPT_PAGE_WORD_THRESHOLD = "voice.transcript_page_word_threshold"
     }

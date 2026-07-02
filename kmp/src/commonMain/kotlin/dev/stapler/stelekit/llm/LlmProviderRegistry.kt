@@ -11,6 +11,21 @@ package dev.stapler.stelekit.llm
  */
 class LlmProviderRegistry(private val providers: List<LlmProvider>) {
 
+    companion object {
+        /**
+         * Sentinel value for [LlmSettings.setSelectedProviderId] meaning "this feature is
+         * explicitly disabled" — distinct from `null` ("Auto"). Overloads the persisted
+         * provider-id string rather than adding a third enum state to [LlmSettings], since
+         * every persisted selection is already a plain string (Epic 8 Story 8.2's
+         * existing-install default-behavior guard: an upgrading user who had tag suggestion's
+         * LLM tier configured under the old Anthropic/OpenAI-only scheme must not silently
+         * start getting on-device suggestions just because "Auto" now resolves differently).
+         * [find] never resolves this id to a real provider — callers must check for it
+         * explicitly before falling back to Auto.
+         */
+        const val DISABLED_SENTINEL = "__disabled__"
+    }
+
     /** Static list, no suspend — safe to call from composition. */
     fun all(): List<LlmProvider> = providers
 

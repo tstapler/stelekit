@@ -37,7 +37,6 @@ fun VoiceCaptureSettings(
     var whisperKey by remember { mutableStateOf(voiceSettings.getWhisperApiKey() ?: "") }
     var llmEnabled by remember { mutableStateOf(voiceSettings.getLlmEnabled()) }
     var useDeviceStt by remember { mutableStateOf(voiceSettings.getUseDeviceStt()) }
-    var useDeviceLlm by remember { mutableStateOf(voiceSettings.getUseDeviceLlm()) }
     var includeRawTranscript by remember { mutableStateOf(voiceSettings.getIncludeRawTranscript()) }
     var transcriptPageWordThreshold by remember { mutableStateOf(voiceSettings.getTranscriptPageWordThreshold().toString()) }
     var saved by remember { mutableStateOf(false) }
@@ -102,45 +101,34 @@ fun VoiceCaptureSettings(
         }
         if (llmEnabled) {
             if (deviceLlmAvailable) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Use on-device LLM (Gemini Nano)", style = MaterialTheme.typography.bodyMedium)
-                    Switch(
-                        checked = useDeviceLlm,
-                        onCheckedChange = { useDeviceLlm = it; saved = false },
-                    )
-                }
-                if (useDeviceLlm) {
-                    Text(
-                        "Formatting runs on-device — no API key or network required. " +
-                            "256-token output limit; longer notes may be truncated.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
-                }
+                // Epic 8 Story 8.1c: the old local useDeviceLlm switch is retired — per-feature
+                // provider selection (including on-device) now lives in the unified provider
+                // hub's PerFeatureProviderPicker (Epic 6 Story 6.4), backed by
+                // LlmSettings/LlmProviderRegistry instead of this screen's own boolean flag.
+                Text(
+                    "On-device LLM (Gemini Nano) is available. Choose it — or a remote " +
+                        "provider — in Settings → AI Providers.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
             }
-            if (!deviceLlmAvailable || !useDeviceLlm) {
-                // Anthropic/OpenAI key entry moved to the unified provider hub (Epic 6 Story
-                // 6.2/6.3) — this screen no longer reads/writes those keys directly (Story
-                // 6.6), so there is exactly one place in the UI to configure them.
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Configure AI provider keys in Settings → AI Providers.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (onNavigateToAiProviders != null) {
-                        TextButton(onClick = onNavigateToAiProviders) {
-                            Text("Open")
-                        }
+            // Anthropic/OpenAI key entry moved to the unified provider hub (Epic 6 Story
+            // 6.2/6.3) — this screen no longer reads/writes those keys directly (Story
+            // 6.6), so there is exactly one place in the UI to configure them.
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Configure AI provider keys in Settings → AI Providers.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                if (onNavigateToAiProviders != null) {
+                    TextButton(onClick = onNavigateToAiProviders) {
+                        Text("Open")
                     }
                 }
             }
@@ -177,7 +165,6 @@ fun VoiceCaptureSettings(
                     voiceSettings.setWhisperApiKey(whisperKey)
                     voiceSettings.setLlmEnabled(llmEnabled)
                     voiceSettings.setUseDeviceStt(useDeviceStt)
-                    voiceSettings.setUseDeviceLlm(useDeviceLlm)
                     voiceSettings.setIncludeRawTranscript(includeRawTranscript)
                     voiceSettings.setTranscriptPageWordThreshold(maxOf(1, transcriptPageWordThreshold.toIntOrNull() ?: 20))
                     saved = true

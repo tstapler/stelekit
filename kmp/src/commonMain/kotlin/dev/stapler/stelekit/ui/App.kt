@@ -442,18 +442,6 @@ private fun GraphContent(
     val llmCredentialStore = remember {
         dev.stapler.stelekit.llm.LlmCredentialStore(dev.stapler.stelekit.platform.security.CredentialStore())
     }
-    // One-shot migration of VoiceSettings' plaintext Anthropic/OpenAI keys into
-    // llmCredentialStore (Epic 2 Story 2.3). Run synchronously in this remember block —
-    // not LaunchedEffect — so it completes before tagEngine (below) or any other code path
-    // reads voiceSettings/llmCredentialStore for provider selection on the first frame.
-    // runIfNeeded() is idempotent (early-returns once migrated), so re-execution on
-    // recomposition is safe.
-    remember(voiceSettings, platformSettings, llmCredentialStore) {
-        if (voiceSettings != null) {
-            dev.stapler.stelekit.llm.LlmCredentialMigration(voiceSettings, llmCredentialStore, platformSettings).runIfNeeded()
-        }
-    }
-
     // LLM provider registry + settings (Epic 6 Settings UI). llmRegistryRefreshToken forces a
     // rebuild after the user adds/edits/removes a credential through the new Settings UI —
     // LlmCredentialStore itself isn't reactive (no Flow), so this is the simplest way to keep
@@ -462,6 +450,23 @@ private fun GraphContent(
     val llmSettings = remember(platformSettings) { dev.stapler.stelekit.llm.LlmSettings(platformSettings) }
     val llmProviderRegistry = remember(llmCredentialStore, llmRegistryRefreshToken) {
         dev.stapler.stelekit.llm.buildLlmProviderRegistry(llmCredentialStore)
+    }
+
+    // One-shot migrations (Epic 2 Story 2.3 credential migration; Epic 8 Story 8.1b voice
+    // on-device flag migration; Epic 8 Story 8.2b tag-suggestion existing-install guard). Run
+    // synchronously in this remember block — not LaunchedEffect — so it completes before
+    // tagEngine/voicePipeline provider selection or any other code path reads
+    // voiceSettings/llmCredentialStore/llmSettings on the first frame. runIfNeeded() is
+    // idempotent per-step (each step has its own one-shot flag), so re-execution on
+    // recomposition is safe. The return value signals whether Story 8.2's one-time
+    // "on-device tag suggestions available" notice should be shown this session — consumed
+    // below, once snackbarHostState is in scope.
+    val showTagSuggestionOnDeviceNotice = remember(voiceSettings, platformSettings, llmCredentialStore, llmSettings) {
+        if (voiceSettings != null) {
+            dev.stapler.stelekit.llm.LlmCredentialMigration(
+                voiceSettings, llmCredentialStore, platformSettings, llmSettings,
+            ).runIfNeeded()
+        } else false
     }
 
     val activeGraphInfo = remember { graphManager.getActiveGraphInfo() }
@@ -1021,18 +1026,44 @@ private fun GraphContent(
     }
 
     val tagSettings = remember(platformSettings) { TagSettings(platformSettings) }
-    val tagEngine = remember(viewModel.pageNameIndex, voiceSettings, tagSettings) {
+    // Epic 8 Story 8.2: resolved through the unified registry instead of the old
+    // buildLlmFormatterForTags(voiceSettings) (Anthropic/OpenAI-key-only) helper — this is the
+    // fix for the original complaint that Android tag suggestion couldn't use on-device
+    // inference. availableForFeature() performs a live availability check (e.g. on-device
+    // model readiness), so resolution is async via produceState; tagEngine briefly has no LLM
+    // tier on first composition until it resolves, then recomposes with it.
+    val tagLlmProviderState = produceState<dev.stapler.stelekit.llm.LlmProvider?>(
+        initialValue = null,
+        llmProviderRegistry, llmSettings, tagSettings,
+    ) {
+        value = if (tagSettings.isLlmTierEnabled()) {
+            when (val selectedId = llmSettings.getSelectedProviderId(dev.stapler.stelekit.llm.LlmFeature.TAG_SUGGESTION)) {
+                // Existing-install guard (Story 8.2b) explicitly disabled this feature —
+                // never fall through to Auto.
+                dev.stapler.stelekit.llm.LlmProviderRegistry.DISABLED_SENTINEL -> null
+                // "Auto" — first available provider in registry order (on-device included).
+                null -> llmProviderRegistry.availableForFeature(dev.stapler.stelekit.llm.LlmFeature.TAG_SUGGESTION).firstOrNull()
+                // Explicit selection — no Auto fallback if the id is stale/removed.
+                else -> llmProviderRegistry.find(selectedId)
+            }
+        } else null
+    }
+    val tagEngine = remember(viewModel.pageNameIndex, tagSettings.isEnabled(), tagLlmProviderState.value) {
         if (!tagSettings.isEnabled()) null
-        else {
-            val llmProvider = if (tagSettings.isLlmTierEnabled() && voiceSettings != null) {
-                val llmFormatter = buildLlmFormatterForTags(voiceSettings)
-                if (llmFormatter != null) LlmTagProvider(llmFormatter) else null
-            } else null
-            TagSuggestionEngine(
-                pageNameIndex = viewModel.pageNameIndex,
-                llmTagProvider = llmProvider,
-            )
-        }
+        else TagSuggestionEngine(
+            pageNameIndex = viewModel.pageNameIndex,
+            llmTagProvider = tagLlmProviderState.value?.let { LlmTagProvider(it.formatter) },
+        )
+    }
+    // Epic 8 Story 8.4a straggler fix: TagSuggestionSettings' "hasLlmKey" gate used to read
+    // voiceSettings.getAnthropicKey()/getOpenAiKey() directly — those always return null once
+    // LlmCredentialMigration has run (the whole point of the migration is clearing them), which
+    // would have permanently disabled the LLM-tier switch in Settings for every migrated
+    // install, including ones with a valid registry provider (remote key or on-device). Now
+    // reflects "is any provider available for TAG_SUGGESTION at all" via the registry,
+    // independent of the tier's enabled/disabled toggle state.
+    val hasTagSuggestionLlmProviderState = produceState(initialValue = false, llmProviderRegistry) {
+        value = llmProviderRegistry.availableForFeature(dev.stapler.stelekit.llm.LlmFeature.TAG_SUGGESTION).isNotEmpty()
     }
     val tagSuggestionViewModel = remember(tagEngine) {
         if (tagEngine != null) TagSuggestionViewModel(tagEngine) else null
@@ -1172,6 +1203,21 @@ private fun GraphContent(
                         viewModel.snackbarEvents.collect { msg ->
                             try {
                                 snackbarHostState.showSnackbar(msg)
+                            } catch (e: kotlinx.coroutines.CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                graphContentLogger.warn("showSnackbar failed: $e")
+                            }
+                        }
+                    }
+                    // Epic 8 Story 8.2: one-time notice for existing installs whose tag
+                    // suggestion LLM tier was explicitly disabled by the migration guard above
+                    // (see showTagSuggestionOnDeviceNotice) so they know on-device support now
+                    // exists and how to turn it on.
+                    LaunchedEffect(showTagSuggestionOnDeviceNotice) {
+                        if (showTagSuggestionOnDeviceNotice) {
+                            try {
+                                snackbarHostState.showSnackbar("On-device tag suggestions are now available — enable in Settings")
                             } catch (e: kotlinx.coroutines.CancellationException) {
                                 throw e
                             } catch (e: Exception) {
@@ -1654,7 +1700,7 @@ private fun GraphContent(
                         driveClient = null, // DriveApiClient injected from platform entry point in a future phase
                         shareGoogleAuthManager = googleAuthManager,
                         tagSettings = tagSettings,
-                        hasLlmKey = voiceSettings?.getAnthropicKey() != null || voiceSettings?.getOpenAiKey() != null,
+                        hasLlmKey = hasTagSuggestionLlmProviderState.value,
                         currentPage = appState.currentPage,
                         currentBlocks = appState.currentPage?.let {
                             blockStateManager.blocksForPage(it.uuid.value)
@@ -1726,19 +1772,6 @@ private fun onGraphKeyEvent(
         else -> false
     }
 }
-
-/**
- * Builds a [dev.stapler.stelekit.voice.LlmFormatterProvider] for tag suggestions,
- * reusing the same Anthropic / OpenAI keys already stored in [VoiceSettings].
- * Returns null when no key is configured.
- */
-private fun buildLlmFormatterForTags(
-    voiceSettings: VoiceSettings,
-): dev.stapler.stelekit.voice.LlmFormatterProvider? =
-    voiceSettings.getAnthropicKey()
-        ?.let { dev.stapler.stelekit.voice.ClaudeLlmFormatterProvider.withDefaults(it) }
-        ?: voiceSettings.getOpenAiKey()
-            ?.let { dev.stapler.stelekit.voice.OpenAiLlmFormatterProvider.withDefaults(it) }
 
 /**
  * Status bar row — pure presentational composable. Receives only primitives;

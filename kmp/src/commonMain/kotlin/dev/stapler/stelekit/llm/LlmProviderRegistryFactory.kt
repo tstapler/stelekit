@@ -16,8 +16,9 @@ import kotlinx.serialization.json.Json
  * instances, plus the platform on-device provider. Single call site for Epic 6 (Settings UI)
  * and Epic 8 (consumer migration) to depend on.
  *
- * Does **not** touch `App.kt`'s existing `buildLlmFormatterForTags` or any current wiring —
- * this factory is added side-by-side, unused by production code until Epic 8.
+ * Epic 8 migrated `App.kt`'s tag-suggestion (`buildLlmFormatterForTags`, now deleted) and
+ * `VoicePipelineFactory`'s voice-formatting selection onto this registry — it is the single
+ * production-code composition root for both consumers now, not just the Settings UI.
  *
  * Only providers that have credentials/capability are included — an absent Anthropic key
  * means no `"anthropic"` entry in [LlmProviderRegistry.all], not an entry that fails on first

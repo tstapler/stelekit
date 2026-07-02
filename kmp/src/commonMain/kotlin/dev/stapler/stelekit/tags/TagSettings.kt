@@ -23,6 +23,14 @@ class TagSettings(private val platformSettings: Settings) {
 
     companion object {
         private const val KEY_ENABLED = "tags.enabled"
-        private const val KEY_LLM_TIER_ENABLED = "tags.llm_tier_enabled"
+
+        /**
+         * Public (not private) so [dev.stapler.stelekit.llm.LlmCredentialMigration] can use
+         * [Settings.containsKey] on it directly — Epic 8 Story 8.2's existing-install guard
+         * needs to distinguish "key never set" (fresh install) from "key present" (existing
+         * install, regardless of its boolean value), which [isLlmTierEnabled]'s typed getter
+         * cannot express.
+         */
+        const val KEY_LLM_TIER_ENABLED = "tags.llm_tier_enabled"
     }
 }
