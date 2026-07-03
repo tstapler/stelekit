@@ -24,7 +24,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
@@ -235,7 +234,7 @@ class RepositoryFactoryImpl(
         )
 
     @OptIn(DirectRepositoryWrite::class)
-    fun createRepositorySet(
+    suspend fun createRepositorySet(
         backend: GraphBackend,
         scope: CoroutineScope? = null,
         fileSystem: dev.stapler.stelekit.platform.FileSystem? = null,
@@ -256,7 +255,7 @@ class RepositoryFactoryImpl(
         if (collector != null) queryStatsCollector = collector
 
         // Kick off telemetry driver open in parallel with main DB init — no data dependency.
-        // ponytail: runBlocking join is bounded; telemetry typically finishes before main DB init
+        // Awaited after blockRepo init; telemetry typically finishes before main DB init completes.
         val telemetryDeferred = if (graphId != null && backend == GraphBackend.SQLDELIGHT && scope != null) {
             scope.async(PlatformDispatcher.IO) {
                 try {
@@ -271,7 +270,7 @@ class RepositoryFactoryImpl(
 
         // Await telemetry result; usually already done since main DB init takes longer
         val telemetryDb: TelemetryDatabase? = when {
-            telemetryDeferred != null -> runBlocking { telemetryDeferred.await() }
+            telemetryDeferred != null -> telemetryDeferred.await()
             graphId != null && backend == GraphBackend.SQLDELIGHT -> {
                 // scope == null: synchronous fallback (test-only path)
                 try {

@@ -842,6 +842,8 @@ object MigrationRunner {
             mapper = { cursor -> cursor.next(); QueryResult.Value((cursor.getLong(0) ?: 0L) > 0L) },
             parameters = 0
         ).await()
+    } catch (e: CancellationException) {
+        throw e
     } catch (_: Exception) {
         false
     }
