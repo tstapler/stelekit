@@ -819,16 +819,20 @@ object MigrationRunner {
         // making each ANALYZE call O(1) in table size and typically under 50 ms on Android
         // even for 50 000-row tables. The 400-sample statistics are accurate enough for the
         // planner to always prefer the composite index over a heap scan.
-        // ANALYZE blocks and pages unconditionally so fresh installs get correct statistics
-        // on their second launch (after graph import). The analysis_limit=400 PRAGMA is set by
-        // DriverFactory per-platform before this runs (rawQuery on Android, driver.execute on JVM)
-        // so each ANALYZE reads at most 400 index rows — typically under 50 ms.
+        // ANALYZE blocks/pages only when sqlite_stat1 has no entry for the table. On cold starts
+        // (first launch after install, or after a factory reset) the stats are absent and ANALYZE
+        // runs so the planner gets correct statistics. On warm starts the stats are present and
+        // ANALYZE is skipped — saving ~50 ms per table on Android. The analysis_limit=400 PRAGMA
+        // is set by DriverFactory per-platform before this runs (rawQuery on Android, driver.execute
+        // on JVM) so each ANALYZE reads at most 400 index rows — typically under 50 ms.
+        //
+        // PRAGMA optimize (without the 0x10002 flag) runs after the conditional ANALYZE so the
+        // planner also refreshes statistics for tables we did not explicitly analyze above.
         //
         // NOTE: PRAGMA analysis_limit=400 is NOT called here because on Android the Requery
         // driver throws when execSQL is called for result-returning statements. It is set in
         // ANDROID_PRAGMAS via the rawQuery path (DriverFactory.android.kt) and in
         // buildMainDbConnectionProps() for JVM so every pool connection inherits it.
-        // ponytail: only ANALYZE when stats are absent; PRAGMA optimize handles stale stats
         if (!hasStats(driver, "blocks")) driver.execute(null, "ANALYZE blocks", 0).await()
         if (!hasStats(driver, "pages")) driver.execute(null, "ANALYZE pages", 0).await()
         driver.execute(null, "PRAGMA optimize", 0).await()
@@ -838,9 +842,10 @@ object MigrationRunner {
     private suspend fun hasStats(driver: SqlDriver, table: String): Boolean = try {
         driver.executeQuery(
             identifier = null,
-            sql = "SELECT count(*) FROM sqlite_stat1 WHERE tbl = '$table'",
+            sql = "SELECT count(*) FROM sqlite_stat1 WHERE tbl = ?",
             mapper = { cursor -> cursor.next(); QueryResult.Value((cursor.getLong(0) ?: 0L) > 0L) },
-            parameters = 0
+            parameters = 1,
+            binders = { bindString(0, table) }
         ).await()
     } catch (e: CancellationException) {
         throw e
