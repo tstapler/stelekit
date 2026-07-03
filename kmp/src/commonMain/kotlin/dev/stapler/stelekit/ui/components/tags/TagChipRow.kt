@@ -61,7 +61,7 @@ fun TagChipRow(
         if (llmError != null) {
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = "Could not reach LLM",
+                text = llmError,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
             )
