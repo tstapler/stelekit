@@ -2,16 +2,16 @@
 class Stelekit < Formula
   desc "Markdown-based outliner and note-taking app (Kotlin Multiplatform)"
   homepage "https://github.com/tstapler/stelekit"
-  version "0.59.0"
+  version "0.59.1"
 
   on_linux do
     url "https://github.com/tstapler/stelekit/releases/download/v#{version}/SteleKit-v#{version}-linux.AppImage"
-    sha256 "089ed80cabbef63fa24ca4444b4cabbcbc767173a90018fb9a270c61aa86c7fe"
+    sha256 "47bae7800a2ade024f9ca6e7ba73f978928e23ae0403e8b5869d99b10b56b6f3"
   end
 
   on_macos do
     url "https://github.com/tstapler/stelekit/releases/download/v#{version}/SteleKit-v#{version}-macos.dmg"
-    sha256 "edb75fcfdede442947340d00fba96d07bff12fcc76da50582a4efba90430b3e9"
+    sha256 "4f759fa07f9e4a10a120d52ab8d3e6501e8e27d01fbfe9964aa5abe953fee1de"
   end
 
   def install
