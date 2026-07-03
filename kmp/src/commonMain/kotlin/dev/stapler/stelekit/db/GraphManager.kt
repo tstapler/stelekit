@@ -378,7 +378,11 @@ class GraphManager(
         // never hangs permanently.
         graphScope.launch(PlatformDispatcher.IO) {
             try {
+                val t0 = kotlin.time.Clock.System.now().toEpochMilliseconds()
+                fun elapsed() = kotlin.time.Clock.System.now().toEpochMilliseconds() - t0
+
                 preFlightJob?.await()
+                logger.info("init[${elapsed()}ms]: preFlightJob done")
 
                 val dbUrl = driverFactory.getDatabaseUrl(id)
                 val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl, graphId = id)
@@ -396,6 +400,7 @@ class GraphManager(
                     appVersion = deviceInfo?.appVersion ?: "unknown",
                     platform = deviceInfo?.platform ?: "unknown",
                 )
+                logger.info("init[${elapsed()}ms]: createRepositorySet done")
                 currentFactory = factory
                 _activeRepositorySet.value = repoSet
 
@@ -404,6 +409,7 @@ class GraphManager(
                     if (writeActor != null) {
                         val db = factory.steleDatabase()
                         UuidMigration(writeActor).runIfNeeded(db)
+                        logger.info("init[${elapsed()}ms]: UuidMigration done")
                         try {
                             MigrationRunner(
                                 registry = MigrationRegistry,
@@ -417,8 +423,10 @@ class GraphManager(
                         } catch (e: MigrationTamperedError) {
                             logger.error("MigrationRunner: tampered migration detected for graph $id", e)
                         }
+                        logger.info("init[${elapsed()}ms]: content migrations done")
                     }
                 }
+                repoSet.spanEmitter?.emit("db.init", t0)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

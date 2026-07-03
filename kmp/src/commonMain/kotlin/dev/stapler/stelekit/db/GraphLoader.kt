@@ -1307,8 +1307,9 @@ class GraphLoader(
 
     companion object {
         // Timeout for the batch mtime cursor on startup. Two SAF cursor queries should
-        // complete well under 500ms; 2s is a conservative ceiling for slow providers.
-        private const val SHADOW_STARTUP_TIMEOUT_MS = 2_000L
+        // complete well under 500ms. Failure is non-fatal — the warm reconcile will catch
+        // any stale entries on the next launch.
+        private const val SHADOW_STARTUP_TIMEOUT_MS = 500L
 
         // Phase 3 drain-batch size: bounds how many unloaded Page rows are materialized at
         // once during background indexing, independent of graph size.
