@@ -426,6 +426,7 @@ class GraphManager(
                         logger.info("init[${elapsed()}ms]: content migrations done")
                     }
                 }
+                repoSet.spanEmitter?.emit("db.init", t0)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

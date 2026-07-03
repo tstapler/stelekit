@@ -21,8 +21,10 @@ import dev.stapler.stelekit.performance.TimingDriverWrapper
 import dev.stapler.stelekit.performance.wrapWithOtelIfAvailable
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
@@ -253,18 +255,33 @@ class RepositoryFactoryImpl(
         } else null
         if (collector != null) queryStatsCollector = collector
 
-        // Create telemetry DB (separate SQLite file with poolSize=1 — no WAL contention)
-        val telemetryDb: TelemetryDatabase? = if (graphId != null && backend == GraphBackend.SQLDELIGHT) {
-            try {
-                val driver = driverFactory.createTelemetryDriver(graphId)
-                activeTelemetryDriver = driver
-                TelemetryDatabase(driver).also { activeTelemetryDb = it }
-            } catch (_: Exception) {
-                null
+        // Kick off telemetry driver open in parallel with main DB init — no data dependency.
+        // ponytail: runBlocking join is bounded; telemetry typically finishes before main DB init
+        val telemetryDeferred = if (graphId != null && backend == GraphBackend.SQLDELIGHT && scope != null) {
+            scope.async(PlatformDispatcher.IO) {
+                try {
+                    val driver = driverFactory.createTelemetryDriver(graphId)
+                    activeTelemetryDriver = driver
+                    TelemetryDatabase(driver).also { activeTelemetryDb = it }
+                } catch (_: Exception) { null }
             }
         } else null
 
-        val blockRepo = createBlockRepository(backend)
+        val blockRepo = createBlockRepository(backend) // triggers write + read driver opens
+
+        // Await telemetry result; usually already done since main DB init takes longer
+        val telemetryDb: TelemetryDatabase? = when {
+            telemetryDeferred != null -> runBlocking { telemetryDeferred.await() }
+            graphId != null && backend == GraphBackend.SQLDELIGHT -> {
+                // scope == null: synchronous fallback (test-only path)
+                try {
+                    val driver = driverFactory.createTelemetryDriver(graphId)
+                    activeTelemetryDriver = driver
+                    TelemetryDatabase(driver).also { activeTelemetryDb = it }
+                } catch (_: Exception) { null }
+            }
+            else -> null
+        }
         val pageRepo = createPageRepository(backend)
         val backgroundPageRepo: PageRepository = if (backend == GraphBackend.SQLDELIGHT) {
             SqlDelightPageRepository(database, cacheWrites = false)
