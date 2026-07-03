@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.59.1](https://github.com/tstapler/stelekit/compare/v0.59.0...v0.59.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* **ci:** resolve CI failures, skip warm-start ANALYZE, add init timing logs ([#200](https://github.com/tstapler/stelekit/issues/200)) ([7f9ecbd](https://github.com/tstapler/stelekit/commit/7f9ecbdbcdd77b97acd085c9b657124f5e49ba30))
+* **ui:** hide edit affordance for on-device provider rows ([b01ed75](https://github.com/tstapler/stelekit/commit/b01ed7574c223c9b30bc42b0c16a505e777dc01b))
+* **ui:** show actual LLM error message; skip API key dialog for on-device providers ([bc0de57](https://github.com/tstapler/stelekit/commit/bc0de57fdc4c5051bb3e0b0952f2a90cc3488a63))
+* **ui:** show actual LLM error; skip API key dialog for on-device providers ([49880fc](https://github.com/tstapler/stelekit/commit/49880fcc4180ac5ba64c041ffd7540dae16d5df5))
+* **ui:** use allowlist (== REMOTE) not denylist (!= ON_DEVICE) in onEditProvider ([59c6e52](https://github.com/tstapler/stelekit/commit/59c6e5257cb9954aa3365a7a2ed39ff524164ad1))
+
 ## [0.59.0](https://github.com/tstapler/stelekit/compare/v0.58.1...v0.59.0) (2026-07-02)
 
 
