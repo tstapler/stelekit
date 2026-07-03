@@ -98,7 +98,12 @@ fun LlmProviderListScreen(
         }
 
         providers.forEachIndexed { index, provider ->
-            LlmProviderRow(provider = provider, onClick = { onEditProvider(provider.id) })
+            LlmProviderRow(
+                provider = provider,
+                onClick = if (provider.kind != LlmProviderKind.ON_DEVICE) {
+                    { onEditProvider(provider.id) }
+                } else null,
+            )
             if (index != providers.lastIndex) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             }
@@ -108,7 +113,7 @@ fun LlmProviderListScreen(
 
 /** A single provider row — resolves [LlmProvider.checkAvailability] asynchronously per-row. */
 @Composable
-private fun LlmProviderRow(provider: LlmProvider, onClick: () -> Unit) {
+private fun LlmProviderRow(provider: LlmProvider, onClick: (() -> Unit)?) {
     // produceState re-runs the suspend block whenever `provider` changes identity; starts at
     // `null` ("Checking availability…") so we never render an optimistic default.
     val availability by produceState<LlmProviderAvailability?>(initialValue = null, provider) {
@@ -118,7 +123,7 @@ private fun LlmProviderRow(provider: LlmProvider, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(vertical = 10.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -143,12 +148,14 @@ private fun LlmProviderRow(provider: LlmProvider, onClick: () -> Unit) {
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             ProviderStatusIndicator(availability)
-            Spacer(modifier = Modifier.width(4.dp))
-            Icon(
-                Icons.Default.ChevronRight,
-                contentDescription = "Edit",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (onClick != null) {
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    Icons.Default.ChevronRight,
+                    contentDescription = "Edit",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

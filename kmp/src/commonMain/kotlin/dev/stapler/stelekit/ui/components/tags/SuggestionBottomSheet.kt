@@ -90,7 +90,7 @@ fun SuggestionBottomSheet(
 
                     if (state.llmError != null) {
                         Text(
-                            text = "Could not reach LLM",
+                            text = state.llmError,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.padding(top = 8.dp),

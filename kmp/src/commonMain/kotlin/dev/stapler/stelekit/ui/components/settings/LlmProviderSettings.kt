@@ -30,6 +30,7 @@ import dev.stapler.stelekit.llm.CustomOpenAiCompatibleLlmProvider
 import dev.stapler.stelekit.llm.CustomProviderConfig
 import dev.stapler.stelekit.llm.LlmCredentialStore
 import dev.stapler.stelekit.llm.LlmFeature
+import dev.stapler.stelekit.llm.LlmProviderKind
 import dev.stapler.stelekit.llm.LlmProviderRegistry
 import dev.stapler.stelekit.llm.LlmSettings
 import io.ktor.client.HttpClient
@@ -79,9 +80,10 @@ fun LlmProviderSettings(
             onEditProvider = { id ->
                 if (id.startsWith("custom:")) {
                     editingCustomProviderId = id
-                } else {
+                } else if (registry.find(id)?.kind == LlmProviderKind.REMOTE) {
                     editingBuiltInProviderId = id
                 }
+                // ON_DEVICE and unknown kinds have no credentials — click is intentionally a no-op
             },
         )
 
