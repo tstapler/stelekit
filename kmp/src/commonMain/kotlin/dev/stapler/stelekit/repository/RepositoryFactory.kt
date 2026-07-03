@@ -262,6 +262,8 @@ class RepositoryFactoryImpl(
                     val driver = driverFactory.createTelemetryDriver(graphId)
                     activeTelemetryDriver = driver
                     TelemetryDatabase(driver).also { activeTelemetryDb = it }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (_: Exception) { null }
             }
         } else null
@@ -277,6 +279,8 @@ class RepositoryFactoryImpl(
                     val driver = driverFactory.createTelemetryDriver(graphId)
                     activeTelemetryDriver = driver
                     TelemetryDatabase(driver).also { activeTelemetryDb = it }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (_: Exception) { null }
             }
             else -> null
