@@ -80,10 +80,10 @@ fun LlmProviderSettings(
             onEditProvider = { id ->
                 if (id.startsWith("custom:")) {
                     editingCustomProviderId = id
-                } else if (registry.find(id)?.kind != LlmProviderKind.ON_DEVICE) {
+                } else if (registry.find(id)?.kind == LlmProviderKind.REMOTE) {
                     editingBuiltInProviderId = id
                 }
-                // ON_DEVICE providers have no credentials — click is intentionally a no-op
+                // ON_DEVICE and unknown kinds have no credentials — click is intentionally a no-op
             },
         )
 
