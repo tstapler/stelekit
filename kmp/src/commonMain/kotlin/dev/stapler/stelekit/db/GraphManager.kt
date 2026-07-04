@@ -360,8 +360,11 @@ class GraphManager(
         currentFactory?.close()
         currentFactory = null
         
-        // Create a new scope for this graph's operations first so the actor can use it
-        val graphScope = CoroutineScope(coroutineScope.coroutineContext)
+        // Create a new scope for this graph's operations first so the actor can use it.
+        // MUST use a fresh SupervisorJob — CoroutineScope(coroutineScope.coroutineContext) would
+        // share the same Job, so cancelling any previous graphScope (line above) would cancel
+        // coroutineScope itself, making all subsequent launches immediately fail.
+        val graphScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         activeGraphJobs[id] = graphScope
 
         // Expose a Deferred for callers that need to await the full initialization.
