@@ -1322,10 +1322,10 @@ private fun GraphContent(
                                     if (fileSystem.supportsNativeDirectoryPicker) {
                                         scope.launch {
                                             val selectedPath = fileSystem.pickDirectoryAsync()
-                                            appLogger.info("onAddGraph: picker returned '$selectedPath'")
+                                            println("[SteleKit] onAddGraph: picker returned '$selectedPath'")
                                             if (selectedPath != null) {
                                                 val newGraphId = graphManager.addGraph(selectedPath)
-                                                appLogger.info("onAddGraph: addGraph='$newGraphId', switching...")
+                                                println("[SteleKit] onAddGraph: addGraph='$newGraphId', switching...")
                                                 graphManager.switchGraph(newGraphId)
                                             }
                                         }
