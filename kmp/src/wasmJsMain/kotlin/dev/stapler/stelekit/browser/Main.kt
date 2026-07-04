@@ -23,7 +23,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 
 private fun markSteleKitReady(): Unit = js("window.__stelekit_ready = true")
-private fun markGraphDialogCapable(): Unit = js("window.__stelekit_native_graph_picker = false")
+private fun markGraphDialogCapable(capable: Boolean): Unit = js("window.__stelekit_native_graph_picker = capable")
 private fun markDriverBackend(backend: String): Unit = js("window.__stelekit_driver_backend = backend")
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -106,7 +106,7 @@ fun main() {
         )
 
         markSteleKitReady()
-        markGraphDialogCapable()
+        markGraphDialogCapable(dev.stapler.stelekit.platform.showDirectoryPickerSupported())
 
         ComposeViewport(document.body!!) {
             StelekitApp(

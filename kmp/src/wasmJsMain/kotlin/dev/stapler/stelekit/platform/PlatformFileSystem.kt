@@ -118,8 +118,40 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return true
     }
     actual override fun pickDirectory(): String? = null
-    override val supportsNativeDirectoryPicker: Boolean = false
-    actual override suspend fun pickDirectoryAsync(): String? = null
+    override val supportsNativeDirectoryPicker: Boolean get() = showDirectoryPickerSupported()
+    actual override suspend fun pickDirectoryAsync(): String? {
+        if (!showDirectoryPickerSupported()) return null
+        return try {
+            val dirHandle = showDirectoryPickerPromise().await()
+            val name = getEntryName(dirHandle)
+            val opfsPath = "$homeDir/$name"
+            importUserDirToCache(dirHandle, opfsPath)
+            opfsPath
+        } catch (e: Throwable) {
+            println("[SteleKit] showDirectoryPicker: ${e.message}")
+            null
+        }
+    }
+
+    private suspend fun importUserDirToCache(dirHandle: JsAny, currentPath: String) {
+        val entries = listOpfsEntries(dirHandle)
+        for (entry in entries) {
+            val name = getEntryName(entry)
+            val path = "$currentPath/$name"
+            when {
+                isFileEntry(entry) && isImageFile(name) -> {
+                    readOpfsFileAsObjectUrl(entry)?.let { blobUrlCache[path] = it }
+                }
+                isFileEntry(entry) -> {
+                    readOpfsFile(entry)?.let { content ->
+                        cache[path] = content
+                        scope.launch { opfsWriteFile(path, content) }
+                    }
+                }
+                isDirectoryEntry(entry) -> importUserDirToCache(entry, path)
+            }
+        }
+    }
     override suspend fun pickFileAsync(): String? = null
     actual override fun getLastModifiedTime(path: String): Long? = null
     override fun registerBlobUrl(path: String, url: String) { blobUrlCache[path] = url }

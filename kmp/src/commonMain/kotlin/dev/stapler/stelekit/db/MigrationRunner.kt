@@ -31,9 +31,38 @@ object MigrationRunner {
 
     private val logger = Logger("MigrationRunner")
 
+    /**
+     * DSL operation types that the migration runner knows how to execute safely.
+     * Use these instead of raw SQL strings when the operation requires a schema pre-check.
+     */
+    sealed class SchemaOp {
+        /** Canonical SQL string used for hash computation. */
+        abstract fun hashContent(): String
+
+        /**
+         * Adds a column to a table only if it does not already exist.
+         * The runner checks `PRAGMA table_info` before issuing `ALTER TABLE ADD COLUMN`,
+         * so no invalid `IF NOT EXISTS` syntax (which SQLite never supported on ALTER TABLE)
+         * is needed and no exception is ever thrown for the already-applied case.
+         */
+        data class AddColumn(
+            val table: String,
+            val column: String,
+            val type: String,
+        ) : SchemaOp() {
+            override fun hashContent() = "ALTER TABLE $table ADD COLUMN $column $type"
+        }
+    }
+
     data class Migration(
         val name: String,
-        val statements: List<String>,
+        val statements: List<String> = emptyList(),
+        /**
+         * Schema-aware DSL operations executed before [statements].
+         * Prefer this over raw SQL strings for DDL that requires an existence check
+         * (e.g. [SchemaOp.AddColumn]).
+         */
+        val schemaOps: List<SchemaOp> = emptyList(),
         /**
          * When true, a hash mismatch for this migration (recorded hash ≠ current hash) is
          * treated as an intentional update rather than tampering: the old hash is replaced with
@@ -43,8 +72,10 @@ object MigrationRunner {
          */
         val allowContentUpdate: Boolean = false,
     ) {
-        /** FNV-1a-64 digest of all statements joined with newlines. */
-        val hash: String = fnv1a64(statements.joinToString("\n"))
+        /** FNV-1a-64 digest of schemaOps (by canonical SQL) + statements, joined with newlines. */
+        val hash: String = fnv1a64(
+            (schemaOps.map { it.hashContent() } + statements).joinToString("\n")
+        )
 
         init {
             // Raw transaction control (BEGIN/COMMIT/ROLLBACK) cannot be used in migration
@@ -83,16 +114,16 @@ object MigrationRunner {
         @Suppress("IndexWithoutAnalyze")
         Migration(
             name = "blocks_content_hash",
+            schemaOps = listOf(SchemaOp.AddColumn("blocks", "content_hash", "TEXT")),
             statements = listOf(
-                "ALTER TABLE blocks ADD COLUMN IF NOT EXISTS content_hash TEXT",
                 "CREATE INDEX IF NOT EXISTS idx_blocks_content_hash ON blocks(content_hash)"
-            )
+            ),
+            allowContentUpdate = true,
         ),
         Migration(
             name = "pages_is_content_loaded",
-            statements = listOf(
-                "ALTER TABLE pages ADD COLUMN IF NOT EXISTS is_content_loaded INTEGER NOT NULL DEFAULT 1"
-            )
+            schemaOps = listOf(SchemaOp.AddColumn("pages", "is_content_loaded", "INTEGER NOT NULL DEFAULT 1")),
+            allowContentUpdate = true,
         ),
         Migration(
             name = "operations_and_logical_clock",
@@ -215,22 +246,18 @@ object MigrationRunner {
         ),
         Migration(
             name = "pages_backlink_count_fix",
+            // Repair for databases where pages_backlink_count was recorded as applied but the
+            // column was never added (original migration used ADD COLUMN IF NOT EXISTS — invalid
+            // SQLite syntax). Uses SchemaOp.AddColumn so the PRAGMA check prevents any error on
+            // databases that already have the column.
+            //
+            // The O(P×B) UPDATE that used to follow this ADD COLUMN has been intentionally
+            // removed (allowContentUpdate = true). On large libraries (500+ pages, 50k+
+            // blocks) it took 10–60+ minutes and caused permanent "Initializing…" hangs.
+            // Backlink counts start at 0 (the column default) and are recomputed
+            // incrementally as the user edits notes, or fully via Search > Rebuild Index.
+            schemaOps = listOf(SchemaOp.AddColumn("pages", "backlink_count", "INTEGER NOT NULL DEFAULT 0")),
             allowContentUpdate = true,
-            statements = listOf(
-                // Repair for databases where pages_backlink_count was recorded as applied but
-                // the column was never added: the original migration used ADD COLUMN IF NOT EXISTS,
-                // which is not valid SQLite syntax. The syntax error was swallowed and the
-                // migration hash was falsely marked applied. This migration uses the correct
-                // syntax; on databases that already have the column, "duplicate column name"
-                // is swallowed by applyAll leaving the column untouched.
-                //
-                // The O(P×B) UPDATE that used to follow this ADD COLUMN has been intentionally
-                // removed (allowContentUpdate = true). On large libraries (500+ pages, 50k+
-                // blocks) it took 10–60+ minutes and caused permanent "Initializing…" hangs.
-                // Backlink counts start at 0 (the column default) and are recomputed
-                // incrementally as the user edits notes, or fully via Search > Rebuild Index.
-                "ALTER TABLE pages ADD COLUMN backlink_count INTEGER NOT NULL DEFAULT 0"
-            )
         ),
         Migration(
             name = "fix_blocks_au_trigger_content_only",
@@ -838,6 +865,20 @@ object MigrationRunner {
         driver.execute(null, "PRAGMA optimize", 0).await()
     }
 
+    // Returns true if [column] exists in [table] (checks PRAGMA table_info).
+    private suspend fun columnExists(driver: SqlDriver, table: String, column: String): Boolean = try {
+        driver.executeQuery(
+            identifier = null,
+            sql = "SELECT COUNT(*) FROM pragma_table_info('$table') WHERE name='$column'",
+            mapper = { cursor -> cursor.next(); QueryResult.Value((cursor.getLong(0) ?: 0L) > 0L) },
+            parameters = 0,
+        ).await()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Throwable) {
+        false
+    }
+
     // Returns false if sqlite_stat1 doesn't exist yet or has no row for [table].
     private suspend fun hasStats(driver: SqlDriver, table: String): Boolean = try {
         driver.executeQuery(
@@ -849,7 +890,7 @@ object MigrationRunner {
         ).await()
     } catch (e: CancellationException) {
         throw e
-    } catch (_: Exception) {
+    } catch (_: Throwable) {
         false
     }
 
@@ -924,12 +965,35 @@ object MigrationRunner {
             }
 
             var encounteredRealError = false
+
+            // Schema-aware DSL ops: execute with existence pre-checks (no exception expected).
+            for (op in migration.schemaOps) {
+                try {
+                    when (op) {
+                        is SchemaOp.AddColumn -> {
+                            if (!columnExists(driver, op.table, op.column)) {
+                                driver.execute(null, op.hashContent(), 0).await()
+                            }
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    logger.error(
+                        "Migration '${migration.name}' schemaOp failed: ${e.message} | op=$op"
+                    )
+                    encounteredRealError = true
+                    break
+                }
+            }
+            if (encounteredRealError) continue
+
             for (sql in migration.statements) {
                 try {
                     driver.execute(null, sql.trimIndent(), 0).await()
                 } catch (e: CancellationException) {
                     throw e
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     val trimmed = sql.trim()
                     val msg = e.message?.lowercase() ?: ""
                     // Statements written with IF NOT EXISTS / IF EXISTS declare intent to be

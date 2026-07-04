@@ -16,7 +16,7 @@ on:
       force_demo_rebuild:
         type: boolean
         default: false
-        description: 'Force Wasm rebuild even when kmp/ files did not change — pass true from release.yml so the demo artifact is present in the run for build-site to download'
+        description: 'Force Wasm rebuild even when kmp/ files did not change — pass true from release.yml so the app artifact is present in the run for build-site to download'
 
 # Queue pages.yml runs rather than cancelling them. A fast CI-only push completing
 # and deploying would otherwise cancel a concurrent workflow_dispatch run mid-way
@@ -89,14 +89,14 @@ jobs:
         with:
           path: ~/.konan
           key: konan-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml', 'settings.gradle.kts', 'gradle.properties') }}
-      - name: Cache Wasm demo distribution
+      - name: Cache Wasm app distribution
         id: cache-demo
         uses: actions/cache@v4
         with:
           path: kmp/build/dist/wasmJs/productionExecutable/
-          key: wasm-demo-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml', 'settings.gradle.kts', 'gradle.properties', 'kmp/src/wasmJsMain/**', 'kmp/src/jsMain/**', 'kmp/src/commonMain/**') }}
+          key: wasm-app-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml', 'settings.gradle.kts', 'gradle.properties', 'kmp/src/wasmJsMain/**', 'kmp/src/jsMain/**', 'kmp/src/commonMain/**') }}
           restore-keys: |
-            wasm-demo-${{ runner.os }}-
+            wasm-app-${{ runner.os }}-
       - name: Build wasmJs demo
         if: steps.cache-demo.outputs.cache-hit != 'true'
         run: ./gradlew :kmp:wasmJsBrowserDistribution --no-daemon --build-cache -PenableJs=true
@@ -110,7 +110,7 @@ jobs:
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: demo-dist
+          name: app-dist
           path: kmp/build/dist/wasmJs/productionExecutable/
           retention-days: 90
 
@@ -125,32 +125,32 @@ jobs:
       # Try current run first (when build-demo ran); fall back to last successful run
       # so site-only edits keep the previously-built demo live.
       - id: download-demo
-        name: Download demo artifact (current run)
+        name: Download app artifact (current run)
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
-          name: demo-dist
-          path: site/public/demo/
-      - name: Restore demo from cache (fallback when current-run artifact absent)
+          name: app-dist
+          path: site/public/app/
+      - name: Restore app from cache (fallback when current-run artifact absent)
         if: steps.download-demo.outcome == 'failure'
         uses: actions/cache/restore@v4
         with:
           path: kmp/build/dist/wasmJs/productionExecutable/
-          key: wasm-demo-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml', 'settings.gradle.kts', 'gradle.properties', 'kmp/src/wasmJsMain/**', 'kmp/src/jsMain/**', 'kmp/src/commonMain/**') }}
+          key: wasm-app-${{ runner.os }}-${{ hashFiles('kmp/build.gradle.kts', 'gradle/libs.versions.toml', 'settings.gradle.kts', 'gradle.properties', 'kmp/src/wasmJsMain/**', 'kmp/src/jsMain/**', 'kmp/src/commonMain/**') }}
           restore-keys: |
-            wasm-demo-${{ runner.os }}-
+            wasm-app-${{ runner.os }}-
       - id: download-demo-fallback
-        name: Copy cached demo to site/public/demo
+        name: Copy cached app to site/public/app
         if: steps.download-demo.outcome == 'failure'
         continue-on-error: true
         run: |
           if [ -d kmp/build/dist/wasmJs/productionExecutable ] && \
              [ "$(ls -A kmp/build/dist/wasmJs/productionExecutable 2>/dev/null)" ]; then
-            mkdir -p site/public/demo
-            cp -r kmp/build/dist/wasmJs/productionExecutable/. site/public/demo/
-            echo "Demo restored from cache"
+            mkdir -p site/public/app
+            cp -r kmp/build/dist/wasmJs/productionExecutable/. site/public/app/
+            echo "App restored from cache"
           else
-            echo "No demo cache available — demo will be absent from this deploy"
+            echo "No app cache available — app will be absent from this deploy"
             exit 1
           fi
 

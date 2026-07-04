@@ -1320,9 +1320,9 @@ private fun GraphContent(
                                 },
                                 onAddGraph = {
                                     if (fileSystem.supportsNativeDirectoryPicker) {
-                                        val selectedPath = fileSystem.pickDirectory()
-                                        if (selectedPath != null) {
-                                            scope.launch {
+                                        scope.launch {
+                                            val selectedPath = fileSystem.pickDirectoryAsync()
+                                            if (selectedPath != null) {
                                                 val newGraphId = graphManager.addGraph(selectedPath)
                                                 newGraphId?.let { graphManager.switchGraph(it) }
                                             }
