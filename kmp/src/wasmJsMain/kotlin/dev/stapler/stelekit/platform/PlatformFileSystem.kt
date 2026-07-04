@@ -122,7 +122,7 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     actual override suspend fun pickDirectoryAsync(): String? {
         if (!showDirectoryPickerSupported()) return null
         return try {
-            val dirHandle = showDirectoryPickerPromise().await()
+            val dirHandle = showDirectoryPicker()
             val name = getEntryName(dirHandle)
             val opfsPath = "$homeDir/$name"
             importUserDirToCache(dirHandle, opfsPath)
