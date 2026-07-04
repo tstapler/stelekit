@@ -1322,9 +1322,11 @@ private fun GraphContent(
                                     if (fileSystem.supportsNativeDirectoryPicker) {
                                         scope.launch {
                                             val selectedPath = fileSystem.pickDirectoryAsync()
+                                            appLogger.info("onAddGraph: picker returned '$selectedPath'")
                                             if (selectedPath != null) {
                                                 val newGraphId = graphManager.addGraph(selectedPath)
-                                                newGraphId?.let { graphManager.switchGraph(it) }
+                                                appLogger.info("onAddGraph: addGraph='$newGraphId', switching...")
+                                                graphManager.switchGraph(newGraphId)
                                             }
                                         }
                                     } else {

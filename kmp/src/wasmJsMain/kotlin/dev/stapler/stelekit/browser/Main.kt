@@ -41,6 +41,20 @@ fun main() {
         val opfsFileSystem = PlatformFileSystem()
         opfsFileSystem.preload(opfsGraphPath)
 
+        // On first visit the OPFS graph is empty — seed it with demo content so new users
+        // see example pages rather than a blank graph. Skipped on subsequent loads once
+        // preload() finds existing files (directoryExists returns true).
+        if (!opfsFileSystem.directoryExists(opfsGraphPath)) {
+            val demo = DemoFileSystem()
+            for (subdir in listOf("pages", "journals")) {
+                for (file in demo.listFiles("/demo/$subdir")) {
+                    val content = demo.readFile("/demo/$subdir/$file") ?: continue
+                    opfsFileSystem.writeFile("$opfsGraphPath/$subdir/$file", content)
+                }
+            }
+            println("[SteleKit] Seeded demo content into $opfsGraphPath")
+        }
+
         // Wire GitHub config for section sync and lazy content fetching.
         // Keys stored in localStorage by the web host (e.g. embed script).
         val ghSettings = PlatformSettings()
