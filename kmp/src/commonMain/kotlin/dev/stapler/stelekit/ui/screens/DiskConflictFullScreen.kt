@@ -45,7 +45,12 @@ import io.github.petertrr.diffutils.patch.Patch
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DiskConflictFullScreen(localContent: String, diskContent: String, onDismiss: () -> Unit) {
+fun DiskConflictFullScreen(
+    localContent: String,
+    diskContent: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val diffState = remember(localContent, diskContent) { computeDiskDiffState(localContent, diskContent) }
 
     // Intercept the Android system back gesture/predictive-back so it goes through onDismiss
@@ -56,6 +61,7 @@ fun DiskConflictFullScreen(localContent: String, diskContent: String, onDismiss:
     }
 
     Scaffold(
+        modifier = modifier,
         topBar = {
             TopAppBar(
                 title = {
