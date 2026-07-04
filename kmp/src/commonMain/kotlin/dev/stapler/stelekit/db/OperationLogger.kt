@@ -60,12 +60,19 @@ class OperationLogger(
     // In-memory Lamport clock; loaded from DB on first use
     private var seq: Long = -1L
 
-    @OptIn(DirectSqlWrite::class)
-    private suspend fun nextSeq(): Long {
+    // Must be called OUTSIDE any transaction. The asFlow()+mapToOneOrNull suspends to
+    // PlatformDispatcher.DB which may switch threads; inside a JDBC transaction that would
+    // break the thread-local connection binding and cause pool exhaustion.
+    private suspend fun ensureSeqInitialized() {
         if (seq < 0) {
             seq = db.steleDatabaseQueries.selectLogicalClock(sessionId)
                 .asFlow().mapToOneOrNull(PlatformDispatcher.DB).first() ?: 0L
         }
+    }
+
+    @OptIn(DirectSqlWrite::class)
+    private suspend fun nextSeq(): Long {
+        // seq is guaranteed >= 0 here; ensureSeqInitialized() is called before every transaction.
         seq += 1
         restricted.upsertLogicalClock(sessionId, seq)
         return seq
@@ -119,6 +126,9 @@ class OperationLogger(
             val opId = UuidGenerator.generateV7()
             val payloadJson = json.encodeToString(payload)
             val now = clock.now().toEpochMilliseconds()
+            // Initialize seq BEFORE the transaction. The lazy SELECT may switch dispatchers,
+            // which would break JDBC's thread-local transaction binding if called inside.
+            ensureSeqInitialized()
             // Wrap clock bump + operation insert in one transaction so the two writes
             // share a single lock acquisition rather than two back-to-back ones.
             restricted.transaction {
