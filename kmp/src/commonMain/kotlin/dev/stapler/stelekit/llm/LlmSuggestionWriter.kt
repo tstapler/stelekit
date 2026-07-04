@@ -168,7 +168,7 @@ class LlmSuggestionWriter(
             val block = Block(
                 uuid = BlockUuid(UuidGenerator.generateV7()),
                 pageUuid = pageUuid,
-                parentUuid = parentUuid,
+                parentUuid = parentUuid?.let { dev.stapler.stelekit.model.BlockUuid(it) },
                 content = proposed.content,
                 level = depth,
                 position = position,

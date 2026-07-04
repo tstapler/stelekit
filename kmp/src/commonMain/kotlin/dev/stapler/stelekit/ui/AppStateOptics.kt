@@ -4,6 +4,7 @@
 package dev.stapler.stelekit.ui
 
 import arrow.optics.Lens
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.ui.i18n.Language
@@ -34,7 +35,7 @@ object AppStateOptics {
     val journalPages: Lens<AppState, List<Page>> = Lens(get = { it.journalPages }, set = { s, v -> s.copy(journalPages = v) })
     val favoritePages: Lens<AppState, List<Page>> = Lens(get = { it.favoritePages }, set = { s, v -> s.copy(favoritePages = v) })
     val recentPages: Lens<AppState, List<Page>> = Lens(get = { it.recentPages }, set = { s, v -> s.copy(recentPages = v) })
-    val editingBlockId: Lens<AppState, String?> = Lens(get = { it.editingBlockId }, set = { s, v -> s.copy(editingBlockId = v) })
+    val editingBlockId: Lens<AppState, BlockUuid?> = Lens(get = { it.editingBlockId }, set = { s, v -> s.copy(editingBlockId = v) })
     val editingCursorIndex: Lens<AppState, Int?> = Lens(get = { it.editingCursorIndex }, set = { s, v -> s.copy(editingCursorIndex = v) })
     val isDebugMode: Lens<AppState, Boolean> = Lens(get = { it.isDebugMode }, set = { s, v -> s.copy(isDebugMode = v) })
     val isDebugMenuVisible: Lens<AppState, Boolean> = Lens(get = { it.isDebugMenuVisible }, set = { s, v -> s.copy(isDebugMenuVisible = v) })

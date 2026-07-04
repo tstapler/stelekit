@@ -28,6 +28,7 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.ui.components.BlockList
 import dev.stapler.stelekit.ui.components.EditorCapabilities
 import dev.stapler.stelekit.ui.components.EditorToolbar
@@ -336,10 +337,11 @@ private fun JournalEntry(
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
             )
-            if (page.sectionId.isNotBlank()) {
+            val sid = page.sectionId
+            if (sid is SectionId.Named) {
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "[${page.sectionId}]",
+                    text = "[${sid.id}]",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )

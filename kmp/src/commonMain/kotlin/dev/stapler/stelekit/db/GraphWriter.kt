@@ -14,6 +14,7 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
@@ -569,7 +570,7 @@ class GraphWriter(
         // 2. Blocks — reconstruct tree from flat list
         val blocksByParent = blocks.groupBy { it.parentUuid }
 
-        fun writeBlocks(parentUuid: String?) {
+        fun writeBlocks(parentUuid: dev.stapler.stelekit.model.BlockUuid?) {
             val siblings = blocksByParent[parentUuid] ?: return
             val sortedSiblings = siblings.sortedBy { it.position }
 
@@ -587,7 +588,7 @@ class GraphWriter(
                     }
                 }
 
-                writeBlocks(block.uuid.value)
+                writeBlocks(block.uuid)
             }
         }
 
@@ -663,7 +664,7 @@ class GraphWriter(
      */
     override suspend fun movePageToSection(
         page: Page,
-        newSectionId: String,
+        newSectionId: SectionId,
         newPathPrefix: String,
     ): Either<DomainError, Page> = withContext(PlatformDispatcher.IO) {
         try {

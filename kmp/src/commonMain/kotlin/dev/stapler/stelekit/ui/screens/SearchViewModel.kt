@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.ui.screens
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockPropertyKeys
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.repository.DataType
 import dev.stapler.stelekit.repository.DateRange
@@ -181,7 +182,7 @@ class SearchViewModel(
             try {
                 // Merge tag filter into property filters if present
                 val effectivePropertyFilters = if (parsed.tagFilter != null) {
-                    parsed.propertyFilters + mapOf("tags" to parsed.tagFilter)
+                    parsed.propertyFilters + mapOf(BlockPropertyKeys.TAGS to parsed.tagFilter)
                 } else {
                     parsed.propertyFilters
                 }
@@ -330,7 +331,7 @@ class SearchViewModel(
     }
 
     private fun parseTagsFromProperties(properties: Map<String, String>): List<String> {
-        val tagsValue = properties["tags"] ?: return emptyList()
+        val tagsValue = properties[BlockPropertyKeys.TAGS] ?: return emptyList()
         return tagsValue.split(Regex("[,\\s]+"))
             .map { it.trim() }
             .filter { it.isNotBlank() }

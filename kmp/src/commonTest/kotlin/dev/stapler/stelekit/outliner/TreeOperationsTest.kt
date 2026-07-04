@@ -17,8 +17,8 @@ class TreeOperationsTest {
             uuid = BlockUuid("00000000-0000-0000-0000-$idStr"),
             content = "Block $uuidSuffix",
             pageUuid = PageUuid("page-1"),
-            parentUuid = parentUuid,
-            leftUuid = leftUuid,
+            parentUuid = parentUuid?.let { BlockUuid(it) },
+            leftUuid = leftUuid?.let { BlockUuid(it) },
             position = position,
             level = level,
             createdAt = Instant.fromEpochMilliseconds(0),
@@ -43,9 +43,9 @@ class TreeOperationsTest {
         assertEquals(1, result.size) // No next sibling to update
         
         val indented = result[0]
-        assertEquals(uuid("1"), indented.parentUuid)
+        assertEquals(uuid("1"), indented.parentUuid?.value)
         assertEquals(1, indented.level)
-        assertNull(indented.leftUuid) // First child of B1
+        assertNull(indented.leftUuid?.value) // First child of B1
     }
 
     @Test
@@ -65,10 +65,10 @@ class TreeOperationsTest {
         val updatedB3 = result.find { it.uuid.value == uuid("3") }!!
 
         // Check B2
-        assertEquals(uuid("1"), indentedB2.parentUuid)
+        assertEquals(uuid("1"), indentedB2.parentUuid?.value)
         
         // Check B3: Should now point to B1 (closing the gap)
-        assertEquals(uuid("1"), updatedB3.leftUuid)
+        assertEquals(uuid("1"), updatedB3.leftUuid?.value)
     }
 
     @Test
@@ -84,8 +84,8 @@ class TreeOperationsTest {
         assertNotNull(result)
         
         val indentedB2 = result[0]
-        assertEquals(uuid("1"), indentedB2.parentUuid)
-        assertEquals(uuid("10"), indentedB2.leftUuid) // Should follow C1
+        assertEquals(uuid("1"), indentedB2.parentUuid?.value)
+        assertEquals(uuid("10"), indentedB2.leftUuid?.value) // Should follow C1
     }
 
 
@@ -118,15 +118,15 @@ class TreeOperationsTest {
         val updatedUncle = result.find { it.uuid.value == uuid("99") }!!
 
         // Check B2
-        assertNull(outdentedB2.parentUuid) // Top level now
+        assertNull(outdentedB2.parentUuid?.value) // Top level now
         assertEquals(0, outdentedB2.level)
-        assertEquals(uuid("1"), outdentedB2.leftUuid) // Follows Parent
+        assertEquals(uuid("1"), outdentedB2.leftUuid?.value) // Follows Parent
 
         // Check B3 (Gap closed in children list)
-        assertNull(updatedB3.leftUuid) // Was pointing to 2, now first child (null)
+        assertNull(updatedB3.leftUuid?.value) // Was pointing to 2, now first child (null)
         
         // Check Uncle (Gap opened in parent list)
-        assertEquals(uuid("2"), updatedUncle.leftUuid) // Now follows B2
+        assertEquals(uuid("2"), updatedUncle.leftUuid?.value) // Now follows B2
     }
 
     @Test
@@ -142,8 +142,8 @@ class TreeOperationsTest {
         val updatedB2 = result.find { it.uuid.value == uuid("2") }!!
         val updatedB1 = result.find { it.uuid.value == uuid("1") }!!
 
-        assertNull(updatedB2.leftUuid)
-        assertEquals(uuid("2"), updatedB1.leftUuid)
+        assertNull(updatedB2.leftUuid?.value)
+        assertEquals(uuid("2"), updatedB1.leftUuid?.value)
     }
 
     @Test
@@ -159,8 +159,8 @@ class TreeOperationsTest {
         val updatedB1 = result.find { it.uuid.value == uuid("1") }!!
         val updatedB2 = result.find { it.uuid.value == uuid("2") }!!
 
-        assertEquals(uuid("2"), updatedB1.leftUuid)
-        assertNull(updatedB2.leftUuid)
+        assertEquals(uuid("2"), updatedB1.leftUuid?.value)
+        assertNull(updatedB2.leftUuid?.value)
     }
 
     @Test
@@ -172,12 +172,12 @@ class TreeOperationsTest {
         val reordered = TreeOperations.reorderSiblings(listOf(b1, b2, b3))
         
         assertEquals("a0", reordered[0].position)
-        assertNull(reordered[0].leftUuid)
+        assertNull(reordered[0].leftUuid?.value)
 
         assertEquals("a1", reordered[1].position)
-        assertEquals(uuid("1"), reordered[1].leftUuid)
+        assertEquals(uuid("1"), reordered[1].leftUuid?.value)
 
         assertEquals("a2", reordered[2].position)
-        assertEquals(uuid("2"), reordered[2].leftUuid)
+        assertEquals(uuid("2"), reordered[2].leftUuid?.value)
     }
 }

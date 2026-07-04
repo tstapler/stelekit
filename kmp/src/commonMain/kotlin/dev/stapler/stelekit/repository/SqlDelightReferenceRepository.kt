@@ -132,8 +132,8 @@ class SqlDelightReferenceRepository(
     ): Block = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid(pageUuid),
-        parentUuid = parentUuid,
-        leftUuid = leftUuid,
+        parentUuid = parentUuid?.let { BlockUuid(it) },
+        leftUuid = leftUuid?.let { BlockUuid(it) },
         content = content,
         level = level.toInt(),
         position = position,

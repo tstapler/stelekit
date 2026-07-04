@@ -96,7 +96,7 @@ private suspend fun runSyncWithManager(
         throw SyncExitException(5)
     }
 
-    val configResult = gitConfigRepo.getConfig(graphId)
+    val configResult = gitConfigRepo.getConfig(graphId.value)
     val config = when (configResult) {
         is Either.Left -> {
             output.error("Failed to load git config: ${configResult.value.message}")

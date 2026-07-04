@@ -16,6 +16,7 @@ import dev.stapler.stelekit.migration.InterruptedMigrationException
 import dev.stapler.stelekit.migration.MigrationRegistry
 import dev.stapler.stelekit.migration.MigrationRunner
 import dev.stapler.stelekit.migration.MigrationTamperedError
+import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.GraphRegistry
 import dev.stapler.stelekit.vault.VaultManager
@@ -76,7 +77,7 @@ class GraphManager(
     private var _pendingMigration: Deferred<Unit> = CompletableDeferred<Unit>().also { it.complete(Unit) }
 
     // Track active coroutines for cleanup during graph switches
-    private val activeGraphJobs = mutableMapOf<String, CoroutineScope>()
+    private val activeGraphJobs = mutableMapOf<GraphId, CoroutineScope>()
 
     // Git sync service for the currently active graph.
     // Set externally via registerGitSyncService() after GraphLoader/GraphWriter are wired.
@@ -144,11 +145,11 @@ class GraphManager(
         try {
             val expandedPath = fileSystem.expandTilde(lastGraphPath)
             val graphId = graphIdFromPath(expandedPath)
-            
+
             // Get the database directory (platform-specific)
             val dbDir = driverFactory.getDatabaseDirectory()
             val oldDbPath = "$dbDir/logseq.db"
-            val newDbPath = driverFactory.getDatabaseUrl(graphId).substringAfter("jdbc:sqlite:")
+            val newDbPath = driverFactory.getDatabaseUrl(graphId.value).substringAfter("jdbc:sqlite:")
             
             // Check if old database exists and rename it
             if (fileSystem.fileExists(oldDbPath)) {
@@ -206,9 +207,9 @@ class GraphManager(
     /**
      * Migrate WAL and SHM files (SQLite write-ahead log files)
      */
-    private fun migrateWalShmFiles(dbDir: String, graphId: String) {
+    private fun migrateWalShmFiles(dbDir: String, graphId: GraphId) {
         try {
-            val newDbPath = driverFactory.getDatabaseUrl(graphId).substringAfter("jdbc:sqlite:")
+            val newDbPath = driverFactory.getDatabaseUrl(graphId.value).substringAfter("jdbc:sqlite:")
             fileSystem.renameFile("$dbDir/logseq.db-wal", "$newDbPath-wal")
             fileSystem.renameFile("$dbDir/logseq.db-shm", "$newDbPath-shm")
         } catch (e: CancellationException) {
@@ -223,10 +224,10 @@ class GraphManager(
         platformSettings.putString("graph_registry", registryJson)
     }
     
-    fun graphIdFromPath(path: String): String = 
-        ContentHasher.sha256(path).take(16)
-    
-    suspend fun addGraph(path: String): String {
+    fun graphIdFromPath(path: String): GraphId =
+        GraphId(ContentHasher.sha256(path).take(16))
+
+    suspend fun addGraph(path: String): GraphId {
         // Use expanded path for consistent ID generation
         val expandedPath = fileSystem.expandTilde(path)
         val graphId = graphIdFromPath(expandedPath)
@@ -281,12 +282,12 @@ class GraphManager(
         localPath: String,
         auth: GitAuth,
         onProgress: (String) -> Unit,
-    ): Either<DomainError.GitError, String> {
+    ): Either<DomainError.GitError, GraphId> {
         val cloneResult = gitRepository.clone(url, localPath, auth, onProgress)
         return cloneResult.map { addGraph(localPath) }
     }
 
-    fun removeGraph(id: String): Boolean {
+    fun removeGraph(id: GraphId): Boolean {
         // Cancel any active coroutines for this graph
         activeGraphJobs.remove(id)?.cancel()
         
@@ -305,8 +306,8 @@ class GraphManager(
         // Clean up git credentials stored for this graph
         try {
             val cs = dev.stapler.stelekit.platform.security.CredentialStore()
-            cs.delete("git_https_token_$id")
-            cs.delete("git_ssh_passphrase_$id")
+            cs.delete("git_https_token_${id.value}")
+            cs.delete("git_ssh_passphrase_${id.value}")
         } catch (_: Exception) {
             // Non-critical — credential cleanup failure should not prevent graph removal
         }
@@ -314,7 +315,7 @@ class GraphManager(
         return true
     }
     
-    fun renameGraph(id: String, newName: String): Boolean {
+    fun renameGraph(id: GraphId, newName: String): Boolean {
         val registry = _graphRegistry.value
         val graphIndex = registry.graphs.indexOfFirst { it.id == id }
         if (graphIndex == -1) return false
@@ -332,7 +333,7 @@ class GraphManager(
      * Switch to a different graph.
      * Closes the current database connection and opens a new one for the target graph.
      */
-    fun switchGraph(id: String) {
+    fun switchGraph(id: GraphId) {
         val registry = _graphRegistry.value
         val graphInfo = registry.graphs.firstOrNull { it.id == id }
         if (graphInfo == null) return
@@ -387,8 +388,8 @@ class GraphManager(
                 preFlightJob?.await()
                 logger.info("init[${elapsed()}ms]: preFlightJob done")
 
-                val dbUrl = driverFactory.getDatabaseUrl(id)
-                val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl, graphId = id)
+                val dbUrl = driverFactory.getDatabaseUrl(id.value)
+                val factory = dev.stapler.stelekit.repository.RepositoryFactoryImpl(driverFactory, dbUrl, graphId = id.value)
                 val deviceInfo = try {
                     dev.stapler.stelekit.performance.getDeviceInfo()
                 } catch (e: CancellationException) {
@@ -420,7 +421,7 @@ class GraphManager(
                                 evaluator = DslEvaluator(repoSet),
                                 applier = ChangeApplier(writeActor, opLogger = null),
                                 flusher = null,
-                            ).runPending(id, repoSet, graphInfo.path)
+                            ).runPending(id.value, repoSet, graphInfo.path)
                         } catch (e: InterruptedMigrationException) {
                             logger.error("MigrationRunner: interrupted migration detected for graph $id", e)
                         } catch (e: MigrationTamperedError) {
@@ -470,20 +471,20 @@ class GraphManager(
             ?: error("Failed to open graph at '$path' — database did not initialise")
     }
     
-    fun getGraphInfo(id: String): GraphInfo? {
+    fun getGraphInfo(id: GraphId): GraphInfo? {
         return _graphRegistry.value.graphs.firstOrNull { it.id == id }
     }
-    
-    fun getActiveGraphId(): String? {
+
+    fun getActiveGraphId(): GraphId? {
         return _graphRegistry.value.activeGraphId
     }
-    
+
     fun getActiveGraphInfo(): GraphInfo? {
         val activeId = _graphRegistry.value.activeGraphId ?: return null
         return getGraphInfo(activeId)
     }
-    
-    fun getGraphIds(): Set<String> = 
+
+    fun getGraphIds(): Set<GraphId> =
         _graphRegistry.value.graphs.map { it.id }.toSet()
     
     fun getActiveRepositorySet(): RepositorySet? = _activeRepositorySet.value
@@ -517,7 +518,7 @@ class GraphManager(
         }
     }
 
-    private suspend fun updateGraphInfoDetection(graphId: String, repoRoot: String, wikiSubdir: String) {
+    private suspend fun updateGraphInfoDetection(graphId: GraphId, repoRoot: String, wikiSubdir: String) {
         val registry = _graphRegistry.value
         val updatedGraphs = registry.graphs.map { g ->
             if (g.id == graphId) g.copy(detectedRepoRoot = repoRoot, detectedWikiSubdir = wikiSubdir)
@@ -527,7 +528,7 @@ class GraphManager(
         saveRegistry()
     }
 
-    suspend fun setGitDetectionDismissed(graphId: String, dismissed: Boolean) {
+    suspend fun setGitDetectionDismissed(graphId: GraphId, dismissed: Boolean) {
         val registry = _graphRegistry.value
         val updatedGraphs = registry.graphs.map { g ->
             if (g.id == graphId) g.copy(gitDetectionDismissed = dismissed)

@@ -156,8 +156,8 @@ class OperationLogger(
         uuid = uuid.value,
         content = content,
         position = position,
-        parentUuid = parentUuid,
-        leftUuid = leftUuid,
+        parentUuid = parentUuid?.value,
+        leftUuid = leftUuid?.value,
         properties = properties.mapValues { it.value },
     )
 }

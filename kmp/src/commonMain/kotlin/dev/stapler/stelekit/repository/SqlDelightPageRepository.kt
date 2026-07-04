@@ -14,6 +14,7 @@ import dev.stapler.stelekit.cache.RequestCoalescer
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
@@ -269,7 +270,7 @@ class SqlDelightPageRepository(
             is_journal = if (page.isJournal) 1L else 0L,
             journal_date = page.journalDate?.toString(),
             is_content_loaded = if (page.isContentLoaded) 1L else 0L,
-            section_id = page.sectionId,
+            section_id = page.sectionId.toDbString(),
         )
         queries.updatePage(
             namespace = page.namespace,
@@ -281,7 +282,7 @@ class SqlDelightPageRepository(
             is_journal = if (page.isJournal) 1L else 0L,
             journal_date = page.journalDate?.toString(),
             is_content_loaded = if (page.isContentLoaded) 1L else 0L,
-            section_id = page.sectionId,
+            section_id = page.sectionId.toDbString(),
             uuid = page.uuid.value,
         )
     }
@@ -367,7 +368,7 @@ class SqlDelightPageRepository(
             isJournal = this.is_journal == 1L,
             journalDate = this.journal_date?.let { kotlinx.datetime.LocalDate.parse(it) },
             isContentLoaded = this.is_content_loaded == 1L,
-            sectionId = this.section_id,
+            sectionId = SectionId.fromDbString(this.section_id),
         )
     }
 
@@ -389,7 +390,7 @@ class SqlDelightPageRepository(
             isJournal = this.is_journal == 1L,
             journalDate = kotlinx.datetime.LocalDate.parse(this.journal_date),
             isContentLoaded = this.is_content_loaded == 1L,
-            sectionId = this.section_id,
+            sectionId = SectionId.fromDbString(this.section_id),
         )
     }
 }

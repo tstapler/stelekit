@@ -144,8 +144,8 @@ class SqlDelightPropertyRepository(
         return Block(
             uuid = BlockUuid(this.uuid),
             pageUuid = PageUuid(this.page_uuid),
-            parentUuid = this.parent_uuid,
-            leftUuid = this.left_uuid,
+            parentUuid = this.parent_uuid?.let { BlockUuid(it) },
+            leftUuid = this.left_uuid?.let { BlockUuid(it) },
             content = this.content,
             level = this.level.toInt(),
             position = this.position,

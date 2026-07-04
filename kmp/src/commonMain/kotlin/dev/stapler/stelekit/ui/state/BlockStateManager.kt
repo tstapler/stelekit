@@ -344,7 +344,7 @@ class BlockStateManager(
         }
         // 2. Identify root blocks
         val rootBlocks = clipBlocks.filter { b ->
-            b.parentUuid == null || b.parentUuid !in clipUuidSet
+            b.parentUuid == null || b.parentUuid?.value !in clipUuidSet
         }
 
         // 3. Compute insertion context
@@ -362,7 +362,7 @@ class BlockStateManager(
             rootBlocks = rootBlocks,
             uuidMap = uuidMap,
             afterBlock = afterBlock,
-            insertionParentUuid = insertionParentUuid,
+            insertionParentUuid = insertionParentUuid?.value,
             nextSiblingPos = nextSiblingPos,
             now = now,
         )
@@ -373,7 +373,7 @@ class BlockStateManager(
 
         // 6. Write to DB atomically (BUG 5 fix: track success; BUG 1 fix: repair right-sibling leftUuid)
         val chainRepair = if (existingRightSibling != null && lastPastedRootNewUuid != null)
-            listOf(existingRightSibling.copy(leftUuid = lastPastedRootNewUuid))
+            listOf(existingRightSibling.copy(leftUuid = lastPastedRootNewUuid.let { dev.stapler.stelekit.model.BlockUuid(it) }))
         else emptyList()
 
         var success = true
@@ -393,7 +393,7 @@ class BlockStateManager(
 
         // 7. Update in-memory state and persist
         val repairedExisting = if (existingRightSibling != null && lastPastedRootNewUuid != null)
-            allBlocks.map { if (it.uuid == existingRightSibling.uuid) it.copy(leftUuid = lastPastedRootNewUuid) else it }
+            allBlocks.map { if (it.uuid == existingRightSibling.uuid) it.copy(leftUuid = dev.stapler.stelekit.model.BlockUuid(lastPastedRootNewUuid)) else it }
         else allBlocks
         _blocks.update { state -> state + (pageUuidStr to (repairedExisting + pastedBlocks)) }
         queueDiskSave(pageUuidStr)
@@ -460,7 +460,7 @@ class BlockStateManager(
 
         // Compute fractional position range for insertion
         val allBlocks = _blocks.value[pageUuid] ?: emptyList()
-        val siblings = allBlocks.filter { it.parentUuid == newParentUuid?.value }.sortedBy { it.position }
+        val siblings = allBlocks.filter { it.parentUuid == newParentUuid }.sortedBy { it.position }
         val insertAfterBlock = if (insertAfterUuid != null) allBlocks.find { it.uuid == insertAfterUuid } else null
         val afterPosition = insertAfterBlock?.position
         val nextSiblingPosition = if (insertAfterBlock != null) {
@@ -1182,7 +1182,7 @@ class BlockStateManager(
             uuid = expectedNewBlockUuid,
             content = "",
             position = optimisticPosition,
-            leftUuid = currentBlockUuid.value,
+            leftUuid = currentBlockUuid,
             createdAt = now,
             updatedAt = now,
         )
@@ -1234,7 +1234,7 @@ class BlockStateManager(
             uuid = expectedNewBlockUuid,
             content = secondPart,
             position = optimisticSplitPosition,
-            leftUuid = blockUuid.value,
+            leftUuid = blockUuid,
             createdAt = now,
             updatedAt = now,
         )
@@ -1288,7 +1288,7 @@ class BlockStateManager(
             uuid = BlockUuid(UuidGenerator.generateV7()),
             pageUuid = pageUuid,
             parentUuid = null,
-            leftUuid = lastBlock?.uuid?.value,
+            leftUuid = lastBlock?.uuid,
             content = "",
             level = 0,
             position = newPosition,
@@ -1348,7 +1348,7 @@ class BlockStateManager(
             uuid = BlockUuid(UuidGenerator.generateV7()),
             pageUuid = pageUuid,
             parentUuid = null,
-            leftUuid = lastBlock?.uuid?.value,
+            leftUuid = lastBlock?.uuid,
             content = content,
             level = 0,
             position = newPosition,
@@ -1446,7 +1446,7 @@ class BlockStateManager(
                 requestEditBlock(blockUuid, 0)
             }
         } else if (currentBlock.parentUuid != null) {
-            val parent = pageBlocks.find { it.uuid.value == currentBlock.parentUuid }
+            val parent = pageBlocks.find { it.uuid == currentBlock.parentUuid }
             if (parent != null) {
                 if (currentBlock.content.isEmpty()) {
                     // Move focus before the DB round-trip
@@ -1513,7 +1513,7 @@ class BlockStateManager(
         val sortedBlocks = BlockSorter.sort(blocks)
         if (collapsedUuids.isEmpty()) return sortedBlocks
 
-        val childrenByParent = blocks.groupBy { it.parentUuid }
+        val childrenByParent = blocks.groupBy { it.parentUuid?.value }
 
         fun getDescendantUuids(blockUuid: String): Set<String> {
             val descendants = mutableSetOf<String>()

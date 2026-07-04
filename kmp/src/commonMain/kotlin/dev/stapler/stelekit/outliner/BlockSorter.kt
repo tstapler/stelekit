@@ -23,7 +23,7 @@ object BlockSorter {
         // Roots are blocks with no parent OR parent is not in the current list
         // Sort descending because we'll push them onto a stack (LIFO)
         val roots = blocks.filter {
-            it.parentUuid == null || !allBlockUuidValues.contains(it.parentUuid)
+            it.parentUuid == null || !allBlockUuidValues.contains(it.parentUuid?.value)
         }.sortedWith(compareByDescending<Block> { it.position }.thenByDescending { it.uuid.value })
 
         val result = mutableListOf<Block>()
@@ -48,7 +48,7 @@ object BlockSorter {
             result.add(repairedBlock)
 
             // Push children in reverse order so the first child is popped first
-            val children = childrenByParent[block.uuid.value]
+            val children = childrenByParent[block.uuid]
                 ?.sortedWith(compareByDescending<Block> { it.position }.thenByDescending { it.uuid.value })
                 ?: emptyList()
 

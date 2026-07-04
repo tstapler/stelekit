@@ -27,8 +27,8 @@ class TreeOperationsPropertyTest {
     ) = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid("page-1"),
-        parentUuid = parentUuid,
-        leftUuid = leftUuid,
+        parentUuid = parentUuid?.let { BlockUuid(it) },
+        leftUuid = leftUuid?.let { BlockUuid(it) },
         content = content,
         level = level,
         position = position,
@@ -60,7 +60,7 @@ class TreeOperationsPropertyTest {
                     val result = TreeOperations.indent(block, siblings)
                     if (result != null) {
                         val indented = result.first { it.uuid == block.uuid }
-                        assertEquals(siblings[i - 1].uuid.value, indented.parentUuid)
+                        assertEquals(siblings[i - 1].uuid.value, indented.parentUuid?.value)
                         assertEquals(siblings[i - 1].level + 1, indented.level)
                     }
                 } catch (e: CancellationException) {
@@ -265,7 +265,7 @@ class TreeOperationsPropertyTest {
                 if (count > 0) {
                     assertEquals(null, reordered[0].leftUuid)
                     for (i in 1 until count) {
-                        assertEquals(reordered[i - 1].uuid.value, reordered[i].leftUuid)
+                        assertEquals(reordered[i - 1].uuid.value, reordered[i].leftUuid?.value)
                     }
                 }
             } catch (e: CancellationException) {
@@ -388,10 +388,10 @@ class TreeOperationsPropertyTest {
         try {
             val reordered = TreeOperations.reorderSiblings(siblings)
 
-            var expectedLeftUuid: String? = null
+            var expectedLeftUuid: BlockUuid? = null
             reordered.forEach { block ->
                 assertEquals(expectedLeftUuid, block.leftUuid)
-                expectedLeftUuid = block.uuid.value
+                expectedLeftUuid = block.uuid
             }
         } catch (e: CancellationException) {
             throw e

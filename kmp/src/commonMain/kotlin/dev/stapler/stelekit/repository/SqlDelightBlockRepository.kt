@@ -181,7 +181,7 @@ class SqlDelightBlockRepository(
                     if (parent != null) {
                         blockCache.put(parent.uuid.value, parent)
                         ancestors.add(parent)
-                        currentParentUuid = parent.parentUuid
+                        currentParentUuid = parent.parentUuid?.value
                     } else {
                         break
                     }
@@ -333,8 +333,8 @@ class SqlDelightBlockRepository(
                     chunk.forEach { block ->
                         queries.updateBlockForSave(
                             block.pageUuid.value,
-                            block.parentUuid,
-                            block.leftUuid,
+                            block.parentUuid?.value,
+                            block.leftUuid?.value,
                             block.content,
                             block.level.toLong(),
                             block.position,
@@ -361,8 +361,8 @@ class SqlDelightBlockRepository(
         queries.insertBlock(
             block.uuid.value,
             block.pageUuid.value,
-            block.parentUuid,
-            block.leftUuid,
+            block.parentUuid?.value,
+            block.leftUuid?.value,
             block.content,
             block.level.toLong(),
             block.position,
@@ -413,8 +413,8 @@ class SqlDelightBlockRepository(
                     chunk.forEach { block ->
                         queries.updateBlockFull(
                             block.pageUuid.value,
-                            block.parentUuid,
-                            block.leftUuid,
+                            block.parentUuid?.value,
+                            block.leftUuid?.value,
                             block.content,
                             block.level.toLong(),
                             block.position,
@@ -446,7 +446,7 @@ class SqlDelightBlockRepository(
                 toInsert.forEach { block -> insertBlockRow(block) }
                 chainRepair.forEach { block ->
                     queries.updateBlockFull(
-                        block.pageUuid.value, block.parentUuid, block.leftUuid,
+                        block.pageUuid.value, block.parentUuid?.value, block.leftUuid?.value,
                         block.content, block.level.toLong(), block.position,
                         block.updatedAt.toEpochMilliseconds(),
                         block.properties.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null },
@@ -485,8 +485,8 @@ class SqlDelightBlockRepository(
             queries.insertBlock(
                 block.uuid.value,
                 block.pageUuid.value,
-                block.parentUuid,
-                block.leftUuid,
+                block.parentUuid?.value,
+                block.leftUuid?.value,
                 block.content,
                 block.level.toLong(),
                 block.position,
@@ -1017,8 +1017,8 @@ class SqlDelightBlockRepository(
                 newBlock = Block(
                     uuid = BlockUuid(newUuid),
                     pageUuid = PageUuid(block.page_uuid),
-                    parentUuid = block.parent_uuid,
-                    leftUuid = block.uuid,
+                    parentUuid = block.parent_uuid?.let { BlockUuid(it) },
+                    leftUuid = BlockUuid(block.uuid),
                     content = secondPart,
                     level = block.level.toInt(),
                     position = newPosition,
@@ -1231,8 +1231,8 @@ class SqlDelightBlockRepository(
         return Block(
             uuid = BlockUuid(this.uuid),
             pageUuid = PageUuid(this.page_uuid),
-            parentUuid = this.parent_uuid,
-            leftUuid = this.left_uuid,
+            parentUuid = this.parent_uuid?.let { BlockUuid(it) },
+            leftUuid = this.left_uuid?.let { BlockUuid(it) },
             content = this.content,
             level = this.level.toInt(),
             position = this.position,
@@ -1250,8 +1250,8 @@ class SqlDelightBlockRepository(
         return Block(
             uuid = BlockUuid(this.uuid),
             pageUuid = PageUuid(this.page_uuid),
-            parentUuid = this.parent_uuid,
-            leftUuid = this.left_uuid,
+            parentUuid = this.parent_uuid?.let { BlockUuid(it) },
+            leftUuid = this.left_uuid?.let { BlockUuid(it) },
             content = this.content,
             level = this.level.toInt(),
             position = this.position,

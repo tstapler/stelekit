@@ -152,8 +152,8 @@ object MarkdownPageParser {
             val block = Block(
                 uuid = blockUuid,
                 pageUuid = pageUuid,
-                parentUuid = parentUuid,
-                leftUuid = previousSiblingUuid,
+                parentUuid = parentUuid?.let { BlockUuid(it) },
+                leftUuid = previousSiblingUuid?.let { BlockUuid(it) },
                 content = parsedBlock.content,
                 level = baseLevel,
                 position = positionKey,
@@ -214,7 +214,7 @@ object MarkdownPageParser {
                 Block(
                     uuid = blockUuid,
                     pageUuid = pageUuid,
-                    parentUuid = parentUuid,
+                    parentUuid = parentUuid?.let { BlockUuid(it) },
                     content = parsedBlock.content,
                     level = baseLevel,
                     position = stubPositionKey,

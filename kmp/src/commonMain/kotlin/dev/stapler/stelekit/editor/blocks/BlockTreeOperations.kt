@@ -3,6 +3,7 @@
 package dev.stapler.stelekit.editor.blocks
 
 import arrow.core.Either
+import dev.stapler.stelekit.model.BlockPropertyKeys
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
@@ -163,8 +164,8 @@ class BlockTreeOperations(
             val pageBlocks = pageBlocksResult.getOrNull() ?: emptyList()
 
             val collapsed = pageBlocks.filter { block ->
-                block.properties.containsKey("collapsed") &&
-                block.properties["collapsed"] == "true"
+                block.properties.containsKey(BlockPropertyKeys.COLLAPSED) &&
+                block.properties[BlockPropertyKeys.COLLAPSED] == "true"
             }
 
             collapsed.map { it.uuid.value }.right()
@@ -183,12 +184,12 @@ class BlockTreeOperations(
             val blockResult = blockOperations.getBlockByUuid(BlockUuid(blockUuid)).first()
             val block = blockResult.getOrNull() ?: return DomainError.DatabaseError.NotFound("block", blockUuid).left()
 
-            val isCurrentlyCollapsed = block.properties["collapsed"] == "true"
+            val isCurrentlyCollapsed = block.properties[BlockPropertyKeys.COLLAPSED] == "true"
             val newProperties = block.properties.toMutableMap().apply {
                 if (isCurrentlyCollapsed) {
-                    remove("collapsed")
+                    remove(BlockPropertyKeys.COLLAPSED)
                 } else {
-                    put("collapsed", "true")
+                    put(BlockPropertyKeys.COLLAPSED, "true")
                 }
             }
             
@@ -239,10 +240,10 @@ class BlockTreeOperations(
                 val oldBlock = item.block
                 val newUuid = oldToNewUuid[oldBlock.uuid.value]!!
 
-                val newParentUuid = if (oldBlock.uuid.value == rootBlockUuid) {
+                val newParentUuidStr = if (oldBlock.uuid.value == rootBlockUuid) {
                     targetParentUuid
                 } else {
-                    oldToNewUuid[oldBlock.parentUuid]
+                    oldToNewUuid[oldBlock.parentUuid?.value]
                 }
 
                 val itemTargetLevel = targetLevel + item.depth
@@ -250,7 +251,7 @@ class BlockTreeOperations(
                 val newBlock = oldBlock.copy(
                     uuid = BlockUuid(newUuid),
                     pageUuid = oldBlock.pageUuid, // Remains on same page
-                    parentUuid = newParentUuid,
+                    parentUuid = newParentUuidStr?.let { BlockUuid(it) },
                     level = itemTargetLevel,
                     createdAt = Clock.System.now(),
                     updatedAt = Clock.System.now(),
@@ -339,7 +340,7 @@ class BlockTreeOperations(
 
             // Get the current parent and its parent
             val parent = blockOperations.getBlockParent(block.uuid).first().getOrNull()
-                ?: return DomainError.DatabaseError.NotFound("block", block.parentUuid!!).left()
+                ?: return DomainError.DatabaseError.NotFound("block", block.parentUuid!!.value).left()
 
             val targetParent = if (levels == 1) {
                 blockOperations.getBlockParent(parent.uuid).first().getOrNull()
@@ -426,7 +427,7 @@ class BlockTreeOperations(
         result.add(BlockWithDepth(block, depth))
 
         // Check if this block is collapsed
-        val isCollapsed = block.properties["collapsed"] == "true"
+        val isCollapsed = block.properties[BlockPropertyKeys.COLLAPSED] == "true"
         if (!includeCollapsed && isCollapsed) return
 
         // Recursively collect children

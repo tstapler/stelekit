@@ -22,8 +22,8 @@ fun SqlCursor.toBlock(): Block {
     return Block(
         uuid = BlockUuid(getString(1) ?: ""), // uuid
         pageUuid = PageUuid(getString(2) ?: ""), // page_uuid
-        parentUuid = getString(3), // parent_uuid
-        leftUuid = getString(4), // left_uuid
+        parentUuid = getString(3)?.let { BlockUuid(it) }, // parent_uuid
+        leftUuid = getString(4)?.let { BlockUuid(it) }, // left_uuid
         content = getString(5) ?: "", // content
         level = getLong(6)?.toInt() ?: 0, // level
         position = getString(7) ?: "a0", // position

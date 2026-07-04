@@ -81,7 +81,7 @@ class DatalogBlockRepository : BlockRepository {
             while (currentUuid != null) {
                 val block = map[currentUuid] ?: break
                 if (block.parentUuid != null) {
-                    val parent = map[block.parentUuid]
+                    val parent = map[block.parentUuid?.value]
                     if (parent != null) {
                         ancestors.add(parent)
                         currentUuid = parent.uuid.value
@@ -99,7 +99,7 @@ class DatalogBlockRepository : BlockRepository {
     override fun getBlockParent(blockUuid: BlockUuid): Flow<Either<DomainError, Block?>> {
         return blocks.map { map ->
             val block = map[blockUuid.value] ?: return@map null.right()
-            val parent = block.parentUuid?.let { map[it] }
+            val parent = block.parentUuid?.let { map[it.value] }
             parent.right()
         }
     }
@@ -279,7 +279,7 @@ class DatalogBlockRepository : BlockRepository {
                     var index = 0
                     while (index < uuidsToDelete.size) {
                         val currentUuid = uuidsToDelete[index]
-                        val children = current.values.filter { it.parentUuid == currentUuid }
+                        val children = current.values.filter { it.parentUuid?.value == currentUuid }
                         children.forEach { child ->
                             uuidsToDelete.add(child.uuid.value)
                         }
@@ -318,7 +318,7 @@ class DatalogBlockRepository : BlockRepository {
                 val currentBlocks = blocks.value
                 val block = currentBlocks[blockUuid.value] ?: return@withLock Unit.right()
 
-                if (block.parentUuid == newParentUuid?.value && block.position == newPosition) {
+                if (block.parentUuid == newParentUuid && block.position == newPosition) {
                     return@withLock Unit.right()
                 }
 
@@ -327,11 +327,11 @@ class DatalogBlockRepository : BlockRepository {
                     .filter { it.parentUuid == oldParentUuid && it.uuid != blockUuid }
                     .sortedBy { it.position }
 
-                val newSiblings = if (oldParentUuid == newParentUuid?.value) {
+                val newSiblings = if (oldParentUuid == newParentUuid) {
                     oldSiblings.toMutableList().apply { add(block.copy(position = newPosition)) }
                 } else {
                     currentBlocks.values
-                        .filter { it.parentUuid == newParentUuid?.value }
+                        .filter { it.parentUuid == newParentUuid }
                         .sortedBy { it.position }
                         .toMutableList().apply { add(block.copy(position = newPosition)) }
                 }
@@ -346,13 +346,13 @@ class DatalogBlockRepository : BlockRepository {
 
                 hierarchy.forEach { (b, _) ->
                     updatedBlocks[b.uuid.value] = b.copy(
-                        parentUuid = if (b.uuid == blockUuid) newParentUuid?.value else b.parentUuid,
+                        parentUuid = if (b.uuid == blockUuid) newParentUuid else b.parentUuid,
                         level = b.level + levelOffset
                     )
                 }
 
                 // Update siblings in old parent
-                if (oldParentUuid != newParentUuid?.value) {
+                if (oldParentUuid != newParentUuid) {
                     TreeOperations.reorderSiblings(oldSiblings).forEach { updatedBlocks[it.uuid.value] = it }
                 }
 
@@ -386,7 +386,7 @@ class DatalogBlockRepository : BlockRepository {
 
                 val newParent = siblings[index - 1]
                 val newParentChildren = currentBlocks.values
-                    .filter { it.parentUuid == newParent.uuid.value && it.pageUuid == block.pageUuid }
+                    .filter { it.parentUuid == newParent.uuid && it.pageUuid == block.pageUuid }
                     .sortedBy { it.position }
 
                 val result = TreeOperations.indent(block, siblings, newParentChildren.lastOrNull())
@@ -426,7 +426,7 @@ class DatalogBlockRepository : BlockRepository {
                 val block = currentBlocks[blockUuid.value] ?: return@withLock Unit.right()
                 val parentUuid = block.parentUuid ?: return@withLock Unit.right()
 
-                val parent = currentBlocks[parentUuid]
+                val parent = currentBlocks[parentUuid.value]
 
                 val siblings = currentBlocks.values
                     .filter { it.parentUuid == block.parentUuid && it.pageUuid == block.pageUuid }
@@ -445,7 +445,7 @@ class DatalogBlockRepository : BlockRepository {
                     val remainingOldSiblings = siblings.filter { it.uuid != blockUuid }
                     TreeOperations.reorderSiblings(remainingOldSiblings).forEach { updates[it.uuid.value] = it }
 
-                    val parentIndex = parentSiblings.indexOfFirst { it.uuid.value == parentUuid }
+                    val parentIndex = parentSiblings.indexOfFirst { it.uuid == parentUuid }
                     val newSiblingsList = parentSiblings.toMutableList()
                     newSiblingsList.add(parentIndex + 1, movedBlock)
                     TreeOperations.reorderSiblings(newSiblingsList).forEach { updates[it.uuid.value] = it }
@@ -594,6 +594,6 @@ class DatalogBlockRepository : BlockRepository {
         val allBlocks = currentBlocks.values
         byUuid.value = currentBlocks
         byPageUuid.value = allBlocks.groupBy { it.pageUuid.value }
-        byParentUuid.value = allBlocks.groupBy { it.parentUuid }
+        byParentUuid.value = allBlocks.groupBy { it.parentUuid?.value }
     }
 }

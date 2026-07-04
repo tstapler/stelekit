@@ -31,7 +31,7 @@ class ExportServiceTest {
     ) = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid(pageUuid),
-        parentUuid = parentUuid,
+        parentUuid = parentUuid?.let { BlockUuid(it) },
         content = content,
         level = level,
         position = position,

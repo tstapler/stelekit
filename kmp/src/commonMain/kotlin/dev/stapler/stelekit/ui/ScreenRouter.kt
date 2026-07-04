@@ -299,7 +299,7 @@ internal fun ScreenRouter(
                     mutableStateOf<dev.stapler.stelekit.model.ImageAnnotation?>(null)
                 }
                 LaunchedEffect(imageAnnotationUuid) {
-                    repos.imageAnnotationRepository.getImageAnnotationByUuid(imageAnnotationUuid)
+                    repos.imageAnnotationRepository.getImageAnnotationByUuid(imageAnnotationUuid.value)
                         .collect { either ->
                             either.onRight { annotation ->
                                 resolvedAnnotation = annotation

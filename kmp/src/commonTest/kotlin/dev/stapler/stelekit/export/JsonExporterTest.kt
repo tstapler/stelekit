@@ -44,7 +44,7 @@ class JsonExporterTest {
     ) = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid("page-uuid"),
-        parentUuid = parentUuid,
+        parentUuid = parentUuid?.let { BlockUuid(it) },
         content = content,
         level = level,
         position = position,

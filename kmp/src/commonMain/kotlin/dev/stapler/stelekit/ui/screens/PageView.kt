@@ -33,6 +33,7 @@ import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.performance.NavigationTracingEffect
@@ -318,8 +319,9 @@ fun PageView(
                 }
 
                 // Section badge — shown when page belongs to a section and the manifest is available
-                if (page.sectionId.isNotEmpty() && currentManifest != null) {
-                    val section = currentManifest.sections.find { it.id == page.sectionId }
+                val pageSectionId = page.sectionId
+                if (pageSectionId is SectionId.Named && currentManifest != null) {
+                    val section = currentManifest.sections.find { it.id == pageSectionId.id }
                     if (section != null) {
                         Spacer(modifier = Modifier.height(8.dp))
                         SectionBadge(

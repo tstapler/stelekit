@@ -215,18 +215,18 @@ class Editor(
         
         return if (currentPage != null) {
             // Create new block after focused block or at root
-            var parentUuid: String? = null
-            
+            var parentUuid: dev.stapler.stelekit.model.BlockUuid? = null
+
             if (focusedBlockUuid != null) {
                 val focusedBlock = blockRepository.getBlockByUuid(BlockUuid(focusedBlockUuid)).first().getOrNull()
                 // If we have a focused block, we likely want to create a sibling (same parent)
                 parentUuid = focusedBlock?.parentUuid
             }
-            
+
             blockOperations.createBlock(
                 pageId = currentPage.uuid.value,
                 content = content,
-                parentId = parentUuid
+                parentId = parentUuid?.value
             ).also { result ->
                 if (result.isRight()) {
                     // Update editor state

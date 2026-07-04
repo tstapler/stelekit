@@ -12,6 +12,7 @@ import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageName
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.ParsedBlock
 import kotlin.time.Instant
@@ -1213,7 +1214,7 @@ class GraphLoader(
 
                                 if (mode == ParseMode.INDEX_ONLY) {
                                     if (existingPage != null && existingPage.isContentLoaded) return@count true
-                                    val sectId = sectionFilter?.sectionIdForPath(filePath) ?: ""
+                                    val sectId = SectionId.fromDbString(sectionFilter?.sectionIdForPath(filePath) ?: "")
                                     val stubPage = Page(
                                         uuid = existingPage?.uuid ?: PageUuid(UuidGenerator.generateV7()),
                                         name = name, filePath = filePath,
@@ -1377,7 +1378,7 @@ class GraphLoader(
             isJournal = isJournal,
             journalDate = journalDate,
             isContentLoaded = isLoaded,
-            sectionId = sectionFilter?.sectionIdForPath(filePath) ?: ""
+            sectionId = SectionId.fromDbString(sectionFilter?.sectionIdForPath(filePath) ?: "")
         )
         
         // For METADATA_ONLY, create lightweight stub blocks (isLoaded = false)
@@ -1715,9 +1716,9 @@ class GraphLoader(
                 // existingPage?.sectionId preserves a section assignment already in the DB so that
                 // re-parsing a page on the warm path (file watcher hit) does not clear the field.
                 val page = rawPage.copy(
-                    sectionId = existingPage?.sectionId?.takeIf { it.isNotEmpty() }
-                        ?: sectionFilter?.sectionIdForPath(filePathStr)
-                        ?: ""
+                    sectionId = (existingPage?.sectionId?.takeIf { it is SectionId.Named }
+                        ?: sectionFilter?.sectionIdForPath(filePathStr)?.let { SectionId.fromDbString(it) })
+                        ?: SectionId.Global
                 )
                 val pageUuid = page.uuid
                 val updatedAt = page.updatedAt

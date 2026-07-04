@@ -655,8 +655,8 @@ class SqlDelightSearchRepository(
         Block(
             uuid = BlockUuid(uuid),
             pageUuid = PageUuid(page_uuid),
-            parentUuid = parent_uuid,
-            leftUuid = left_uuid,
+            parentUuid = parent_uuid?.let { BlockUuid(it) },
+            leftUuid = left_uuid?.let { BlockUuid(it) },
             content = content,
             level = level.toInt(),
             position = position,
@@ -670,8 +670,8 @@ class SqlDelightSearchRepository(
         Block(
             uuid = BlockUuid(uuid),
             pageUuid = PageUuid(page_uuid),
-            parentUuid = parent_uuid,
-            leftUuid = left_uuid,
+            parentUuid = parent_uuid?.let { BlockUuid(it) },
+            leftUuid = left_uuid?.let { BlockUuid(it) },
             content = content,
             level = level.toInt(),
             position = position,
@@ -685,8 +685,8 @@ class SqlDelightSearchRepository(
         Block(
             uuid = BlockUuid(uuid),
             pageUuid = PageUuid(page_uuid),
-            parentUuid = parent_uuid,
-            leftUuid = left_uuid,
+            parentUuid = parent_uuid?.let { BlockUuid(it) },
+            leftUuid = left_uuid?.let { BlockUuid(it) },
             content = content,
             level = level.toInt(),
             position = position,
@@ -730,8 +730,8 @@ class SqlDelightSearchRepository(
         Block(
             uuid = BlockUuid(uuid),
             pageUuid = PageUuid(page_uuid),
-            parentUuid = parent_uuid,
-            leftUuid = left_uuid,
+            parentUuid = parent_uuid?.let { BlockUuid(it) },
+            leftUuid = left_uuid?.let { BlockUuid(it) },
             content = content,
             level = level.toInt(),
             position = position,

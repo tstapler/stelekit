@@ -35,7 +35,7 @@ class HtmlExporterUnitTest {
     ) = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid("html-unit-page"),
-        parentUuid = parentUuid,
+        parentUuid = parentUuid?.let { BlockUuid(it) },
         content = content,
         level = level,
         position = position,

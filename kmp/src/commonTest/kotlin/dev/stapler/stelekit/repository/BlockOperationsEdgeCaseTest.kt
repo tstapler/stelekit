@@ -52,7 +52,7 @@ class BlockOperationsEdgeCaseTest {
             uuid = BlockUuid(uuid),
             pageUuid = PageUuid(pageUuid),
             content = content,
-            parentUuid = parentUuid,
+            parentUuid = parentUuid?.let { BlockUuid(it) },
             position = position,
             level = level,
             leftUuid = null,
@@ -88,7 +88,7 @@ class BlockOperationsEdgeCaseTest {
         // Verify B is now child of A
         val blockB = repository.getBlockByUuid(page1BlockB.uuid).first().getOrNull()
         assertNotNull(blockB)
-        assertEquals(page1BlockA.uuid.value, blockB.parentUuid, "B should be child of A")
+        assertEquals(page1BlockA.uuid.value, blockB.parentUuid?.value, "B should be child of A")
 
         // Verify page 2 blocks are unchanged
         val page2Uuid = PageUuid("00000000-0000-0000-0000-000000000002")
