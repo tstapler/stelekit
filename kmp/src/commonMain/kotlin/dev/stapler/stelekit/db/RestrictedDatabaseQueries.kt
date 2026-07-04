@@ -1,7 +1,12 @@
 package dev.stapler.stelekit.db
 
+import app.cash.sqldelight.Query
 import app.cash.sqldelight.SuspendingTransactionWithoutReturn
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToOne
 import app.cash.sqldelight.db.SqlDriver
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import kotlinx.coroutines.flow.first
 
 /**
  * Wraps [SteleDatabaseQueries] and gates every mutating method behind [DirectSqlWrite].
@@ -655,7 +660,10 @@ class RestrictedDatabaseQueries(
         queries.deletePendingMove(id)
 
     // SELECT — not a write, no @DirectSqlWrite needed
-    fun lastInsertRowId(): Long = queries.selectLastInsertRowId().executeAsOne()
+    suspend fun lastInsertRowId(): Long {
+        @Suppress("UNCHECKED_CAST")
+        return (queries.selectLastInsertRowId() as Query<Long>).asFlow().mapToOne(PlatformDispatcher.DB).first()
+    }
 
     @DirectSqlWrite
     suspend fun insertAssetOrIgnore(

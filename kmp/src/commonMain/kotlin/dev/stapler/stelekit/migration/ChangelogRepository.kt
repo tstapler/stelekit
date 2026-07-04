@@ -6,7 +6,11 @@ package dev.stapler.stelekit.migration
 import dev.stapler.stelekit.db.DirectSqlWrite
 import dev.stapler.stelekit.db.RestrictedDatabaseQueries
 import dev.stapler.stelekit.db.SteleDatabase
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
 import kotlin.time.Clock
+import kotlinx.coroutines.flow.first
 
 /**
  * Migration-time writer. Runs before [dev.stapler.stelekit.db.DatabaseWriteActor] exists;
@@ -18,10 +22,10 @@ class ChangelogRepository(private val db: SteleDatabase) {
     private val restricted = RestrictedDatabaseQueries(db.steleDatabaseQueries)
 
     /** Returns id → checksum for all APPLIED migrations for this graph. */
-    fun appliedIds(graphId: String): Map<String, String> {
+    suspend fun appliedIds(graphId: String): Map<String, String> {
         return db.steleDatabaseQueries
             .selectAppliedMigrations(graphId)
-            .executeAsList()
+            .asFlow().mapToList(PlatformDispatcher.DB).first()
             .associate { it.id to it.checksum }
     }
 
@@ -63,10 +67,10 @@ class ChangelogRepository(private val db: SteleDatabase) {
         )
     }
 
-    fun runningMigrations(graphId: String): List<String> {
+    suspend fun runningMigrations(graphId: String): List<String> {
         return db.steleDatabaseQueries
             .selectRunningMigrations(graphId)
-            .executeAsList()
+            .asFlow().mapToList(PlatformDispatcher.DB).first()
             .map { it.id }
     }
 
@@ -75,10 +79,10 @@ class ChangelogRepository(private val db: SteleDatabase) {
     }
 
     /** Returns IDs of all FAILED migrations for this graph (filtered in memory). */
-    fun failedMigrations(graphId: String): List<String> {
+    suspend fun failedMigrations(graphId: String): List<String> {
         return db.steleDatabaseQueries
             .selectAllMigrationsForGraph(graphId)
-            .executeAsList()
+            .asFlow().mapToList(PlatformDispatcher.DB).first()
             .filter { it.status == MigrationStatus.FAILED.name }
             .map { it.id }
     }

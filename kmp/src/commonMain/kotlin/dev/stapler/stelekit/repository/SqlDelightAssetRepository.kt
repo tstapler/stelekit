@@ -7,11 +7,15 @@ import dev.stapler.stelekit.asset.AssetEntry
 import dev.stapler.stelekit.asset.AssetMediaType
 import dev.stapler.stelekit.asset.AssetSortOrder
 import dev.stapler.stelekit.asset.AssetUuid
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
+import app.cash.sqldelight.coroutines.mapToOne
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.error.DomainError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
@@ -98,7 +102,7 @@ class SqlDelightAssetRepository(
     override suspend fun countUnprocessedAssets(): Either<DomainError, Long> =
         withContext(PlatformDispatcher.DB) {
             try {
-                queries.countUnprocessedAssets().executeAsOne().right()
+                queries.countUnprocessedAssets().asFlow().mapToOne(PlatformDispatcher.DB).first().right()
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
@@ -108,7 +112,7 @@ class SqlDelightAssetRepository(
     override suspend fun countAssets(): Either<DomainError, Long> =
         withContext(PlatformDispatcher.DB) {
             try {
-                queries.countAssets().executeAsOne().right()
+                queries.countAssets().asFlow().mapToOne(PlatformDispatcher.DB).first().right()
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
@@ -303,7 +307,7 @@ class SqlDelightAssetRepository(
     override suspend fun countOrphanedAssets(): Either<DomainError, Long> =
         withContext(PlatformDispatcher.DB) {
             try {
-                queries.countOrphanedAssets().executeAsOne().right()
+                queries.countOrphanedAssets().asFlow().mapToOne(PlatformDispatcher.DB).first().right()
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 DomainError.DatabaseError.ReadFailed(e.message ?: "unknown").left()
@@ -313,7 +317,7 @@ class SqlDelightAssetRepository(
     override suspend fun getDistinctTags(): Either<DomainError, List<String>> =
         withContext(PlatformDispatcher.DB) {
             try {
-                val rawList = queries.selectAllTagsJson().executeAsList()
+                val rawList = queries.selectAllTagsJson().asFlow().mapToList(PlatformDispatcher.DB).first()
                 val tags = rawList
                     .flatMap { tagsJson -> tagsJson.fromJsonList() }
                     .distinct()

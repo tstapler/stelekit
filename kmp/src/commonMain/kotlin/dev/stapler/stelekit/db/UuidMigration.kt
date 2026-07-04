@@ -4,9 +4,15 @@
 
 package dev.stapler.stelekit.db
 
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
+import app.cash.sqldelight.coroutines.mapToOne
+import app.cash.sqldelight.coroutines.mapToOneOrNull
 import arrow.core.left
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import arrow.core.right
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.util.UuidGenerator
@@ -44,7 +50,7 @@ class UuidMigration(
      */
     suspend fun runIfNeeded(db: SteleDatabase) {
         val alreadyDone = db.steleDatabaseQueries.selectMetadata("uuid_migration_v1")
-            .executeAsOneOrNull()
+            .asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
         if (alreadyDone == "done") {
             logger.info("UUID migration already applied — skipping")
             return
@@ -62,7 +68,7 @@ class UuidMigration(
         // Load all blocks joined with their page file_path in one query.
         val allBlockRows = db.steleDatabaseQueries
             .selectAllBlocksWithPagePath()
-            .executeAsList()
+            .asFlow().mapToList(PlatformDispatcher.DB).first()
 
         if (allBlockRows.isEmpty()) {
             logger.info("UUID migration: no blocks found — marking as done")
@@ -111,7 +117,7 @@ class UuidMigration(
         // Pre-check for UNIQUE constraint collisions before entering the transaction.
         // Remove any entries where the new UUID already belongs to a different block.
         val safeRemap = uuidRemap.filterTo(mutableMapOf()) { (oldUuid, newUuid) ->
-            val existingCount = db.steleDatabaseQueries.existsBlockByUuid(newUuid).executeAsOne()
+            val existingCount = db.steleDatabaseQueries.existsBlockByUuid(newUuid).asFlow().mapToOne(PlatformDispatcher.DB).first()
             if (existingCount > 0L) {
                 logger.warn("UUID migration: skipping $oldUuid → $newUuid (new UUID already exists)")
                 false

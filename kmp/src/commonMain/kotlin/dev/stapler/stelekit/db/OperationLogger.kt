@@ -1,7 +1,11 @@
 package dev.stapler.stelekit.db
 
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToOneOrNull
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.PageUuid
@@ -60,7 +64,7 @@ class OperationLogger(
     private suspend fun nextSeq(): Long {
         if (seq < 0) {
             seq = db.steleDatabaseQueries.selectLogicalClock(sessionId)
-                .executeAsOneOrNull() ?: 0L
+                .asFlow().mapToOneOrNull(PlatformDispatcher.DB).first() ?: 0L
         }
         seq += 1
         restricted.upsertLogicalClock(sessionId, seq)

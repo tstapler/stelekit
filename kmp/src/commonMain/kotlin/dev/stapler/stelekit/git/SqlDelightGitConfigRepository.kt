@@ -15,8 +15,11 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.repository.asDbFlowOrNull
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToOneOrNull
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 /**
@@ -35,7 +38,7 @@ class SqlDelightGitConfigRepository(
     override suspend fun getConfig(graphId: String): Either<DomainError, GitConfig?> =
         withContext(PlatformDispatcher.DB) {
             try {
-                val row = queries.selectGitConfig(graphId).executeAsOneOrNull()
+                val row = queries.selectGitConfig(graphId).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
                 row?.toModel().right()
             } catch (e: CancellationException) {
                 throw e
