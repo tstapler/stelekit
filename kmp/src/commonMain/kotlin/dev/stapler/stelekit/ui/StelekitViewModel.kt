@@ -1,7 +1,9 @@
 package dev.stapler.stelekit.ui
 
 import dev.stapler.stelekit.db.BacklinkRenamer
+import dev.stapler.stelekit.db.ConflictMarkerDetector
 import dev.stapler.stelekit.db.DatabaseWriteActor
+import dev.stapler.stelekit.db.DiskConflictBlockMatcher
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphLoaderPort
 import dev.stapler.stelekit.db.GraphWriterPort
@@ -35,6 +37,7 @@ import dev.stapler.stelekit.model.NotificationType
 import dev.stapler.stelekit.model.PageName
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.outliner.BlockSorter
+import dev.stapler.stelekit.parser.MarkdownParser
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
@@ -164,6 +167,31 @@ class StelekitViewModel(
     )
     private val recentMutex = Mutex()
     private val logger = Logger("StelekitViewModel")
+    private val markdownParser = MarkdownParser()
+
+    /**
+     * Parses [diskContent] and matches it back to [targetUuid]'s position among [localBlocks],
+     * degrading to `null` on any parse failure rather than propagating — [MarkdownParser.parsePage]
+     * rethrows on malformed content by design, and an uncaught exception here would either kill
+     * the standing `observeExternalFileChanges()` collector for the rest of the session, or
+     * surface a full-screen fatal error from a one-shot `scope.launch`, both of which directly
+     * contradict this dialog's anxiety-reduction goal. `null` is treated identically to a
+     * structural no-match by the dialog's existing fallback copy.
+     */
+    private fun tryMatchDiskBlockContent(localBlocks: List<Block>, targetUuid: String, diskContent: String): String? =
+        try {
+            DiskConflictBlockMatcher.matchDiskBlockContent(localBlocks, targetUuid, markdownParser.parsePage(diskContent).blocks)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("Failed to parse disk content for block-scoped conflict preview: ${e.message}")
+            null
+        }
+
+    /** Marks [filePath]'s deferred conflict as resolved — called from the tail of each resolver. */
+    private fun clearPendingConflict(filePath: String) {
+        _uiState.update { it.copy(pendingConflicts = it.pendingConflicts - filePath) }
+    }
 
     private fun sanitizeErrorMessage(message: String?): String =
         message
@@ -282,6 +310,16 @@ class StelekitViewModel(
     /** Dismisses the conflict resolution screen. */
     fun dismissConflictResolution() {
         _uiState.update { it.copy(conflictResolutionVisible = false) }
+    }
+
+    /** Opens the full-screen line-diff view for the current disk conflict. */
+    fun showDiskConflictFullView() {
+        _uiState.update { it.copy(diskConflictViewFullVisible = true) }
+    }
+
+    /** Closes the full-screen line-diff view, returning to the still-open DiskConflictDialog. */
+    fun hideDiskConflictFullView() {
+        _uiState.update { it.copy(diskConflictViewFullVisible = false) }
     }
 
     /** Dismisses the journal merge review screen without applying the merge. */
@@ -1436,12 +1474,20 @@ class StelekitViewModel(
                     }
                     ?: return@collect
 
-                // Read the latest local content from BlockStateManager's optimistic state
-                val localContent = blockStateManager
+                // Read the latest local blocks from BlockStateManager's optimistic state, falling
+                // back to a full page fetch (not a single-block read) — DiskConflictBlockMatcher's
+                // buildBlockPath needs the whole sibling set to compute the target's ordinal
+                // position, not just the target block itself. Reused below for the block matcher's
+                // localBlocks argument rather than issuing a second DB query — this function only
+                // fires when the four-tier protection trips, exactly the scenarios where the DB can
+                // lag behind BlockStateManager's current optimistic tree shape.
+                val localBlocks = blockStateManager
                     ?.blocks?.value?.get(currentPage.uuid.value)
-                    ?.find { it.uuid.value == conflictBlockUuid }?.content
-                    ?: blockRepository.getBlockByUuid(BlockUuid(conflictBlockUuid)).first().getOrNull()?.content
-                    ?: ""
+                    ?: blockRepository.getBlocksForPage(currentPage.uuid).first().getOrNull() ?: emptyList()
+
+                val localContent = localBlocks.find { it.uuid.value == conflictBlockUuid }?.content ?: ""
+
+                val diskBlockContent = tryMatchDiskBlockContent(localBlocks, conflictBlockUuid, event.content)
 
                 _uiState.update { it.copy(
                     diskConflict = DiskConflict(
@@ -1450,7 +1496,8 @@ class StelekitViewModel(
                         filePath = event.filePath,
                         editingBlockUuid = conflictBlockUuid,
                         localContent = localContent,
-                        diskContent = event.content
+                        diskContent = event.content,
+                        diskBlockContent = diskBlockContent
                     )
                 )}
             }
@@ -1468,10 +1515,14 @@ class StelekitViewModel(
         if (screen !is Screen.PageView) return false
         val filePath = screen.page.filePath ?: return false
         val pending = _uiState.value.pendingConflicts[filePath] ?: return false
-        _uiState.update { it.copy(pendingConflicts = it.pendingConflicts - filePath) }
         scope.launch {
-            val firstBlock = blockRepository.getBlocksForPage(screen.page.uuid)
-                .first().getOrNull()?.minByOrNull { it.position }
+            val allBlocksForPage = blockRepository.getBlocksForPage(screen.page.uuid)
+                .first().getOrNull() ?: emptyList()
+            val firstBlock = allBlocksForPage.minByOrNull { it.position }
+            val latestDiskContent = _uiState.value.pendingConflicts[filePath]?.diskContent ?: pending.diskContent
+
+            val diskBlockContent = tryMatchDiskBlockContent(allBlocksForPage, firstBlock?.uuid?.value ?: "", latestDiskContent)
+
             _uiState.update { state ->
                 state.copy(diskConflict = DiskConflict(
                     pageUuid = screen.page.uuid.value,
@@ -1479,7 +1530,8 @@ class StelekitViewModel(
                     filePath = filePath,
                     editingBlockUuid = firstBlock?.uuid?.value ?: "",
                     localContent = firstBlock?.content ?: "",
-                    diskContent = pending.diskContent,
+                    diskContent = latestDiskContent,
+                    diskBlockContent = diskBlockContent,
                 ))
             }
         }
@@ -1538,7 +1590,10 @@ class StelekitViewModel(
         // Re-queue a save for the current page so local content overwrites the disk file
         val currentPage = (uiState.value.currentScreen as? Screen.PageView)?.page ?: return
         val bsm = blockStateManager ?: return
-        scope.launch { bsm.queuePageSave(currentPage.uuid.value) }
+        scope.launch {
+            bsm.queuePageSave(currentPage.uuid.value)
+            clearPendingConflict(conflict.filePath)
+        }
     }
 
     /**
@@ -1554,6 +1609,7 @@ class StelekitViewModel(
             // any auto-save that ran during the dialog would have written local content
             // to disk, leaving disk/DB out of sync after we update the DB here.
             blockStateManager?.savePageNow(conflict.pageUuid)
+            clearPendingConflict(conflict.filePath)
         }
     }
 
@@ -1577,6 +1633,7 @@ class StelekitViewModel(
         if (conflict.editingBlockUuid.isBlank()) {
             // No specific block to merge into — fall back to accepting the local version
             _uiState.update { it.copy(diskConflict = null) }
+            clearPendingConflict(conflict.filePath)
             return
         }
         _uiState.update { it.copy(diskConflict = null) }
@@ -1586,8 +1643,8 @@ class StelekitViewModel(
                 append(conflict.localContent)
                 if (!conflict.localContent.endsWith("\n")) appendLine()
                 appendLine("=======")
-                append(conflict.diskContent.lines().firstOrNull { it.startsWith("- ") }
-                    ?.removePrefix("- ") ?: conflict.diskContent.take(200))
+                append(conflict.diskBlockContent
+                    ?: "${conflict.diskContent.take(200)} (no matching section found — showing file excerpt)")
                 if (!conflict.diskContent.endsWith("\n")) appendLine()
                 append(">>>>>>> Disk")
             }
@@ -1598,6 +1655,10 @@ class StelekitViewModel(
                 ?: blockRepository.saveBlock(updatedBlock)
             // Focus the block so the user can start editing immediately
             requestEditBlock(conflict.editingBlockUuid, 0)
+            if (ConflictMarkerDetector.hasConflictMarkers(updatedBlock.content)) {
+                sendSnackbar("Conflict markers inserted — remove <<<<<<<, =======, >>>>>>> to let \"${conflict.pageName}\" sync again")
+            }
+            clearPendingConflict(conflict.filePath)
         }
     }
 
@@ -1632,6 +1693,7 @@ class StelekitViewModel(
                 ?: blockRepository.saveBlock(newBlock)
             // Persist the new block to disk
             blockStateManager?.savePageNow(conflict.pageUuid)
+            clearPendingConflict(conflict.filePath)
         }
     }
 

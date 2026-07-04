@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.flowOf
 import dev.stapler.stelekit.ui.components.CommandPalette
 import dev.stapler.stelekit.ui.components.DebugMenuOverlay
 import dev.stapler.stelekit.ui.components.DiskConflictDialog
+import dev.stapler.stelekit.ui.screens.DiskConflictFullScreen
 import dev.stapler.stelekit.ui.components.NotificationOverlay
 import dev.stapler.stelekit.ui.components.PlatformFrameTimeOverlay
 import dev.stapler.stelekit.ui.components.RenamePageDialog
@@ -271,14 +272,27 @@ internal fun GraphDialogLayer(
         )
     }
 
-    appState.diskConflict?.let { conflict ->
-        DiskConflictDialog(
-            conflict = conflict,
-            onKeepLocal = { viewModel.keepLocalChanges() },
-            onUseDisk = { viewModel.acceptDiskVersion() },
-            onSaveAsNew = { viewModel.saveAsNewBlock() },
-            onManualResolve = { viewModel.manualResolve() }
-        )
+    if (!appState.diskConflictViewFullVisible) {
+        appState.diskConflict?.let { conflict ->
+            DiskConflictDialog(
+                conflict = conflict,
+                onKeepLocal = { viewModel.keepLocalChanges() },
+                onUseDisk = { viewModel.acceptDiskVersion() },
+                onSaveAsNew = { viewModel.saveAsNewBlock() },
+                onManualResolve = { viewModel.manualResolve() },
+                onViewFull = { viewModel.showDiskConflictFullView() },
+            )
+        }
+    }
+
+    if (appState.diskConflictViewFullVisible) {
+        appState.diskConflict?.let { conflict ->
+            DiskConflictFullScreen(
+                localContent = conflict.localContent,
+                diskContent = conflict.diskBlockContent ?: conflict.diskContent,
+                onDismiss = { viewModel.hideDiskConflictFullView() },
+            )
+        }
     }
 
     appState.renameDialogPage?.let { page ->
