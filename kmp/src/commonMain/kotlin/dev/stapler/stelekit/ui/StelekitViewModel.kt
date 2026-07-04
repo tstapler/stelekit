@@ -1651,9 +1651,10 @@ class StelekitViewModel(
                 append(conflict.localContent)
                 if (!conflict.localContent.endsWith("\n")) appendLine()
                 appendLine("=======")
-                append(conflict.diskBlockContent
-                    ?: "${conflict.diskContent.take(200)} (no matching section found — showing file excerpt)")
-                if (!conflict.diskContent.endsWith("\n")) appendLine()
+                val diskSideText = conflict.diskBlockContent
+                    ?: "${conflict.diskContent.take(200)} (no matching section found — showing file excerpt)"
+                append(diskSideText)
+                if (!diskSideText.endsWith("\n")) appendLine()
                 append(">>>>>>> Disk")
             }
             val blockResult = blockRepository.getBlockByUuid(BlockUuid(conflict.editingBlockUuid ?: return@launch)).first()
