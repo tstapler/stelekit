@@ -1505,10 +1505,18 @@ class StelekitViewModel(
     }
 
     /**
-     * If [screen] is a [Screen.PageView] with a stored [PendingConflict], removes it from
-     * state, builds a [DiskConflict] from current DB blocks, and shows the conflict dialog.
-     * Also skips the normal [GraphLoader.loadFullPage] call so the DB is not overwritten
-     * with the disk content before the user gets a chance to choose.
+     * If [screen] is a [Screen.PageView] with a stored [PendingConflict], builds a
+     * [DiskConflict] from current DB blocks and shows the conflict dialog. Also skips the
+     * normal [GraphLoader.loadFullPage] call so the DB is not overwritten with the disk
+     * content before the user gets a chance to choose.
+     *
+     * Does **not** remove the [PendingConflict] entry from `pendingConflicts` — it is
+     * intentionally retained until an explicit resolve action clears it (see
+     * [clearPendingConflict]), so the sidebar's persistent conflict indicator stays accurate
+     * for as long as the conflict is genuinely unresolved, including while this dialog is
+     * open. Removing it here (as an earlier version of this code did) reintroduces the bug
+     * this lifecycle fix exists to close.
+     *
      * Returns true if a pending conflict was found (caller should skip loadFullPage).
      */
     private fun checkAndShowPendingConflict(screen: Screen): Boolean {

@@ -163,9 +163,9 @@ fun computeDiskDiffState(localContent: String, diskContent: String): DiskDiffSta
     else -> DiskDiffState.Different(diffLines(localContent.lines(), diskContent.lines()))
 }
 
-private enum class DiffLineKind { UNCHANGED, REMOVED, ADDED }
+internal enum class DiffLineKind { UNCHANGED, REMOVED, ADDED }
 
-private data class DiffLineItem(val text: String, val kind: DiffLineKind)
+internal data class DiffLineItem(val text: String, val kind: DiffLineKind)
 
 /**
  * Reconstructs the full rendered line sequence (unchanged + removed + added) from a [Patch]
@@ -173,7 +173,7 @@ private data class DiffLineItem(val text: String, val kind: DiffLineKind)
  * lines taken from [localLines] (identical to the disk lines at those positions by definition).
  * Pure function — independently testable without Compose.
  */
-private fun buildDiffLines(patch: Patch<String>, localLines: List<String>): List<DiffLineItem> {
+internal fun buildDiffLines(patch: Patch<String>, localLines: List<String>): List<DiffLineItem> {
     val items = mutableListOf<DiffLineItem>()
     var cursor = 0
     val deltas: List<Delta<String>> = patch.deltas.sortedBy { it.source.position }

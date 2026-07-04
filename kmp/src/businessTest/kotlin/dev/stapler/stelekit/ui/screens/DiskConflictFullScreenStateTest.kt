@@ -32,4 +32,87 @@ class DiskConflictFullScreenStateTest {
         val different = assertIs<DiskDiffState.Different>(result)
         assertTrue(different.patch.deltas.isNotEmpty())
     }
+
+    @Test
+    fun `buildDiffLines reconstructs a pure insert with unchanged lines surrounding the addition`() {
+        // Disk adds two lines ("x", "y") between the two local lines — a pure INSERT delta.
+        val localContent = "a\nb"
+        val diskContent = "a\nx\ny\nb"
+
+        val different = assertIs<DiskDiffState.Different>(computeDiskDiffState(localContent, diskContent))
+        val lines = buildDiffLines(different.patch, localContent.lines())
+
+        assertEquals(
+            listOf(
+                DiffLineItem("a", DiffLineKind.UNCHANGED),
+                DiffLineItem("x", DiffLineKind.ADDED),
+                DiffLineItem("y", DiffLineKind.ADDED),
+                DiffLineItem("b", DiffLineKind.UNCHANGED),
+            ),
+            lines,
+        )
+    }
+
+    @Test
+    fun `buildDiffLines reconstructs a pure delete with unchanged lines intact`() {
+        // Disk drops the middle line ("b") — a pure DELETE delta.
+        val localContent = "a\nb\nc"
+        val diskContent = "a\nc"
+
+        val different = assertIs<DiskDiffState.Different>(computeDiskDiffState(localContent, diskContent))
+        val lines = buildDiffLines(different.patch, localContent.lines())
+
+        assertEquals(
+            listOf(
+                DiffLineItem("a", DiffLineKind.UNCHANGED),
+                DiffLineItem("b", DiffLineKind.REMOVED),
+                DiffLineItem("c", DiffLineKind.UNCHANGED),
+            ),
+            lines,
+        )
+    }
+
+    @Test
+    fun `buildDiffLines reconstructs a middle change with unchanged prefix and suffix`() {
+        // The middle line changes ("b" -> "X"); "a" and "c" are unchanged on either side.
+        val localContent = "a\nb\nc"
+        val diskContent = "a\nX\nc"
+
+        val different = assertIs<DiskDiffState.Different>(computeDiskDiffState(localContent, diskContent))
+        val lines = buildDiffLines(different.patch, localContent.lines())
+
+        assertEquals(
+            listOf(
+                DiffLineItem("a", DiffLineKind.UNCHANGED),
+                DiffLineItem("b", DiffLineKind.REMOVED),
+                DiffLineItem("X", DiffLineKind.ADDED),
+                DiffLineItem("c", DiffLineKind.UNCHANGED),
+            ),
+            lines,
+        )
+    }
+
+    @Test
+    fun `buildDiffLines reconstructs multiple non-adjacent deltas without dropping or duplicating lines`() {
+        // Two separate single-line changes ("b" -> "X" and "d" -> "Y") with unchanged lines
+        // around and between them — exercises the cursor gap-fill loop running more than once.
+        val localContent = "a\nb\nc\nd\ne"
+        val diskContent = "a\nX\nc\nY\ne"
+
+        val different = assertIs<DiskDiffState.Different>(computeDiskDiffState(localContent, diskContent))
+        val lines = buildDiffLines(different.patch, localContent.lines())
+
+        assertEquals(
+            listOf(
+                DiffLineItem("a", DiffLineKind.UNCHANGED),
+                DiffLineItem("b", DiffLineKind.REMOVED),
+                DiffLineItem("X", DiffLineKind.ADDED),
+                DiffLineItem("c", DiffLineKind.UNCHANGED),
+                DiffLineItem("d", DiffLineKind.REMOVED),
+                DiffLineItem("Y", DiffLineKind.ADDED),
+                DiffLineItem("e", DiffLineKind.UNCHANGED),
+            ),
+            lines,
+        )
+    }
 }

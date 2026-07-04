@@ -273,20 +273,45 @@ class DiskConflictResolutionTest {
         val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
-        vm.navigateTo(Screen.PageView(testPage))
-        vm.requestEditBlock(testBlockUuid)
 
-        // Direct (on-page) conflict path: editingBlockUuid resolves to the real block being
-        // edited, so manualResolve() takes the main branch (writes conflict markers).
+        // Off-page first, so pendingConflicts[testFilePath] is genuinely populated before
+        // manualResolve() runs. The on-page/immediate branch (observeExternalFileChanges) never
+        // populates pendingConflicts by itself — only the off-page/deferred branch does — so
+        // asserting the clear without this setup is vacuously true both before and after
+        // manualResolve() runs and proves nothing about clearPendingConflict().
         graphLoader.emitExternalFileChange(testFilePath, "- disk content")
+        assertNotNull(
+            vm.uiState.value.pendingConflicts[testFilePath],
+            "Off-page external change must populate pendingConflicts"
+        )
+
+        vm.navigateTo(Screen.PageView(testPage))
+
+        // checkAndShowPendingConflict() promotes the pending conflict to an active diskConflict
+        // but must NOT clear pendingConflicts merely by showing the dialog — only an explicit
+        // resolve action does that (the lifecycle fix this whole suite covers).
+        assertNotNull(
+            vm.uiState.value.pendingConflicts[testFilePath],
+            "pendingConflicts entry must survive navigation/promotion to an active diskConflict"
+        )
+
+        // The page has exactly one block, so checkAndShowPendingConflict() resolves
+        // editingBlockUuid to that block's uuid (non-blank), forcing manualResolve()'s main
+        // branch (writes conflict markers) rather than the early-return branch.
         val conflict = vm.uiState.value.diskConflict
         assertNotNull(conflict)
-        assertTrue(conflict.editingBlockUuid.isNotBlank())
+        assertTrue(
+            conflict.editingBlockUuid.isNotBlank(),
+            "Non-empty page must resolve to a non-blank editingBlockUuid, forcing manualResolve()'s main branch"
+        )
 
         vm.manualResolve()
 
         assertNull(vm.uiState.value.diskConflict)
-        assertNull(vm.uiState.value.pendingConflicts[testFilePath])
+        assertNull(
+            vm.uiState.value.pendingConflicts[testFilePath],
+            "manualResolve()'s main branch must clear the pendingConflicts entry it inherited from the deferred/off-page path"
+        )
     }
 
     @Test
@@ -334,6 +359,42 @@ class DiskConflictResolutionTest {
             "disk version content",
             conflict.diskBlockContent,
             "diskBlockContent must be wired through the live ViewModel, not just testable in isolation on the matcher"
+        )
+    }
+
+    @Test
+    fun pendingConflict_diskBlockContent_wiring_matches_first_block_position_via_checkAndShowPendingConflict() = runBlocking {
+        val pageRepo = FakePageRepository(listOf(testPage))
+        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
+        vm.startAutoSave()
+
+        // Off-page: default screen is Journals, not PageView(testPage) — this routes through
+        // checkAndShowPendingConflict()'s deferred branch (using a fresh getBlocksForPage() read
+        // and firstBlock), not observeExternalFileChanges()'s immediate/actively-edited-block
+        // branch, which diskConflict_diskBlockContent_wiring_matches_local_block_position_on_disk
+        // already covers.
+        graphLoader.emitExternalFileChange(testFilePath, "- disk version content")
+        assertNotNull(
+            vm.uiState.value.pendingConflicts[testFilePath],
+            "Off-page external change must populate pendingConflicts"
+        )
+
+        vm.navigateTo(Screen.PageView(testPage))
+
+        // checkAndShowPendingConflict() computes diskBlockContent inside its own scope.launch
+        // (a real getBlocksForPage() read), so await it rather than assume synchronous
+        // completion.
+        val conflict = withTimeout(2_000) {
+            vm.uiState.first { it.diskConflict?.diskBlockContent != null }.diskConflict
+        }
+        assertNotNull(conflict)
+        assertEquals(
+            "disk version content",
+            conflict.diskBlockContent,
+            "diskBlockContent must be wired through checkAndShowPendingConflict()'s firstBlock-based " +
+                "ordinal match, not just testable in isolation on the matcher"
         )
     }
 
@@ -407,6 +468,87 @@ class DiskConflictResolutionTest {
         assertNull(vm.uiState.value.diskConflict)
         val noSnackbar = withTimeoutOrNull(200) { vm.snackbarEvents.first() }
         assertNull(noSnackbar, "The early-return branch must not write conflict markers, so no snackbar should fire")
+    }
+
+    @Test
+    fun manualResolve_persists_conflict_markers_containing_matched_diskBlockContent() = runBlocking {
+        val pageRepo = FakePageRepository(listOf(testPage))
+        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
+        vm.startAutoSave()
+        vm.navigateTo(Screen.PageView(testPage))
+        vm.requestEditBlock(testBlockUuid)
+
+        // testBlock is the only (root-level) block on the page, so its disk counterpart at the
+        // same ordinal position successfully matches — manualResolve() should merge in the
+        // matched diskBlockContent, not the raw-excerpt fallback.
+        graphLoader.emitExternalFileChange(testFilePath, "- disk version content")
+        val conflict = vm.uiState.value.diskConflict
+        assertNotNull(conflict)
+        assertEquals("disk version content", conflict.diskBlockContent)
+
+        vm.manualResolve()
+
+        val resolvedBlock = withTimeout(2_000) {
+            blockRepo.getBlockByUuid(BlockUuid(testBlockUuid))
+                .first { it.getOrNull()?.content?.contains("<<<<<<<") == true }
+                .getOrNull()
+        }
+        assertNotNull(resolvedBlock)
+        val content = resolvedBlock.content
+        assertTrue(content.contains("<<<<<<< Your edit"), "must contain the local-edit marker")
+        assertTrue(content.contains("Original content"), "must contain the local edit content")
+        assertTrue(content.contains("======="), "must contain the separator marker")
+        assertTrue(
+            content.contains("disk version content"),
+            "must contain the positionally-matched disk-block content, not a raw file excerpt"
+        )
+        assertFalse(
+            content.contains("no matching section found"),
+            "a successful positional match must not fall back to the file-excerpt heuristic"
+        )
+        assertTrue(content.contains(">>>>>>> Disk"), "must contain the disk-version marker")
+    }
+
+    @Test
+    fun manualResolve_persists_fallback_excerpt_when_diskBlockContent_has_no_match() = runBlocking {
+        val pageRepo = FakePageRepository(listOf(testPage))
+        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
+        vm.startAutoSave()
+        vm.navigateTo(Screen.PageView(testPage))
+        vm.requestEditBlock(testBlockUuid)
+
+        // Empty disk content parses to zero blocks, so DiskConflictBlockMatcher's ordinal
+        // lookup at testBlock's path ([0]) has nothing to index into — no positional match
+        // exists, forcing manualResolve()'s fallback branch (raw file-excerpt text) instead of
+        // the matched diskBlockContent.
+        graphLoader.emitExternalFileChange(testFilePath, "")
+        val conflict = vm.uiState.value.diskConflict
+        assertNotNull(conflict)
+        assertNull(
+            conflict.diskBlockContent,
+            "Empty disk content must fail to positionally match, forcing the fallback branch"
+        )
+
+        vm.manualResolve()
+
+        val resolvedBlock = withTimeout(2_000) {
+            blockRepo.getBlockByUuid(BlockUuid(testBlockUuid))
+                .first { it.getOrNull()?.content?.contains("<<<<<<<") == true }
+                .getOrNull()
+        }
+        assertNotNull(resolvedBlock)
+        val content = resolvedBlock.content
+        assertTrue(content.contains("<<<<<<< Your edit"), "must contain the local-edit marker")
+        assertTrue(content.contains("======="), "must contain the separator marker")
+        assertTrue(
+            content.contains("(no matching section found — showing file excerpt)"),
+            "must fall back to the file-excerpt text when no positional match exists"
+        )
+        assertTrue(content.contains(">>>>>>> Disk"), "must contain the disk-version marker")
     }
 
     @Test
