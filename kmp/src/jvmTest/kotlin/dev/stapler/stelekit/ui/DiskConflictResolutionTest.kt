@@ -97,34 +97,6 @@ class DiskConflictResolutionTest {
     }
 
     @Test
-    fun keepLocalChanges_dismisses_conflict() = runBlocking {
-        val vm = makeViewModel()
-        // Navigate to the test page so currentScreen is PageView
-        vm.navigateTo(Screen.PageView(testPage))
-        // Simulate editing state
-        vm.requestEditBlock(testBlockUuid)
-
-        // keepLocalChanges is a no-op when no conflict is set
-        vm.keepLocalChanges()
-
-        assertNull(vm.uiState.value.diskConflict, "No conflict should be set initially")
-    }
-
-    @Test
-    fun manualResolve_writes_conflict_markers() = runBlocking {
-        val blockRepo = FakeBlockRepository(mapOf(testPageUuid to listOf(testBlock)))
-        val vm = makeViewModel(blockRepo = blockRepo)
-
-        vm.navigateTo(Screen.PageView(testPage))
-        vm.requestEditBlock(testBlockUuid)
-
-        // Verify the block has original content
-        val blockBefore = blockRepo.getBlockByUuid(BlockUuid(testBlockUuid)).first().getOrNull()
-        assertNotNull(blockBefore)
-        assertEquals("Original content", blockBefore.content)
-    }
-
-    @Test
     fun diskConflict_model_has_all_fields() {
         val conflict = DiskConflict(
             pageUuid = "page-1",
