@@ -33,7 +33,7 @@ object DiskConflictBlockMatcher {
             if (index < 0) return null
             path.add(0, index)
 
-            val parent = parentUuid?.let { blocksByUuid[it] } ?: return path
+            val parent = parentUuid?.let { blocksByUuid[it.value] } ?: return path
             current = parent
         }
     }

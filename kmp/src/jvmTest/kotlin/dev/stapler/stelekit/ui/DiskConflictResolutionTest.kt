@@ -319,7 +319,7 @@ class DiskConflictResolutionTest {
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
         vm.navigateTo(Screen.PageView(testPage))
-        vm.requestEditBlock(testBlockUuid)
+        vm.requestEditBlock(BlockUuid(testBlockUuid))
 
         // testBlock is the only (root-level, parentUuid == null) block on the page, so its
         // ordinal path is [0] — the single top-level bullet below is its disk counterpart.
@@ -378,7 +378,7 @@ class DiskConflictResolutionTest {
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
         vm.navigateTo(Screen.PageView(testPage))
-        vm.requestEditBlock(testBlockUuid)
+        vm.requestEditBlock(BlockUuid(testBlockUuid))
         graphLoader.emitExternalFileChange(testFilePath, "- disk content")
 
         val conflictBefore = vm.uiState.value.diskConflict
@@ -402,7 +402,7 @@ class DiskConflictResolutionTest {
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
         vm.navigateTo(Screen.PageView(testPage))
-        vm.requestEditBlock(testBlockUuid)
+        vm.requestEditBlock(BlockUuid(testBlockUuid))
 
         graphLoader.emitExternalFileChange(testFilePath, "- disk content")
         assertNotNull(vm.uiState.value.diskConflict)
@@ -450,7 +450,7 @@ class DiskConflictResolutionTest {
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
         vm.navigateTo(Screen.PageView(testPage))
-        vm.requestEditBlock(testBlockUuid)
+        vm.requestEditBlock(BlockUuid(testBlockUuid))
 
         // testBlock is the only (root-level) block on the page, so its disk counterpart at the
         // same ordinal position successfully matches — manualResolve() should merge in the
@@ -491,7 +491,7 @@ class DiskConflictResolutionTest {
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
         vm.navigateTo(Screen.PageView(testPage))
-        vm.requestEditBlock(testBlockUuid)
+        vm.requestEditBlock(BlockUuid(testBlockUuid))
 
         // Empty disk content parses to zero blocks, so DiskConflictBlockMatcher's ordinal
         // lookup at testBlock's path ([0]) has nothing to index into — no positional match
@@ -552,7 +552,7 @@ class DiskConflictResolutionTest {
         vm.startAutoSave()
 
         vm.navigateTo(Screen.PageView(testPage))
-        vm.requestEditBlock(testBlockUuid)
+        vm.requestEditBlock(BlockUuid(testBlockUuid))
 
         // Deferred conflict: an external change to a *different* page while on testPage.
         graphLoader.emitExternalFileChange(otherFilePath, "- other disk content")
@@ -610,7 +610,7 @@ class DiskConflictResolutionTest {
         val vm = makeViewModel(pageRepo = pageRepo, blockRepo = blockRepo, graphLoader = graphLoader)
         vm.startAutoSave()
         vm.navigateTo(Screen.PageView(testPage))
-        vm.requestEditBlock(testBlockUuid)
+        vm.requestEditBlock(BlockUuid(testBlockUuid))
 
         val malformedContent = "99999999999999999999999999999999999999. overflow ordinal marker\n"
         graphLoader.emitExternalFileChange(testFilePath, malformedContent)
