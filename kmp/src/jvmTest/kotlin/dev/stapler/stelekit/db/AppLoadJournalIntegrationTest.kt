@@ -223,9 +223,9 @@ class AppLoadJournalIntegrationTest {
 
         h.pageRepo.savePage(Page(uuid = PageUuid("nested-uuid"), name = today().toString(), createdAt = now, updatedAt = now, isJournal = true, journalDate = today()))
         h.blockRepo.saveBlock(Block(uuid = BlockUuid("root"), pageUuid = PageUuid("nested-uuid"), content = "Root block", position = "a0", level = 0, createdAt = now, updatedAt = now))
-        h.blockRepo.saveBlock(Block(uuid = BlockUuid("child1"), pageUuid = PageUuid("nested-uuid"), parentUuid = "root", content = "Child 1", position = "a0", level = 1, createdAt = now, updatedAt = now))
-        h.blockRepo.saveBlock(Block(uuid = BlockUuid("child2"), pageUuid = PageUuid("nested-uuid"), parentUuid = "root", content = "Child 2", position = "a1", level = 1, createdAt = now, updatedAt = now))
-        h.blockRepo.saveBlock(Block(uuid = BlockUuid("grandchild"), pageUuid = PageUuid("nested-uuid"), parentUuid = "child1", content = "Grandchild", position = "a0", level = 2, createdAt = now, updatedAt = now))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("child1"), pageUuid = PageUuid("nested-uuid"), parentUuid = BlockUuid("root"), content = "Child 1", position = "a0", level = 1, createdAt = now, updatedAt = now))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("child2"), pageUuid = PageUuid("nested-uuid"), parentUuid = BlockUuid("root"), content = "Child 2", position = "a1", level = 1, createdAt = now, updatedAt = now))
+        h.blockRepo.saveBlock(Block(uuid = BlockUuid("grandchild"), pageUuid = PageUuid("nested-uuid"), parentUuid = BlockUuid("child1"), content = "Grandchild", position = "a0", level = 2, createdAt = now, updatedAt = now))
 
         h.journalService.ensureTodayJournal()
 

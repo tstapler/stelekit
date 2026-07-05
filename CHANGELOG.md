@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.60.0](https://github.com/tstapler/stelekit/compare/v0.59.1...v0.60.0) (2026-07-05)
+
+
+### Features
+
+* **wasm:** seed demo content on first load; add directory import logging ([ee7947c](https://github.com/tstapler/stelekit/commit/ee7947c9711458ee00a6ea67c49802f0a2840495))
+
+
+### Bug Fixes
+
+* **db:** prevent JDBC pool deadlock in OperationLogger ([5c7b961](https://github.com/tstapler/stelekit/commit/5c7b96175b95522a13a9aebbc507f4c4f313a879))
+* **observability:** remove SpanLogSink from LogManager on factory close ([3911134](https://github.com/tstapler/stelekit/commit/3911134d11550d8c1d05bd1cf463342fca2f07bf))
+* **quality:** reflect-and-fix enforcement for this session's bugs ([84148bd](https://github.com/tstapler/stelekit/commit/84148bdd55ce6ab3d340d925685a250ed5072421))
+* update tests and call sites for type-driven design refactors ([610de21](https://github.com/tstapler/stelekit/commit/610de216d4077b109e9512949277f73516edc115))
+* **wasm:** fix graph switch stuck on Initializing overlay ([f87254c](https://github.com/tstapler/stelekit/commit/f87254cc84b7715612f3a06de264b5ff44ac4450))
+* **wasm:** replace all sync executeAsList/executeAsOne/executeAsOneOrNull with async equivalents ([6f49ffa](https://github.com/tstapler/stelekit/commit/6f49ffa1d0cbc0a5b1c6d1d8f7d7dd6e7f363d4d))
+* **wasm:** resolve await unresolved reference for showDirectoryPicker ([0c8b194](https://github.com/tstapler/stelekit/commit/0c8b19483d0bfee043fcbf8212c0ba7ec0833d17))
+* **wasm:** use println instead of appLogger in onAddGraph lambda ([f5b237c](https://github.com/tstapler/stelekit/commit/f5b237ca1e0498214f524abc4b85090b29581654))
+* **web:** restore OPFS persistence and wire up native directory picker ([f456513](https://github.com/tstapler/stelekit/commit/f4565134ad78070d995faf441da3e7877c535f1a))
+
 ## [0.59.1](https://github.com/tstapler/stelekit/compare/v0.59.0...v0.59.1) (2026-07-03)
 
 

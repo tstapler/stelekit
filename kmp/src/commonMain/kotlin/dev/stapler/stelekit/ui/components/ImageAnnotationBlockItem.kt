@@ -3,6 +3,7 @@
 
 package dev.stapler.stelekit.ui.components
 
+import dev.stapler.stelekit.model.BlockPropertyKeys
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -46,7 +47,7 @@ internal fun ImageAnnotationBlockItem(
     onStartEditing: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val imageAnnotationUuid = block.properties["image-id"] ?: ""
+    val imageAnnotationUuid = block.properties[BlockPropertyKeys.IMAGE_ID] ?: ""
     val imagePath = extractImagePath(block.content)
     val measurementCount = block.properties["image-measurement-count"]?.toIntOrNull() ?: 0
     val calibrationRaw = block.properties["image-calibration"] ?: CalibrationMethod.NONE.name

@@ -21,7 +21,7 @@ object TestUtils {
         return Block(
             uuid = BlockUuid(uuid),
             pageUuid = PageUuid(pageUuid),
-            parentUuid = parentUuid,
+            parentUuid = parentUuid?.let { BlockUuid(it) },
             leftUuid = null,
             content = content,
             level = level,

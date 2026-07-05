@@ -33,7 +33,7 @@ class PlainTextExporterTest {
     ) = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid("page-1"),
-        parentUuid = parentUuid,
+        parentUuid = parentUuid?.let { BlockUuid(it) },
         content = content,
         level = level,
         position = position,

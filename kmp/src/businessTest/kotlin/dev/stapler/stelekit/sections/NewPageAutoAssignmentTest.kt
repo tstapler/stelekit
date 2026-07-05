@@ -15,6 +15,7 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageName
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.parsing.ParseMode
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
@@ -107,7 +108,7 @@ class NewPageAutoAssignmentTest {
         override suspend fun savePage(page: Page, blocks: List<Block>, graphPath: String): Either<DomainError, Unit> = Unit.right()
         override suspend fun deletePage(page: Page) = true
         override suspend fun movePageToSection(
-            page: Page, newSectionId: String, newPathPrefix: String,
+            page: Page, newSectionId: SectionId, newPathPrefix: String,
         ): Either<DomainError, Page> = page.copy(sectionId = newSectionId).right()
     }
 
@@ -151,7 +152,7 @@ class NewPageAutoAssignmentTest {
             val page = pageRepo.getPageByName("Meeting Notes").first().getOrNull()
             assertNotNull(page, "Page must be created when it does not exist")
             assertEquals(
-                "acme-work", page.sectionId,
+                "acme-work", page.sectionId.toDbString(),
                 "New page must inherit defaultSection as sectionId",
             )
         } finally {
@@ -169,7 +170,7 @@ class NewPageAutoAssignmentTest {
             val page = pageRepo.getPageByName("Meeting Notes").first().getOrNull()
             assertNotNull(page, "Page must be created when it does not exist")
             assertEquals(
-                "", page.sectionId,
+                "", page.sectionId.toDbString(),
                 "New page must have empty sectionId when defaultSection is not set",
             )
         } finally {

@@ -1,5 +1,8 @@
 package dev.stapler.stelekit.db
 
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
@@ -7,6 +10,7 @@ import dev.stapler.stelekit.model.PageUuid
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlin.time.Clock
@@ -40,7 +44,7 @@ class UndoManager(
     suspend fun undo() {
         val ops = db.steleDatabaseQueries
             .selectOperationsBySessionDesc(sessionId, 1000L)
-            .executeAsList()
+            .asFlow().mapToList(PlatformDispatcher.DB).first()
 
         val undoableOps = ops.filterNot { it.op_id in undoneOpIds }
         val target = findUndoTarget(undoableOps) ?: run {
@@ -55,7 +59,7 @@ class UndoManager(
     suspend fun redo() {
         val ops = db.steleDatabaseQueries
             .selectOperationsBySessionDesc(sessionId, 1000L)
-            .executeAsList()
+            .asFlow().mapToList(PlatformDispatcher.DB).first()
 
         val redoableOp = ops
             .filter { it.op_id in undoneOpIds }
@@ -67,10 +71,10 @@ class UndoManager(
         updateCanUndoRedo(ops)
     }
 
-    fun refreshState() {
+    suspend fun refreshState() {
         val ops = db.steleDatabaseQueries
             .selectOperationsBySessionDesc(sessionId, 1000L)
-            .executeAsList()
+            .asFlow().mapToList(PlatformDispatcher.DB).first()
         updateCanUndoRedo(ops)
     }
 
@@ -198,8 +202,8 @@ class UndoManager(
             pageUuid = PageUuid(pageUuid),
             content = snapshot.content,
             position = snapshot.position,
-            parentUuid = snapshot.parentUuid,
-            leftUuid = snapshot.leftUuid,
+            parentUuid = snapshot.parentUuid?.let { dev.stapler.stelekit.model.BlockUuid(it) },
+            leftUuid = snapshot.leftUuid?.let { dev.stapler.stelekit.model.BlockUuid(it) },
             properties = snapshot.properties,
             createdAt = now,
             updatedAt = now,

@@ -54,8 +54,8 @@ class BlockOperations(
                 uuid = BlockUuid(uuid ?: generateBlockUuid()),
                 content = content,
                 pageUuid = PageUuid(pageId),
-                parentUuid = parentId,
-                leftUuid = leftId,
+                parentUuid = parentId?.let { dev.stapler.stelekit.model.BlockUuid(it) },
+                leftUuid = leftId?.let { dev.stapler.stelekit.model.BlockUuid(it) },
                 position = position ?: dev.stapler.stelekit.util.FractionalIndexing.generateKeyBetween(null, null),
                 level = 0, // Level should be determined based on parent, but keeping it simple for now
                 createdAt = createdAt ?: kotlin.time.Clock.System.now(),

@@ -13,6 +13,7 @@ import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageName
 import dev.stapler.stelekit.model.PageUuid
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.parsing.ParseMode
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
@@ -124,7 +125,7 @@ class ThreeStateSubscriptionTest {
         override suspend fun deletePage(page: Page) = true
         override suspend fun movePageToSection(
             page: Page,
-            newSectionId: String,
+            newSectionId: SectionId,
             newPathPrefix: String,
         ): Either<DomainError, Page> = page.copy(sectionId = newSectionId).right()
     }
@@ -140,7 +141,7 @@ class ThreeStateSubscriptionTest {
             updatedAt = now,
             isJournal = true,
             journalDate = date,
-            sectionId = sectionId,
+            sectionId = SectionId.fromDbString(sectionId),
         )
     }
 
@@ -204,9 +205,9 @@ class ThreeStateSubscriptionTest {
             .getOrNull() ?: error("Expected Right")
 
         // Global section ("") must be included; acme-work must be excluded
-        assertTrue(result.any { it.sectionId == "" },
+        assertTrue(result.any { it.sectionId == SectionId.Global },
             "Global journal page must be included")
-        assertTrue(result.none { it.sectionId == "acme-work" },
+        assertTrue(result.none { it.sectionId == SectionId.Named("acme-work") },
             "HIDDEN section (acme-work) must be excluded from journal results")
     }
 
@@ -225,7 +226,7 @@ class ThreeStateSubscriptionTest {
             .first()
             .getOrNull() ?: error("Expected Right")
 
-        assertTrue(result.any { it.sectionId == "acme-work" },
+        assertTrue(result.any { it.sectionId == SectionId.Named("acme-work") },
             "ACTIVE section pages must appear in journal results")
     }
 
@@ -295,7 +296,7 @@ class ThreeStateSubscriptionTest {
             .first()
             .getOrNull() ?: error("Expected Right")
 
-        assertTrue(result.any { it.sectionId == "acme-work" },
+        assertTrue(result.any { it.sectionId == SectionId.Named("acme-work") },
             "Re-activated section pages must appear in journal results")
     }
 

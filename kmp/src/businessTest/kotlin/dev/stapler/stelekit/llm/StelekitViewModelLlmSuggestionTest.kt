@@ -13,6 +13,7 @@ import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.parsing.ParseMode
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
@@ -118,7 +119,7 @@ class StelekitViewModelLlmSuggestionTest {
         override suspend fun deletePage(page: Page) = true
         override suspend fun movePageToSection(
             page: Page,
-            newSectionId: String,
+            newSectionId: SectionId,
             newPathPrefix: String,
         ): Either<DomainError, Page> = page.copy(sectionId = newSectionId).right()
     }

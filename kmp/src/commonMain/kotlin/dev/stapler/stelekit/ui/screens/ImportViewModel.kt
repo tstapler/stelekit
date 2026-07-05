@@ -13,6 +13,7 @@ import dev.stapler.stelekit.domain.TopicEnricher
 import dev.stapler.stelekit.domain.TopicSuggestion
 import dev.stapler.stelekit.domain.UrlFetcher
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockPropertyKeys
 import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
@@ -382,7 +383,7 @@ class ImportViewModel(
         // One-shot bounded-batch snapshot (the source-URL property has no SQL index).
         if (currentState.activeTab == ImportTab.URL && currentState.urlInput.isNotBlank()) {
             val allPages = pageRepository.getAllPagesSnapshot().getOrNull()
-            val duplicatePage = allPages?.firstOrNull { it.properties["source"] == currentState.urlInput }
+            val duplicatePage = allPages?.firstOrNull { it.properties[BlockPropertyKeys.SOURCE] == currentState.urlInput }
             if (duplicatePage != null) {
                 _state.update { it.copy(pageNameError = "A page from this URL already exists: '${duplicatePage.name}'") }
                 return
@@ -464,7 +465,7 @@ class ImportViewModel(
         // Build page properties
         val properties = buildMap<String, String> {
             if (currentState.activeTab == ImportTab.URL && currentState.urlInput.isNotBlank()) {
-                put("source", currentState.urlInput)
+                put(BlockPropertyKeys.SOURCE, currentState.urlInput)
             }
         }
 

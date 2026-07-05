@@ -28,7 +28,7 @@ class BlockTreeAlgorithmsTest {
         pageUuid = PageUuid("test-page"),
         content = uuid,
         position = position,
-        parentUuid = parentUuid,
+        parentUuid = parentUuid?.let { BlockUuid(it) },
         level = level,
         createdAt = now,
         updatedAt = now,
@@ -182,7 +182,7 @@ class BlockTreeAlgorithmsTest {
 
         val pastedR1 = result.find { it.uuid.value == "new-r1" }!!
         val pastedR2 = result.find { it.uuid.value == "new-r2" }!!
-        assertEquals(afterBlock.uuid.value, pastedR1.leftUuid, "First root leftUuid must equal afterBlock.uuid")
-        assertEquals("new-r1", pastedR2.leftUuid, "Second root leftUuid must equal first root's new UUID")
+        assertEquals(afterBlock.uuid.value, pastedR1.leftUuid?.value, "First root leftUuid must equal afterBlock.uuid")
+        assertEquals("new-r1", pastedR2.leftUuid?.value, "Second root leftUuid must equal first root's new UUID")
     }
 }

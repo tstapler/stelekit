@@ -69,7 +69,7 @@ class WasmSectionSyncService(private val pageRepository: PageRepository) {
                 isJournal = isJournal,
                 journalDate = if (isJournal) JournalUtils.parseJournalDate(name) else null,
                 isContentLoaded = false,
-                sectionId = section.id,
+                sectionId = dev.stapler.stelekit.model.SectionId.fromDbString(section.id),
             )
             val result = pageRepository.savePage(stubPage)
             if (result is Either.Left) {

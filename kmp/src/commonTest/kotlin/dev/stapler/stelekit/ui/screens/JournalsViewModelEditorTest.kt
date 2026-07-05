@@ -100,7 +100,7 @@ class JournalsViewModelEditorTest {
                 if (block == null) {
                     emptyList<Block>().right()
                 } else {
-                    val children = map.values.filter { it.parentUuid == block.uuid.value }.sortedBy { it.position }
+                    val children = map.values.filter { it.parentUuid?.value == block.uuid.value }.sortedBy { it.position }
                     children.right()
                 }
             }
@@ -118,7 +118,7 @@ class JournalsViewModelEditorTest {
                 if (block?.parentUuid == null) {
                     null.right()
                 } else {
-                    val parent = map.values.find { it.uuid.value == block.parentUuid }
+                    val parent = map.values.find { it.uuid == block.parentUuid }
                     parent.right()
                 }
             }
@@ -172,7 +172,7 @@ class JournalsViewModelEditorTest {
             if (deleteChildren) {
                 fun deleteRecursive(uuid: String) {
                     val b = newMap[uuid] ?: return
-                    newMap.values.filter { it.parentUuid == b.uuid.value }.forEach { deleteRecursive(it.uuid.value) }
+                    newMap.values.filter { it.parentUuid == b.uuid }.forEach { deleteRecursive(it.uuid.value) }
                     newMap.remove(uuid)
                 }
                 deleteRecursive(blockUuid.value)
@@ -365,7 +365,7 @@ class JournalsViewModelEditorTest {
         return Block(
             uuid = BlockUuid(uuid),
             pageUuid = PageUuid(pageUuid),
-            parentUuid = parentUuid,
+            parentUuid = parentUuid?.let { BlockUuid(it) },
             content = content,
             position = position,
             level = level,

@@ -9,6 +9,7 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.sections.SectionDefinition
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.sections.SectionFilter
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.sections.SectionState
@@ -61,7 +62,7 @@ class IndexDrainSectionFilterTest {
             inner.getUnloadedPages(limit = Int.MAX_VALUE / 2, offset = 0).map { result ->
                 when (result) {
                     is Either.Right -> result.value
-                        .filter { it.sectionId in sectionIds }
+                        .filter { it.sectionId.toDbString() in sectionIds }
                         .drop(offset)
                         .take(limit)
                         .right()
@@ -80,7 +81,7 @@ class IndexDrainSectionFilterTest {
         updatedAt = Clock.System.now(),
         isJournal = false,
         isContentLoaded = false,
-        sectionId = sectionId,
+        sectionId = SectionId.fromDbString(sectionId),
     )
 
     // ── TC-6.4-A ─────────────────────────────────────────────────────────────

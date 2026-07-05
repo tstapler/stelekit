@@ -7,6 +7,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.git.FetchResult
 import dev.stapler.stelekit.git.GitAuth
 import dev.stapler.stelekit.git.GitCommit
@@ -107,9 +108,9 @@ class GraphManagerCloneTest {
             onProgress = {},
         )
 
-        assertIs<Either.Right<String>>(result, "Expected Right but got: $result")
+        assertIs<Either.Right<GraphId>>(result, "Expected Right but got: $result")
         val graphId = result.value
-        assertTrue(graphId.isNotEmpty(), "graphId should be a non-empty string")
+        assertTrue(graphId.value.isNotEmpty(), "graphId should be a non-empty string")
 
         val registry = gm.graphRegistry.value
         assertTrue(

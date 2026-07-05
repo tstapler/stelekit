@@ -104,12 +104,12 @@ fun BlockList(
 
     // Build a map of parent UUID to children for quick lookup
     val childrenByParent = remember(blocks) {
-        blocks.groupBy { it.parentUuid }
+        blocks.groupBy { it.parentUuid?.value }
     }
 
     // Get UUIDs of blocks that have children
     val blocksWithChildren = remember(blocks) {
-        blocks.mapNotNull { it.parentUuid }.toSet()
+        blocks.mapNotNull { it.parentUuid?.value }.toSet()
     }
 
     // Get all descendant UUIDs of a block (for hiding when collapsed)
@@ -288,10 +288,10 @@ fun BlockList(
                                             val siblingBefore = blocks
                                                 .filter { it.parentUuid == targetBlock.parentUuid && it.position < targetBlock.position }
                                                 .maxByOrNull { it.position }
-                                            onMoveSelectedBlocks(targetBlock.parentUuid, siblingBefore?.uuid?.value)
+                                            onMoveSelectedBlocks(targetBlock.parentUuid?.value, siblingBefore?.uuid?.value)
                                         }
                                         DropZone.BELOW -> {
-                                            onMoveSelectedBlocks(targetBlock.parentUuid, targetBlock.uuid.value)
+                                            onMoveSelectedBlocks(targetBlock.parentUuid?.value, targetBlock.uuid.value)
                                         }
                                         DropZone.CHILD -> {
                                             onMoveSelectedBlocks(targetBlock.uuid.value, null)

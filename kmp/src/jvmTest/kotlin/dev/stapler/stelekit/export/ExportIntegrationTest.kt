@@ -48,7 +48,7 @@ class ExportIntegrationTest {
                 content = "((ref-uuid))",
                 level = 1,
                 position = "a1",
-                parentUuid = "block-1",
+                parentUuid = BlockUuid("block-1"),
                 createdAt = now,
                 updatedAt = now
             ),
@@ -58,7 +58,7 @@ class ExportIntegrationTest {
                 content = "key:: value",
                 level = 1,
                 position = "a2",
-                parentUuid = "block-1",
+                parentUuid = BlockUuid("block-1"),
                 createdAt = now,
                 updatedAt = now
             )
@@ -197,7 +197,7 @@ class ExportIntegrationTest {
         val childA = Block(
             uuid = BlockUuid("b-json-childA"),
             pageUuid = PageUuid("page-json"),
-            parentUuid = "b-json-root",
+            parentUuid = BlockUuid("b-json-root"),
             content = "Child A",
             level = 1,
             position = "a0",
@@ -207,7 +207,7 @@ class ExportIntegrationTest {
         val childB = Block(
             uuid = BlockUuid("b-json-childB"),
             pageUuid = PageUuid("page-json"),
-            parentUuid = "b-json-root",
+            parentUuid = BlockUuid("b-json-root"),
             content = "Child B",
             level = 1,
             position = "a1",
@@ -251,7 +251,7 @@ class ExportIntegrationTest {
         val childA = Block(
             uuid = BlockUuid("sub-childA"),
             pageUuid = PageUuid(pageUuid),
-            parentUuid = "sub-root",
+            parentUuid = BlockUuid("sub-root"),
             content = "Child A",
             level = 1,
             position = "a0",
@@ -261,7 +261,7 @@ class ExportIntegrationTest {
         val grandchild = Block(
             uuid = BlockUuid("sub-grand"),
             pageUuid = PageUuid(pageUuid),
-            parentUuid = "sub-childA",
+            parentUuid = BlockUuid("sub-childA"),
             content = "Grandchild",
             level = 2,
             position = "a0",
@@ -271,7 +271,7 @@ class ExportIntegrationTest {
         val childB = Block(
             uuid = BlockUuid("sub-childB"),
             pageUuid = PageUuid(pageUuid),
-            parentUuid = "sub-root",
+            parentUuid = BlockUuid("sub-root"),
             content = "Child B",
             level = 1,
             position = "a1",

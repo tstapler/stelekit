@@ -364,10 +364,10 @@ fun GraphSwitcher(
                     text = {
                         GraphItem(
                             graph = graph,
-                            isActive = graph.id == activeGraphId,
-                            isSynced = graph.id == gitSyncedGraphId,
+                            isActive = graph.id.value == activeGraphId,
+                            isSynced = graph.id.value == gitSyncedGraphId,
                             onSelect = {
-                                onGraphSelected(graph.id)
+                                onGraphSelected(graph.id.value)
                                 expanded = false
                             },
                             onRemove = if (availableGraphs.size > 1) {
@@ -376,7 +376,7 @@ fun GraphSwitcher(
                         )
                     },
                     onClick = {
-                        onGraphSelected(graph.id)
+                        onGraphSelected(graph.id.value)
                         expanded = false
                     },
                     contentPadding = PaddingValues(0.dp)
@@ -426,7 +426,7 @@ fun GraphSwitcher(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        graphToRemove?.let { onRemoveGraph(it.id) }
+                        graphToRemove?.let { onRemoveGraph(it.id.value) }
                         graphToRemove = null
                     }
                 ) {

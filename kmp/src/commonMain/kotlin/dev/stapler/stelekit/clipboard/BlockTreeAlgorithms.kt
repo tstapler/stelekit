@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.clipboard
 
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.util.FractionalIndexing
 import kotlin.time.Instant
 
@@ -12,7 +13,7 @@ object BlockTreeAlgorithms {
 
     /** Pre-index blocks by parentUuid for O(1) child lookups. */
     fun indexChildren(blocks: List<Block>): Map<String?, List<Block>> =
-        blocks.groupBy { it.parentUuid }
+        blocks.groupBy { it.parentUuid?.value }
 
     /**
      * Collect a block and all its descendants in DFS pre-order.
@@ -56,11 +57,12 @@ object BlockTreeAlgorithms {
 
         val result = mutableListOf<Block>()
 
-        fun build(original: Block, newParentUuid: String?, position: String, prevLeftUuid: String?) {
-            val newUuid = uuidMap[original.uuid.value] ?: return
+        fun build(original: Block, newParentUuid: BlockUuid?, position: String, prevLeftUuid: BlockUuid?) {
+            val newUuidStr = uuidMap[original.uuid.value] ?: return
+            val newUuid = BlockUuid(newUuidStr)
             result.add(
                 original.copy(
-                    uuid = dev.stapler.stelekit.model.BlockUuid(newUuid),
+                    uuid = newUuid,
                     pageUuid = afterBlock.pageUuid,
                     parentUuid = newParentUuid,
                     leftUuid = prevLeftUuid,
@@ -71,25 +73,25 @@ object BlockTreeAlgorithms {
                     isLoaded = true,
                 )
             )
-            val children = (clipChildrenByParent[original.uuid.value] ?: emptyList())
+            val children = (clipChildrenByParent[original.uuid] ?: emptyList())
                 .sortedBy { it.position }
             var prevChildPos: String? = null
-            var prevChildLeftUuid: String? = null
+            var prevChildLeftUuid: BlockUuid? = null
             children.forEach { child ->
                 val childPos = FractionalIndexing.generateKeyBetween(prevChildPos, null)
                 prevChildPos = childPos
                 build(child, newUuid, childPos, prevChildLeftUuid)
-                prevChildLeftUuid = uuidMap[child.uuid.value]
+                prevChildLeftUuid = uuidMap[child.uuid.value]?.let { BlockUuid(it) }
             }
         }
 
         var prevRootPos: String? = afterBlock.position
-        var prevRootLeftUuid: String? = afterBlock.uuid.value
+        var prevRootLeftUuid: BlockUuid? = afterBlock.uuid
         rootBlocks.forEach { root ->
             val pos = FractionalIndexing.generateKeyBetween(prevRootPos, nextSiblingPos)
             prevRootPos = pos
-            build(root, insertionParentUuid, pos, prevRootLeftUuid)
-            prevRootLeftUuid = uuidMap[root.uuid.value]
+            build(root, insertionParentUuid?.let { BlockUuid(it) }, pos, prevRootLeftUuid)
+            prevRootLeftUuid = uuidMap[root.uuid.value]?.let { BlockUuid(it) }
         }
 
         return result

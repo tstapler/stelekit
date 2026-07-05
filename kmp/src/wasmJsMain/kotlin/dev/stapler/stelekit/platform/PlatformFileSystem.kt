@@ -118,8 +118,47 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return true
     }
     actual override fun pickDirectory(): String? = null
-    override val supportsNativeDirectoryPicker: Boolean = false
-    actual override suspend fun pickDirectoryAsync(): String? = null
+    override val supportsNativeDirectoryPicker: Boolean get() = showDirectoryPickerSupported()
+    actual override suspend fun pickDirectoryAsync(): String? {
+        if (!showDirectoryPickerSupported()) return null
+        return try {
+            val dirHandle = showDirectoryPicker()
+            val name = getEntryName(dirHandle)
+            val opfsPath = "$homeDir/$name"
+            println("[SteleKit] pickDirectory: importing '$name' → '$opfsPath'")
+            importUserDirToCache(dirHandle, opfsPath)
+            val count = cache.keys.count { it.startsWith("$opfsPath/") }
+            println("[SteleKit] pickDirectory: $count files imported to cache")
+            opfsPath
+        } catch (e: Throwable) {
+            println("[SteleKit] showDirectoryPicker: ${e.message}")
+            null
+        }
+    }
+
+    private suspend fun importUserDirToCache(dirHandle: JsAny, currentPath: String) {
+        val entries = listOpfsEntries(dirHandle)
+        println("[SteleKit] importUserDirToCache: ${entries.size} entries in '$currentPath'")
+        for (entry in entries) {
+            val name = getEntryName(entry)
+            val path = "$currentPath/$name"
+            when {
+                isFileEntry(entry) && isImageFile(name) -> {
+                    readOpfsFileAsObjectUrl(entry)?.let { blobUrlCache[path] = it }
+                }
+                isFileEntry(entry) -> {
+                    val content = readOpfsFile(entry)
+                    if (content != null) {
+                        cache[path] = content
+                        scope.launch { opfsWriteFile(path, content) }
+                    } else {
+                        println("[SteleKit] importUserDirToCache: failed to read '$path'")
+                    }
+                }
+                isDirectoryEntry(entry) -> importUserDirToCache(entry, path)
+            }
+        }
+    }
     override suspend fun pickFileAsync(): String? = null
     actual override fun getLastModifiedTime(path: String): Long? = null
     override fun registerBlobUrl(path: String, url: String) { blobUrlCache[path] = url }

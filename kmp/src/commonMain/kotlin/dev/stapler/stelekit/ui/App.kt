@@ -51,6 +51,7 @@ import dev.stapler.stelekit.export.MarkdownExporter
 import dev.stapler.stelekit.export.PlainTextExporter
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.DebugMenuState
@@ -667,8 +668,8 @@ private fun GraphContent(
                 histogramWriter = repos.histogramWriter,
                 ringBuffer = repos.ringBuffer,
                 activeGitSyncService = graphManager.activeGitSyncService,
-                activeGraphIdProvider = { graphManager.getActiveGraphId() },
-                onDismissGitDetection = { graphId -> graphManager.setGitDetectionDismissed(graphId, true) },
+                activeGraphIdProvider = { graphManager.getActiveGraphId()?.value },
+                onDismissGitDetection = { graphId -> graphManager.setGitDetectionDismissed(GraphId(graphId), true) },
                 onSectionsLoaded = onSectionsLoaded,
                 scope = viewModelScope,
             )
@@ -812,11 +813,11 @@ private fun GraphContent(
                         // Swap git repository credential access to vault store
                         gitRepository?.setCredentialAccess(vaultCredentialStore ?: dev.stapler.stelekit.platform.security.CredentialStore())
                         // Migrate existing credentials from PBKDF2 store into vault
-                        val graphId = graphManager.getActiveGraphId() ?: ""
-                        if (graphId.isNotEmpty()) {
+                        val graphId = graphManager.getActiveGraphId()
+                        if (graphId != null) {
                             vaultCredentialStore?.migrateFrom(
                                 source = dev.stapler.stelekit.platform.security.CredentialStore(),
-                                keys = listOf("git_https_token_$graphId", "git_ssh_passphrase_$graphId"),
+                                keys = listOf("git_https_token_${graphId.value}", "git_ssh_passphrase_${graphId.value}"),
                             )
                         }
                         vaultManager = tempManager
@@ -1304,7 +1305,7 @@ private fun GraphContent(
                                 currentScreen = appState.currentScreen,
                                 currentGraphName = activeGraphInfo?.displayName ?: "",
                                 availableGraphs = graphRegistry.graphs,
-                                activeGraphId = activeGraphId,
+                                activeGraphId = activeGraphId?.value,
                                 pendingConflictFilePaths = appState.pendingConflictFilePaths,
                                 onPageClick = { page ->
                                     viewModel.navigateTo(Screen.PageView(page))
@@ -1316,16 +1317,18 @@ private fun GraphContent(
                                 },
                                 onToggleFavorite = { viewModel.toggleFavorite(it) },
                                 onGraphSelected = { id ->
-                                    scope.launch { graphManager.switchGraph(id) }
+                                    scope.launch { graphManager.switchGraph(GraphId(id)) }
                                     closeSidebarIfMobile()
                                 },
                                 onAddGraph = {
                                     if (fileSystem.supportsNativeDirectoryPicker) {
-                                        val selectedPath = fileSystem.pickDirectory()
-                                        if (selectedPath != null) {
-                                            scope.launch {
+                                        scope.launch {
+                                            val selectedPath = fileSystem.pickDirectoryAsync()
+                                            println("[SteleKit] onAddGraph: picker returned '$selectedPath'")
+                                            if (selectedPath != null) {
                                                 val newGraphId = graphManager.addGraph(selectedPath)
-                                                newGraphId?.let { graphManager.switchGraph(it) }
+                                                println("[SteleKit] onAddGraph: addGraph='$newGraphId', switching...")
+                                                graphManager.switchGraph(newGraphId)
                                             }
                                         }
                                     } else {
@@ -1333,7 +1336,7 @@ private fun GraphContent(
                                     }
                                     closeSidebarIfMobile()
                                 },
-                                onRemoveGraph = { scope.launch { graphManager.removeGraph(it) } },
+                                onRemoveGraph = { scope.launch { graphManager.removeGraph(GraphId(it)) } },
                                 onCollapse = { viewModel.toggleSidebar() },
                                 syncState = syncState,
                                 onSyncClick = {
@@ -1348,7 +1351,7 @@ private fun GraphContent(
                                 isGitConfigured = appState.gitConfig != null,
                                 onAuthError = { viewModel.openGitSetupForCredentials() },
                                 onCloneGraph = { viewModel.openGitSetupForClone() },
-                                gitSyncedGraphId = if (appState.gitConfig != null) activeGraphId else null,
+                                gitSyncedGraphId = if (appState.gitConfig != null) activeGraphId?.value else null,
                                 onNewSectionJournalEntry = if (activeSectionIds?.size == 1) {
                                     { viewModel.newSectionJournalForToday(activeSectionIds[0]) }
                                 } else null,
@@ -1384,7 +1387,7 @@ private fun GraphContent(
                                         onSetupSync = { viewModel.openGitSetup() },
                                         onDismiss = {
                                             val gid = activeGraphId ?: return@GitDetectionBanner
-                                            viewModel.dismissGitDetection(gid)
+                                            viewModel.dismissGitDetection(gid.value)
                                         },
                                     )
                                 }
@@ -1685,15 +1688,15 @@ private fun GraphContent(
                         gitSyncService = gitSyncService,
                         gitRepository = gitRepository,
                         gitConfigRepository = gitConfigRepository,
-                        activeGraphId = activeGraphId,
+                        activeGraphId = activeGraphId?.value,
                         onCloneAndAdd = if (gitRepository != null) {
                             { url, localPath, auth, onProgress ->
-                                graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress)
+                                graphManager.cloneAndAdd(gitRepository, url, localPath, auth, onProgress).map { it.value }
                             }
                         } else null,
                         graphPath = activeGraphPath,
                         onCloneComplete = { newGraphId ->
-                            scope.launch { graphManager.switchGraph(newGraphId) }
+                            scope.launch { graphManager.switchGraph(GraphId(newGraphId)) }
                         },
                         onAuthError = { viewModel.openGitSetupForCredentials() },
                         shareProvider = shareProvider,

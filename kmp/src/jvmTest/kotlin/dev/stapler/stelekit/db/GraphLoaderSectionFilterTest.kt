@@ -67,7 +67,7 @@ class GraphLoaderSectionFilterTest {
         val pages = pageRepo.getAllPagesSnapshot().getOrNull() ?: emptyList()
         val rootPage = pages.firstOrNull { it.name.equals("Root Page", ignoreCase = true) }
         assertNotNull(rootPage, "Root page should be loaded from /graph/pages/")
-        assertEquals("", rootPage.sectionId, "Root page matches no section prefix — sectionId must be empty")
+        assertEquals("", rootPage.sectionId.toDbString(), "Root page matches no section prefix — sectionId must be empty")
     }
 
     @Test

@@ -62,7 +62,7 @@ object TestFixtures {
             Block(
                 uuid = BlockUuid(uuid(baseId + 3)),
                 pageUuid = pageUuid,
-                parentUuid = uuid(baseId),
+                parentUuid = BlockUuid(uuid(baseId)),
                 content = "Child block content",
                 level = 1,
                 position = "a0",

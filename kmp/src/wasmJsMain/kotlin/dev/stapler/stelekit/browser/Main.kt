@@ -23,7 +23,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 
 private fun markSteleKitReady(): Unit = js("window.__stelekit_ready = true")
-private fun markGraphDialogCapable(): Unit = js("window.__stelekit_native_graph_picker = false")
+private fun markGraphDialogCapable(capable: Boolean): Unit = js("window.__stelekit_native_graph_picker = capable")
 private fun markDriverBackend(backend: String): Unit = js("window.__stelekit_driver_backend = backend")
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -40,6 +40,20 @@ fun main() {
 
         val opfsFileSystem = PlatformFileSystem()
         opfsFileSystem.preload(opfsGraphPath)
+
+        // On first visit the OPFS graph is empty — seed it with demo content so new users
+        // see example pages rather than a blank graph. Skipped on subsequent loads once
+        // preload() finds existing files (directoryExists returns true).
+        if (!opfsFileSystem.directoryExists(opfsGraphPath)) {
+            val demo = DemoFileSystem()
+            for (subdir in listOf("pages", "journals")) {
+                for (file in demo.listFiles("/demo/$subdir")) {
+                    val content = demo.readFile("/demo/$subdir/$file") ?: continue
+                    opfsFileSystem.writeFile("$opfsGraphPath/$subdir/$file", content)
+                }
+            }
+            println("[SteleKit] Seeded demo content into $opfsGraphPath")
+        }
 
         // Wire GitHub config for section sync and lazy content fetching.
         // Keys stored in localStorage by the web host (e.g. embed script).
@@ -94,8 +108,17 @@ fun main() {
         } else {
             fileSystem = opfsFileSystem
             graphPath = opfsGraphPath
-            // Ensure OPFS path overwrites any stale demo fallback stored from a previous session
+            // Ensure OPFS path overwrites any stale demo fallback stored from a previous session.
+            // Also purge any stale graph_registry that contains /demo paths — those entries come
+            // from a prior run where OPFS was unavailable and the in-memory DemoFileSystem was used.
+            // Leaving them in causes GraphManager.init to call switchGraph("/demo") at startup,
+            // which hangs the loading overlay because /demo has no files in OPFS.
             PlatformSettings().putString("lastGraphPath", graphPath)
+            val existingRegistry = localStorage.getItem("graph_registry") ?: ""
+            if (existingRegistry.contains("/demo")) {
+                localStorage.removeItem("graph_registry")
+                println("[SteleKit] Cleared stale /demo graph registry from previous demo-fallback session")
+            }
         }
 
         val graphManager = GraphManager(
@@ -106,7 +129,7 @@ fun main() {
         )
 
         markSteleKitReady()
-        markGraphDialogCapable()
+        markGraphDialogCapable(dev.stapler.stelekit.platform.showDirectoryPickerSupported())
 
         ComposeViewport(document.body!!) {
             StelekitApp(

@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.db
 
+import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphInfo
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -23,7 +24,7 @@ class GraphInfoSerializationTest {
     @Test
     fun `GraphInfo round-trips with new fields`() {
         val original = GraphInfo(
-            id = "abc123",
+            id = GraphId("abc123"),
             path = "/home/user/notes",
             displayName = "notes",
             addedAt = 1234567890L,

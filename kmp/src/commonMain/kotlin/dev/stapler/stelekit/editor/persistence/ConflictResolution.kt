@@ -189,7 +189,7 @@ class ConflictDetector {
         val expectedParent = change.metadata.moveTarget
         val actualParent = existingBlock.parentUuid
         
-        if (expectedParent != null && expectedParent != actualParent) {
+        if (expectedParent != null && expectedParent != actualParent?.value) {
             conflicts.add(ConflictInfo(
                 conflictId = generateConflictId(),
                 blockUuid = change.blockUuid,

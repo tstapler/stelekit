@@ -43,9 +43,9 @@ class BlockStateManagerCopyPasteTest {
         pageUuid = PageUuid(pageUuid),
         content = uuid,
         position = position,
-        parentUuid = parentUuid,
+        parentUuid = parentUuid?.let { BlockUuid(it) },
         level = level,
-        leftUuid = leftUuid,
+        leftUuid = leftUuid?.let { BlockUuid(it) },
         createdAt = now,
         updatedAt = now,
     )
@@ -185,8 +185,8 @@ class BlockStateManagerCopyPasteTest {
 
         // BUG 1 fix: b2 is the right sibling of afterBlock (b1); its leftUuid must be
         // updated from "b1" to the pasted block's new UUID.
-        assertNotEquals("b1", b2After.leftUuid, "b2.leftUuid must be repaired away from 'b1'")
-        assertEquals(pasted.uuid.value, b2After.leftUuid, "b2.leftUuid must point to the pasted block")
+        assertNotEquals("b1", b2After.leftUuid?.value, "b2.leftUuid must be repaired away from 'b1'")
+        assertEquals(pasted.uuid.value, b2After.leftUuid?.value, "b2.leftUuid must point to the pasted block")
     }
 
     @Test

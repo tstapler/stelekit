@@ -33,6 +33,7 @@ import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.FilePath
+import dev.stapler.stelekit.model.ImageAnnotationUuid
 import dev.stapler.stelekit.model.NotificationType
 import dev.stapler.stelekit.model.PageName
 import dev.stapler.stelekit.model.PageUuid
@@ -41,6 +42,7 @@ import dev.stapler.stelekit.parser.MarkdownParser
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.BlockRepository
@@ -904,7 +906,7 @@ class StelekitViewModel(
         }
     }
 
-    fun requestEditBlock(blockUuid: String?, cursorIndex: Int? = null) {
+    fun requestEditBlock(blockUuid: BlockUuid?, cursorIndex: Int? = null) {
         _uiState.update { it.copy(editingBlockId = blockUuid, editingCursorIndex = cursorIndex) }
     }
 
@@ -928,7 +930,7 @@ class StelekitViewModel(
                 uuid = BlockUuid(generateUuid()),
                 pageUuid = currentBlock.pageUuid,
                 parentUuid = currentBlock.parentUuid,
-                leftUuid = currentBlock.uuid.value,
+                leftUuid = currentBlock.uuid,
                 content = "",
                 level = currentBlock.level,
                 position = newPosition,
@@ -941,7 +943,7 @@ class StelekitViewModel(
             val blocksToSave = updatedSiblings + newBlock
             blockRepository.saveBlocks(blocksToSave)
 
-            requestEditBlock(newBlock.uuid.value)
+            requestEditBlock(newBlock.uuid)
         }
     }
 
@@ -968,7 +970,7 @@ class StelekitViewModel(
                 uuid = BlockUuid(generateUuid()),
                 pageUuid = page.uuid,
                 parentUuid = null,
-                leftUuid = lastBlock?.uuid?.value,
+                leftUuid = lastBlock?.uuid,
                 content = "",
                 level = 0,
                 position = newPosition,
@@ -979,7 +981,7 @@ class StelekitViewModel(
             )
 
             blockRepository.saveBlock(newBlock)
-            requestEditBlock(newBlock.uuid.value)
+            requestEditBlock(newBlock.uuid)
         }
     }
 
@@ -987,7 +989,7 @@ class StelekitViewModel(
     fun splitBlock(blockUuid: String, cursorPosition: Int) {
         scope.launch {
             blockRepository.splitBlock(BlockUuid(blockUuid), cursorPosition).onRight { newBlock ->
-                requestEditBlock(newBlock.uuid.value)
+                requestEditBlock(newBlock.uuid)
             }
         }
     }
@@ -1010,7 +1012,7 @@ class StelekitViewModel(
             if (currentIndex > 0) {
                 val prevBlock = siblings[currentIndex - 1]
                 blockRepository.mergeBlocks(prevBlock.uuid, BlockUuid(blockUuid), "").onRight {
-                    requestEditBlock(prevBlock.uuid.value, prevBlock.content.length)
+                    requestEditBlock(prevBlock.uuid, prevBlock.content.length)
                 }
             }
         }
@@ -1034,17 +1036,17 @@ class StelekitViewModel(
             if (currentIndex > 0) {
                 val previousBlock = siblings[currentIndex - 1]
                 blockRepository.deleteBlock(blockUuidTyped)
-                requestEditBlock(previousBlock.uuid.value, previousBlock.content.length)
+                requestEditBlock(previousBlock.uuid, previousBlock.content.length)
             } else if (currentBlock.parentUuid != null) {
-                val parent = allBlocks.find { it.uuid.value == currentBlock.parentUuid }
+                val parent = allBlocks.find { it.uuid == currentBlock.parentUuid }
                 blockRepository.deleteBlock(blockUuidTyped)
                 if (parent != null) {
-                    requestEditBlock(parent.uuid.value, parent.content.length)
+                    requestEditBlock(parent.uuid, parent.content.length)
                 }
             } else if (siblings.size > 1) {
                 val nextBlock = siblings[1]
                 blockRepository.deleteBlock(blockUuidTyped)
-                requestEditBlock(nextBlock.uuid.value, 0)
+                requestEditBlock(nextBlock.uuid, 0)
             }
         }
     }
@@ -1062,7 +1064,7 @@ class StelekitViewModel(
 
             if (currentIndex > 0) {
                 val prevBlock = sortedBlocks[currentIndex - 1]
-                requestEditBlock(prevBlock.uuid.value, prevBlock.content.length)
+                requestEditBlock(prevBlock.uuid, prevBlock.content.length)
             }
         }
     }
@@ -1080,7 +1082,7 @@ class StelekitViewModel(
 
             if (currentIndex != -1 && currentIndex < sortedBlocks.size - 1) {
                 val nextBlock = sortedBlocks[currentIndex + 1]
-                requestEditBlock(nextBlock.uuid.value, 0)
+                requestEditBlock(nextBlock.uuid, 0)
             }
         }
     }
@@ -1266,7 +1268,7 @@ class StelekitViewModel(
      * expose a "Go to page" action that returns here.
      */
     fun navigateToAnnotationEditor(imageAnnotationUuid: String, pageUuid: String? = null) {
-        navigateTo(Screen.AnnotationEditor(imageAnnotationUuid = imageAnnotationUuid, pageUuid = pageUuid))
+        navigateTo(Screen.AnnotationEditor(imageAnnotationUuid = ImageAnnotationUuid(imageAnnotationUuid), pageUuid = pageUuid))
     }
 
     /** Navigate to the image gallery screen. */
@@ -1328,7 +1330,7 @@ class StelekitViewModel(
 
             // Story 5.8: assign new non-journal pages to the default section when set
             val currentDefaultSection = _uiState.value.defaultSection
-            val sectionId = if (!isJournal && currentDefaultSection.isNotEmpty()) currentDefaultSection else ""
+            val sectionId = if (!isJournal && currentDefaultSection.isNotEmpty()) SectionId.Named(currentDefaultSection) else SectionId.Global
 
             val newPage = Page(
                 uuid = PageUuid(uuid),
@@ -1467,7 +1469,7 @@ class StelekitViewModel(
 
                 // Use the actively-editing block for the conflict dialog; fall back to first
                 // dirty block on the page if the user has clicked away.
-                val conflictBlockUuid = editingBlockUuid
+                val conflictBlockUuid = editingBlockUuid?.value
                     ?: dirtyUuids.firstOrNull { uuid ->
                         blockStateManager?.blocks?.value?.get(currentPage.uuid.value)
                             ?.any { it.uuid.value == uuid } == true
@@ -1668,7 +1670,7 @@ class StelekitViewModel(
                 return@launch
             }
             // Focus the block so the user can start editing immediately
-            requestEditBlock(conflict.editingBlockUuid, 0)
+            requestEditBlock(BlockUuid(conflict.editingBlockUuid), 0)
             if (ConflictMarkerDetector.hasConflictMarkers(updatedBlock.content)) {
                 sendSnackbar("Conflict markers inserted — remove <<<<<<<, =======, >>>>>>> to let \"${conflict.pageName}\" sync again")
             }
@@ -2454,8 +2456,9 @@ class StelekitViewModel(
         val manifest = _uiState.value.currentManifest ?: return
         val section = if (sectionId.isEmpty()) null else manifest.sections.find { it.id == sectionId }
         val pathPrefix = section?.pagePathPrefix ?: "pages"
+        val typedSectionId = SectionId.fromDbString(sectionId)
         scope.launch {
-            graphWriter.movePageToSection(page, sectionId, pathPrefix).fold(
+            graphWriter.movePageToSection(page, typedSectionId, pathPrefix).fold(
                 ifLeft = { err ->
                     logger.error("movePageToSection failed: ${err.message}")
                     sendSnackbar("Failed to move page: ${err.message}")

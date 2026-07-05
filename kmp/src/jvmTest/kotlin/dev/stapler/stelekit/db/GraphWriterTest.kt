@@ -72,7 +72,7 @@ class GraphWriterTest {
                     content = "Block A1",
                     level = 1,
                     position = "a0",
-                    parentUuid = blockAUuid,
+                    parentUuid = BlockUuid(blockAUuid),
                     createdAt = now,
                     updatedAt = now,
                     properties = emptyMap()
@@ -97,7 +97,7 @@ class GraphWriterTest {
                     content = "Block B1",
                     level = 1,
                     position = "a0",
-                    parentUuid = blockBUuid,
+                    parentUuid = BlockUuid(blockBUuid),
                     createdAt = now,
                     updatedAt = now,
                     properties = emptyMap()

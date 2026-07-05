@@ -73,9 +73,9 @@ class GraphLoaderIntegrationTest {
         
         // Verify Hierarchy
         assertEquals(null, parent.parentUuid)
-        assertEquals(parent.uuid.value, child1.parentUuid)
-        assertEquals(child1.uuid.value, grandchild.parentUuid)
-        assertEquals(parent.uuid.value, child2.parentUuid)
+        assertEquals(parent.uuid, child1.parentUuid)
+        assertEquals(child1.uuid, grandchild.parentUuid)
+        assertEquals(parent.uuid, child2.parentUuid)
         assertEquals(null, root2.parentUuid)
         
         // Verify Levels

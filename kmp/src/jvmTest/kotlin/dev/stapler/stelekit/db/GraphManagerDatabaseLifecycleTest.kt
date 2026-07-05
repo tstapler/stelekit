@@ -225,4 +225,45 @@ class GraphManagerDatabaseLifecycleTest {
 
         graphManager.shutdown()
     }
+
+    // TC-GM-LIFECYCLE-005
+    @Test
+    fun `switchGraph to a new graph succeeds after a previous graph's scope was cancelled`() = runBlocking {
+        // Regression for the WASM "stuck on Initializing…" bug.
+        //
+        // Pre-fix: graphScope = CoroutineScope(coroutineScope.coroutineContext) shared the
+        // manager's SupervisorJob. Cancelling graphScope1 via `previousGraphScope?.cancel()` at
+        // the top of the SECOND switchGraph call killed coroutineScope itself. The third
+        // `launch { ... }` in the new graphScope ran in an already-cancelled context — the
+        // coroutine body never executed, so `deferred.complete(Unit)` was never called, and
+        // `awaitPendingMigration()` hung forever.
+        //
+        // Post-fix: each graphScope uses an independent SupervisorJob(), so cancelling one
+        // graph's scope has no effect on the manager scope or subsequent graph scopes.
+        val graphManager = GraphManager(
+            platformSettings = StubSettings(),
+            driverFactory = DriverFactory(),
+            fileSystem = StubFileSystem(),
+            defaultBackend = GraphBackend.SQLDELIGHT,
+        )
+
+        // Unique suffix avoids stale .db files from previous test runs (JDBC creates real files).
+        val runId = System.nanoTime()
+
+        // First graph — completes full init cycle (scope is created, then cancelled on switch).
+        graphManager.openGraph("/test/graph1-$runId")
+
+        // Second graph — must also complete init despite graph1's scope being cancelled.
+        // Pre-fix: this hangs forever at awaitPendingMigration().
+        graphManager.openGraph("/test/graph2-$runId")
+
+        assertNotNull(
+            graphManager.activeRepositorySet.value,
+            "openGraph() after a fully-completed previous graph must not hang at migration await. " +
+                "Pre-fix: CoroutineScope(coroutineScope.coroutineContext) shared the Job — " +
+                "cancelling graph1's scope killed the manager scope; graph2's launch never ran."
+        )
+
+        graphManager.shutdown()
+    }
 }

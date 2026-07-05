@@ -125,7 +125,7 @@ class UserSessionBenchmarkTest {
 
     private suspend fun reorderBlock(vm: StelekitViewModel, block: Block, newPos: String): Long {
         val elapsed = measureTime {
-            vm.moveBlock(block.uuid.value, block.parentUuid, newPos)
+            vm.moveBlock(block.uuid.value, block.parentUuid?.value, newPos)
             delay(50)
         }
         return elapsed.inWholeMilliseconds.also { reorderSamples.add(it) }

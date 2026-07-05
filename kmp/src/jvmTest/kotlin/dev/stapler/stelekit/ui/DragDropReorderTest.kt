@@ -32,7 +32,7 @@ class DragDropReorderTest {
             val result = mutableSetOf<String>()
             while (queue.isNotEmpty()) {
                 val current = queue.removeFirst()
-                blocks.filter { it.parentUuid == current }.forEach {
+                blocks.filter { it.parentUuid?.value == current }.forEach {
                     result.add(it.uuid.value)
                     queue.add(it.uuid.value)
                 }
@@ -62,7 +62,7 @@ class DragDropReorderTest {
             uuid = BlockUuid("B"),
             pageUuid = PageUuid("page1"),
             content = "Block B",
-            parentUuid = "A",
+            parentUuid = BlockUuid("A"),
             level = 1,
             position = "a0",
             createdAt = now,
@@ -72,7 +72,7 @@ class DragDropReorderTest {
             uuid = BlockUuid("C"),
             pageUuid = PageUuid("page1"),
             content = "Block C",
-            parentUuid = "B",
+            parentUuid = BlockUuid("B"),
             level = 2,
             position = "a0",
             createdAt = now,
@@ -86,7 +86,7 @@ class DragDropReorderTest {
         assertTrue(movedC.parentUuid == null, "C should have no parent after move to root")
         // A and B are unaffected
         assertTrue(blockA.parentUuid == null, "A should remain at root")
-        assertTrue(blockB.parentUuid == "A", "B should still be a child of A")
+        assertTrue(blockB.parentUuid == BlockUuid("A"), "B should still be a child of A")
     }
 
     // ---------------------------------------------------------------------------
@@ -99,8 +99,8 @@ class DragDropReorderTest {
         val now = Clock.System.now()
         val blocks = listOf(
             Block(uuid = BlockUuid("A"), pageUuid = PageUuid("p"), content = "A", parentUuid = null,  level = 0, position = "a0", createdAt = now, updatedAt = now),
-            Block(uuid = BlockUuid("B"), pageUuid = PageUuid("p"), content = "B", parentUuid = "A",   level = 1, position = "a0", createdAt = now, updatedAt = now),
-            Block(uuid = BlockUuid("C"), pageUuid = PageUuid("p"), content = "C", parentUuid = "B",   level = 2, position = "a0", createdAt = now, updatedAt = now)
+            Block(uuid = BlockUuid("B"), pageUuid = PageUuid("p"), content = "B", parentUuid = BlockUuid("A"),   level = 1, position = "a0", createdAt = now, updatedAt = now),
+            Block(uuid = BlockUuid("C"), pageUuid = PageUuid("p"), content = "C", parentUuid = BlockUuid("B"),   level = 2, position = "a0", createdAt = now, updatedAt = now)
         )
 
         // Dragging A — both B and C are descendants
@@ -124,9 +124,9 @@ class DragDropReorderTest {
         val now = Clock.System.now()
         val blocks = listOf(
             Block(uuid = BlockUuid("A"), pageUuid = PageUuid("p"), content = "A", parentUuid = null, level = 0, position = "a0", createdAt = now, updatedAt = now),
-            Block(uuid = BlockUuid("B"), pageUuid = PageUuid("p"), content = "B", parentUuid = "A",  level = 1, position = "a0", createdAt = now, updatedAt = now),
-            Block(uuid = BlockUuid("C"), pageUuid = PageUuid("p"), content = "C", parentUuid = "A",  level = 1, position = "a1", createdAt = now, updatedAt = now),
-            Block(uuid = BlockUuid("D"), pageUuid = PageUuid("p"), content = "D", parentUuid = "C",  level = 2, position = "a0", createdAt = now, updatedAt = now)
+            Block(uuid = BlockUuid("B"), pageUuid = PageUuid("p"), content = "B", parentUuid = BlockUuid("A"),  level = 1, position = "a0", createdAt = now, updatedAt = now),
+            Block(uuid = BlockUuid("C"), pageUuid = PageUuid("p"), content = "C", parentUuid = BlockUuid("A"),  level = 1, position = "a1", createdAt = now, updatedAt = now),
+            Block(uuid = BlockUuid("D"), pageUuid = PageUuid("p"), content = "D", parentUuid = BlockUuid("C"),  level = 2, position = "a0", createdAt = now, updatedAt = now)
         )
 
         // Dragging A — all three children/grandchildren are included

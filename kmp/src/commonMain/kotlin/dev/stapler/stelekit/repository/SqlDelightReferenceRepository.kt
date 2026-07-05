@@ -12,7 +12,10 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
@@ -33,7 +36,7 @@ class SqlDelightReferenceRepository(
 
     override fun getOutgoingReferences(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flow {
         try {
-            val results = queries.selectOutgoingReferences(blockUuid.value).executeAsList().map { it.toBlockModel() }
+            val results = queries.selectOutgoingReferences(blockUuid.value).asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toBlockModel() }
             emit(results.right())
         } catch (e: CancellationException) {
             throw e
@@ -44,7 +47,7 @@ class SqlDelightReferenceRepository(
 
     override fun getIncomingReferences(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flow {
         try {
-            val results = queries.selectIncomingReferences(blockUuid.value).executeAsList().map { it.toBlockModel() }
+            val results = queries.selectIncomingReferences(blockUuid.value).asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toBlockModel() }
             emit(results.right())
         } catch (e: CancellationException) {
             throw e
@@ -55,8 +58,8 @@ class SqlDelightReferenceRepository(
 
     override fun getAllReferences(blockUuid: BlockUuid): Flow<Either<DomainError, BlockReferences>> = flow {
         try {
-            val outgoing = queries.selectOutgoingReferences(blockUuid.value).executeAsList().map { it.toBlockModel() }
-            val incoming = queries.selectIncomingReferences(blockUuid.value).executeAsList().map { it.toBlockModel() }
+            val outgoing = queries.selectOutgoingReferences(blockUuid.value).asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toBlockModel() }
+            val incoming = queries.selectIncomingReferences(blockUuid.value).asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toBlockModel() }
             emit(BlockReferences(outgoing, incoming).right())
         } catch (e: CancellationException) {
             throw e
@@ -91,7 +94,7 @@ class SqlDelightReferenceRepository(
 
     override fun getOrphanedBlocks(): Flow<Either<DomainError, List<Block>>> = flow {
         try {
-            val results = queries.selectOrphanedBlocks().executeAsList().map { it.toBlockModel() }
+            val results = queries.selectOrphanedBlocks().asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toBlockModel() }
             emit(results.right())
         } catch (e: CancellationException) {
             throw e
@@ -102,7 +105,7 @@ class SqlDelightReferenceRepository(
 
     override fun getMostConnectedBlocks(limit: Int): Flow<Either<DomainError, List<BlockWithReferenceCount>>> = flow {
         try {
-            val results = queries.selectMostConnectedBlocks(limit.toLong()).executeAsList().map {
+            val results = queries.selectMostConnectedBlocks(limit.toLong()).asFlow().mapToList(PlatformDispatcher.DB).first().map {
                 BlockWithReferenceCount(it.toBlockModel(), it.reference_count.toInt())
             }
             emit(results.right())
@@ -129,8 +132,8 @@ class SqlDelightReferenceRepository(
     ): Block = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid(pageUuid),
-        parentUuid = parentUuid,
-        leftUuid = leftUuid,
+        parentUuid = parentUuid?.let { BlockUuid(it) },
+        leftUuid = leftUuid?.let { BlockUuid(it) },
         content = content,
         level = level.toInt(),
         position = position,

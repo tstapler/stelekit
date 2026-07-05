@@ -4,6 +4,7 @@ import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.vault.CryptoLayer
 
 /**
@@ -75,7 +76,7 @@ interface GraphWriterPort {
      */
     suspend fun movePageToSection(
         page: Page,
-        newSectionId: String,
+        newSectionId: SectionId,
         newPathPrefix: String,
     ): Either<DomainError, Page>
 }

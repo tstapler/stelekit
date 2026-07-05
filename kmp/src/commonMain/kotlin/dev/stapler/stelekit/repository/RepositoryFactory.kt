@@ -118,6 +118,7 @@ class RepositoryFactoryImpl(
     internal var queryStatsCollector: QueryStatsCollector? = null
     private var searchRingBuffer: RingBufferSpanExporter? = null
     private var searchHistogramWriter: dev.stapler.stelekit.performance.HistogramWriter? = null
+    private var logSinkHandle: dev.stapler.stelekit.logging.SinkHandle? = null
 
     private val database: SteleDatabase by lazy {
         val writeDriver = driverFactory.createDriver(jdbcUrl)
@@ -367,7 +368,9 @@ class RepositoryFactoryImpl(
 
         // Register a log sink that bridges ERROR logs into spans
         val spanLogSink = if (ringBuffer != null) {
-            SpanLogSink(spanEmitter).also { LogManager.addSink(it) }
+            SpanLogSink(spanEmitter).also {
+                logSinkHandle = LogManager.addSink(it)
+            }
         } else null
 
         val sqlBlockRepo = blockRepo as? SqlDelightBlockRepository
@@ -512,6 +515,8 @@ class RepositoryFactoryImpl(
         activeTelemetryDb = null
         instances.clear()
         queryStatsCollector = null
+        logSinkHandle?.close()
+        logSinkHandle = null
     }
 
     private inline fun <reified T : Any> getOrCreateInstance(key: String, factory: () -> T): T {

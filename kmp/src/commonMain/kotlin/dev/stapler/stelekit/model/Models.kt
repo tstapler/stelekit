@@ -71,6 +71,22 @@ object Validation {
     }
 }
 
+sealed class SectionId {
+    data object Global : SectionId()
+    data class Named(val id: String) : SectionId() {
+        init { require(id.isNotBlank()) { "SectionId.Named id must not be blank" } }
+    }
+
+    fun toDbString(): String = when (this) {
+        is Global -> ""
+        is Named -> id
+    }
+
+    companion object {
+        fun fromDbString(s: String): SectionId = if (s.isBlank()) Global else Named(s)
+    }
+}
+
 data class Page(
     val uuid: PageUuid,
     val name: String,
@@ -85,8 +101,7 @@ data class Page(
     val journalDate: LocalDate? = null,
     /** True when page content (blocks) has been fully loaded from file */
     val isContentLoaded: Boolean = true,
-    /** Empty string = global (no section). NOT NULL sentinel avoids NULL != NULL UNIQUE issues. */
-    val sectionId: String = "",
+    val sectionId: SectionId = SectionId.Global,
 ) {
     init {
         Validation.validateUuid(uuid)
@@ -103,8 +118,8 @@ data class Page(
 data class Block(
     val uuid: BlockUuid,
     val pageUuid: PageUuid,
-    val parentUuid: String? = null,
-    val leftUuid: String? = null,
+    val parentUuid: BlockUuid? = null,
+    val leftUuid: BlockUuid? = null,
     val content: String,
     val level: Int = 0,
     val position: String,
@@ -150,12 +165,17 @@ enum class NotificationType {
     INFO, WARNING, ERROR, SUCCESS
 }
 
+sealed class NotificationDuration {
+    data object Permanent : NotificationDuration()
+    data class AutoDismiss(val millis: Long) : NotificationDuration()
+}
+
 data class Notification(
     val id: String,
     val content: String,
     val type: NotificationType = NotificationType.INFO,
     val timestamp: Instant,
-    val timeout: Long? = 3000
+    val duration: NotificationDuration = NotificationDuration.AutoDismiss(3000),
 ) {
     init {
         Validation.validateContent(content)

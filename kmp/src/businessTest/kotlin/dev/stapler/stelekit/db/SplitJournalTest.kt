@@ -115,7 +115,7 @@ class SplitJournalTest {
 
         val page = pageRepo.getJournalPageByDateAndSection(date, "").first().getOrNull()
         assertNotNull(page)
-        assertEquals("", page.sectionId, "Global journal must have sectionId = \"\"")
+        assertEquals("", page.sectionId.toDbString(), "Global journal must have sectionId = \"\"")
     }
 
     // ── TC-6.3-C: section journal sectionId matches section id ────────────────
@@ -128,7 +128,7 @@ class SplitJournalTest {
 
         val page = pageRepo.getJournalPageByDateAndSection(date, "acme-work").first().getOrNull()
         assertNotNull(page)
-        assertEquals("acme-work", page.sectionId, "Section journal must have sectionId = \"acme-work\"")
+        assertEquals("acme-work", page.sectionId.toDbString(), "Section journal must have sectionId = \"acme-work\"")
     }
 
     // ── TC-6.3-D: section-aware lookup returns null for wrong section ──────────
@@ -156,7 +156,7 @@ class SplitJournalTest {
 
         assert(result.isRight()) { "createSectionJournalPage must succeed, got: $result" }
         val page = result.getOrNull()!!
-        assertEquals("acme-work", page.sectionId, "Created page must have sectionId = \"acme-work\"")
+        assertEquals("acme-work", page.sectionId.toDbString(), "Created page must have sectionId = \"acme-work\"")
         assertEquals(date, page.journalDate, "Created page must have correct journalDate")
         assert(page.isJournal) { "Created page must be flagged as a journal" }
     }

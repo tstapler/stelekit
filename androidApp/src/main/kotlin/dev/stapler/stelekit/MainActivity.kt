@@ -297,8 +297,8 @@ class MainActivity : ComponentActivity() {
                 if (appGm == null) return@LaunchedEffect
                 val graphId = appGm.getActiveGraphId() ?: return@LaunchedEffect
                 val svc = activeGitSyncService
-                if (svc != null) GitSyncServiceRegistry.register(graphId, svc)
-                else GitSyncServiceRegistry.unregister(graphId)
+                if (svc != null) GitSyncServiceRegistry.register(graphId.value, svc)
+                else GitSyncServiceRegistry.unregister(graphId.value)
             }
 
             StelekitApp(

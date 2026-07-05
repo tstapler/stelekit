@@ -1316,7 +1316,7 @@ class BlockStateManagerTest {
         val blocks = manager.blocks.value[pageUuid] ?: emptyList()
         val b2 = blocks.find { it.uuid.value == "b2" }
         assertNotNull(b2)
-        assertEquals("b1", b2.parentUuid, "indentBlock must make b2 a child of b1")
+        assertEquals(BlockUuid("b1"), b2.parentUuid, "indentBlock must make b2 a child of b1")
     }
 
     @Test
@@ -1351,7 +1351,7 @@ class BlockStateManagerTest {
         // b1 at root, b2 is child of b1
         blockRepo.saveBlock(createBlock("b1", content = "root", position = "a0"))
         val childBlock = Block(
-            uuid = BlockUuid("b2"), pageUuid = PageUuid(pageUuid), parentUuid = "b1",
+            uuid = BlockUuid("b2"), pageUuid = PageUuid(pageUuid), parentUuid = BlockUuid("b1"),
             content = "child", level = 1, position = "a0",
             createdAt = now, updatedAt = now
         )

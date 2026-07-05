@@ -179,7 +179,7 @@ class OutlinerMonkeyTest {
             val blocksByUuid = blocks.associateBy { it.uuid.value }
             blocks.forEach { block ->
                 if (block.parentUuid != null) {
-                    val parent = blocksByUuid[block.parentUuid]
+                    val parent = blocksByUuid[block.parentUuid?.value]
                     assertTrue(parent != null, "Block ${block.uuid} references non-existent parent ${block.parentUuid}")
                     assertEquals(parent!!.level + 1, block.level, "Block ${block.uuid} level (${block.level}) is inconsistent with parent level (${parent.level})")
                 } else {

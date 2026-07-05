@@ -24,6 +24,7 @@ import dev.stapler.stelekit.llm.LlmProviderRegistry
 import dev.stapler.stelekit.llm.LlmSettings
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.FrameMetric
 import dev.stapler.stelekit.performance.DebugMenuState
@@ -344,7 +345,7 @@ internal fun GraphDialogLayer(
         }
         SectionPickerDialog(
             sections = activeSections,
-            currentSectionId = pickerPage?.sectionId ?: "",
+            currentSectionId = pickerPage?.sectionId?.toDbString() ?: "",
             onSelect = { sectionId ->
                 pickerPage?.let { viewModel.movePageToSection(it, sectionId) }
             },

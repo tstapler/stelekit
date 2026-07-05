@@ -25,8 +25,8 @@ object PageOptics {
 object BlockOptics {
     val uuid: Lens<Block, BlockUuid> = Lens(get = { it.uuid }, set = { b, v -> b.copy(uuid = v) })
     val pageUuid: Lens<Block, PageUuid> = Lens(get = { it.pageUuid }, set = { b, v -> b.copy(pageUuid = v) })
-    val parentUuid: Lens<Block, String?> = Lens(get = { it.parentUuid }, set = { b, v -> b.copy(parentUuid = v) })
-    val leftUuid: Lens<Block, String?> = Lens(get = { it.leftUuid }, set = { b, v -> b.copy(leftUuid = v) })
+    val parentUuid: Lens<Block, BlockUuid?> = Lens(get = { it.parentUuid }, set = { b, v -> b.copy(parentUuid = v) })
+    val leftUuid: Lens<Block, BlockUuid?> = Lens(get = { it.leftUuid }, set = { b, v -> b.copy(leftUuid = v) })
     val content: Lens<Block, String> = Lens(get = { it.content }, set = { b, v -> b.copy(content = v) })
     val level: Lens<Block, Int> = Lens(get = { it.level }, set = { b, v -> b.copy(level = v) })
     val position: Lens<Block, String> = Lens(get = { it.position }, set = { b, v -> b.copy(position = v) })

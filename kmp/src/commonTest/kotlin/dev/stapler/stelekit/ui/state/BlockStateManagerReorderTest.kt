@@ -40,7 +40,7 @@ class BlockStateManagerReorderTest {
         pageUuid = PageUuid(pageUuid),
         content = uuid,
         position = position,
-        parentUuid = parentUuid,
+        parentUuid = parentUuid?.let { BlockUuid(it) },
         createdAt = now,
         updatedAt = now,
     )
@@ -119,7 +119,7 @@ class BlockStateManagerReorderTest {
 
         assertTrue(m.hasPendingDiskWrite(pageUuid), "indentBlock must trigger queueDiskSave")
         val b2 = m.blocks.value[pageUuid]?.find { it.uuid.value == "b2" } ?: error("b2 not found")
-        assertEquals("b1", b2.parentUuid, "b2 must be a child of b1 after indent")
+        assertEquals("b1", b2.parentUuid?.value, "b2 must be a child of b1 after indent")
     }
 
     @Test

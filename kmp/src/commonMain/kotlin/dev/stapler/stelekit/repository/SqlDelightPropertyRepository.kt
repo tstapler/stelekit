@@ -11,9 +11,13 @@ import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.Property
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
+import app.cash.sqldelight.coroutines.mapToOneOrNull
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlin.time.Instant
@@ -31,7 +35,7 @@ class SqlDelightPropertyRepository(
 
     override fun getPropertiesForBlock(blockUuid: BlockUuid): Flow<Either<DomainError, List<Property>>> = flow {
         try {
-            val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
+            val block = queries.selectBlockByUuid(blockUuid.value).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
             if (block == null) {
                 emit(emptyList<Property>().right())
             } else {
@@ -47,7 +51,7 @@ class SqlDelightPropertyRepository(
 
     override fun getProperty(blockUuid: BlockUuid, key: String): Flow<Either<DomainError, Property?>> = flow {
         try {
-            val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
+            val block = queries.selectBlockByUuid(blockUuid.value).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
             if (block == null) {
                 emit(null.right())
             } else {
@@ -63,7 +67,7 @@ class SqlDelightPropertyRepository(
 
     override suspend fun saveProperty(property: Property): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            val block = queries.selectBlockByUuid(property.blockUuid).executeAsOneOrNull()  // Property.blockUuid is still String
+            val block = queries.selectBlockByUuid(property.blockUuid).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()  // Property.blockUuid is still String
             if (block != null) {
                 val existing = parseProperties(block.uuid, block.properties).associate { it.key to it.value }.toMutableMap()
                 existing[property.key] = property.value
@@ -80,7 +84,7 @@ class SqlDelightPropertyRepository(
 
     override suspend fun deleteProperty(blockUuid: BlockUuid, key: String): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            val block = queries.selectBlockByUuid(blockUuid.value).executeAsOneOrNull()
+            val block = queries.selectBlockByUuid(blockUuid.value).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
             if (block != null) {
                 val existing = parseProperties(block.uuid, block.properties).associate { it.key to it.value }.toMutableMap()
                 existing.remove(key)
@@ -97,7 +101,7 @@ class SqlDelightPropertyRepository(
 
     override fun getBlocksWithPropertyKey(key: String): Flow<Either<DomainError, List<Block>>> = flow {
         try {
-            val results = queries.selectAllBlocks().executeAsList()
+            val results = queries.selectAllBlocks().asFlow().mapToList(PlatformDispatcher.DB).first()
                 .filter { it.properties?.contains(key) == true }
                 .map { it.toBlockModel() }
             emit(results.right())
@@ -110,7 +114,7 @@ class SqlDelightPropertyRepository(
 
     override fun getBlocksWithPropertyValue(key: String, value: String): Flow<Either<DomainError, List<Block>>> = flow {
         try {
-            val results = queries.selectAllBlocks().executeAsList()
+            val results = queries.selectAllBlocks().asFlow().mapToList(PlatformDispatcher.DB).first()
                 .filter { it.properties?.contains("$key:$value") == true }
                 .map { it.toBlockModel() }
             emit(results.right())
@@ -140,8 +144,8 @@ class SqlDelightPropertyRepository(
         return Block(
             uuid = BlockUuid(this.uuid),
             pageUuid = PageUuid(this.page_uuid),
-            parentUuid = this.parent_uuid,
-            leftUuid = this.left_uuid,
+            parentUuid = this.parent_uuid?.let { BlockUuid(it) },
+            leftUuid = this.left_uuid?.let { BlockUuid(it) },
             content = this.content,
             level = this.level.toInt(),
             position = this.position,

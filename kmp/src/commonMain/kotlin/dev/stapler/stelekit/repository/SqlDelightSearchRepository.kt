@@ -22,10 +22,13 @@ import dev.stapler.stelekit.performance.RingBufferSpanExporter
 import dev.stapler.stelekit.performance.SpanEmitter
 import dev.stapler.stelekit.search.FtsQueryBuilder
 import dev.stapler.stelekit.util.UuidGenerator
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.db.SqlDriver
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.CancellationException
@@ -86,7 +89,7 @@ class SqlDelightSearchRepository(
                     query = ftsQuery,
                     limit = limit.toLong(),
                     offset = offset.toLong()
-                ).executeAsList()
+                ).asFlow().mapToList(PlatformDispatcher.DB).first()
                 if (andResults.isNotEmpty()) {
                     andResults.map { it.toBlockModel() }
                 } else {
@@ -96,7 +99,7 @@ class SqlDelightSearchRepository(
                         query = orQuery,
                         limit = limit.toLong(),
                         offset = offset.toLong()
-                    ).executeAsList().map { it.toBlockModel() }
+                    ).asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toBlockModel() }
                 }
             } finally {
                 CurrentSpanContext.set(null)
@@ -133,11 +136,11 @@ class SqlDelightSearchRepository(
             val results = try {
                 try {
                     queries.searchPagesByNameFts(query = ftsQuery, limit = limit.toLong())
-                        .executeAsList().map { it.toPageModel() }
+                        .asFlow().mapToList(PlatformDispatcher.DB).first().map { it.toPageModel() }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Exception) {
-                    queries.selectPagesByNameLike("%$query%").executeAsList().take(limit).map { it.toPageModel() }
+                    queries.selectPagesByNameLike("%$query%").asFlow().mapToList(PlatformDispatcher.DB).first().take(limit).map { it.toPageModel() }
                 }
             } finally {
                 CurrentSpanContext.set(null)
@@ -165,7 +168,7 @@ class SqlDelightSearchRepository(
     override fun findBlocksReferencing(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> = flow {
         try {
             val results = queries.selectBlocksReferencing(blockUuid.value)
-                .executeAsList()
+                .asFlow().mapToList(PlatformDispatcher.DB).first()
                 .map { it.toBlockModel() }
             emit(results.right())
         } catch (e: CancellationException) {
@@ -225,7 +228,7 @@ class SqlDelightSearchRepository(
                             startMs = startMs,
                             endMs = endMs,
                             limit = searchRequest.limit.toLong()
-                        ).executeAsList()
+                        ).asFlow().mapToList(PlatformDispatcher.DB).first()
                         val pageRows = if (andPages.isNotEmpty()) {
                             andPages
                         } else {
@@ -236,7 +239,7 @@ class SqlDelightSearchRepository(
                                 startMs = startMs,
                                 endMs = endMs,
                                 limit = searchRequest.limit.toLong()
-                            ).executeAsList()
+                            ).asFlow().mapToList(PlatformDispatcher.DB).first()
                         }
                         pageRows.map { row ->
                             SearchedPage(
@@ -249,7 +252,7 @@ class SqlDelightSearchRepository(
                         val andPages = queries.searchPagesByNameFts(
                             query = ftsQuery,
                             limit = searchRequest.limit.toLong()
-                        ).executeAsList()
+                        ).asFlow().mapToList(PlatformDispatcher.DB).first()
                         val pageRows = if (andPages.isNotEmpty()) {
                             andPages
                         } else {
@@ -258,7 +261,7 @@ class SqlDelightSearchRepository(
                             else queries.searchPagesByNameFts(
                                 query = orQuery,
                                 limit = searchRequest.limit.toLong()
-                            ).executeAsList()
+                            ).asFlow().mapToList(PlatformDispatcher.DB).first()
                         }
                         pageRows.map { row ->
                             SearchedPage(
@@ -273,7 +276,7 @@ class SqlDelightSearchRepository(
                 } catch (_: Exception) {
                     // pages_fts not yet available — fall back to LIKE
                     queries.selectPagesByNameLike("%$rawQuery%")
-                        .executeAsList()
+                        .asFlow().mapToList(PlatformDispatcher.DB).first()
                         .take(searchRequest.limit)
                         .map { SearchedPage(page = it.toPageModel()) }
                         .applyPageScope(scope, searchRequest.pageUuid)
@@ -283,11 +286,12 @@ class SqlDelightSearchRepository(
             // Read precomputed backlink counts from the pages.backlink_count column (O(1) per page).
             // The column is populated by the pages_backlink_count migration and refreshed by rebuildFts.
             val backlinkMap: Map<String, Int> = if (searchedPages.isNotEmpty()) {
-                runCatching {
+                try {
                     queries.selectBacklinkCountsForPages(searchedPages.map { it.page.uuid.value }.toSet())
-                        .executeAsList()
+                        .asFlow().mapToList(PlatformDispatcher.DB).first()
                         .associate { it.page_name to it.backlink_count.toInt() }
-                }.getOrDefault(emptyMap())
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) { emptyMap() }
             } else emptyMap()
 
             val searchedPagesWithBacklinks = searchedPages.map { sp ->
@@ -319,7 +323,7 @@ class SqlDelightSearchRepository(
                                     pageUuid = pageUuid.value,
                                     limit = searchRequest.limit.toLong(),
                                     offset = searchRequest.offset.toLong()
-                                ).executeAsList().map { row ->
+                                ).asFlow().mapToList(PlatformDispatcher.DB).first().map { row ->
                                     SearchedBlock(
                                         block = row.toBlockModel(),
                                         snippet = row.highlight?.takeIf { it.isNotBlank() },
@@ -337,7 +341,7 @@ class SqlDelightSearchRepository(
                                     endMs = endMs,
                                     limit = searchRequest.limit.toLong(),
                                     offset = searchRequest.offset.toLong()
-                                ).executeAsList()
+                                ).asFlow().mapToList(PlatformDispatcher.DB).first()
                                 val blockRows = if (andBlocks.isNotEmpty()) {
                                     andBlocks
                                 } else {
@@ -349,7 +353,7 @@ class SqlDelightSearchRepository(
                                         endMs = endMs,
                                         limit = searchRequest.limit.toLong(),
                                         offset = searchRequest.offset.toLong()
-                                    ).executeAsList()
+                                    ).asFlow().mapToList(PlatformDispatcher.DB).first()
                                 }
                                 blockRows.map { row ->
                                     SearchedBlock(
@@ -363,7 +367,7 @@ class SqlDelightSearchRepository(
                                     query = ftsQuery,
                                     limit = searchRequest.limit.toLong(),
                                     offset = searchRequest.offset.toLong()
-                                ).executeAsList()
+                                ).asFlow().mapToList(PlatformDispatcher.DB).first()
                                 val blockRows = if (andBlocks.isNotEmpty()) {
                                     andBlocks
                                 } else {
@@ -373,7 +377,7 @@ class SqlDelightSearchRepository(
                                         query = orQuery,
                                         limit = searchRequest.limit.toLong(),
                                         offset = searchRequest.offset.toLong()
-                                    ).executeAsList()
+                                    ).asFlow().mapToList(PlatformDispatcher.DB).first()
                                 }
                                 blockRows.map { row ->
                                     SearchedBlock(
@@ -393,19 +397,23 @@ class SqlDelightSearchRepository(
             } else emptyList()
 
             val neighbourPageUuids = searchRequest.pageUuid
-                ?.let { runCatching { queries.selectNeighbourPageUuids(it.value).executeAsList().toSet() }.getOrDefault(emptySet()) }
-                ?: emptySet()
+                ?.let {
+                    try { queries.selectNeighbourPageUuids(it.value).asFlow().mapToList(PlatformDispatcher.DB).first().toSet() }
+                    catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { emptySet() }
+                } ?: emptySet()
             val nowMs = HistogramWriter.epochMs()
 
             // Batch-fetch visit data for all result UUIDs — single IN query, not N+1
             val allResultUuids = searchedPagesWithBacklinks.map { it.page.uuid.value } +
                 searchedBlocks.map { it.block.pageUuid.value }
             val visitMap: Map<String, Long> = if (allResultUuids.isEmpty()) emptyMap()
-            else runCatching {
+            else try {
                 queries.selectPageVisitsByUuids(allResultUuids.toSet())
-                    .executeAsList()
+                    .asFlow().mapToList(PlatformDispatcher.DB).first()
                     .associate { it.page_uuid to it.last_visited_at }
-            }.getOrDefault(emptyMap())
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { emptyMap() }
 
             val rankedRaw = buildRankedList(searchedPagesWithBacklinks, searchedBlocks, neighbourPageUuids, visitMap, nowMs)
             val ranked = promoteExactTitleMatch(rankedRaw, rawQuery)
@@ -571,13 +579,13 @@ class SqlDelightSearchRepository(
     // acceptable because rebuildFts is a background maintenance operation.
     private suspend fun computeBacklinkCountsFromBlocks(): Map<String, Long> =
         withContext(PlatformDispatcher.DB) {
-            val pageRows = queries.selectPageNameEntries().executeAsList()
+            val pageRows = queries.selectPageNameEntries().asFlow().mapToList(PlatformDispatcher.DB).first()
             val lowerToCanonical = pageRows.associate { it.name.lowercase() to it.name }
             val counts = HashMap<String, Long>(lowerToCanonical.size)
             lowerToCanonical.keys.forEach { counts[it] = 0L }
             var lastUuid = ""
             while (true) {
-                val batch = queries.selectAllBlocksPaginatedAfterUuid(lastUuid, BACKLINK_BATCH_SIZE).executeAsList()
+                val batch = queries.selectAllBlocksPaginatedAfterUuid(lastUuid, BACKLINK_BATCH_SIZE).asFlow().mapToList(PlatformDispatcher.DB).first()
                 if (batch.isEmpty()) break
                 for (block in batch) {
                     for (link in extractWikilinks(block.content)) {
@@ -647,8 +655,8 @@ class SqlDelightSearchRepository(
         Block(
             uuid = BlockUuid(uuid),
             pageUuid = PageUuid(page_uuid),
-            parentUuid = parent_uuid,
-            leftUuid = left_uuid,
+            parentUuid = parent_uuid?.let { BlockUuid(it) },
+            leftUuid = left_uuid?.let { BlockUuid(it) },
             content = content,
             level = level.toInt(),
             position = position,
@@ -662,8 +670,8 @@ class SqlDelightSearchRepository(
         Block(
             uuid = BlockUuid(uuid),
             pageUuid = PageUuid(page_uuid),
-            parentUuid = parent_uuid,
-            leftUuid = left_uuid,
+            parentUuid = parent_uuid?.let { BlockUuid(it) },
+            leftUuid = left_uuid?.let { BlockUuid(it) },
             content = content,
             level = level.toInt(),
             position = position,
@@ -677,8 +685,8 @@ class SqlDelightSearchRepository(
         Block(
             uuid = BlockUuid(uuid),
             pageUuid = PageUuid(page_uuid),
-            parentUuid = parent_uuid,
-            leftUuid = left_uuid,
+            parentUuid = parent_uuid?.let { BlockUuid(it) },
+            leftUuid = left_uuid?.let { BlockUuid(it) },
             content = content,
             level = level.toInt(),
             position = position,
@@ -722,8 +730,8 @@ class SqlDelightSearchRepository(
         Block(
             uuid = BlockUuid(uuid),
             pageUuid = PageUuid(page_uuid),
-            parentUuid = parent_uuid,
-            leftUuid = left_uuid,
+            parentUuid = parent_uuid?.let { BlockUuid(it) },
+            leftUuid = left_uuid?.let { BlockUuid(it) },
             content = content,
             level = level.toInt(),
             position = position,

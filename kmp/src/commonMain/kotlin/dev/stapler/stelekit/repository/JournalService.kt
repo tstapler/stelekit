@@ -85,10 +85,10 @@ class JournalService(
         offset: Int,
     ): Flow<Either<DomainError, List<Page>>> {
         if (activeSectionIds.isEmpty()) return pageRepository.getJournalPages(limit, offset)
-        // "" is the sentinel sectionId for global pages (not assigned to any section).
+        // SectionId.Global maps to "" in the DB; include it by adding "" to the allowed set.
         val allowedIds = buildSet { add(""); addAll(activeSectionIds) }
         return pageRepository.getJournalPages(limit, offset).map { result ->
-            result.map { pages -> pages.filter { it.sectionId in allowedIds } }
+            result.map { pages -> pages.filter { it.sectionId.toDbString() in allowedIds } }
         }
     }
 

@@ -11,7 +11,9 @@ import dev.stapler.stelekit.docs.JournalsDocs
 import dev.stapler.stelekit.docs.PageViewDocs
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.git.model.SyncState
+import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.GraphInfo
+import dev.stapler.stelekit.model.ImageAnnotationUuid
 import dev.stapler.stelekit.vault.VaultError
 import dev.stapler.stelekit.vault.VaultNamespace
 import dev.stapler.stelekit.asset.AssetUuid
@@ -83,7 +85,7 @@ sealed class Screen {
      */
     @HelpExempt(reason = "Entered via image tap, not from sidebar nav; advanced feature for image annotation")
     data class AnnotationEditor(
-        val imageAnnotationUuid: String,
+        val imageAnnotationUuid: ImageAnnotationUuid,
         val pageUuid: String? = null,
     ) : Screen()
 }
@@ -117,7 +119,7 @@ data class AppState(
     val journalPages: List<Page> = emptyList(),
     val favoritePages: List<Page> = emptyList(),
     val recentPages: List<Page> = emptyList(),
-    val editingBlockId: String? = null,
+    val editingBlockId: BlockUuid? = null,
     val editingCursorIndex: Int? = null,
     // Debug settings
     val isDebugMode: Boolean = false,

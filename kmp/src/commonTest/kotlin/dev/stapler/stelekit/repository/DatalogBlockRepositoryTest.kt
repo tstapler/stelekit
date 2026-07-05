@@ -39,7 +39,7 @@ class DatalogBlockRepositoryTest {
             uuid = BlockUuid(uuid),
             pageUuid = PageUuid(pageUuid),
             content = content,
-            parentUuid = parentUuid,
+            parentUuid = parentUuid?.let { BlockUuid(it) },
             position = position,
             leftUuid = null, // simplified for helper, logic should handle it
             createdAt = now,
@@ -68,7 +68,7 @@ class DatalogBlockRepositoryTest {
         val res = repository.getBlockByUuid(uuid2).first()
         val block = res.getOrNull()
         assertNotNull(block)
-        assertEquals(uuid1.value, block.parentUuid) // Should now be child of B1
+        assertEquals(uuid1.value, block.parentUuid?.value) // Should now be child of B1
     }
 
     @Test

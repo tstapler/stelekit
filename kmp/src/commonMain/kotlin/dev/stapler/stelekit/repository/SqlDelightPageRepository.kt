@@ -14,6 +14,7 @@ import dev.stapler.stelekit.cache.RequestCoalescer
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
@@ -79,7 +80,7 @@ class SqlDelightPageRepository(
                 return@flow
             }
             val page = byUuidCoalescer.execute(uuid.value) {
-                queries.selectPageByUuid(uuid.value).executeAsOneOrNull()?.toModel()
+                queries.selectPageByUuid(uuid.value).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()?.toModel()
             }
             if (page != null) {
                 pageByUuidCache.put(page.uuid.value, page)
@@ -105,7 +106,7 @@ class SqlDelightPageRepository(
                 return@flow
             }
             val page = byNameCoalescer.execute(name.lowercase()) {
-                queries.selectPageByName(name).executeAsOneOrNull()?.toModel()
+                queries.selectPageByName(name).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()?.toModel()
             }
             if (page != null) {
                 pageByNameCache.put(name.lowercase(), page)
@@ -164,7 +165,7 @@ class SqlDelightPageRepository(
 
     override suspend fun countUnloadedPages(): Either<DomainError, Long> = withContext(PlatformDispatcher.DB) {
         try {
-            queries.countUnloadedPages().executeAsOne().right()
+            queries.countUnloadedPages().asFlow().mapToOne(PlatformDispatcher.DB).first().right()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -188,9 +189,11 @@ class SqlDelightPageRepository(
                 // Chunk the IN list: SQLITE_MAX_VARIABLE_NUMBER is 999 on Android API < 30.
                 var result: List<Page> = emptyList()
                 queries.transaction {
-                    result = names.chunked(IN_CLAUSE_CHUNK_SIZE).flatMap { chunk ->
-                        queries.selectPagesByNames(chunk).executeAsList().map { it.toModel() }
+                    val allPages = mutableListOf<Page>()
+                    for (chunk in names.chunked(IN_CLAUSE_CHUNK_SIZE)) {
+                        queries.selectPagesByNames(chunk).asFlow().mapToList(PlatformDispatcher.DB).first().mapTo(allPages) { it.toModel() }
                     }
+                    result = allPages
                 }
                 result.right()
             } catch (e: CancellationException) {
@@ -206,10 +209,12 @@ class SqlDelightPageRepository(
         try {
             var result: List<Page> = emptyList()
             queries.transaction {
-                result = dates.chunked(IN_CLAUSE_CHUNK_SIZE).flatMap { chunk ->
+                val allPages = mutableListOf<Page>()
+                for (chunk in dates.chunked(IN_CLAUSE_CHUNK_SIZE)) {
                     queries.selectJournalPagesByDates(chunk.map { it.toString() })
-                        .executeAsList().map { it.toModel() }
+                        .asFlow().mapToList(PlatformDispatcher.DB).first().mapTo(allPages) { it.toModel() }
                 }
+                result = allPages
             }
             result.right()
         } catch (e: CancellationException) {
@@ -265,7 +270,7 @@ class SqlDelightPageRepository(
             is_journal = if (page.isJournal) 1L else 0L,
             journal_date = page.journalDate?.toString(),
             is_content_loaded = if (page.isContentLoaded) 1L else 0L,
-            section_id = page.sectionId,
+            section_id = page.sectionId.toDbString(),
         )
         queries.updatePage(
             namespace = page.namespace,
@@ -277,14 +282,14 @@ class SqlDelightPageRepository(
             is_journal = if (page.isJournal) 1L else 0L,
             journal_date = page.journalDate?.toString(),
             is_content_loaded = if (page.isContentLoaded) 1L else 0L,
-            section_id = page.sectionId,
+            section_id = page.sectionId.toDbString(),
             uuid = page.uuid.value,
         )
     }
 
     override suspend fun toggleFavorite(pageUuid: PageUuid): Either<DomainError, Unit> = withContext(PlatformDispatcher.DB) {
         try {
-            val page = queries.selectPageByUuid(pageUuid.value).executeAsOneOrNull()
+            val page = queries.selectPageByUuid(pageUuid.value).asFlow().mapToOneOrNull(PlatformDispatcher.DB).first()
             if (page != null) {
                 val newFavorite = if (page.is_favorite == 1L) 0L else 1L
                 queries.updatePageFavorite(newFavorite, pageUuid.value)
@@ -327,7 +332,7 @@ class SqlDelightPageRepository(
 
     override fun countPages(): Flow<Either<DomainError, Long>> = flow {
         try {
-            val count = queries.countPages().executeAsOne()
+            val count = queries.countPages().asFlow().mapToOne(PlatformDispatcher.DB).first()
             emit(count.right())
         } catch (e: CancellationException) {
             throw e
@@ -363,7 +368,7 @@ class SqlDelightPageRepository(
             isJournal = this.is_journal == 1L,
             journalDate = this.journal_date?.let { kotlinx.datetime.LocalDate.parse(it) },
             isContentLoaded = this.is_content_loaded == 1L,
-            sectionId = this.section_id,
+            sectionId = SectionId.fromDbString(this.section_id),
         )
     }
 
@@ -385,7 +390,7 @@ class SqlDelightPageRepository(
             isJournal = this.is_journal == 1L,
             journalDate = kotlinx.datetime.LocalDate.parse(this.journal_date),
             isContentLoaded = this.is_content_loaded == 1L,
-            sectionId = this.section_id,
+            sectionId = SectionId.fromDbString(this.section_id),
         )
     }
 }

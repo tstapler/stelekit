@@ -12,8 +12,12 @@ import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.AssetRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
+import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -133,7 +137,7 @@ class AssetMoveService(
     ) {
         val queries = restrictedQueries ?: return
         val pending = try {
-            queries.rawQueries.selectAllPendingMoves().executeAsList()
+            queries.rawQueries.selectAllPendingMoves().asFlow().mapToList(PlatformDispatcher.DB).first()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
