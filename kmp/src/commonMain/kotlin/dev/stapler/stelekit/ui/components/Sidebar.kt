@@ -593,6 +593,7 @@ fun RightSidebar(
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun SidebarItem(
     title: String,
@@ -629,12 +630,18 @@ fun SidebarItem(
                 modifier = Modifier.weight(1f)
             )
             if (hasPendingConflict) {
-                Icon(
-                    imageVector = Icons.Default.Warning,
-                    contentDescription = "Unresolved disk conflict",
-                    tint = DiskConflictWarningColor,
-                    modifier = Modifier.size(14.dp)
-                )
+                TooltipBox(
+                    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                    tooltip = { PlainTooltip { Text("Unresolved disk conflict") } },
+                    state = rememberTooltipState(),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Unresolved disk conflict",
+                        tint = DiskConflictWarningColor,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
             }
             IconButton(
                 onClick = onFavoriteClick,

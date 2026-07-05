@@ -1660,8 +1660,13 @@ class StelekitViewModel(
             val blockResult = blockRepository.getBlockByUuid(BlockUuid(conflict.editingBlockUuid ?: return@launch)).first()
             val block = blockResult.getOrNull() ?: return@launch
             val updatedBlock = block.copy(content = conflictContent, updatedAt = kotlin.time.Clock.System.now())
-            writeActor?.execute { blockRepository.saveBlock(updatedBlock) }
+            val saveResult = writeActor?.execute { blockRepository.saveBlock(updatedBlock) }
                 ?: blockRepository.saveBlock(updatedBlock)
+            saveResult.onLeft { error ->
+                logger.error("manualResolve failed to save block ${conflict.editingBlockUuid}: ${error.message}")
+                sendSnackbar("Could not save your merge — try again (${error.message})")
+                return@launch
+            }
             // Focus the block so the user can start editing immediately
             requestEditBlock(conflict.editingBlockUuid, 0)
             if (ConflictMarkerDetector.hasConflictMarkers(updatedBlock.content)) {
@@ -1698,8 +1703,13 @@ class StelekitViewModel(
                 createdAt = now,
                 updatedAt = now
             )
-            writeActor?.execute { blockRepository.saveBlock(newBlock) }
+            val saveResult = writeActor?.execute { blockRepository.saveBlock(newBlock) }
                 ?: blockRepository.saveBlock(newBlock)
+            saveResult.onLeft { error ->
+                logger.error("saveAsNewBlock failed to save new block for page ${conflict.pageUuid}: ${error.message}")
+                sendSnackbar("Could not save your edit as a new block — try again (${error.message})")
+                return@launch
+            }
             // Persist the new block to disk
             blockStateManager?.savePageNow(conflict.pageUuid)
             clearPendingConflict(conflict.filePath)
