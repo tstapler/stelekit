@@ -188,7 +188,8 @@ Phase 1: Data Model
 
 ##### Task 2.1.2a: Add demo-stripping logic to `loadRegistry()` (~5 min)
 - In `loadRegistry()` (lines 105–130), after `val registry = json.decodeFromString<GraphRegistry>(registryJson)`:
-  - Compute `val demoStripped = registry.graphs.filter { !it.isDemo }`.
+  - Compute `val demoStripped = registry.graphs.filter { !it.isDemo && it.path != "/demo" }`.
+  - The `it.path != "/demo"` guard handles WASM old-format entries written before the `isDemo` field was introduced: those entries deserialize with `isDemo = false` (the default) but `path = "/demo"`, so the type-safe check alone would miss them.
   - If `demoStripped.size < registry.graphs.size` (i.e., some were stripped): log it, compute a new `activeGraphId` (null if the original pointed at a stripped demo entry), call `platformSettings.putBoolean("onboardingCompleted", false)` if `demoStripped.isEmpty()`.
   - Replace `registry` with `registry.copy(graphs = demoStripped, activeGraphId = adjustedActiveId)` before passing to the refresh-display-names chain.
 - Files: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/db/GraphManager.kt`
@@ -262,13 +263,18 @@ Phase 1: Data Model
   `"src/commonMain/kotlin/dev/stapler/stelekit/platform/DemoFileSystem.kt"`.
 - Files: `kmp/build.gradle.kts`
 
-##### Task 3.1.1b: Wire JVM compilation to generateDemoFileSystem (~2 min)
-- In `build.gradle.kts`, after line 587 where `jvmTest` depends on `generateDemoFileSystem`, add:
+##### Task 3.1.1b: Wire all-platform compilation to generateDemoFileSystem (~3 min)
+- Because `DemoFileSystem.kt` is now in `commonMain`, every platform's compile task needs it available. Do NOT wire only `compileKotlinJvm` — Android and iOS compilation will fail with "Unresolved reference: DemoFileSystem".
+- In `build.gradle.kts`, replace the previous `compileKotlinWasmJs`-only wiring with:
   ```kotlin
   afterEvaluate {
+      tasks.findByName("compileCommonMainKotlinMetadata")?.dependsOn(generateDemoFileSystem)
       tasks.findByName("compileKotlinJvm")?.dependsOn(generateDemoFileSystem)
+      tasks.findByName("compileKotlinAndroid")?.dependsOn(generateDemoFileSystem)
+      tasks.findByName("compileKotlinWasmJs")?.dependsOn(generateDemoFileSystem)
   }
   ```
+  `compileCommonMainKotlinMetadata` is the metadata compilation that IDE and Kotlin Multiplatform's type-checking use; wiring it ensures the class is present before any platform-specific compilation begins.
 - Files: `kmp/build.gradle.kts`
 
 ##### Task 3.1.1c: Run generator and delete old file (~2 min)
@@ -303,12 +309,14 @@ Phase 1: Data Model
 **Files**:
 - `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/onboarding/Onboarding.kt`
 
-##### Task 4.1.1a: Add `onDemoSelected` to `Onboarding.kt` (~3 min)
+##### Task 4.1.1a: Add `onDemoSelected` to `Onboarding.kt` and rename button (~5 min)
 - Add `onDemoSelected: () -> Unit = {}` to the `Onboarding` composable signature (line 24 area).
 - Replace lines 160–167 (the "Load Demo Graph" button `onClick` body):
   - Old: `selectedPath = demoPath; onGraphSelected(demoPath)`
   - New: `onDemoSelected()`
 - Remove the `val demoPath = "deps/graph-parser/test/resources/exporter-test-graph"` local variable.
+- **Rename the button**: change button text from `"Load Demo Graph"` to `"Try Demo Graph"` (UX AC-1).
+- **Add subtitle**: directly below the button, add a `Text` with content `"Explore sample notes — no files saved"`, style `MaterialTheme.typography.bodySmall`, color `MaterialTheme.colorScheme.onSurfaceVariant` (UX AC-1).
 - Files: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/onboarding/Onboarding.kt`
 
 #### Story 4.1.2: Wire `onDemoSelected` in App.kt
@@ -331,11 +339,13 @@ Phase 1: Data Model
   onDemoSelected = {
       scope.launch {
           val graphId = graphManager.addDemoGraph()
-          viewModel.setOnboardingCompleted(true)
           graphManager.switchGraph(graphId)
+          viewModel.setOnboardingCompleted(true)   // MUST be after switchGraph
       }
   },
   ```
+  **Order matters**: `setOnboardingCompleted(true)` must come AFTER `switchGraph()`. If it fires first and an Android Activity recreates (e.g., permission dialog), the app restarts with `onboardingCompleted=true` but no active graph — the loading overlay never resolves. Placing it after `switchGraph` ensures the graph is already wired before the flag is persisted.
+- The demo graph load advances through the onboarding step machine normally (the existing `onboardingCompleted` flag drives routing in App.kt line 1147); the UX KEYMAP_INTRO step will still display after demo selection because `setOnboardingCompleted` is what triggers the routing, and it fires after the graph is active.
 - Files: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt`
 
 #### Story 4.1.3: Derive `effectiveFileSystem` for GraphLoader from isDemo flag
@@ -367,6 +377,53 @@ Phase 1: Data Model
   }
   ```
 - Add the `import dev.stapler.stelekit.platform.DemoFileSystem` import.
+- Files: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt`
+
+##### Task 4.1.3b: Apply `effectiveFileSystem` to `graphWriter` and `LocalFileSystem` (~5 min)
+- In the same `GraphContent` composable, `effectiveFileSystem` must also be used in **two additional places** that were not updated by Task 4.1.3a. Without this, demo edits (`GraphWriter.saveBlock`) write to the real platform filesystem and the `LocalFileSystem` CompositionLocal provides the wrong instance to child composables:
+  1. **`LocalFileSystem`**: Replace `LocalFileSystem provides fileSystem` with `LocalFileSystem provides effectiveFileSystem`.
+  2. **`graphWriter`**: In the `graphWriter = remember(fileSystem, repos)` block, replace `fileSystem` with `effectiveFileSystem`:
+     ```kotlin
+     val graphWriter = remember(effectiveFileSystem, repos) {
+         repos.createGraphWriter(effectiveFileSystem)
+     }
+     ```
+- Files: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt`
+
+#### Story 4.1.4: Demo content load failure — snackbar error state (UX ACs 11–14)
+
+**As a** user whose demo content fails to load, **I want** the app to remain functional with a clear error message, **so that** I am never stuck on a spinner or routed back to onboarding.
+
+**Acceptance Criteria**:
+- When `switchGraph(DEMO_GRAPH_ID)` succeeds but `graphLoader` yields no pages (empty result or exception), the app stays on the main screen (never reroutes to onboarding).
+- A `Snackbar` appears with text `"Could not load demo content. Starting with an empty graph."` and auto-dismisses after `SnackbarDuration.Short` (~4 s).
+- The demo banner still appears (the graph is still `isDemo = true`; banner is driven by flag, not content).
+- The graph switcher remains accessible (no blocking dialog).
+  - *Given* `DemoFileSystem` throws on `listFiles("/demo/pages")`, *When* `loadGraph` completes, *Then* the snackbar message appears within 2 seconds and the sidebar is still rendered.
+
+**Files**:
+- `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt`
+- `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/StelekitViewModel.kt` (or wherever snackbar state is emitted)
+
+##### Task 4.1.4a: Emit snackbar on demo load failure (~5 min)
+- In `App.kt`'s `onDemoSelected` lambda (Task 4.1.2a), wrap `switchGraph` in a `try/catch` and also observe the graph's page count after load:
+  ```kotlin
+  onDemoSelected = {
+      scope.launch {
+          try {
+              val graphId = graphManager.addDemoGraph()
+              graphManager.switchGraph(graphId)
+              viewModel.setOnboardingCompleted(true)
+          } catch (e: Exception) {
+              snackbarHostState.showSnackbar(
+                  "Could not load demo content. Starting with an empty graph."
+              )
+          }
+      }
+  },
+  ```
+- If the pattern for snackbar emission in this codebase routes through `StelekitViewModel` (check existing snackbar usage), follow the same pattern rather than calling `snackbarHostState` directly.
+- The error path must NOT call `graphManager.removeGraph(DEMO_GRAPH_ID)` — the demo flag must remain active so the banner appears and the graph switcher still shows the pill. The empty in-memory graph is the correct fallback state.
 - Files: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt`
 
 ---
@@ -418,7 +475,7 @@ Phase 1: Data Model
   else
       "Graph: $currentGraphName, tap to switch graph"
   ```
-- Pass `isDemoActive = availableGraphs.size < (availableGraphs + demo).size` from the call site — or simply compute from `activeGraphInfo?.isDemo` in `LeftSidebar`.
+- Pass `isDemoActive = activeGraphInfo?.isDemo == true` from the `LeftSidebar` call site in App.kt.
 - Files: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/components/Sidebar.kt`
 
 #### Story 5.1.3: Dismissible in-session demo banner
@@ -434,44 +491,65 @@ Phase 1: Data Model
 **Files**:
 - `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt` (or a new `DemoBanner.kt` composable in `ui/components/`)
 
-##### Task 5.1.3a: Add `DemoBanner` composable (~5 min)
+##### Task 5.1.3a: Add `DemoBanner` composable in the sidebar (~8 min)
+- **Placement**: The banner belongs in the sidebar, below the `HorizontalDivider` that follows `GraphSwitcher`, above the Navigation section — NOT in `GraphContent`. Placing it in `GraphContent` would make it scroll with page content and disappear when a page is opened. In `LeftSidebar` (or its direct caller in `Sidebar.kt`), conditionally render `DemoBanner` after the `GraphSwitcher` section.
+- **Color**: Use `MaterialTheme.colorScheme.tertiaryContainer` (UX spec Surface 2). `secondaryContainer` is incorrect.
 - Create `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/components/DemoBanner.kt`:
   ```kotlin
   @Composable
   fun DemoBanner(modifier: Modifier = Modifier) {
       var dismissed by remember { mutableStateOf(false) }
-      if (!dismissed) {
+      AnimatedVisibility(
+          visible = !dismissed,
+          exit = fadeOut() + shrinkVertically()
+      ) {
           Surface(
-              color = MaterialTheme.colorScheme.secondaryContainer,
+              color = MaterialTheme.colorScheme.tertiaryContainer,
               shape = MaterialTheme.shapes.small,
-              modifier = modifier.fillMaxWidth()
+              modifier = modifier
+                  .fillMaxWidth()
+                  .semantics {
+                      contentDescription =
+                          "Demo graph notice: Exploring the demo, changes won't be saved"
+                  }
           ) {
               Row(
                   modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                   verticalAlignment = Alignment.CenterVertically
               ) {
-                  Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(16.dp))
+                  Icon(
+                      Icons.Default.Info,
+                      contentDescription = null,
+                      modifier = Modifier.size(18.dp),
+                      tint = MaterialTheme.colorScheme.onTertiaryContainer
+                  )
                   Spacer(Modifier.width(8.dp))
                   Text(
                       text = "Exploring the demo — changes won't be saved",
                       style = MaterialTheme.typography.bodySmall,
+                      color = MaterialTheme.colorScheme.onTertiaryContainer,
                       modifier = Modifier.weight(1f)
                   )
                   IconButton(onClick = { dismissed = true }) {
-                      Icon(Icons.Default.Close, contentDescription = "Dismiss demo banner")
+                      Icon(
+                          Icons.Default.Close,
+                          contentDescription = "Dismiss demo notice",
+                          modifier = Modifier.size(18.dp)
+                      )
                   }
               }
           }
       }
   }
   ```
-- In `App.kt`, in the `GraphContent` composable body (just above the main page content area), add:
+- In `LeftSidebar` in `Sidebar.kt`, after the `HorizontalDivider` that follows `GraphSwitcher`, add:
   ```kotlin
-  if (activeGraphInfo?.isDemo == true) {
-      DemoBanner(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+  if (isDemoActive) {
+      DemoBanner(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
   }
   ```
-- Files: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/components/DemoBanner.kt`, `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/App.kt`
+  Pass `isDemoActive: Boolean` as a new parameter on `LeftSidebar` (derived from `activeGraphInfo?.isDemo == true` at the call site in App.kt).
+- Files: `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/components/DemoBanner.kt`, `kmp/src/commonMain/kotlin/dev/stapler/stelekit/ui/components/Sidebar.kt`
 
 ---
 
