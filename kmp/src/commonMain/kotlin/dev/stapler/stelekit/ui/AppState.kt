@@ -157,6 +157,10 @@ data class AppState(
     // Story 6.1). Drives direct-open + auto-selection of the "AI Providers" settings category.
     val llmProviderSettingsVisible: Boolean = false,
     val conflictResolutionVisible: Boolean = false,
+    // Full-screen line-diff view for a disk conflict, reached via DiskConflictDialog's
+    // "View full comparison" button. Does not clear diskConflict — only suppresses the
+    // AlertDialog's rendering while true (see GraphDialogLayer).
+    val diskConflictViewFullVisible: Boolean = false,
     val journalMergeReviewVisible: Boolean = false,
     // LLM suggestion inbox — mirrors journalMergeReviewVisible's shape. Set true when
     // LlmSuggestionInbox.pendingForGraph(currentGraphId) becomes non-empty; NOT auto-dismissed
@@ -188,6 +192,15 @@ data class AppState(
     val hasSectionFilter: Boolean
         get() = currentManifest?.sections?.isNotEmpty() == true &&
             currentSectionStates.values.any { it != SectionState.ACTIVE }
+
+    /**
+     * File paths with an unresolved disk conflict — both deferred ([pendingConflicts]) and the
+     * one whose dialog is currently open ([diskConflict]), so the sidebar indicator is never
+     * momentarily wrong while a dialog is up. Single source of truth for the sidebar wiring in
+     * `App.kt` and the corresponding test assertions.
+     */
+    val pendingConflictFilePaths: Set<String>
+        get() = pendingConflicts.keys + listOfNotNull(diskConflict?.filePath)
 }
 
 /** Opens the global search dialog pre-filled with the given text. */
@@ -210,7 +223,8 @@ data class DiskConflict(
     val filePath: String,
     val editingBlockUuid: String,
     val localContent: String,
-    val diskContent: String
+    val diskContent: String,
+    val diskBlockContent: String? = null
 )
 
 /**

@@ -1306,6 +1306,7 @@ private fun GraphContent(
                                 currentGraphName = activeGraphInfo?.displayName ?: "",
                                 availableGraphs = graphRegistry.graphs,
                                 activeGraphId = activeGraphId?.value,
+                                pendingConflictFilePaths = appState.pendingConflictFilePaths,
                                 onPageClick = { page ->
                                     viewModel.navigateTo(Screen.PageView(page))
                                     closeSidebarIfMobile()

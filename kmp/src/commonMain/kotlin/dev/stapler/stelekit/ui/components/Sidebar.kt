@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Style
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.BarChart
@@ -32,6 +33,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -51,6 +53,12 @@ import dev.stapler.stelekit.ui.Screen
 import dev.stapler.stelekit.ui.isMobile
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 
+/** Amber warning treatment for an unresolved disk conflict — matches [SyncStatusBadge]'s
+ * `ConflictPending` color exactly (deliberately, for visual consistency between the two
+ * conflict types), but kept as a separate constant since these are functionally distinct
+ * indicators, not a shared component. */
+private val DiskConflictWarningColor = Color(0xFFF59E0B)
+
 /**
  * Main sidebar component for the application.
  * Updated with multi-graph support.
@@ -65,6 +73,7 @@ fun LeftSidebar(
     currentGraphName: String = "",
     availableGraphs: List<GraphInfo> = emptyList(),
     activeGraphId: String? = null,
+    pendingConflictFilePaths: Set<String> = emptySet(),
     onPageClick: (Page) -> Unit,
     onNavigate: (Screen) -> Unit,
     onToggleFavorite: (Page) -> Unit,
@@ -151,6 +160,14 @@ fun LeftSidebar(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
             )
 
+            if (pendingConflictFilePaths.isNotEmpty()) {
+                PendingConflictsBanner(
+                    count = pendingConflictFilePaths.size,
+                    onClick = { onNavigate(Screen.AllPages) },
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+            }
+
             // Navigation Section
             Text(
                 "Navigation",
@@ -213,7 +230,8 @@ fun LeftSidebar(
                             icon = Icons.Default.Star,
                             isFavorite = true,
                             onFavoriteClick = { onToggleFavorite(page) },
-                            onClick = { onPageClick(page) }
+                            onClick = { onPageClick(page) },
+                            hasPendingConflict = page.filePath in pendingConflictFilePaths
                         )
                     }
                     Spacer(modifier = Modifier.height(16.dp))
@@ -234,10 +252,45 @@ fun LeftSidebar(
                             icon = Icons.Default.Description,
                             isFavorite = page.isFavorite,
                             onFavoriteClick = { onToggleFavorite(page) },
-                            onClick = { onPageClick(page) }
+                            onClick = { onPageClick(page) },
+                            hasPendingConflict = page.filePath in pendingConflictFilePaths
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun PendingConflictsBanner(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        color = DiskConflictWarningColor.copy(alpha = 0.15f),
+        shape = MaterialTheme.shapes.small,
+        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = "Unresolved disk conflicts",
+                modifier = Modifier.size(16.dp),
+                tint = DiskConflictWarningColor,
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Column {
+                Text(
+                    text = if (count == 1) "1 page has an unresolved conflict" else "$count pages have unresolved conflicts",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = "Tap to view pages · cleared on app restart",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                )
             }
         }
     }
@@ -540,6 +593,7 @@ fun RightSidebar(
     }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun SidebarItem(
     title: String,
@@ -547,7 +601,8 @@ fun SidebarItem(
     icon: ImageVector,
     isFavorite: Boolean,
     onFavoriteClick: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    hasPendingConflict: Boolean = false,
 ) {
     Surface(
         color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else androidx.compose.ui.graphics.Color.Transparent,
@@ -574,6 +629,20 @@ fun SidebarItem(
                 color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f)
             )
+            if (hasPendingConflict) {
+                TooltipBox(
+                    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                    tooltip = { PlainTooltip { Text("Unresolved disk conflict") } },
+                    state = rememberTooltipState(),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Unresolved disk conflict",
+                        tint = DiskConflictWarningColor,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
             IconButton(
                 onClick = onFavoriteClick,
                 modifier = Modifier.size(36.dp)

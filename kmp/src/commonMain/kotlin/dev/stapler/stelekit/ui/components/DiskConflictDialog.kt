@@ -24,7 +24,8 @@ fun DiskConflictDialog(
     onKeepLocal: () -> Unit,
     onUseDisk: () -> Unit,
     onSaveAsNew: () -> Unit,
-    onManualResolve: () -> Unit
+    onManualResolve: () -> Unit,
+    onViewFull: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = { /* require explicit choice */ },
@@ -61,13 +62,21 @@ fun DiskConflictDialog(
                 }
 
                 Text("Disk version:", style = MaterialTheme.typography.labelMedium)
+                if (conflict.diskBlockContent == null) {
+                    Text(
+                        "Could not find a matching section on disk — showing the full file.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     shape = MaterialTheme.shapes.small
                 ) {
+                    val diskPreview = conflict.diskBlockContent ?: conflict.diskContent
                     Text(
-                        text = conflict.diskContent.take(200).let {
-                            if (conflict.diskContent.length > 200) "$it…" else it
+                        text = diskPreview.take(200).let {
+                            if (diskPreview.length > 200) "$it…" else it
                         },
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontFamily = FontFamily.Monospace
@@ -90,9 +99,18 @@ fun DiskConflictDialog(
                         Text("Save my edit as a new block")
                     }
                 }
+                TextButton(onClick = onViewFull, modifier = Modifier.fillMaxWidth()) {
+                    Text("View full comparison")
+                }
                 TextButton(onClick = onManualResolve, modifier = Modifier.fillMaxWidth()) {
                     Text("Manual resolve (show conflict markers)")
                 }
+                Text(
+                    "Inserts <<<<<<< / ======= / >>>>>>> markers into this block for you to edit by hand. " +
+                        "This page won't sync with disk again until the markers are removed.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     )

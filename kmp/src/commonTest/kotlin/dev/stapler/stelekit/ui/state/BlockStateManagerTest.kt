@@ -763,6 +763,102 @@ class BlockStateManagerTest {
         assertEquals("Hi[[Page]]", updated.content, "With no cursor info, link appended at end")
     }
 
+    // ---- insertLinkAtCursor — reads fresh in-memory content, not stale DB content ----
+
+    /**
+     * Regression test for the bug fixed by extracting [BlockStateManager.findBlockOrNull]:
+     * before the fix, [BlockStateManager.insertLinkAtCursor] read the block directly from
+     * [BlockRepository.getBlockByUuid], bypassing [BlockStateManager._blocks] (the in-memory
+     * optimistic state). If a user typed something and then, within the debounce window,
+     * inserted a `[[link]]`, the insertion silently built on stale DB content and dropped the
+     * user's just-typed keystrokes.
+     *
+     * This test forces the DB to lag behind [_blocks] the same way
+     * [dirty_block_is_preserved_when_stale_db_emission_arrives] does: an edit is applied (marking
+     * the block dirty), then the ORIGINAL (pre-edit) content is re-saved directly to the fake
+     * repository to simulate a stale reactive re-emission arriving during the debounce window.
+     * The dirty-set merge keeps the fresh content in [_blocks] while the repository itself holds
+     * the stale content — exactly the "DB behind, in-memory ahead" scenario the bug fix targets.
+     */
+    @Test
+    fun insertLinkAtCursor_usesInMemoryContent_notStaleDbContent_whenBlockIsDirty() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        val original = createBlock("b1", content = "old content", version = 0)
+        blockRepo.saveBlock(original)
+        manager.observePage(PageUuid(pageUuid))
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        // Simulate an in-flight unsaved edit: in-memory state advances and the block is marked dirty.
+        // newVersion is deliberately higher than what the fake repo's own auto-increment would
+        // produce (existing.version + 1 = 1) so the dirty flag survives the write's own reactive
+        // re-emission — matching how a real (slower, actor-queued) DB write stays "behind" the
+        // in-memory version for the whole debounce window. See
+        // dirty_block_is_preserved_when_stale_db_emission_arrives for the same technique.
+        val unsavedContent = "old content plus unsaved edit"
+        manager.updateBlockContent(BlockUuid("b1"), unsavedContent, newVersion = 5)
+        advanceUntilIdle()
+
+        // Simulate the DB lagging behind the debounce window: re-save the ORIGINAL (stale)
+        // content directly to the repository, as a stale reactive emission would arrive.
+        blockRepo.saveBlock(original)
+        advanceUntilIdle()
+
+        // Sanity: dirty-set merge must have kept the unsaved edit in memory while the
+        // repository itself now holds stale content — the precondition this test needs.
+        val preInsert = manager.blocks.value[pageUuid]?.find { it.uuid.value == "b1" }
+        assertNotNull(preInsert)
+        assertEquals(unsavedContent, preInsert.content, "In-memory state should retain the unsaved edit")
+        val staleDb = blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull()
+        assertNotNull(staleDb)
+        assertEquals("old content", staleDb.content, "DB should be stale (simulating debounce window lag)")
+
+        // Insert a link at the end of the UNSAVED content.
+        manager.insertLinkAtCursor(BlockUuid("b1"), "SomePage", overrideCursorIndex = unsavedContent.length)
+        advanceUntilIdle()
+
+        val result = manager.blocks.value[pageUuid]?.find { it.uuid.value == "b1" }
+        assertNotNull(result)
+        assertEquals(
+            "$unsavedContent[[SomePage]]", result.content,
+            "insertLinkAtCursor must build on the fresh in-memory content, not the stale DB content"
+        )
+    }
+
+    /**
+     * Complementary sanity check: when the block is NOT currently loaded into [_blocks]
+     * (e.g. it was never observed via [BlockStateManager.observePage]), [findBlockOrNull]'s
+     * fallback path must still find it via the DB repository, so [insertLinkAtCursor] keeps
+     * working outside the in-memory-cache-hit case.
+     */
+    @Test
+    fun insertLinkAtCursor_fallsBackToDb_whenBlockNotLoadedInMemory() = runTest {
+        val blockRepo = InMemoryBlockRepository()
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val manager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        pageRepo.savePage(createPage())
+        blockRepo.saveBlock(createBlock("b1", content = "Hello world", version = 0))
+        // Deliberately no observePage() call — block is not cached in _blocks.
+
+        manager.insertLinkAtCursor(BlockUuid("b1"), "SomePage", overrideCursorIndex = 11)
+        advanceUntilIdle()
+
+        val updated = blockRepo.getBlockByUuid(BlockUuid("b1")).first().getOrNull()
+        assertNotNull(updated)
+        assertEquals(
+            "Hello world[[SomePage]]", updated.content,
+            "insertLinkAtCursor must fall back to DB content when the block isn't cached in memory"
+        )
+    }
+
     // ---- replaceSelectionWithLink ----
 
     @Test

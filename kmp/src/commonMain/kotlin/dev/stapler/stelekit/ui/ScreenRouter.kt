@@ -162,7 +162,7 @@ internal fun ScreenRouter(
                 onOpenAnnotationEditor = { uuid -> viewModel.navigateToAnnotationEditor(uuid) },
                 capabilities = capabilities,
                 tagSuggestionViewModel = tagSuggestionViewModel,
-                conflictFilePaths = appState.pendingConflicts.keys.toSet(),
+                conflictFilePaths = appState.pendingConflictFilePaths,
             )
             is Screen.Flashcards -> {
                 NavigationTracingEffect("Flashcards")
@@ -172,7 +172,7 @@ internal fun ScreenRouter(
                 viewModel = allPagesViewModel,
                 onPageClick = { page -> viewModel.navigateTo(Screen.PageView(page)) },
                 onBulkDelete = { uuids -> viewModel.bulkDeletePages(uuids) },
-                conflictFilePaths = appState.pendingConflicts.keys.toSet(),
+                conflictFilePaths = appState.pendingConflictFilePaths,
             )
             is Screen.LibraryStats -> LibraryStatsScreen(viewModel = libraryStatsViewModel)
             is Screen.Notifications -> {
