@@ -21,7 +21,8 @@ enum class OnboardingStep {
 fun Onboarding(
     fileSystem: FileSystem,
     onComplete: () -> Unit,
-    onGraphSelected: (String) -> Unit
+    onGraphSelected: (String) -> Unit,
+    onDemoSelected: () -> Unit = {}
 ) {
     var currentStep by remember { mutableStateOf(OnboardingStep.WELCOME) }
     var graphPath by remember { mutableStateOf(fileSystem.getDefaultGraphPath()) }
@@ -39,7 +40,10 @@ fun Onboarding(
         ) {
             when (currentStep) {
                 OnboardingStep.WELCOME -> WelcomeStep()
-                OnboardingStep.GRAPH_SELECTION -> GraphSelectionStep(fileSystem) { path ->
+                OnboardingStep.GRAPH_SELECTION -> GraphSelectionStep(fileSystem, onDemoSelected = {
+                    onDemoSelected()
+                    currentStep = OnboardingStep.KEYMAP_INTRO
+                }) { path ->
                     graphPath = path
                     onGraphSelected(path)
                     // Auto-advance so the user isn't left on the same screen after picking
@@ -103,6 +107,7 @@ private fun WelcomeStep() {
 @Composable
 private fun GraphSelectionStep(
     fileSystem: FileSystem,
+    onDemoSelected: () -> Unit = {},
     onGraphSelected: (String) -> Unit
 ) {
     var selectedPath by remember { mutableStateOf(fileSystem.getDefaultGraphPath()) }
@@ -157,14 +162,14 @@ private fun GraphSelectionStep(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Button(onClick = {
-                    // Use the demo graph path relative to the project root
-                    val demoPath = "deps/graph-parser/test/resources/exporter-test-graph"
-                    selectedPath = demoPath
-                    onGraphSelected(demoPath)
-                }) {
-                    Text("Load Demo Graph")
+                Button(onClick = { onDemoSelected() }) {
+                    Text("Try Demo Graph")
                 }
+                Text(
+                    "Explore sample notes — no files saved",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

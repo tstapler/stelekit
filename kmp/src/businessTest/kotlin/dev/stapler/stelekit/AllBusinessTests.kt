@@ -13,6 +13,9 @@ import dev.stapler.stelekit.llm.LlmSettingsTest
 import dev.stapler.stelekit.performance.HistogramRegressionTest
 import dev.stapler.stelekit.performance.HistogramWriterTest
 import dev.stapler.stelekit.performance.PerfExporterPickerTest
+import dev.stapler.stelekit.db.DemoFileSystemSyncTest
+import dev.stapler.stelekit.db.DemoGraphPersistenceTest
+import dev.stapler.stelekit.db.GraphInfoSerializationTest
 import dev.stapler.stelekit.db.SplitJournalTest
 import dev.stapler.stelekit.repository.BacklinkRepositoryTest
 import dev.stapler.stelekit.sections.CrossSectionBacklinkRenderTest
@@ -43,6 +46,9 @@ import org.junit.runners.Suite
     BacklinkRepositoryTest::class,
     CrossSectionBacklinkRenderTest::class,
     NewPageAutoAssignmentTest::class,
+    DemoFileSystemSyncTest::class,
+    DemoGraphPersistenceTest::class,
+    GraphInfoSerializationTest::class,
     SplitJournalTest::class,
     ToolbarActionTest::class,
     VoiceCaptureViewModelTest::class,

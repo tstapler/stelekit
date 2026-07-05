@@ -5,8 +5,9 @@ import dev.stapler.stelekit.model.GraphInfo
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class GraphInfoSerializationTest {
 
@@ -36,5 +37,49 @@ class GraphInfoSerializationTest {
         val encoded = json.encodeToString(GraphInfo.serializer(), original)
         val decoded = json.decodeFromString<GraphInfo>(encoded)
         assertEquals(original, decoded)
+    }
+
+    // T-8
+    @Test
+    fun `GraphInfo without isDemo field deserializes with isDemo=false default`() {
+        val oldJson = """{"id":"abc123","path":"/home/user/notes","displayName":"notes","addedAt":1234567890}"""
+        val info = json.decodeFromString<GraphInfo>(oldJson)
+        assertFalse(info.isDemo, "isDemo must default to false when the field is absent from JSON")
+    }
+
+    // T-9
+    @Test
+    fun `GraphInfo with isDemo=false omits field from JSON`() {
+        val graphInfo = GraphInfo(
+            id = GraphId("abc123"),
+            path = "/home/user/notes",
+            displayName = "notes",
+            addedAt = 1234567890L,
+            isDemo = false,
+        )
+        val encoded = json.encodeToString(GraphInfo.serializer(), graphInfo)
+        assertFalse(
+            encoded.contains("isDemo"),
+            "isDemo=false must be omitted from JSON (encodeDefaults is not set): $encoded",
+        )
+    }
+
+    // T-10
+    @Test
+    fun `GraphInfo with isDemo=true serializes and round-trips`() {
+        val original = GraphInfo(
+            id = GraphId("__demo__"),
+            path = "/demo",
+            displayName = "Demo Graph",
+            addedAt = 1000L,
+            isDemo = true,
+        )
+        val encoded = json.encodeToString(GraphInfo.serializer(), original)
+        assertTrue(
+            encoded.contains("\"isDemo\":true"),
+            "isDemo=true must appear in JSON output: $encoded",
+        )
+        val decoded = json.decodeFromString<GraphInfo>(encoded)
+        assertEquals(original, decoded, "Round-tripped GraphInfo with isDemo=true must equal original")
     }
 }

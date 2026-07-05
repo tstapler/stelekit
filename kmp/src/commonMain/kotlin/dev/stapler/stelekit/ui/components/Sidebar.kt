@@ -74,6 +74,9 @@ fun LeftSidebar(
     availableGraphs: List<GraphInfo> = emptyList(),
     activeGraphId: String? = null,
     pendingConflictFilePaths: Set<String> = emptySet(),
+    isDemoActive: Boolean = false,
+    demoBannerDismissed: Boolean = false,
+    onDismissDemoBanner: () -> Unit = {},
     onPageClick: (Page) -> Unit,
     onNavigate: (Screen) -> Unit,
     onToggleFavorite: (Page) -> Unit,
@@ -130,16 +133,27 @@ fun LeftSidebar(
             // Graph Switcher Section
             GraphSwitcher(
                 currentGraphName = currentGraphName,
-                availableGraphs = availableGraphs,
+                availableGraphs = availableGraphs.filter { !it.isDemo },
                 activeGraphId = activeGraphId,
                 onGraphSelected = onGraphSelected,
                 onAddGraph = onAddGraph,
                 onRemoveGraph = onRemoveGraph,
                 onCloneGraph = onCloneGraph,
                 gitSyncedGraphId = gitSyncedGraphId,
+                isDemoActive = isDemoActive,
             )
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            AnimatedVisibility(
+                visible = isDemoActive && !demoBannerDismissed,
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                DemoBanner(
+                    onDismiss = onDismissDemoBanner,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
 
             // Section context indicator — shown when a manifest with sections exists
             if (sectionManifest != null && sectionManifest.sections.isNotEmpty()) {
@@ -309,6 +323,7 @@ fun GraphSwitcher(
     onRemoveGraph: (String) -> Unit,
     onCloneGraph: () -> Unit = {},
     gitSyncedGraphId: String? = null,
+    isDemoActive: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -323,7 +338,9 @@ fun GraphSwitcher(
                 .fillMaxWidth()
                 .semantics {
                     role = Role.Button
-                    contentDescription = if (expanded)
+                    contentDescription = if (isDemoActive)
+                        "Graph: $currentGraphName (demo), tap to switch graph"
+                    else if (expanded)
                         "Graph: $currentGraphName, expanded"
                     else
                         "Graph: $currentGraphName, tap to switch graph"

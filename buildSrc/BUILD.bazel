@@ -1,0 +1,33 @@
+load("@rules_java//java:defs.bzl", "java_import", "java_library")
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
+
+# detekt-api is compileOnly in Gradle — must be neverlink in Bazel to avoid
+# pulling kotlin-compiler-embeddable onto the detekt_test plugin classpath.
+# neverlink = True means the JAR is on the compile classpath but NOT the runtime classpath.
+java_library(
+    name = "detekt_api_neverlink",
+    exports = ["@maven//:io_gitlab_arturbosch_detekt_detekt_api"],
+    neverlink = True,
+)
+
+kt_jvm_library(
+    name = "detekt_rules",
+    srcs = glob(["src/main/kotlin/dev/stapler/detekt/**/*.kt"]),
+    deps = [
+        # Use the neverlink wrapper — NOT @maven//:io_gitlab_arturbosch_detekt_detekt_api directly.
+        ":detekt_api_neverlink",
+    ],
+    # resources includes the META-INF/services file so Detekt can discover SteleKitRuleSetProvider.
+    resources = glob(["src/main/resources/**"]),
+    visibility = ["//kmp:__pkg__"],
+)
+
+# rules_detekt passes ctx.files.plugins directly to Detekt's --plugins flag.
+# kt_jvm_library's DefaultInfo.files includes both detekt_rules.jar AND detekt_rules.jdeps;
+# Detekt 1.23.8 rejects non-JAR files with IllegalArgumentException at startup.
+# This java_import wraps only the JAR so ctx.files only sees the JAR file.
+java_import(
+    name = "detekt_rules_jar",
+    jars = [":detekt_rules.jar"],
+    visibility = ["//kmp:__pkg__"],
+)

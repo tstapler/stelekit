@@ -16,6 +16,7 @@ import dev.stapler.stelekit.migration.InterruptedMigrationException
 import dev.stapler.stelekit.migration.MigrationRegistry
 import dev.stapler.stelekit.migration.MigrationRunner
 import dev.stapler.stelekit.migration.MigrationTamperedError
+import dev.stapler.stelekit.model.DEMO_GRAPH_ID
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.GraphInfo
 import dev.stapler.stelekit.model.GraphRegistry
@@ -34,6 +35,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CancellationException
@@ -107,15 +109,31 @@ class GraphManager(
         if (registryJson.isNotEmpty()) {
             try {
                 val registry = json.decodeFromString<GraphRegistry>(registryJson)
+                // Strip any stale demo entries that were persisted before the isDemo guard
+                val demoStripped = registry.graphs.filter { !it.isDemo && it.path != "/demo" }
+                val cleanedRegistry = if (demoStripped.size < registry.graphs.size) {
+                    val strippedCount = registry.graphs.size - demoStripped.size
+                    logger.info("loadRegistry: stripped $strippedCount demo entries")
+                    val strippedIds = registry.graphs.filter { it.isDemo || it.path == "/demo" }
+                                                  .map { it.id }.toSet()
+                val adjustedActiveId = if (registry.activeGraphId in strippedIds) null
+                                       else registry.activeGraphId
+                    if (demoStripped.isEmpty()) {
+                        platformSettings.putBoolean("onboardingCompleted", false)
+                    }
+                    registry.copy(graphs = demoStripped, activeGraphId = adjustedActiveId)
+                } else {
+                    registry
+                }
                 // Refresh display names in case paths were stored before displayNameForPath was fixed
-                val refreshed = registry.copy(
-                    graphs = registry.graphs.map { graph ->
+                val refreshed = cleanedRegistry.copy(
+                    graphs = cleanedRegistry.graphs.map { graph ->
                         val freshName = fileSystem.displayNameForPath(graph.path)
                         if (freshName != graph.displayName) graph.copy(displayName = freshName) else graph
                     }
                 )
                 _graphRegistry.value = refreshed
-                if (refreshed.graphs != registry.graphs) saveRegistry()
+                if (refreshed != registry) saveRegistry()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -220,8 +238,13 @@ class GraphManager(
     }
     
     private fun saveRegistry() {
-        val registryJson = json.encodeToString(_graphRegistry.value)
-        platformSettings.putString("graph_registry", registryJson)
+        val toSave = _graphRegistry.value.let { r ->
+            r.copy(
+                graphs = r.graphs.filter { !it.isDemo },
+                activeGraphId = if (r.activeGraphId == DEMO_GRAPH_ID) null else r.activeGraphId
+            )
+        }
+        platformSettings.putString("graph_registry", json.encodeToString(toSave))
     }
     
     fun graphIdFromPath(path: String): GraphId =
@@ -270,7 +293,29 @@ class GraphManager(
 
         return graphId
     }
-    
+
+    /**
+     * Registers the demo graph in-memory only. The entry is never written to the persistent
+     * registry (saveRegistry() strips isDemo entries). Idempotent — calling twice is safe.
+     */
+    fun addDemoGraph(): GraphId {
+        val demoId = DEMO_GRAPH_ID
+        val info = GraphInfo(
+            id = demoId,
+            path = "/demo",
+            displayName = "Demo Graph",
+            addedAt = Clock.System.now().toEpochMilliseconds(),
+            isDemo = true
+        )
+        _graphRegistry.update { registry ->
+            if (!registry.graphs.any { it.id == demoId })
+                registry.copy(graphs = registry.graphs + info)
+            else registry
+        }
+        logger.info("addDemoGraph: registered DEMO_GRAPH_ID in-memory")
+        return demoId
+    }
+
     /**
      * Clones a remote git repository to [localPath] and registers it as a new graph.
      * Returns the new graphId on success, or a [DomainError.GitError] on failure.
@@ -292,11 +337,14 @@ class GraphManager(
         activeGraphJobs.remove(id)?.cancel()
         
         val registry = _graphRegistry.value
-        if (!registry.graphIds.contains(id)) return false
-        
+        val graphIndex = registry.graphs.indexOfFirst { it.id == id }
+        if (graphIndex == -1) return false
+
         // Don't allow removing active graph
         if (registry.activeGraphId == id) return false
-        
+
+        if (registry.graphs[graphIndex].isDemo) return false
+
         val updated = registry.copy(
             graphs = registry.graphs.filter { it.id != id }
         )
@@ -319,7 +367,8 @@ class GraphManager(
         val registry = _graphRegistry.value
         val graphIndex = registry.graphs.indexOfFirst { it.id == id }
         if (graphIndex == -1) return false
-        
+        if (registry.graphs[graphIndex].isDemo) return false
+
         val updatedGraphs = registry.graphs.toMutableList()
         updatedGraphs[graphIndex] = updatedGraphs[graphIndex].copy(displayName = newName)
         
@@ -397,8 +446,14 @@ class GraphManager(
                 } catch (_: Exception) {
                     null
                 }
+                val backend = if (graphInfo.isDemo) {
+                    logger.info("switchGraph: demo mode — forcing IN_MEMORY backend")
+                    GraphBackend.IN_MEMORY
+                } else {
+                    defaultBackend
+                }
                 val repoSet = factory.createRepositorySet(
-                    backend = defaultBackend,
+                    backend = backend,
                     scope = graphScope,
                     fileSystem = fileSystem,
                     appVersion = deviceInfo?.appVersion ?: "unknown",
@@ -408,7 +463,7 @@ class GraphManager(
                 currentFactory = factory
                 _activeRepositorySet.value = repoSet
 
-                if (defaultBackend == GraphBackend.SQLDELIGHT) {
+                if (defaultBackend == GraphBackend.SQLDELIGHT && !graphInfo.isDemo) {
                     val writeActor = repoSet.writeActor
                     if (writeActor != null) {
                         val db = factory.steleDatabase()

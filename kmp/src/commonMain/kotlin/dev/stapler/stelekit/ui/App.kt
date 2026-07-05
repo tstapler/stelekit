@@ -44,6 +44,7 @@ import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.migration.registerAllMigrations
 import dev.stapler.stelekit.db.SidecarManager
+import dev.stapler.stelekit.platform.DemoFileSystem
 import dev.stapler.stelekit.export.ExportService
 import dev.stapler.stelekit.export.HtmlExporter
 import dev.stapler.stelekit.export.JsonExporter
@@ -473,6 +474,10 @@ private fun GraphContent(
     val activeGraphInfo = remember { graphManager.getActiveGraphInfo() }
     val activeGraphPath = activeGraphInfo?.path ?: ""
 
+    val effectiveFileSystem: FileSystem = remember(activeGraphInfo?.isDemo) {
+        if (activeGraphInfo?.isDemo == true) DemoFileSystem() else fileSystem
+    }
+
     // Paranoid mode: true when a .stele-vault file exists for this graph and a crypto engine is available.
     var isParanoidMode by remember {
         androidx.compose.runtime.mutableStateOf(
@@ -548,23 +553,23 @@ private fun GraphContent(
             }
         }
     }
-    val graphLoader = remember(fileSystem, repos, sidecarManager) {
-        repos.createGraphLoader(fileSystem, sidecarManager = sidecarManager)
+    val graphLoader = remember(effectiveFileSystem, repos, sidecarManager) {
+        repos.createGraphLoader(effectiveFileSystem, sidecarManager = sidecarManager)
     }
     // Wire write-behind flush callbacks so FileRegistry correctly tracks SAF write windows.
     // - onFlushPreWrite: sets Long.MAX_VALUE sentinel before write, closing the mtime race
     //   window where a concurrent detectChanges poll emits a spurious event for .md.stek files.
     // - onFlushComplete: replaces sentinel with post-flush mtime after successful write.
     // - onFlushFailed: removes sentinel when write fails so the file is not permanently suppressed.
-    remember(graphLoader) {
-        fileSystem.setOnFlushPreWrite(graphLoader::preMarkFileWrite)
-        fileSystem.setOnFlushComplete(graphLoader::markFileWrittenByUs)
-        fileSystem.setOnFlushFailed(graphLoader::clearFilePendingWrite)
+    remember(graphLoader, effectiveFileSystem) {
+        effectiveFileSystem.setOnFlushPreWrite(graphLoader::preMarkFileWrite)
+        effectiveFileSystem.setOnFlushComplete(graphLoader::markFileWrittenByUs)
+        effectiveFileSystem.setOnFlushFailed(graphLoader::clearFilePendingWrite)
     }
 
-    val graphWriter = remember(fileSystem, repos, graphLoader, sidecarManager) {
+    val graphWriter = remember(effectiveFileSystem, repos, graphLoader, sidecarManager) {
         GraphWriter(
-            fileSystem,
+            effectiveFileSystem,
             repos.writeActor,
             onFileWritten = graphLoader::markFileWrittenByUs,
             sidecarManager = sidecarManager,
@@ -1159,6 +1164,17 @@ private fun GraphContent(
                             viewModel.setOnboardingCompleted(true)
                             graphManager.switchGraph(graphId)
                         }
+                    },
+                    onDemoSelected = {
+                        scope.launch {
+                            try {
+                                val graphId = graphManager.addDemoGraph()
+                                graphManager.switchGraph(graphId)
+                                viewModel.setOnboardingCompleted(true)
+                            } catch (e: Exception) {
+                                viewModel.sendSnackbar("Could not load demo content. Starting with an empty graph.")
+                            }
+                        }
                     }
                 )
             } else {
@@ -1200,6 +1216,7 @@ private fun GraphContent(
                     val isMobile = windowSizeClass.isMobile
                     val snackbarHostState = remember { SnackbarHostState() }
                     var showAddGraphDialog by remember { mutableStateOf(false) }
+                    var demoBannerDismissed by remember { mutableStateOf(false) }
                     LaunchedEffect(Unit) {
                         viewModel.snackbarEvents.collect { msg ->
                             try {
@@ -1230,7 +1247,7 @@ private fun GraphContent(
                     CompositionLocalProvider(
                         LocalWindowSizeClass provides windowSizeClass,
                         LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) },
-                        LocalFileSystem provides fileSystem,
+                        LocalFileSystem provides effectiveFileSystem,
                     ) {
 
                     // Auto-manage sidebar based on layout: open on desktop, closed on mobile.
@@ -1307,6 +1324,9 @@ private fun GraphContent(
                                 availableGraphs = graphRegistry.graphs,
                                 activeGraphId = activeGraphId?.value,
                                 pendingConflictFilePaths = appState.pendingConflictFilePaths,
+                                isDemoActive = activeGraphInfo?.isDemo == true,
+                                demoBannerDismissed = demoBannerDismissed,
+                                onDismissDemoBanner = { demoBannerDismissed = true },
                                 onPageClick = { page ->
                                     viewModel.navigateTo(Screen.PageView(page))
                                     closeSidebarIfMobile()

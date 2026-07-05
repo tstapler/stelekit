@@ -24,3 +24,11 @@ filegroup(
     srcs = glob(["**/*.kt"]),
     visibility = ["//kmp:__subpackages__"],
 )
+
+# Exposes the generated DemoFileSystem.kt source as a Bazel target so tests can
+# bundle it as a classpath resource and verify sync without a filesystem walk.
+filegroup(
+    name = "demo_filesystem_source",
+    srcs = ["dev/stapler/stelekit/platform/DemoFileSystem.kt"],
+    visibility = ["//kmp:__subpackages__"],
+)

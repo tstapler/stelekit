@@ -8,6 +8,9 @@ import kotlinx.serialization.Serializable
 @JvmInline
 value class GraphId(val value: String)
 
+/** Fixed GraphId for the demo graph — not a sha256 path hash; stable and collision-proof. */
+val DEMO_GRAPH_ID = GraphId("__demo__")
+
 /**
  * Information about a single graph (knowledge base).
  */
@@ -21,6 +24,7 @@ data class GraphInfo(
     val detectedRepoRoot: String? = null,
     val detectedWikiSubdir: String? = null,
     val gitDetectionDismissed: Boolean = false,
+    val isDemo: Boolean = false,
 )
 
 /**
