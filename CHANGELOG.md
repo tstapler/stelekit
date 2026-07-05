@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.61.0](https://github.com/tstapler/stelekit/compare/v0.60.0...v0.61.0) (2026-07-05)
+
+
+### Features
+
+* **demo:** add demo graph isolation — in-memory sandbox with no disk writes ([b3c2fa1](https://github.com/tstapler/stelekit/commit/b3c2fa12c1af492fe63412645cbd613e027c61c0))
+
+
+### Bug Fixes
+
+* **ui:** resolve four UX bugs in DiskConflictDialog ([#203](https://github.com/tstapler/stelekit/issues/203)) ([7d72fd0](https://github.com/tstapler/stelekit/commit/7d72fd0282cd5d9ecf910843a1fa4b1be3c70cf7))
+
 ## [0.60.0](https://github.com/tstapler/stelekit/compare/v0.59.1...v0.60.0) (2026-07-05)
 
 
