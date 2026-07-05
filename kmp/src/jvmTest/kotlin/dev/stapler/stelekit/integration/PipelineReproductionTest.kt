@@ -78,7 +78,7 @@ class PipelineReproductionTest {
         println("Rediscovering UUID: ${rediscovering.uuid}, Parent UUID: ${rediscovering.parentUuid}")
         
         // Verify parentage in DB
-        assertEquals(root.uuid.value, rediscovering.parentUuid, "Rediscovering Paper should be child of Root in DB")
+        assertEquals(root.uuid, rediscovering.parentUuid, "Rediscovering Paper should be child of Root in DB")
         
         // Verify Sorting
         val sorted = BlockSorter.sort(blocks)
@@ -118,15 +118,15 @@ class PipelineReproductionTest {
         val movableIndex = sorted.indexOf(movable)
         
         assert(bathingIndex > rediscoveringIndex)
-        assertEquals(rediscovering.uuid.value, bathing.parentUuid, "Bathing should be child of Rediscovering")
+        assertEquals(rediscovering.uuid, bathing.parentUuid, "Bathing should be child of Rediscovering")
         assertEquals(2, bathing.level, "Bathing should be level 2")
         
         assert(ironGallIndex > bathingIndex)
-        assertEquals(rediscovering.uuid.value, ironGall.parentUuid, "Iron Gall should be child of Rediscovering")
+        assertEquals(rediscovering.uuid, ironGall.parentUuid, "Iron Gall should be child of Rediscovering")
         assertEquals(2, ironGall.level, "Iron Gall should be level 2")
         
         assert(movableIndex > ironGallIndex)
-        assertEquals(rediscovering.uuid.value, movable.parentUuid, "Movable should be child of Rediscovering")
+        assertEquals(rediscovering.uuid, movable.parentUuid, "Movable should be child of Rediscovering")
         assertEquals(2, movable.level, "Movable should be level 2")
     }
 }

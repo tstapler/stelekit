@@ -99,7 +99,7 @@ class JournalParseReproTest {
                     Block(
                         uuid = BlockUuid(blockUuid),
                         pageUuid = PageUuid(fakePageUuid),
-                        parentUuid = parentUuid,
+                        parentUuid = parentUuid?.let { BlockUuid(it) },
                         leftUuid = null,
                         content = parsedBlock.content,
                         level = baseLevel,

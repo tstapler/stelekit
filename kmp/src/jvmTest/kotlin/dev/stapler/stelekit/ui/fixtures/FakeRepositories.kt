@@ -178,13 +178,13 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
 
     override fun getBlockChildren(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> =
         _blocks.map { blocks ->
-            blocks.values.filter { it.parentUuid == blockUuid.value }.sortedBy { it.position }.right()
+            blocks.values.filter { it.parentUuid == blockUuid }.sortedBy { it.position }.right()
         }
 
     override fun getBlockSiblings(blockUuid: BlockUuid): Flow<Either<DomainError, List<Block>>> =
         _blocks.map { blocks ->
             val block = blocks[blockUuid.value] ?: return@map emptyList<Block>().right()
-            blocks.values.filter { it.parentUuid == block.parentUuid && it.uuid.value != blockUuid.value }.sortedBy { it.position }.right()
+            blocks.values.filter { it.parentUuid == block.parentUuid && it.uuid != blockUuid }.sortedBy { it.position }.right()
         }
 
     override suspend fun saveBlock(block: Block): Either<DomainError, Unit> {
@@ -217,7 +217,7 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         if (deleteChildren) {
             val toDelete = mutableSetOf(blockUuid.value)
             fun collectChildren(uuid: String) {
-                current.values.filter { it.parentUuid == uuid }.forEach {
+                current.values.filter { it.parentUuid?.value == uuid }.forEach {
                     toDelete.add(it.uuid.value)
                     collectChildren(it.uuid.value)
                 }
@@ -225,7 +225,7 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
             collectChildren(blockUuid.value)
             _blocks.value = current - toDelete
         } else {
-            val children = current.values.filter { it.parentUuid == blockUuid.value }
+            val children = current.values.filter { it.parentUuid == blockUuid }
             for (child in children) {
                 val levelDelta = 0 - child.level
                 val updatedChild = child.copy(parentUuid = null, level = 0)
@@ -262,7 +262,7 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         val newLevel = if (newParentUuid == null) 0 else (current[newParentUuid.value]?.level ?: -1) + 1
         val levelDelta = newLevel - block.level
 
-        current[blockUuid.value] = block.copy(parentUuid = newParentUuid?.value, position = newPosition, level = newLevel)
+        current[blockUuid.value] = block.copy(parentUuid = newParentUuid, position = newPosition, level = newLevel)
 
         if (levelDelta != 0) {
             val updates = mutableMapOf<String, Block>()
@@ -286,11 +286,11 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         if (blockIndex <= 0) return Unit.right()
 
         val prevSibling = siblings[blockIndex - 1]
-        val prevSiblingChildren = current.values.filter { it.parentUuid == prevSibling.uuid.value }
+        val prevSiblingChildren = current.values.filter { it.parentUuid == prevSibling.uuid }
         val lastChildPosition = prevSiblingChildren.maxByOrNull { it.position }?.position
         val newPosition = FractionalIndexing.generateKeyBetween(lastChildPosition, null)
 
-        current[block.uuid.value] = block.copy(parentUuid = prevSibling.uuid.value, level = block.level + 1, position = newPosition)
+        current[block.uuid.value] = block.copy(parentUuid = prevSibling.uuid, level = block.level + 1, position = newPosition)
 
         val updates = mutableMapOf<String, Block>()
         adjustDescendantLevels(block.uuid.value, +1, current, updates)
@@ -305,14 +305,14 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         val block = current[blockUuid.value] ?: return Unit.right()
         val parentUuid = block.parentUuid ?: return Unit.right()
 
-        val parent = current[parentUuid] ?: return Unit.right()
+        val parent = current[parentUuid.value] ?: return Unit.right()
         val grandParentUuid = parent.parentUuid
 
         val grandparentChildren = current.values
             .filter { it.pageUuid == block.pageUuid && it.parentUuid == grandParentUuid }
             .sortedBy { it.position }
 
-        val parentInGrandchildren = grandparentChildren.find { it.uuid.value == parentUuid }
+        val parentInGrandchildren = grandparentChildren.find { it.uuid == parentUuid }
         val parentPosition = parentInGrandchildren?.position
         val nextSiblingPosition = grandparentChildren
             .filter { parentPosition == null || it.position > parentPosition }
@@ -369,14 +369,14 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
 
         current[blockUuid.value] = blockA.copy(content = blockA.content + separator + blockB.content)
 
-        val childrenOfB = current.values.filter { it.parentUuid == blockB.uuid.value }.sortedBy { it.position }
-        val lastChildOfA = current.values.filter { it.parentUuid == blockA.uuid.value }.maxByOrNull { it.position }
+        val childrenOfB = current.values.filter { it.parentUuid == blockB.uuid }.sortedBy { it.position }
+        val lastChildOfA = current.values.filter { it.parentUuid == blockA.uuid }.maxByOrNull { it.position }
         var lastPos: String? = lastChildOfA?.position
         val levelDelta = blockA.level + 1 - blockB.level
 
         for (child in childrenOfB) {
             val newPos = FractionalIndexing.generateKeyBetween(lastPos, null)
-            val updated = child.copy(parentUuid = blockA.uuid.value, position = newPos, level = child.level + levelDelta)
+            val updated = child.copy(parentUuid = blockA.uuid, position = newPos, level = child.level + levelDelta)
             lastPos = newPos
             current[child.uuid.value] = updated
             val updates = mutableMapOf<String, Block>()
@@ -433,7 +433,7 @@ open class FakeBlockRepository(blocksByPage: Map<String, List<Block>> = emptyMap
         visited.add(parentUuid)
 
         val currentBlocks = snapshot + updates
-        val children = currentBlocks.values.filter { it.parentUuid == parentUuid }
+        val children = currentBlocks.values.filter { it.parentUuid?.value == parentUuid }
 
         for (child in children) {
             val newLevel = child.level + delta

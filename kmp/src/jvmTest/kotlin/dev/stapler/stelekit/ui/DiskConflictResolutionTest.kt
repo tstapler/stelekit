@@ -99,7 +99,7 @@ class DiskConflictResolutionTest {
         // Navigate to the test page so currentScreen is PageView
         vm.navigateTo(Screen.PageView(testPage))
         // Simulate editing state
-        vm.requestEditBlock(testBlockUuid)
+        vm.requestEditBlock(BlockUuid(testBlockUuid))
 
         // keepLocalChanges is a no-op when no conflict is set
         vm.keepLocalChanges()
@@ -113,7 +113,7 @@ class DiskConflictResolutionTest {
         val vm = makeViewModel(blockRepo = blockRepo)
 
         vm.navigateTo(Screen.PageView(testPage))
-        vm.requestEditBlock(testBlockUuid)
+        vm.requestEditBlock(BlockUuid(testBlockUuid))
 
         // Verify the block has original content
         val blockBefore = blockRepo.getBlockByUuid(BlockUuid(testBlockUuid)).first().getOrNull()
@@ -147,8 +147,8 @@ class DiskConflictResolutionTest {
         assertNull(vm.uiState.value.editingBlockId)
 
         // Request editing
-        vm.requestEditBlock(testBlockUuid, 5)
-        assertEquals(testBlockUuid, vm.uiState.value.editingBlockId)
+        vm.requestEditBlock(BlockUuid(testBlockUuid), 5)
+        assertEquals(BlockUuid(testBlockUuid), vm.uiState.value.editingBlockId)
         assertEquals(5, vm.uiState.value.editingCursorIndex)
 
         // Clear editing
@@ -163,7 +163,7 @@ class DiskConflictResolutionTest {
         val vm = makeViewModel(blockRepo = blockRepo)
 
         vm.navigateTo(Screen.PageView(testPage))
-        vm.requestEditBlock(testBlockUuid)
+        vm.requestEditBlock(BlockUuid(testBlockUuid))
 
         // Verify block is accessible in the repository
         val block = blockRepo.getBlockByUuid(BlockUuid(testBlockUuid)).first().getOrNull()

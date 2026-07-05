@@ -64,13 +64,13 @@ class JournalsViewScreenshotTest {
         )
         val childBlock = Block(
             uuid = BlockUuid(childBlockUuid),
-            pageUuid = PageUuid(pageUuid), parentUuid = parentBlockUuid, leftUuid = parentBlockUuid,
+            pageUuid = PageUuid(pageUuid), parentUuid = BlockUuid(parentBlockUuid), leftUuid = BlockUuid(parentBlockUuid),
             content = "Child block with #tag and ~~strikethrough~~ and `code`",
             level = 1, position = "a0", createdAt = now, updatedAt = now
         )
         val grandchildBlock = Block(
             uuid = BlockUuid(grandchildBlockUuid),
-            pageUuid = PageUuid(pageUuid), parentUuid = childBlockUuid, leftUuid = childBlockUuid,
+            pageUuid = PageUuid(pageUuid), parentUuid = BlockUuid(childBlockUuid), leftUuid = BlockUuid(childBlockUuid),
             content = "Grandchild with unresolved ref ((00000000-0000-0000-0000-000000000099))",
             level = 2, position = "a0", createdAt = now, updatedAt = now
         )

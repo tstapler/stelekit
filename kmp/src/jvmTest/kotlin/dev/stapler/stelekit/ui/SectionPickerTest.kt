@@ -4,6 +4,7 @@ import arrow.core.Either
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.sections.getSectionStates
 import dev.stapler.stelekit.sections.putSectionStates
@@ -50,10 +51,10 @@ class SectionPickerTest {
                 filePath = "/graph/pages/Meeting Notes.md",
                 createdAt = now,
                 updatedAt = now,
-                sectionId = "",
+                sectionId = SectionId.Global,
             )
 
-            val result = writer.movePageToSection(page, "acme-work", "pages/acme-work")
+            val result = writer.movePageToSection(page, SectionId.Named("acme-work"), "pages/acme-work")
 
             assertTrue(result.isRight(), "movePageToSection must succeed; got: $result")
             assertEquals(1, renames.size, "Exactly one rename should be performed")
@@ -62,7 +63,7 @@ class SectionPickerTest {
             assertEquals("/graph/pages/acme-work/Meeting Notes.md", to,
                 "Destination must be under new section's pagePathPrefix")
             val updated = (result as Either.Right).value
-            assertEquals("acme-work", updated.sectionId)
+            assertEquals("acme-work", updated.sectionId.toDbString())
             assertEquals("/graph/pages/acme-work/Meeting Notes.md", updated.filePath)
         }
 
@@ -84,14 +85,14 @@ class SectionPickerTest {
                 filePath = null,
                 createdAt = now,
                 updatedAt = now,
-                sectionId = "",
+                sectionId = SectionId.Global,
             )
 
-            val result = writer.movePageToSection(page, "personal", "pages/personal")
+            val result = writer.movePageToSection(page, SectionId.Named("personal"), "pages/personal")
 
             assertTrue(result.isRight())
             assertEquals(0, renames.size, "No rename when source filePath is null")
-            assertEquals("personal", (result as Either.Right).value.sectionId)
+            assertEquals("personal", (result as Either.Right).value.sectionId.toDbString())
         }
 
     @Test
@@ -111,17 +112,17 @@ class SectionPickerTest {
             filePath = "/graph/pages/acme-work/Note.md",
             createdAt = now,
             updatedAt = now,
-            sectionId = "acme-work",
+            sectionId = SectionId.Named("acme-work"),
         )
 
-        val result = writer.movePageToSection(page, "", "pages")
+        val result = writer.movePageToSection(page, SectionId.Global, "pages")
 
         assertTrue(result.isRight())
         assertEquals(1, renames.size)
         val (_, to) = renames.first()
         assertEquals("/graph/pages/Note.md", to,
             "Moving to global must put file directly in pages/ root")
-        assertEquals("", (result as Either.Right).value.sectionId)
+        assertEquals("", (result as Either.Right).value.sectionId.toDbString())
     }
 
     // ─── 2. Subscription toggle persistence ──────────────────────────────────

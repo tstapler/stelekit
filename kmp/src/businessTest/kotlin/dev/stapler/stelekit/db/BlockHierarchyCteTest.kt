@@ -41,7 +41,7 @@ class BlockHierarchyCteTest {
     private fun block(uuid: String, pageUuid: String, parentUuid: String? = null, position: String = "a0") = Block(
         uuid = BlockUuid(uuid),
         pageUuid = PageUuid(pageUuid),
-        parentUuid = parentUuid,
+        parentUuid = parentUuid?.let { BlockUuid(it) },
         content = "content-$uuid",
         position = position,
         createdAt = now(),

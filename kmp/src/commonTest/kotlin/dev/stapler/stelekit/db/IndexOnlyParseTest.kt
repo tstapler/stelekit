@@ -136,7 +136,7 @@ class IndexOnlyParseTest {
         loader.loadDirectory(sectionPagesDir, {}, ParseMode.INDEX_ONLY)
 
         val page = pageRepo.getAllPagesSnapshot().getOrNull().orEmpty().firstOrNull()
-        assertEquals("acme-work", page?.sectionId, "sectionId must come from SectionFilter path match")
+        assertEquals("acme-work", page?.sectionId?.toDbString(), "sectionId must come from SectionFilter path match")
         assertEquals("Work Note", page?.name)
         assertFalse(page?.isContentLoaded ?: true, "stub must have isContentLoaded = false")
     }
@@ -152,7 +152,7 @@ class IndexOnlyParseTest {
         loader.loadDirectory(pagesDir, {}, ParseMode.INDEX_ONLY)
 
         val page = pageRepo.getAllPagesSnapshot().getOrNull().orEmpty().firstOrNull()
-        assertEquals("", page?.sectionId, "sectionId must be empty string when no SectionFilter")
+        assertEquals("", page?.sectionId?.toDbString(), "sectionId must be empty string when no SectionFilter")
     }
 
     @Test

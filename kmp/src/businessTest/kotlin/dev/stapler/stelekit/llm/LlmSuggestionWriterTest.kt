@@ -10,6 +10,7 @@ import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
+import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.repository.PageRepository
@@ -49,7 +50,7 @@ class LlmSuggestionWriterTest {
         override suspend fun deletePage(page: Page) = true
         override suspend fun movePageToSection(
             page: Page,
-            newSectionId: String,
+            newSectionId: SectionId,
             newPathPrefix: String,
         ): Either<DomainError, Page> = page.copy(sectionId = newSectionId).right()
     }
@@ -178,7 +179,7 @@ class LlmSuggestionWriterTest {
         val child = savedBlocks?.first { it.content == "child block" }
         val secondRoot = savedBlocks?.first { it.content == "second root" }
         assertNull(root?.parentUuid)
-        assertEquals(root?.uuid?.value, child?.parentUuid)
+        assertEquals(root?.uuid, child?.parentUuid)
         assertNull(secondRoot?.parentUuid)
         assertEquals(0, root?.level)
         assertEquals(1, child?.level)

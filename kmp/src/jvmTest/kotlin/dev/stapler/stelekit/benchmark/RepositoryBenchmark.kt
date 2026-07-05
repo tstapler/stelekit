@@ -73,7 +73,7 @@ class RepositoryBenchmark(
                     dev.stapler.stelekit.model.Block(
                         uuid = BlockUuid("test-block-$i"),
                         pageUuid = PageUuid("test-page-1"),
-                        parentUuid = if (i > 1) "test-block-${i - 1}" else null,
+                        parentUuid = if (i > 1) BlockUuid("test-block-${i - 1}") else null,
                         leftUuid = null,
                         content = "Test block content $i",
                         level = if (i > 1) 1 else 0,

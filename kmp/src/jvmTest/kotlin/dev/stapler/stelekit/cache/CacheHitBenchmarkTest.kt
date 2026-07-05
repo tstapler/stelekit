@@ -38,7 +38,7 @@ class CacheHitBenchmarkTest : BlockHoundTestBase() {
 
     private fun block(uuid: String, pageUuid: String, parentUuid: String? = null) = Block(
         uuid = BlockUuid(uuid), pageUuid = PageUuid(pageUuid), content = "c-$uuid",
-        position = "a0", parentUuid = parentUuid,
+        position = "a0", parentUuid = parentUuid?.let { BlockUuid(it) },
         createdAt = now(), updatedAt = now()
     )
 
