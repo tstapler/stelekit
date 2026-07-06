@@ -66,18 +66,47 @@ class Stelekit < Formula
       system "update-desktop-database", share/"applications" rescue nil
       system "gtk-update-icon-cache", "-f", "-t", share/"icons/hicolor" rescue nil
 
-      # Copy desktop entry and icon to the user's local share so app launchers
-      # that don't check HOMEBREW_PREFIX (i.e. XDG_DATA_DIRS not set) find them.
       home = Pathname.new(ENV.fetch("HOME", ""))
-      user_apps = home/".local/share/applications"
-      user_apps.mkpath
-      cp share/"applications/stelekit.desktop", user_apps/"stelekit.desktop"
-      system "update-desktop-database", user_apps rescue nil
-
       user_icons = home/".local/share/icons/hicolor/256x256/apps"
       user_icons.mkpath
       cp share/"icons/hicolor/256x256/apps/stelekit.png", user_icons/"stelekit.png"
+
+      # Only wire up the launcher shortcut if it actually launches. A known
+      # jpackage bug (classpath built from ~130 individual jar entries
+      # overflows the native launcher's arg buffer) corrupts the launcher's
+      # argv/env memory before the JVM even starts. Being memory corruption,
+      # it's heap-layout dependent and shows up two ways: a hard SIGSEGV
+      # (exit 139), or a garbled internal re-exec that fails with ENOENT
+      # (exit 127). Silently registering a shortcut that crashes every time
+      # is worse than not registering one at all.
+      if launcher_broken?
+        opoo <<~EOS
+          SteleKit's launcher crashed during a startup self-test. Skipping
+          app-launcher registration so it doesn't replace a working shortcut
+          with a broken one. Run `#{bin}/stelekit` in a terminal to see the
+          crash yourself, then `brew reinstall stelekit` once a fixed release
+          is out, or open an issue: https://github.com/tstapler/stelekit/issues
+        EOS
+      else
+        # Copy desktop entry to the user's local share so app launchers that
+        # don't check HOMEBREW_PREFIX (i.e. XDG_DATA_DIRS not set) find it.
+        user_apps = home/".local/share/applications"
+        user_apps.mkpath
+        cp share/"applications/stelekit.desktop", user_apps/"stelekit.desktop"
+        system "update-desktop-database", user_apps rescue nil
+      end
     end
+  end
+
+  # Best-effort startup self-test — never raises, defaults to "assume fine"
+  # (false) on any error so a broken self-test can't block installation.
+  # 127 and 139 are the two observed symptoms of the classpath-overflow bug
+  # (see comment above); other exit codes are left alone rather than guessed at.
+  def launcher_broken?
+    ::Kernel.system("timeout", "6", bin/"stelekit", out: File::NULL, err: File::NULL, in: File::NULL)
+    [127, 139].include?($?&.exitstatus)
+  rescue StandardError
+    false
   end
 
   def caveats
