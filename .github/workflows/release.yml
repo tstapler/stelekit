@@ -221,6 +221,10 @@ jobs:
       - name: Install RPM toolchain
         run: sudo apt-get install -y rpm
 
+      # KNOWN GAP: the .deb/.rpm builds below invoke jpackage independently of
+      # the AppImage build and hit the same classpath-buffer-overflow bug
+      # patched (only in the AppImage's staged .cfg) further down in this job.
+      # Not fixed here — see tracking issue TBD.
       - name: Build DEB, RPM, and distributable
         run: |
           APP_VERSION="${{ needs.resolve-version.outputs.version }}"
