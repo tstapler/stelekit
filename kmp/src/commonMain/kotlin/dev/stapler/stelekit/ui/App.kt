@@ -110,6 +110,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.QueryStat
 import dev.stapler.stelekit.performance.SerializedSpan
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -1153,7 +1154,7 @@ private fun GraphContent(
                 Onboarding(
                     fileSystem = fileSystem,
                     onComplete = { viewModel.setOnboardingCompleted(true) },
-                    onGraphSelected = { path ->
+                    onGraphSelect = { path ->
                         scope.launch {
                             val graphId = graphManager.addGraph(path)
                             // Persist BEFORE switchGraph — switchGraph updates activeGraphId which
@@ -1165,12 +1166,14 @@ private fun GraphContent(
                             graphManager.switchGraph(graphId)
                         }
                     },
-                    onDemoSelected = {
+                    onDemoSelect = {
                         scope.launch {
                             try {
                                 val graphId = graphManager.addDemoGraph()
                                 graphManager.switchGraph(graphId)
                                 viewModel.setOnboardingCompleted(true)
+                            } catch (e: CancellationException) {
+                                throw e
                             } catch (e: Exception) {
                                 viewModel.sendSnackbar("Could not load demo content. Starting with an empty graph.")
                             }
