@@ -15,6 +15,7 @@ import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.PlatformSettings
 import dev.stapler.stelekit.sync.WasmSectionSyncService
 import dev.stapler.stelekit.repository.GraphBackend
+import dev.stapler.stelekit.model.DEMO_GRAPH_ID
 import dev.stapler.stelekit.service.WasmMediaAttachmentService
 import dev.stapler.stelekit.ui.StelekitApp
 import kotlinx.browser.localStorage
@@ -39,24 +40,10 @@ fun main() {
         val opfsGraphPath = "/stelekit/$graphId"
 
         val opfsFileSystem = PlatformFileSystem()
-        opfsFileSystem.preload(opfsGraphPath)
 
-        // On first visit the OPFS graph is empty — seed it with demo content so new users
-        // see example pages rather than a blank graph. Skipped on subsequent loads once
-        // preload() finds existing files (directoryExists returns true).
-        if (!opfsFileSystem.directoryExists(opfsGraphPath)) {
-            val demo = DemoFileSystem()
-            for (subdir in listOf("pages", "journals")) {
-                for (file in demo.listFiles("/demo/$subdir")) {
-                    val content = demo.readFile("/demo/$subdir/$file") ?: continue
-                    opfsFileSystem.writeFile("$opfsGraphPath/$subdir/$file", content)
-                }
-            }
-            println("[SteleKit] Seeded demo content into $opfsGraphPath")
-        }
-
-        // Wire GitHub config for section sync and lazy content fetching.
-        // Keys stored in localStorage by the web host (e.g. embed script).
+        // Wire GitHub config before preload() so the lazy GitHub-fetch fallback in
+        // PlatformFileSystem.readFileSuspend() has credentials available for returning
+        // users whose OPFS cache may already contain stale entries.
         val ghSettings = PlatformSettings()
         val ghOwner = ghSettings.getString("githubOwner", "")
         val ghRepo = ghSettings.getString("githubRepo", "")
@@ -71,6 +58,10 @@ fun main() {
         WasmSectionSyncService.githubBranch = ghBranch
         WasmSectionSyncService.githubToken = ghToken
         WasmSectionSyncService.graphId = graphId
+
+        // preload() must run after GitHub config is wired; directoryExists() requires preload().
+        opfsFileSystem.preload(opfsGraphPath)
+        val isNewUser = !opfsFileSystem.directoryExists(opfsGraphPath)
 
         val driverFactory = DriverFactory()
         var useDemoFallback = false
@@ -98,18 +89,20 @@ fun main() {
         if (useDemoFallback) {
             fileSystem = DemoFileSystem()
             graphPath = fileSystem.getDefaultGraphPath()
-            // Seed settings so the viewmodel initializes to the demo path on first read,
-            // and clear the persisted graph registry so the GraphManager starts fresh.
+            // Clear persisted registry so GraphManager starts fresh in memory-only mode.
             val settings = PlatformSettings()
-            settings.putString("lastGraphPath", graphPath)
             settings.putBoolean("onboardingCompleted", true)
             localStorage.removeItem("graph_registry")
             localStorage.removeItem("cached_graph_path")
         } else {
             fileSystem = opfsFileSystem
             graphPath = opfsGraphPath
-            // Ensure OPFS path overwrites any stale demo fallback stored from a previous session.
-            PlatformSettings().putString("lastGraphPath", graphPath)
+            // lastGraphPath feeds the single-graph → multi-graph migration in loadRegistry().
+            // Only write it for returning users; new users start fresh and have no old registry
+            // to migrate, so leaving lastGraphPath unset is correct.
+            if (!isNewUser) {
+                PlatformSettings().putString("lastGraphPath", graphPath)
+            }
         }
 
         val graphManager = GraphManager(
@@ -118,6 +111,13 @@ fun main() {
             fileSystem = fileSystem,
             defaultBackend = backend,
         )
+
+        // Always register the demo graph in the switcher.
+        // New users and fallback mode start on it so the app isn't blank on first load.
+        graphManager.addDemoGraph()
+        if (isNewUser || useDemoFallback) {
+            graphManager.switchGraph(DEMO_GRAPH_ID)
+        }
 
         markSteleKitReady()
         markGraphDialogCapable(dev.stapler.stelekit.platform.showDirectoryPickerSupported())
