@@ -251,6 +251,48 @@ class KeyboardShortcutTest {
         assertEquals("TODO # Buy milk", toggled.text, "HEADING marker must be preserved by applyTodoToggle")
     }
 
+    @Test
+    fun `applyFormatAction should preserveTodoMarker when QUOTE applied to TODO-prefixed block`() {
+        var textState by mutableStateOf(TextFieldValue("TODO Buy milk"))
+        var lastContent: String? = null
+
+        applyFormatAction(
+            FormatAction.QUOTE,
+            textState,
+            onTextFieldValueChange = { textState = it },
+            onLocalVersionIncrement = { 1L },
+            onContentChange = { content, _ -> lastContent = content },
+        )
+
+        assertEquals("TODO > Buy milk", textState.text, "TODO marker must be preserved, not stripped by the QUOTE strip-group")
+        assertEquals("TODO > Buy milk", lastContent)
+
+        // Conversely: applyTodoToggle on a QUOTE-prefixed block preserves the quote marker.
+        val toggled = applyTodoToggle(TextFieldValue("> Buy milk"))
+        assertEquals("TODO > Buy milk", toggled.text, "QUOTE marker must be preserved by applyTodoToggle")
+    }
+
+    @Test
+    fun `applyFormatAction should preserveTodoMarker when NUMBERED_LIST applied to TODO-prefixed block`() {
+        var textState by mutableStateOf(TextFieldValue("TODO Buy milk"))
+        var lastContent: String? = null
+
+        applyFormatAction(
+            FormatAction.NUMBERED_LIST,
+            textState,
+            onTextFieldValueChange = { textState = it },
+            onLocalVersionIncrement = { 1L },
+            onContentChange = { content, _ -> lastContent = content },
+        )
+
+        assertEquals("TODO 1. Buy milk", textState.text, "TODO marker must be preserved, not stripped by the NUMBERED_LIST strip-group")
+        assertEquals("TODO 1. Buy milk", lastContent)
+
+        // Conversely: applyTodoToggle on a NUMBERED_LIST-prefixed block preserves the list marker.
+        val toggled = applyTodoToggle(TextFieldValue("1. Buy milk"))
+        assertEquals("TODO 1. Buy milk", toggled.text, "NUMBERED_LIST marker must be preserved by applyTodoToggle")
+    }
+
     // ------------------------------------------------------------------------------------
     // Phase C.2: FormatAction.CODE_BLOCK / FormatAction.TABLE_INSERT (GAP-006 / GAP-007)
     // ------------------------------------------------------------------------------------
@@ -268,6 +310,25 @@ class KeyboardShortcutTest {
         )
 
         assertEquals("```\nprint(x)\n```", textState.text)
+    }
+
+    @Test
+    fun `applyFormatAction CODE_BLOCK unwraps already-fenced content back to plain text`() {
+        // Regression guard: re-pressing the CODE_BLOCK toggle on already-fenced content
+        // (e.g. a mobile double-tap on the "Code block" toolbar button, which calls
+        // onFormat(FormatAction.CODE_BLOCK) unconditionally with no toggle-state guard)
+        // must strip the fence back off rather than double-wrapping it.
+        var textState by mutableStateOf(TextFieldValue("```\nprint(x)\n```"))
+
+        applyFormatAction(
+            FormatAction.CODE_BLOCK,
+            textState,
+            onTextFieldValueChange = { textState = it },
+            onLocalVersionIncrement = { 1L },
+            onContentChange = { _, _ -> },
+        )
+
+        assertEquals("print(x)", textState.text)
     }
 
     @Test
