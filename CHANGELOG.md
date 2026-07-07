@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.63.0](https://github.com/tstapler/stelekit/compare/v0.62.0...v0.63.0) (2026-07-07)
+
+
+### Features
+
+* **editor:** rich editing experience overhaul ([#208](https://github.com/tstapler/stelekit/issues/208)) ([afc94fd](https://github.com/tstapler/stelekit/commit/afc94fd3276bef7a9f9e3cd8c683b3c06c9e5a91))
+
+
+### Bug Fixes
+
+* **build:** wire generateDemoFileSystem to the real Android compile tasks ([#211](https://github.com/tstapler/stelekit/issues/211)) ([08afa7f](https://github.com/tstapler/stelekit/commit/08afa7f4cd36ef27461602b07293fc617049ab66))
+
 ## [0.62.0](https://github.com/tstapler/stelekit/compare/v0.61.0...v0.62.0) (2026-07-07)
 
 
