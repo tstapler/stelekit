@@ -8,9 +8,11 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,6 +73,10 @@ fun BlockList(
     onResolveContent: suspend (String) -> String? = { null },
     onSearchPages: (String) -> Flow<List<SearchResultItem>> = { emptyFlow() },
     formatEvents: SharedFlow<FormatAction>? = null,
+    /** GAP-005 (Story D.2.1): dispatches todo-toggle requests from the mobile toolbar's new
+     * overflow-row "☑ TODO" button to whichever block is currently being edited — mirrors
+     * [formatEvents]'s decoupling shape exactly. */
+    todoToggleEvents: SharedFlow<Unit>? = null,
     selectedBlockUuids: Set<String> = emptySet(),
     isInSelectionMode: Boolean = false,
     onToggleSelect: (String) -> Unit = {},
@@ -95,6 +101,15 @@ fun BlockList(
     onUnavailableLinkTap: () -> Unit = {},
     /** UUIDs of blocks that are pending a CUT-paste; rendered at reduced alpha. */
     cutBlockUuids: Set<String> = emptySet(),
+    /**
+     * GAP-010 (Story D.3.1): called with `true` while a drag-to-reorder gesture is active and
+     * `false` once it ends. [blockBounds] below is cached relative to this composable's own
+     * internal `Column` and is never re-derived from an ancestor scroll offset — callers (e.g.
+     * `JournalsView`/`PageView`) should set their hosting `LazyColumn`'s `userScrollEnabled` to
+     * `false` while this is `true`, so a mid-drag scroll can never desynchronize `blockBounds`
+     * from the drop-target computation (`docs/tasks/drag-and-drop-reorder.md`'s "Bug 002").
+     */
+    onDragStateChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (isDebugMode) {
@@ -138,12 +153,21 @@ fun BlockList(
     var dropTargetUuid by remember { mutableStateOf<String?>(null) }
     var currentDropZone by remember { mutableStateOf<DropZone?>(null) }
 
+    // GAP-010: notify the caller whenever an active drag starts/stops so the hosting scroll
+    // container can suspend scrolling for the duration (see onDragStateChange's doc above).
+    // rememberUpdatedState avoids capturing a stale lambda reference inside the LaunchedEffect
+    // below if the caller passes a new onDragStateChange lambda across recompositions.
+    val currentOnDragStateChange by rememberUpdatedState(onDragStateChange)
+    val isDragging = dragState?.isDragging == true
+    LaunchedEffect(isDragging) { currentOnDragStateChange(isDragging) }
+
     // Clean up drag state when this composable leaves the composition (e.g. page navigation)
     DisposableEffect(Unit) {
         onDispose {
             dragState = null
             dropTargetUuid = null
             currentDropZone = null
+            currentOnDragStateChange(false)
         }
     }
 
@@ -236,6 +260,7 @@ fun BlockList(
                     onResolveContent = onResolveContent,
                     onSearchPages = onSearchPages,
                     formatEvents = formatEvents,
+                    todoToggleEvents = todoToggleEvents,
                     suggestionMatcher = suggestionMatcher,
                     onNavigateAllSuggestions = if (onNavigateAllSuggestions != null) {
                         {

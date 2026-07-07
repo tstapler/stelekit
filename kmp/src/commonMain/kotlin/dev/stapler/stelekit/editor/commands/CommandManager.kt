@@ -7,18 +7,24 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 
 /**
- * Command manager that integrates all command system components
+ * Command manager that integrates all command system components.
+ *
+ * Phase H (rich-editing-experience, ADR-001): this is the one live, reachable slice of the
+ * former "enterprise" `editor/commands/` framework — `StelekitViewModel` uses it purely to
+ * source id/label/shortcut metadata for the command palette (`updateCommands()`'s
+ * `getAvailableCommands()` call). The `/`-slash-command bridge (`SlashCommandHandler`) that
+ * used to live here has been deleted (zero UI call sites, confirmed by repo-wide grep) — no
+ * `/` keystroke trigger exists anywhere in the app.
  */
 class CommandManager(
     private val scope: CoroutineScope,
     private val notificationManager: ((String, NotificationType, Long?) -> Unit)? = null
 ) {
     private val logger = Logger("CommandManager")
-    
+
     private val registry = CommandRegistry()
     private val commandSystem = CommandSystem(registry)
-    private val slashCommandHandler = SlashCommandHandler(commandSystem)
-    
+
     init {
         // Register essential commands
         scope.launch {
@@ -38,11 +44,6 @@ class CommandManager(
     fun getRegistry(): ICommandRegistry = registry
     
     /**
-     * Get the slash command handler
-     */
-    fun getSlashCommandHandler(): ISlashCommandHandler = slashCommandHandler
-    
-    /**
      * Execute a command by ID with context
      */
     suspend fun executeCommand(commandId: String, context: CommandContext = CommandContext()): CommandResult {
@@ -57,78 +58,6 @@ class CommandManager(
             val errorResult = CommandResult.Error("Failed to execute command: ${e.message}", e)
             handleResult(errorResult)
             errorResult
-        }
-    }
-    
-    /**
-     * Execute a slash command
-     */
-    suspend fun executeSlashCommand(input: String, context: CommandContext = CommandContext()): CommandResult {
-        return try {
-            when (val parseResult = slashCommandHandler.parse(input)) {
-                is SlashCommandParseResult.Success -> {
-                    val result = slashCommandHandler.execute(parseResult.command, context)
-                    handleResult(result)
-                    result
-                }
-                is SlashCommandParseResult.Error -> {
-                    val errorResult = CommandResult.Error(parseResult.message)
-                    handleResult(errorResult)
-                    errorResult
-                }
-                is SlashCommandParseResult.NotASlashCommand -> {
-                    CommandResult.Error("Not a slash command")
-                }
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error("Failed to execute slash command: $input", e)
-            val errorResult = CommandResult.Error("Failed to execute slash command: ${e.message}", e)
-            handleResult(errorResult)
-            errorResult
-        }
-    }
-    
-    /**
-     * Get command suggestions for the palette
-     */
-    suspend fun getCommandSuggestions(query: String, context: CommandContext = CommandContext()): List<CommandSuggestion> {
-        return try {
-            registry.searchCommands(query, context)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error("Failed to get command suggestions", e)
-            emptyList()
-        }
-    }
-    
-    /**
-     * Get slash command suggestions for auto-completion
-     */
-    suspend fun getSlashCommandSuggestions(input: String): List<SlashCommandSuggestion> {
-        return try {
-            slashCommandHandler.getSuggestions(input)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error("Failed to get slash command suggestions", e)
-            emptyList()
-        }
-    }
-    
-    /**
-     * Check if input is a slash command
-     */
-    suspend fun isSlashCommand(input: String): Boolean {
-        return try {
-            slashCommandHandler.isSlashCommand(input)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error("Failed to check if input is slash command", e)
-            false
         }
     }
     
@@ -157,23 +86,6 @@ class CommandManager(
             throw e
         } catch (e: Exception) {
             logger.error("Failed to register command: ${command.id}", e)
-        }
-    }
-    
-    /**
-     * Register a custom slash command handler
-     */
-    suspend fun registerSlashCommand(
-        command: String,
-        handler: suspend (SlashCommand, CommandContext) -> CommandResult
-    ) {
-        try {
-            slashCommandHandler.registerSlashCommand(command, handler)
-            logger.info("Registered custom slash command: $command")
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error("Failed to register slash command: $command", e)
         }
     }
     

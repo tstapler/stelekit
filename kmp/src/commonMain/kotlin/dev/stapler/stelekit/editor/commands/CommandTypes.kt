@@ -70,10 +70,21 @@ enum class CommandModifier {
 }
 
 /**
- * Configuration for command behavior and availability
+ * Configuration for command behavior and availability.
+ *
+ * Phase H (rich-editing-experience, ADR-001/Epic H.2.2): [hidden] is the mechanism
+ * `EssentialCommands.kt` now uses to keep every command that lacks a real, working mutation
+ * route out of `StelekitViewModel`'s command palette (`updateCommands()` sources its list from
+ * `getAvailableCommands()`, which filters on [EditorCommand.isAvailable] below) — see
+ * `EssentialCommands.kt`'s per-command audit comments for which commands are hidden and why.
  */
 data class CommandConfig(
     val enabled: Boolean = true,
+    /**
+     * Do not flip to false without first verifying the command has a real, non-discarded
+     * mutation route — see the per-command audit comment at each `hidden = true` site in
+     * EssentialCommands.kt.
+     */
     val hidden: Boolean = false,
     val requiresSelection: Boolean = false,
     val requiresBlock: Boolean = false,
@@ -134,22 +145,7 @@ data class CommandHistoryEntry(
     val executionTimeMs: Long
 )
 
-/**
- * Command suggestion for auto-completion
- */
-data class CommandSuggestion(
-    val command: EditorCommand,
-    val matchScore: Double,
-    val matchType: MatchType,
-    val highlightedLabel: String
-)
-
-/**
- * Type of match for command suggestions
- */
-enum class MatchType {
-    EXACT,        // Exact match
-    PREFIX,       // Prefix match
-    FUZZY,        // Fuzzy match
-    CONTAINS      // Contains match
-}
+// Phase H (rich-editing-experience, ADR-001/Epic H.2.2): CommandSuggestion/MatchType (formerly
+// defined here) and CommandRegistry.searchCommands (their sole producer) were removed — zero
+// callers anywhere in the codebase. CommandPalette.kt does its own fuzzy filtering directly over
+// List<Command>, not EditorCommand/CommandSuggestion.

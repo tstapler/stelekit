@@ -149,6 +149,7 @@ internal fun ScreenRouter(
                 tagSuggestionViewModel = tagSuggestionViewModel,
                 currentManifest = appState.currentManifest,
                 onSectionBadgeClick = { viewModel.showSectionPicker(currentScreen.page) },
+                hasDiskConflictPending = appState.diskConflict != null,
             )
             is Screen.Journals -> JournalsView(
                 viewModel = journalsViewModel,
@@ -163,6 +164,7 @@ internal fun ScreenRouter(
                 capabilities = capabilities,
                 tagSuggestionViewModel = tagSuggestionViewModel,
                 conflictFilePaths = appState.pendingConflicts.keys.toSet(),
+                hasDiskConflictPending = appState.diskConflict != null,
             )
             is Screen.Flashcards -> {
                 NavigationTracingEffect("Flashcards")

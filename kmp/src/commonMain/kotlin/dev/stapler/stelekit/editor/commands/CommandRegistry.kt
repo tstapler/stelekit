@@ -4,10 +4,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import dev.stapler.stelekit.logging.Logger
-import kotlin.math.max
 
 /**
- * Interface for command registry
+ * Interface for command registry.
+ *
+ * Phase H (rich-editing-experience, ADR-001/Epic H.2.2): `searchCommands`/fuzzy-matching
+ * (`CommandSuggestion`, `MatchType`) was trimmed — it had zero callers anywhere in the codebase
+ * (the real command palette, `CommandPalette.kt`, does its own fuzzy filtering directly over
+ * `List<Command>`, not `EditorCommand`/`CommandSuggestion`). Only the live bridge's needs
+ * remain: register/getCommand/getAllCommands/getAvailableCommands.
  */
 interface ICommandRegistry {
     /**
@@ -39,11 +44,6 @@ interface ICommandRegistry {
      * Get commands by type
      */
     suspend fun getCommandsByType(type: CommandType): List<EditorCommand>
-    
-    /**
-     * Search commands by query
-     */
-    suspend fun searchCommands(query: String, context: CommandContext): List<CommandSuggestion>
     
     /**
      * Get available commands for context
@@ -98,115 +98,7 @@ class CommandRegistry : ICommandRegistry {
         return _commands.value.values.filter { it.type == type }
     }
     
-    override suspend fun searchCommands(query: String, context: CommandContext): List<CommandSuggestion> {
-        if (query.isEmpty()) {
-            return getAvailableCommands(context).map { 
-                CommandSuggestion(it, 1.0, MatchType.EXACT, it.label) 
-            }
-        }
-        
-        val availableCommands = getAvailableCommands(context)
-        val normalizedQuery = query.lowercase()
-        
-        return availableCommands.mapNotNull { command ->
-            val normalizedLabel = command.label.lowercase()
-            val score = calculateMatchScore(normalizedQuery, normalizedLabel, command.id)
-            
-            if (score > 0) {
-                val matchType = determineMatchType(normalizedQuery, normalizedLabel)
-                val highlightedLabel = highlightMatch(command.label, normalizedQuery)
-                CommandSuggestion(command, score, matchType, highlightedLabel)
-            } else null
-        }.sortedByDescending { it.matchScore }
-    }
-    
     override suspend fun getAvailableCommands(context: CommandContext): List<EditorCommand> {
         return _commands.value.values.filter { it.isAvailable(context) }
-    }
-    
-    /**
-     * Calculate fuzzy matching score for command search
-     */
-    private fun calculateMatchScore(query: String, label: String, commandId: String): Double {
-        // Exact match gets highest score
-        if (query == label || query == commandId.lowercase()) {
-            return 1.0
-        }
-        
-        // Prefix match gets high score
-        if (label.startsWith(query) || commandId.lowercase().startsWith(query)) {
-            return 0.8
-        }
-        
-        // Contains match gets medium score
-        if (label.contains(query) || commandId.lowercase().contains(query)) {
-            return 0.6
-        }
-        
-        // Fuzzy match using simple character sequence matching
-        val fuzzyScore = calculateFuzzyScore(query, label)
-        return if (fuzzyScore > 0.3) fuzzyScore else 0.0
-    }
-    
-    /**
-     * Simple fuzzy string matching
-     */
-    private fun calculateFuzzyScore(query: String, text: String): Double {
-        if (query.isEmpty()) return 0.0
-        if (text.isEmpty()) return 0.0
-        
-        var queryIndex = 0
-        var textIndex = 0
-        var matches = 0
-        
-        while (queryIndex < query.length && textIndex < text.length) {
-            if (query[queryIndex] == text[textIndex]) {
-                matches++
-                queryIndex++
-            }
-            textIndex++
-        }
-        
-        return if (queryIndex == query.length) {
-            // All query characters found, score based on concentration
-            val concentration = matches.toDouble() / text.length
-            concentration * 0.4 // Base fuzzy score
-        } else {
-            0.0
-        }
-    }
-    
-    /**
-     * Determine the type of match
-     */
-    private fun determineMatchType(query: String, label: String): MatchType {
-        return when {
-            query == label -> MatchType.EXACT
-            label.startsWith(query) -> MatchType.PREFIX
-            label.contains(query) -> MatchType.CONTAINS
-            else -> MatchType.FUZZY
-        }
-    }
-    
-    /**
-     * Highlight matching parts in the label
-     */
-    private fun highlightMatch(label: String, query: String): String {
-        if (query.isEmpty()) return label
-        
-        // Simple implementation - in a real app, you'd use markdown or styled spans
-        val normalizedLabel = label.lowercase()
-        val normalizedQuery = query.lowercase()
-        
-        val startIndex = normalizedLabel.indexOf(normalizedQuery)
-        return if (startIndex != -1) {
-            val endIndex = startIndex + query.length
-            val before = label.substring(0, startIndex)
-            val match = label.substring(startIndex, endIndex)
-            val after = label.substring(endIndex)
-            "$before**$match**$after"
-        } else {
-            label
-        }
     }
 }

@@ -20,13 +20,33 @@ fun EditorToolbar(
     searchViewModel: SearchViewModel?,
     isLeftHanded: Boolean,
     modifier: Modifier = Modifier,
+    /**
+     * ux.md (i)/criterion 14: true while a `DiskConflict` is pending resolution in `AppState`.
+     * Threaded straight through to [MobileBlockToolbar]'s `hasDiskConflictPending` — see that
+     * parameter's doc for the live-state contract callers must uphold.
+     */
+    hasDiskConflictPending: Boolean = false,
     onSuggestTags: ((blockUuid: String, content: String) -> Unit)? = null,
+    // Test-only recomposition probe (pitfalls.md §1 / Task B.1.2a regression guard).
+    // Invoked via SideEffect once per recomposition of this composable's own scope.
+    // Always null in production call sites (PageView/JournalsView) — exists solely so
+    // EditorToolbarRecompositionTest can assert this composable does not recompose on
+    // every keystroke into the editing block.
+    onRecompose: (() -> Unit)? = null,
+    // Test-only hook exposing the freshly-built onSuggestTags click handler on every
+    // (re)composition. Always a no-op in production call sites — lets
+    // EditorToolbarRecompositionTest hold a reference to the handler independent of this
+    // composable's lifecycle, to prove it reads block content from a live source
+    // (blockStateManager.blocks.value) rather than a collectAsState() snapshot that goes
+    // stale once this composable leaves composition.
+    onSuggestTagsHandlerReady: (handler: (() -> Unit)?) -> Unit = {},
 ) {
+    SideEffect { onRecompose?.invoke() }
+
     val editingBlockUuid by blockStateManager.editingBlockUuid.collectAsState()
     val editingCursorIndex by blockStateManager.editingCursorIndex.collectAsState()
     val isInSelectionMode by blockStateManager.isInSelectionMode.collectAsState()
     val selectedBlockUuids by blockStateManager.selectedBlockUuids.collectAsState()
-    val allBlocks by blockStateManager.blocks.collectAsState()
     val blockClipboard by blockStateManager.blockClipboard.collectAsState()
 
     var showLinkPicker by remember { mutableStateOf(false) }
@@ -71,7 +91,10 @@ fun EditorToolbar(
         onAddBlock = { blockUuid -> blockStateManager.addNewBlock(BlockUuid(blockUuid)) },
         onUndo = { blockStateManager.undo() },
         onRedo = { blockStateManager.redo() },
+        hasDiskConflictPending = hasDiskConflictPending,
         onFormat = { action -> blockStateManager.requestFormat(action) },
+        onTodoToggle = { blockStateManager.requestTodoToggle() },
+        onEnterSelectionMode = { blockUuid -> blockStateManager.enterSelectionMode(BlockUuid(blockUuid)) },
         onAttachImage = run {
             val attachFn = capabilities.onAttachImage
             val targetUuid = editingBlockUuid
@@ -82,13 +105,18 @@ fun EditorToolbar(
         onSuggestTags = run {
             val suggestFn = onSuggestTags
             val targetUuid = editingBlockUuid
-            if (suggestFn != null && targetUuid != null) {
+            val handler = if (suggestFn != null && targetUuid != null) {
                 {
-                    val block = allBlocks.values.flatten().find { it.uuid == targetUuid }
+                    // Read blocks at click-time via .value, not a collectAsState()-derived
+                    // variable captured in this closure — the latter changes on every
+                    // keystroke and would force MobileBlockToolbar to recompose constantly.
+                    val block = blockStateManager.blocks.value.values.flatten().find { it.uuid == targetUuid }
                     val content = block?.content ?: ""
                     suggestFn(targetUuid.value, content)
                 }
             } else null
+            onSuggestTagsHandlerReady(handler)
+            handler
         },
         onCaptureImage = capabilities.onCaptureImage,
         onLinkPicker = if (searchViewModel != null) {
@@ -99,7 +127,9 @@ fun EditorToolbar(
                 linkPickerCursorIndex = editingCursorIndex ?: sel?.first
                 linkPickerSelectionRange = sel
                 linkPickerInitialQuery = if (sel != null && sel.first < sel.last && curBlockUuid != null) {
-                    val block = allBlocks.values.flatten().find { it.uuid == curBlockUuid }
+                    // Same click-time-read fix as onSuggestTags above (Task B.1.1b) — read
+                    // blocks via .value here, not a collectAsState()-derived closure capture.
+                    val block = blockStateManager.blocks.value.values.flatten().find { it.uuid == curBlockUuid }
                     block?.content?.substring(
                         sel.first.coerceAtMost(block.content.length),
                         sel.last.coerceAtMost(block.content.length)

@@ -501,6 +501,18 @@ class BlockStateManager(
         _formatEvents.tryEmit(action)
     }
 
+    // ---- Todo-toggle events (keyboard/toolbar/palette → active BlockItem) ----
+    // Mirrors formatEvents/requestFormat's exact decoupling shape (Story C.1.1), kept as its
+    // own dedicated SharedFlow rather than folded into FormatAction/formatEvents — see the
+    // TodoState Pattern Decision.
+
+    private val _todoToggleEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val todoToggleEvents: SharedFlow<Unit> = _todoToggleEvents.asSharedFlow()
+
+    fun requestTodoToggle() {
+        _todoToggleEvents.tryEmit(Unit)
+    }
+
     // ---- Undo/redo (delegated to BlockUndoManager) ----
 
     private val undoManager = BlockUndoManager(scope)

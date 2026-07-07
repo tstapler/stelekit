@@ -55,6 +55,8 @@ import dev.stapler.stelekit.editor.commands.EditorCommand
 import dev.stapler.stelekit.editor.commands.CommandResult
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
 import dev.stapler.stelekit.domain.PageNameIndex
+import dev.stapler.stelekit.ui.components.ShortcutTable
+import dev.stapler.stelekit.ui.screens.FormatAction
 import dev.stapler.stelekit.ui.screens.SearchResultItem
 import dev.stapler.stelekit.ui.state.BlockStateManager
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
@@ -1968,33 +1970,34 @@ class StelekitViewModel(
 
 
     /**
-     * Execute a command by ID
+     * Execute a command by ID.
+     *
+     * Phase H (rich-editing-experience, ADR-001/Epic H.2.1): the legacy `"block.toggle-todo"`
+     * id (sourced from the `EssentialCommands`/`CommandManager` bridge via
+     * [getAvailableCommands]) used to silently discard its computed [CommandResult] here —
+     * selecting "Toggle Todo" from the palette appeared to work but never actually mutated block
+     * content (features.md §2 — the "wired-looking but silently non-functional" trap this
+     * project exists partly to eliminate). This is now intercepted BEFORE ever reaching
+     * [commandManager]`.executeCommand()`, calling the real `requestTodoToggle()` ->
+     * `applyTodoToggle` mutation (Phase C.1) instead.
+     *
+     * The `"block.toggle-todo"` `EssentialCommands` entry is ALSO hidden from the palette
+     * (`EssentialCommands.kt`'s `BlockCommands.toggleTodo.config.hidden = true`) since Phase F.2
+     * already ships a working, canonically-named `"format.toggle-todo"` entry in
+     * [updateCommands] below — shipping both would put two identical "Toggle Todo" rows (same
+     * Ctrl+Enter shortcut) in the palette simultaneously. This interception therefore exists as
+     * a defensive correctness fix (in case something still invokes
+     * `executeCommand("block.toggle-todo")` directly) rather than to serve a currently-visible
+     * palette row.
      */
     suspend fun executeCommand(commandId: String, context: CommandContext = CommandContext()): CommandResult {
+        if (commandId == "block.toggle-todo") {
+            blockStateManager?.requestTodoToggle()
+            return CommandResult.Success(message = "Todo status toggled")
+        }
         return commandManager.executeCommand(commandId, context)
     }
-    
-    /**
-     * Execute a slash command
-     */
-    suspend fun executeSlashCommand(input: String, context: CommandContext = CommandContext()): CommandResult {
-        return commandManager.executeSlashCommand(input, context)
-    }
-    
-    /**
-     * Get command suggestions for the command palette
-     */
-    suspend fun getCommandSuggestions(query: String, context: CommandContext = CommandContext()): List<EditorCommand> {
-        return commandManager.getCommandSuggestions(query, context).map { it.command }
-    }
-    
-    /**
-     * Check if input is a slash command
-     */
-    suspend fun isSlashCommand(input: String): Boolean {
-        return commandManager.isSlashCommand(input)
-    }
-    
+
     /**
      * Get available commands for current context
      */
@@ -2030,6 +2033,53 @@ class StelekitViewModel(
                         }
                     }
                 }.toMutableList()
+
+                // Epic F.2 (Story F.2.1): format/structural command-palette entries. Story F.1.1's
+                // empirical spike (CommandPaletteFocusRetentionTest) recorded PASS for both
+                // FormatAction.BOLD and requestTodoToggle() dispatched while CommandPalette is
+                // open, so these entries use the existing requestFormat/requestTodoToggle
+                // SharedFlow path unchanged (no bypass fix was required). blockStateManager is
+                // already a ViewModel-level field (Task F.2.1a) — requestFormat/requestTodoToggle
+                // route to whichever block currently has isEditing == true via BlockItem's
+                // LaunchedEffect(isEditing, formatEvents)/(isEditing, todoToggleEvents) collectors;
+                // calling either when no block is being edited is a harmless no-op.
+                //
+                // "Toggle Todo" is filed under a distinct id ("format.toggle-todo") rather than the
+                // legacy "block.toggle-todo" id. Phase H (ADR-001, Epic H.2.1 — DONE): the legacy
+                // id's handling in executeCommand() above is now repointed to this same
+                // requestTodoToggle() path, AND EssentialCommands.kt's "block.toggle-todo" entry
+                // is hidden from getAvailableCommands() (config.hidden = true) — so only this one
+                // "format.toggle-todo" row ever appears in the palette; the legacy id can never
+                // reach here as a second, duplicate row.
+                blockStateManager?.let { bsm ->
+                    val formatCommands = listOf(
+                        FormatAction.BOLD to "Format: Bold",
+                        FormatAction.ITALIC to "Format: Italic",
+                        FormatAction.STRIKETHROUGH to "Format: Strikethrough",
+                        FormatAction.HIGHLIGHT to "Format: Highlight",
+                        FormatAction.CODE to "Format: Code",
+                        FormatAction.LINK to "Format: Link",
+                        FormatAction.QUOTE to "Format: Quote",
+                        FormatAction.NUMBERED_LIST to "Format: Numbered List",
+                        FormatAction.HEADING to "Format: Heading",
+                        FormatAction.CODE_BLOCK to "Format: Code Block",
+                        FormatAction.TABLE_INSERT to "Format: Table",
+                    )
+                    formatCommands.forEach { (action, label) ->
+                        legacyCommands += Command(
+                            id = "format.${action.name.lowercase()}",
+                            label = label,
+                            shortcut = ShortcutTable.forAction(action),
+                            action = { bsm.requestFormat(action) }
+                        )
+                    }
+                    legacyCommands += Command(
+                        id = "format.toggle-todo",
+                        label = "Format: Toggle Todo",
+                        shortcut = ShortcutTable.TODO_TOGGLE,
+                        action = { bsm.requestTodoToggle() }
+                    )
+                }
 
                 // Add rename/export commands only when a non-journal page is open
                 val currentPage = _uiState.value.currentPage
