@@ -52,6 +52,7 @@ import dev.stapler.stelekit.export.MarkdownExporter
 import dev.stapler.stelekit.export.PlainTextExporter
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.DEMO_GRAPH_ID
 import dev.stapler.stelekit.model.GraphId
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.performance.DebugBuildConfig
@@ -351,10 +352,16 @@ fun StelekitApp(
     // (returns the existing ID if already registered) and handles reconnect after
     // SAF permission loss, where activeGraphId may be non-null from the persisted
     // registry but the in-memory repos have not been set up in this process.
+    // Skip if currentGraphPath is the demo path — demo is managed by addDemoGraph()
+    // and must not be registered as a real graph here.
     LaunchedEffect(currentGraphPath) {
         if (currentGraphPath.isNotEmpty()) {
-            val graphId = graphManager.addGraph(currentGraphPath)
-            graphManager.switchGraph(graphId)
+            val isDemoPath = graphManager.graphRegistry.value.graphs
+                .any { it.path == currentGraphPath && it.id == DEMO_GRAPH_ID }
+            if (!isDemoPath) {
+                val graphId = graphManager.addGraph(currentGraphPath)
+                graphManager.switchGraph(graphId)
+            }
         }
     }
 
