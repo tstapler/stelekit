@@ -495,9 +495,9 @@ class GraphManager(
             }
         }
 
-        // Update active graph
-        val updatedRegistry = registry.copy(activeGraphId = id)
-        _graphRegistry.value = updatedRegistry
+        // Update active graph — use atomic update {} to avoid clobbering concurrent registry
+        // mutations (e.g. git detection updating detectedRepoRoot on a background IO coroutine).
+        _graphRegistry.update { it.copy(activeGraphId = id) }
         saveRegistry()
     }
 
@@ -574,12 +574,14 @@ class GraphManager(
     }
 
     private suspend fun updateGraphInfoDetection(graphId: GraphId, repoRoot: String, wikiSubdir: String) {
-        val registry = _graphRegistry.value
-        val updatedGraphs = registry.graphs.map { g ->
-            if (g.id == graphId) g.copy(detectedRepoRoot = repoRoot, detectedWikiSubdir = wikiSubdir)
-            else g
+        // Atomic update: prevents clobbering concurrent activeGraphId changes from switchGraph.
+        _graphRegistry.update { registry ->
+            val updatedGraphs = registry.graphs.map { g ->
+                if (g.id == graphId) g.copy(detectedRepoRoot = repoRoot, detectedWikiSubdir = wikiSubdir)
+                else g
+            }
+            registry.copy(graphs = updatedGraphs)
         }
-        _graphRegistry.value = registry.copy(graphs = updatedGraphs)
         saveRegistry()
     }
 
