@@ -51,7 +51,7 @@ private data class FormatButtonSpec(
  * ux.md (i)/criterion 14's exact wording for the Undo/Redo disabled state while a
  * [dev.stapler.stelekit.ui.DiskConflict] is pending resolution.
  */
-private const val DiskConflictBlockedTooltip = "Resolve file conflict to continue"
+private const val DISK_CONFLICT_BLOCKED_TOOLTIP = "Resolve file conflict to continue"
 
 @Composable
 private fun FormatToolbarButton(spec: FormatButtonSpec) {
@@ -335,7 +335,7 @@ fun MobileBlockToolbar(
                 // Second row: undo/redo (always visible) + structural actions (editing only)
                 val undoRedo: @Composable RowScope.() -> Unit = {
                     val undoDescription = if (hasDiskConflictPending) {
-                        DiskConflictBlockedTooltip
+                        DISK_CONFLICT_BLOCKED_TOOLTIP
                     } else {
                         "Undo"
                     }
@@ -349,7 +349,7 @@ fun MobileBlockToolbar(
                         }
                     }
                     val redoDescription = if (hasDiskConflictPending) {
-                        DiskConflictBlockedTooltip
+                        DISK_CONFLICT_BLOCKED_TOOLTIP
                     } else {
                         "Redo"
                     }

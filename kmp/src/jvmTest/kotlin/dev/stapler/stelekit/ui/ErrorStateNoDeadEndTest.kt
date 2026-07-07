@@ -102,6 +102,7 @@ class ErrorStateNoDeadEndTest {
                     onUseDisk = { usedDisk = true },
                     onSaveAsNew = { savedAsNew = true },
                     onManualResolve = { manuallyResolved = true },
+                    onViewFull = { },
                 )
             }
         }
