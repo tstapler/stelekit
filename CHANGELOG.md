@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.64.0](https://github.com/tstapler/stelekit/compare/v0.63.0...v0.64.0) (2026-07-07)
+
+
+### Features
+
+* **web:** demo graph as dedicated named graph in switcher ([27bef53](https://github.com/tstapler/stelekit/commit/27bef530e3959a3887e602abe5878e23668e4401))
+
+
+### Bug Fixes
+
+* **db:** make GraphManager registry updates atomic to fix flaky lifecycle tests ([81b6db3](https://github.com/tstapler/stelekit/commit/81b6db34b31147d33675ed52690a7524ba660b43))
+
 ## [0.63.0](https://github.com/tstapler/stelekit/compare/v0.62.0...v0.63.0) (2026-07-07)
 
 
