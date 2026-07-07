@@ -40,13 +40,10 @@ fun main() {
         val opfsGraphPath = "/stelekit/$graphId"
 
         val opfsFileSystem = PlatformFileSystem()
-        opfsFileSystem.preload(opfsGraphPath)
 
-        // New users (no OPFS content yet) start on the demo graph instead of a blank graph.
-        val isNewUser = !opfsFileSystem.directoryExists(opfsGraphPath)
-
-        // Wire GitHub config for section sync and lazy content fetching.
-        // Keys stored in localStorage by the web host (e.g. embed script).
+        // Wire GitHub config before preload() so the lazy GitHub-fetch fallback in
+        // PlatformFileSystem.readFileSuspend() has credentials available for returning
+        // users whose OPFS cache may already contain stale entries.
         val ghSettings = PlatformSettings()
         val ghOwner = ghSettings.getString("githubOwner", "")
         val ghRepo = ghSettings.getString("githubRepo", "")
@@ -61,6 +58,10 @@ fun main() {
         WasmSectionSyncService.githubBranch = ghBranch
         WasmSectionSyncService.githubToken = ghToken
         WasmSectionSyncService.graphId = graphId
+
+        // preload() must run after GitHub config is wired; directoryExists() requires preload().
+        opfsFileSystem.preload(opfsGraphPath)
+        val isNewUser = !opfsFileSystem.directoryExists(opfsGraphPath)
 
         val driverFactory = DriverFactory()
         var useDemoFallback = false
@@ -96,8 +97,10 @@ fun main() {
         } else {
             fileSystem = opfsFileSystem
             graphPath = opfsGraphPath
+            // lastGraphPath feeds the single-graph → multi-graph migration in loadRegistry().
+            // Only write it for returning users; new users start fresh and have no old registry
+            // to migrate, so leaving lastGraphPath unset is correct.
             if (!isNewUser) {
-                // Returning user: set lastGraphPath so single-graph → multi-graph migration works.
                 PlatformSettings().putString("lastGraphPath", graphPath)
             }
         }

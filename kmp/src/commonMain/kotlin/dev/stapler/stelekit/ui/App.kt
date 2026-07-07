@@ -355,13 +355,9 @@ fun StelekitApp(
     // Skip if currentGraphPath is the demo path — demo is managed by addDemoGraph()
     // and must not be registered as a real graph here.
     LaunchedEffect(currentGraphPath) {
-        if (currentGraphPath.isNotEmpty()) {
-            val isDemoPath = graphManager.graphRegistry.value.graphs
-                .any { it.path == currentGraphPath && it.id == DEMO_GRAPH_ID }
-            if (!isDemoPath) {
-                val graphId = graphManager.addGraph(currentGraphPath)
-                graphManager.switchGraph(graphId)
-            }
+        if (currentGraphPath.isNotEmpty() && graphManager.getActiveGraphInfo()?.id != DEMO_GRAPH_ID) {
+            val graphId = graphManager.addGraph(currentGraphPath)
+            graphManager.switchGraph(graphId)
         }
     }
 
