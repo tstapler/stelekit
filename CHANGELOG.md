@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.62.0](https://github.com/tstapler/stelekit/compare/v0.61.0...v0.62.0) (2026-07-07)
+
+
+### Features
+
+* **web:** wire app icon as browser favicon ([4a22a71](https://github.com/tstapler/stelekit/commit/4a22a71ed0e3dd99e033be37689a9f06745264e3))
+
+
+### Bug Fixes
+
+* **release:** collapse AppImage classpath to avoid launcher buffer overflow ([#206](https://github.com/tstapler/stelekit/issues/206)) ([91e087b](https://github.com/tstapler/stelekit/commit/91e087bd4628b1a328b3337ade56bb7d4872fd08))
+* **ui:** resolve Detekt failures blocking main CI ([#209](https://github.com/tstapler/stelekit/issues/209)) ([1a0af50](https://github.com/tstapler/stelekit/commit/1a0af50766bf17552af3819b013c9949a31e8c72))
+
 ## [0.61.0](https://github.com/tstapler/stelekit/compare/v0.60.0...v0.61.0) (2026-07-05)
 
 
