@@ -25,7 +25,7 @@ post_fix_step_count:
        large-graph safety exactly as before. The LLM tier continues to enrich the same `Ready`
        state asynchronously via `llmPending`/`llmSuggestions`, unchanged.
     2. `SuggestionBottomSheet`'s `rememberModalBottomSheetState()` now passes
-       `skipPartialExpanded = true` so the sheet reaches its final position in one continuous
+       `skipPartiallyExpanded = true` so the sheet reaches its final position in one continuous
        motion instead of settling at partial height first.
     This does not yet implement design/ux.md (d)'s longer-term "fully inline, no modal round-trip"
     redesign (2-step target) — that remains a larger follow-up; this pass removes the one

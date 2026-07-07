@@ -1992,7 +1992,9 @@ class StelekitViewModel(
      */
     suspend fun executeCommand(commandId: String, context: CommandContext = CommandContext()): CommandResult {
         if (commandId == "block.toggle-todo") {
-            blockStateManager?.requestTodoToggle()
+            val manager = blockStateManager
+                ?: return CommandResult.Error(message = "No block is currently being edited")
+            manager.requestTodoToggle()
             return CommandResult.Success(message = "Todo status toggled")
         }
         return commandManager.executeCommand(commandId, context)
