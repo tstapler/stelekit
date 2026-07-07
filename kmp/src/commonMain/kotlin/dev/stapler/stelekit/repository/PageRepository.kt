@@ -1,7 +1,6 @@
 package dev.stapler.stelekit.repository
 
 import arrow.core.Either
-import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid

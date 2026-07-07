@@ -1,6 +1,5 @@
 package dev.stapler.stelekit.repository
 
-import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import arrow.core.Either
@@ -17,7 +16,6 @@ import dev.stapler.stelekit.model.ImageSource
 import dev.stapler.stelekit.model.MeasurementUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json

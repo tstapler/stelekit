@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.*
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.git.GitConfigRepository
@@ -24,7 +23,6 @@ import dev.stapler.stelekit.llm.LlmProviderRegistry
 import dev.stapler.stelekit.llm.LlmSettings
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
-import dev.stapler.stelekit.model.SectionId
 import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.FrameMetric
 import dev.stapler.stelekit.performance.DebugMenuState

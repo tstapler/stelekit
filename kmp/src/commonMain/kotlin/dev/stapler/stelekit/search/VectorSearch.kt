@@ -3,7 +3,6 @@ package dev.stapler.stelekit.search
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.repository.BlockReadRepository
-import dev.stapler.stelekit.repository.BlockWithDepth
 import kotlinx.coroutines.flow.firstOrNull
 import kotlin.math.sqrt
 

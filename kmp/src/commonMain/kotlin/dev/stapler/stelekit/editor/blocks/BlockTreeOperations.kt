@@ -14,20 +14,11 @@ import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.BlockWithDepth
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.util.UuidGenerator
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 
-import dev.stapler.stelekit.editor.blocks.IBlockOperations
-import dev.stapler.stelekit.editor.blocks.DeleteStrategy
-import dev.stapler.stelekit.editor.blocks.PositioningMode
-import dev.stapler.stelekit.editor.blocks.IndentMode
-import dev.stapler.stelekit.editor.blocks.BlockOperation
-import dev.stapler.stelekit.editor.blocks.ValidationResult
-import dev.stapler.stelekit.editor.blocks.BulkOperation
-import dev.stapler.stelekit.editor.blocks.HistoricalOperation
 
 /**
  * Enhanced block operations with tree traversal and manipulation capabilities.

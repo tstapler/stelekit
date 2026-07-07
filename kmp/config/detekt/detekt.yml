@@ -323,9 +323,9 @@ style:
     ignoreAnnotated:
       - 'Composable'
   UnusedImports:
-    active: false
+    active: true
   UnusedPrivateMember:
-    active: false
+    active: true
   ForbiddenComment:
     active: false
 

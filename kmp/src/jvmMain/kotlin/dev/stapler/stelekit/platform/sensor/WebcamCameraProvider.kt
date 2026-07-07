@@ -1,7 +1,6 @@
 package dev.stapler.stelekit.platform.sensor
 
 import arrow.core.Either
-import arrow.core.left
 import dev.stapler.stelekit.error.DomainError
 
 /**

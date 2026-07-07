@@ -4,7 +4,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import dev.stapler.stelekit.logging.Logger
-import kotlin.math.max
 
 /**
  * Interface for command registry

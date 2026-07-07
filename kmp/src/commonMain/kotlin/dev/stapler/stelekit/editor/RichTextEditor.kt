@@ -24,16 +24,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.model.Block
-import dev.stapler.stelekit.ui.theme.StelekitTheme
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import dev.stapler.stelekit.editor.text.ITextOperations
 import dev.stapler.stelekit.editor.format.IFormatProcessor

@@ -7,8 +7,6 @@ import dev.stapler.stelekit.logging.Logger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import dev.stapler.stelekit.model.Block
-import dev.stapler.stelekit.model.BlockUuid
-import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.util.UuidGenerator
 import kotlin.time.Clock
 import kotlin.time.Clock.System

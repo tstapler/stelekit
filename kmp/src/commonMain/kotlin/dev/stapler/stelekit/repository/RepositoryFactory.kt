@@ -7,7 +7,6 @@ import dev.stapler.stelekit.db.OperationLogger
 import dev.stapler.stelekit.db.SteleDatabase
 import dev.stapler.stelekit.db.TelemetryDatabase
 import dev.stapler.stelekit.db.UndoManager
-import dev.stapler.stelekit.db.createDatabase
 import dev.stapler.stelekit.logging.LogManager
 import dev.stapler.stelekit.performance.HistogramWriter
 import dev.stapler.stelekit.performance.OtelProvider

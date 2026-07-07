@@ -3,7 +3,6 @@
 
 package dev.stapler.stelekit.ui.screens.git
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column

@@ -3,7 +3,6 @@ package dev.stapler.stelekit.ui.annotate
 import arrow.core.Either
 import androidx.compose.ui.graphics.ImageBitmap
 import dev.stapler.stelekit.calibration.CalibrationService
-import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.AnnotationType
 import dev.stapler.stelekit.model.Calibration
@@ -14,7 +13,6 @@ import dev.stapler.stelekit.model.MeasurementUnit
 import dev.stapler.stelekit.model.NormalizedPoint
 import dev.stapler.stelekit.model.angleBetweenThreePoints
 import dev.stapler.stelekit.model.metersToDisplayString
-import dev.stapler.stelekit.model.pixelDistanceToMeters
 import dev.stapler.stelekit.model.polygonAreaMeters
 import dev.stapler.stelekit.platform.measurement.DeviceConnectionState
 import dev.stapler.stelekit.platform.measurement.ExternalMeasurementDevice
