@@ -2034,51 +2034,8 @@ class StelekitViewModel(
                     }
                 }.toMutableList()
 
-                // Epic F.2 (Story F.2.1): format/structural command-palette entries. Story F.1.1's
-                // empirical spike (CommandPaletteFocusRetentionTest) recorded PASS for both
-                // FormatAction.BOLD and requestTodoToggle() dispatched while CommandPalette is
-                // open, so these entries use the existing requestFormat/requestTodoToggle
-                // SharedFlow path unchanged (no bypass fix was required). blockStateManager is
-                // already a ViewModel-level field (Task F.2.1a) — requestFormat/requestTodoToggle
-                // route to whichever block currently has isEditing == true via BlockItem's
-                // LaunchedEffect(isEditing, formatEvents)/(isEditing, todoToggleEvents) collectors;
-                // calling either when no block is being edited is a harmless no-op.
-                //
-                // "Toggle Todo" is filed under a distinct id ("format.toggle-todo") rather than the
-                // legacy "block.toggle-todo" id. Phase H (ADR-001, Epic H.2.1 — DONE): the legacy
-                // id's handling in executeCommand() above is now repointed to this same
-                // requestTodoToggle() path, AND EssentialCommands.kt's "block.toggle-todo" entry
-                // is hidden from getAvailableCommands() (config.hidden = true) — so only this one
-                // "format.toggle-todo" row ever appears in the palette; the legacy id can never
-                // reach here as a second, duplicate row.
                 blockStateManager?.let { bsm ->
-                    val formatCommands = listOf(
-                        FormatAction.BOLD to "Format: Bold",
-                        FormatAction.ITALIC to "Format: Italic",
-                        FormatAction.STRIKETHROUGH to "Format: Strikethrough",
-                        FormatAction.HIGHLIGHT to "Format: Highlight",
-                        FormatAction.CODE to "Format: Code",
-                        FormatAction.LINK to "Format: Link",
-                        FormatAction.QUOTE to "Format: Quote",
-                        FormatAction.NUMBERED_LIST to "Format: Numbered List",
-                        FormatAction.HEADING to "Format: Heading",
-                        FormatAction.CODE_BLOCK to "Format: Code Block",
-                        FormatAction.TABLE_INSERT to "Format: Table",
-                    )
-                    formatCommands.forEach { (action, label) ->
-                        legacyCommands += Command(
-                            id = "format.${action.name.lowercase()}",
-                            label = label,
-                            shortcut = ShortcutTable.forAction(action),
-                            action = { bsm.requestFormat(action) }
-                        )
-                    }
-                    legacyCommands += Command(
-                        id = "format.toggle-todo",
-                        label = "Format: Toggle Todo",
-                        shortcut = ShortcutTable.TODO_TOGGLE,
-                        action = { bsm.requestTodoToggle() }
-                    )
+                    legacyCommands += buildFormatCommands(bsm)
                 }
 
                 // Add rename/export commands only when a non-journal page is open
@@ -2164,12 +2121,57 @@ class StelekitViewModel(
             }
         }
     }
-    
+
     /**
-     * Get the command manager for advanced usage
+     * Epic F.2 (Story F.2.1): format/structural command-palette entries. Story F.1.1's
+     * empirical spike (CommandPaletteFocusRetentionTest) recorded PASS for both
+     * FormatAction.BOLD and requestTodoToggle() dispatched while CommandPalette is
+     * open, so these entries use the existing requestFormat/requestTodoToggle
+     * SharedFlow path unchanged (no bypass fix was required). blockStateManager is
+     * already a ViewModel-level field (Task F.2.1a) — requestFormat/requestTodoToggle
+     * route to whichever block currently has isEditing == true via BlockItem's
+     * LaunchedEffect(isEditing, formatEvents)/(isEditing, todoToggleEvents) collectors;
+     * calling either when no block is being edited is a harmless no-op.
+     *
+     * "Toggle Todo" is filed under a distinct id ("format.toggle-todo") rather than the
+     * legacy "block.toggle-todo" id. Phase H (ADR-001, Epic H.2.1 — DONE): the legacy
+     * id's handling in executeCommand() above is now repointed to this same
+     * requestTodoToggle() path, AND EssentialCommands.kt's "block.toggle-todo" entry
+     * is hidden from getAvailableCommands() (config.hidden = true) — so only this one
+     * "format.toggle-todo" row ever appears in the palette; the legacy id can never
+     * reach here as a second, duplicate row.
      */
-    fun getCommandManager(): CommandManager = commandManager
-    
+    private fun buildFormatCommands(blockStateManager: BlockStateManager): List<Command> {
+        val formatCommands = listOf(
+            FormatAction.BOLD to "Format: Bold",
+            FormatAction.ITALIC to "Format: Italic",
+            FormatAction.STRIKETHROUGH to "Format: Strikethrough",
+            FormatAction.HIGHLIGHT to "Format: Highlight",
+            FormatAction.CODE to "Format: Code",
+            FormatAction.LINK to "Format: Link",
+            FormatAction.QUOTE to "Format: Quote",
+            FormatAction.NUMBERED_LIST to "Format: Numbered List",
+            FormatAction.HEADING to "Format: Heading",
+            FormatAction.CODE_BLOCK to "Format: Code Block",
+            FormatAction.TABLE_INSERT to "Format: Table",
+        )
+        val commands = formatCommands.map { (action, label) ->
+            Command(
+                id = "format.${action.name.lowercase()}",
+                label = label,
+                shortcut = ShortcutTable.forAction(action),
+                action = { blockStateManager.requestFormat(action) }
+            )
+        }.toMutableList()
+        commands += Command(
+            id = "format.toggle-todo",
+            label = "Format: Toggle Todo",
+            shortcut = ShortcutTable.TODO_TOGGLE,
+            action = { blockStateManager.requestTodoToggle() }
+        )
+        return commands
+    }
+
     /**
      * Search pages for autocomplete
      */

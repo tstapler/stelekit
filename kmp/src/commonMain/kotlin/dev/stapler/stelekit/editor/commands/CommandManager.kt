@@ -32,17 +32,7 @@ class CommandManager(
             logger.info("Command manager initialized with ${EssentialCommands.getAll().size} essential commands")
         }
     }
-    
-    /**
-     * Get the command system
-     */
-    fun getCommandSystem(): ICommandSystem = commandSystem
-    
-    /**
-     * Get the command registry
-     */
-    fun getRegistry(): ICommandRegistry = registry
-    
+
     /**
      * Execute a command by ID with context
      */
@@ -74,53 +64,7 @@ class CommandManager(
             emptyList()
         }
     }
-    
-    /**
-     * Register a custom command
-     */
-    suspend fun registerCommand(command: EditorCommand) {
-        try {
-            registry.register(command)
-            logger.info("Registered custom command: ${command.id}")
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error("Failed to register command: ${command.id}", e)
-        }
-    }
-    
-    /**
-     * Get command by ID
-     */
-    suspend fun getCommand(commandId: String): EditorCommand? {
-        return try {
-            registry.getCommand(commandId)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error("Failed to get command: $commandId", e)
-            null
-        }
-    }
-    
-    /**
-     * Get command execution history
-     */
-    fun getHistory() = commandSystem.getHistory()
-    
-    /**
-     * Clear command history
-     */
-    suspend fun clearHistory() {
-        try {
-            commandSystem.clearHistory()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.error("Failed to clear history", e)
-        }
-    }
-    
+
     /**
      * Handle command results (show notifications, etc.)
      */
