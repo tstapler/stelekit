@@ -21,8 +21,8 @@ enum class OnboardingStep {
 fun Onboarding(
     fileSystem: FileSystem,
     onComplete: () -> Unit,
-    onGraphSelected: (String) -> Unit,
-    onDemoSelected: () -> Unit = {}
+    onGraphSelect: (String) -> Unit,
+    onDemoSelect: () -> Unit = {}
 ) {
     var currentStep by remember { mutableStateOf(OnboardingStep.WELCOME) }
     var graphPath by remember { mutableStateOf(fileSystem.getDefaultGraphPath()) }
@@ -40,12 +40,12 @@ fun Onboarding(
         ) {
             when (currentStep) {
                 OnboardingStep.WELCOME -> WelcomeStep()
-                OnboardingStep.GRAPH_SELECTION -> GraphSelectionStep(fileSystem, onDemoSelected = {
-                    onDemoSelected()
+                OnboardingStep.GRAPH_SELECTION -> GraphSelectionStep(fileSystem, onDemoSelect = {
+                    onDemoSelect()
                     currentStep = OnboardingStep.KEYMAP_INTRO
                 }) { path ->
                     graphPath = path
-                    onGraphSelected(path)
+                    onGraphSelect(path)
                     // Auto-advance so the user isn't left on the same screen after picking
                     currentStep = OnboardingStep.KEYMAP_INTRO
                 }
@@ -107,8 +107,8 @@ private fun WelcomeStep() {
 @Composable
 private fun GraphSelectionStep(
     fileSystem: FileSystem,
-    onDemoSelected: () -> Unit = {},
-    onGraphSelected: (String) -> Unit
+    onDemoSelect: () -> Unit = {},
+    onGraphSelect: (String) -> Unit
 ) {
     var selectedPath by remember { mutableStateOf(fileSystem.getDefaultGraphPath()) }
 
@@ -146,7 +146,7 @@ private fun GraphSelectionStep(
                             val path = fileSystem.pickDirectoryAsync()
                             if (path != null) {
                                 selectedPath = path
-                                onGraphSelected(path)
+                                onGraphSelect(path)
                             }
                         }
                     }) {
@@ -162,7 +162,7 @@ private fun GraphSelectionStep(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Button(onClick = { onDemoSelected() }) {
+                Button(onClick = { onDemoSelect() }) {
                     Text("Try Demo Graph")
                 }
                 Text(
