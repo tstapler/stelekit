@@ -1629,6 +1629,7 @@ private fun GraphContent(
                                         onDismissError = { voiceCaptureViewModel.dismissError() },
                                         onAutoReset = { voiceCaptureViewModel.resetToIdle() },
                                         amplitudeFlow = voicePipeline.effectiveAmplitudeFlow,
+                                        isSupported = voicePipeline.isSupported,
                                     )
                                 },
                             )

@@ -90,6 +90,13 @@ fun PageView(
      * surfaced via the LLM suggestion inbox StelekitViewModel already observes. */
     llmSynthesisService: dev.stapler.stelekit.llm.LlmSynthesisService? = null,
     currentGraphId: String? = null,
+    /**
+     * ux.md (i)/criterion 14: true while `AppState.diskConflict` is non-null. Passed straight
+     * through to [EditorToolbar]/`MobileBlockToolbar`'s Undo/Redo — must be a live value (see
+     * `ScreenRouter`'s `appState.diskConflict != null` call site) so Undo/Redo re-enable
+     * automatically once the conflict resolves.
+     */
+    hasDiskConflictPending: Boolean = false,
 ) {
     NavigationTracingEffect("PageView/${page.name}")
     val focusManager = LocalFocusManager.current
@@ -123,6 +130,10 @@ fun PageView(
     // Navigator panel state — empty list means closed
     var navigatorSuggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
     var navigatorIndex by remember { mutableStateOf(0) }
+
+    // GAP-010 (Story D.3.1): true while BlockList has an active block drag — suspends this
+    // LazyColumn's own scrolling so blockBounds can never desynchronize mid-drag.
+    var isBlockDragging by remember { mutableStateOf(false) }
 
     val blocks = allBlocks[page.uuid.value] ?: emptyList()
     val cutBlockUuids = if (blockClipboard.isCut) blockClipboard.entries.map { it.block.uuid.value }.toSet() else emptySet()
@@ -188,6 +199,8 @@ fun PageView(
         }
     }) {
         LazyColumn(
+            // GAP-010: suspend scroll for the duration of any active block drag.
+            userScrollEnabled = !isBlockDragging,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 24.dp)
@@ -399,6 +412,8 @@ fun PageView(
                         onResolveContent = { uuid -> viewModel.getBlockContent(uuid) },
                         onSearchPages = { query -> viewModel.searchPages(query) },
                         formatEvents = blockStateManager.formatEvents,
+                        todoToggleEvents = blockStateManager.todoToggleEvents,
+                        onDragStateChange = { isDragging -> isBlockDragging = isDragging },
                         suggestionMatcher = suggestionMatcher,
                         onNavigateAllSuggestions = { suggestions ->
                             navigatorSuggestions = suggestions
@@ -486,6 +501,7 @@ fun PageView(
             capabilities = capabilities,
             searchViewModel = searchViewModel,
             isLeftHanded = isLeftHanded,
+            hasDiskConflictPending = hasDiskConflictPending,
             onSuggestTags = if (tagSuggestionViewModel != null) { blockUuid, content ->
                 if (content.isNotBlank()) {
                     val alreadyLinked = WikiLinkExtractor.extractPageNames(content)

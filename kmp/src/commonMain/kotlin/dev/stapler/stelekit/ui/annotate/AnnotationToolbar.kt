@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package dev.stapler.stelekit.ui.annotate
 
 import androidx.compose.foundation.background
@@ -48,6 +50,21 @@ import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.model.MeasurementUnit
 
 /**
+ * Background the toolbar renders on. Exposed as a constant (rather than inlined) so the
+ * disabled-tint contrast ratio can be verified computationally in tests — see
+ * `DisabledTintContrastTest`.
+ */
+internal val TOOLBAR_BACKGROUND_COLOR = Color(0xEE1A1A1A)
+
+/**
+ * Disabled-state icon/label tint. Must maintain WCAG contrast >= 4.5:1 against
+ * [TOOLBAR_BACKGROUND_COLOR]. The previous value, Color(0xFF555555), measured ~2.33:1 (a
+ * flagged accessibility failure); Color(0xFF9E9E9E) (Material "Grey 500") measures ~6.5:1
+ * while still reading as visibly dimmer than the enabled-inactive tint (Color(0xFFBBBBBB)).
+ */
+internal val DISABLED_TINT_COLOR = Color(0xFF9E9E9E)
+
+/**
  * Bottom toolbar providing tool selection, undo/redo, unit selection, and annotation deletion.
  *
  * Active tool is highlighted with the primaryContainer color background.
@@ -76,7 +93,7 @@ fun AnnotationToolbar(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xEE1A1A1A))
+            .background(TOOLBAR_BACKGROUND_COLOR)
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -158,19 +175,33 @@ fun AnnotationToolbar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onUndo, enabled = canUndo) {
-                Icon(
-                    Icons.Default.Undo,
-                    contentDescription = "Undo",
-                    tint = if (canUndo) Color.White else Color.Gray,
-                )
+            val undoTooltipState = rememberTooltipState()
+            TooltipBox(
+                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                tooltip = { PlainTooltip { Text("Undo (Ctrl+Z)") } },
+                state = undoTooltipState,
+            ) {
+                IconButton(onClick = onUndo, enabled = canUndo) {
+                    Icon(
+                        Icons.Default.Undo,
+                        contentDescription = "Undo",
+                        tint = if (canUndo) Color.White else Color.Gray,
+                    )
+                }
             }
-            IconButton(onClick = onRedo, enabled = canRedo) {
-                Icon(
-                    Icons.Default.Redo,
-                    contentDescription = "Redo",
-                    tint = if (canRedo) Color.White else Color.Gray,
-                )
+            val redoTooltipState = rememberTooltipState()
+            TooltipBox(
+                positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                tooltip = { PlainTooltip { Text("Redo (Ctrl+Shift+Z)") } },
+                state = redoTooltipState,
+            ) {
+                IconButton(onClick = onRedo, enabled = canRedo) {
+                    Icon(
+                        Icons.Default.Redo,
+                        contentDescription = "Redo",
+                        tint = if (canRedo) Color.White else Color.Gray,
+                    )
+                }
             }
 
             if (displayUnit != null) {
@@ -210,7 +241,9 @@ private fun ToolButton(
     val bg = if (isActive && enabled) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     val tint = when {
         isActive && enabled -> MaterialTheme.colorScheme.onPrimaryContainer
-        !enabled -> Color(0xFF555555)
+        // WCAG contrast against TOOLBAR_BACKGROUND_COLOR must stay >= 4.5:1 — see
+        // DisabledTintContrastTest.
+        !enabled -> DISABLED_TINT_COLOR
         else -> Color(0xFFBBBBBB)
     }
     val tooltipState = rememberTooltipState()
@@ -241,7 +274,7 @@ private fun ToolButton(
                     text = label,
                     style = MaterialTheme.typography.labelSmall,
                     color = if (isActive && enabled) MaterialTheme.colorScheme.onPrimaryContainer
-                            else if (!enabled) Color(0xFF555555)
+                            else if (!enabled) DISABLED_TINT_COLOR
                             else Color(0xFFBBBBBB),
                     maxLines = 1,
                 )

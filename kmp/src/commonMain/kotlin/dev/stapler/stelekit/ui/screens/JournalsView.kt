@@ -61,6 +61,13 @@ fun JournalsView(
     capabilities: EditorCapabilities = EditorCapabilities(),
     tagSuggestionViewModel: TagSuggestionViewModel? = null,
     conflictFilePaths: Set<String> = emptySet(),
+    /**
+     * ux.md (i)/criterion 14: true while `AppState.diskConflict` is non-null. Passed straight
+     * through to [EditorToolbar]/`MobileBlockToolbar`'s Undo/Redo — must be a live value (see
+     * `ScreenRouter`'s `appState.diskConflict != null` call site) so Undo/Redo re-enable
+     * automatically once the conflict resolves.
+     */
+    hasDiskConflictPending: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     NavigationTracingEffect("Journals")
@@ -86,6 +93,11 @@ fun JournalsView(
     // Navigator panel state — empty list means closed
     var navigatorSuggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
     var navigatorIndex by remember { mutableStateOf(0) }
+
+    // GAP-010 (Story D.3.1): true while any page's BlockList has an active block drag — used to
+    // suspend this LazyColumn's own scrolling so blockBounds (cached relative to each BlockList's
+    // internal Column) can never desynchronize from the drop-target computation mid-drag.
+    val isAnyBlockDragging = remember { mutableStateOf(false) }
 
     // Infinite scroll detection
     val shouldLoadMore = remember {
@@ -114,6 +126,9 @@ fun JournalsView(
     ) {
         LazyColumn(
             state = listState,
+            // GAP-010: suspend scroll for the duration of any active block drag (see
+            // isAnyBlockDragging's doc above and BlockList.onDragStateChange).
+            userScrollEnabled = !isAnyBlockDragging.value,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 24.dp)
@@ -177,6 +192,8 @@ fun JournalsView(
                     onFocusDown = { blockUuid -> viewModel.focusNextBlock(BlockUuid(blockUuid)) },
                     onSearchPages = onSearchPages,
                     formatEvents = viewModel.formatEvents,
+                    todoToggleEvents = viewModel.todoToggleEvents,
+                    onDragStateChange = { isDragging -> isAnyBlockDragging.value = isDragging },
                     suggestionMatcher = suggestionMatcher,
                     onNavigateAllSuggestions = { suggestions ->
                         navigatorSuggestions = suggestions
@@ -247,6 +264,7 @@ fun JournalsView(
             capabilities = capabilities,
             searchViewModel = searchViewModel,
             isLeftHanded = isLeftHanded,
+            hasDiskConflictPending = hasDiskConflictPending,
             onSuggestTags = if (tagSuggestionViewModel != null) { blockUuid, content ->
                 if (content.isNotBlank()) {
                     val alreadyLinked = WikiLinkExtractor.extractPageNames(content)
@@ -317,6 +335,8 @@ private fun JournalEntry(
     onFocusDown: (String) -> Unit,
     onSearchPages: (String) -> kotlinx.coroutines.flow.Flow<List<SearchResultItem>> = { kotlinx.coroutines.flow.emptyFlow() },
     formatEvents: kotlinx.coroutines.flow.SharedFlow<FormatAction>? = null,
+    todoToggleEvents: kotlinx.coroutines.flow.SharedFlow<Unit>? = null,
+    onDragStateChange: (Boolean) -> Unit = {},
     suggestionMatcher: AhoCorasickMatcher? = null,
     onNavigateAllSuggestions: ((List<SuggestionItem>) -> Unit)? = null,
     onBlockSelectionChange: ((blockUuid: String, range: IntRange?) -> Unit)? = null,
@@ -418,6 +438,8 @@ private fun JournalEntry(
                 onFocusDown = onFocusDown,
                 onSearchPages = onSearchPages,
                 formatEvents = formatEvents,
+                todoToggleEvents = todoToggleEvents,
+                onDragStateChange = onDragStateChange,
                 suggestionMatcher = suggestionMatcher,
                 onNavigateAllSuggestions = onNavigateAllSuggestions,
                 onBlockSelectionChange = onBlockSelectionChange,

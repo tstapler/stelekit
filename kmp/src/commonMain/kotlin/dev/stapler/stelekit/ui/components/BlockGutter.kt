@@ -11,10 +11,13 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.useLongPressForDrag
@@ -52,13 +55,22 @@ internal fun BlockGutter(
             modifier = Modifier.size(18.dp)
         )
     } else {
-        Icon(
-            imageVector = Icons.Default.DragHandle,
-            contentDescription = "Drag to move",
+        // The draggable/clickable hit area must independently meet the app's 48dp minimum
+        // touch target (ux.md criterion 19) — the same "small glyph, large hit box" pattern
+        // IconButton uses internally. The gesture detection (pointerInput/detectDragGestures)
+        // is attached to this outer 48dp Box, not the 18dp Icon, so the actual draggable
+        // region is genuinely 48dp rather than a cosmetic-only padding increase around a
+        // small hit area. The contentDescription lives here too so semantics bounds queries
+        // (e.g. onNodeWithContentDescription("Drag to move")) measure the real hit area.
+        Box(
             modifier = Modifier
-                .size(18.dp)
+                // padding is applied OUTSIDE the fixed-size touch target (as external gutter
+                // spacing) — it must not be allowed to shrink the 48dp hit area itself. size()
+                // therefore comes after padding so it forces an exact 48dp x 48dp region for
+                // everything nested inside it (semantics + both pointerInput gesture detectors).
                 .padding(end = 4.dp)
-                .graphicsLayer(alpha = if (isHovered || isDragging) 1f else 0.15f)
+                .size(48.dp)
+                .semantics { contentDescription = "Drag to move" }
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
                         while (true) {
@@ -114,8 +126,22 @@ internal fun BlockGutter(
                         )
                     }
                 },
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.DragHandle,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(18.dp)
+                    // GAP-012 (Story D.3.1): 0.15 alpha made the handle near-invisible until
+                    // hover/drag, hiding an already-implemented, step-count-target-meeting
+                    // reorder mechanism from new users (corroborated by
+                    // docs/ux/journey-map.md's prior-art finding). 0.45 keeps a visible
+                    // "idle" affordance while still brightening further on hover/drag.
+                    .graphicsLayer(alpha = if (isHovered || isDragging) 1f else 0.45f),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 
     // Collapse/expand indicator (caret)

@@ -57,6 +57,19 @@ class VoicePipelineConfig(
     /** Amplitude flow for waveform animation: prefers directSpeechProvider, falls back to audioRecorder. */
     val effectiveAmplitudeFlow get() = directSpeechProvider?.amplitudeFlow ?: audioRecorder.amplitudeFlow
 
+    /**
+     * True when this pipeline can actually capture audio on the current platform — i.e. a real
+     * [AudioRecorder] is wired (anything other than the [NoOpAudioRecorder] fallback), or a
+     * [DirectSpeechProvider] is supplied instead. False only when both fall back to their no-op
+     * defaults, which today is every platform except Android (the only real [AudioRecorder]
+     * implementation, `AndroidAudioRecorder`, is instantiated solely in the Android app module).
+     *
+     * [dev.stapler.stelekit.ui.components.VoiceCaptureButton] uses this to render an honestly
+     * disabled affordance instead of a fully-interactive-looking control that silently records
+     * nothing (GAP-002, `project_plans/rich-editing-experience/implementation/gap-backlog.md`).
+     */
+    val isSupported: Boolean get() = audioRecorder !is NoOpAudioRecorder || directSpeechProvider != null
+
     fun close() {
         (sttProvider as? WhisperSpeechToTextProvider)?.close()
         (llmProvider as? ClaudeLlmFormatterProvider)?.close()

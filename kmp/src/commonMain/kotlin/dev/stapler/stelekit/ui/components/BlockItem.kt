@@ -73,6 +73,7 @@ internal fun BlockItem(
     onResolveContent: suspend (String) -> String? = { null },
     onSearchPages: (String) -> Flow<List<SearchResultItem>> = { emptyFlow() },
     formatEvents: SharedFlow<FormatAction>? = null,
+    todoToggleEvents: SharedFlow<Unit>? = null,
     suggestionMatcher: AhoCorasickMatcher? = null,
     /** Called when the user requests to navigate all suggestions on screen (via context menu). */
     onNavigateAllSuggestions: (() -> Unit)? = null,
@@ -228,6 +229,24 @@ internal fun BlockItem(
         }
     }
 
+    // GAP-005 (Story D.2.1): apply todo-toggle requests from the mobile toolbar's new overflow-row
+    // "☑ TODO" button when this block is being edited — mirrors the formatEvents collector above.
+    // BlockStateManager.todoToggleEvents (introduced Phase C.1) previously had no collector
+    // anywhere in the UI tree, so a future toolbar/palette trigger would have been the exact
+    // silently-non-functional "wired-looking but does nothing" anti-pattern this project's own
+    // audit flagged for the legacy `block.toggle-todo` command.
+    LaunchedEffect(isEditing, todoToggleEvents) {
+        if (isEditing && todoToggleEvents != null) {
+            todoToggleEvents.collect {
+                val newValue = applyTodoToggle(textFieldValue)
+                textFieldValue = newValue
+                onSelectionChange?.invoke(IntRange(newValue.selection.min, newValue.selection.max))
+                val newVersion = ++localVersion
+                onContentChange(newValue.text, newVersion)
+            }
+        }
+    }
+
     // Trigger load if not loaded
     LaunchedEffect(block.isLoaded) {
         if (!block.isLoaded) {
@@ -267,8 +286,20 @@ internal fun BlockItem(
             )
         }
 
-        Column {
+        // GAP-013 (Story D.3.1): DropZone.CHILD (reparent-as-child) previously rendered as only a
+        // divider/indent-shift — the same visual language as ABOVE/BELOW, differing solely by a
+        // 24dp indent on a thin line. That made it easy to mis-drop and silently reparent content
+        // with no distinct warning. A full-row background tint gives "this will become a child of
+        // the highlighted row" its own unambiguous affordance, on top of (not instead of) the
+        // existing indented divider.
         val dividerColor = MaterialTheme.colorScheme.primary
+        Column(
+            modifier = if (dropAsChild) {
+                Modifier.background(dividerColor.copy(alpha = 0.12f))
+            } else {
+                Modifier
+            }
+        ) {
         val indent = when {
             dropAsChild -> ((block.level + 1) * 24).dp
             dropAbove || dropBelow -> (block.level * 24).dp

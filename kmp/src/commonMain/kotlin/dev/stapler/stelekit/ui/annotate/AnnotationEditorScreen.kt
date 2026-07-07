@@ -59,6 +59,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -239,7 +240,21 @@ fun AnnotationEditorScreen(
     }
 
     Scaffold(
-        modifier = modifier,
+        // GAP-G02 fix: Undo/Redo now advertise "Ctrl+Z"/"Ctrl+Shift+Z" via AnnotationToolbar's
+        // TooltipBox (matching every other tool button's shortcut-hint convention), so this
+        // hardware binding must exist or the tooltip would itself become a new instance of the
+        // "advertises a shortcut that does nothing" bug this fix is closing. Scoped to this
+        // screen's own undo/redo stack only — independent of BlockStateManager's, per
+        // architecture.md §2's "no shared abstraction with the main editor."
+        modifier = modifier.onKeyEvent { event ->
+            onAnnotationEditorKeyEvent(
+                keyEvent = event,
+                canUndo = canUndo,
+                canRedo = canRedo,
+                onUndo = { viewModel.undo() },
+                onRedo = { viewModel.redo() },
+            )
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { paddingValues ->
         Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
@@ -348,6 +363,23 @@ fun AnnotationEditorScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 2.dp),
+            )
+        }
+
+        // GAP-G01 fix: TagEditorPanel was fully implemented (chip row + autocomplete,
+        // backed by viewModel.addTag()/removeTag()) but had zero call sites anywhere in the
+        // app — image-level tagging was completely unreachable despite Gallery already
+        // reading/filtering on ImageAnnotation.tags. Wired here as a persistent info strip,
+        // matching CalibrationConfidenceBadge/GpsMetadataRow's always-visible placement so the
+        // affordance is discoverable without an extra toggle tap (social-JTBD discoverability).
+        state.imageAnnotation?.let { annotation ->
+            TagEditorPanel(
+                tags = annotation.tags,
+                onAddTag = { viewModel.addTag(it) },
+                onRemoveTag = { viewModel.removeTag(it) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
             )
         }
 
@@ -1083,6 +1115,39 @@ private fun formatDecimals(value: Double, decimals: Int): String {
             currentDecimals > decimals -> s.substring(0, dotIdx + decimals + 1)
             else -> s
         }
+    }
+}
+
+// ── Keyboard shortcuts (GAP-G02) ──────────────────────────────────────────────
+
+/**
+ * Handles the annotation editor's hardware-keyboard undo/redo shortcuts.
+ *
+ * Dispatches to [AnnotationEditorScreen]'s own undo/redo stack ([AnnotationEditorViewModel.undo]/
+ * [AnnotationEditorViewModel.redo]) exclusively — this is intentionally independent of
+ * `BlockEditor.kt`'s `handleKeyEvent`/`FormatAction` dispatch (mirrors its Ctrl+Z/Ctrl+Shift+Z
+ * convention for consistency, per `App.kt`'s `onGraphKeyEvent`, but shares no code with it, per
+ * architecture.md §2's "no shared abstraction between the main editor and the annotation editor").
+ *
+ * Mirrors [AnnotationToolbar]'s `canUndo`/`canRedo`-gated `IconButton`s: the shortcut is a no-op
+ * (not consumed) when the corresponding action is unavailable, matching the button's own
+ * disabled-state behavior.
+ */
+private fun onAnnotationEditorKeyEvent(
+    keyEvent: KeyEvent,
+    canUndo: Boolean,
+    canRedo: Boolean,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
+): Boolean {
+    if (keyEvent.type != KeyEventType.KeyDown) return false
+    val isMod = keyEvent.isCtrlPressed || keyEvent.isMetaPressed
+    if (!isMod || keyEvent.key != Key.Z) return false
+    val isShift = keyEvent.isShiftPressed
+    return when {
+        !isShift && canUndo -> { onUndo(); true }
+        isShift && canRedo -> { onRedo(); true }
+        else -> false
     }
 }
 

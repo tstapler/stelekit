@@ -33,7 +33,10 @@ fun SuggestionBottomSheet(
     val isVisible = state is TagSuggestionState.Ready || state is TagSuggestionState.Loading
     if (!isVisible) return
 
-    val sheetState = rememberModalBottomSheetState()
+    // GAP-003 (Story D.1.1): skip the partially-expanded resting state so the sheet reaches its
+    // final position in one continuous motion instead of settling-then-expanding — removing a
+    // perceptible extra animation step from the flagship "insert tag" button-path journey.
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,

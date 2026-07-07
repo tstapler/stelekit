@@ -34,6 +34,13 @@ enum class FormatAction(val prefix: String, val suffix: String) {
     QUOTE("> ", ""),
     NUMBERED_LIST("1. ", ""),
     HEADING("# ", ""),
+    // Structural inserts (Phase C.2, GAP-006/GAP-007) — applyFormatAction dispatches these to
+    // dedicated branches rather than the generic prefix/suffix wrap logic above. The prefix/
+    // suffix values are unused by those branches; CODE_BLOCK's non-empty suffix and
+    // TABLE_INSERT's empty prefix keep both excluded from the line-prefix strip-group filter
+    // (suffix.isEmpty() && prefix.isNotEmpty()) so neither contaminates QUOTE/NUMBERED_LIST/HEADING.
+    CODE_BLOCK("```\n", "\n```"),
+    TABLE_INSERT("", ""),
 }
 
 /**
@@ -64,6 +71,7 @@ class JournalsViewModel(
     val selectedBlockUuids: StateFlow<Set<String>> = blockStateManager.selectedBlockUuids
     val isInSelectionMode: StateFlow<Boolean> = blockStateManager.isInSelectionMode
     val formatEvents: SharedFlow<FormatAction> = blockStateManager.formatEvents
+    val todoToggleEvents: SharedFlow<Unit> = blockStateManager.todoToggleEvents
     val canUndo: StateFlow<Boolean> = blockStateManager.canUndo
     val canRedo: StateFlow<Boolean> = blockStateManager.canRedo
     val loadingPageUuids: StateFlow<Set<String>> = blockStateManager.loadingPageUuids

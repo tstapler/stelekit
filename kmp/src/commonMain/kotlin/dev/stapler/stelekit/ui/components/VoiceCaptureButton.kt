@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
@@ -52,6 +53,14 @@ private const val FIXED_PULSE_MAX_SCALE = 1.25f
 // Duration the Done state is shown before auto-resetting to Idle.
 private const val DONE_AUTO_RESET_MS = 5_000L
 
+/**
+ * Shown instead of "Start recording" when [VoiceCaptureButton]'s `isSupported` is false — i.e.
+ * the wired [dev.stapler.stelekit.voice.AudioRecorder] is the [dev.stapler.stelekit.voice.NoOpAudioRecorder]
+ * fallback and no [dev.stapler.stelekit.voice.DirectSpeechProvider] is configured (every platform
+ * except Android today). Surfaced up front, before any tap, per GAP-002.
+ */
+const val VOICE_CAPTURE_UNSUPPORTED_DESCRIPTION = "Voice capture isn't available on this device"
+
 @Composable
 fun VoiceCaptureButton(
     state: VoiceCaptureState,
@@ -60,11 +69,30 @@ fun VoiceCaptureButton(
     onAutoReset: () -> Unit = {},
     amplitudeFlow: Flow<Float>? = null,
     onAcceptTag: ((term: String) -> Unit)? = null,
+    isSupported: Boolean = true,
 ) {
     when (state) {
         VoiceCaptureState.Idle -> {
-            FloatingActionButton(onClick = onTap) {
-                Icon(Icons.Default.Mic, contentDescription = "Start recording")
+            if (isSupported) {
+                FloatingActionButton(onClick = onTap) {
+                    Icon(Icons.Default.Mic, contentDescription = "Start recording")
+                }
+            } else {
+                // Honestly reflect unavailability instead of presenting a fully-interactive
+                // control that would silently record nothing (GAP-002) — disabled up front,
+                // before the user ever taps, rather than only discoverable via a confusing
+                // error message after a Recording pulse.
+                FloatingActionButton(
+                    onClick = {},
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.semantics {
+                        contentDescription = VOICE_CAPTURE_UNSUPPORTED_DESCRIPTION
+                        disabled()
+                    },
+                ) {
+                    Icon(Icons.Default.MicOff, contentDescription = null)
+                }
             }
         }
 

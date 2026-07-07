@@ -61,6 +61,26 @@ internal fun findWordEnd(text: String, position: Int): Int {
     return len
 }
 
+/**
+ * Detects whether the text immediately before the cursor matches the `[[` wiki-link or `#`
+ * hashtag autocomplete trigger pattern. Returns `null` (no trigger) while IME composition is
+ * active ([TextFieldValue.composition] non-null) — see the IME-composition-guard Pattern
+ * Decision (Phase E.1, pitfalls.md §2-§3): partial/candidate CJK/Japanese/Korean composition
+ * text must never be mistaken for a committed `[[`/`#` trigger.
+ *
+ * Exposed as `internal` so the guard is unit-testable without a full Compose harness.
+ */
+internal fun detectAutocompleteMatch(newValue: TextFieldValue): Pair<MatchResult, AutocompleteTrigger>? {
+    if (newValue.composition != null) return null
+    val cursor = newValue.selection.min
+    val textBeforeCursor = newValue.text.take(cursor)
+    val wikiMatch = WIKI_LINK_AUTOCOMPLETE_REGEX.find(textBeforeCursor)
+    if (wikiMatch != null) return Pair(wikiMatch, AutocompleteTrigger.WIKI_LINK)
+    val hashMatch = HASHTAG_AUTOCOMPLETE_REGEX.find(textBeforeCursor)
+    if (hashMatch != null) return Pair(hashMatch, AutocompleteTrigger.HASHTAG)
+    return null
+}
+
 @Composable
 internal fun BlockEditor(
     textFieldValue: TextFieldValue,
@@ -121,19 +141,14 @@ internal fun BlockEditor(
                 }
             }
 
-            // Autocomplete trigger detection
+            // Autocomplete trigger detection — guarded against active IME composition inside
+            // detectAutocompleteMatch (Phase E.1 / pitfalls.md §2-§3): partial/candidate CJK
+            // composition text must never falsely trigger [[ / # autocomplete.
             val cursor = newValue.selection.min
-            val textBeforeCursor = newValue.text.take(cursor)
-            val wikiMatch = WIKI_LINK_AUTOCOMPLETE_REGEX.find(textBeforeCursor)
-            val hashMatch = if (wikiMatch == null) HASHTAG_AUTOCOMPLETE_REGEX.find(textBeforeCursor) else null
+            val match = detectAutocompleteMatch(newValue)
 
-            val (activeMatch, trigger) = when {
-                wikiMatch != null -> Pair(wikiMatch, AutocompleteTrigger.WIKI_LINK)
-                hashMatch != null -> Pair(hashMatch, AutocompleteTrigger.HASHTAG)
-                else -> Pair(null, AutocompleteTrigger.WIKI_LINK)
-            }
-
-            if (activeMatch != null) {
+            if (match != null) {
+                val (activeMatch, trigger) = match
                 val query = activeMatch.groupValues[1]
                 val safeCursor = cursor.coerceIn(0, textLayoutResult?.layoutInput?.text?.length ?: 0)
                 val rect = if (textLayoutResult != null && safeCursor <= textLayoutResult!!.layoutInput.text.length) {
@@ -310,20 +325,36 @@ private fun handleKeyEvent(
             onOpenSearchWithText(selectedText)
             return true
         }
-        val formatAction = when (event.key) {
-            Key.B -> FormatAction.BOLD
-            Key.I -> FormatAction.ITALIC
-            Key.S -> FormatAction.STRIKETHROUGH
-            Key.H -> FormatAction.HIGHLIGHT
-            Key.E -> FormatAction.CODE
-            else -> null
-        }
+        // GAP-016 (Phase E.3): LINK/QUOTE/NUMBERED_LIST/HEADING had no hardware-keyboard
+        // shortcut at all — keyboard-unreachable on Desktop/Web, toolbar-only on mobile.
+        // Key choices checked against both this cascade's existing B/I/S/H/E bindings and
+        // App.kt's onGraphKeyEvent global bindings (K, Comma, Z/Shift+Z/Y, Shift+B, Shift+P,
+        // Shift+D, [, ]) to avoid shadowing global shortcuts while a block is focused.
+        // NUMBERED_LIST mirrors Google Docs' Ctrl+Shift+7 convention; HEADING follows the same
+        // Shift+digit shape (Ctrl+Shift+1) for internal consistency.
+        // Story F.3.1: the key/shift → FormatAction mapping now lives in ShortcutTable so it
+        // can never drift from the command palette's displayed shortcut badge — behavior is
+        // unchanged (ShortcutTable.bindings preserves this cascade's original order/semantics).
+        val formatAction = ShortcutTable.actionForKeyEvent(event.key, event.isShiftPressed)
         if (formatAction != null) {
             val result = applyFormatAction(
                 formatAction, textFieldValue, onTextFieldValueChange,
                 onLocalVersionIncrement, onContentChange
             )
             return result
+        }
+    }
+
+    // Ctrl+Enter: toggle TODO state (Story C.1.2 / GAP-001), but only when no autocomplete
+    // popup is open — the branch above (autocompleteState != null && searchResults.isNotEmpty())
+    // already owns Ctrl+Enter's "create new page" meaning while a query is active, and must win.
+    if (event.type == KeyEventType.KeyDown && event.isCtrlPressed && event.key == Key.Enter) {
+        if (autocompleteState == null) {
+            val newValue = applyTodoToggle(textFieldValue)
+            onTextFieldValueChange(newValue)
+            val newVersion = onLocalVersionIncrement()
+            onContentChange(newValue.text, newVersion)
+            return true
         }
     }
 
@@ -483,9 +514,70 @@ private fun handleKeyEvent(
 }
 
 /**
- * Wraps the selected text with formatting markers, or inserts markers at cursor.
- * If text is selected, wraps it: `**selected**`. If no selection, inserts markers
- * and places cursor between them: `**|**`.
+ * A block's todo-marker state, modeled as its own sum type rather than a [FormatAction] case —
+ * see the "TODO-toggle state modeling" Pattern Decision in the rich-editing-experience plan.
+ * Keeping this orthogonal to [FormatAction] means the three-state TODO→DONE cycle isn't
+ * shoehorned into a binary (prefix, suffix) toggle, and applying an unrelated `FormatAction`
+ * (HEADING/QUOTE/NUMBERED_LIST) can never silently strip a todo marker, or vice versa.
+ */
+internal enum class TodoState {
+    NONE, TODO, DOING, DONE;
+
+    /**
+     * The next state in the cycle, per `EssentialCommands.toggleTodo`'s existing specified
+     * (but previously discarded) behavior: NONE→TODO, TODO→DONE, DOING→DONE, DONE→TODO.
+     */
+    fun next(): TodoState = when (this) {
+        NONE -> TODO
+        TODO -> DONE
+        DOING -> DONE
+        DONE -> TODO
+    }
+
+    companion object {
+        /** Reads the current todo state from a block's raw line content. */
+        fun parse(content: String): TodoState = when {
+            content.startsWith("TODO ") -> TODO
+            content.startsWith("DOING ") -> DOING
+            content.startsWith("DONE ") -> DONE
+            else -> NONE
+        }
+    }
+}
+
+private fun TodoState.marker(): String = when (this) {
+    TodoState.NONE -> ""
+    TodoState.TODO -> "TODO "
+    TodoState.DOING -> "DOING "
+    TodoState.DONE -> "DONE "
+}
+
+/**
+ * Toggles a block's TODO/DOING/DONE marker, cycling per [TodoState.next]. Strips only the
+ * narrowly-scoped set `{"TODO ", "DOING ", "DONE "}` and prepends the next state's marker
+ * (empty for [TodoState.NONE]) — this never reads or mutates [FormatAction]'s mutually-exclusive
+ * line-prefix strip-group in [applyFormatAction], since todo state is an orthogonal axis, not a
+ * member of that group.
+ */
+internal fun applyTodoToggle(value: TextFieldValue): TextFieldValue {
+    val text = value.text
+    val currentMarker = TodoState.parse(text).marker()
+    val stripped = text.removePrefix(currentMarker)
+    val newMarker = TodoState.parse(text).next().marker()
+    val newText = newMarker + stripped
+
+    val delta = newMarker.length - currentMarker.length
+    val newSelection = TextRange(
+        (value.selection.start + delta).coerceIn(0, newText.length),
+        (value.selection.end + delta).coerceIn(0, newText.length),
+    )
+    return TextFieldValue(newText, newSelection)
+}
+
+/**
+ * Dispatches a toolbar/keyboard format [action] to the handler for its structural shape:
+ * whole-block code-fence toggle, whole-block table-skeleton insert, line-prefix toggle
+ * (with todo-marker preservation), or the generic selection wrap/toggle.
  */
 internal fun applyFormatAction(
     action: FormatAction,
@@ -499,29 +591,136 @@ internal fun applyFormatAction(
     val prefix = action.prefix
     val suffix = action.suffix
 
-    // Line-prefix actions (QUOTE, NUMBERED_LIST, HEADING) have an empty suffix.
-    // They toggle the prefix at the start of the entire block content, not at the cursor.
-    if (suffix.isEmpty() && prefix.isNotEmpty()) {
-        val newText: String
-        val newCursor: TextRange
-        if (text.startsWith(prefix)) {
-            // Already has this prefix — remove it (toggle off)
-            newText = text.removePrefix(prefix)
-            newCursor = TextRange(maxOf(0, selection.start - prefix.length))
-        } else {
-            // Strip any conflicting line-prefix before applying the new one
-            val stripped = FormatAction.entries
-                .filter { it.suffix.isEmpty() && it.prefix.isNotEmpty() && text.startsWith(it.prefix) }
-                .fold(text) { acc, other -> acc.removePrefix(other.prefix) }
-            newText = prefix + stripped
-            newCursor = TextRange(selection.start + prefix.length)
-        }
-        onTextFieldValueChange(TextFieldValue(newText, newCursor))
-        val newVersion = onLocalVersionIncrement()
-        onContentChange(newText, newVersion)
-        return true
+    return when {
+        action == FormatAction.CODE_BLOCK -> applyCodeBlockToggle(
+            text, selection, onTextFieldValueChange, onLocalVersionIncrement, onContentChange,
+        )
+        action == FormatAction.TABLE_INSERT -> applyTableInsert(
+            onTextFieldValueChange, onLocalVersionIncrement, onContentChange,
+        )
+        // Line-prefix actions (QUOTE, NUMBERED_LIST, HEADING) have an empty suffix.
+        suffix.isEmpty() && prefix.isNotEmpty() -> applyLinePrefixToggle(
+            text, selection, prefix, onTextFieldValueChange, onLocalVersionIncrement, onContentChange,
+        )
+        else -> applySelectionWrap(
+            text, selection, prefix, suffix, onTextFieldValueChange, onLocalVersionIncrement, onContentChange,
+        )
     }
+}
 
+/**
+ * Commits a format-action result: pushes the new [TextFieldValue] into the editor,
+ * bumps the block's local edit version, and notifies the content-change callback.
+ * Shared trailer for every `applyFormatAction` branch — always returns `true`.
+ */
+private fun commit(
+    newText: String,
+    newCursor: TextRange,
+    onTextFieldValueChange: (TextFieldValue) -> Unit,
+    onLocalVersionIncrement: () -> Long,
+    onContentChange: (String, Long) -> Unit,
+): Boolean {
+    onTextFieldValueChange(TextFieldValue(newText, newCursor))
+    val newVersion = onLocalVersionIncrement()
+    onContentChange(newText, newVersion)
+    return true
+}
+
+/**
+ * CODE_BLOCK (GAP-006): wraps the entire block content in a fenced code block, cursor
+ * placed just inside the opening fence. Structurally separate from the generic wrap/
+ * line-prefix logic since it always wraps the whole block, not just a selection.
+ */
+private fun applyCodeBlockToggle(
+    text: String,
+    selection: TextRange,
+    onTextFieldValueChange: (TextFieldValue) -> Unit,
+    onLocalVersionIncrement: () -> Long,
+    onContentChange: (String, Long) -> Unit,
+): Boolean {
+    val fenceOpen = "```\n"
+    val fenceClose = "\n```"
+    val newText: String
+    val newCursor: TextRange
+    if (text.startsWith(fenceOpen) && text.endsWith(fenceClose)) {
+        // Already fenced — toggle off
+        newText = text.removePrefix(fenceOpen).removeSuffix(fenceClose)
+        newCursor = TextRange(maxOf(0, selection.start - fenceOpen.length))
+    } else {
+        newText = fenceOpen + text + fenceClose
+        newCursor = TextRange(fenceOpen.length + selection.start)
+    }
+    return commit(newText, newCursor, onTextFieldValueChange, onLocalVersionIncrement, onContentChange)
+}
+
+/**
+ * TABLE_INSERT (GAP-007): inserts a 2x2 markdown table skeleton, cursor in the first cell,
+ * per design/ux.md surface (a) interaction-flow item 4.
+ */
+private fun applyTableInsert(
+    onTextFieldValueChange: (TextFieldValue) -> Unit,
+    onLocalVersionIncrement: () -> Long,
+    onContentChange: (String, Long) -> Unit,
+): Boolean {
+    val newText = "| | |\n| --- | --- |\n| | |"
+    val newCursor = TextRange(2)
+    return commit(newText, newCursor, onTextFieldValueChange, onLocalVersionIncrement, onContentChange)
+}
+
+/**
+ * Line-prefix actions (QUOTE, NUMBERED_LIST, HEADING) have an empty suffix.
+ * They toggle the prefix at the start of the entire block content, not at the cursor.
+ *
+ * Todo markers (if present) are an orthogonal axis to line-prefix formatting — see
+ * applyTodoToggle. Split off any todo marker first so this toggle operates only on the
+ * remainder, then re-prepend it, keeping "TODO "/"DOING "/"DONE " outermost/leftmost
+ * rather than letting a heading (or other line-prefix) get inserted ahead of it.
+ */
+private fun applyLinePrefixToggle(
+    text: String,
+    selection: TextRange,
+    prefix: String,
+    onTextFieldValueChange: (TextFieldValue) -> Unit,
+    onLocalVersionIncrement: () -> Long,
+    onContentChange: (String, Long) -> Unit,
+): Boolean {
+    val todoMarker = TodoState.parse(text).marker()
+    val rest = text.removePrefix(todoMarker)
+    val restSelectionStart = (selection.start - todoMarker.length).coerceAtLeast(0)
+
+    val newRest: String
+    val newRestCursor: Int
+    if (rest.startsWith(prefix)) {
+        // Already has this prefix — remove it (toggle off)
+        newRest = rest.removePrefix(prefix)
+        newRestCursor = maxOf(0, restSelectionStart - prefix.length)
+    } else {
+        // Strip any conflicting line-prefix before applying the new one
+        val stripped = FormatAction.entries
+            .filter { it.suffix.isEmpty() && it.prefix.isNotEmpty() && rest.startsWith(it.prefix) }
+            .fold(rest) { acc, other -> acc.removePrefix(other.prefix) }
+        newRest = prefix + stripped
+        newRestCursor = restSelectionStart + prefix.length
+    }
+    val newText = todoMarker + newRest
+    val newCursor = TextRange((todoMarker.length + newRestCursor).coerceIn(0, newText.length))
+    return commit(newText, newCursor, onTextFieldValueChange, onLocalVersionIncrement, onContentChange)
+}
+
+/**
+ * Wraps the selected text with formatting markers, or inserts markers at cursor.
+ * If text is selected, wraps it: `**selected**`. If no selection, inserts markers
+ * and places cursor between them: `**|**`.
+ */
+private fun applySelectionWrap(
+    text: String,
+    selection: TextRange,
+    prefix: String,
+    suffix: String,
+    onTextFieldValueChange: (TextFieldValue) -> Unit,
+    onLocalVersionIncrement: () -> Long,
+    onContentChange: (String, Long) -> Unit,
+): Boolean {
     val newText: String
     val newCursor: TextRange
 
@@ -550,10 +749,7 @@ internal fun applyFormatAction(
         }
     }
 
-    onTextFieldValueChange(TextFieldValue(newText, newCursor))
-    val newVersion = onLocalVersionIncrement()
-    onContentChange(newText, newVersion)
-    return true
+    return commit(newText, newCursor, onTextFieldValueChange, onLocalVersionIncrement, onContentChange)
 }
 
 /**
@@ -634,6 +830,11 @@ internal fun detectSoftKeyboardBracketWrap(
     oldSelection: TextRange,
     newValue: TextFieldValue,
 ): TextFieldValue? {
+    // IME composition guard (Phase E.1 / pitfalls.md §2-§3): partial/candidate IME composition
+    // text must never be mistaken for a committed `[` keystroke that should trigger [[ ]]
+    // wrapping — CJK/Japanese/Korean candidate selection can transiently produce text that
+    // matches this heuristic's diff pattern.
+    if (newValue.composition != null) return null
     if (oldSelection.collapsed) return null
     val selStart = oldSelection.min
     val selEnd = oldSelection.max

@@ -35,10 +35,17 @@ class TagSuggestionViewModel(
 
     fun requestSuggestions(blockUuid: String, blockContent: String, alreadyLinkedTerms: Set<String> = emptySet()) {
         suggestionJob?.cancel()
-        _state.value = TagSuggestionState.Loading
 
         suggestionJob = scope.launch {
-            // Tier 1: local scan — synchronous, always available
+            // GAP-003 fix (docs/journeys/insert-tag.md, Story D.1.1): this function previously set
+            // state = Loading synchronously before dispatching this coroutine, forcing every
+            // "Suggest tags" tap through a perceptible spinner frame even though Tier-1 local
+            // matches (AhoCorasickMatcher exact hits) need no network round-trip — only the Tier-2
+            // LLM call genuinely needs to wait. Emitting Ready directly, as soon as the (still
+            // off-main-thread, for large-graph safety) local scan completes, removes that avoidable
+            // step from the flagship button-path journey: chips now appear as soon as local matches
+            // are known, with the LLM tier continuing to enrich the same Ready state exactly as
+            // before via llmPending/llmSuggestions.
             val localSuggestions = engine.directMatch(blockContent)
             _state.value = TagSuggestionState.Ready(
                 blockUuid = blockUuid,
