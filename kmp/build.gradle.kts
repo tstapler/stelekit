@@ -581,8 +581,12 @@ val generateDemoFileSystem by tasks.registering {
 afterEvaluate {
     tasks.findByName("compileCommonMainKotlinMetadata")?.dependsOn(generateDemoFileSystem)
     tasks.findByName("compileKotlinJvm")?.dependsOn(generateDemoFileSystem)
-    tasks.findByName("compileDebugKotlinAndroid")?.dependsOn(generateDemoFileSystem)
-    tasks.findByName("compileReleaseKotlinAndroid")?.dependsOn(generateDemoFileSystem)
+    // Match by name rather than enumerating variants — hardcoding Debug/Release missed
+    // compileKotlinAndroid entirely (that task doesn't exist for this target; see the
+    // fix this comment lives next to), and would go stale again if a build type or
+    // product flavor is added later (e.g. compileBenchmarkKotlinAndroid).
+    tasks.matching { it.name.startsWith("compile") && it.name.endsWith("KotlinAndroid") }
+        .configureEach { dependsOn(generateDemoFileSystem) }
     tasks.findByName("compileKotlinWasmJs")?.dependsOn(generateDemoFileSystem)
 }
 
