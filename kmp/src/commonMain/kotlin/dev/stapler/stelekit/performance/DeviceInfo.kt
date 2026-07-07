@@ -1,6 +1,5 @@
 package dev.stapler.stelekit.performance
 
-import kotlinx.serialization.Serializable
 
 expect class DeviceInfo(
     platform: String,

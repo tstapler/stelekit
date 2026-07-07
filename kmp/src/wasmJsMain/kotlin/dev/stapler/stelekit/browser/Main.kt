@@ -109,16 +109,7 @@ fun main() {
             fileSystem = opfsFileSystem
             graphPath = opfsGraphPath
             // Ensure OPFS path overwrites any stale demo fallback stored from a previous session.
-            // Also purge any stale graph_registry that contains /demo paths — those entries come
-            // from a prior run where OPFS was unavailable and the in-memory DemoFileSystem was used.
-            // Leaving them in causes GraphManager.init to call switchGraph("/demo") at startup,
-            // which hangs the loading overlay because /demo has no files in OPFS.
             PlatformSettings().putString("lastGraphPath", graphPath)
-            val existingRegistry = localStorage.getItem("graph_registry") ?: ""
-            if (existingRegistry.contains("/demo")) {
-                localStorage.removeItem("graph_registry")
-                println("[SteleKit] Cleared stale /demo graph registry from previous demo-fallback session")
-            }
         }
 
         val graphManager = GraphManager(

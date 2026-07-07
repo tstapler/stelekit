@@ -20,7 +20,6 @@ import dev.stapler.stelekit.repository.DirectRepositoryWrite
 import dev.stapler.stelekit.repository.PageRepository
 import dev.stapler.stelekit.util.FileUtils
 import dev.stapler.stelekit.vault.CryptoLayer
-import dev.stapler.stelekit.vault.VaultError
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore

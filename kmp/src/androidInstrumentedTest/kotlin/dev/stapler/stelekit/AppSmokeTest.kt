@@ -92,7 +92,7 @@ class AppSmokeTest {
             Onboarding(
                 fileSystem = localFileSystem(graphDir.absolutePath),
                 onComplete = {},
-                onGraphSelected = {},
+                onGraphSelect = {},
             )
         }
         composeTestRule.onNodeWithText("Welcome to SteleKit").assertIsDisplayed()
@@ -105,7 +105,7 @@ class AppSmokeTest {
             Onboarding(
                 fileSystem = localFileSystem(graphDir.absolutePath),
                 onComplete = {},
-                onGraphSelected = {},
+                onGraphSelect = {},
             )
         }
         composeTestRule.onNodeWithText("Next").performClick()
@@ -118,7 +118,7 @@ class AppSmokeTest {
             Onboarding(
                 fileSystem = localFileSystem(graphDir.absolutePath),
                 onComplete = {},
-                onGraphSelected = {},
+                onGraphSelect = {},
             )
         }
         composeTestRule.onNodeWithText("Next").performClick()
@@ -134,7 +134,7 @@ class AppSmokeTest {
             Onboarding(
                 fileSystem = localFileSystem(graphDir.absolutePath),
                 onComplete = { onboardingFinished = true },
-                onGraphSelected = {},
+                onGraphSelect = {},
             )
         }
         // Welcome → Graph Selection → Keymap Intro → finish

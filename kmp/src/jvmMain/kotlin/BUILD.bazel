@@ -38,6 +38,8 @@ kt_jvm_library(
     deps = [
         # Resources (demo-graph, icons) from commonMain/resources
         "//kmp/src/commonMain/resources:common_resources",
+        # Desktop icon from jvmMain/resources/icons
+        "//kmp/src/jvmMain/resources/icons:icon_resource",
 
         # SQLDelight generated code + runtime (from commonMain)
         "//kmp/src/generated/sqldelight:sqldelight_generated_jvm",

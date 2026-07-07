@@ -221,6 +221,10 @@ jobs:
       - name: Install RPM toolchain
         run: sudo apt-get install -y rpm
 
+      # KNOWN GAP: the .deb/.rpm builds below invoke jpackage independently of
+      # the AppImage build and hit the same classpath-buffer-overflow bug
+      # patched (only in the AppImage's staged .cfg) further down in this job.
+      # Not fixed here — .deb/.rpm installs still crash until this is addressed separately.
       - name: Build DEB, RPM, and distributable
         run: |
           APP_VERSION="${{ needs.resolve-version.outputs.version }}"
@@ -258,6 +262,30 @@ jobs:
           APPDIR="$(pwd)/AppDir"
           mkdir -p "$APPDIR/usr"
           cp -r kmp/build/compose/binaries/main/app/stelekit/* "$APPDIR/usr/"
+
+          # jpackage lists every dependency jar as its own `app.classpath=` line in
+          # the launcher .cfg file. With ~130 jars in this app's classpath, the
+          # native launcher's fixed-size arg buffer overflows while building the
+          # JLI_Launch argv, silently truncating it and corrupting adjacent memory
+          # (including the env-var table) — the launcher then segfaults inside
+          # glibc's setenv(). Collapsing to one wildcard entry avoids the overflow;
+          # `$APPDIR/*` is expanded by the JVM's own classpath wildcard handling.
+          CFG="$APPDIR/usr/lib/app/stelekit.cfg"
+          awk '
+            /^app\.classpath=/ && !done { print "app.classpath=$APPDIR/*"; done=1; next }
+            /^app\.classpath=/ { next }
+            { print }
+          ' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+
+          # Deterministic regression guard: this must always collapse to exactly one
+          # entry. Relying only on the runtime smoke test below is not enough — the
+          # launcher's buffer-overflow corruption is heap-layout dependent, so it can
+          # silently pass on one glibc/allocator and still segfault on another.
+          CLASSPATH_LINES=$(grep -c '^app\.classpath=' "$CFG")
+          if [ "$CLASSPATH_LINES" -ne 1 ]; then
+            echo "::error::Expected exactly 1 app.classpath= line in $CFG after collapsing to a wildcard, found $CLASSPATH_LINES"
+            exit 1
+          fi
 
           mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
           mkdir -p "$APPDIR/usr/share/applications"
@@ -319,7 +347,11 @@ jobs:
             kill $APP_PID 2>/dev/null || true
           else
             wait $APP_PID; EXIT_CODE=$?
-            echo "Smoke test FAILED — app exited within ${TIMEOUT}s (code $EXIT_CODE)"
+            if [ "$EXIT_CODE" -eq 139 ] || [ "$EXIT_CODE" -eq 127 ]; then
+              echo "::error::Smoke test FAILED — exit $EXIT_CODE within ${TIMEOUT}s. This matches the jpackage classpath-buffer-overflow bug (JvmLauncherLib.c corrupts its argv/env buffer building a huge -classpath; depending on heap layout it either segfaults in setenv (139) or fails an internal re-exec with ENOENT (127)) — check that the app.classpath wildcard collapse above actually applied."
+            else
+              echo "Smoke test FAILED — app exited within ${TIMEOUT}s (code $EXIT_CODE)"
+            fi
             cat /tmp/stelekit-smoke.log || true
             kill $XVFB_PID 2>/dev/null || true
             exit 1

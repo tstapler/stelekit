@@ -1,6 +1,5 @@
 package dev.stapler.stelekit.ui.components
 
-import androidx.compose.foundation.background
 import kotlinx.coroutines.CancellationException
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicTextField

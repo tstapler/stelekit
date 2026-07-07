@@ -7,7 +7,6 @@ import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
-import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.performance.DebounceManager
@@ -785,6 +784,17 @@ class BlockStateManager(
     // ---- Block content operations ----
 
     /**
+     * Looks up [blockUuid] in the in-memory optimistic state first, falling back to a DB read
+     * only if it isn't cached there. The DB can lag behind [_blocks] by up to the debounce
+     * window, so any operation that reads-then-derives new content from a block (insert,
+     * append, link, split, etc.) must go through this rather than a bare DB fetch, or it risks
+     * silently overwriting unsaved edits with a stale snapshot.
+     */
+    private suspend fun findBlockOrNull(blockUuid: BlockUuid): Block? =
+        _blocks.value.values.flatten().find { it.uuid == blockUuid }
+            ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+
+    /**
      * Inserts [text] at the cursor position for the given block.
      * Used for image attachment markdown insertion (`![alt](path)`).
      *
@@ -793,7 +803,7 @@ class BlockStateManager(
      */
     override fun insertTextAtCursor(blockUuid: BlockUuid, text: String, overrideCursorIndex: Int?) {
         scope.launch {
-            val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
+            val block = findBlockOrNull(blockUuid) ?: return@launch
             val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
             val safePos = cursor.coerceIn(0, block.content.length)
             val newContent = block.content.substring(0, safePos) + text + block.content.substring(safePos)
@@ -810,9 +820,7 @@ class BlockStateManager(
      */
     fun appendToBlock(blockUuid: BlockUuid, text: String) {
         scope.launch {
-            val block = _blocks.value.values.flatten().firstOrNull { it.uuid == blockUuid }
-                ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
-                ?: return@launch
+            val block = findBlockOrNull(blockUuid) ?: return@launch
             insertTextAtCursor(blockUuid, text, overrideCursorIndex = block.content.length)
         }
     }
@@ -826,7 +834,7 @@ class BlockStateManager(
      */
     override fun insertLinkAtCursor(blockUuid: BlockUuid, pageName: String, overrideCursorIndex: Int?) {
         scope.launch {
-            val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
+            val block = findBlockOrNull(blockUuid) ?: return@launch
             val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
             val linkText = "[[$pageName]]"
             val safePos = cursor.coerceIn(0, block.content.length)
@@ -852,7 +860,7 @@ class BlockStateManager(
             return
         }
         scope.launch {
-            val block = blockRepository.getBlockByUuid(blockUuid).first().getOrNull() ?: return@launch
+            val block = findBlockOrNull(blockUuid) ?: return@launch
             val safeStart = selectionStart.coerceIn(0, block.content.length)
             val safeEnd = selectionEnd.coerceIn(safeStart, block.content.length)
             val linkText = "[[$pageName]]"
@@ -911,9 +919,7 @@ class BlockStateManager(
      * marks the block as dirty, and persists to DB asynchronously.
      */
     override fun updateBlockContent(blockUuid: BlockUuid, newContent: String, newVersion: Long): Job = scope.launch {
-        val block = _blocks.value.values.flatten().find { it.uuid == blockUuid }
-            ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
-            ?: return@launch
+        val block = findBlockOrNull(blockUuid) ?: return@launch
         val oldContent = block.content
         val oldVersion = block.version
         if (oldContent == newContent) return@launch
@@ -938,8 +944,7 @@ class BlockStateManager(
      */
     private suspend fun applyContentChange(blockUuid: BlockUuid, content: String, version: Long) {
         val uuidStr = blockUuid.value
-        val block = _blocks.value.values.flatten().find { it.uuid == blockUuid }
-            ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
+        val block = findBlockOrNull(blockUuid)
             ?: run {
                 logger.warn("applyContentChange: block $uuidStr not found — content update dropped")
                 return
@@ -1178,9 +1183,7 @@ class BlockStateManager(
             ?.position
 
     override fun addNewBlock(currentBlockUuid: BlockUuid): Job = scope.launch {
-        val sourceBlock = _blocks.value.values.flatten().find { it.uuid == currentBlockUuid }
-            ?: blockRepository.getBlockByUuid(currentBlockUuid).first().getOrNull()
-            ?: return@launch
+        val sourceBlock = findBlockOrNull(currentBlockUuid) ?: return@launch
         val pageUuidStr = sourceBlock.pageUuid.value
         val before = takePageSnapshot(pageUuidStr)
         val cursorPosition = sourceBlock.content.length

@@ -12,9 +12,7 @@ import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.DirectRepositoryWrite
-import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.performance.PerformanceMonitor
-import dev.stapler.stelekit.repository.BlockWithDepth
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock

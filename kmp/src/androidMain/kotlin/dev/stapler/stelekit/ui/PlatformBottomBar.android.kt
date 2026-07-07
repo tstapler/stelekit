@@ -20,8 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import dev.stapler.stelekit.ui.LocalWindowSizeClass
-import dev.stapler.stelekit.ui.isMobile
 
 private enum class BottomNavItem(
     val icon: ImageVector,

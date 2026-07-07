@@ -4,29 +4,12 @@
 
 package dev.stapler.stelekit.ui
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Style
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,13 +20,13 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalClipboardManager
 import dev.stapler.stelekit.db.GraphManager
 import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.migration.registerAllMigrations
 import dev.stapler.stelekit.db.SidecarManager
+import dev.stapler.stelekit.platform.DemoFileSystem
 import dev.stapler.stelekit.export.ExportService
 import dev.stapler.stelekit.export.HtmlExporter
 import dev.stapler.stelekit.export.JsonExporter
@@ -52,11 +35,9 @@ import dev.stapler.stelekit.export.PlainTextExporter
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.GraphId
-import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.performance.DebugBuildConfig
 import dev.stapler.stelekit.performance.DebugMenuState
 import dev.stapler.stelekit.performance.LocalSpanRecorder
-import dev.stapler.stelekit.performance.NavigationTracingEffect
 import dev.stapler.stelekit.performance.NoOpSpanRecorder
 import dev.stapler.stelekit.performance.PlatformJankStatsEffect
 import dev.stapler.stelekit.performance.SpanRecorder
@@ -65,26 +46,14 @@ import dev.stapler.stelekit.db.DriverFactory
 import dev.stapler.stelekit.repository.*
 import dev.stapler.stelekit.ui.components.*
 import dev.stapler.stelekit.ui.components.git.GitDetectionBanner
-import dev.stapler.stelekit.ui.components.settings.SettingsDialog
-import dev.stapler.stelekit.ui.rememberShareProvider
 import dev.stapler.stelekit.ui.i18n.I18n
 import dev.stapler.stelekit.ui.i18n.LocalI18n
 import dev.stapler.stelekit.ui.i18n.t
 import dev.stapler.stelekit.ui.onboarding.Onboarding
-import dev.stapler.stelekit.repository.InMemoryImageAnnotationRepository
-import dev.stapler.stelekit.repository.InMemoryMeasurementAnnotationRepository
-import dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel
-import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreen
-import dev.stapler.stelekit.ui.gallery.GalleryScreen
-import dev.stapler.stelekit.ui.gallery.GalleryViewModel
-import dev.stapler.stelekit.ui.screens.AllPagesScreen
 import dev.stapler.stelekit.ui.screens.AllPagesViewModel
-import dev.stapler.stelekit.ui.screens.LibraryStatsScreen
 import dev.stapler.stelekit.ui.screens.LibraryStatsViewModel
 import dev.stapler.stelekit.stats.LibraryStatsProvider
 import dev.stapler.stelekit.stats.NoOpLibraryStatsProvider
-import dev.stapler.stelekit.ui.screens.GlobalUnlinkedReferencesScreen
-import dev.stapler.stelekit.ui.screens.JournalsView
 import dev.stapler.stelekit.ui.screens.JournalsViewModel
 import dev.stapler.stelekit.ui.screens.LibrarySetupScreen
 import dev.stapler.stelekit.ui.screens.PageView
@@ -104,22 +73,16 @@ import dev.stapler.stelekit.tags.TagSuggestionEngine
 import dev.stapler.stelekit.tags.TagSuggestionViewModel
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.theme.StelekitThemeMode
-import kotlin.math.roundToInt
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.performance.PercentileSummary
 import dev.stapler.stelekit.performance.QueryStat
 import dev.stapler.stelekit.performance.SerializedSpan
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.time.Clock
-import kotlinx.datetime.DateTimeUnit
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
-import kotlinx.datetime.toLocalDateTime
 import arrow.core.Either
 import dev.stapler.stelekit.sections.SectionState
 import dev.stapler.stelekit.sections.getSectionStates
@@ -473,6 +436,10 @@ private fun GraphContent(
     val activeGraphInfo = remember { graphManager.getActiveGraphInfo() }
     val activeGraphPath = activeGraphInfo?.path ?: ""
 
+    val effectiveFileSystem: FileSystem = remember(activeGraphInfo?.isDemo) {
+        if (activeGraphInfo?.isDemo == true) DemoFileSystem() else fileSystem
+    }
+
     // Paranoid mode: true when a .stele-vault file exists for this graph and a crypto engine is available.
     var isParanoidMode by remember {
         androidx.compose.runtime.mutableStateOf(
@@ -548,23 +515,23 @@ private fun GraphContent(
             }
         }
     }
-    val graphLoader = remember(fileSystem, repos, sidecarManager) {
-        repos.createGraphLoader(fileSystem, sidecarManager = sidecarManager)
+    val graphLoader = remember(effectiveFileSystem, repos, sidecarManager) {
+        repos.createGraphLoader(effectiveFileSystem, sidecarManager = sidecarManager)
     }
     // Wire write-behind flush callbacks so FileRegistry correctly tracks SAF write windows.
     // - onFlushPreWrite: sets Long.MAX_VALUE sentinel before write, closing the mtime race
     //   window where a concurrent detectChanges poll emits a spurious event for .md.stek files.
     // - onFlushComplete: replaces sentinel with post-flush mtime after successful write.
     // - onFlushFailed: removes sentinel when write fails so the file is not permanently suppressed.
-    remember(graphLoader) {
-        fileSystem.setOnFlushPreWrite(graphLoader::preMarkFileWrite)
-        fileSystem.setOnFlushComplete(graphLoader::markFileWrittenByUs)
-        fileSystem.setOnFlushFailed(graphLoader::clearFilePendingWrite)
+    remember(graphLoader, effectiveFileSystem) {
+        effectiveFileSystem.setOnFlushPreWrite(graphLoader::preMarkFileWrite)
+        effectiveFileSystem.setOnFlushComplete(graphLoader::markFileWrittenByUs)
+        effectiveFileSystem.setOnFlushFailed(graphLoader::clearFilePendingWrite)
     }
 
-    val graphWriter = remember(fileSystem, repos, graphLoader, sidecarManager) {
+    val graphWriter = remember(effectiveFileSystem, repos, graphLoader, sidecarManager) {
         GraphWriter(
-            fileSystem,
+            effectiveFileSystem,
             repos.writeActor,
             onFileWritten = graphLoader::markFileWrittenByUs,
             sidecarManager = sidecarManager,
@@ -1148,7 +1115,7 @@ private fun GraphContent(
                 Onboarding(
                     fileSystem = fileSystem,
                     onComplete = { viewModel.setOnboardingCompleted(true) },
-                    onGraphSelected = { path ->
+                    onGraphSelect = { path ->
                         scope.launch {
                             val graphId = graphManager.addGraph(path)
                             // Persist BEFORE switchGraph — switchGraph updates activeGraphId which
@@ -1158,6 +1125,19 @@ private fun GraphContent(
                             viewModel.setGraphPath(path)
                             viewModel.setOnboardingCompleted(true)
                             graphManager.switchGraph(graphId)
+                        }
+                    },
+                    onDemoSelect = {
+                        scope.launch {
+                            try {
+                                val graphId = graphManager.addDemoGraph()
+                                graphManager.switchGraph(graphId)
+                                viewModel.setOnboardingCompleted(true)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                viewModel.sendSnackbar("Could not load demo content. Starting with an empty graph.")
+                            }
                         }
                     }
                 )
@@ -1200,6 +1180,7 @@ private fun GraphContent(
                     val isMobile = windowSizeClass.isMobile
                     val snackbarHostState = remember { SnackbarHostState() }
                     var showAddGraphDialog by remember { mutableStateOf(false) }
+                    var demoBannerDismissed by remember { mutableStateOf(false) }
                     LaunchedEffect(Unit) {
                         viewModel.snackbarEvents.collect { msg ->
                             try {
@@ -1230,7 +1211,7 @@ private fun GraphContent(
                     CompositionLocalProvider(
                         LocalWindowSizeClass provides windowSizeClass,
                         LocalOpenSearchWithText provides { text -> viewModel.setSearchDialogVisible(true, text) },
-                        LocalFileSystem provides fileSystem,
+                        LocalFileSystem provides effectiveFileSystem,
                     ) {
 
                     // Auto-manage sidebar based on layout: open on desktop, closed on mobile.
@@ -1306,6 +1287,10 @@ private fun GraphContent(
                                 currentGraphName = activeGraphInfo?.displayName ?: "",
                                 availableGraphs = graphRegistry.graphs,
                                 activeGraphId = activeGraphId?.value,
+                                pendingConflictFilePaths = appState.pendingConflictFilePaths,
+                                isDemoActive = activeGraphInfo?.isDemo == true,
+                                demoBannerDismissed = demoBannerDismissed,
+                                onDismissDemoBanner = { demoBannerDismissed = true },
                                 onPageClick = { page ->
                                     viewModel.navigateTo(Screen.PageView(page))
                                     closeSidebarIfMobile()

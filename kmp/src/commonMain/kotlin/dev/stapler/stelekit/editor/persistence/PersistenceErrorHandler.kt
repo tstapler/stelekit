@@ -10,7 +10,6 @@ import dev.stapler.stelekit.ui.NotificationManager
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlin.time.Clock
-import kotlin.Result
 import kotlin.math.pow
 
 /**

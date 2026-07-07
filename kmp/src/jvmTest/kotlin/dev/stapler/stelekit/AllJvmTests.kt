@@ -56,7 +56,9 @@ import dev.stapler.stelekit.repository.VisitRecencyMultiplierTest
 import dev.stapler.stelekit.search.FtsQueryBuilderTest
 import dev.stapler.stelekit.stats.LibraryWrappedTest
 import dev.stapler.stelekit.testing.OutlinerMonkeyTest
+import dev.stapler.stelekit.ui.DemoBannerTest
 import dev.stapler.stelekit.ui.DiskConflictResolutionTest
+import dev.stapler.stelekit.ui.GraphSwitcherDemoFilterTest
 import dev.stapler.stelekit.ui.DragDropReorderTest
 import dev.stapler.stelekit.ui.KeyboardShortcutTest
 import dev.stapler.stelekit.ui.MigrationReadyLoadingTest
@@ -164,6 +166,8 @@ import org.junit.runners.Suite
     SuggestionNavigatorPanelTest::class,
     SuggestionRenderBenchmarkTest::class,
     TopBarTest::class,
+    DemoBannerTest::class,
+    GraphSwitcherDemoFilterTest::class,
     DiskConflictResolutionTest::class,
     DragDropReorderTest::class,
     KeyboardShortcutTest::class,

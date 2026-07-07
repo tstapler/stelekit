@@ -1,16 +1,12 @@
 package dev.stapler.stelekit.editor.blocks
 
 import arrow.core.Either
-import arrow.core.left
-import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.repository.BlockRepository
-import dev.stapler.stelekit.repository.BlockWithDepth
 import kotlinx.coroutines.flow.Flow
 import kotlin.time.Instant
-import kotlin.Result
 
 /**
  * Core interface for rich editor block operations.

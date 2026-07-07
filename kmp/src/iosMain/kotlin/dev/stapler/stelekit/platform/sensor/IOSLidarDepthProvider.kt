@@ -5,7 +5,6 @@ import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.calibration.DepthFrame
 import dev.stapler.stelekit.error.DomainError
-import kotlinx.cinterop.CPointer
 import kotlinx.coroutines.CancellationException
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.get

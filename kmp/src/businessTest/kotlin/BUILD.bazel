@@ -6,6 +6,15 @@ dependencies, making it fast to run in CI.
 """
 
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library", "kt_jvm_test")
+load("@rules_java//java:defs.bzl", "java_library")
+
+# Bundles DemoFileSystem.kt as a classpath resource so DemoFileSystemSyncTest
+# can read it without a filesystem walk (needed for Bazel's sandboxed runs).
+java_library(
+    name = "demo_filesystem_as_resource",
+    resources = ["//kmp/src/commonMain/kotlin:demo_filesystem_source"],
+    resource_strip_prefix = "kmp/src/commonMain/kotlin/dev/stapler/stelekit/platform",
+)
 
 # Runnable test target — bazel test //kmp:business_tests
 kt_jvm_test(
@@ -19,6 +28,8 @@ kt_jvm_test(
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "//kmp/src/commonMain/resources:common_resources",
+        ":demo_filesystem_as_resource",
     ],
     visibility = ["//kmp:__subpackages__"],
 )

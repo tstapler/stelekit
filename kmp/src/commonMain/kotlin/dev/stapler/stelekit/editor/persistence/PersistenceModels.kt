@@ -1,6 +1,5 @@
 package dev.stapler.stelekit.editor.persistence
 
-import dev.stapler.stelekit.model.Block
 import kotlin.time.Instant
 import kotlinx.serialization.Serializable
 

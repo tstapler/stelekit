@@ -419,7 +419,7 @@ if (project.findProperty("enableJs") == "true") {
 
 // ── Demo filesystem generator ──────────────────────────────────────────────────
 // Reads: kmp/src/commonMain/resources/demo-graph/{pages,journals}/
-// Writes: kmp/src/wasmJsMain/kotlin/dev/stapler/stelekit/platform/DemoFileSystem.kt
+// Writes: kmp/src/commonMain/kotlin/dev/stapler/stelekit/platform/DemoFileSystem.kt
 // Up-to-date: Gradle skips if no .md file in demo-graph changed since last run.
 
 val generateDemoFileSystem by tasks.registering {
@@ -429,7 +429,7 @@ val generateDemoFileSystem by tasks.registering {
     inputs.dir(demoGraphDir).withPathSensitivity(PathSensitivity.RELATIVE)
 
     val outputFile = layout.projectDirectory.file(
-        "src/wasmJsMain/kotlin/dev/stapler/stelekit/platform/DemoFileSystem.kt"
+        "src/commonMain/kotlin/dev/stapler/stelekit/platform/DemoFileSystem.kt"
     )
     outputs.file(outputFile)
 
@@ -576,9 +576,17 @@ val generateDemoFileSystem by tasks.registering {
     }
 }
 
-// Wire generateDemoFileSystem before wasmJs compilation (only when wasmJs is enabled).
-// findByName is used instead of named to silently skip when JS is disabled.
+// Wire generateDemoFileSystem before all-platform compilation (commonMain + per-platform).
+// findByName is used instead of named to silently skip targets that are disabled.
 afterEvaluate {
+    tasks.findByName("compileCommonMainKotlinMetadata")?.dependsOn(generateDemoFileSystem)
+    tasks.findByName("compileKotlinJvm")?.dependsOn(generateDemoFileSystem)
+    // Match by name rather than enumerating variants — hardcoding Debug/Release missed
+    // compileKotlinAndroid entirely (that task doesn't exist for this target; see the
+    // fix this comment lives next to), and would go stale again if a build type or
+    // product flavor is added later (e.g. compileBenchmarkKotlinAndroid).
+    tasks.matching { it.name.startsWith("compile") && it.name.endsWith("KotlinAndroid") }
+        .configureEach { dependsOn(generateDemoFileSystem) }
     tasks.findByName("compileKotlinWasmJs")?.dependsOn(generateDemoFileSystem)
 }
 
