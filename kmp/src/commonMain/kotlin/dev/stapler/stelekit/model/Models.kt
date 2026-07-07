@@ -2,7 +2,6 @@ package dev.stapler.stelekit.model
 
 import kotlin.time.Instant
 import kotlinx.datetime.LocalDate
-import kotlinx.serialization.Serializable
 
 /**
  * Security validation for input data

@@ -26,7 +26,6 @@ import dev.stapler.stelekit.util.FractionalIndexing
 import dev.stapler.stelekit.util.UuidGenerator
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
-import app.cash.sqldelight.coroutines.mapToOne
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -37,8 +36,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 
 /**
  * SQLDelight implementation of BlockRepository.
@@ -55,10 +52,6 @@ class SqlDelightBlockRepository(
 
     private val queries = database.steleDatabaseQueries
     private val restricted = RestrictedDatabaseQueries(queries, driver)
-
-    @OptIn(DirectSqlWrite::class)
-    private suspend fun recomputeBacklinkCount(name: String) =
-        restricted.recomputeBacklinkCountForPage(name)
 
     @OptIn(DirectSqlWrite::class)
     private suspend fun recomputeBacklinkCountFromIndex(name: String) =

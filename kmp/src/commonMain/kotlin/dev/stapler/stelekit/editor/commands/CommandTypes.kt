@@ -1,6 +1,5 @@
 package dev.stapler.stelekit.editor.commands
 
-import dev.stapler.stelekit.model.NotificationType
 
 /**
  * Types of commands available in the editor

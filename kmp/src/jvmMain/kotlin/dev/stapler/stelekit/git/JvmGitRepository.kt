@@ -10,7 +10,6 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.git.model.ConflictFile
-import dev.stapler.stelekit.git.model.ConflictHunk
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.GitConfig
 import dev.stapler.stelekit.platform.security.CredentialAccess
@@ -21,13 +20,11 @@ import kotlinx.coroutines.withContext
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.MergeCommand
 import org.eclipse.jgit.api.errors.TransportException
-import org.eclipse.jgit.lib.Repository
 import org.eclipse.jgit.merge.MergeStrategy
 import org.eclipse.jgit.storage.file.FileRepositoryBuilder
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider
 import org.eclipse.jgit.transport.sshd.SshdSessionFactoryBuilder
 import java.io.File
-import java.time.Instant
 
 /**
  * JVM (Desktop) implementation of GitRepository using JGit 7.x.

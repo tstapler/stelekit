@@ -15,7 +15,6 @@ import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import dev.stapler.stelekit.performance.ActiveSpanContext
-import dev.stapler.stelekit.performance.AppSession
 import dev.stapler.stelekit.performance.CurrentSpanContext
 import dev.stapler.stelekit.performance.HistogramWriter
 import dev.stapler.stelekit.performance.RingBufferSpanExporter
@@ -33,7 +32,6 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.CancellationException
 import kotlin.time.Instant
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.math.abs
 import kotlin.math.exp
 

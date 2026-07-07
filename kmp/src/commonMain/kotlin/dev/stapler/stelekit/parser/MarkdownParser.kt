@@ -5,7 +5,6 @@ import kotlinx.coroutines.CancellationException
 import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.model.ParsedBlock
 import dev.stapler.stelekit.model.ParsedPage
-import dev.stapler.stelekit.parsing.InlineParser
 import dev.stapler.stelekit.parsing.OutlinerParser
 import dev.stapler.stelekit.parsing.ast.*
 

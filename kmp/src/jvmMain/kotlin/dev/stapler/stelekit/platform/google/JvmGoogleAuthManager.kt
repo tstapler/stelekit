@@ -5,7 +5,6 @@ package dev.stapler.stelekit.platform.google
 
 import arrow.core.Either
 import arrow.core.left
-import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import java.awt.Desktop
 import java.io.BufferedReader

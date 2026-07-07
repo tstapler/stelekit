@@ -27,7 +27,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Instant
-import kotlin.random.Random
 
 /**
  * ViewModel for rich text editor that integrates with existing Logseq infrastructure.

@@ -12,18 +12,12 @@ import dev.stapler.stelekit.db.RenameResult
 import dev.stapler.stelekit.db.UndoManager
 import arrow.core.Either
 import arrow.core.left
-import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.sections.SectionDefinition
 import dev.stapler.stelekit.sections.SectionManifest
 import dev.stapler.stelekit.sections.SectionManifestParser
 import dev.stapler.stelekit.sections.SectionManifestWriter
 import dev.stapler.stelekit.sections.SectionState
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import dev.stapler.stelekit.error.DomainError.ExportError
 import dev.stapler.stelekit.export.ClipboardProvider
 import dev.stapler.stelekit.export.ExportService
@@ -64,7 +58,6 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlin.time.Clock
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow

@@ -156,16 +156,6 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
         return DocumentsContract.buildDocumentUriUsingTree(resolvedTreeUri, childDocId)
     }
 
-    private fun parseTreeUri(safPath: String): Uri {
-        // Same encoding issue as parseDocumentUri — use stored treeUri directly.
-        return treeUri ?: run {
-            val withoutScheme = safPath.removePrefix("saf://")
-            val slashIdx = withoutScheme.indexOf('/')
-            val encodedTreePart = if (slashIdx >= 0) withoutScheme.substring(0, slashIdx) else withoutScheme
-            Uri.parse(Uri.decode(encodedTreePart))
-        }
-    }
-
     /** Returns the stored tree URI (used by MainActivity to pre-fill the folder picker hint). */
     fun getStoredTreeUri(): Uri? = treeUri
 
