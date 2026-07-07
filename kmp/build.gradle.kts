@@ -581,7 +581,8 @@ val generateDemoFileSystem by tasks.registering {
 afterEvaluate {
     tasks.findByName("compileCommonMainKotlinMetadata")?.dependsOn(generateDemoFileSystem)
     tasks.findByName("compileKotlinJvm")?.dependsOn(generateDemoFileSystem)
-    tasks.findByName("compileKotlinAndroid")?.dependsOn(generateDemoFileSystem)
+    tasks.findByName("compileDebugKotlinAndroid")?.dependsOn(generateDemoFileSystem)
+    tasks.findByName("compileReleaseKotlinAndroid")?.dependsOn(generateDemoFileSystem)
     tasks.findByName("compileKotlinWasmJs")?.dependsOn(generateDemoFileSystem)
 }
 
