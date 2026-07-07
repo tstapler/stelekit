@@ -66,7 +66,7 @@ class Stelekit < Formula
       system "update-desktop-database", share/"applications" rescue nil
       system "gtk-update-icon-cache", "-f", "-t", share/"icons/hicolor" rescue nil
 
-      home = Pathname.new(ENV.fetch("HOME", ""))
+      home = Pathname.new(ENV["HOME"].to_s.empty? ? Dir.home : ENV["HOME"])
       user_icons = home/".local/share/icons/hicolor/256x256/apps"
       user_icons.mkpath
       cp share/"icons/hicolor/256x256/apps/stelekit.png", user_icons/"stelekit.png"
@@ -118,10 +118,21 @@ class Stelekit < Formula
   # briefly flash a real GUI window on a machine with a display.
   def launcher_broken?
     require "tmpdir"
+    require "timeout"
     Dir.mktmpdir("stelekit-launcher-probe") do |sandbox|
       probe_env = {"HOME" => sandbox, "XDG_DATA_HOME" => "#{sandbox}/.local/share"}
-      ::Kernel.system(probe_env, "timeout", "6", bin/"stelekit", out: File::NULL, err: File::NULL, in: File::NULL)
-      [127, 139].include?($?&.exitstatus)
+      pid = Process.spawn(probe_env, (bin/"stelekit").to_s, out: File::NULL, err: File::NULL, in: File::NULL)
+      begin
+        Timeout.timeout(6) { Process.waitpid(pid) }
+        [127, 139].include?($?&.exitstatus)
+      rescue Timeout::Error
+        # Still running after 6s — treat as healthy, not broken. A hang isn't
+        # the classpath-overflow bug's signature (that's an immediate crash),
+        # and flagging slow-but-working launches as "broken" would be wrong.
+        Process.kill("TERM", pid) rescue nil
+        Process.waitpid(pid) rescue nil
+        false
+      end
     end
   rescue StandardError
     false

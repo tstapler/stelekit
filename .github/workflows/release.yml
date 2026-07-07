@@ -224,7 +224,7 @@ jobs:
       # KNOWN GAP: the .deb/.rpm builds below invoke jpackage independently of
       # the AppImage build and hit the same classpath-buffer-overflow bug
       # patched (only in the AppImage's staged .cfg) further down in this job.
-      # Not fixed here — see tracking issue TBD.
+      # Not fixed here — .deb/.rpm installs still crash until this is addressed separately.
       - name: Build DEB, RPM, and distributable
         run: |
           APP_VERSION="${{ needs.resolve-version.outputs.version }}"
