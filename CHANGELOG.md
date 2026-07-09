@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.65.0](https://github.com/tstapler/stelekit/compare/v0.64.0...v0.65.0) (2026-07-09)
+
+
+### Features
+
+* **journals:** add per-entry overflow menu with export and suggest tags ([4daee78](https://github.com/tstapler/stelekit/commit/4daee78915aefe920608f1198df35d1bf647f73f))
+
+
+### Bug Fixes
+
+* **mobile:** fix block drag conflicting with selection mode, add Select All ([c96fdde](https://github.com/tstapler/stelekit/commit/c96fdded7bb9695f858ed6b09c3c6a5d44bafed9))
+* **tags:** trigger ML Kit model download and include block content in prompt ([19efb39](https://github.com/tstapler/stelekit/commit/19efb39f3549301b36fa82d33eb1e39534cbd83e))
+
 ## [0.64.0](https://github.com/tstapler/stelekit/compare/v0.63.0...v0.64.0) (2026-07-07)
 
 
