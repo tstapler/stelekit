@@ -34,7 +34,6 @@ import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.SectionId
-import dev.stapler.stelekit.outliner.BlockSorter
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.performance.NavigationTracingEffect
 import dev.stapler.stelekit.repository.PageRepository
@@ -42,7 +41,7 @@ import dev.stapler.stelekit.ui.state.BlockStateManager
 import dev.stapler.stelekit.ui.StelekitViewModel
 import androidx.compose.runtime.CompositionLocalProvider
 import dev.stapler.stelekit.sections.SectionManifest
-import dev.stapler.stelekit.ui.components.BlockList
+import dev.stapler.stelekit.ui.components.PageContent
 import dev.stapler.stelekit.ui.components.EditorCapabilities
 import dev.stapler.stelekit.ui.components.EditorToolbar
 import dev.stapler.stelekit.ui.components.LocalGraphRootPath
@@ -352,100 +351,60 @@ fun PageView(
 
             // Blocks content
             item {
-                if (blocks.isEmpty()) {
-                    if (!page.isContentLoaded || page.uuid.value in loadingPageUuids) {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { blockStateManager.addBlockToPage(page.uuid) }
-                                .padding(vertical = 8.dp)
-                        ) {
-                            Text(
-                                text = "Click to write...",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp)
-                            )
-                        }
-                    }
-                } else {
-                    val sortedBlocks = remember(blocks) { BlockSorter.sort(blocks) }
-
-                    BlockList(
-                        blocks = sortedBlocks,
-                        isDebugMode = isDebugMode,
-                        editingBlockUuid = editingBlockUuid?.value,
-                        editingCursorIndex = editingCursorIndex,
-                        collapsedBlocks = collapsedBlockUuids,
-                        selectedBlockUuids = selectedBlockUuids,
-                        isInSelectionMode = isInSelectionMode,
-                        onToggleSelect = { uuid -> blockStateManager.toggleBlockSelection(BlockUuid(uuid)) },
-                        onEnterSelectionMode = { uuid -> blockStateManager.enterSelectionMode(BlockUuid(uuid)) },
-                        onShiftClick = { uuid -> blockStateManager.extendSelectionTo(BlockUuid(uuid)) },
-                        onShiftArrowUp = { blockStateManager.extendSelectionByOne(up = true) },
-                        onShiftArrowDown = { blockStateManager.extendSelectionByOne(up = false) },
-                        onStartEditing = { uuid -> blockStateManager.requestEditBlock(BlockUuid(uuid)) },
-                        onStopEditing = { blockUuid -> blockStateManager.stopEditingBlock(BlockUuid(blockUuid)) },
-                        onContentChange = { blockUuid, newContent, version ->
-                            blockStateManager.updateBlockContent(BlockUuid(blockUuid), newContent, version)
-                        },
-                        onLinkClick = onLinkClick,
-                        onNewBlock = { uuid -> blockStateManager.addNewBlock(BlockUuid(uuid)) },
-                        onSplitBlock = { uuid, pos -> blockStateManager.splitBlock(BlockUuid(uuid), pos) },
-                        onMergeBlock = { uuid -> blockStateManager.mergeBlock(BlockUuid(uuid)) },
-                        onIndent = { blockUuid -> blockStateManager.indentBlock(BlockUuid(blockUuid)) },
-                        onOutdent = { blockUuid -> blockStateManager.outdentBlock(BlockUuid(blockUuid)) },
-                        onMoveUp = { blockUuid -> blockStateManager.moveBlockUp(BlockUuid(blockUuid)) },
-                        onMoveDown = { blockUuid -> blockStateManager.moveBlockDown(BlockUuid(blockUuid)) },
-                        onLoadContent = { pageUuid -> blockStateManager.loadPageContent(PageUuid(pageUuid)) },
-                        onBackspace = { blockUuid -> blockStateManager.handleBackspace(BlockUuid(blockUuid)) },
-                        onToggleCollapse = { blockUuid -> blockStateManager.toggleBlockCollapse(BlockUuid(blockUuid)) },
-                        onFocusUp = { blockUuid -> blockStateManager.focusPreviousBlock(BlockUuid(blockUuid)) },
-                        onFocusDown = { blockUuid -> blockStateManager.focusNextBlock(BlockUuid(blockUuid)) },
-                        onResolveContent = { uuid -> viewModel.getBlockContent(uuid) },
-                        onSearchPages = { query -> viewModel.searchPages(query) },
-                        formatEvents = blockStateManager.formatEvents,
-                        todoToggleEvents = blockStateManager.todoToggleEvents,
-                        onDragStateChange = { isDragging -> isBlockDragging = isDragging },
-                        suggestionMatcher = suggestionMatcher,
-                        onNavigateAllSuggestions = { suggestions ->
-                            navigatorSuggestions = suggestions
-                            navigatorIndex = 0
-                        },
-                        onMoveSelectedBlocks = { newParentUuid, insertAfterUuid ->
-                            blockStateManager.moveSelectedBlocks(
-                                newParentUuid?.let { BlockUuid(it) },
-                                insertAfterUuid?.let { BlockUuid(it) }
-                            )
-                        },
-                        onAutoSelectForDrag = { uuid -> blockStateManager.enterSelectionMode(BlockUuid(uuid)) },
-                        onBlockSelectionChange = { blockUuid, range ->
-                            blockStateManager.updateEditingSelection(
-                                if (blockUuid == editingBlockUuid?.value) range else null
-                            )
-                        },
-                        onOpenAnnotationEditor = { uuid ->
-                            viewModel.navigateToAnnotationEditor(uuid, page.uuid.value)
-                        },
-                        hasSectionFilter = hasSectionFilter,
-                        localPageNames = localPageNames,
-                        cutBlockUuids = cutBlockUuids,
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .clickable { blockStateManager.addBlockToPage(page.uuid) }
-                    )
-                }
+                PageContent(
+                    blocks = blocks,
+                    isLoading = !page.isContentLoaded || page.uuid.value in loadingPageUuids,
+                    isDebugMode = isDebugMode,
+                    editingBlockUuid = editingBlockUuid?.value,
+                    editingCursorIndex = editingCursorIndex,
+                    collapsedBlocks = collapsedBlockUuids,
+                    selectedBlockUuids = selectedBlockUuids,
+                    isInSelectionMode = isInSelectionMode,
+                    cutBlockUuids = cutBlockUuids,
+                    suggestionMatcher = suggestionMatcher,
+                    localPageNames = localPageNames,
+                    hasSectionFilter = hasSectionFilter,
+                    formatEvents = blockStateManager.formatEvents,
+                    onAddBlockToPage = { blockStateManager.addBlockToPage(page.uuid) },
+                    onStartEditing = { uuid -> blockStateManager.requestEditBlock(BlockUuid(uuid)) },
+                    onStopEditing = { uuid -> blockStateManager.stopEditingBlock(BlockUuid(uuid)) },
+                    onContentChange = { uuid, content, version -> blockStateManager.updateBlockContent(BlockUuid(uuid), content, version) },
+                    onLinkClick = onLinkClick,
+                    onNewBlock = { uuid -> blockStateManager.addNewBlock(BlockUuid(uuid)) },
+                    onSplitBlock = { uuid, pos -> blockStateManager.splitBlock(BlockUuid(uuid), pos) },
+                    onMergeBlock = { uuid -> blockStateManager.mergeBlock(BlockUuid(uuid)) },
+                    onBackspace = { uuid -> blockStateManager.handleBackspace(BlockUuid(uuid)) },
+                    onLoadContent = { pageUuid -> blockStateManager.loadPageContent(PageUuid(pageUuid)) },
+                    onToggleCollapse = { uuid -> blockStateManager.toggleBlockCollapse(BlockUuid(uuid)) },
+                    onIndent = { uuid -> blockStateManager.indentBlock(BlockUuid(uuid)) },
+                    onOutdent = { uuid -> blockStateManager.outdentBlock(BlockUuid(uuid)) },
+                    onMoveUp = { uuid -> blockStateManager.moveBlockUp(BlockUuid(uuid)) },
+                    onMoveDown = { uuid -> blockStateManager.moveBlockDown(BlockUuid(uuid)) },
+                    onFocusUp = { uuid -> blockStateManager.focusPreviousBlock(BlockUuid(uuid)) },
+                    onFocusDown = { uuid -> blockStateManager.focusNextBlock(BlockUuid(uuid)) },
+                    onToggleSelect = { uuid -> blockStateManager.toggleBlockSelection(BlockUuid(uuid)) },
+                    onEnterSelectionMode = { uuid -> blockStateManager.enterSelectionMode(BlockUuid(uuid)) },
+                    onShiftClick = { uuid -> blockStateManager.extendSelectionTo(BlockUuid(uuid)) },
+                    onShiftArrowUp = { blockStateManager.extendSelectionByOne(up = true) },
+                    onShiftArrowDown = { blockStateManager.extendSelectionByOne(up = false) },
+                    onMoveSelectedBlocks = { newParentUuid, insertAfterUuid ->
+                        blockStateManager.moveSelectedBlocks(
+                            newParentUuid?.let { BlockUuid(it) },
+                            insertAfterUuid?.let { BlockUuid(it) }
+                        )
+                    },
+                    onAutoSelectForDrag = { uuid -> blockStateManager.enterSelectionMode(BlockUuid(uuid)) },
+                    onBlockSelectionChange = { uuid, range ->
+                        blockStateManager.updateEditingSelection(if (uuid == editingBlockUuid?.value) range else null)
+                    },
+                    onResolveContent = { uuid -> viewModel.getBlockContent(uuid) },
+                    onSearchPages = { query -> viewModel.searchPages(query) },
+                    onNavigateAllSuggestions = { suggestions ->
+                        navigatorSuggestions = suggestions
+                        navigatorIndex = 0
+                    },
+                    onOpenAnnotationEditor = { uuid -> viewModel.navigateToAnnotationEditor(uuid, page.uuid.value) },
+                )
             }
 
             // References section
@@ -512,6 +471,7 @@ fun PageView(
                     )
                 }
             } else null,
+            onSelectAll = { blockStateManager.selectAll(page.uuid) },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .onSizeChanged { toolbarHeight = it.height },

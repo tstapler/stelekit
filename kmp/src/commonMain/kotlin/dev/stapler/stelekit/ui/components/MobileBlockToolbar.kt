@@ -7,6 +7,7 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -103,6 +104,7 @@ fun MobileBlockToolbar(
     clipboardEmpty: Boolean = true,
     onPaste: () -> Unit = {},
     onClearClipboard: () -> Unit = {},
+    onSelectAll: (() -> Unit)? = null,
     isLeftHanded: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -380,6 +382,10 @@ fun MobileBlockToolbar(
                         // long-press entry (BlockItem.kt), which is unchanged.
                         IconButton(onClick = { onEnterSelectionMode(editingBlockId) }) {
                             Icon(Icons.Default.CheckCircle, contentDescription = "Select blocks")
+                        }
+                    } else if (onSelectAll != null) {
+                        IconButton(onClick = onSelectAll) {
+                            Icon(Icons.Default.CheckBox, contentDescription = "Select all blocks")
                         }
                     }
                     if (!clipboardEmpty) {

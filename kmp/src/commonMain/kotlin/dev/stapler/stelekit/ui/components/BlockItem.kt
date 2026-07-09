@@ -20,6 +20,7 @@ import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockType
 import dev.stapler.stelekit.ui.theme.StelekitTheme
 import dev.stapler.stelekit.ui.screens.FormatAction
+import dev.stapler.stelekit.ui.useLongPressForDrag
 import dev.stapler.stelekit.ui.screens.SearchResultItem
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharedFlow
@@ -255,6 +256,7 @@ internal fun BlockItem(
     }
 
     val haptic = LocalHapticFeedback.current
+    val useLongPressForDrag = useLongPressForDrag()
 
     Box(
         modifier = Modifier
@@ -263,14 +265,17 @@ internal fun BlockItem(
                 if (isSelected) Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
                 else Modifier
             )
-            .pointerInput(isInSelectionMode) {
+            .pointerInput(isInSelectionMode, useLongPressForDrag) {
                 detectTapGestures(
-                    onLongPress = {
+                    // On platforms where long-press initiates drag (Android), suppress the
+                    // block-level long-press-to-select so it doesn't conflict with the gutter's
+                    // detectDragGesturesAfterLongPress, which fires at the same time.
+                    onLongPress = if (useLongPressForDrag) null else ({
                         if (!isInSelectionMode) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onEnterSelectionMode()
                         }
-                    },
+                    }),
                     onTap = { if (isInSelectionMode) onToggleSelect() }
                 )
             }

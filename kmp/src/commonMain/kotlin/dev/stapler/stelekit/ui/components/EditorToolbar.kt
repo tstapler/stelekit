@@ -27,6 +27,7 @@ fun EditorToolbar(
      */
     hasDiskConflictPending: Boolean = false,
     onSuggestTags: ((blockUuid: String, content: String) -> Unit)? = null,
+    onSelectAll: (() -> Unit)? = null,
     // Test-only recomposition probe (pitfalls.md §1 / Task B.1.2a regression guard).
     // Invoked via SideEffect once per recomposition of this composable's own scope.
     // Always null in production call sites (PageView/JournalsView) — exists solely so
@@ -147,6 +148,7 @@ fun EditorToolbar(
         clipboardEmpty = blockClipboard.isEmpty,
         onPaste = { editingBlockUuid?.let { blockStateManager.pasteBlocks(it) } },
         onClearClipboard = { blockStateManager.clearClipboard() },
+        onSelectAll = onSelectAll,
         isLeftHanded = isLeftHanded,
         modifier = modifier,
     )

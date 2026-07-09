@@ -138,7 +138,7 @@ internal fun BlockGutter(
                     // reorder mechanism from new users (corroborated by
                     // docs/ux/journey-map.md's prior-art finding). 0.45 keeps a visible
                     // "idle" affordance while still brightening further on hover/drag.
-                    .graphicsLayer(alpha = if (isHovered || isDragging) 1f else 0.45f),
+                    .graphicsLayer(alpha = if (useLongPress || isHovered || isDragging) 1f else 0.45f),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
