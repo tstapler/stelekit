@@ -32,7 +32,7 @@ class LlmTagProvider(
             .take(MAX_VOCABULARY_SIZE)
         if (filtered.isEmpty()) return emptyList<TagSuggestion>().right()
 
-        val systemPrompt = buildSystemPrompt(filtered)
+        val systemPrompt = buildSystemPrompt(truncatedContent, filtered)
         return try {
             withTimeout(timeoutSeconds.seconds) {
                 when (val result = provider.format(truncatedContent, systemPrompt)) {
@@ -77,7 +77,7 @@ class LlmTagProvider(
         }
     }
 
-    private fun buildSystemPrompt(vocabulary: List<String>): String {
+    private fun buildSystemPrompt(blockContent: String, vocabulary: List<String>): String {
         val tagList = vocabulary.joinToString("\n") { "- $it" }
         return """
 You are a knowledge-graph tagging assistant.
@@ -85,6 +85,10 @@ Given a block of text and a list of existing page names, return ONLY the page na
 list below that are genuinely relevant to the block content.
 Output one page name per line. No explanation, no markdown, no extra text.
 If nothing is relevant, output nothing.
+
+<block>
+$blockContent
+</block>
 
 <tags>
 $tagList

@@ -66,12 +66,19 @@ class MlKitLlmFormatterProvider private constructor(
                         LlmResult.Success(text, LlmProviderSupport.detectTruncation(text))
                     }
                 }
-                FeatureStatus.DOWNLOADABLE,
-                FeatureStatus.DOWNLOADING -> {
-                    // AICore downloads the model in the background automatically.
-                    // Blocking here would take several minutes — return a friendly retry message.
+                FeatureStatus.DOWNLOADABLE -> {
+                    // generateContent() triggers the AICore model download as a side effect.
+                    // It will throw a GenAiException since the model isn't ready — we swallow it
+                    // and return a retryable message. Without this call the download never starts.
+                    runCatching { model.generateContent(systemPrompt) }
                     LlmResult.Failure.OnDeviceUnavailable(
-                        "Model is still downloading",
+                        "Downloading on-device model — this may take a few minutes",
+                        retryable = true,
+                    )
+                }
+                FeatureStatus.DOWNLOADING -> {
+                    LlmResult.Failure.OnDeviceUnavailable(
+                        "On-device model is downloading — try again in a moment",
                         retryable = true,
                     )
                 }
