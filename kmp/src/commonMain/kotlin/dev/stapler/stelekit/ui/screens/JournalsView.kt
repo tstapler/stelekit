@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,7 +30,7 @@ import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.model.SectionId
-import dev.stapler.stelekit.ui.components.BlockList
+import dev.stapler.stelekit.ui.components.PageContent
 import dev.stapler.stelekit.ui.components.EditorCapabilities
 import dev.stapler.stelekit.ui.components.EditorToolbar
 import dev.stapler.stelekit.ui.components.LocalGraphRootPath
@@ -68,6 +69,7 @@ fun JournalsView(
      * automatically once the conflict resolves.
      */
     hasDiskConflictPending: Boolean = false,
+    onExportEntry: ((page: Page, blocks: List<Block>, formatId: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     NavigationTracingEffect("Journals")
@@ -153,6 +155,14 @@ fun JournalsView(
                     isDebugMode = isDebugMode,
                     hasConflict = page.filePath in conflictFilePaths,
                     onTitleClick = { onLinkClick(page.name) },
+                    onExport = onExportEntry?.let { export -> { formatId -> export(page, blockList, formatId) } },
+                    onSuggestTags = if (tagSuggestionViewModel != null) {
+                        {
+                            val content = blockList.take(20).joinToString("\n") { it.content }.take(500)
+                            val linked = WikiLinkExtractor.extractPageNames(blockList.joinToString("\n") { it.content })
+                            tagSuggestionViewModel.requestSuggestions(page.uuid.value, content, linked)
+                        }
+                    } else null,
                     editingBlockUuid = editingBlockUuid?.value,
                     editingCursorIndex = editingCursorIndex,
                     collapsedBlocks = collapsedBlockUuids,
@@ -306,6 +316,8 @@ private fun JournalEntry(
     isDebugMode: Boolean,
     hasConflict: Boolean = false,
     onTitleClick: () -> Unit,
+    onExport: ((formatId: String) -> Unit)? = null,
+    onSuggestTags: (() -> Unit)? = null,
     editingBlockUuid: String?,
     editingCursorIndex: Int?,
     collapsedBlocks: Set<String>,
@@ -344,116 +356,120 @@ private fun JournalEntry(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
-        // Journal date header with optional conflict indicator
+        // Journal date header with optional conflict indicator and overflow menu
+        var menuExpanded by remember { mutableStateOf(false) }
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .clickable { onTitleClick() }
-                .padding(bottom = 16.dp, top = 8.dp)
+            modifier = Modifier.padding(bottom = 16.dp, top = 8.dp)
         ) {
-            Text(
-                text = formatJournalDate(page.name),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            val sid = page.sectionId
-            if (sid is SectionId.Named) {
-                Spacer(Modifier.width(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onTitleClick() }
+            ) {
                 Text(
-                    text = "[${sid.id}]",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    text = formatJournalDate(page.name),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
                 )
+                val sid = page.sectionId
+                if (sid is SectionId.Named) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "[${sid.id}]",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                if (hasConflict) {
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Page modified on disk — tap to review",
+                        tint = Color(0xFFF59E0B),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
-            if (hasConflict) {
-                Spacer(Modifier.width(8.dp))
-                Icon(
-                    imageVector = Icons.Default.Warning,
-                    contentDescription = "Page modified on disk — tap to review",
-                    tint = Color(0xFFF59E0B),
-                    modifier = Modifier.size(20.dp)
-                )
+            if (onExport != null || onSuggestTags != null) {
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Entry options",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        if (onExport != null) {
+                            listOf(
+                                "markdown" to "Copy as Markdown",
+                                "plain-text" to "Copy as Plain Text",
+                                "html" to "Copy as HTML",
+                                "json" to "Copy as JSON",
+                            ).forEach { (formatId, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = { menuExpanded = false; onExport(formatId) }
+                                )
+                            }
+                        }
+                        if (onSuggestTags != null) {
+                            if (onExport != null) HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Suggest tags for entry") },
+                                onClick = { menuExpanded = false; onSuggestTags() }
+                            )
+                        }
+                    }
+                }
             }
         }
 
         // Blocks content
-        if (blocks.isEmpty()) {
-            if (isLoading) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                }
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onAddBlockToPage(page.uuid.value) }
-                        .padding(vertical = 8.dp)
-                ) {
-                    Text(
-                        text = "Click to write...",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp)
-                    )
-                }
-            }
-        } else {
-            // Sort blocks hierarchically for display
-            val sortedBlocks = remember(blocks) { 
-                dev.stapler.stelekit.outliner.BlockSorter.sort(blocks)
-            }
-            
-            BlockList(
-                blocks = sortedBlocks,
-                isDebugMode = isDebugMode,
-                editingBlockUuid = editingBlockUuid,
-                editingCursorIndex = editingCursorIndex,
-                collapsedBlocks = collapsedBlocks,
-                selectedBlockUuids = selectedBlockUuids,
-                isInSelectionMode = isInSelectionMode,
-                onToggleSelect = onToggleSelect,
-                onEnterSelectionMode = onEnterSelectionMode,
-                onShiftClick = onShiftClick,
-                onShiftArrowUp = onShiftArrowUp,
-                onShiftArrowDown = onShiftArrowDown,
-                onStartEditing = onStartEditing,
-                onStopEditing = onStopEditing,
-                onContentChange = onContentChange,
-                onLinkClick = onLinkClick,
-                onNewBlock = onNewBlock,
-                onSplitBlock = onSplitBlock,
-                onMergeBlock = onMergeBlock,
-                onIndent = onIndent,
-                onOutdent = onOutdent,
-                onMoveUp = onMoveUp,
-                onMoveDown = onMoveDown,
-                onLoadContent = onLoadContent,
-                onBackspace = onBackspace,
-                onToggleCollapse = onToggleCollapse,
-                onFocusUp = onFocusUp,
-                onFocusDown = onFocusDown,
-                onSearchPages = onSearchPages,
-                formatEvents = formatEvents,
-                todoToggleEvents = todoToggleEvents,
-                onDragStateChange = onDragStateChange,
-                suggestionMatcher = suggestionMatcher,
-                onNavigateAllSuggestions = onNavigateAllSuggestions,
-                onBlockSelectionChange = onBlockSelectionChange,
-                onOpenAnnotationEditor = onOpenAnnotationEditor,
-            )
-
-            // Clickable area below blocks to append new block
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .clickable { onAddBlockToPage(page.uuid.value) }
-            )
-        }
+        PageContent(
+            blocks = blocks,
+            isLoading = isLoading,
+            isDebugMode = isDebugMode,
+            editingBlockUuid = editingBlockUuid,
+            editingCursorIndex = editingCursorIndex,
+            collapsedBlocks = collapsedBlocks,
+            selectedBlockUuids = selectedBlockUuids,
+            isInSelectionMode = isInSelectionMode,
+            suggestionMatcher = suggestionMatcher,
+            formatEvents = formatEvents,
+            onAddBlockToPage = { onAddBlockToPage(page.uuid.value) },
+            onStartEditing = onStartEditing,
+            onStopEditing = onStopEditing,
+            onContentChange = onContentChange,
+            onLinkClick = onLinkClick,
+            onNewBlock = onNewBlock,
+            onSplitBlock = onSplitBlock,
+            onMergeBlock = onMergeBlock,
+            onBackspace = onBackspace,
+            onLoadContent = onLoadContent,
+            onToggleCollapse = onToggleCollapse,
+            onIndent = onIndent,
+            onOutdent = onOutdent,
+            onMoveUp = onMoveUp,
+            onMoveDown = onMoveDown,
+            onFocusUp = onFocusUp,
+            onFocusDown = onFocusDown,
+            onToggleSelect = onToggleSelect,
+            onEnterSelectionMode = onEnterSelectionMode,
+            onShiftClick = onShiftClick,
+            onShiftArrowUp = onShiftArrowUp,
+            onShiftArrowDown = onShiftArrowDown,
+            onSearchPages = onSearchPages,
+            onNavigateAllSuggestions = onNavigateAllSuggestions,
+            onBlockSelectionChange = onBlockSelectionChange,
+            onOpenAnnotationEditor = onOpenAnnotationEditor,
+        )
     }
 }
 

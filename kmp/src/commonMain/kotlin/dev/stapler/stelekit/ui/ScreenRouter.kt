@@ -165,6 +165,15 @@ internal fun ScreenRouter(
                 tagSuggestionViewModel = tagSuggestionViewModel,
                 conflictFilePaths = appState.pendingConflictFilePaths,
                 hasDiskConflictPending = appState.diskConflict != null,
+                onExportEntry = { page, blocks, formatId ->
+                    viewModel.exportScopeToClipboard(
+                        shareScope = dev.stapler.stelekit.ui.ShareScope.CurrentPage,
+                        page = page,
+                        allBlocks = blocks,
+                        selectedUuids = emptySet(),
+                        formatId = formatId,
+                    )
+                },
             )
             is Screen.Flashcards -> {
                 NavigationTracingEffect("Flashcards")
