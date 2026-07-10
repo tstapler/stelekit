@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.67.0](https://github.com/tstapler/stelekit/compare/v0.66.0...v0.67.0) (2026-07-10)
+
+
+### Features
+
+* **assets:** pinch-zoom fixes, background swatches, and measurement annotate on image viewer ([ac1eef9](https://github.com/tstapler/stelekit/commit/ac1eef9289537c80dd526d45907fc3bd2cbb58bb))
+
+
+### Bug Fixes
+
+* **assets:** clip zoomed image to the viewer's bounds ([fd9dd23](https://github.com/tstapler/stelekit/commit/fd9dd231dfba506324b9f2f962dd9e0e47edcd97))
+* **assets:** create matching Block for synthesized annotations, move switchGraph close off UI thread ([614da88](https://github.com/tstapler/stelekit/commit/614da885e2bf1d9554d50253ecc2edef2047a940))
+* **db:** don't let a stale-factory close failure abort switchGraph ([f24fa1e](https://github.com/tstapler/stelekit/commit/f24fa1eb0849015ce52144c9ae80248574b3ecb3))
+* **desktop:** isolate ./gradlew run from the real graph, checkpoint WAL on close ([d45acf8](https://github.com/tstapler/stelekit/commit/d45acf87d9198665a017f5151bb65d8c89a73e1a))
+
 ## [0.66.0](https://github.com/tstapler/stelekit/compare/v0.65.1...v0.66.0) (2026-07-10)
 
 
