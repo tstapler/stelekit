@@ -1042,6 +1042,9 @@ private fun GraphContent(
     DisposableEffect(tagSuggestionViewModel) {
         onDispose { tagSuggestionViewModel?.close() }
     }
+    // Warm up the on-device model as soon as a provider is available — long before the user
+    // taps "Suggest tags" so the first request hits a warm runtime instead of a cold one.
+    LaunchedEffect(tagSuggestionViewModel) { tagSuggestionViewModel?.preload() }
 
     val voiceCaptureViewModel = remember(voicePipeline, tagEngine) {
         VoiceCaptureViewModel(
