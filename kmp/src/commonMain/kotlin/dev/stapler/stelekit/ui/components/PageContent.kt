@@ -26,13 +26,22 @@ import kotlinx.coroutines.flow.emptyFlow
  *
  * Headers, toolbars, overlays, and chrome stay in the caller.
  */
+@Suppress("MultipleEmitters") // dispatches to 3 mutually-exclusive branches; not a real violation
 @Composable
 fun PageContent(
     blocks: List<Block>,
     isLoading: Boolean,
-    isDebugMode: Boolean = false,
     editingBlockUuid: String?,
     editingCursorIndex: Int?,
+    onAddBlockToPage: () -> Unit,
+    onStartEditing: (String) -> Unit,
+    onStopEditing: (String) -> Unit,
+    onContentChange: (String, String, Long) -> Unit,
+    onLinkClick: (String) -> Unit,
+    onNewBlock: (String) -> Unit,
+    onSplitBlock: (String, Int) -> Unit,
+    modifier: Modifier = Modifier,
+    isDebugMode: Boolean = false,
     collapsedBlocks: Set<String> = emptySet(),
     selectedBlockUuids: Set<String> = emptySet(),
     isInSelectionMode: Boolean = false,
@@ -41,13 +50,6 @@ fun PageContent(
     localPageNames: Set<String> = emptySet(),
     hasSectionFilter: Boolean = false,
     formatEvents: SharedFlow<FormatAction>? = null,
-    onAddBlockToPage: () -> Unit,
-    onStartEditing: (String) -> Unit,
-    onStopEditing: (String) -> Unit,
-    onContentChange: (String, String, Long) -> Unit,
-    onLinkClick: (String) -> Unit,
-    onNewBlock: (String) -> Unit,
-    onSplitBlock: (String, Int) -> Unit,
     onMergeBlock: (String) -> Unit = {},
     onBackspace: (String) -> Unit = {},
     onLoadContent: (String) -> Unit = {},
@@ -70,7 +72,6 @@ fun PageContent(
     onSearchPages: (String) -> Flow<List<SearchResultItem>> = { emptyFlow() },
     onNavigateAllSuggestions: ((List<SuggestionItem>) -> Unit)? = null,
     onOpenAnnotationEditor: (String) -> Unit = {},
-    modifier: Modifier = Modifier,
 ) {
     if (blocks.isEmpty()) {
         if (isLoading) {
