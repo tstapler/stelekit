@@ -44,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.isSpecified
@@ -248,6 +249,7 @@ private fun ImageViewer(asset: AssetEntry, modifier: Modifier = Modifier) {
             modifier = Modifier
                 .fillMaxWidth()
                 .height(420.dp)
+                .clipToBounds()
                 .onSizeChanged { containerSize = it }
                 .viewerBackground(background)
                 .transformable(transformableState)
