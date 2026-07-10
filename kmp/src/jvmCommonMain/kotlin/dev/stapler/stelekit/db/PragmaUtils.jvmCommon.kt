@@ -2,6 +2,10 @@ package dev.stapler.stelekit.db
 
 import app.cash.sqldelight.db.SqlDriver
 import kotlinx.coroutines.runBlocking
+import java.util.logging.Level
+import java.util.logging.Logger
+
+private val log = Logger.getLogger("PragmaUtils")
 
 actual fun pragmaOptimizeAndClose(driver: SqlDriver?) {
     try { runBlocking { driver?.execute(null, "PRAGMA optimize", 0)?.await() } } catch (_: Exception) {}
@@ -11,6 +15,10 @@ actual fun pragmaOptimizeAndClose(driver: SqlDriver?) {
     // size only ever grows to its historical peak (observed: 5GB WAL for a 722MB db), and every
     // subsequent read/write has to wade through it. Truncate on every graph close so the file
     // stays proportional to actual write volume between sessions.
-    try { runBlocking { driver?.execute(null, "PRAGMA wal_checkpoint(TRUNCATE)", 0)?.await() } } catch (_: Exception) {}
+    try {
+        runBlocking { driver?.execute(null, "PRAGMA wal_checkpoint(TRUNCATE)", 0)?.await() }
+    } catch (e: Exception) {
+        log.log(Level.WARNING, "wal_checkpoint(TRUNCATE) failed — WAL file may not shrink", e)
+    }
     try { driver?.close() } catch (_: Exception) {}
 }

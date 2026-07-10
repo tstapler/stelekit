@@ -1236,7 +1236,19 @@ afterEvaluate {
                 val realGraphDir = IoFile(System.getProperty("user.home"), "Documents/stelekit")
                 if (realGraphDir.exists()) {
                     println("── Seeding dev graph: copying $realGraphDir -> $devGraphDir")
-                    realGraphDir.copyRecursively(devGraphDir)
+                    try {
+                        realGraphDir.copyRecursively(devGraphDir)
+                    } catch (e: Exception) {
+                        // A partial copy would otherwise sit at devGraphDir forever — the
+                        // !devGraphDir.exists() guard above means it's never retried on a later
+                        // run. Delete the partial copy so the next `run` invocation re-seeds.
+                        devGraphDir.deleteRecursively()
+                        throw GradleException(
+                            "Failed to seed dev graph from $realGraphDir to $devGraphDir. " +
+                                "Deleted the partial copy — rerun the task to retry.",
+                            e,
+                        )
+                    }
                 } else {
                     devGraphDir.mkdirs()
                 }

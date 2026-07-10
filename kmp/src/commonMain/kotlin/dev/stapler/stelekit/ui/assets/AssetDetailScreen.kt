@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -62,6 +63,7 @@ import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.math.floor
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -172,6 +174,46 @@ private enum class ViewerBackground(val label: String) {
 private const val MAX_ZOOM = 5f
 private const val DOUBLE_TAP_ZOOM = 2.5f
 
+/**
+ * Computes the maximum symmetric pan offset (in px, per axis) allowed at [scale] for an image
+ * rendered under [ContentScale.Fit] inside [containerSize].
+ *
+ * `Fit` scales the image uniformly to fit inside the container, which letterboxes it — leaves
+ * blank space — on whichever axis doesn't match the container's aspect ratio. Bounding pan by
+ * the raw container (rather than the actual rendered image rect) overestimates the allowable
+ * pan range on the letterboxed axis, letting the user pan blank space into view. This function
+ * derives the bound from the actual rendered image rect instead.
+ *
+ * When [imageIntrinsicSize] is null or degenerate (image still loading, or intrinsic size
+ * unknown/unavailable), falls back to treating the whole container as the image bounds — this
+ * matches the pre-existing (letterbox-unaware) behavior, so it's a safe default, not a
+ * regression.
+ */
+internal fun maxPan(containerSize: IntSize, imageIntrinsicSize: IntSize?, scale: Float): Offset {
+    if (containerSize.width <= 0 || containerSize.height <= 0) return Offset.Zero
+
+    val (renderedWidth, renderedHeight) = if (
+        imageIntrinsicSize != null && imageIntrinsicSize.width > 0 && imageIntrinsicSize.height > 0
+    ) {
+        val containerAspect = containerSize.width.toFloat() / containerSize.height.toFloat()
+        val imageAspect = imageIntrinsicSize.width.toFloat() / imageIntrinsicSize.height.toFloat()
+        if (imageAspect > containerAspect) {
+            // Image is relatively wider than the container — fit to width, letterbox top/bottom.
+            containerSize.width.toFloat() to (containerSize.width.toFloat() / imageAspect)
+        } else {
+            // Image is relatively taller than (or same aspect as) the container — fit to height,
+            // letterbox left/right.
+            (containerSize.height.toFloat() * imageAspect) to containerSize.height.toFloat()
+        }
+    } else {
+        containerSize.width.toFloat() to containerSize.height.toFloat()
+    }
+
+    val maxX = (renderedWidth * (scale - 1f) / 2f).coerceAtLeast(0f)
+    val maxY = (renderedHeight * (scale - 1f) / 2f).coerceAtLeast(0f)
+    return Offset(maxX, maxY)
+}
+
 @Composable
 private fun ImageViewer(asset: AssetEntry, modifier: Modifier = Modifier) {
     val imageLoader = rememberSteleKitImageLoader()
@@ -179,9 +221,8 @@ private fun ImageViewer(asset: AssetEntry, modifier: Modifier = Modifier) {
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
+    var imageIntrinsicSize by remember { mutableStateOf<IntSize?>(null) }
     var background by remember { mutableStateOf(ViewerBackground.THEME) }
-
-    fun maxPan(dimensionPx: Int): Float = (dimensionPx * (scale - 1f) / 2f).coerceAtLeast(0f)
 
     fun resetZoom() {
         scale = 1f
@@ -191,8 +232,9 @@ private fun ImageViewer(asset: AssetEntry, modifier: Modifier = Modifier) {
 
     val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
         scale = (scale * zoomChange).coerceIn(1f, MAX_ZOOM)
-        offsetX = (offsetX + panChange.x).coerceIn(-maxPan(containerSize.width), maxPan(containerSize.width))
-        offsetY = (offsetY + panChange.y).coerceIn(-maxPan(containerSize.height), maxPan(containerSize.height))
+        val panBound = maxPan(containerSize, imageIntrinsicSize, scale)
+        offsetX = (offsetX + panChange.x).coerceIn(-panBound.x, panBound.x)
+        offsetY = (offsetY + panChange.y).coerceIn(-panBound.y, panBound.y)
     }
     val coilModel = when {
         asset.relativePath.startsWith("../assets/") -> asset.relativePath
@@ -221,6 +263,12 @@ private fun ImageViewer(asset: AssetEntry, modifier: Modifier = Modifier) {
                 imageLoader = imageLoader,
                 contentDescription = asset.filePath.substringAfterLast('/'),
                 contentScale = ContentScale.Fit,
+                onSuccess = { state ->
+                    val size = state.painter.intrinsicSize
+                    if (size.isSpecified) {
+                        imageIntrinsicSize = IntSize(size.width.roundToInt(), size.height.roundToInt())
+                    }
+                },
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer(

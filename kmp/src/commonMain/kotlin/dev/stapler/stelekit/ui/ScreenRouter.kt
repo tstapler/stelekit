@@ -41,7 +41,6 @@ import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.repository.RepositorySet
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreen
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel
@@ -285,6 +284,10 @@ internal fun ScreenRouter(
                     dev.stapler.stelekit.ui.assets.AssetDetailViewModel(
                         assetRepository = repos.assetRepository,
                         assetUuid = currentScreen.assetUuid,
+                        imageAnnotationRepository = repos.imageAnnotationRepository,
+                        blockRepository = repos.blockRepository,
+                        writeActor = repos.writeActor,
+                        graphPath = appState.currentGraphPath,
                     )
                 }
                 val annotateScope = rememberCoroutineScope()
@@ -294,11 +297,7 @@ internal fun ScreenRouter(
                     onNavigateToPage = { pageUuid -> viewModel.navigateToPageByUuid(pageUuid) },
                     onAnnotate = { asset ->
                         annotateScope.launch {
-                            openOrCreateImageAnnotation(
-                                asset = asset,
-                                graphPath = appState.currentGraphPath,
-                                repos = repos,
-                            )?.let { annotationUuid ->
+                            assetDetailViewModel.resolveOrCreateAnnotation(asset)?.let { annotationUuid ->
                                 viewModel.navigateToAnnotationEditor(annotationUuid, asset.pageUuids.firstOrNull())
                             }
                         }
@@ -409,38 +408,4 @@ private fun FatalErrorScreen(
             Text("Dismiss")
         }
     }
-}
-
-/**
- * Resolves the [dev.stapler.stelekit.model.ImageAnnotation] uuid to open the annotation editor
- * with for [asset]: reuses an existing annotation row matching [AssetEntry.filePath] if one
- * exists (e.g. the asset was already imported via the measurement flow), otherwise creates a new
- * orphan-block annotation scoped to the asset's first linked page.
- *
- * Returns null (and creates nothing) for assets with no page association — annotation rows
- * require a real [dev.stapler.stelekit.model.ImageAnnotation.pageUuid]; `AssetDetailScreen`
- * already hides the "Annotate" action for orphan assets, so this is a defensive no-op.
- */
-@OptIn(dev.stapler.stelekit.repository.DirectRepositoryWrite::class)
-private suspend fun openOrCreateImageAnnotation(
-    asset: dev.stapler.stelekit.asset.AssetEntry,
-    graphPath: String,
-    repos: RepositorySet,
-): String? {
-    val existing = repos.imageAnnotationRepository.getAllImageAnnotations().first()
-        .getOrNull()
-        ?.firstOrNull { it.filePath == asset.filePath }
-    if (existing != null) return existing.uuid
-
-    val pageUuid = asset.pageUuids.firstOrNull() ?: return null
-    val annotation = dev.stapler.stelekit.model.ImageAnnotation(
-        uuid = dev.stapler.stelekit.util.UuidGenerator.generateV7(),
-        blockUuid = dev.stapler.stelekit.util.UuidGenerator.generateV7(),
-        pageUuid = pageUuid,
-        graphPath = graphPath,
-        filePath = asset.filePath,
-        tags = asset.tags,
-    )
-    return repos.imageAnnotationRepository.saveImageAnnotation(annotation)
-        .fold({ null }, { annotation.uuid })
 }

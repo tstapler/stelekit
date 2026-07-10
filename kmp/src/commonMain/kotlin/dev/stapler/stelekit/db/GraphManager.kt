@@ -406,10 +406,14 @@ class GraphManager(
         // Null the repo set BEFORE closing the driver so Compose flow collectors see null
         // and stop querying before the database connection is torn down. Closing first
         // caused a race where in-flight LaunchedEffect queries hit an already-closed DB.
+        // The actual close() call is deferred to the IO coroutine below — pragmaOptimizeAndClose()
+        // now runs a PRAGMA wal_checkpoint(TRUNCATE), which can take seconds on a large WAL, and
+        // switchGraph() is called synchronously from the Compose UI dispatcher (rememberCoroutineScope
+        // in App.kt), so running it here would freeze the UI on every graph switch.
         _activeRepositorySet.value = null
-        currentFactory?.close()
+        val factoryToClose = currentFactory
         currentFactory = null
-        
+
         // Create a new scope for this graph's operations first so the actor can use it.
         // MUST use a fresh SupervisorJob — CoroutineScope(coroutineScope.coroutineContext) would
         // share the same Job, so cancelling any previous graphScope (line above) would cancel
@@ -433,6 +437,11 @@ class GraphManager(
             try {
                 val t0 = kotlin.time.Clock.System.now().toEpochMilliseconds()
                 fun elapsed() = kotlin.time.Clock.System.now().toEpochMilliseconds() - t0
+
+                // Close the previous graph's database off the UI thread — see comment above
+                // where factoryToClose was captured.
+                factoryToClose?.close()
+                logger.info("init[${elapsed()}ms]: previous factory closed")
 
                 preFlightJob?.await()
                 logger.info("init[${elapsed()}ms]: preFlightJob done")
