@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.66.0](https://github.com/tstapler/stelekit/compare/v0.65.1...v0.66.0) (2026-07-10)
+
+
+### Features
+
+* **tags:** add explicit Scan button for bulk journal LLM tag suggestions ([2681e98](https://github.com/tstapler/stelekit/commit/2681e98bb274f9388a3887586e359af95d3b8413))
+* **tags:** background LLM suggestions with app-startup preload and result cache ([b307c72](https://github.com/tstapler/stelekit/commit/b307c729db03f12941f3a73d2ed2c2e48d8ce331))
+
+
+### Bug Fixes
+
+* **lint:** resolve 3 Detekt violations from previous commits ([b234527](https://github.com/tstapler/stelekit/commit/b2345271b4c63f80fdc53d6700e7486e8e3b62d3))
+
 ## [0.65.1](https://github.com/tstapler/stelekit/compare/v0.65.0...v0.65.1) (2026-07-10)
 
 
