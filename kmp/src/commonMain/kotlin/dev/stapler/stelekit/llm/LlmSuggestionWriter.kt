@@ -64,6 +64,13 @@ class LlmSuggestionWriter(
             graphPath = graphPath,
         )
         is PendingLlmSuggestion.NewPage -> writeNewPage(suggestion, graphPath)
+        is PendingLlmSuggestion.UnlinkedReference -> writeBlockEdit(
+            pageUuid = suggestion.pageUuid,
+            blockUuid = suggestion.blockUuid,
+            currentContentSnapshot = suggestion.currentContentSnapshot,
+            newContent = applyUnlinkedRef(suggestion),
+            graphPath = graphPath,
+        )
     }
 
     /**
@@ -183,6 +190,13 @@ class LlmSuggestionWriter(
         }
 
         return result
+    }
+
+    private fun applyUnlinkedRef(suggestion: PendingLlmSuggestion.UnlinkedReference): String {
+        val c = suggestion.currentContentSnapshot
+        val safeEnd = suggestion.matchEnd.coerceAtMost(c.length)
+        val safeStart = suggestion.matchStart.coerceIn(0, safeEnd)
+        return c.substring(0, safeStart) + "[[${suggestion.targetPageName}]]" + c.substring(safeEnd)
     }
 
     /** Applies [addedTerms]/[removedTerms] as `[[wiki-link]]` insertions/removals on [content]. */

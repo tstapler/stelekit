@@ -51,9 +51,14 @@ import dev.stapler.stelekit.ui.components.ReferencesPanel
 import dev.stapler.stelekit.ui.components.SuggestionItem
 import dev.stapler.stelekit.ui.components.SuggestionNavigatorPanel
 import dev.stapler.stelekit.ui.i18n.t
+import dev.stapler.stelekit.llm.PendingLlmSuggestion
+import dev.stapler.stelekit.tags.BulkScanState
+import dev.stapler.stelekit.tags.JournalScanEntry
 import dev.stapler.stelekit.tags.TagSuggestionViewModel
 import dev.stapler.stelekit.tags.TagSuggestionState
 import dev.stapler.stelekit.tags.WikiLinkExtractor
+import kotlin.time.Clock
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import dev.stapler.stelekit.ui.components.tags.SuggestionBottomSheet
@@ -124,6 +129,15 @@ fun PageView(
 
     val tagSuggestionState by tagSuggestionViewModel?.state?.collectAsState()
         ?: remember { mutableStateOf(TagSuggestionState.Idle) }
+    val scanState by tagSuggestionViewModel?.scanState?.collectAsState()
+        ?: remember { mutableStateOf<BulkScanState>(BulkScanState.Idle) }
+
+    LaunchedEffect(scanState) {
+        if (scanState is BulkScanState.Complete) {
+            delay(3_000)
+            tagSuggestionViewModel?.resetScan()
+        }
+    }
 
     // Navigator panel state — empty list means closed
     var navigatorSuggestions by remember { mutableStateOf<List<SuggestionItem>>(emptyList()) }
@@ -135,6 +149,57 @@ fun PageView(
 
     val blocks = allBlocks[page.uuid.value] ?: emptyList()
     val cutBlockUuids = if (blockClipboard.isCut) blockClipboard.entries.map { it.block.uuid.value }.toSet() else emptySet()
+
+    // Shared scan trigger: proposes matcher results immediately, then starts async LLM scan.
+    // Keyed on blocks + matcher so the lambda always closes over fresh values.
+    val onScanPage = remember(blocks, suggestionMatcher, currentGraphId) {
+        trigger@{
+            val firstBlock = blocks.firstOrNull { it.content.isNotBlank() } ?: return@trigger
+            val now = Clock.System.now().toEpochMilliseconds()
+            val graphId = currentGraphId ?: ""
+            // Matcher results are synchronous — propose immediately so review screen opens at once.
+            suggestionMatcher?.let { matcher ->
+                blocks.forEach { block ->
+                    matcher.findAll(block.content).forEach { span ->
+                        // ponytail: skip if already inside [[...]] — prefix check only, not a full parser
+                        val alreadyLinked = span.start >= 2 &&
+                            block.content.substring(span.start - 2, span.start) == "[["
+                        if (!alreadyLinked) {
+                            viewModel.proposeLlmSuggestion(
+                                PendingLlmSuggestion.UnlinkedReference(
+                                    // deterministic ID deduplicates re-scans of the same block+match
+                                    id = "unlinked::${block.uuid.value}::${span.canonicalName}::${span.start}",
+                                    graphId = graphId,
+                                    sourceProviderId = "aho-corasick-matcher",
+                                    proposedAtEpochMs = now,
+                                    rationale = null,
+                                    pageUuid = page.uuid.value,
+                                    blockUuid = block.uuid.value,
+                                    targetPageName = span.canonicalName,
+                                    matchStart = span.start,
+                                    matchEnd = span.end,
+                                    currentContentSnapshot = block.content,
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+            // LLM scan runs asynchronously; banner tracks its progress.
+            tagSuggestionViewModel?.scanEntries(listOf(
+                JournalScanEntry(
+                    pageUuid = page.uuid.value,
+                    targetBlockUuid = firstBlock.uuid.value,
+                    contentSnapshot = firstBlock.content,
+                    fullContent = blocks.take(20).joinToString("\n") { it.content }.take(500),
+                    alreadyLinked = WikiLinkExtractor.extractPageNames(
+                        blocks.joinToString("\n") { it.content }
+                    ),
+                    graphId = graphId,
+                )
+            ))
+        }
+    }
 
     // Start observing this page's blocks on enter, stop on leave
     DisposableEffect(page.uuid.value) {
@@ -301,6 +366,15 @@ fun PageView(
                                         )
                                     }
                                 )
+                                if (tagSuggestionViewModel.hasLlmProvider) {
+                                    DropdownMenuItem(
+                                        text = { Text("Scan page for tag suggestions") },
+                                        onClick = {
+                                            exportMenuExpanded = false
+                                            onScanPage()
+                                        }
+                                    )
+                                }
                             }
                             if (llmSynthesisService != null && currentGraphId != null) {
                                 HorizontalDivider()
@@ -346,6 +420,17 @@ fun PageView(
                 Spacer(modifier = Modifier.height(16.dp))
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            if (tagSuggestionViewModel != null && tagSuggestionViewModel.hasLlmProvider) {
+                item(key = "page_scan_banner") {
+                    ScanBanner(
+                        scanState = scanState,
+                        enabled = blocks.isNotEmpty(),
+                        onScan = onScanPage,
+                        onCancel = { tagSuggestionViewModel.cancelScan() },
+                    )
+                }
             }
 
             // Blocks content

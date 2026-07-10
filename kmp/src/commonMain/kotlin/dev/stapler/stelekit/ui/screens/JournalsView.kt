@@ -350,7 +350,7 @@ fun JournalsView(
 }
 
 @Composable
-private fun ScanBanner(
+internal fun ScanBanner(
     scanState: BulkScanState,
     enabled: Boolean,
     onScan: () -> Unit,

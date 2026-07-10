@@ -177,6 +177,10 @@ fun LlmSuggestionReviewScreen(
                         title = current.proposedTitle,
                         blocks = current.proposedBlocks,
                     )
+                    is PendingLlmSuggestion.UnlinkedReference -> BlockDiffView(
+                        beforeContent = current.currentContentSnapshot,
+                        afterContent = applyUnlinkedRefPreview(current),
+                    )
                 }
             }
         }
@@ -187,12 +191,21 @@ private fun typeBadge(suggestion: PendingLlmSuggestion): String = when (suggesti
     is PendingLlmSuggestion.BlockEdit -> "Edit"
     is PendingLlmSuggestion.TagChange -> "Tag Change"
     is PendingLlmSuggestion.NewPage -> "New Note"
+    is PendingLlmSuggestion.UnlinkedReference -> "Link"
 }
 
 private fun applyLabel(suggestion: PendingLlmSuggestion): String = when (suggestion) {
     is PendingLlmSuggestion.BlockEdit -> "Apply"
     is PendingLlmSuggestion.TagChange -> "Apply"
     is PendingLlmSuggestion.NewPage -> "Create"
+    is PendingLlmSuggestion.UnlinkedReference -> "Link"
+}
+
+private fun applyUnlinkedRefPreview(s: PendingLlmSuggestion.UnlinkedReference): String {
+    val c = s.currentContentSnapshot
+    val safeEnd = s.matchEnd.coerceAtMost(c.length)
+    val safeStart = s.matchStart.coerceIn(0, safeEnd)
+    return c.substring(0, safeStart) + "[[${s.targetPageName}]]" + c.substring(safeEnd)
 }
 
 private fun describeTagChange(tagChange: PendingLlmSuggestion.TagChange): String {

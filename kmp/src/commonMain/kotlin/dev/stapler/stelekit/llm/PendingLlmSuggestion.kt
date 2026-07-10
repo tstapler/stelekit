@@ -61,6 +61,26 @@ sealed interface PendingLlmSuggestion {
         val proposedTitle: String,
         val proposedBlocks: List<ProposedBlock>,
     ) : PendingLlmSuggestion
+
+    /**
+     * A single Aho-Corasick matcher hit proposing that a plain-text occurrence of [targetPageName]
+     * be wrapped as `[[targetPageName]]`. Not LLM-sourced — [sourceProviderId] is
+     * `"aho-corasick-matcher"`. ID is deterministic (`"unlinked::blockUuid::name::start"`) so
+     * proposing the same scan twice never duplicates inbox entries.
+     */
+    data class UnlinkedReference(
+        override val id: String,
+        override val graphId: String,
+        override val sourceProviderId: String,
+        override val proposedAtEpochMs: Long,
+        override val rationale: String?,
+        val pageUuid: String,
+        val blockUuid: String,
+        val targetPageName: String,
+        val matchStart: Int,
+        val matchEnd: Int,
+        val currentContentSnapshot: String,
+    ) : PendingLlmSuggestion
 }
 
 data class ProposedBlock(val content: String, val depth: Int, val order: Int)

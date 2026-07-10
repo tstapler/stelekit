@@ -41,6 +41,20 @@ class PendingLlmSuggestionTest {
         proposedBlocks = listOf(ProposedBlock("hello", depth = 0, order = 0)),
     )
 
+    private val unlinkedRef = PendingLlmSuggestion.UnlinkedReference(
+        id = "unlinked::block-uuid-4::Kotlin::5",
+        graphId = "graph-d",
+        sourceProviderId = "aho-corasick-matcher",
+        proposedAtEpochMs = 4L,
+        rationale = null,
+        pageUuid = "page-uuid-4",
+        blockUuid = "block-uuid-4",
+        targetPageName = "Kotlin",
+        matchStart = 5,
+        matchEnd = 11,
+        currentContentSnapshot = "Using Kotlin coroutines",
+    )
+
     /**
      * Exhaustiveness test: a `when` over all three sealed variants asserts each has a
      * non-blank `id`/`graphId` — guarantees no future variant can be added to the sealed
@@ -48,13 +62,14 @@ class PendingLlmSuggestionTest {
      */
     @Test
     fun allVariants_should_HaveNonBlankIdAndGraphId_ViaExhaustiveWhen() {
-        val variants: List<PendingLlmSuggestion> = listOf(blockEdit, tagChange, newPage)
+        val variants: List<PendingLlmSuggestion> = listOf(blockEdit, tagChange, newPage, unlinkedRef)
         for (variant in variants) {
             @Suppress("UNUSED_EXPRESSION")
             when (variant) {
                 is PendingLlmSuggestion.BlockEdit -> Unit
                 is PendingLlmSuggestion.TagChange -> Unit
                 is PendingLlmSuggestion.NewPage -> Unit
+                is PendingLlmSuggestion.UnlinkedReference -> Unit
             }
             assertFalse(variant.id.isBlank(), "id must not be blank for ${variant::class.simpleName}")
             assertFalse(variant.graphId.isBlank(), "graphId must not be blank for ${variant::class.simpleName}")
