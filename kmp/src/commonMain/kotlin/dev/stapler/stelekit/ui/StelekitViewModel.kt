@@ -392,6 +392,11 @@ class StelekitViewModel(
         }
     }
 
+    /** Routes a suggestion from TagSuggestionViewModel's scan into the inbox. */
+    fun proposeLlmSuggestion(suggestion: dev.stapler.stelekit.llm.PendingLlmSuggestion) {
+        llmSuggestionInbox.propose(suggestion)
+    }
+
     /** Dismisses the LLM suggestion review screen without accepting or rejecting anything. */
     fun dismissLlmSuggestionReview() {
         _uiState.update { it.copy(llmSuggestionReviewVisible = false) }

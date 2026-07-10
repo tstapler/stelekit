@@ -21,6 +21,8 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import dev.stapler.stelekit.domain.AhoCorasickMatcher
+import dev.stapler.stelekit.tags.BulkScanState
+import dev.stapler.stelekit.tags.JournalScanEntry
 import dev.stapler.stelekit.tags.TagSuggestionState
 import dev.stapler.stelekit.tags.TagSuggestionViewModel
 import dev.stapler.stelekit.tags.WikiLinkExtractor
@@ -40,6 +42,7 @@ import dev.stapler.stelekit.ui.components.typedItems
 import dev.stapler.stelekit.ui.components.SuggestionNavigatorPanel
 import dev.stapler.stelekit.performance.NavigationTracingEffect
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.datetime.LocalDate
 
 /**
@@ -61,6 +64,7 @@ fun JournalsView(
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
     capabilities: EditorCapabilities = EditorCapabilities(),
     tagSuggestionViewModel: TagSuggestionViewModel? = null,
+    currentGraphId: String? = null,
     conflictFilePaths: Set<String> = emptySet(),
     /**
      * ux.md (i)/criterion 14: true while `AppState.diskConflict` is non-null. Passed straight
@@ -86,6 +90,15 @@ fun JournalsView(
     var toolbarHeight by remember { mutableStateOf(0) }
     val tagSuggestionState by tagSuggestionViewModel?.state?.collectAsState()
         ?: remember { mutableStateOf(TagSuggestionState.Idle) }
+    val scanState by tagSuggestionViewModel?.scanState?.collectAsState()
+        ?: remember { mutableStateOf<BulkScanState>(BulkScanState.Idle) }
+
+    LaunchedEffect(scanState) {
+        if (scanState is BulkScanState.Complete) {
+            delay(3_000)
+            tagSuggestionViewModel?.resetScan()
+        }
+    }
 
     if (isDebugMode) {
         val recomposeCount = remember { androidx.compose.runtime.mutableIntStateOf(0) }
@@ -141,6 +154,33 @@ fun JournalsView(
                 },
             contentPadding = PaddingValues(top = 16.dp, bottom = toolbarHeightDp + 8.dp)
         ) {
+            if (tagSuggestionViewModel != null && tagSuggestionViewModel.hasLlmProvider) {
+                item(key = "scan_banner") {
+                    ScanBanner(
+                        scanState = scanState,
+                        enabled = uiState.pages.isNotEmpty(),
+                        onScan = {
+                            val entries = uiState.pages.mapNotNull { page ->
+                                val blocks = allBlocks[page.uuid.value] ?: return@mapNotNull null
+                                val firstBlock = blocks.firstOrNull { it.content.isNotBlank() }
+                                    ?: return@mapNotNull null
+                                JournalScanEntry(
+                                    pageUuid = page.uuid.value,
+                                    targetBlockUuid = firstBlock.uuid.value,
+                                    contentSnapshot = firstBlock.content,
+                                    fullContent = blocks.take(20).joinToString("\n") { it.content }.take(500),
+                                    alreadyLinked = WikiLinkExtractor.extractPageNames(
+                                        blocks.joinToString("\n") { it.content }
+                                    ),
+                                    graphId = currentGraphId ?: "",
+                                )
+                            }
+                            tagSuggestionViewModel.scanEntries(entries)
+                        },
+                        onCancel = { tagSuggestionViewModel.cancelScan() },
+                    )
+                }
+            }
             typedItems(
                 items = uiState.pages,
                 key = { page -> page.uuid.asLazyKey() },
@@ -158,9 +198,13 @@ fun JournalsView(
                     onExport = onExportEntry?.let { export -> { formatId -> export(page, blockList, formatId) } },
                     onSuggestTags = if (tagSuggestionViewModel != null) {
                         {
-                            val content = blockList.take(20).joinToString("\n") { it.content }.take(500)
-                            val linked = WikiLinkExtractor.extractPageNames(blockList.joinToString("\n") { it.content })
-                            tagSuggestionViewModel.requestSuggestions(page.uuid.value, content, linked)
+                            val firstBlock = blockList.firstOrNull { it.content.isNotBlank() }
+                                ?: blockList.firstOrNull()
+                            if (firstBlock != null) {
+                                val content = blockList.take(20).joinToString("\n") { it.content }.take(500)
+                                val linked = WikiLinkExtractor.extractPageNames(blockList.joinToString("\n") { it.content })
+                                tagSuggestionViewModel.requestSuggestions(firstBlock.uuid.value, content, linked)
+                            }
                         }
                     } else null,
                     editingBlockUuid = editingBlockUuid?.value,
@@ -303,6 +347,53 @@ fun JournalsView(
         }
     }
     } // CompositionLocalProvider(LocalGraphRootPath)
+}
+
+@Composable
+private fun ScanBanner(
+    scanState: BulkScanState,
+    enabled: Boolean,
+    onScan: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    when (scanState) {
+        is BulkScanState.Idle -> if (enabled) {
+            TextButton(onClick = onScan, modifier = modifier.fillMaxWidth()) {
+                Text("Scan entries for tag suggestions")
+            }
+        }
+        is BulkScanState.Scanning -> Column(modifier = modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    "Scanning entries… (${scanState.done}/${scanState.total})",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onCancel) { Text("Cancel") }
+            }
+            LinearProgressIndicator(
+                progress = {
+                    if (scanState.total > 0) scanState.done.toFloat() / scanState.total else 0f
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        is BulkScanState.Complete -> {
+            val msg = if (scanState.found > 0)
+                "Found ${scanState.found} tag suggestion${if (scanState.found != 1) "s" else ""} — opening review…"
+            else
+                "No new tag suggestions found"
+            Text(
+                msg,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = modifier.fillMaxWidth().padding(vertical = 8.dp),
+            )
+        }
+    }
 }
 
 /**

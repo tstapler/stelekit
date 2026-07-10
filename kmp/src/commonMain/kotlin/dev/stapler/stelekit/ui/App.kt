@@ -1037,7 +1037,7 @@ private fun GraphContent(
         value = llmProviderRegistry.availableForFeature(dev.stapler.stelekit.llm.LlmFeature.TAG_SUGGESTION).isNotEmpty()
     }
     val tagSuggestionViewModel = remember(tagEngine) {
-        if (tagEngine != null) TagSuggestionViewModel(tagEngine) else null
+        if (tagEngine != null) TagSuggestionViewModel(tagEngine, onPropose = viewModel::proposeLlmSuggestion) else null
     }
     DisposableEffect(tagSuggestionViewModel) {
         onDispose { tagSuggestionViewModel?.close() }

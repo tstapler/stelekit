@@ -163,6 +163,7 @@ internal fun ScreenRouter(
                 onOpenAnnotationEditor = { uuid -> viewModel.navigateToAnnotationEditor(uuid) },
                 capabilities = capabilities,
                 tagSuggestionViewModel = tagSuggestionViewModel,
+                currentGraphId = appState.currentGraphId,
                 conflictFilePaths = appState.pendingConflictFilePaths,
                 hasDiskConflictPending = appState.diskConflict != null,
                 onExportEntry = { page, blocks, formatId ->

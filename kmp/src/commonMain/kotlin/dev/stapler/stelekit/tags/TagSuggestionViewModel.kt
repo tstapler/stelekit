@@ -1,6 +1,8 @@
 package dev.stapler.stelekit.tags
 
+import dev.stapler.stelekit.llm.PendingLlmSuggestion
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.util.UuidGenerator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -13,9 +15,29 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.time.Clock
+
+sealed interface BulkScanState {
+    data object Idle : BulkScanState
+    data class Scanning(val done: Int, val total: Int) : BulkScanState
+    data class Complete(val found: Int) : BulkScanState
+}
+
+data class JournalScanEntry(
+    val pageUuid: String,
+    /** First non-empty block — where accepted tags are appended. */
+    val targetBlockUuid: String,
+    /** Block content at scan time — staleness re-check on accept. */
+    val contentSnapshot: String,
+    /** All blocks joined — LLM prompt context. */
+    val fullContent: String,
+    val alreadyLinked: Set<String>,
+    val graphId: String,
+)
 
 class TagSuggestionViewModel(
     private val engine: TagSuggestionEngine,
+    private val onPropose: ((PendingLlmSuggestion) -> Unit)? = null,
 ) {
     private val logger = Logger("TagSuggestionViewModel")
     private val scope = CoroutineScope(
@@ -37,6 +59,13 @@ class TagSuggestionViewModel(
     // Results cache keyed by block UUID. Survives dismiss() so the LLM can finish in the
     // background and the sheet shows instantly on reopen.
     private val cache = mutableMapOf<String, TagSuggestionState.Ready>()
+
+    private var scanJob: Job? = null
+    private val _scanState = MutableStateFlow<BulkScanState>(BulkScanState.Idle)
+    val scanState: StateFlow<BulkScanState> = _scanState.asStateFlow()
+
+    /** True when an LLM provider is wired — controls scan button visibility. */
+    val hasLlmProvider: Boolean get() = engine.hasLlmProvider
 
     /** Warm up the on-device model. Called at app start so first real request is never cold. */
     fun preload() {
@@ -93,6 +122,56 @@ class TagSuggestionViewModel(
             )
             activeBlockUuid = null
         }
+    }
+
+    /** Scan a batch of journal entries sequentially, proposing results to the inbox when done. */
+    fun scanEntries(entries: List<JournalScanEntry>) {
+        if (entries.isEmpty()) return
+        scanJob?.cancel()
+        _scanState.value = BulkScanState.Scanning(0, entries.size)
+        scanJob = scope.launch {
+            val proposals = mutableListOf<PendingLlmSuggestion>()
+            entries.forEachIndexed { index, entry ->
+                _scanState.value = BulkScanState.Scanning(index, entries.size)
+                engine.llmSuggest(entry.fullContent, entry.alreadyLinked).fold(
+                    ifLeft = { /* skip — continue to next entry */ },
+                    ifRight = { suggestions ->
+                        cache[entry.targetBlockUuid] = TagSuggestionState.Ready(
+                            blockUuid = entry.targetBlockUuid,
+                            localSuggestions = engine.directMatch(entry.fullContent),
+                            llmSuggestions = suggestions,
+                            llmPending = false,
+                        )
+                        if (suggestions.isNotEmpty()) {
+                            proposals += PendingLlmSuggestion.TagChange(
+                                id = UuidGenerator.generateV7(),
+                                graphId = entry.graphId,
+                                sourceProviderId = "on-device-tag-suggester",
+                                proposedAtEpochMs = Clock.System.now().toEpochMilliseconds(),
+                                rationale = null,
+                                pageUuid = entry.pageUuid,
+                                blockUuid = entry.targetBlockUuid,
+                                currentContentSnapshot = entry.contentSnapshot,
+                                addedTerms = suggestions.map { it.term },
+                                removedTerms = emptyList(),
+                            )
+                        }
+                    }
+                )
+            }
+            // Batch-propose so the review screen opens once at the end, not per-entry.
+            proposals.forEach { onPropose?.invoke(it) }
+            _scanState.value = BulkScanState.Complete(proposals.size)
+        }
+    }
+
+    fun cancelScan() {
+        scanJob?.cancel()
+        _scanState.value = BulkScanState.Idle
+    }
+
+    fun resetScan() {
+        _scanState.value = BulkScanState.Idle
     }
 
     fun dismiss() {
