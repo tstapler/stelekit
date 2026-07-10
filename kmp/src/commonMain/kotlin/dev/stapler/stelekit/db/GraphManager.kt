@@ -439,8 +439,20 @@ class GraphManager(
                 fun elapsed() = kotlin.time.Clock.System.now().toEpochMilliseconds() - t0
 
                 // Close the previous graph's database off the UI thread — see comment above
-                // where factoryToClose was captured.
-                factoryToClose?.close()
+                // where factoryToClose was captured. Guarded independently (not by the outer
+                // try/catch below) so a close failure — e.g. wal_checkpoint(TRUNCATE) lock
+                // contention — can never abort opening the new graph. Letting it propagate
+                // would skip the rest of this block entirely, leaving currentFactory/
+                // _activeRepositorySet null while activeGraphJobs[id] is already set — the
+                // idempotency guard at the top of switchGraph() would then treat this graph
+                // as "already initializing" forever and silently no-op every retry.
+                try {
+                    factoryToClose?.close()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.error("Failed to close previous graph's factory before switching to $id", e)
+                }
                 logger.info("init[${elapsed()}ms]: previous factory closed")
 
                 preFlightJob?.await()
