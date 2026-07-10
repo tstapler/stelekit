@@ -12,6 +12,9 @@ import java.util.logging.Logger
 private val log = Logger.getLogger("DriverFactory")
 
 private fun jvmDatabaseDirectory(): String {
+    // Set only by `./gradlew run` (see kmp/build.gradle.kts) — dev/test launches must not
+    // write their SQLite files into the same app-data directory a real install uses.
+    System.getProperty("stelekit.devDataDir")?.let { return it }
     val os = System.getProperty("os.name").lowercase()
     val userHome = System.getProperty("user.home")
     return when {

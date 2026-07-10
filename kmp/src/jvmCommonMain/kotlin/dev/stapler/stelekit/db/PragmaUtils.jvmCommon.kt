@@ -5,5 +5,12 @@ import kotlinx.coroutines.runBlocking
 
 actual fun pragmaOptimizeAndClose(driver: SqlDriver?) {
     try { runBlocking { driver?.execute(null, "PRAGMA optimize", 0)?.await() } } catch (_: Exception) {}
+    // wal_autocheckpoint (see DriverFactory) triggers passive checkpoints during the session, but
+    // passive checkpoints never shrink the .db-wal file on disk — they just reuse it from the
+    // start once fully flushed. Without an explicit TRUNCATE checkpoint the WAL file's on-disk
+    // size only ever grows to its historical peak (observed: 5GB WAL for a 722MB db), and every
+    // subsequent read/write has to wade through it. Truncate on every graph close so the file
+    // stays proportional to actual write volume between sessions.
+    try { runBlocking { driver?.execute(null, "PRAGMA wal_checkpoint(TRUNCATE)", 0)?.await() } } catch (_: Exception) {}
     try { driver?.close() } catch (_: Exception) {}
 }

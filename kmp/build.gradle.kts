@@ -4,6 +4,8 @@
 import java.io.File as IoFile
 import java.text.SimpleDateFormat
 import java.util.Date
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.jvm.toolchain.JavaToolchainService
 
 plugins {
     kotlin("multiplatform")
@@ -1022,6 +1024,14 @@ tasks.register("runApp") {
     dependsOn("run")
 }
 
+// JavaExec tasks (run, runSync) default to the Gradle daemon's own JVM, which tracks
+// org.gradle.java.home in the user's ~/.gradle/gradle.properties — not the project's
+// jvmToolchain(21). If the daemon JVM is older than 21, the JavaExec fails with
+// UnsupportedClassVersionError even though compilation (which always resolves its own
+// JDK 21 toolchain) succeeded. Pin both tasks to a real JDK 21 launcher explicitly.
+val jdk21Launcher = project.extensions.getByType(JavaToolchainService::class.java)
+    .launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) }
+
 // ── SteleKit headless sync CLI ───────────────────────────────────────────────
 // Run with: ./gradlew :kmp:runSync -Pargs="--graph /path/to/graph"
 tasks.register<JavaExec>("runSync") {
@@ -1030,6 +1040,7 @@ tasks.register<JavaExec>("runSync") {
     classpath = kotlin.jvm().compilations["main"].output.allOutputs +
                 kotlin.jvm().compilations["main"].runtimeDependencyFiles
     mainClass.set("dev.stapler.stelekit.cli.SyncMainKt")
+    javaLauncher.set(jdk21Launcher)
     val argsStr = project.findProperty("args") as String? ?: ""
     args = argsStr.split(" ").filter { it.isNotBlank() }
     dependsOn("jvmJar")
@@ -1199,9 +1210,38 @@ afterEvaluate {
         notCompatibleWithConfigurationCache("uses project.findProperty at execution time")
         // finalizedBy runs convertLastProfile even if run fails or is cancelled (Ctrl+C).
         finalizedBy(convertLastProfile)
+        // The Compose Desktop plugin already sets `executable` directly (to the Gradle
+        // daemon's own java binary) rather than using the lazy `javaLauncher` property, so
+        // setting `javaLauncher` here conflicts ("Toolchain from `executable` property does
+        // not match toolchain from `javaLauncher` property"). Override `executable` itself
+        // with the resolved JDK 21 binary instead.
+        setExecutable(jdk21Launcher.get().executablePath.asFile.absolutePath)
         systemProperty("app.version", resolvedAppVersion)
 
+        // Dev/test launches must never point at the real default graph path — running
+        // alongside an already-open real install (or repeated dev sessions) lets independent
+        // JVM processes contend for the same SQLite file, and silently bloats its WAL over
+        // time (observed: 5GB WAL for a 722MB db). Use an isolated scratch copy instead,
+        // seeded once from the real graph so dev testing has realistic content.
+        val devGraphDir = layout.buildDirectory.dir("devGraph").get().asFile
+        systemProperty("stelekit.devGraphPath", devGraphDir.absolutePath)
+        // Isolates SQLite db files (DriverFactory.jvmDatabaseDirectory) and the settings/graph-
+        // registry prefs file (PlatformSettings) from the real app-data directory — otherwise
+        // the persisted "last active graph" there overrides stelekit.devGraphPath above.
+        val devDataDir = layout.buildDirectory.dir("devData").get().asFile
+        systemProperty("stelekit.devDataDir", devDataDir.absolutePath)
+
         doFirst {
+            if (!devGraphDir.exists()) {
+                val realGraphDir = IoFile(System.getProperty("user.home"), "Documents/stelekit")
+                if (realGraphDir.exists()) {
+                    println("── Seeding dev graph: copying $realGraphDir -> $devGraphDir")
+                    realGraphDir.copyRecursively(devGraphDir)
+                } else {
+                    devGraphDir.mkdirs()
+                }
+            }
+
             val ts = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(Date())
             val jfr = IoFile(profilesDir, "run-$ts.jfr").also { it.parentFile.mkdirs() }
 
