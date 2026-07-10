@@ -73,6 +73,7 @@ fun JournalsView(
     modifier: Modifier = Modifier
 ) {
     NavigationTracingEffect("Journals")
+    LaunchedEffect(tagSuggestionViewModel) { tagSuggestionViewModel?.preload() }
     val uiState by viewModel.uiState.collectAsState()
     val allBlocks by viewModel.blocks.collectAsState()
     val loadingPageUuids by viewModel.loadingPageUuids.collectAsState()

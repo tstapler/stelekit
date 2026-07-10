@@ -13,7 +13,7 @@ import kotlin.time.Duration.Companion.seconds
 
 class LlmTagProvider(
     private val provider: LlmFormatterProvider,
-    private val timeoutSeconds: Long = 8,
+    private val timeoutSeconds: Long = 90,
 ) {
     companion object {
         private const val MAX_BLOCK_CHARS = 500
@@ -22,6 +22,16 @@ class LlmTagProvider(
         private const val CONFIDENCE_DECAY = 0.02f
         private const val CONFIDENCE_MIN = 0.50f
         private val WORD_SPLIT = Regex("\\W+")
+    }
+
+    /**
+     * Fires a minimal inference to warm up the on-device model (AICore / Gemini Nano).
+     * Call this when the user navigates to a screen that may request suggestions, so the
+     * first real inference doesn't cold-start and hit the timeout.
+     * Also triggers the AICore download if the model is in DOWNLOADABLE state.
+     */
+    suspend fun preload() {
+        runCatching { provider.format("", "Ready?") }
     }
 
     suspend fun suggestTags(

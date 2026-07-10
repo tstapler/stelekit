@@ -27,6 +27,9 @@ class TagSuggestionEngine(
     /** True when an LLM provider is configured; false when suggestions are local-only. */
     val hasLlmProvider: Boolean get() = llmTagProvider != null
 
+    /** Warm up the on-device LLM so the first real request doesn't cold-start. No-op when no provider. */
+    suspend fun preload() { llmTagProvider?.preload() }
+
     /**
      * Synchronous local scan. Uses the current AhoCorasickMatcher snapshot (null = no suggestions).
      * All results are confidence=1.0 and autoApplied=true — exact page name matches require no threshold.

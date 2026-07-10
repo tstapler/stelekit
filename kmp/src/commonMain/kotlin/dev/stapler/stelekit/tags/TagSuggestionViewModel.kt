@@ -33,6 +33,11 @@ class TagSuggestionViewModel(
 
     private var suggestionJob: Job? = null
 
+    /** Warm up the on-device model in the background. Call when a screen opens that may request suggestions. */
+    fun preload() {
+        scope.launch { engine.preload() }
+    }
+
     fun requestSuggestions(blockUuid: String, blockContent: String, alreadyLinkedTerms: Set<String> = emptySet()) {
         suggestionJob?.cancel()
 
