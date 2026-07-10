@@ -11,8 +11,18 @@ actual class PlatformSettings actual constructor() : Settings {
     private val prefsFile: File
 
     init {
-        val userHome = System.getProperty("user.home")
-        val steleKitDir = File(userHome, ".stelekit")
+        // Set only by `./gradlew run` (see kmp/build.gradle.kts) — dev/test launches must not
+        // read or write the same prefs file a real install uses. Without this, GraphManager's
+        // persisted "last active graph" (read from this file) silently overrides whatever graph
+        // path the dev launch requested, since App.kt intentionally prefers the persisted graph
+        // over the passed-in default.
+        val devDataDir = System.getProperty("stelekit.devDataDir")
+        val steleKitDir = if (devDataDir != null) {
+            File(devDataDir)
+        } else {
+            val userHome = System.getProperty("user.home")
+            File(userHome, ".stelekit")
+        }
         if (!steleKitDir.exists()) {
             steleKitDir.mkdirs()
         }

@@ -1,14 +1,17 @@
 package dev.stapler.stelekit.ui.assets
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,10 +20,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,9 +44,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.isSpecified
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import dev.stapler.stelekit.asset.AssetEntry
@@ -49,6 +63,8 @@ import dev.stapler.stelekit.ui.components.rememberSteleKitImageLoader
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlin.math.floor
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,6 +73,7 @@ fun AssetDetailScreen(
     onNavigateBack: () -> Unit,
     onNavigateToPage: (pageUuid: String) -> Unit,
     modifier: Modifier = Modifier,
+    onAnnotate: (AssetEntry) -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -76,6 +93,17 @@ fun AssetDetailScreen(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
                         )
+                    }
+                },
+                actions = {
+                    val asset = uiState.asset
+                    if (asset != null && asset.mediaType == AssetMediaType.IMAGE && !asset.isOrphan) {
+                        IconButton(onClick = { onAnnotate(asset) }) {
+                            Icon(
+                                imageVector = Icons.Default.Straighten,
+                                contentDescription = "Annotate / measure image",
+                            )
+                        }
                     }
                 },
             )
@@ -137,16 +165,77 @@ private fun AssetDetailContent(
     }
 }
 
+private enum class ViewerBackground(val label: String) {
+    THEME("Theme"),
+    WHITE("White"),
+    BLACK("Black"),
+    CHECKERBOARD("Checkered"),
+}
+
+private const val MAX_ZOOM = 5f
+private const val DOUBLE_TAP_ZOOM = 2.5f
+
+/**
+ * Computes the maximum symmetric pan offset (in px, per axis) allowed at [scale] for an image
+ * rendered under [ContentScale.Fit] inside [containerSize].
+ *
+ * `Fit` scales the image uniformly to fit inside the container, which letterboxes it — leaves
+ * blank space — on whichever axis doesn't match the container's aspect ratio. Bounding pan by
+ * the raw container (rather than the actual rendered image rect) overestimates the allowable
+ * pan range on the letterboxed axis, letting the user pan blank space into view. This function
+ * derives the bound from the actual rendered image rect instead.
+ *
+ * When [imageIntrinsicSize] is null or degenerate (image still loading, or intrinsic size
+ * unknown/unavailable), falls back to treating the whole container as the image bounds — this
+ * matches the pre-existing (letterbox-unaware) behavior, so it's a safe default, not a
+ * regression.
+ */
+internal fun maxPan(containerSize: IntSize, imageIntrinsicSize: IntSize?, scale: Float): Offset {
+    if (containerSize.width <= 0 || containerSize.height <= 0) return Offset.Zero
+
+    val (renderedWidth, renderedHeight) = if (
+        imageIntrinsicSize != null && imageIntrinsicSize.width > 0 && imageIntrinsicSize.height > 0
+    ) {
+        val containerAspect = containerSize.width.toFloat() / containerSize.height.toFloat()
+        val imageAspect = imageIntrinsicSize.width.toFloat() / imageIntrinsicSize.height.toFloat()
+        if (imageAspect > containerAspect) {
+            // Image is relatively wider than the container — fit to width, letterbox top/bottom.
+            containerSize.width.toFloat() to (containerSize.width.toFloat() / imageAspect)
+        } else {
+            // Image is relatively taller than (or same aspect as) the container — fit to height,
+            // letterbox left/right.
+            (containerSize.height.toFloat() * imageAspect) to containerSize.height.toFloat()
+        }
+    } else {
+        containerSize.width.toFloat() to containerSize.height.toFloat()
+    }
+
+    val maxX = (renderedWidth * (scale - 1f) / 2f).coerceAtLeast(0f)
+    val maxY = (renderedHeight * (scale - 1f) / 2f).coerceAtLeast(0f)
+    return Offset(maxX, maxY)
+}
+
 @Composable
 private fun ImageViewer(asset: AssetEntry, modifier: Modifier = Modifier) {
     val imageLoader = rememberSteleKitImageLoader()
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
+    var containerSize by remember { mutableStateOf(IntSize.Zero) }
+    var imageIntrinsicSize by remember { mutableStateOf<IntSize?>(null) }
+    var background by remember { mutableStateOf(ViewerBackground.THEME) }
+
+    fun resetZoom() {
+        scale = 1f
+        offsetX = 0f
+        offsetY = 0f
+    }
+
     val transformableState = rememberTransformableState { zoomChange, panChange, _ ->
-        scale = (scale * zoomChange).coerceIn(1f, 5f)
-        offsetX += panChange.x
-        offsetY += panChange.y
+        scale = (scale * zoomChange).coerceIn(1f, MAX_ZOOM)
+        val panBound = maxPan(containerSize, imageIntrinsicSize, scale)
+        offsetX = (offsetX + panChange.x).coerceIn(-panBound.x, panBound.x)
+        offsetY = (offsetY + panChange.y).coerceIn(-panBound.y, panBound.y)
     }
     val coilModel = when {
         asset.relativePath.startsWith("../assets/") -> asset.relativePath
@@ -154,27 +243,95 @@ private fun ImageViewer(asset: AssetEntry, modifier: Modifier = Modifier) {
         asset.filePath.startsWith("file://") || asset.filePath.startsWith("content://") -> asset.filePath
         else -> "file://${asset.filePath}"
     }
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            .transformable(transformableState),
-        contentAlignment = Alignment.Center,
-    ) {
-        AsyncImage(
-            model = coilModel,
-            imageLoader = imageLoader,
-            contentDescription = asset.filePath.substringAfterLast('/'),
-            contentScale = ContentScale.Fit,
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Box(
             modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offsetX,
-                    translationY = offsetY,
-                ),
-        )
+                .fillMaxWidth()
+                .height(420.dp)
+                .clipToBounds()
+                .onSizeChanged { containerSize = it }
+                .viewerBackground(background)
+                .transformable(transformableState)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onDoubleTap = { if (scale > 1f) resetZoom() else scale = DOUBLE_TAP_ZOOM },
+                    )
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            AsyncImage(
+                model = coilModel,
+                imageLoader = imageLoader,
+                contentDescription = asset.filePath.substringAfterLast('/'),
+                contentScale = ContentScale.Fit,
+                onSuccess = { state ->
+                    val size = state.painter.intrinsicSize
+                    if (size.isSpecified) {
+                        imageIntrinsicSize = IntSize(size.width.roundToInt(), size.height.roundToInt())
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offsetX,
+                        translationY = offsetY,
+                    ),
+            )
+            if (scale > 1.01f) {
+                IconButton(
+                    onClick = { resetZoom() },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), androidx.compose.foundation.shape.CircleShape),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Reset zoom",
+                        tint = Color.White,
+                    )
+                }
+            }
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+            ViewerBackground.entries.forEach { option ->
+                FilterChip(
+                    selected = background == option,
+                    onClick = { background = option },
+                    label = { Text(option.label) },
+                )
+            }
+        }
+    }
+}
+
+private fun Modifier.viewerBackground(mode: ViewerBackground): Modifier = when (mode) {
+    ViewerBackground.THEME -> this
+    ViewerBackground.WHITE -> this.background(Color.White)
+    ViewerBackground.BLACK -> this.background(Color.Black)
+    ViewerBackground.CHECKERBOARD -> this.background(Color.White).drawBehind { drawCheckerboard() }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawCheckerboard(tilePx: Float = 24f) {
+    val light = Color(0xFFE0E0E0)
+    val cols = floor(size.width / tilePx).toInt() + 1
+    val rows = floor(size.height / tilePx).toInt() + 1
+    for (row in 0..rows) {
+        for (col in 0..cols) {
+            if ((row + col) % 2 == 0) {
+                drawRect(
+                    color = light,
+                    topLeft = Offset(col * tilePx, row * tilePx),
+                    size = androidx.compose.ui.geometry.Size(tilePx, tilePx),
+                )
+            }
+        }
     }
 }
 

@@ -81,7 +81,12 @@ fun main() {
         )
 
         val fileSystem = PlatformFileSystem()
-        val graphPath = fileSystem.getDefaultGraphPath()
+        // Set only by `./gradlew run` (see kmp/build.gradle.kts) so dev/test launches use an
+        // isolated scratch graph instead of the real default graph path — running the dev build
+        // against real notes let multiple JVM instances (a real running install + repeated test
+        // launches) contend for the same SQLite file, and repeated dev sessions silently bloated
+        // its WAL to several GB. Packaged/installed builds never set this property.
+        val graphPath = System.getProperty("stelekit.devGraphPath") ?: fileSystem.getDefaultGraphPath()
         val spanRecorder = remember {
             OtelSpanRecorder(OtelProvider.getTracer("compose.navigation") as Tracer)
         }

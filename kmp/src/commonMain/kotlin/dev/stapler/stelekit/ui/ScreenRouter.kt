@@ -41,6 +41,7 @@ import dev.stapler.stelekit.performance.SerializedSpan
 import dev.stapler.stelekit.repository.RepositorySet
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorScreen
 import dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel
 import dev.stapler.stelekit.ui.components.*
@@ -284,12 +285,24 @@ internal fun ScreenRouter(
                     dev.stapler.stelekit.ui.assets.AssetDetailViewModel(
                         assetRepository = repos.assetRepository,
                         assetUuid = currentScreen.assetUuid,
+                        imageAnnotationRepository = repos.imageAnnotationRepository,
+                        blockRepository = repos.blockRepository,
+                        writeActor = repos.writeActor,
+                        graphPath = appState.currentGraphPath,
                     )
                 }
+                val annotateScope = rememberCoroutineScope()
                 dev.stapler.stelekit.ui.assets.AssetDetailScreen(
                     viewModel = assetDetailViewModel,
                     onNavigateBack = { viewModel.goBack() },
                     onNavigateToPage = { pageUuid -> viewModel.navigateToPageByUuid(pageUuid) },
+                    onAnnotate = { asset ->
+                        annotateScope.launch {
+                            assetDetailViewModel.resolveOrCreateAnnotation(asset)?.let { annotationUuid ->
+                                viewModel.navigateToAnnotationEditor(annotationUuid, asset.pageUuids.firstOrNull())
+                            }
+                        }
+                    },
                 )
             }
 
