@@ -144,6 +144,9 @@ kt_android_library(
         # Kable BLE Android (from androidMain)
         "@maven//:com_juul_kable_core_android",
 
+        # ZXing — QR encode/decode for camera-qr-export (from commonMain expect / androidMain actual)
+        "@maven//:com_google_zxing_core",
+
         # Okio — cross-platform file I/O (from commonMain)
         "@maven//:com_squareup_okio_okio_jvm",
 

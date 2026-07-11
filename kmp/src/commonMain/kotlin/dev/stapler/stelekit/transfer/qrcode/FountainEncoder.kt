@@ -61,6 +61,12 @@ class FountainEncoder private constructor(
         const val DEFAULT_MIN_FRAGMENT_BYTES = 10
         const val DEFAULT_MAX_PAYLOAD_BYTES = 65536
 
+        /** ADR-001 wire frame overhead: 20-byte header + 4-byte trailing CRC. */
+        const val FRAME_OVERHEAD_BYTES = 24
+
+        /** Default frame-count ceiling above which [preflightEstimate] flags a transfer oversize. */
+        const val DEFAULT_OVERSIZE_FRAME_THRESHOLD = 200
+
         operator fun invoke(
             transferId: TransferId,
             payloadBytes: ByteArray,
@@ -75,6 +81,32 @@ class FountainEncoder private constructor(
             val fragmentLen = findNominalFragmentLength(payloadBytes.size, minFragmentBytes, maxFragmentBytes)
             val fragments = partitionMessage(payloadBytes, fragmentLen)
             return FountainEncoder(transferId, payloadBytes.size, checksum, fragmentLen, fragments).right()
+        }
+
+        /**
+         * Story 2.1.3 (Task 2.1.3b): estimates frame count/byte size for [payloadLen] before any
+         * frame is displayed, so the UI can fail fast on an oversize transfer. Additive to this
+         * already-landed Phase 1 file — does not alter [invoke] or any fountain-math internals.
+         */
+        fun preflightEstimate(
+            payloadLen: Int,
+            maxFragmentBytes: Int = QrTransferSettings.DEFAULT_MAX_FRAGMENT_BYTES,
+            minFragmentBytes: Int = DEFAULT_MIN_FRAGMENT_BYTES,
+            redundancyMultiplier: Double = QrTransferSettings.DEFAULT_REDUNDANCY_MULTIPLIER,
+            oversizeFrameThreshold: Int = DEFAULT_OVERSIZE_FRAME_THRESHOLD,
+        ): FountainPreflightEstimate {
+            require(payloadLen > 0) { "payloadLen must be positive, was $payloadLen" }
+            val fragmentLen = findNominalFragmentLength(payloadLen, minFragmentBytes, maxFragmentBytes)
+            val pureFragmentCount = ceil(payloadLen.toDouble() / fragmentLen).toInt()
+            val estimatedFrameCount = ceil(pureFragmentCount * redundancyMultiplier).toInt()
+            val estimatedTotalBytes = estimatedFrameCount * (fragmentLen + FRAME_OVERHEAD_BYTES)
+            return FountainPreflightEstimate(
+                fragmentLen = fragmentLen,
+                pureFragmentCount = pureFragmentCount,
+                estimatedFrameCount = estimatedFrameCount,
+                estimatedTotalBytes = estimatedTotalBytes,
+                isOversize = estimatedFrameCount > oversizeFrameThreshold,
+            )
         }
     }
 }

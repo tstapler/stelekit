@@ -56,6 +56,8 @@ import dev.stapler.stelekit.repository.VisitRecencyMultiplierTest
 import dev.stapler.stelekit.search.FtsQueryBuilderTest
 import dev.stapler.stelekit.stats.LibraryWrappedTest
 import dev.stapler.stelekit.testing.OutlinerMonkeyTest
+import dev.stapler.stelekit.transfer.qrcode.QrCodecJvmRoundTripTest
+import dev.stapler.stelekit.transfer.qrcode.QrCodecJvmTest
 import dev.stapler.stelekit.ui.DemoBannerTest
 import dev.stapler.stelekit.ui.DiskConflictResolutionTest
 import dev.stapler.stelekit.ui.GraphSwitcherDemoFilterTest
@@ -159,6 +161,8 @@ import org.junit.runners.Suite
     FtsQueryBuilderTest::class,
     LibraryWrappedTest::class,
     OutlinerMonkeyTest::class,
+    QrCodecJvmTest::class,
+    QrCodecJvmRoundTripTest::class,
     ApplyAutocompleteSelectionTest::class,
     ParseMarkdownWithStylingTest::class,
     SearchDialogTest::class,

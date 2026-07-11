@@ -112,6 +112,9 @@ kt_jvm_library(
         # PDFBox — PDF text extraction for asset OCR pipeline (from jvmMain)
         "@maven//:org_apache_pdfbox_pdfbox",
 
+        # ZXing — QR encode/decode for camera-qr-export (from commonMain expect / jvmMain actual)
+        "@maven//:com_google_zxing_core",
+
         # Kotlin stdlib
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
     ],

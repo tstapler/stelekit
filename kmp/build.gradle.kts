@@ -180,6 +180,9 @@ kotlin {
                 // ONNX Runtime — on-device ML inference for image auto-labeling
                 implementation("com.microsoft.onnxruntime:onnxruntime:1.26.0")
 
+                // ZXing — QR encode/decode for camera-qr-export (ADR-001/Story 2.1.2)
+                implementation("com.google.zxing:core:3.5.4")
+
                 // Graph databases for performance evaluation
                 // implementation("com.kuzudb:kuzu-jdbc:0.7.0")
                 // implementation("org.neo4j.driver:neo4j-java-driver:5.21.0")
@@ -196,6 +199,9 @@ kotlin {
                 implementation("io.ktor:ktor-client-mock:3.1.3")
                 // BlockHound — detects blocking calls on coroutine scheduler threads
                 implementation("io.projectreactor.tools:blockhound:1.0.9.RELEASE")
+                // kotlin-reflect — required at runtime for KFunction.isSuspend/.parameters/.returnType
+                // (FrameTransportSignatureTest's reflection-based signature assertions)
+                implementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
 
             }
         }
@@ -258,6 +264,9 @@ kotlin {
 
                 // PDFBox Android — PDF text extraction for asset OCR pipeline (Android)
                 implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
+                // ZXing — QR encode/decode for camera-qr-export (ADR-001/Story 2.1.2)
+                implementation("com.google.zxing:core:3.5.4")
 
                 // ML Kit Image Labeling — on-device image auto-labeling
                 implementation("com.google.mlkit:image-labeling:17.0.9")
