@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.68.0](https://github.com/tstapler/stelekit/compare/v0.67.0...v0.68.0) (2026-07-11)
+
+
+### Features
+
+* **suggestions:** unified inbox for matcher and LLM suggestions on page scan ([61b894c](https://github.com/tstapler/stelekit/commit/61b894cffec8bdee684ebb7b7e46c32d6af6ddca))
+
 ## [0.67.0](https://github.com/tstapler/stelekit/compare/v0.66.0...v0.67.0) (2026-07-10)
 
 
