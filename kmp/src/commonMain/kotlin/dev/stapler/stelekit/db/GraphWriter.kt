@@ -558,41 +558,8 @@ class GraphWriter(
             } // end withContext(PlatformDispatcher.IO)
         }
 
-    private fun buildMarkdown(page: Page, blocks: List<Block>): String = buildString {
-        // 1. Page Properties
-        if (page.properties.isNotEmpty()) {
-            page.properties.forEach { (key, value) ->
-                appendLine("$key:: $value")
-            }
-        }
-
-        // 2. Blocks — reconstruct tree from flat list
-        val blocksByParent = blocks.groupBy { it.parentUuid }
-
-        fun writeBlocks(parentUuid: dev.stapler.stelekit.model.BlockUuid?) {
-            val siblings = blocksByParent[parentUuid] ?: return
-            val sortedSiblings = siblings.sortedBy { it.position }
-
-            sortedSiblings.forEach { block ->
-                val indent = "\t".repeat(block.level)
-                append(indent)
-                append("- ")
-                appendLine(block.content)
-
-                if (block.properties.isNotEmpty()) {
-                    val propIndent = indent + "\t"
-                    block.properties.forEach { (key, value) ->
-                        append(propIndent)
-                        appendLine("$key:: $value")
-                    }
-                }
-
-                writeBlocks(block.uuid)
-            }
-        }
-
-        writeBlocks(null)
-    }
+    private fun buildMarkdown(page: Page, blocks: List<Block>): String =
+        LogseqPageSerializer.serialize(page, blocks)
 
     /**
      * Scans all .md files under [graphRoot]/pages/ and [graphRoot]/journals/ for occurrences

@@ -107,6 +107,27 @@ sealed interface DomainError {
         data class ClipboardFailed(override val message: String) : ExportError
         data class ShareFailed(override val message: String) : ExportError
     }
+
+    sealed interface QrTransferError : DomainError {
+        data object ChunkDecodeFailed : QrTransferError {
+            override val message: String = "Failed to decode QR chunk"
+        }
+        data class IncompleteTransfer(val received: Int, val total: Int) : QrTransferError {
+            override val message: String = "Incomplete transfer: received $received of $total chunks"
+        }
+        data object IntegrityCheckFailed : QrTransferError {
+            override val message: String = "Transfer integrity check failed"
+        }
+        data class PayloadTooLarge(val sizeBytes: Int, val maxBytes: Int) : QrTransferError {
+            override val message: String = "Payload too large: $sizeBytes bytes exceeds max of $maxBytes bytes"
+        }
+        data object TransferCancelled : QrTransferError {
+            override val message: String = "Transfer cancelled"
+        }
+        data object MarkdownParseFailed : QrTransferError {
+            override val message: String = "Failed to parse received markdown"
+        }
+    }
 }
 
 fun Throwable.toDatabaseError(): DomainError.DatabaseError.WriteFailed =
@@ -157,6 +178,12 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.ExportError.SerializationFailed -> "Export failed"
     is DomainError.ExportError.ClipboardFailed -> "Clipboard write failed"
     is DomainError.ExportError.ShareFailed -> "Share failed"
+    is DomainError.QrTransferError.ChunkDecodeFailed -> "Couldn't read that QR code — try again"
+    is DomainError.QrTransferError.IncompleteTransfer -> "Scan not finished — keep scanning until every code is captured"
+    is DomainError.QrTransferError.IntegrityCheckFailed -> "This transfer looks corrupted — please try scanning again"
+    is DomainError.QrTransferError.PayloadTooLarge -> "This page is too large to send via QR"
+    is DomainError.QrTransferError.TransferCancelled -> "Transfer cancelled"
+    is DomainError.QrTransferError.MarkdownParseFailed -> "Received data isn't valid page content"
 }
 
 fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
