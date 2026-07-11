@@ -1402,6 +1402,7 @@ private fun GraphContent(
                                 graphWriter = graphWriter,
                                 urlFetcher = urlFetcher,
                                 qrTransferSettings = qrTransferSettings,
+                                graphLoader = graphLoader,
                                 capabilities = dev.stapler.stelekit.ui.components.EditorCapabilities(
                                     onAttachImage = if (attachmentService != null) {
                                         { editingBlockUuid ->

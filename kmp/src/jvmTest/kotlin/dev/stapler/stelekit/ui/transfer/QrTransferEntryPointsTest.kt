@@ -5,6 +5,8 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.domain.AhoCorasickMatcher
+import dev.stapler.stelekit.domain.NoOpUrlFetcher
 import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.repository.InMemorySearchRepository
@@ -16,11 +18,14 @@ import dev.stapler.stelekit.ui.fixtures.InMemorySettings
 import dev.stapler.stelekit.ui.fixtures.PopulatedFakeBlockRepository
 import dev.stapler.stelekit.ui.fixtures.PopulatedFakePageRepository
 import dev.stapler.stelekit.ui.fixtures.TestFixtures
+import dev.stapler.stelekit.ui.screens.ImportScreen
+import dev.stapler.stelekit.ui.screens.ImportViewModel
 import dev.stapler.stelekit.ui.screens.PageView
 import dev.stapler.stelekit.ui.state.BlockStateManager
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Rule
 import org.junit.Test
 
@@ -152,5 +157,42 @@ class QrTransferEntryPointsTest {
 
         composeTestRule.onNodeWithContentDescription("Export page").performClick()
         composeTestRule.onNodeWithText("Send via QR", substring = true).assertIsDisplayed()
+    }
+
+    /**
+     * Decode-side equivalent of [desktopMenu_should_ShowSendViaQrAction_When_EnabledOnJvm]: proves
+     * "Import via camera" reaches the real desktop composition path — `ImportScreen`'s own menu —
+     * rather than only the isolated [ImportViaCameraMenuItem] composable exercised above. Guards
+     * the `ScreenRouter` -> `ImportScreen` wiring fix (decode-side counterpart of commit 9b537e8cdc)
+     * that threads a live [QrTransferSettings] instance down instead of leaving it `null`.
+     */
+    @Test
+    fun desktopImportMenu_should_ShowImportViaCameraAction_When_EnabledOnJvm() {
+        val pageRepo = PopulatedFakePageRepository()
+        val platformFileSystem = PlatformFileSystem()
+        val graphWriter = GraphWriter(platformFileSystem)
+        val matcherFlow = MutableStateFlow<AhoCorasickMatcher?>(null)
+        val importViewModel = ImportViewModel(
+            pageRepository = pageRepo,
+            graphWriter = graphWriter,
+            graphPath = "/tmp/test",
+            urlFetcher = NoOpUrlFetcher(),
+            matcherFlow = matcherFlow,
+        )
+        val qrTransferSettings = QrTransferSettings(MapSettings()).apply { enabled = true }
+
+        composeTestRule.setContent {
+            MaterialTheme {
+                ImportScreen(
+                    viewModel = importViewModel,
+                    onDismiss = {},
+                    qrTransferSettings = qrTransferSettings,
+                    onImportViaCamera = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("More import options").performClick()
+        composeTestRule.onNodeWithText("Import via camera", substring = true).assertIsDisplayed()
     }
 }
