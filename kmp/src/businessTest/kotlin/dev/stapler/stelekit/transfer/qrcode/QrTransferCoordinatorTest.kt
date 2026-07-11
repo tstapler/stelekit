@@ -17,6 +17,7 @@ import kotlin.test.Test
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -184,6 +185,72 @@ class QrTransferCoordinatorTest {
         assertIs<CoordinatorEvent.Cancelled>(state)
         val saved = pageRepo.getPageByName("Cancelled Page").first().getOrNull()
         assertNull(saved, "no write must occur after cancel()")
+
+        coordinator.close()
+    }
+
+    @Test
+    fun coordinator_should_EmitConcurrentTransferDetected_When_FrameFromDifferentTransferIdArrivesDuringActiveSession() = runBlocking {
+        // Story 3.3.4 binding AC: a frame for a second TransferId dropped mid-session MUST emit a
+        // user-visible signal — never a silent drop — while the active session (TransferId 7)
+        // keeps making progress toward Success undisrupted.
+        //
+        // The data path applies .conflate() (by design — see QrTransferCoordinator KDoc), so a
+        // producer that free-runs ahead of the collector can race-drop an individual injected
+        // frame. This test avoids that race entirely: it drives frames through a manually-pumped
+        // Channel and waits for the coordinator's own event confirming each frame was actually
+        // processed before sending the next one — deterministic by construction, not by luck.
+        val activeMarkdown = "- active session page body with enough content for several fountain chunks\n"
+        val activeEncoder = FountainCodec.encoder(TransferId(7), activeMarkdown.encodeToByteArray(), maxFragmentBytes = 12).getOrNull()!!
+        val foreignEncoder = FountainCodec.encoder(TransferId(9), "- foreign".encodeToByteArray(), maxFragmentBytes = 12).getOrNull()!!
+        val (importService, pageRepo) = buildImportService()
+
+        // Deterministic two-item prefix (the active session's first fragment, then the foreign
+        // one) pumped one at a time through a Channel; once both are confirmed processed, the
+        // flow transitions into the SAME abundant-redundant-parts generator this file's other
+        // tests already rely on (see fakeReceiver above) — occasional .conflate() drops there are
+        // harmless because the fountain stream vastly over-provisions coverage.
+        val prefixChannel = Channel<ByteArray>(Channel.RENDEZVOUS)
+        val pumpedReceiver = object : FrameTransportReceiver {
+            override fun frames(): Flow<ByteArray> = flow {
+                emit(prefixChannel.receive())
+                emit(prefixChannel.receive())
+                for (chunk in activeEncoder.parts().drop(1)) {
+                    emit(ChunkFrameCodec.encode(chunk))
+                    kotlinx.coroutines.yield()
+                }
+            }
+        }
+
+        val coordinator = QrTransferCoordinator(
+            frameTransportReceiver = pumpedReceiver,
+            cameraFrameSource = noOpCameraFrameSource(),
+            qrImportService = importService,
+            targetName = PageName("Concurrent Sender Page"),
+        )
+
+        coordinator.start()
+
+        // Send + confirm the first active-session fragment is admitted (binds the session to
+        // TransferId(7)) before introducing the foreign one.
+        prefixChannel.send(ChunkFrameCodec.encode(activeEncoder.parts().first()))
+        withTimeout(5_000) { coordinator.events.first { it is CoordinatorEvent.FragmentAdmitted } }
+
+        // Inject a frame for a different TransferId — must be dropped with a visible signal, and
+        // must NOT disturb the active session.
+        prefixChannel.send(ChunkFrameCodec.encode(foreignEncoder.parts().first()))
+        val concurrentEvent = withTimeout(5_000) {
+            coordinator.events.first { it is CoordinatorEvent.ConcurrentTransferDetected }
+        }
+        assertIs<CoordinatorEvent.ConcurrentTransferDetected>(concurrentEvent)
+
+        // The active TransferId(7) session must still be able to complete normally afterward —
+        // the generator above keeps emitting its own redundant fountain stream automatically.
+        val terminal = collectUntilTerminal(coordinator)
+        assertIs<CoordinatorEvent.Success>(terminal.last(), "the active TransferId(7) session must still complete undisrupted")
+
+        val saved = pageRepo.getPageByName("Concurrent Sender Page").first().getOrNull()
+        assertTrue(saved != null, "the active session's own page must still be written")
 
         coordinator.close()
     }

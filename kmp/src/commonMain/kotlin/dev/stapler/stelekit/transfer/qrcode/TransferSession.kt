@@ -14,9 +14,9 @@ import kotlin.time.Instant
  * increases after a successful [accept], which happens if and only if [chunk] was a genuinely new
  * (previously-unseen) fragment, not a duplicate.
  *
- * Story 3.3.2 (out of scope for this story) adds stall-timer *behavior* on top of
- * [lastNewFragmentAt] — this class carries only the base aggregate shape needed to support that
- * later addition without a retrofit.
+ * Story 3.3.2 adds stall-timer *behavior* on top of [lastNewFragmentAt]: [stalledSeconds]/[isStalled]/
+ * [stallHint] let [QrTransferCoordinator] surface [ScanHint.Stalled] through the existing
+ * `Scanning(hint=...)` state without any new aggregate type.
  */
 class TransferSession(
     val transferId: TransferId,
@@ -53,5 +53,26 @@ class TransferSession(
             }
         }
         return accepted
+    }
+
+    /**
+     * Seconds since [lastNewFragmentAt]. validation.md's `TransferSessionTest` exercises the
+     * timer at [STALL_THRESHOLD_SECONDS]=8s; `design/ux.md`'s S9 copy references
+     * `stalledSeconds>=9` for display — that 1s gap is display-layer rounding (a value computed at
+     * 8.0s elapsed can already read "9" once whole-second UI formatting rounds up), not a second
+     * independent threshold.
+     */
+    fun stalledSeconds(now: Instant = clock()): Int =
+        (now - lastNewFragmentAt).inWholeSeconds.toInt().coerceAtLeast(0)
+
+    /** `true` once [stalledSeconds] reaches [STALL_THRESHOLD_SECONDS] with no genuinely new fragment. */
+    fun isStalled(now: Instant = clock()): Boolean = stalledSeconds(now) >= STALL_THRESHOLD_SECONDS
+
+    /** [ScanHint.Stalled] once [isStalled], else `null` — the stall-specific half of hint derivation. */
+    fun stallHint(now: Instant = clock()): ScanHint? = if (isStalled(now)) ScanHint.Stalled else null
+
+    companion object {
+        /** Stall-timer threshold (Story 3.3.2); kept in sync with `TransferSessionTest`'s 8s scenario. */
+        const val STALL_THRESHOLD_SECONDS = 8
     }
 }

@@ -53,6 +53,21 @@ sealed interface CoordinatorEvent {
 
     /** User cancelled (or declined a collision); no write ever occurred. */
     data object Cancelled : CoordinatorEvent
+
+    /**
+     * [ScanHint] changed (e.g. the stall timer crossed [TransferSession.STALL_THRESHOLD_SECONDS],
+     * or a diagnostics frame started/stopped matching [ScanHint.WrongCode]/[ScanHint.LowLight])
+     * WITHOUT a new fragment being admitted — Story 3.3.2. Kept distinct from [FragmentAdmitted]
+     * so a hint-only update never inflates a `framesDecoded` counter derived from that event.
+     */
+    data class ScanHintUpdated(val uniqueFragments: Int, val stalledSeconds: Int, val hint: ScanHint?) : CoordinatorEvent
+
+    /**
+     * A frame carrying a different [dev.stapler.stelekit.transfer.TransferId] than the active
+     * session was dropped (Story 3.3.4) — a binding, user-visible signal, not a silent drop. The
+     * active session's [ChunkBuffer] is unaffected; this is diagnostics-only.
+     */
+    data object ConcurrentTransferDetected : CoordinatorEvent
 }
 
 /**
@@ -119,7 +134,9 @@ class QrTransferCoordinator(
         check(delivered) { "CoordinatorEvent buffer overflowed — increase extraBufferCapacity" }
     }
 
-    private var session: TransferSession? = null
+    // @Volatile: read from the diagnostics coroutine, written from the data-path coroutine —
+    // both run on Dispatchers.Default and may land on different threads (Story 3.3.2 stall hint).
+    @Volatile private var session: TransferSession? = null
     @Volatile private var currentHint: ScanHint? = null
     private var collisionChannel: Channel<QrImportService.CollisionChoice?>? = null
     private var dataJob: Job? = null
@@ -145,7 +162,7 @@ class QrTransferCoordinator(
             cameraFrameSource.frameStream().conflate().collect { either ->
                 either.fold(
                     ifLeft = { /* sensor error surfaces via the pre-flight gate upstream, not here */ },
-                    ifRight = { frame -> currentHint = deriveHint(frame) },
+                    ifRight = { frame -> updateHint(deriveHint(frame)) },
                 )
             }
         } catch (e: CancellationException) {
@@ -156,10 +173,33 @@ class QrTransferCoordinator(
         }
     }
 
-    private fun deriveHint(frame: CameraFrame): ScanHint? = when (scan(frame)) {
-        is ScanResult.NotSteleKitCode -> ScanHint.WrongCode
-        is ScanResult.NoCodeDetected -> if (meanLuminance(frame) < lowLightThreshold) ScanHint.LowLight else null
-        is ScanResult.Decoded -> null
+    /**
+     * Stores [newHint] and, if it differs from the previously observed hint, emits
+     * [CoordinatorEvent.ScanHintUpdated] (Story 3.3.2) so [dev.stapler.stelekit.ui.transfer.QrDecodeUiState.Scanning]
+     * reflects a stall (or its resolution) even when no new fragment has arrived to otherwise
+     * drive a state update.
+     */
+    private fun updateHint(newHint: ScanHint?) {
+        if (newHint == currentHint) return
+        currentHint = newHint
+        val activeSession = session ?: return
+        emitEvent(
+            CoordinatorEvent.ScanHintUpdated(
+                uniqueFragments = activeSession.uniqueFragments,
+                stalledSeconds = activeSession.stalledSeconds(),
+                hint = newHint,
+            ),
+        )
+    }
+
+    /** Scan-based hint takes priority; the session's own stall timer only fills in when scan is silent. */
+    private fun deriveHint(frame: CameraFrame): ScanHint? {
+        val scanHint = when (scan(frame)) {
+            is ScanResult.NotSteleKitCode -> ScanHint.WrongCode
+            is ScanResult.NoCodeDetected -> if (meanLuminance(frame) < lowLightThreshold) ScanHint.LowLight else null
+            is ScanResult.Decoded -> null
+        }
+        return scanHint ?: session?.stallHint()
     }
 
     private fun meanLuminance(frame: CameraFrame): Int {
@@ -180,9 +220,13 @@ class QrTransferCoordinator(
                     activeSession = TransferSession(chunk.transferId, maxPayloadBytes)
                     session = activeSession
                 } else if (chunk.transferId != activeSession.transferId) {
-                    // Concurrent-sender rejection (Story 3.3.4, out of scope) — silently ignored
-                    // here; a later story adds the required user-visible "another transfer
-                    // started" signal. The active session's ChunkBuffer is untouched.
+                    // Concurrent-sender rejection (Story 3.3.4): the active session's ChunkBuffer
+                    // is untouched, but the drop is a REQUIRED user-visible signal, not a silent one.
+                    logger.warn(
+                        "ignoring frame for transferId=${chunk.transferId.value} — active session " +
+                            "is bound to transferId=${activeSession.transferId.value}",
+                    )
+                    emitEvent(CoordinatorEvent.ConcurrentTransferDetected)
                     return@collect
                 }
 

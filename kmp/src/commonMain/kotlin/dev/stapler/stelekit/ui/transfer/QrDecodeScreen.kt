@@ -67,9 +67,20 @@ fun QrDecodeScreen(
     val state by viewModel.state.collectAsState()
     val collisionPrompt by viewModel.collisionPrompt.collectAsState()
     val pendingCollisionChoice by viewModel.pendingCollisionChoice.collectAsState()
+    val concurrentTransferWarningNonce by viewModel.concurrentTransferWarningNonce.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.start()
+    }
+
+    // Story 3.3.4 binding AC: a dropped-TransferId frame during an active session MUST surface a
+    // visible, transient message — never a silent drop — without disrupting the active session.
+    var showConcurrentTransferWarning by remember { mutableStateOf(false) }
+    LaunchedEffect(concurrentTransferWarningNonce) {
+        if (concurrentTransferWarningNonce == 0) return@LaunchedEffect
+        showConcurrentTransferWarning = true
+        kotlinx.coroutines.delay(3_000L)
+        showConcurrentTransferWarning = false
     }
 
     Column(
@@ -79,6 +90,11 @@ fun QrDecodeScreen(
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        if (showConcurrentTransferWarning) {
+            ConcurrentTransferWarningBanner()
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
         when (val s = state) {
             QrDecodeUiState.Idle -> {
                 Spacer(modifier = Modifier.height(64.dp))
@@ -150,6 +166,20 @@ fun QrDecodeScreen(
             onCancel = { viewModel.cancel(); onDismiss() },
         )
     }
+}
+
+/** Transient, visible warning for a dropped second sender (Story 3.3.4 binding AC). */
+@Composable
+private fun ConcurrentTransferWarningBanner() {
+    Text(
+        "Another transfer started — ignoring it",
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, MaterialTheme.colorScheme.error, RoundedCornerShape(8.dp))
+            .padding(8.dp),
+        color = MaterialTheme.colorScheme.error,
+    )
 }
 
 @Composable

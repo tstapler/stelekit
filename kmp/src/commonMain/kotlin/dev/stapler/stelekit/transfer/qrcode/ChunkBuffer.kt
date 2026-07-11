@@ -4,7 +4,9 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.transfer.Crc32
+import dev.stapler.stelekit.transfer.TransferId
 import kotlin.math.ceil
 
 /**
@@ -14,10 +16,16 @@ import kotlin.math.ceil
  * "passed the whole-payload CRC32 proof gate" is therefore a type-level fact, not a runtime flag
  * a caller could forget to check (Parse-Don't-Validate). [isComplete] only reports that decoding
  * has *resolved* (success or integrity failure) — it does not imply [reassemble] will succeed.
+ *
+ * Story 3.3.4: once bound to a [TransferId] (by the first accepted chunk), a frame carrying a
+ * different [TransferId] is ignored (logged, not errored) rather than corrupting the in-progress
+ * decode — defense in depth alongside [QrTransferCoordinator]'s own session-level binding check.
  */
 class ChunkBuffer(private val maxPayloadBytes: Int) {
+    private val logger = Logger("ChunkBuffer")
 
     private var decoder: FountainDecoder? = null
+    private var expectedTransferId: TransferId? = null
     private var expectedSeqLen = 0
     private var expectedMessageLen = 0
     private var expectedChecksum = 0
@@ -27,7 +35,8 @@ class ChunkBuffer(private val maxPayloadBytes: Int) {
 
     /**
      * Idempotent for duplicates, order-independent. Returns `false` if the chunk is rejected
-     * (already complete, or the claimed `payloadLen`/parameters are invalid/inconsistent).
+     * (already complete, the claimed `payloadLen`/parameters are invalid/inconsistent, or [chunk]
+     * carries a different [TransferId] than the one this buffer bound to on its first chunk).
      */
     fun accept(chunk: FountainChunk): Boolean {
         if (isComplete()) return false
@@ -36,8 +45,18 @@ class ChunkBuffer(private val maxPayloadBytes: Int) {
         if (chunk.payloadLen <= 0 || chunk.payloadLen > maxPayloadBytes) return false
         if (chunk.fragment.isEmpty()) return false
 
+        val boundTransferId = expectedTransferId
+        if (boundTransferId != null && chunk.transferId != boundTransferId) {
+            logger.warn(
+                "ignoring frame for transferId=${chunk.transferId.value} — buffer is bound to " +
+                    "transferId=${boundTransferId.value}",
+            )
+            return false
+        }
+
         val existingDecoder = decoder
         if (existingDecoder == null) {
+            expectedTransferId = chunk.transferId
             expectedMessageLen = chunk.payloadLen
             expectedChecksum = chunk.payloadCrc.value
             expectedFragmentLen = chunk.fragment.size

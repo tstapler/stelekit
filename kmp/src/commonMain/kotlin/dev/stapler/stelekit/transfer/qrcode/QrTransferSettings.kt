@@ -91,6 +91,13 @@ class QrTransferSettings(private val platformSettings: Settings) {
         /** Redundancy multiplier applied on top of the pure-fragment count for the pre-flight estimate. */
         const val DEFAULT_REDUNDANCY_MULTIPLIER: Double = 1.0
 
+        // ponytail: Task 3.3.5a (hardware-in-the-loop reliability pass, resolves UQ-2 — the
+        // empirical steady-state frame-interval floor at which the Android receiver reliably
+        // locks on) is OUTSTANDING — real hardware and two physical devices, cannot be run in
+        // this environment. DEFAULT_FRAMES_PER_SECOND below is the plan's own provisional 2.5fps
+        // default (plan.md UQ-2), not yet tuned against measured lock-on/frame-loss rates at
+        // 2.0/2.5/3.0 fps. Do not treat this default as validated until Task 3.3.5a records real
+        // transfer results and updates this KDoc + the constant.
         /** ADR-004 default: 2.5fps (400ms/frame) — within the ≤3fps WCAG 2.3.1 hard ceiling. */
         const val DEFAULT_FRAMES_PER_SECOND: Double = 2.5
 

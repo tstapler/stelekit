@@ -26,6 +26,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.SupervisorJob
 import kotlin.random.Random
+import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * Owns serialize -> pre-flight -> paced-display for the QR sender (Story 3.1.2). Drives the send
@@ -49,8 +51,10 @@ class QrEncodeViewModel(
     private val settings: QrTransferSettings,
     private val cameraFrameSource: CameraFrameSource = NoOpCameraFrameSource(),
     private val tick: suspend (delayMs: Long) -> Unit = { delayMs -> delay(delayMs) },
+    /** Injected so tests can assert on emitted lines via [dev.stapler.stelekit.logging.LogManager.logs] (Story 3.3.3). */
+    private val logger: Logger = Logger("QrEncodeViewModel"),
+    private val clock: () -> Instant = { Clock.System.now() },
 ) {
-    private val logger = Logger("QrEncodeViewModel")
 
     // CRITICAL: internal scope — never injected from outside composition.
     private val scope = CoroutineScope(
@@ -58,6 +62,7 @@ class QrEncodeViewModel(
             CoroutineExceptionHandler { _, throwable ->
                 logger.error("QrEncodeViewModel uncaught: ${throwable.message}")
                 _state.value = QrEncodeUiState.Failed(DomainError.QrTransferError.ChunkDecodeFailed)
+                logEnded(outcome = "failed")
             },
     )
 
@@ -79,10 +84,17 @@ class QrEncodeViewModel(
     private var chunkCount = 0
     private var estBytes = 0
 
+    // Story 3.3.3 observability bookkeeping — read only at qr_transfer_started/qr_frame_sent/qr_transfer_ended.
+    private var transferId: TransferId? = null
+    private var transferStartedAt: Instant? = null
+    private var endedLogged = false
+
     /** Idle -> Serializing -> Displaying/Failed. No-op unless currently [QrEncodeUiState.Idle]. */
     fun start(pageUuid: PageUuid) {
         if (_state.value != QrEncodeUiState.Idle) return
         _state.value = QrEncodeUiState.Serializing
+        transferStartedAt = clock()
+        endedLogged = false
         scope.launch {
             val page = pageRepository.getPageByUuid(pageUuid).first().getOrNull()
             if (page == null) {
@@ -100,6 +112,7 @@ class QrEncodeViewModel(
                 _state.value = QrEncodeUiState.Failed(
                     DomainError.QrTransferError.PayloadTooLarge(payload.size, maxPayloadBytes),
                 )
+                logEnded(outcome = "failed")
                 return@launch
             }
 
@@ -113,13 +126,17 @@ class QrEncodeViewModel(
             frameIndex = 0
             totalCycled = 0
 
+            val id = TransferId(Random.nextInt())
+            transferId = id
             val transport = QrFrameTransport(
-                transferId = TransferId(Random.nextInt()),
+                transferId = id,
                 cameraFrameSource = cameraFrameSource,
                 maxFragmentBytes = maxFragmentBytes,
             )
             activeTransport = transport
             sendJob = scope.launch { transport.send(flowOf(payload)) }
+
+            logger.info("qr_transfer_started transferId=${id.value} role=sender estBytes=$estBytes chunkCount=$chunkCount")
 
             _state.value = QrEncodeUiState.Displaying(frameIndex, totalCycled, chunkCount, estBytes)
             if (!settings.reduceMotion) startPacing(transport)
@@ -147,6 +164,7 @@ class QrEncodeViewModel(
         transport.displayFrames.value?.let { _currentFrame.value = it }
         totalCycled += 1
         frameIndex = if (chunkCount > 0) totalCycled % chunkCount else 0
+        logger.debug("qr_frame_sent transferId=${transferId?.value} frameIndex=$frameIndex")
         _state.value = QrEncodeUiState.Displaying(frameIndex, totalCycled, chunkCount, estBytes)
     }
 
@@ -185,12 +203,25 @@ class QrEncodeViewModel(
         if (_state.value !is QrEncodeUiState.Displaying) return
         stopLoops()
         _state.value = QrEncodeUiState.Complete
+        logEnded(outcome = "success")
     }
 
     /** Cancels an in-progress send from any non-terminal state. Stops the loop within one tick. */
     fun cancel() {
         stopLoops()
         _state.value = QrEncodeUiState.Cancelled
+        logEnded(outcome = "cancelled")
+    }
+
+    /** `qr_transfer_ended{role=sender, outcome, elapsedMs, framesSent}` (Story 3.3.3 Observability Plan). */
+    private fun logEnded(outcome: String) {
+        if (endedLogged) return
+        endedLogged = true
+        val elapsedMs = transferStartedAt?.let { (clock() - it).inWholeMilliseconds } ?: 0L
+        logger.info(
+            "qr_transfer_ended transferId=${transferId?.value} role=sender outcome=$outcome " +
+                "elapsedMs=$elapsedMs framesSent=$totalCycled",
+        )
     }
 
     private fun stopLoops() {

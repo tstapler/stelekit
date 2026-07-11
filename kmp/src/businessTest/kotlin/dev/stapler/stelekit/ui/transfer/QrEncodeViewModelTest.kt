@@ -3,6 +3,9 @@
 package dev.stapler.stelekit.ui.transfer
 
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.logging.LogLevel
+import dev.stapler.stelekit.logging.LogManager
+import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.Page
@@ -207,6 +210,36 @@ class QrEncodeViewModelTest {
 
         // Must not throw ForgottenCoroutineScopeException (or anything else) — the scope is
         // internally owned, never a caller-supplied rememberCoroutineScope().
+        vm.close()
+    }
+
+    @Test
+    fun send_should_EmitTransferEndedLogWithOutcomeCancelled_When_UserCancelsMidSend() = runBlocking {
+        // Story 3.3.3: injected Logger is a spy via LogManager.logs (this repo's existing
+        // structured-logger convention — see GraphWriterTest — not a new logging abstraction).
+        LogManager.clearLogs()
+        val (pageRepo, blockRepo, pageUuid) = fixture(contentLength = 30)
+        val settings = QrTransferSettings(MapSettings())
+        val vm = QrEncodeViewModel(
+            pageRepository = pageRepo,
+            blockRepository = blockRepo,
+            settings = settings,
+            logger = Logger("QrEncodeViewModel"),
+        )
+
+        vm.start(pageUuid)
+        withTimeout(5_000) { vm.state.first { it is QrEncodeUiState.Displaying } }
+
+        vm.cancel()
+        assertEquals(QrEncodeUiState.Cancelled, vm.state.value)
+
+        val logs = LogManager.logs.value.filter { it.tag == "QrEncodeViewModel" }
+        val endedLog = logs.firstOrNull { it.level == LogLevel.INFO && it.message.contains("qr_transfer_ended") }
+        assertTrue(endedLog != null, "expected a qr_transfer_ended log line, got $logs")
+        assertTrue(endedLog!!.message.contains("outcome=cancelled"), "expected outcome=cancelled, got: ${endedLog.message}")
+        assertTrue(endedLog.message.contains("role=sender"), "expected role=sender, got: ${endedLog.message}")
+        assertTrue(endedLog.message.contains("framesSent="), "expected a framesSent count, got: ${endedLog.message}")
+
         vm.close()
     }
 }

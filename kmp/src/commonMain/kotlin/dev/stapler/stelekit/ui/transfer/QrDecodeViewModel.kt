@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 /** S11 collision-resolution prompt, surfaced mid-[QrDecodeUiState.Importing] (Story 3.2.4). */
 data class CollisionPrompt(val existingName: PageName, val proposedName: PageName)
@@ -63,8 +64,10 @@ class QrDecodeViewModel(
             targetName = name,
         )
     },
+    /** Injected so tests can assert on emitted lines via [dev.stapler.stelekit.logging.LogManager.logs] (Story 3.3.3). */
+    private val logger: Logger = Logger("QrDecodeViewModel"),
+    private val clock: () -> Instant = { Clock.System.now() },
 ) {
-    private val logger = Logger("QrDecodeViewModel")
 
     // CRITICAL: internal scope — never injected from outside composition.
     private val scope = CoroutineScope(
@@ -87,8 +90,21 @@ class QrDecodeViewModel(
     private val _pendingCollisionChoice = MutableStateFlow<QrImportService.CollisionChoice?>(null)
     val pendingCollisionChoice: StateFlow<QrImportService.CollisionChoice?> = _pendingCollisionChoice.asStateFlow()
 
+    /**
+     * Incremented each time [CoordinatorEvent.ConcurrentTransferDetected] fires (Story 3.3.4). A
+     * counter, not a `Boolean`, so a second warning while the first is still visible re-triggers
+     * [dev.stapler.stelekit.ui.transfer.QrDecodeScreen]'s `LaunchedEffect(nonce)` instead of being
+     * swallowed as a no-op state change.
+     */
+    private val _concurrentTransferWarningNonce = MutableStateFlow(0)
+    val concurrentTransferWarningNonce: StateFlow<Int> = _concurrentTransferWarningNonce.asStateFlow()
+
     private var activeCoordinator: QrTransferCoordinator? = null
     private var collectJob: Job? = null
+
+    // Story 3.3.3 observability bookkeeping — read only at qr_transfer_started/qr_transfer_ended.
+    private var transferStartedAt: Instant? = null
+    private var framesDecoded = 0
 
     /**
      * Idle -> PreflightFailed | Scanning. Pre-flight rejects immediately — never enters [QrDecodeUiState.Scanning]
@@ -103,6 +119,10 @@ class QrDecodeViewModel(
             )
             return
         }
+
+        transferStartedAt = clock()
+        framesDecoded = 0
+        logger.info("qr_transfer_started role=receiver")
 
         val coordinator = coordinatorFactory(targetNameProvider())
         activeCoordinator = coordinator
@@ -125,11 +145,33 @@ class QrDecodeViewModel(
                 _collisionPrompt.value = null
                 _pendingCollisionChoice.value = null
             }
-            else -> { /* FragmentAdmitted, Reassembling, Importing: no collision-prompt change */ }
+            else -> { /* FragmentAdmitted, Reassembling, Importing, ScanHintUpdated, ConcurrentTransferDetected: no collision-prompt change */ }
         }
+
+        when (event) {
+            is CoordinatorEvent.FragmentAdmitted -> {
+                framesDecoded += 1
+                logger.debug("qr_frame_decoded chunkIndex=$framesDecoded admitted=true")
+            }
+            is CoordinatorEvent.ConcurrentTransferDetected -> {
+                logger.debug("qr_chunk_rejected reason=concurrent_transfer_id")
+                _concurrentTransferWarningNonce.value += 1
+            }
+            CoordinatorEvent.Reassembling -> logger.info("qr_reassembly uniqueFragments=$framesDecoded result=in_progress")
+            is CoordinatorEvent.Success -> logEnded(outcome = "success")
+            is CoordinatorEvent.Failed -> logEnded(outcome = "failed")
+            CoordinatorEvent.Cancelled -> logEnded(outcome = "cancelled")
+            else -> { /* FragmentAdmitted logged above; CollisionDetected/Importing: no dedicated log line */ }
+        }
+
         return when (event) {
             is CoordinatorEvent.FragmentAdmitted ->
                 QrDecodeUiState.Scanning(event.uniqueFragments, stalledSeconds = 0, hint = event.hint)
+
+            is CoordinatorEvent.ScanHintUpdated ->
+                QrDecodeUiState.Scanning(event.uniqueFragments, event.stalledSeconds, event.hint)
+
+            CoordinatorEvent.ConcurrentTransferDetected -> _state.value
 
             CoordinatorEvent.Reassembling -> QrDecodeUiState.Reassembling
             is CoordinatorEvent.CollisionDetected -> QrDecodeUiState.Importing
@@ -138,6 +180,14 @@ class QrDecodeViewModel(
             is CoordinatorEvent.Failed -> QrDecodeUiState.Failed(event.error)
             CoordinatorEvent.Cancelled -> QrDecodeUiState.Cancelled
         }
+    }
+
+    /** `qr_transfer_ended{role=receiver, outcome, elapsedMs, framesDecoded}` (Story 3.3.3 Observability Plan). */
+    private fun logEnded(outcome: String) {
+        val elapsedMs = transferStartedAt?.let { (clock() - it).inWholeMilliseconds } ?: 0L
+        logger.info(
+            "qr_transfer_ended role=receiver outcome=$outcome elapsedMs=$elapsedMs framesDecoded=$framesDecoded",
+        )
     }
 
     /** Resolves a pending [collisionPrompt] (S11: Keep both / Overwrite). No-op if none is pending. */
@@ -153,6 +203,18 @@ class QrDecodeViewModel(
         _pendingCollisionChoice.value = null
         _state.value = QrDecodeUiState.Cancelled
     }
+
+    /**
+     * Lifecycle background/foreground signal (Story 3.3.2, UQ-3) — intentionally NO-OP. Backgrounding
+     * must NOT tear down [activeCoordinator] or its `TransferSession`/`ChunkBuffer`: accumulated
+     * fragments persist across a background/foreground cycle within the same VM lifetime. Callers
+     * (e.g. an Android lifecycle observer) may call this unconditionally; only [cancel] or [close]
+     * ever tear the coordinator down.
+     */
+    fun pause() { /* intentionally no-op — see KDoc */ }
+
+    /** Paired with [pause] — also intentionally a no-op; scanning simply continues where it left off. */
+    fun resume() { /* intentionally no-op — see KDoc */ }
 
     /** Cancel the internal [CoroutineScope] and the active coordinator. Call on permanent dismiss. */
     fun close() {
