@@ -1,0 +1,308 @@
+package dev.stapler.stelekit.ui.transfer
+
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.error.toUiMessage
+import dev.stapler.stelekit.transfer.qrcode.QrImportService
+import dev.stapler.stelekit.transfer.qrcode.QrTransferSettings
+import dev.stapler.stelekit.transfer.qrcode.ScanHint
+
+/** Continuous-`Scanning` duration after which the one-time handheld-fatigue tip appears (Story 3.2.3). */
+private const val HANDHELD_FATIGUE_TIP_THRESHOLD_MS = 15_000L
+
+/**
+ * Full-screen QR receiver (Story 3.2.3): camera preview + reticle, non-linear
+ * "Receiving… (N fragments)" progress, hint-driven guidance copy, a one-time-per-session
+ * handheld-fatigue tip, and a one-time-ever first-use explainer.
+ *
+ * [onFragmentTick] mirrors [dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel]'s
+ * `onHapticFeedback` pattern (`LocalHapticFeedback.current.performHapticFeedback(...)`) — directly
+ * injectable so tests can substitute a plain counter instead of a real haptic call. Purely
+ * additive: the "Receiving… (N fragments)" text line is always rendered and always sufficient on
+ * its own, per Story 3.2.3's binding AC (haptics-disabled devices must not lose progress info).
+ */
+@Composable
+fun QrDecodeScreen(
+    viewModel: QrDecodeViewModel,
+    settings: QrTransferSettings,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    onImportFromFile: (() -> Unit)? = null,
+    onFragmentTick: () -> Unit = LocalHapticFeedback.current.let { haptic ->
+        { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
+    },
+) {
+    val state by viewModel.state.collectAsState()
+    val collisionPrompt by viewModel.collisionPrompt.collectAsState()
+    val pendingCollisionChoice by viewModel.pendingCollisionChoice.collectAsState()
+
+    LaunchedEffect(Unit) {
+        viewModel.start()
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        when (val s = state) {
+            QrDecodeUiState.Idle -> {
+                Spacer(modifier = Modifier.height(64.dp))
+                Text("Starting…", style = MaterialTheme.typography.titleMedium)
+            }
+
+            is QrDecodeUiState.PreflightFailed -> PreflightFailedContent(
+                onImportFromFile = onImportFromFile,
+                onBack = onDismiss,
+            )
+
+            is QrDecodeUiState.Scanning -> ScanningContent(
+                state = s,
+                settings = settings,
+                onHapticTick = onFragmentTick,
+                onCancel = { viewModel.cancel(); onDismiss() },
+            )
+
+            QrDecodeUiState.Reassembling -> {
+                Spacer(modifier = Modifier.height(64.dp))
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Checking…", style = MaterialTheme.typography.titleMedium)
+                Text("Verifying the received data", style = MaterialTheme.typography.bodyMedium)
+            }
+
+            QrDecodeUiState.Importing -> {
+                Spacer(modifier = Modifier.height(64.dp))
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Importing…", style = MaterialTheme.typography.titleMedium)
+            }
+
+            is QrDecodeUiState.Success -> {
+                Spacer(modifier = Modifier.height(64.dp))
+                Text("✅  Imported!", style = MaterialTheme.typography.headlineSmall)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("\"${s.pageName.value}\" was added to your graph.", style = MaterialTheme.typography.bodyMedium)
+                Spacer(modifier = Modifier.height(32.dp))
+                Button(onClick = onDismiss) { Text("Done") }
+            }
+
+            is QrDecodeUiState.Failed -> {
+                Spacer(modifier = Modifier.height(64.dp))
+                Text(s.error.toUiMessage(), style = MaterialTheme.typography.bodyLarge)
+                Spacer(modifier = Modifier.height(32.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    OutlinedButton(onClick = onDismiss) { Text("Close") }
+                    Button(onClick = onDismiss) { Text("Try again") }
+                }
+            }
+
+            QrDecodeUiState.Cancelled -> {
+                Spacer(modifier = Modifier.height(64.dp))
+                Text("Import cancelled", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(32.dp))
+                Button(onClick = onDismiss) { Text("Close") }
+            }
+        }
+    }
+
+    val prompt = collisionPrompt
+    if (prompt != null) {
+        QrImportConfirmDialog(
+            existingName = prompt.existingName.value,
+            pendingChoice = pendingCollisionChoice,
+            onKeepBoth = { viewModel.resolveCollision(QrImportService.CollisionChoice.KEEP_BOTH) },
+            onOverwrite = { viewModel.resolveCollision(QrImportService.CollisionChoice.OVERWRITE) },
+            onCancel = { viewModel.cancel(); onDismiss() },
+        )
+    }
+}
+
+@Composable
+private fun PreflightFailedContent(onImportFromFile: (() -> Unit)?, onBack: () -> Unit) {
+    Spacer(modifier = Modifier.height(64.dp))
+    Text("📷🚫  Camera unavailable", style = MaterialTheme.typography.titleMedium)
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+        "This device can't scan QR transfer codes yet. Try importing from a file instead, or use a device with a camera.",
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    Spacer(modifier = Modifier.height(32.dp))
+    if (onImportFromFile != null) {
+        Button(onClick = onImportFromFile) { Text("Import from file") }
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+    OutlinedButton(onClick = onBack) { Text("Back") }
+}
+
+@Composable
+private fun ScanningContent(
+    state: QrDecodeUiState.Scanning,
+    settings: QrTransferSettings,
+    onHapticTick: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    var explainerDismissed by remember { mutableStateOf(settings.seenDecoderExplainer) }
+    var fatigueTipDismissed by remember { mutableStateOf(false) }
+    var fatigueTipVisible by remember { mutableStateOf(false) }
+    var lastTickedFragments by remember { mutableStateOf(0) }
+
+    // Haptic tick is purely additive (Story 3.2.3 binding AC) — the text line below always
+    // renders the fragment count regardless of whether this effect ever fires.
+    LaunchedEffect(state.uniqueFragments) {
+        if (state.uniqueFragments > lastTickedFragments) {
+            lastTickedFragments = state.uniqueFragments
+            onHapticTick()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(HANDHELD_FATIGUE_TIP_THRESHOLD_MS)
+        if (!fatigueTipDismissed) fatigueTipVisible = true
+    }
+
+    if (!explainerDismissed) {
+        DecoderFirstUseExplainerBanner(
+            onDismiss = {
+                settings.seenDecoderExplainer = true
+                explainerDismissed = true
+            },
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+
+    CameraPreviewReticle(uniqueFragments = state.uniqueFragments)
+
+    Spacer(modifier = Modifier.height(16.dp))
+    Text(
+        "Receiving… (${state.uniqueFragments} fragments)",
+        style = MaterialTheme.typography.bodyMedium,
+    )
+
+    // Bar only animates on genuine new-fragment progress — never a smooth indeterminate
+    // animation implying progress that hasn't happened (UX criterion 8).
+    LinearProgressIndicator(
+        progress = { if (state.uniqueFragments == 0) 0f else 1f - (1f / (state.uniqueFragments + 1)) },
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    Spacer(modifier = Modifier.height(8.dp))
+    HintCopy(hint = state.hint, stalledSeconds = state.stalledSeconds)
+
+    if (fatigueTipVisible && !fatigueTipDismissed) {
+        Spacer(modifier = Modifier.height(8.dp))
+        HandheldFatigueTip(onDismiss = { fatigueTipDismissed = true; fatigueTipVisible = false })
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+    OutlinedButton(onClick = onCancel) { Text("Cancel") }
+}
+
+@Composable
+private fun HintCopy(hint: ScanHint?, stalledSeconds: Int) {
+    val text = when (hint) {
+        ScanHint.Stalled -> "Not receiving new data — move closer or adjust the angle."
+        ScanHint.WrongCode -> "That's not a SteleKit transfer code."
+        ScanHint.LowLight -> "Too dark to scan — add light."
+        null -> if (stalledSeconds >= 8) {
+            "Not receiving new data — move closer or adjust the angle."
+        } else {
+            null
+        }
+    }
+    if (text != null) {
+        Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    }
+}
+
+@Composable
+private fun CameraPreviewReticle(uniqueFragments: Int) {
+    // Fractional width (not fillMaxWidth) keeps this from dominating the viewport on short
+    // screens/small test windows and pushing the progress/hint text below the visible area —
+    // same fraction as QrEncodeScreen's InsetQrCard (INSET_CARD_WIDTH_FRACTION).
+    Box(
+        modifier = Modifier
+            .fillMaxWidth(0.55f)
+            .aspectRatio(1f)
+            .border(2.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
+            .semantics {
+                contentDescription = "Point camera at the SteleKit transfer code, $uniqueFragments fragments received"
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.4f)
+                .aspectRatio(1f)
+                .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)),
+        )
+    }
+}
+
+@Composable
+private fun HandheldFatigueTip(onDismiss: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
+            .padding(12.dp),
+    ) {
+        Text(
+            "Tip: try propping your phone against something stable for a steadier scan.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(onClick = onDismiss) { Text("Got it") }
+    }
+}
+
+@Composable
+private fun DecoderFirstUseExplainerBanner(onDismiss: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
+            .padding(12.dp),
+    ) {
+        Text(
+            "Point your camera at the other device's screen — this is a continuous scan, not a photo, and may take 30–60 seconds.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(onClick = onDismiss) { Text("Got it") }
+    }
+}

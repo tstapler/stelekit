@@ -23,3 +23,22 @@ fun SendViaQrMenuItem(
         onClick = onClick,
     )
 }
+
+/**
+ * Flag-gated import-menu action that launches [QrDecodeScreen] (Story 3.2.4, S7).
+ *
+ * Same present-when-enabled/absent-when-disabled shape as [SendViaQrMenuItem] — renders nothing
+ * at all (not a disabled item) when [QrTransferSettings.enabled] is false, so the feature has zero
+ * surface area when off.
+ */
+@Composable
+fun ImportViaCameraMenuItem(
+    settings: QrTransferSettings,
+    onClick: () -> Unit,
+) {
+    if (!settings.enabled) return
+    DropdownMenuItem(
+        text = { Text("📷  Import via camera") },
+        onClick = onClick,
+    )
+}

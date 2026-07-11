@@ -63,6 +63,15 @@ class QrTransferSettings(private val platformSettings: Settings) {
         get() = platformSettings.getBoolean(KEY_SEEN_ENCODER_EXPLAINER, false)
         set(value) = platformSettings.putBoolean(KEY_SEEN_ENCODER_EXPLAINER, value)
 
+    /**
+     * One-time-ever, per-device dismissible first-use explainer shown on the receiver's first
+     * [dev.stapler.stelekit.ui.transfer.QrDecodeScreen] `Scanning` render (Task 3.2.3c, S8/S9).
+     * Mirrors [seenEncoderExplainer]'s pattern on the sender side. Never re-shown once set.
+     */
+    var seenDecoderExplainer: Boolean
+        get() = platformSettings.getBoolean(KEY_SEEN_DECODER_EXPLAINER, false)
+        set(value) = platformSettings.putBoolean(KEY_SEEN_DECODER_EXPLAINER, value)
+
     companion object {
         // ponytail: provisional default pending the real-device scan spike (Task 2.1.3a / UQ-1 in
         // plan.md) — not yet empirically tuned. UQ-1 is a manual/hardware spike (render QR at
@@ -94,6 +103,7 @@ class QrTransferSettings(private val platformSettings: Settings) {
         private const val KEY_EC_LEVEL = "qr_transfer.ec_level"
         private const val KEY_MAX_FRAGMENT_BYTES = "qr_transfer.max_fragment_bytes"
         private const val KEY_SEEN_ENCODER_EXPLAINER = "qr_transfer.seen_encoder_explainer"
+        private const val KEY_SEEN_DECODER_EXPLAINER = "qr_transfer.seen_decoder_explainer"
     }
 }
 

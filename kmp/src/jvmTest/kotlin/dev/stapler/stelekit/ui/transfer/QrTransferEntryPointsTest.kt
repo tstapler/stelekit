@@ -51,4 +51,29 @@ class QrTransferEntryPointsTest {
 
         composeTestRule.onNodeWithText("Send via QR", substring = true).assertDoesNotExist()
     }
+
+    @Test
+    fun importMenu_should_ShowImportViaCameraAction_When_QrTransferSettingsEnabled() {
+        val settings = QrTransferSettings(MapSettings()).apply { enabled = true }
+        var launched = false
+
+        composeTestRule.setContent {
+            ImportViaCameraMenuItem(settings = settings, onClick = { launched = true })
+        }
+
+        composeTestRule.onNodeWithText("Import via camera", substring = true).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Import via camera", substring = true).performClick()
+        assertTrue(launched, "tapping the menu item must invoke onClick (which launches QrDecodeScreen)")
+    }
+
+    @Test
+    fun importMenu_should_OmitImportViaCameraAction_When_QrTransferSettingsDisabled() {
+        val settings = QrTransferSettings(MapSettings()) // enabled defaults to false
+
+        composeTestRule.setContent {
+            ImportViaCameraMenuItem(settings = settings, onClick = {})
+        }
+
+        composeTestRule.onNodeWithText("Import via camera", substring = true).assertDoesNotExist()
+    }
 }
