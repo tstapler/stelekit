@@ -63,6 +63,38 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
                 false
             }
         }
+
+        /**
+         * Converts a saf:// path to a real filesystem path.
+         * Requires API 30+ and MANAGE_EXTERNAL_STORAGE permission.
+         * Returns null if conversion is not possible (no permission, old API, non-SAF path).
+         */
+        @Suppress("MagicNumber")
+        fun resolveSafToRealPath(safPath: String, context: Context): String? {
+            if (!safPath.startsWith("saf://")) return null
+            if (android.os.Build.VERSION.SDK_INT < 30) return null
+            if (!android.os.Environment.isExternalStorageManager()) return null
+            val withoutScheme = safPath.removePrefix("saf://")
+            val slashIdx = withoutScheme.indexOf('/')
+            val encodedTreeUri = if (slashIdx >= 0) withoutScheme.substring(0, slashIdx) else withoutScheme
+            val relPath = if (slashIdx >= 0) withoutScheme.substring(slashIdx + 1) else ""
+            val treeUri = try { Uri.parse(Uri.decode(encodedTreeUri)) } catch (_: Exception) { return null }
+            val docId = try { DocumentsContract.getTreeDocumentId(treeUri) } catch (_: Exception) { return null }
+                ?: return null
+            val colonIdx = docId.indexOf(':')
+            if (colonIdx < 0) return null
+            val volumeName = docId.substring(0, colonIdx)
+            val relativeInVolume = docId.substring(colonIdx + 1)
+            val volumeRoot: java.io.File = if (volumeName == "primary") {
+                android.os.Environment.getExternalStorageDirectory()
+            } else {
+                val sm = context.getSystemService(android.os.storage.StorageManager::class.java) ?: return null
+                sm.storageVolumes.firstOrNull { it.uuid?.equals(volumeName, ignoreCase = true) == true }
+                    ?.directory ?: return null
+            }
+            val graphRoot = java.io.File(volumeRoot, relativeInVolume)
+            return if (relPath.isEmpty()) graphRoot.absolutePath else java.io.File(graphRoot, relPath).absolutePath
+        }
     }
 
     /**

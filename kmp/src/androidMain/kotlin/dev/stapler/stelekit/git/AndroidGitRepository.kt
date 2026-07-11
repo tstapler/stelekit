@@ -38,6 +38,7 @@ import java.io.File
 class AndroidGitRepository(
     private val sshKeyProvider: (() -> ByteArray)? = null,
     credentialAccess: CredentialAccess = CredentialStore(),
+    private val pathResolver: (String) -> String? = { null },
 ) : GitRepository {
 
     private val logger = Logger("AndroidGitRepository")
@@ -48,13 +49,13 @@ class AndroidGitRepository(
     override fun setCredentialAccess(access: CredentialAccess) { credentialAccess = access }
 
     override suspend fun isGitRepo(path: String): Boolean = withContext(PlatformDispatcher.IO) {
-        File(path, ".git").exists()
+        File(resolveForJGit(path), ".git").exists()
     }
 
     override suspend fun init(repoRoot: String): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             try {
-                Git.init().setDirectory(File(repoRoot)).call().close()
+                Git.init().setDirectory(File(resolveForJGit(repoRoot))).call().close()
                 Unit.right()
             } catch (e: CancellationException) {
                 throw e
@@ -76,7 +77,7 @@ class AndroidGitRepository(
 
             val cmd = Git.cloneRepository()
                 .setURI(url)
-                .setDirectory(File(localPath))
+                .setDirectory(File(resolveForJGit(localPath)))
                 .setProgressMonitor(object : org.eclipse.jgit.lib.ProgressMonitor {
                     override fun start(totalTasks: Int) {}
                     override fun beginTask(title: String, totalWork: Int) { onProgress(title) }
@@ -391,7 +392,7 @@ class AndroidGitRepository(
     override suspend fun removeStaleLockFile(config: GitConfig): Either<DomainError.GitError, Unit> =
         withContext(PlatformDispatcher.IO) {
             try {
-                val lockFile = File(config.repoRoot, ".git/index.lock")
+                val lockFile = File(resolveForJGit(config.repoRoot), ".git/index.lock")
                 if (!lockFile.exists()) return@withContext Unit.right()
 
                 val ageMs = System.currentTimeMillis() - lockFile.lastModified()
@@ -410,7 +411,10 @@ class AndroidGitRepository(
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    private fun openGit(repoRoot: String): Git = Git.open(File(repoRoot))
+    /** Resolves saf:// URIs to real filesystem paths for JGit's File-based API. */
+    private fun resolveForJGit(path: String): String = pathResolver(path) ?: path
+
+    private fun openGit(repoRoot: String): Git = Git.open(File(resolveForJGit(repoRoot)))
 
     private fun buildJschSessionFactory(keyPath: String, passphrase: String? = null): JschConfigSessionFactory {
         return object : JschConfigSessionFactory() {

@@ -285,7 +285,10 @@ class MainActivity : ComponentActivity() {
                 rebuildVoicePipeline()
             }
             val spanRecorder = remember { createAndroidSpanRecorder() }
-            val gitRepository = remember { AndroidGitRepository() }
+            val gitRepository = remember {
+                val ctx = this@MainActivity.applicationContext
+                AndroidGitRepository(pathResolver = { PlatformFileSystem.resolveSafToRealPath(it, ctx) })
+            }
             val attachmentService = rememberAndroidMediaAttachmentService(this@MainActivity, fileSystem)
 
             // Keep GitSyncServiceRegistry in sync so GitSyncWorker can reach the active service
