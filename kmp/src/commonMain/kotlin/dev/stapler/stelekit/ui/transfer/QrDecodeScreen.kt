@@ -34,10 +34,12 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.error.toUiMessage
 import dev.stapler.stelekit.transfer.qrcode.QrImportService
 import dev.stapler.stelekit.transfer.qrcode.QrTransferSettings
 import dev.stapler.stelekit.transfer.qrcode.ScanHint
+import dev.stapler.stelekit.ui.annotate.CameraPermissionRationaleDialog
 
 /** Continuous-`Scanning` duration after which the one-time handheld-fatigue tip appears (Story 3.2.3). */
 private const val HANDHELD_FATIGUE_TIP_THRESHOLD_MS = 15_000L
@@ -102,6 +104,7 @@ fun QrDecodeScreen(
             }
 
             is QrDecodeUiState.PreflightFailed -> PreflightFailedContent(
+                reason = s.reason,
                 onImportFromFile = onImportFromFile,
                 onBack = onDismiss,
             )
@@ -182,15 +185,47 @@ private fun ConcurrentTransferWarningBanner() {
     )
 }
 
+/**
+ * Bug 1 fix — UX criterion 11: distinct copy AND icon per [reason], never the shared generic
+ * "Camera unavailable" text regardless of cause. [DomainError.SensorError.PermissionDenied]
+ * additionally surfaces [CameraPermissionRationaleDialog] (reusing the existing camera-permission
+ * dialog shape, Story 3.2.4) — "Not now" dismisses to [onBack] (the working alternative one level
+ * up, e.g. [dev.stapler.stelekit.ui.screens.ImportScreen]'s file-import option), never leaving the
+ * user stuck on the rationale dialog (UX criterion 6).
+ */
 @Composable
-private fun PreflightFailedContent(onImportFromFile: (() -> Unit)?, onBack: () -> Unit) {
-    Spacer(modifier = Modifier.height(64.dp))
-    Text("📷🚫  Camera unavailable", style = MaterialTheme.typography.titleMedium)
-    Spacer(modifier = Modifier.height(8.dp))
-    Text(
-        "This device can't scan QR transfer codes yet. Try importing from a file instead, or use a device with a camera.",
-        style = MaterialTheme.typography.bodyMedium,
-    )
+private fun PreflightFailedContent(
+    reason: DomainError.SensorError,
+    onImportFromFile: (() -> Unit)?,
+    onBack: () -> Unit,
+) {
+    if (reason is DomainError.SensorError.PermissionDenied) {
+        var rationaleVisible by remember { mutableStateOf(true) }
+        if (rationaleVisible) {
+            CameraPermissionRationaleDialog(
+                onNotNow = { rationaleVisible = false; onBack() },
+                // Re-requesting permission needs a fresh coordinator (a new OS prompt) — simplest
+                // safe action here is the same working alternative "Not now" offers, rather than
+                // silently retrying against an already-terminated coordinator.
+                onContinue = { rationaleVisible = false; onBack() },
+            )
+        }
+        Spacer(modifier = Modifier.height(64.dp))
+        Text("📷🔒  Camera permission needed", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            "SteleKit needs camera access to scan a transfer code from another device. You can allow it in Settings, or import from a file instead.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    } else {
+        Spacer(modifier = Modifier.height(64.dp))
+        Text("📷🚫  Camera unavailable", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            "This device doesn't have a usable camera for scanning transfer codes. Try importing from a file instead.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
     Spacer(modifier = Modifier.height(32.dp))
     if (onImportFromFile != null) {
         Button(onClick = onImportFromFile) { Text("Import from file") }

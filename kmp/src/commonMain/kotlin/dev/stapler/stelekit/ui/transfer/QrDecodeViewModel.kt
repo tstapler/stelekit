@@ -107,8 +107,13 @@ class QrDecodeViewModel(
     private var framesDecoded = 0
 
     /**
-     * Idle -> PreflightFailed | Scanning. Pre-flight rejects immediately — never enters [QrDecodeUiState.Scanning]
-     * — when [CameraFrameSource.isAvailable] is false (Story 3.2.2 AC).
+     * Idle -> PreflightFailed | Scanning. Pre-flight rejects immediately — never enters
+     * [QrDecodeUiState.Scanning] — when [CameraFrameSource.isAvailable] is false (Story 3.2.2 AC,
+     * [DomainError.SensorError.HardwareUnavailable]). A SECOND, asynchronous pre-flight path
+     * (Bug 1 fix, Story 3.2.4) also reaches [QrDecodeUiState.PreflightFailed]: once the coordinator
+     * starts, its first camera-stream emission may be [DomainError.SensorError.PermissionDenied] if
+     * the user denies the runtime permission prompt — surfaced via
+     * [CoordinatorEvent.PreflightFailed], never [QrDecodeUiState.Scanning].
      */
     fun start() {
         if (_state.value != QrDecodeUiState.Idle) return
@@ -165,6 +170,8 @@ class QrDecodeViewModel(
         }
 
         return when (event) {
+            is CoordinatorEvent.PreflightFailed -> QrDecodeUiState.PreflightFailed(event.reason)
+
             is CoordinatorEvent.FragmentAdmitted ->
                 QrDecodeUiState.Scanning(event.uniqueFragments, stalledSeconds = 0, hint = event.hint)
 

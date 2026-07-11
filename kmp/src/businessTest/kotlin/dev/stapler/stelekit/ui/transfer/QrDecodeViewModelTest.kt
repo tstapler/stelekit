@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.ui.transfer
 
 import arrow.core.Either
+import arrow.core.left
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.error.DomainError
@@ -85,6 +86,14 @@ class QrDecodeViewModelTest {
         override fun frameStream(): Flow<Either<DomainError.SensorError, CameraFrame>> = emptyFlow()
     }
 
+    /** Bug 1 fix fixture: reports available synchronously, but denies permission on first collect. */
+    private class PermissionDeniedCameraFrameSource : CameraFrameSource {
+        override val isAvailable = true
+        override fun frameStream(): Flow<Either<DomainError.SensorError, CameraFrame>> = flow {
+            emit(DomainError.SensorError.PermissionDenied("camera").left())
+        }
+    }
+
     /** Wire-encodes every part of [encoder]'s true fountain sequence, yielding between emits. */
     private fun fakeReceiver(encoder: dev.stapler.stelekit.transfer.qrcode.FountainEncoder): FrameTransportReceiver =
         object : FrameTransportReceiver {
@@ -108,6 +117,33 @@ class QrDecodeViewModelTest {
 
         val state = assertIs<QrDecodeUiState.PreflightFailed>(vm.state.value)
         assertIs<DomainError.SensorError.HardwareUnavailable>(state.reason)
+
+        vm.close()
+    }
+
+    @Test
+    fun start_should_TransitionToPreflightFailedWithPermissionDenied_When_CameraStreamFirstEmissionIsLeft() = runBlocking {
+        // Bug 1 fix: PermissionDenied is reachable via the coordinator's own camera-stream
+        // collection, distinct from the synchronous isAvailable==false -> HardwareUnavailable path
+        // exercised above — Scanning must never be entered in this case either.
+        val cameraSource = PermissionDeniedCameraFrameSource()
+        val vm = QrDecodeViewModel(
+            cameraFrameSource = cameraSource,
+            qrImportService = buildImportService(),
+            settings = QrTransferSettings(MapSettings()),
+        )
+
+        vm.start()
+
+        val state = withTimeout(5_000) {
+            var s = vm.state.value
+            while (s !is QrDecodeUiState.PreflightFailed) {
+                s = vm.state.first { it != s }
+            }
+            s
+        }
+        val preflightFailed = assertIs<QrDecodeUiState.PreflightFailed>(state)
+        assertIs<DomainError.SensorError.PermissionDenied>(preflightFailed.reason)
 
         vm.close()
     }

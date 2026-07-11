@@ -29,6 +29,16 @@ import kotlinx.coroutines.launch
  * not otherwise touch [CameraFrameSource]/[QrScanner]/[ChunkBuffer].
  */
 sealed interface CoordinatorEvent {
+    /**
+     * The camera stream's first emission was a [DomainError.SensorError] rather than a frame —
+     * e.g. [DomainError.SensorError.PermissionDenied] once the user actually denies the runtime
+     * prompt. Bug 1 fix: this is the only place a genuine permission denial is observable —
+     * [CameraFrameSource] implementations emit exactly one `Left` then complete, never a
+     * mid-scan failure a live [TransferSession] would need to recover from. Distinct from a
+     * synchronous `isAvailable == false` check, which never touches the camera at all.
+     */
+    data class PreflightFailed(val reason: DomainError.SensorError) : CoordinatorEvent
+
     /** A fragment was admitted into the active [TransferSession]. */
     data class FragmentAdmitted(val uniqueFragments: Int, val hint: ScanHint?) : CoordinatorEvent
 
@@ -159,11 +169,19 @@ class QrTransferCoordinator(
 
     private suspend fun runDiagnostics() {
         try {
+            var sawFirstFrame = false
             cameraFrameSource.frameStream().conflate().collect { either ->
-                either.fold(
-                    ifLeft = { /* sensor error surfaces via the pre-flight gate upstream, not here */ },
-                    ifRight = { frame -> updateHint(deriveHint(frame)) },
-                )
+                // Bug 1 fix: only the FIRST emission is a meaningful pre-flight signal — a real
+                // CameraFrameSource emits exactly one Left (PermissionDenied/HardwareUnavailable)
+                // then completes, so this can never fire mid-scan and abort an in-progress session.
+                if (!sawFirstFrame) {
+                    sawFirstFrame = true
+                    either.onLeft { reason ->
+                        emitEvent(CoordinatorEvent.PreflightFailed(reason))
+                        dataJob?.cancel()
+                    }
+                }
+                either.onRight { frame -> updateHint(deriveHint(frame)) }
             }
         } catch (e: CancellationException) {
             throw e

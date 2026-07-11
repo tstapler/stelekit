@@ -1,6 +1,7 @@
 package dev.stapler.stelekit.transfer.qrcode
 
 import arrow.core.Either
+import arrow.core.left
 import arrow.core.right
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphLoader
@@ -251,6 +252,44 @@ class QrTransferCoordinatorTest {
 
         val saved = pageRepo.getPageByName("Concurrent Sender Page").first().getOrNull()
         assertTrue(saved != null, "the active session's own page must still be written")
+
+        coordinator.close()
+    }
+
+    @Test
+    fun start_should_EmitPreflightFailedWithPermissionDenied_When_CameraStreamFirstEmissionIsLeft() = runBlocking {
+        // Bug 1 fix: a real CameraFrameSource (e.g. AndroidCameraFrameSource) emits exactly one
+        // Left(PermissionDenied) then completes when the user denies the runtime prompt — this
+        // must surface as CoordinatorEvent.PreflightFailed, never leave the coordinator silently
+        // idling in Scanning.
+        val (importService, pageRepo) = buildImportService()
+        val deniedCameraFrameSource: CameraFrameSource = object : CameraFrameSource {
+            override val isAvailable = true
+            override fun frameStream(): Flow<Either<DomainError.SensorError, CameraFrame>> = flow {
+                emit(DomainError.SensorError.PermissionDenied("camera").left())
+            }
+        }
+        val neverEmittingReceiver = object : FrameTransportReceiver {
+            override fun frames(): Flow<ByteArray> = flow { kotlinx.coroutines.awaitCancellation() }
+        }
+
+        val coordinator = QrTransferCoordinator(
+            frameTransportReceiver = neverEmittingReceiver,
+            cameraFrameSource = deniedCameraFrameSource,
+            qrImportService = importService,
+            targetName = PageName("Permission Denied Page"),
+        )
+
+        coordinator.start()
+
+        val event = withTimeout(5_000) {
+            coordinator.events.first { it is CoordinatorEvent.PreflightFailed }
+        }
+        val preflightFailed = assertIs<CoordinatorEvent.PreflightFailed>(event)
+        assertIs<DomainError.SensorError.PermissionDenied>(preflightFailed.reason)
+
+        val saved = pageRepo.getPageByName("Permission Denied Page").first().getOrNull()
+        assertNull(saved, "no write must occur when the pre-flight camera stream reports PermissionDenied")
 
         coordinator.close()
     }
