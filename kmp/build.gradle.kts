@@ -332,6 +332,10 @@ kotlin {
                 implementation("io.github.takahirom.roborazzi:roborazzi-compose:1.59.0")
                 implementation("androidx.compose.ui:ui-test-junit4:1.10.6")
                 implementation("androidx.compose.ui:ui-test-manifest:1.10.6")
+                // kotlin-reflect — required at runtime for KFunction.isSuspend/.parameters/.returnType
+                // (FrameTransportSignatureTest's reflection-based signature assertions, run on this
+                // target too since it lives in commonTest)
+                implementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
             }
         }
 
