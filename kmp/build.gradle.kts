@@ -282,6 +282,10 @@ kotlin {
                 implementation("androidx.camera:camera-core:1.4.1")
                 implementation("androidx.camera:camera-camera2:1.4.1")
                 implementation("androidx.camera:camera-lifecycle:1.4.1")
+                // camera-view's PreviewView — QR-receive live camera preview (Bug 2 fix,
+                // camera-qr-export Story 3.2.3 AC). Not previously needed: AndroidCameraFrameSource
+                // only ever bound ImageAnalysis (no visible surface) for scanning.
+                implementation("androidx.camera:camera-view:1.4.1")
                 // ProcessLifecycleOwner — needed by AndroidCameraProvider; camera-lifecycle pulls
                 // this transitively but we declare it explicitly to guarantee compile-time resolution.
                 implementation("androidx.lifecycle:lifecycle-process:2.9.1")

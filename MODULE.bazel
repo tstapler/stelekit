@@ -375,6 +375,7 @@ maven.install(
         "androidx.camera:camera-core:1.4.1",
         "androidx.camera:camera-camera2:1.4.1",
         "androidx.camera:camera-lifecycle:1.4.1",
+        "androidx.camera:camera-view:1.4.1",
 
         # ── ONNX Runtime Android ──────────────────────────────────────────────
         "com.microsoft.onnxruntime:onnxruntime-android:1.20.0",

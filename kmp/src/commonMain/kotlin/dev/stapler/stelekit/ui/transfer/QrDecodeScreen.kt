@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
@@ -314,6 +315,12 @@ private fun HintCopy(hint: ScanHint?, stalledSeconds: Int) {
     }
 }
 
+/**
+ * Bug 2 fix (Story 3.2.3 AC "camera preview + reticle"): renders the real live camera feed
+ * ([PlatformCameraPreview]) behind the reticle border/corner-mark overlay, so the user can see
+ * what the camera sees to aim it at the sender's screen — previously this was a static bordered
+ * [Box] with no camera feed at all.
+ */
 @Composable
 private fun CameraPreviewReticle(uniqueFragments: Int) {
     // Fractional width (not fillMaxWidth) keeps this from dominating the viewport on short
@@ -323,12 +330,14 @@ private fun CameraPreviewReticle(uniqueFragments: Int) {
         modifier = Modifier
             .fillMaxWidth(0.55f)
             .aspectRatio(1f)
+            .clip(RoundedCornerShape(8.dp))
             .border(2.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
             .semantics {
                 contentDescription = "Point camera at the SteleKit transfer code, $uniqueFragments fragments received"
             },
         contentAlignment = Alignment.Center,
     ) {
+        PlatformCameraPreview(modifier = Modifier.matchParentSize())
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.4f)
