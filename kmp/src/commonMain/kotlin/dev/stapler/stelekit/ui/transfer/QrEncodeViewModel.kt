@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.SupervisorJob
 import kotlin.random.Random
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Instant
 
 /**
@@ -89,12 +90,17 @@ class QrEncodeViewModel(
     private var transferStartedAt: Instant? = null
     private var endedLogged = false
 
+    // Timestamp of the last tap-to-advance grant (reduce-motion mode only). Null until the first
+    // tap of a transfer.
+    private var lastTapAdvanceAt: Instant? = null
+
     /** Idle -> Serializing -> Displaying/Failed. No-op unless currently [QrEncodeUiState.Idle]. */
     fun start(pageUuid: PageUuid) {
         if (_state.value != QrEncodeUiState.Idle) return
         _state.value = QrEncodeUiState.Serializing
         transferStartedAt = clock()
         endedLogged = false
+        lastTapAdvanceAt = null
         scope.launch {
             val page = pageRepository.getPageByUuid(pageUuid).first().getOrNull()
             if (page == null) {
@@ -171,10 +177,20 @@ class QrEncodeViewModel(
     /**
      * Reduce-motion tap-to-advance (S5): steps exactly one frame per call, never auto-paced.
      * No-op outside [QrEncodeUiState.Displaying] (e.g. while [Paused] or before a transport exists).
+     *
+     * WCAG 2.3.1 flash-safety is a hard ceiling, not a UX nicety: reduce-motion mode must never
+     * advance faster than 2fps even under a rapid or programmatically-held tap, so relying on
+     * human tap speed alone is not acceptable. A tap arriving less than [MIN_TAP_ADVANCE_INTERVAL]
+     * after the last granted advance is silently ignored (no queueing, no delayed replay) — the
+     * current frame just stays on screen until the ceiling has elapsed.
      */
     fun advanceFrame() {
         if (_state.value !is QrEncodeUiState.Displaying) return
         val transport = activeTransport ?: return
+        val now = clock()
+        val last = lastTapAdvanceAt
+        if (last != null && now - last < MIN_TAP_ADVANCE_INTERVAL) return
+        lastTapAdvanceAt = now
         advanceFrame(transport)
     }
 
@@ -238,5 +254,14 @@ class QrEncodeViewModel(
      */
     fun close() {
         scope.coroutineContext[Job]?.cancel()
+    }
+
+    companion object {
+        /**
+         * WCAG 2.3.1 flash-safety hard ceiling for reduce-motion tap-to-advance: 2fps, i.e. no
+         * more than one granted advance per 500ms — not an arbitrary UX choice (Story 3.1.3 AC,
+         * validation.md criterion 16, ADR-004).
+         */
+        val MIN_TAP_ADVANCE_INTERVAL = 500.milliseconds
     }
 }

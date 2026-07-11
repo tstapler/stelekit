@@ -19,6 +19,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -239,6 +240,53 @@ class QrEncodeViewModelTest {
         assertTrue(endedLog!!.message.contains("outcome=cancelled"), "expected outcome=cancelled, got: ${endedLog.message}")
         assertTrue(endedLog.message.contains("role=sender"), "expected role=sender, got: ${endedLog.message}")
         assertTrue(endedLog.message.contains("framesSent="), "expected a framesSent count, got: ${endedLog.message}")
+
+        vm.close()
+    }
+
+    @Test
+    fun advanceFrame_should_CapAdvanceRateAt2Fps_When_NextButtonHeldOrRapidlyTapped() = runBlocking {
+        // Story 3.1.3 AC / validation.md criterion 16 (WCAG 2.3.1): reduce-motion tap-to-advance
+        // must be rate-limited by the app itself, not merely by human tap speed. A fake, test-driven
+        // clock (via the injected `clock` seam) lets this assert exact virtual-time boundaries
+        // without any real sleep.
+        val (pageRepo, blockRepo, pageUuid) = fixture(contentLength = 400)
+        var now = Clock.System.now()
+        val settings = QrTransferSettings(MapSettings()).apply {
+            maxFragmentBytes = 16
+            reduceMotion = true
+        }
+        val vm = QrEncodeViewModel(
+            pageRepository = pageRepo,
+            blockRepository = blockRepo,
+            settings = settings,
+            clock = { now },
+        )
+
+        vm.start(pageUuid)
+        val initial = withTimeout(5_000) { vm.state.first { it is QrEncodeUiState.Displaying } }
+        assertEquals(0, assertIs<QrEncodeUiState.Displaying>(initial).totalCycled)
+
+        // 10 taps crammed into 200ms of virtual time (20ms apart) — well under the 500ms/frame
+        // (2fps) ceiling. Only the very first tap should be granted; the rest are silent no-ops
+        // that leave the current frame on screen rather than being queued or delayed.
+        repeat(10) {
+            now += 20.milliseconds
+            vm.advanceFrame()
+        }
+        val afterRapidTaps = assertIs<QrEncodeUiState.Displaying>(vm.state.value)
+        assertEquals(1, afterRapidTaps.totalCycled, "rapid taps within 200ms must yield at most one advance")
+
+        // Still under the ceiling (total elapsed ~380ms since the granted advance) — another tap
+        // must still be rejected.
+        now += 180.milliseconds
+        vm.advanceFrame()
+        assertEquals(1, assertIs<QrEncodeUiState.Displaying>(vm.state.value).totalCycled)
+
+        // Cross the 500ms ceiling from the last granted advance — this tap must be granted.
+        now += 150.milliseconds
+        vm.advanceFrame()
+        assertEquals(2, assertIs<QrEncodeUiState.Displaying>(vm.state.value).totalCycled)
 
         vm.close()
     }
