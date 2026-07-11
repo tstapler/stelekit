@@ -28,8 +28,8 @@ private val logger = Logger("PlatformCameraPreview")
 actual fun PlatformCameraPreview(modifier: Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val binder = remember { AndroidCameraPreviewBinder(context) }
-    val previewView = remember {
+    val binder = remember(context) { AndroidCameraPreviewBinder(context) }
+    val previewView = remember(context) {
         PreviewView(context).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,

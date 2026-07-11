@@ -211,28 +211,34 @@ private fun PreflightFailedContent(
                 onContinue = { rationaleVisible = false; onBack() },
             )
         }
-        Spacer(modifier = Modifier.height(64.dp))
-        Text("📷🔒  Camera permission needed", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            "SteleKit needs camera access to scan a transfer code from another device. You can allow it in Settings, or import from a file instead.",
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    } else {
-        Spacer(modifier = Modifier.height(64.dp))
-        Text("📷🚫  Camera unavailable", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            "This device doesn't have a usable camera for scanning transfer codes. Try importing from a file instead.",
-            style = MaterialTheme.typography.bodyMedium,
-        )
     }
-    Spacer(modifier = Modifier.height(32.dp))
-    if (onImportFromFile != null) {
-        Button(onClick = onImportFromFile) { Text("Import from file") }
-        Spacer(modifier = Modifier.height(8.dp))
+    // Single-emitter top level (detekt MultipleEmitters) — the caller (QrDecodeScreen) already
+    // provides the outer Column, this nested one just groups this function's own content.
+    Column {
+        if (reason is DomainError.SensorError.PermissionDenied) {
+            Spacer(modifier = Modifier.height(64.dp))
+            Text("📷🔒  Camera permission needed", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "SteleKit needs camera access to scan a transfer code from another device. You can allow it in Settings, or import from a file instead.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        } else {
+            Spacer(modifier = Modifier.height(64.dp))
+            Text("📷🚫  Camera unavailable", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "This device doesn't have a usable camera for scanning transfer codes. Try importing from a file instead.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        Spacer(modifier = Modifier.height(32.dp))
+        if (onImportFromFile != null) {
+            Button(onClick = onImportFromFile) { Text("Import from file") }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+        OutlinedButton(onClick = onBack) { Text("Back") }
     }
-    OutlinedButton(onClick = onBack) { Text("Back") }
 }
 
 @Composable
