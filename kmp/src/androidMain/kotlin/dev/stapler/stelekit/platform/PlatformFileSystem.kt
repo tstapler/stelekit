@@ -68,12 +68,21 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
          * Converts a saf:// path to a real filesystem path.
          * Requires API 30+ and MANAGE_EXTERNAL_STORAGE permission.
          * Returns null if conversion is not possible (no permission, old API, non-SAF path).
+         *
+         * [isStorageManager] is injectable for testing (Robolectric can't shadow
+         * Environment.isExternalStorageManager()).
          */
         @Suppress("MagicNumber")
-        fun resolveSafToRealPath(safPath: String, context: Context): String? {
+        fun resolveSafToRealPath(
+            safPath: String,
+            context: Context,
+            isStorageManager: () -> Boolean = {
+                android.os.Build.VERSION.SDK_INT >= 30 &&
+                android.os.Environment.isExternalStorageManager()
+            },
+        ): String? {
             if (!safPath.startsWith("saf://")) return null
-            if (android.os.Build.VERSION.SDK_INT < 30) return null
-            if (!android.os.Environment.isExternalStorageManager()) return null
+            if (!isStorageManager()) return null
             val withoutScheme = safPath.removePrefix("saf://")
             val slashIdx = withoutScheme.indexOf('/')
             val encodedTreeUri = if (slashIdx >= 0) withoutScheme.substring(0, slashIdx) else withoutScheme
