@@ -87,6 +87,11 @@ internal fun ScreenRouter(
     perfHistograms: StateFlow<Map<String, PercentileSummary>> = MutableStateFlow(emptyMap()),
     perfQueryStats: StateFlow<List<QueryStat>> = MutableStateFlow(emptyList()),
     tagSuggestionViewModel: TagSuggestionViewModel? = null,
+    /**
+     * Story 4.1.1: threaded down to [PageView]'s "Send via QR" menu item (Story 3.1.4). Null hides
+     * the menu trigger entirely, mirroring [PageView]'s own null-hides-trigger contract.
+     */
+    qrTransferSettings: dev.stapler.stelekit.transfer.qrcode.QrTransferSettings? = null,
 ) {
     if (appState.fatalError != null) {
         FatalErrorScreen(
@@ -151,6 +156,7 @@ internal fun ScreenRouter(
                 currentManifest = appState.currentManifest,
                 onSectionBadgeClick = { viewModel.showSectionPicker(currentScreen.page) },
                 hasDiskConflictPending = appState.diskConflict != null,
+                qrTransferSettings = qrTransferSettings,
             )
             is Screen.Journals -> JournalsView(
                 viewModel = journalsViewModel,

@@ -1,10 +1,26 @@
 package dev.stapler.stelekit.ui.transfer
 
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import dev.stapler.stelekit.db.GraphLoader
+import dev.stapler.stelekit.db.GraphWriter
+import dev.stapler.stelekit.platform.PlatformFileSystem
 import dev.stapler.stelekit.platform.Settings
+import dev.stapler.stelekit.repository.InMemorySearchRepository
 import dev.stapler.stelekit.transfer.qrcode.QrTransferSettings
+import dev.stapler.stelekit.ui.StelekitViewModel
+import dev.stapler.stelekit.ui.StelekitViewModelDependencies
+import dev.stapler.stelekit.ui.fixtures.FakeFileSystem
+import dev.stapler.stelekit.ui.fixtures.InMemorySettings
+import dev.stapler.stelekit.ui.fixtures.PopulatedFakeBlockRepository
+import dev.stapler.stelekit.ui.fixtures.PopulatedFakePageRepository
+import dev.stapler.stelekit.ui.fixtures.TestFixtures
+import dev.stapler.stelekit.ui.screens.PageView
+import dev.stapler.stelekit.ui.state.BlockStateManager
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import org.junit.Rule
 import org.junit.Test
 
@@ -75,5 +91,66 @@ class QrTransferEntryPointsTest {
         }
 
         composeTestRule.onNodeWithText("Import via camera", substring = true).assertDoesNotExist()
+    }
+
+    /**
+     * Story 4.1.1 (Task 4.1.1a): proves "Send via QR" reaches the real desktop composition path —
+     * `PageView`'s share menu, running on the JVM target with no platform branching — rather than
+     * only the isolated [SendViaQrMenuItem] composable exercised by the tests above. Runs on the
+     * same jvmTest source set the desktop app is built from.
+     */
+    @Test
+    fun desktopMenu_should_ShowSendViaQrAction_When_EnabledOnJvm() {
+        val page = TestFixtures.samplePage()
+        val pageRepo = PopulatedFakePageRepository()
+        val blockRepo = PopulatedFakeBlockRepository()
+        val platformFileSystem = PlatformFileSystem()
+        val searchRepo = InMemorySearchRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, blockRepo)
+        val graphWriter = GraphWriter(platformFileSystem)
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        var viewModelRef: StelekitViewModel? = null
+        val blockStateManager = BlockStateManager(
+            blockRepository = blockRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            pageRepository = pageRepo,
+            graphPathProvider = { viewModelRef?.uiState?.value?.currentGraphPath ?: "" },
+        )
+        val viewModel = StelekitViewModel(
+            StelekitViewModelDependencies(
+                fileSystem = platformFileSystem,
+                pageRepository = pageRepo,
+                blockRepository = blockRepo,
+                searchRepository = searchRepo,
+                graphLoader = graphLoader,
+                graphWriter = graphWriter,
+                platformSettings = InMemorySettings(),
+                scope = scope,
+                blockStateManager = blockStateManager,
+            )
+        ).also { viewModelRef = it }
+        val qrTransferSettings = QrTransferSettings(MapSettings()).apply { enabled = true }
+
+        composeTestRule.setContent {
+            MaterialTheme {
+                PageView(
+                    page = page,
+                    blockRepository = blockRepo,
+                    pageRepository = pageRepo,
+                    blockStateManager = blockStateManager,
+                    currentGraphPath = "/tmp/test",
+                    onToggleFavorite = {},
+                    onRefresh = {},
+                    onLinkClick = {},
+                    viewModel = viewModel,
+                    isDebugMode = false,
+                    qrTransferSettings = qrTransferSettings,
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Export page").performClick()
+        composeTestRule.onNodeWithText("Send via QR", substring = true).assertIsDisplayed()
     }
 }
