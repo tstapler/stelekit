@@ -9,7 +9,6 @@ import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.PageName
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.sensor.CameraFrame
-import dev.stapler.stelekit.platform.sensor.CameraFrameSource
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.transfer.FrameTransportReceiver
@@ -28,8 +27,8 @@ import kotlinx.coroutines.withTimeout
 /**
  * Story 3.2.2 acceptance criteria (Task 3.2.2d): [QrTransferCoordinator] is independently
  * unit-testable without a ViewModel or Compose, using fakes for its two constructor collaborators
- * — a fake [FrameTransportReceiver] for the transfer-data path and a fake diagnostics `scan`
- * function for [ScanHint] derivation.
+ * — a fake [FrameTransportReceiver] for the transfer-data path and a fake [QrScanner] for
+ * diagnostics + pre-flight (Bug 3 fix — an actual injected instance, not a function reference).
  */
 class QrTransferCoordinatorTest {
 
@@ -76,12 +75,19 @@ class QrTransferCoordinatorTest {
         }
     }
 
-    private fun noOpCameraFrameSource(available: Boolean = true): CameraFrameSource = object : CameraFrameSource {
-        override val isAvailable = available
-        override fun frameStream(): Flow<Either<DomainError.SensorError, CameraFrame>> = flow {
-            // A single benign frame is enough to exercise the diagnostics path once, then idle.
+    /**
+     * A fake [QrScanner] (Bug 3 fix — an actual injected instance, not a `scan` function
+     * reference): [decodeResult] drives [QrScanner.decode]; [frames] drives [QrScanner.frameStream]
+     * — a single benign frame by default, enough to exercise the diagnostics path once, then idle.
+     */
+    private fun fakeQrScanner(
+        decodeResult: ScanResult = ScanResult.NoCodeDetected,
+        frames: Flow<Either<DomainError.SensorError, CameraFrame>> = flow {
             emit(CameraFrame(luminanceBytes = ByteArray(4) { 200.toByte() }, width = 2, height = 2, rotationDegrees = 0).right())
-        }
+        },
+    ): QrScanner = object : QrScanner {
+        override fun decode(frame: CameraFrame): ScanResult = decodeResult
+        override fun frameStream(): Flow<Either<DomainError.SensorError, CameraFrame>> = frames
     }
 
     /**
@@ -110,7 +116,6 @@ class QrTransferCoordinatorTest {
 
         val coordinator = QrTransferCoordinator(
             frameTransportReceiver = fakeReceiver(encoder),
-            cameraFrameSource = noOpCameraFrameSource(),
             qrImportService = importService,
             targetName = PageName("Page Body Page"),
         )
@@ -138,12 +143,11 @@ class QrTransferCoordinatorTest {
 
         val coordinator = QrTransferCoordinator(
             frameTransportReceiver = fakeReceiver(encoder),
-            cameraFrameSource = noOpCameraFrameSource(),
             qrImportService = importService,
             targetName = PageName("Wrong Code Page"),
             // Fake diagnostics scanner: ALWAYS reports a foreign QR, regardless of the real frame
             // content — its output must never feed ChunkBuffer, only the hint.
-            scan = { ScanResult.NotSteleKitCode },
+            qrScanner = fakeQrScanner(ScanResult.NotSteleKitCode),
         )
 
         coordinator.start()
@@ -174,7 +178,6 @@ class QrTransferCoordinatorTest {
 
         val coordinator = QrTransferCoordinator(
             frameTransportReceiver = neverEmittingReceiver,
-            cameraFrameSource = noOpCameraFrameSource(),
             qrImportService = importService,
             targetName = PageName("Cancelled Page"),
         )
@@ -225,7 +228,6 @@ class QrTransferCoordinatorTest {
 
         val coordinator = QrTransferCoordinator(
             frameTransportReceiver = pumpedReceiver,
-            cameraFrameSource = noOpCameraFrameSource(),
             qrImportService = importService,
             targetName = PageName("Concurrent Sender Page"),
         )
@@ -263,21 +265,18 @@ class QrTransferCoordinatorTest {
         // must surface as CoordinatorEvent.PreflightFailed, never leave the coordinator silently
         // idling in Scanning.
         val (importService, pageRepo) = buildImportService()
-        val deniedCameraFrameSource: CameraFrameSource = object : CameraFrameSource {
-            override val isAvailable = true
-            override fun frameStream(): Flow<Either<DomainError.SensorError, CameraFrame>> = flow {
-                emit(DomainError.SensorError.PermissionDenied("camera").left())
-            }
-        }
+        val deniedQrScanner = fakeQrScanner(
+            frames = flow { emit(DomainError.SensorError.PermissionDenied("camera").left()) },
+        )
         val neverEmittingReceiver = object : FrameTransportReceiver {
             override fun frames(): Flow<ByteArray> = flow { kotlinx.coroutines.awaitCancellation() }
         }
 
         val coordinator = QrTransferCoordinator(
             frameTransportReceiver = neverEmittingReceiver,
-            cameraFrameSource = deniedCameraFrameSource,
             qrImportService = importService,
             targetName = PageName("Permission Denied Page"),
+            qrScanner = deniedQrScanner,
         )
 
         coordinator.start()

@@ -110,7 +110,6 @@ class QrDecodeViewModelBackgroundingTest {
             coordinatorFactory = { name ->
                 QrTransferCoordinator(
                     frameTransportReceiver = receiver,
-                    cameraFrameSource = cameraSource,
                     qrImportService = buildImportService(),
                     targetName = name,
                 )

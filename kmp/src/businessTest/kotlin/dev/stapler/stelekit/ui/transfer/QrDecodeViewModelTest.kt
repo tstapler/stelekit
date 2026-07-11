@@ -115,8 +115,18 @@ class QrDecodeViewModelTest {
 
         vm.start()
 
-        val state = assertIs<QrDecodeUiState.PreflightFailed>(vm.state.value)
-        assertIs<DomainError.SensorError.HardwareUnavailable>(state.reason)
+        // Bug 3 fix: the isAvailable check now lives inside QrTransferCoordinator.start(), reached
+        // asynchronously through the coordinator's event Flow (never a synchronous VM-side check
+        // anymore) — await the transition rather than asserting vm.state.value immediately.
+        val state = withTimeout(5_000) {
+            var s = vm.state.value
+            while (s !is QrDecodeUiState.PreflightFailed) {
+                s = vm.state.first { it != s }
+            }
+            s
+        }
+        val preflightFailed = assertIs<QrDecodeUiState.PreflightFailed>(state)
+        assertIs<DomainError.SensorError.HardwareUnavailable>(preflightFailed.reason)
 
         vm.close()
     }
@@ -164,7 +174,6 @@ class QrDecodeViewModelTest {
             coordinatorFactory = { name ->
                 QrTransferCoordinator(
                     frameTransportReceiver = oomReceiver,
-                    cameraFrameSource = cameraSource,
                     qrImportService = buildImportService(),
                     targetName = name,
                 )
@@ -204,7 +213,6 @@ class QrDecodeViewModelTest {
             coordinatorFactory = { name ->
                 QrTransferCoordinator(
                     frameTransportReceiver = fakeReceiver(encoder),
-                    cameraFrameSource = cameraSource,
                     qrImportService = importService,
                     targetName = name,
                 )

@@ -8,6 +8,7 @@ import dev.stapler.stelekit.transfer.TransferId
 import dev.stapler.stelekit.transfer.qrcode.CoordinatorEvent
 import dev.stapler.stelekit.transfer.qrcode.QrFrameTransport
 import dev.stapler.stelekit.transfer.qrcode.QrImportService
+import dev.stapler.stelekit.transfer.qrcode.QrScanner
 import dev.stapler.stelekit.transfer.qrcode.QrTransferCoordinator
 import dev.stapler.stelekit.transfer.qrcode.QrTransferSettings
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -27,9 +28,11 @@ data class CollisionPrompt(val existingName: PageName, val proposedName: PageNam
 
 /**
  * Owns scope + UI-state ONLY for the QR receiver (Story 3.2.2, SRP split). Delegates the entire
- * frame -> scan -> buffer -> reassemble -> import pipeline to [QrTransferCoordinator], collecting
- * its event [kotlinx.coroutines.flow.Flow] to drive [QrDecodeUiState]. Does NOT touch
- * [CameraFrameSource], `QrScanner`, or `ChunkBuffer` directly — mirrors
+ * frame -> scan -> buffer -> reassemble -> import pipeline (INCLUDING the pre-flight
+ * availability/permission gate, Bug 3 fix) to [QrTransferCoordinator], collecting its event
+ * [kotlinx.coroutines.flow.Flow] to drive [QrDecodeUiState]. Does NOT touch [CameraFrameSource],
+ * `QrScanner`, or `ChunkBuffer` directly — [cameraFrameSource] is held only to construct the
+ * default [coordinatorFactory]'s collaborators, never called from this class's own logic — mirrors
  * [dev.stapler.stelekit.ui.annotate.AnnotationEditorViewModel] +
  * [dev.stapler.stelekit.ui.annotate.DepthEstimationCoordinator].
  *
@@ -59,9 +62,11 @@ class QrDecodeViewModel(
                 cameraFrameSource = cameraFrameSource,
                 maxFragmentBytes = settings.maxFragmentBytes,
             ),
-            cameraFrameSource = cameraFrameSource,
             qrImportService = qrImportService,
             targetName = name,
+            // Bug 3 fix: bound outside the coordinator and passed in fully-formed — the
+            // coordinator itself never holds a raw CameraFrameSource collaborator.
+            qrScanner = QrScanner.bind(cameraFrameSource),
         )
     },
     /** Injected so tests can assert on emitted lines via [dev.stapler.stelekit.logging.LogManager.logs] (Story 3.3.3). */
@@ -108,22 +113,16 @@ class QrDecodeViewModel(
 
     /**
      * Idle -> PreflightFailed | Scanning. Pre-flight rejects immediately — never enters
-     * [QrDecodeUiState.Scanning] — when [CameraFrameSource.isAvailable] is false (Story 3.2.2 AC,
-     * [DomainError.SensorError.HardwareUnavailable]). A SECOND, asynchronous pre-flight path
-     * (Bug 1 fix, Story 3.2.4) also reaches [QrDecodeUiState.PreflightFailed]: once the coordinator
-     * starts, its first camera-stream emission may be [DomainError.SensorError.PermissionDenied] if
-     * the user denies the runtime permission prompt — surfaced via
-     * [CoordinatorEvent.PreflightFailed], never [QrDecodeUiState.Scanning].
+     * [QrDecodeUiState.Scanning] — via TWO paths, both now owned entirely by
+     * [QrTransferCoordinator.start] (Bug 3 fix; this method no longer touches [CameraFrameSource]
+     * itself, per this class's own SRP KDoc): a synchronous [DomainError.SensorError.HardwareUnavailable]
+     * check (Story 3.2.2 AC), and an asynchronous [DomainError.SensorError.PermissionDenied] check
+     * (Bug 1 fix, Story 3.2.4) once the coordinator's diagnostics stream's first emission is a
+     * `Left`. Both surface as [CoordinatorEvent.PreflightFailed], mapped 1:1 to
+     * [QrDecodeUiState.PreflightFailed] in [applyEvent] — never [QrDecodeUiState.Scanning].
      */
     fun start() {
         if (_state.value != QrDecodeUiState.Idle) return
-
-        if (!cameraFrameSource.isAvailable) {
-            _state.value = QrDecodeUiState.PreflightFailed(
-                DomainError.SensorError.HardwareUnavailable("camera"),
-            )
-            return
-        }
 
         transferStartedAt = clock()
         framesDecoded = 0

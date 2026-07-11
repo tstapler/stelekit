@@ -84,18 +84,26 @@ sealed interface CoordinatorEvent {
  * Owns the frame -> scan -> buffer -> reassemble -> import pipeline for one QR receive (Story
  * 3.2.2). Independently unit-testable without a ViewModel or Compose (Task 3.2.2d).
  *
- * **Two collaborators, one data path** (Architecture concern, plan.md Story 3.2.2): the
- * transfer-DATA path goes only through [frameTransportReceiver] — frames -> [ChunkFrameCodec.decode]
- * -> [TransferSession]/[ChunkBuffer] -> `reassemble()`. This coordinator never calls [QrCodec] and
- * never collects [CameraFrameSource.frameStream] for the data path.
+ * **Two collaborators, one data path** (Architecture concern, plan.md Story 3.2.2 — stated three
+ * times in plan.md as a deliberate SRP/ISP decision): the transfer-DATA path goes only through
+ * [frameTransportReceiver] — frames -> [ChunkFrameCodec.decode] -> [TransferSession]/[ChunkBuffer]
+ * -> `reassemble()`. This coordinator never calls [QrCodec] directly and holds no separate
+ * `CameraFrameSource` constructor collaborator of its own (Bug 3 fix — it previously took
+ * `cameraFrameSource: CameraFrameSource` plus a `scan` function reference, a third raw camera
+ * dependency the plan's Domain Glossary didn't authorize).
  *
  * The **one documented exception**: [ScanHint] diagnostics (`WrongCode`/`LowLight`) are derived
- * from a SEPARATE, parallel collection of [cameraFrameSource] run through the directly-injected
- * [scan] function (defaults to [QrScanner.decode]) — rich scan diagnostics are QR-specific UX (gap
- * G5 in `design/ux.md`) that the medium-neutral `FrameTransport` seam deliberately does not carry
- * (see ADR-002/ADR-006 and plan.md's Domain Glossary entry for `QrTransferCoordinator`). This
- * diagnostics stream's output NEVER feeds [ChunkBuffer] — a faked `NotSteleKitCode` changes only
+ * from a SEPARATE, parallel collection of the directly-injected [qrScanner]'s
+ * [QrScanner.frameStream] — rich scan diagnostics are QR-specific UX (gap G5 in `design/ux.md`)
+ * that the medium-neutral `FrameTransport` seam deliberately does not carry (see ADR-002/ADR-006
+ * and plan.md's Domain Glossary entry for `QrTransferCoordinator`). This diagnostics stream's
+ * output NEVER feeds [ChunkBuffer] — a faked `NotSteleKitCode` changes only
  * [CoordinatorEvent.FragmentAdmitted.hint], never the reassembled payload (`QrTransferCoordinatorTest`).
+ * The SAME stream also carries this coordinator's pre-flight gate (Bug 1 fix, see
+ * [CoordinatorEvent.PreflightFailed]) — [qrScanner] is constructed already bound to its
+ * [CameraFrameSource] outside this class (see [QrScanner.bind], used by
+ * [dev.stapler.stelekit.ui.transfer.QrDecodeViewModel]'s `coordinatorFactory`) and passed in
+ * fully-formed, matching plan.md's literal "directly-injected `qrScanner: QrScanner`" wording.
  *
  * `Stalled` hint derivation is intentionally NOT implemented here — Story 3.3.2 adds that
  * stall-timer *behavior* on top of [TransferSession.lastNewFragmentAt] later; this class only
@@ -109,14 +117,20 @@ sealed interface CoordinatorEvent {
  */
 class QrTransferCoordinator(
     private val frameTransportReceiver: FrameTransportReceiver,
-    private val cameraFrameSource: CameraFrameSource,
     private val qrImportService: QrImportService,
     private val targetName: PageName,
     private val maxPayloadBytes: Int = FountainEncoder.DEFAULT_MAX_PAYLOAD_BYTES,
     /** Mean luminance (0-255) below which a frame with no decodable QR is reported as [ScanHint.LowLight]. */
     private val lowLightThreshold: Int = 40,
-    /** Diagnostics-only scan function — directly injectable so tests can fake [ScanResult] without a real [QrCodec]. */
-    private val scan: (CameraFrame) -> ScanResult = QrScanner::decode,
+    /**
+     * Diagnostics + pre-flight collaborator (Bug 3 fix) — an actual injected [QrScanner] instance,
+     * not a bare function reference, so tests can fake both [QrScanner.decode] and
+     * [QrScanner.frameStream]/[QrScanner.isAvailable] without a real [CameraFrameSource]. Defaults
+     * to the real stateless decoder (via [QrScanner.Companion]), whose default `isAvailable=true`/
+     * `frameStream()=emptyFlow()` make [start] proceed normally with no diagnostics activity —
+     * production callers pass [QrScanner.bind] instead.
+     */
+    private val qrScanner: QrScanner = QrScanner,
 ) {
     private val logger = Logger("QrTransferCoordinator")
 
@@ -155,6 +169,12 @@ class QrTransferCoordinator(
     /**
      * Begins collecting frames on both paths. No-op if already started.
      *
+     * Pre-flight gate (Bug 1 + Bug 3 fix): rejects immediately — never launches either
+     * coroutine — when [QrScanner.isAvailable] is false, mirroring the synchronous
+     * `CameraFrameSource.isAvailable` check this used to require callers (the ViewModel) to
+     * perform themselves. A SECOND, asynchronous pre-flight check happens inside [runDiagnostics]
+     * once started (see [CoordinatorEvent.PreflightFailed]).
+     *
      * No transfer id is known upfront — [TransferSession] is created lazily from the FIRST
      * accepted chunk's [FountainChunk.transferId] (Story 3.2.2, aggregate root "from frame 0" —
      * frame 0 is the first one actually observed, not a caller-supplied guess). Once locked,
@@ -163,6 +183,10 @@ class QrTransferCoordinator(
      */
     fun start() {
         if (dataJob != null) return
+        if (!qrScanner.isAvailable) {
+            emitEvent(CoordinatorEvent.PreflightFailed(DomainError.SensorError.HardwareUnavailable("camera")))
+            return
+        }
         diagnosticsJob = scope.launch { runDiagnostics() }
         dataJob = scope.launch { runDataPath() }
     }
@@ -170,7 +194,7 @@ class QrTransferCoordinator(
     private suspend fun runDiagnostics() {
         try {
             var sawFirstFrame = false
-            cameraFrameSource.frameStream().conflate().collect { either ->
+            qrScanner.frameStream().conflate().collect { either ->
                 // Bug 1 fix: only the FIRST emission is a meaningful pre-flight signal — a real
                 // CameraFrameSource emits exactly one Left (PermissionDenied/HardwareUnavailable)
                 // then completes, so this can never fire mid-scan and abort an in-progress session.
@@ -212,7 +236,7 @@ class QrTransferCoordinator(
 
     /** Scan-based hint takes priority; the session's own stall timer only fills in when scan is silent. */
     private fun deriveHint(frame: CameraFrame): ScanHint? {
-        val scanHint = when (scan(frame)) {
+        val scanHint = when (qrScanner.decode(frame)) {
             is ScanResult.NotSteleKitCode -> ScanHint.WrongCode
             is ScanResult.NoCodeDetected -> if (meanLuminance(frame) < lowLightThreshold) ScanHint.LowLight else null
             is ScanResult.Decoded -> null

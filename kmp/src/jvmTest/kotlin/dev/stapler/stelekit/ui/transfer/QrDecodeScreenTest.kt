@@ -19,6 +19,7 @@ import dev.stapler.stelekit.transfer.TransferId
 import dev.stapler.stelekit.transfer.qrcode.ChunkFrameCodec
 import dev.stapler.stelekit.transfer.qrcode.FountainCodec
 import dev.stapler.stelekit.transfer.qrcode.QrImportService
+import dev.stapler.stelekit.transfer.qrcode.QrScanner
 import dev.stapler.stelekit.transfer.qrcode.QrTransferCoordinator
 import dev.stapler.stelekit.transfer.qrcode.QrTransferSettings
 import dev.stapler.stelekit.transfer.qrcode.ScanResult
@@ -110,6 +111,14 @@ class QrDecodeScreenTest {
             }
         }
         val importService = buildImportService()
+        // Bug 3 fix: QrTransferCoordinator's diagnostics collaborator is now an actual injected
+        // QrScanner instance, not a `scan` function reference — wrap cameraSource + scan into a
+        // fake QrScanner bound to it.
+        val fakeQrScanner = object : QrScanner {
+            override fun decode(frame: CameraFrame): ScanResult = scan(frame)
+            override val isAvailable: Boolean get() = cameraSource.isAvailable
+            override fun frameStream() = cameraSource.frameStream()
+        }
         return QrDecodeViewModel(
             cameraFrameSource = cameraSource,
             qrImportService = importService,
@@ -117,10 +126,9 @@ class QrDecodeScreenTest {
             coordinatorFactory = { name ->
                 QrTransferCoordinator(
                     frameTransportReceiver = receiver,
-                    cameraFrameSource = cameraSource,
                     qrImportService = importService,
                     targetName = name,
-                    scan = scan,
+                    qrScanner = fakeQrScanner,
                 )
             },
         )
