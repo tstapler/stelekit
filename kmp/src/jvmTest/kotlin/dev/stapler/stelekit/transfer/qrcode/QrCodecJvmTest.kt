@@ -3,6 +3,8 @@ package dev.stapler.stelekit.transfer.qrcode
 import dev.stapler.stelekit.platform.sensor.CameraFrame
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 /**
  * Story 2.1.2 acceptance criteria: real ZXing encode -> render -> decode round trip, plus the
@@ -56,6 +58,20 @@ class QrCodecJvmTest {
         val decoded = QrCodec.decode(frame)
 
         assertContentEquals(payload, decoded)
+    }
+
+    @Test
+    fun qrCodec_encode_should_RejectOrFail_When_PayloadExceedsFrameCapacity() {
+        // Story 4.1.1 encode-time size guard: a payload beyond a single frame's capacity fails
+        // cleanly (before ZXing ever attempts to render), not with an unclear WriterException or a
+        // silently-produced larger/less-scannable matrix. Defense-in-depth only — the real upstream
+        // guard is FountainEncoder's own per-fragment size check (Story 1.2.2).
+        val oversized = ByteArray(700) { it.toByte() }
+
+        val exception = assertFailsWith<IllegalArgumentException> { QrCodec.encode(oversized) }
+
+        assertTrue(exception.message!!.contains("700"), "expected the actual size in the message, got: ${exception.message}")
+        assertTrue(exception.message!!.contains("666"), "expected the max capacity in the message, got: ${exception.message}")
     }
 
     private fun QrMatrix.toCameraFrame(rotationDegrees: Int = 0): CameraFrame {

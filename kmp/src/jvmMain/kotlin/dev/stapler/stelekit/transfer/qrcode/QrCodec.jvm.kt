@@ -31,7 +31,21 @@ actual object QrCodec {
         DecodeHintType.CHARACTER_SET to "ISO-8859-1",
     )
 
+    /**
+     * Byte-mode data capacity of a QR symbol at [QrTransferSettings.MAX_QR_VERSION] (v20) and EC
+     * level M — matches this file's hardcoded [ENCODE_HINTS] EC level. Defense-in-depth only: the
+     * real upstream guard is [FountainEncoder]'s per-fragment payload-size check (Story 1.2.2),
+     * which already bounds every fragment before it reaches this function. This just turns an
+     * otherwise-unclear ZXing `WriterException` (or a matrix ZXing silently renders at a larger,
+     * less-scannable version) into an explicit, actionable failure.
+     */
+    private const val MAX_ENCODABLE_BYTES = 666
+
     actual fun encode(bytes: ByteArray): QrMatrix {
+        require(bytes.size <= MAX_ENCODABLE_BYTES) {
+            "QrCodec.encode: payload is ${bytes.size} bytes, exceeds the $MAX_ENCODABLE_BYTES-byte " +
+                "capacity ceiling for QR version ${QrTransferSettings.MAX_QR_VERSION} at EC level M"
+        }
         val content = bytes.toString(Charsets.ISO_8859_1)
         val bitMatrix = QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, 0, 0, ENCODE_HINTS)
         val size = bitMatrix.width
