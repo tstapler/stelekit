@@ -34,16 +34,28 @@ class ChunkBuffer(private val maxPayloadBytes: Int) {
     private var resultBytes: ByteArray? = null
 
     /**
-     * Idempotent for duplicates, order-independent. Returns `false` if the chunk is rejected
-     * (already complete, the claimed `payloadLen`/parameters are invalid/inconsistent, or [chunk]
-     * carries a different [TransferId] than the one this buffer bound to on its first chunk).
+     * Idempotent for duplicates, order-independent. Returns `Right(false)` if the chunk is
+     * rejected for a generic/recoverable reason (already complete, `payloadLen<=0`, an empty
+     * fragment, inconsistent parameters vs. the bound transfer, or [chunk] carries a different
+     * [TransferId] than the one this buffer bound to on its first chunk) — the caller should just
+     * keep scanning. Returns `Left(PayloadTooLarge)` for the ONE rejection reason that is NOT
+     * recoverable by scanning more frames: the claimed `payloadLen` alone already exceeds
+     * [maxPayloadBytes], so no amount of additional frames will ever complete this transfer
+     * (Story 1.2.3 AC) — surfaced distinctly so [QrTransferCoordinator] can end the session with a
+     * terminal [dev.stapler.stelekit.error.DomainError.QrTransferError.PayloadTooLarge] failure
+     * instead of leaving the user stuck in `Scanning` forever with no diagnosability.
      */
-    fun accept(chunk: FountainChunk): Boolean {
-        if (isComplete()) return false
+    fun accept(chunk: FountainChunk): Either<DomainError.QrTransferError.PayloadTooLarge, Boolean> {
+        if (isComplete()) return false.right()
 
-        // Bound allocation BEFORE touching any per-transfer state — OOM guard (ADR-001).
-        if (chunk.payloadLen <= 0 || chunk.payloadLen > maxPayloadBytes) return false
-        if (chunk.fragment.isEmpty()) return false
+        // Bound allocation BEFORE touching any per-transfer state — OOM guard (ADR-001). A
+        // genuine size violation, not a generic malformed/duplicate frame — surfaced as a
+        // terminal Left, not folded into the generic `false` rejection below.
+        if (chunk.payloadLen > maxPayloadBytes) {
+            return DomainError.QrTransferError.PayloadTooLarge(chunk.payloadLen, maxPayloadBytes).left()
+        }
+        if (chunk.payloadLen <= 0) return false.right()
+        if (chunk.fragment.isEmpty()) return false.right()
 
         val boundTransferId = expectedTransferId
         if (boundTransferId != null && chunk.transferId != boundTransferId) {
@@ -51,7 +63,7 @@ class ChunkBuffer(private val maxPayloadBytes: Int) {
                 "ignoring frame for transferId=${chunk.transferId.value} — buffer is bound to " +
                     "transferId=${boundTransferId.value}",
             )
-            return false
+            return false.right()
         }
 
         val existingDecoder = decoder
@@ -62,9 +74,9 @@ class ChunkBuffer(private val maxPayloadBytes: Int) {
             expectedFragmentLen = chunk.fragment.size
             expectedSeqLen = ceil(chunk.payloadLen.toDouble() / chunk.fragment.size).toInt().coerceAtLeast(1)
         } else {
-            if (chunk.payloadLen != expectedMessageLen) return false
-            if (chunk.payloadCrc.value != expectedChecksum) return false
-            if (chunk.fragment.size != expectedFragmentLen) return false
+            if (chunk.payloadLen != expectedMessageLen) return false.right()
+            if (chunk.payloadCrc.value != expectedChecksum) return false.right()
+            if (chunk.fragment.size != expectedFragmentLen) return false.right()
         }
         val activeDecoder = existingDecoder ?: FountainDecoder(expectedSeqLen).also { decoder = it }
 
@@ -73,7 +85,7 @@ class ChunkBuffer(private val maxPayloadBytes: Int) {
         activeDecoder.receive(FountainDecoder.Part(indexes, chunk.fragment))
 
         resolveIfDecoded(activeDecoder)
-        return true
+        return true.right()
     }
 
     private fun resolveIfDecoded(activeDecoder: FountainDecoder) {
@@ -105,15 +117,22 @@ class ChunkBuffer(private val maxPayloadBytes: Int) {
     /** `true` once decoding has resolved — success OR integrity failure. Necessary, not sufficient. */
     fun isComplete(): Boolean = resultBytes != null || integrityFailed
 
+    /**
+     * Only two outcomes exist by construction: success, or the whole-payload CRC32 proof gate
+     * failed. "Not enough coverage yet" is deliberately NOT a third outcome here — it is
+     * represented by the caller simply not calling [reassemble] yet (see [isComplete]), never by
+     * a `Left`. `DomainError.QrTransferError.IncompleteTransfer` existed for exactly this
+     * "partial coverage" case and was removed as dead code (audit, Story 1.1.2 follow-up): the
+     * only production caller ([QrTransferCoordinator.finishReassembly]) already gates on
+     * [isComplete] before ever calling this, so that branch could never be reached.
+     */
     fun reassemble(): Either<DomainError, VerifiedTransferPayload> {
+        check(isComplete()) { "reassemble() called before decoding resolved — check isComplete() first" }
         val bytes = resultBytes
-        return when {
-            bytes != null -> VerifiedTransferPayload(bytes.decodeToString()).right()
-            integrityFailed -> DomainError.QrTransferError.IntegrityCheckFailed.left()
-            else -> DomainError.QrTransferError.IncompleteTransfer(
-                received = decoder?.receivedCount ?: 0,
-                total = expectedSeqLen,
-            ).left()
+        return if (bytes != null) {
+            VerifiedTransferPayload(bytes.decodeToString()).right()
+        } else {
+            DomainError.QrTransferError.IntegrityCheckFailed.left()
         }
     }
 }

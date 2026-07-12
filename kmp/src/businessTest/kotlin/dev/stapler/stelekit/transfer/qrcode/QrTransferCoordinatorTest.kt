@@ -11,9 +11,12 @@ import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.sensor.CameraFrame
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
+import dev.stapler.stelekit.transfer.ChunkIndex
 import dev.stapler.stelekit.transfer.FrameTransportReceiver
+import dev.stapler.stelekit.transfer.PayloadChecksum
 import dev.stapler.stelekit.transfer.TransferId
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -254,6 +257,46 @@ class QrTransferCoordinatorTest {
 
         val saved = pageRepo.getPageByName("Concurrent Sender Page").first().getOrNull()
         assertTrue(saved != null, "the active session's own page must still be written")
+
+        coordinator.close()
+    }
+
+    @Test
+    fun start_should_EmitFailedWithPayloadTooLarge_When_FirstFrameClaimsPayloadLenExceedingMaxPayloadBytes() = runBlocking {
+        // Diagnosability gap this test guards against: without this wiring, a receiver pointed at
+        // an oversized sender's QR stream just sits in Scanning forever with uniqueFragments stuck
+        // at 0 — indistinguishable from "no QR in view." Story 1.2.3 AC requires a terminal,
+        // distinct PayloadTooLarge failure instead.
+        val (importService, pageRepo) = buildImportService()
+        val maxPayloadBytes = 65536
+        val oversizedChunk = FountainChunk(
+            transferId = TransferId(1),
+            chunkIndex = ChunkIndex(0),
+            payloadLen = 5_000_000,
+            payloadCrc = PayloadChecksum(0),
+            fragment = byteArrayOf(1, 2, 3),
+        )
+        val oversizedReceiver = object : FrameTransportReceiver {
+            override fun frames(): Flow<ByteArray> = flow { emit(ChunkFrameCodec.encode(oversizedChunk)) }
+        }
+
+        val coordinator = QrTransferCoordinator(
+            frameTransportReceiver = oversizedReceiver,
+            qrImportService = importService,
+            targetName = PageName("Oversized Sender Page"),
+            maxPayloadBytes = maxPayloadBytes,
+        )
+
+        coordinator.start()
+
+        val event = withTimeout(5_000) { coordinator.events.first { it is CoordinatorEvent.Failed } }
+        val failed = assertIs<CoordinatorEvent.Failed>(event)
+        val payloadTooLarge = assertIs<DomainError.QrTransferError.PayloadTooLarge>(failed.error)
+        assertEquals(5_000_000, payloadTooLarge.sizeBytes)
+        assertEquals(maxPayloadBytes, payloadTooLarge.maxBytes)
+
+        val saved = pageRepo.getPageByName("Oversized Sender Page").first().getOrNull()
+        assertNull(saved, "no write must occur after a PayloadTooLarge rejection")
 
         coordinator.close()
     }

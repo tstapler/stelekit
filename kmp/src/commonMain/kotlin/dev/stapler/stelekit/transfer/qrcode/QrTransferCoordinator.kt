@@ -272,17 +272,30 @@ class QrTransferCoordinator(
                     return@collect
                 }
 
-                val accepted = activeSession.accept(chunk)
-                if (accepted) {
-                    emitEvent(CoordinatorEvent.FragmentAdmitted(activeSession.uniqueFragments, currentHint))
-                }
+                activeSession.accept(chunk).fold(
+                    ifLeft = { err ->
+                        // Terminal, non-recoverable rejection (Story 1.2.3 AC): the claimed
+                        // payloadLen alone already exceeds maxPayloadBytes, so no amount of
+                        // further scanning can ever complete this transfer — end the session
+                        // instead of leaving the user stuck in Scanning with uniqueFragments
+                        // stuck at 0, indistinguishable from "no QR in view."
+                        emitEvent(CoordinatorEvent.Failed(err))
+                        throw CancellationException("payload too large")
+                    },
+                    ifRight = { accepted ->
+                        if (accepted) {
+                            emitEvent(CoordinatorEvent.FragmentAdmitted(activeSession.uniqueFragments, currentHint))
+                        }
+                    },
+                )
                 if (activeSession.buffer.isComplete()) {
                     finishReassembly(activeSession)
                     throw CancellationException("transfer reassembly complete")
                 }
             }
         } catch (e: CancellationException) {
-            // Normal termination path: reassembly completed, or cancel()/close() was called.
+            // Normal termination path: reassembly completed, a PayloadTooLarge rejection ended
+            // the session, or cancel()/close() was called.
         } catch (e: Throwable) {
             logger.error("QrTransferCoordinator data path failed: ${e.message}")
             emitEvent(CoordinatorEvent.Failed(DomainError.QrTransferError.ChunkDecodeFailed))

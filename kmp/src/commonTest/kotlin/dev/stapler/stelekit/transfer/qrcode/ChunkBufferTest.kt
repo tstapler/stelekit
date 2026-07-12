@@ -76,7 +76,7 @@ class ChunkBufferTest {
     }
 
     @Test
-    fun accept_should_RejectFrame_When_ClaimedPayloadLenExceedsMaxPayloadBytes() {
+    fun accept_should_ReturnLeftPayloadTooLarge_When_ClaimedPayloadLenExceedsMaxPayloadBytes() {
         val buffer = ChunkBuffer(maxPayloadBytes = 65536)
         val oversizedClaim = FountainChunk(
             transferId = TransferId(1),
@@ -86,10 +86,32 @@ class ChunkBufferTest {
             fragment = byteArrayOf(1, 2, 3),
         )
 
-        val accepted = buffer.accept(oversizedClaim)
+        val result = buffer.accept(oversizedClaim)
 
-        assertFalse(accepted)
+        assertEquals(
+            DomainError.QrTransferError.PayloadTooLarge(sizeBytes = 5_000_000, maxBytes = 65536),
+            result.leftOrNull(),
+        )
         assertFalse(buffer.isComplete())
         assertEquals(0.0, buffer.coverage())
+    }
+
+    @Test
+    fun accept_should_ReturnRightFalse_When_ClaimedPayloadLenIsZeroOrNegative() {
+        // Distinct from the oversize case above: an invalid-but-not-oversize payloadLen is a
+        // generic/recoverable rejection (Right(false)), not a terminal PayloadTooLarge Left.
+        val buffer = ChunkBuffer(maxPayloadBytes = 65536)
+        val invalidClaim = FountainChunk(
+            transferId = TransferId(1),
+            chunkIndex = ChunkIndex(0),
+            payloadLen = 0,
+            payloadCrc = PayloadChecksum(0),
+            fragment = byteArrayOf(1, 2, 3),
+        )
+
+        val result = buffer.accept(invalidClaim)
+
+        assertEquals(false, result.getOrNull())
+        assertFalse(buffer.isComplete())
     }
 }

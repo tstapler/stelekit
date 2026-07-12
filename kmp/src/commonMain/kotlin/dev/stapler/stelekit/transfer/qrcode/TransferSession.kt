@@ -1,5 +1,7 @@
 package dev.stapler.stelekit.transfer.qrcode
 
+import arrow.core.Either
+import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.transfer.TransferId
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -40,20 +42,21 @@ class TransferSession(
 
     /**
      * Accepts [chunk] into [buffer]. Advances [uniqueFragments] and [lastNewFragmentAt] only when
-     * coverage actually grew (a genuinely new fragment), never on a duplicate.
+     * coverage actually grew (a genuinely new fragment), never on a duplicate. Propagates
+     * [ChunkBuffer.accept]'s `Left(PayloadTooLarge)` unchanged — a terminal, non-recoverable
+     * rejection the caller must surface, not something this session's bookkeeping can paper over.
      */
-    fun accept(chunk: FountainChunk): Boolean {
-        val accepted = buffer.accept(chunk)
-        if (accepted) {
-            val newCoverage = buffer.coverage()
-            if (newCoverage > lastCoverage) {
-                lastCoverage = newCoverage
-                uniqueFragments += 1
-                lastNewFragmentAt = clock()
+    fun accept(chunk: FountainChunk): Either<DomainError.QrTransferError.PayloadTooLarge, Boolean> =
+        buffer.accept(chunk).onRight { accepted ->
+            if (accepted) {
+                val newCoverage = buffer.coverage()
+                if (newCoverage > lastCoverage) {
+                    lastCoverage = newCoverage
+                    uniqueFragments += 1
+                    lastNewFragmentAt = clock()
+                }
             }
         }
-        return accepted
-    }
 
     /**
      * Seconds since [lastNewFragmentAt]. validation.md's `TransferSessionTest` exercises the

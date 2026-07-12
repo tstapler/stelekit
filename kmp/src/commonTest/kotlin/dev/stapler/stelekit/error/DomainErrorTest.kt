@@ -50,10 +50,8 @@ class DomainErrorTest {
             DomainError.ExportError.ClipboardFailed("clipboard failed"),
             DomainError.ExportError.ShareFailed("share failed"),
             DomainError.QrTransferError.ChunkDecodeFailed,
-            DomainError.QrTransferError.IncompleteTransfer(3, 10),
             DomainError.QrTransferError.IntegrityCheckFailed,
             DomainError.QrTransferError.PayloadTooLarge(90000, 65536),
-            DomainError.QrTransferError.TransferCancelled,
             DomainError.QrTransferError.MarkdownParseFailed,
         )
         for (err in errors) {
@@ -104,10 +102,8 @@ class DomainErrorTest {
                 is DomainError.ExportError.SerializationFailed -> err.message
                 is DomainError.ExportError.ShareFailed -> err.message
                 DomainError.QrTransferError.ChunkDecodeFailed -> err.message
-                is DomainError.QrTransferError.IncompleteTransfer -> err.message
                 DomainError.QrTransferError.IntegrityCheckFailed -> err.message
                 is DomainError.QrTransferError.PayloadTooLarge -> err.message
-                DomainError.QrTransferError.TransferCancelled -> err.message
                 DomainError.QrTransferError.MarkdownParseFailed -> err.message
             }
             assertTrue(msg.isNotEmpty(), "Expected non-empty message for $err")
@@ -174,10 +170,8 @@ class DomainErrorTest {
             DomainError.ExportError.SerializationFailed("serialization failed"),
             DomainError.ExportError.ShareFailed("share failed"),
             DomainError.QrTransferError.ChunkDecodeFailed,
-            DomainError.QrTransferError.IncompleteTransfer(3, 10),
             DomainError.QrTransferError.IntegrityCheckFailed,
             DomainError.QrTransferError.PayloadTooLarge(90000, 65536),
-            DomainError.QrTransferError.TransferCancelled,
             DomainError.QrTransferError.MarkdownParseFailed,
         )
         for (err in errors) {
@@ -197,19 +191,20 @@ class DomainErrorTest {
     }
 
     @Test
-    fun toUiMessage_should_ReturnSixDistinctMessages_When_CalledForEveryQrTransferErrorVariant() {
+    fun toUiMessage_should_ReturnFourDistinctMessages_When_CalledForEveryQrTransferErrorVariant() {
+        // Four variants, not the original six: IncompleteTransfer and TransferCancelled were
+        // removed as dead code (no principled call site — see ChunkBuffer.reassemble and
+        // QrTransferCoordinator.cancel KDoc).
         val variants: List<DomainError.QrTransferError> = listOf(
             DomainError.QrTransferError.ChunkDecodeFailed,
-            DomainError.QrTransferError.IncompleteTransfer(3, 10),
             DomainError.QrTransferError.IntegrityCheckFailed,
             DomainError.QrTransferError.PayloadTooLarge(90000, 65536),
-            DomainError.QrTransferError.TransferCancelled,
             DomainError.QrTransferError.MarkdownParseFailed,
         )
 
         val messages = variants.map { it.toUiMessage() }
 
-        assertEquals(6, variants.size)
-        assertEquals(messages.size, messages.toSet().size, "Expected all six QrTransferError variants to have distinct UI copy: $messages")
+        assertEquals(4, variants.size)
+        assertEquals(messages.size, messages.toSet().size, "Expected all four QrTransferError variants to have distinct UI copy: $messages")
     }
 }

@@ -29,18 +29,18 @@ class ChunkBufferConcurrencyTest {
         val buffer = ChunkBuffer(maxPayloadBytes = 65536)
 
         // Binds the buffer to TransferId(7) on the first accepted chunk.
-        val boundAccepted = buffer.accept(chunkFor(transferId = 7, index = 0, fragment = byteArrayOf(1, 2, 3)))
-        assertTrue(boundAccepted, "the first chunk must bind and be accepted")
+        val boundAccepted = buffer.accept(chunkFor(transferId = 7, index = 0, fragment = byteArrayOf(1, 2, 3))).getOrNull()
+        assertTrue(boundAccepted == true, "the first chunk must bind and be accepted")
         val coverageAfterBind = buffer.coverage()
 
         // A frame for a different TransferId(9) while TransferId(7) is active must be ignored.
-        val rejected = buffer.accept(chunkFor(transferId = 9, index = 1, fragment = byteArrayOf(4, 5, 6)))
-        assertFalse(rejected, "a frame for a different TransferId must be rejected, not accepted")
+        val rejected = buffer.accept(chunkFor(transferId = 9, index = 1, fragment = byteArrayOf(4, 5, 6))).getOrNull()
+        assertFalse(rejected == true, "a frame for a different TransferId must be rejected, not accepted")
         assertEquals(coverageAfterBind, buffer.coverage(), "a rejected foreign-TransferId frame must not affect coverage")
 
         // The active session's own stream is unaffected — it can still make progress afterward.
-        val stillAccepted = buffer.accept(chunkFor(transferId = 7, index = 1, fragment = byteArrayOf(7, 8, 9)))
-        assertTrue(stillAccepted, "the active session's own frames must still be accepted after a foreign-TransferId drop")
+        val stillAccepted = buffer.accept(chunkFor(transferId = 7, index = 1, fragment = byteArrayOf(7, 8, 9))).getOrNull()
+        assertTrue(stillAccepted == true, "the active session's own frames must still be accepted after a foreign-TransferId drop")
         assertTrue(buffer.coverage() > coverageAfterBind, "the active session must keep making progress")
     }
 
@@ -48,8 +48,8 @@ class ChunkBufferConcurrencyTest {
     fun chunkBuffer_should_AcceptFirstChunk_When_NoTransferIdBoundYet() {
         val buffer = ChunkBuffer(maxPayloadBytes = 65536)
 
-        val accepted = buffer.accept(chunkFor(transferId = 42, index = 0, fragment = byteArrayOf(1, 2, 3)))
+        val accepted = buffer.accept(chunkFor(transferId = 42, index = 0, fragment = byteArrayOf(1, 2, 3))).getOrNull()
 
-        assertTrue(accepted, "an unbound buffer must accept the first chunk regardless of its TransferId")
+        assertTrue(accepted == true, "an unbound buffer must accept the first chunk regardless of its TransferId")
     }
 }
