@@ -36,6 +36,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import arrow.core.right
 import dev.stapler.stelekit.clipboard.BlockClipboard
 import dev.stapler.stelekit.clipboard.BlockTreeAlgorithms
@@ -152,6 +154,20 @@ class BlockStateManager(
     private suspend fun writeMoveBlockDown(uuid: BlockUuid) =
         writeActor?.execute { blockRepository.moveBlockDown(uuid) }
             ?: blockRepository.moveBlockDown(uuid)
+
+    // ---- Per-block content mutation lock ----
+    //
+    // insertTextAtCursor/insertLinkAtCursor/replaceSelectionWithLink/updateBlockContent each
+    // read-compute-write a block's content on `scope` (Dispatchers.Default — a real thread
+    // pool), so two calls for the *same* block fired in quick succession (e.g. accepting two
+    // suggested links back to back) can both read the same pre-update content and race to
+    // write, silently dropping one insertion. A keyed Mutex, mirroring GraphLoader.getFileLock,
+    // serializes the read-compute-write sequence per block without blocking unrelated blocks.
+    private val blockMutexesGuard = Mutex()
+    private val blockMutexes = mutableMapOf<String, Mutex>()
+
+    private suspend fun getBlockMutex(blockUuid: BlockUuid): Mutex =
+        blockMutexesGuard.withLock { blockMutexes.getOrPut(blockUuid.value) { Mutex() } }
 
     // ---- Active page sessions ----
 
@@ -803,13 +819,15 @@ class BlockStateManager(
      */
     override fun insertTextAtCursor(blockUuid: BlockUuid, text: String, overrideCursorIndex: Int?) {
         scope.launch {
-            val block = findBlockOrNull(blockUuid) ?: return@launch
-            val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
-            val safePos = cursor.coerceIn(0, block.content.length)
-            val newContent = block.content.substring(0, safePos) + text + block.content.substring(safePos)
-            val newVersion = block.version + 1
-            updateBlockContent(blockUuid, newContent, newVersion)
-            requestEditBlock(blockUuid, safePos + text.length)
+            getBlockMutex(blockUuid).withLock {
+                val block = findBlockOrNull(blockUuid) ?: return@withLock
+                val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
+                val safePos = cursor.coerceIn(0, block.content.length)
+                val newContent = block.content.substring(0, safePos) + text + block.content.substring(safePos)
+                val newVersion = block.version + 1
+                doUpdateBlockContent(blockUuid, newContent, newVersion)
+                requestEditBlock(blockUuid, safePos + text.length)
+            }
         }
     }
 
@@ -834,14 +852,16 @@ class BlockStateManager(
      */
     override fun insertLinkAtCursor(blockUuid: BlockUuid, pageName: String, overrideCursorIndex: Int?) {
         scope.launch {
-            val block = findBlockOrNull(blockUuid) ?: return@launch
-            val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
-            val linkText = "[[$pageName]]"
-            val safePos = cursor.coerceIn(0, block.content.length)
-            val newContent = block.content.substring(0, safePos) + linkText + block.content.substring(safePos)
-            val newVersion = block.version + 1
-            updateBlockContent(blockUuid, newContent, newVersion)
-            requestEditBlock(blockUuid, safePos + linkText.length)
+            getBlockMutex(blockUuid).withLock {
+                val block = findBlockOrNull(blockUuid) ?: return@withLock
+                val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
+                val linkText = "[[$pageName]]"
+                val safePos = cursor.coerceIn(0, block.content.length)
+                val newContent = block.content.substring(0, safePos) + linkText + block.content.substring(safePos)
+                val newVersion = block.version + 1
+                doUpdateBlockContent(blockUuid, newContent, newVersion)
+                requestEditBlock(blockUuid, safePos + linkText.length)
+            }
         }
     }
 
@@ -860,14 +880,16 @@ class BlockStateManager(
             return
         }
         scope.launch {
-            val block = findBlockOrNull(blockUuid) ?: return@launch
-            val safeStart = selectionStart.coerceIn(0, block.content.length)
-            val safeEnd = selectionEnd.coerceIn(safeStart, block.content.length)
-            val linkText = "[[$pageName]]"
-            val newContent = block.content.substring(0, safeStart) + linkText + block.content.substring(safeEnd)
-            val newVersion = block.version + 1
-            updateBlockContent(blockUuid, newContent, newVersion)
-            requestEditBlock(blockUuid, safeStart + linkText.length)
+            getBlockMutex(blockUuid).withLock {
+                val block = findBlockOrNull(blockUuid) ?: return@withLock
+                val safeStart = selectionStart.coerceIn(0, block.content.length)
+                val safeEnd = selectionEnd.coerceIn(safeStart, block.content.length)
+                val linkText = "[[$pageName]]"
+                val newContent = block.content.substring(0, safeStart) + linkText + block.content.substring(safeEnd)
+                val newVersion = block.version + 1
+                doUpdateBlockContent(blockUuid, newContent, newVersion)
+                requestEditBlock(blockUuid, safeStart + linkText.length)
+            }
         }
     }
 
@@ -917,12 +939,23 @@ class BlockStateManager(
     /**
      * Optimistically update block content. Updates local state immediately,
      * marks the block as dirty, and persists to DB asynchronously.
+     *
+     * Acquires the per-block lock itself, so callers that already hold it (insertTextAtCursor,
+     * insertLinkAtCursor, replaceSelectionWithLink) must call [doUpdateBlockContent] directly
+     * instead — re-entering this method from inside the lock would deadlock (Mutex isn't
+     * reentrant).
      */
     override fun updateBlockContent(blockUuid: BlockUuid, newContent: String, newVersion: Long): Job = scope.launch {
-        val block = findBlockOrNull(blockUuid) ?: return@launch
+        getBlockMutex(blockUuid).withLock {
+            doUpdateBlockContent(blockUuid, newContent, newVersion)
+        }
+    }
+
+    private suspend fun doUpdateBlockContent(blockUuid: BlockUuid, newContent: String, newVersion: Long) {
+        val block = findBlockOrNull(blockUuid) ?: return
         val oldContent = block.content
         val oldVersion = block.version
-        if (oldContent == newContent) return@launch
+        if (oldContent == newContent) return
 
         applyContentChange(blockUuid, newContent, newVersion)
 

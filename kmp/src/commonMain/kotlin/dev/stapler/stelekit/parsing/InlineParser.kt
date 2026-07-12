@@ -7,17 +7,35 @@ class InlineParser(private val source: CharSequence) {
     private val lexer = Lexer(source)
     private var currentToken = lexer.nextToken()
 
-    fun parse(): List<InlineNode> {
+    fun parse(): List<InlineNode> = parseWithSpans().map { it.first }
+
+    /**
+     * Same traversal as [parse], but also returns each top-level node's raw
+     * `[start, end)` span in [source]. Tokens are emitted contiguously by the
+     * lexer (no gaps), so a node's span is exactly the range between the
+     * token positions before and after it was consumed — no need to re-derive
+     * offsets downstream via `indexOf` (which is ambiguous whenever a node's
+     * own raw text contains a copy of a later node's content, e.g. `[[abc]]abc`).
+     */
+    fun parseWithSpans(): List<Pair<InlineNode, IntRange>> {
         val nodes = mutableListOf<InlineNode>()
+        // endExclusive[i] pairs with nodes[i].start tracked separately in starts[i].
+        val starts = mutableListOf<Int>()
+        val endsExclusive = mutableListOf<Int>()
         while (currentToken.type != TokenType.EOF) {
+            val startPos = currentToken.start
             val node = parseExpression(0)
+            val endPos = currentToken.start
             // Hard line break: trailing two spaces + newline
             if (node is TextNode && node.content == "\n") {
                 val prev = nodes.lastOrNull()
                 if (prev is TextNode && prev.content.endsWith("  ")) {
                     // Single node with trailing two spaces
                     nodes[nodes.lastIndex] = TextNode(prev.content.dropLast(2))
+                    endsExclusive[endsExclusive.lastIndex] -= 2
                     nodes.add(HardBreakNode)
+                    starts.add(startPos)
+                    endsExclusive.add(endPos)
                     continue
                 } else if (nodes.size >= 2 && prev is TextNode && prev.content.isBlank()) {
                     // Previous node is whitespace — check if second-to-last also has trailing space
@@ -25,21 +43,34 @@ class InlineParser(private val source: CharSequence) {
                     if (secondPrev is TextNode && secondPrev.content.endsWith(" ")) {
                         // Remove trailing space from secondPrev and remove the space-only prev node
                         nodes[nodes.size - 2] = TextNode(secondPrev.content.dropLast(1))
+                        endsExclusive[endsExclusive.size - 2] -= 1
                         nodes.removeAt(nodes.lastIndex)
+                        starts.removeAt(starts.lastIndex)
+                        endsExclusive.removeAt(endsExclusive.lastIndex)
                         nodes.add(HardBreakNode)
+                        starts.add(startPos)
+                        endsExclusive.add(endPos)
                         continue
                     } else if (secondPrev is TextNode && secondPrev.content.isBlank()) {
                         // Both prev nodes are blank spaces — that counts as trailing two spaces
                         nodes.removeAt(nodes.lastIndex)
+                        starts.removeAt(starts.lastIndex)
+                        endsExclusive.removeAt(endsExclusive.lastIndex)
                         nodes.removeAt(nodes.lastIndex)
+                        starts.removeAt(starts.lastIndex)
+                        endsExclusive.removeAt(endsExclusive.lastIndex)
                         nodes.add(HardBreakNode)
+                        starts.add(startPos)
+                        endsExclusive.add(endPos)
                         continue
                     }
                 }
             }
             nodes.add(node)
+            starts.add(startPos)
+            endsExclusive.add(endPos)
         }
-        return nodes
+        return nodes.indices.map { i -> nodes[i] to (starts[i] until endsExclusive[i]) }
     }
 
     private fun parseExpression(precedence: Int): InlineNode {

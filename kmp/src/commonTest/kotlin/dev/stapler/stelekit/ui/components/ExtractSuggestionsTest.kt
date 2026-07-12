@@ -202,4 +202,32 @@ class ExtractSuggestionsTest {
         assertEquals(1, result.size, "Plain-text 'Python' after a wiki link should be suggested")
         assertEquals("Python", result[0].canonicalName)
     }
+
+    // ── Regression: link target text duplicated immediately outside its own brackets ──
+    // A naive `indexOf(node.content, searchFrom)` fallback finds the copy of "abc" that
+    // sits *inside* "[[abc]]" (since searchFrom never advanced past the link's raw markup),
+    // instead of the real plain-text "abc" right after it — corrupting the offset used to
+    // splice inserted links into the block, which shows up as "insert out of order".
+    @Test
+    fun pageNameImmediatelyAfterIdenticalWikiLink_offsetIsAfterTheLink() {
+        val content = "[[abc]]abc"
+        val result = extractSuggestions(content, matcher("abc"))
+        assertEquals(1, result.size, "Only the plain-text occurrence outside the brackets should be suggested")
+        assertEquals(7, result[0].start)
+        assertEquals(10, result[0].end)
+        assertEquals("abc", content.substring(result[0].start, result[0].end))
+    }
+
+    @Test
+    fun multipleLinksWithDuplicateTargetsInOneBlock_offsetsAreCorrect() {
+        // Two wiki-links back to back, each immediately followed by plain text that
+        // repeats the link's own target — every suggestion offset must land after its link.
+        val content = "[[abc]]abc [[abc]]abc"
+        val result = extractSuggestions(content, matcher("abc")).sortedBy { it.start }
+        assertEquals(2, result.size)
+        assertEquals("abc", content.substring(result[0].start, result[0].end))
+        assertEquals(7, result[0].start)
+        assertEquals("abc", content.substring(result[1].start, result[1].end))
+        assertEquals(18, result[1].start)
+    }
 }

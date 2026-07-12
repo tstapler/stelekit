@@ -1982,6 +1982,50 @@ class BlockStateManagerTest {
 
         actor.close()
     }
+
+    /**
+     * TC-N4e: two links accepted back-to-back on the same block must not race.
+     *
+     * insertLinkAtCursor read-compute-writes a block's content without awaiting the previous
+     * call's DB write to settle. Without a per-block lock, the second call reads the
+     * pre-first-insert content, computes its own new content from that stale snapshot, and its
+     * write clobbers the first insertion — losing a link. This matches the reported bug:
+     * "insert out of order... many times when there's multiple page links in the same block."
+     */
+    @Test
+    fun insertLinkAtCursor_twice_in_quick_succession_does_not_drop_either_link() = runTest {
+        val innerRepo = InMemoryBlockRepository()
+        val delayedRepo = DelayedContentBlockRepository(innerRepo, contentDelayMs = 500L)
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, delayedRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val actor = DatabaseWriteActor(delayedRepo, pageRepo, scope = scope)
+
+        pageRepo.savePage(createPage())
+        innerRepo.saveBlock(createBlock("b1", content = "See ", position = "a0"))
+        val manager = BlockStateManager(
+            blockRepository = delayedRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            writeActor = actor,
+        )
+        manager.observePage(PageUuid(pageUuid))
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        // Both calls target the end of the block (no explicit cursor override needed since
+        // there's no active edit); fired before either write settles.
+        manager.insertLinkAtCursor(BlockUuid("b1"), "PageA", overrideCursorIndex = null)
+        manager.insertLinkAtCursor(BlockUuid("b1"), "PageB", overrideCursorIndex = null)
+        advanceUntilIdle()
+
+        val blocks = manager.blocks.value[pageUuid] ?: emptyList()
+        assertEquals(1, blocks.size, "No block should be created or lost")
+        val content = blocks.find { it.uuid.value == "b1" }?.content
+        assertEquals("See [[PageA]][[PageB]]", content,
+            "Both links must be present in insertion order — neither write may clobber the other")
+
+        actor.close()
+    }
 }
 
 // ---- dirtyPageUuids: watcher guard for journals refresh (FR-2) ----
