@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalAtomicApi::class)
+
 package dev.stapler.stelekit.ui.transfer
 
 import dev.stapler.stelekit.db.LogseqPageSerializer
@@ -27,6 +29,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.SupervisorJob
+import kotlin.concurrent.Volatile
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.random.Random
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.milliseconds
@@ -76,24 +81,46 @@ class QrEncodeViewModel(
     private val _currentFrame = MutableStateFlow<QrMatrix?>(null)
     val currentFrame: StateFlow<QrMatrix?> = _currentFrame.asStateFlow()
 
-    private var sendJob: Job? = null
-    private var pacingJob: Job? = null
-    private var activeTransport: QrFrameTransport? = null
+    // @Volatile: written from the pacing coroutine (startPacing()'s loop runs on Dispatchers.Default
+    // via `scope`) but read/written from pause()/resume()/cancel()/advanceFrame() — all plain
+    // functions the UI thread calls synchronously via button handlers. Mirrors the visibility
+    // hazard already documented on QrTransferCoordinator.session/currentHint.
+    @Volatile private var sendJob: Job? = null
+    @Volatile private var pacingJob: Job? = null
+    @Volatile private var activeTransport: QrFrameTransport? = null
 
     // Frame-position bookkeeping, mirrored into Displaying/Paused payloads so pause()/resume()
     // and reduce-motion advanceFrame() can reconstruct state without parsing the current state.
-    private var frameIndex = 0
-    private var totalCycled = 0
-    private var chunkCount = 0
-    private var estBytes = 0
+    // @Volatile: advanceFrame(transport) writes these from the pacing coroutine (auto-advance) or
+    // directly from the UI thread (reduce-motion taps); pause()/resume() always read them from the
+    // UI thread — cross-thread visibility is required either way.
+    @Volatile private var frameIndex = 0
+    @Volatile private var totalCycled = 0
+    @Volatile private var chunkCount = 0
+    @Volatile private var estBytes = 0
 
     // Story 3.3.3 observability bookkeeping — read only at qr_transfer_started/qr_frame_sent/qr_transfer_ended.
-    private var transferId: TransferId? = null
-    private var transferStartedAt: Instant? = null
-    private var endedLogged = false
+    // @Volatile: transferId is set inside start()'s scope.launch (Dispatchers.Default) and read from
+    // advanceFrame()/logEnded() on either the pacing coroutine or the UI thread. transferStartedAt is
+    // set synchronously on the UI thread in start() but read from logEnded() when it's invoked from
+    // the scope's CoroutineExceptionHandler (Dispatchers.Default) — same hazard, opposite direction.
+    @Volatile private var transferId: TransferId? = null
+    @Volatile private var transferStartedAt: Instant? = null
+
+    // AtomicBoolean, not @Volatile: logEnded() is a check-then-act guard ("if already logged,
+    // return; else log") invoked from both the UI thread (cancel()/complete()) and the scope's own
+    // coroutines (CoroutineExceptionHandler, the PayloadTooLarge branch in start()). @Volatile only
+    // guarantees visibility, not exclusivity — two threads could both observe endedLogged==false and
+    // double-log (or race) the terminal qr_transfer_ended entry. compareAndSet makes "claim the log"
+    // atomic without requiring a suspend function (kotlinx.atomicfu is not a project dependency;
+    // routing through scope.launch{} wouldn't serialize anything since Dispatchers.Default is a
+    // thread pool, not a single confined thread).
+    private val endedLogged = AtomicBoolean(false)
 
     // Timestamp of the last tap-to-advance grant (reduce-motion mode only). Null until the first
-    // tap of a transfer.
+    // tap of a transfer. Not @Volatile: only ever read/written from advanceFrame() and start()'s
+    // synchronous (pre-launch) preamble — both always run on the UI thread, never inside a
+    // scope.launch body, so there is no cross-thread access to guard.
     private var lastTapAdvanceAt: Instant? = null
 
     /** Idle -> Serializing -> Displaying/Failed. No-op unless currently [QrEncodeUiState.Idle]. */
@@ -101,7 +128,7 @@ class QrEncodeViewModel(
         if (_state.value != QrEncodeUiState.Idle) return
         _state.value = QrEncodeUiState.Serializing
         transferStartedAt = clock()
-        endedLogged = false
+        endedLogged.store(false)
         lastTapAdvanceAt = null
         scope.launch {
             val page = pageRepository.getPageByUuid(pageUuid).first().getOrNull()
@@ -238,8 +265,9 @@ class QrEncodeViewModel(
 
     /** `qr_transfer_ended{role=sender, outcome, elapsedMs, framesSent}` (Story 3.3.3 Observability Plan). */
     private fun logEnded(outcome: String) {
-        if (endedLogged) return
-        endedLogged = true
+        // compareAndSet claims the single log emission atomically — see endedLogged's KDoc for why
+        // a plain check-then-act (or @Volatile alone) isn't sufficient here.
+        if (!endedLogged.compareAndSet(expectedValue = false, newValue = true)) return
         val elapsedMs = transferStartedAt?.let { (clock() - it).inWholeMilliseconds } ?: 0L
         logger.info(
             "qr_transfer_ended transferId=${transferId?.value} role=sender outcome=$outcome " +
