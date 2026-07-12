@@ -42,10 +42,22 @@ data class CollisionPrompt(val existingName: PageName, val proposedName: PageNam
  * would run TWICE concurrently and CameraX would silently tear down whichever bound first,
  * breaking every real Android receive session.
  *
- * `replay = 0` + `WhileSubscribed(replayExpirationMillis = 0)`: neither consumer needs a replayed
- * frame (both attach in the same tick, from [QrTransferCoordinator.start]), and the underlying
- * camera binding must tear down the instant both consumers unsubscribe (session end/cancel), not
- * linger holding the camera open.
+ * `replay = 1` + `WhileSubscribed(replayExpirationMillis = 0)`: [QrTransferCoordinator.start]
+ * launches its two consumer coroutines via separate `scope.launch { }` calls on
+ * [kotlinx.coroutines.Dispatchers.Default], a multi-threaded pool — they are NOT guaranteed to
+ * reach their `collect { }` call and subscribe in the same dispatcher tick, so a fast source that
+ * emits once and completes (e.g. a real camera's immediate `PermissionDenied`, or the exact fake
+ * used by `QrNoDeadEndUxTest`'s permission-denied scenario) could otherwise emit before the second
+ * consumer has subscribed — with `replay = 0` that consumer would then miss the only emission
+ * ever produced, permanently hanging one half of the pipeline (caught the hard way: this exact
+ * race caused a CI-only flake, since local runs' scheduling happened not to reproduce it — see PR
+ * #221 CI history). `replay = 1` guarantees any subscriber, regardless of exactly when it attaches,
+ * immediately receives the most recently emitted value — correct for a one-shot sticky signal like
+ * permission-denied, and harmless for continuous real camera frames (a newly-attaching consumer
+ * just gets the latest frame instead of waiting for the next one). The underlying camera binding
+ * still tears down the instant both consumers unsubscribe (session end/cancel) — `replay`
+ * controls the buffer given to subscribers, not upstream lifecycle, which `WhileSubscribed`
+ * governs independently.
  *
  * CRITICAL: owns its [CoroutineScope] internally (CLAUDE.md scope-ownership) rather than accepting
  * the outer [QrDecodeViewModel]'s scope — a constructor-parameter default value cannot reference a
@@ -64,7 +76,7 @@ private class SharedCameraFrameSource(private val delegate: CameraFrameSource) :
         delegate.frameStream().shareIn(
             scope = scope,
             started = SharingStarted.WhileSubscribed(replayExpirationMillis = 0),
-            replay = 0,
+            replay = 1,
         )
 
     override fun frameStream(): Flow<Either<DomainError.SensorError, CameraFrame>> = shared
