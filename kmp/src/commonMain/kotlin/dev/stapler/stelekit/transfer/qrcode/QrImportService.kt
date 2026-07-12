@@ -45,7 +45,10 @@ import kotlinx.coroutines.flow.first
  * UUID is the PRE-EXISTING page's UUID (reused, not newly created), so that same delete would
  * destroy real user content that existed before this call — the page row is left in place instead
  * and [dev.stapler.stelekit.error.DomainError.QrTransferError.OverwriteFailedPreviousContentAffected]
- * is returned so the caller can warn the user their previous content may be affected.
+ * is returned so the caller can warn the user their previous content may be affected. This applies
+ * to a `savePage` failure just as much as a `saveBlocks` failure on the overwrite path — both run
+ * after [DatabaseWriteActor.deleteBlocksForPage] has already cleared the old blocks, so either one
+ * failing leaves the same blocks-empty pre-existing page and gets the same distinct error.
  */
 class QrImportService(
     private val graphLoader: GraphLoader,
@@ -120,7 +123,20 @@ class QrImportService(
         }
 
         writeActor.savePage(pageToSave).fold(
-            ifLeft = { return it.left() },
+            ifLeft = { err ->
+                // Same hazard as the saveBlocks failure branch below: on the overwrite path,
+                // deleteBlocksForPage above already cleared the pre-existing page's old blocks
+                // before this call, so a savePage failure here also leaves the user's real page
+                // blocks-empty, not just a failed new-page write. Surface the same distinct error
+                // so the caller/UI warns the user consistently regardless of which write failed.
+                return if (overwriting) {
+                    DomainError.QrTransferError
+                        .OverwriteFailedPreviousContentAffected(pageToSave.uuid.value)
+                        .left()
+                } else {
+                    err.left()
+                }
+            },
             ifRight = { /* continue */ },
         )
 

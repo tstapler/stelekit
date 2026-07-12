@@ -8,11 +8,13 @@ import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.Block
+import dev.stapler.stelekit.model.Page
 import dev.stapler.stelekit.model.PageName
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
+import dev.stapler.stelekit.repository.PageRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -77,11 +79,37 @@ class QrImportServiceTest {
         }
     }
 
+    /**
+     * Delegates every [PageRepository] call except [savePage], which succeeds on its first
+     * invocation and fails on every subsequent one — models a pre-existing page being created
+     * successfully, then a *later* overwrite import's `savePage` failing (distinct from
+     * [FailSecondSaveBlocksRepository], which fails the write one step later in the pipeline).
+     */
+    private class FailSecondSavePageRepository(
+        private val delegate: PageRepository,
+    ) : PageRepository by delegate {
+        private var callCount = 0
+
+        override suspend fun savePage(page: Page): Either<DomainError, Unit> {
+            callCount += 1
+            return if (callCount >= 2) {
+                DomainError.DatabaseError.WriteFailed("boom").left()
+            } else {
+                delegate.savePage(page)
+            }
+        }
+    }
+
     private suspend fun buildService(
         blockRepository: BlockRepository = InMemoryBlockRepository(),
+        pageWriteRepository: (InMemoryPageRepository) -> PageRepository = { it },
     ): Triple<QrImportService, InMemoryPageRepository, DatabaseWriteActor> {
         val pageRepo = InMemoryPageRepository()
-        val actor = DatabaseWriteActor(blockRepository, pageRepo)
+        // The actor writes through pageWriteRepository(pageRepo) (a failing wrapper delegating to
+        // pageRepo, if overridden) but QrImportService's own lookups always go through pageRepo
+        // directly, so assertions can query real persisted state regardless of which repository
+        // the actor's writes were routed through.
+        val actor = DatabaseWriteActor(blockRepository, pageWriteRepository(pageRepo))
         val graphLoader = GraphLoader(
             fileSystem = NoOpFileSystem(),
             pageRepository = pageRepo,
@@ -272,6 +300,45 @@ class QrImportServiceTest {
         // The pre-existing page ROW must still exist — even though its blocks were cleared before
         // the failed write, the page itself must never vanish from the database.
         val afterFailure = pageRepo.getPageByName("Overwrite Fail Test").first().getOrNull()
+        assertNotNull(afterFailure, "pre-existing page must NOT be deleted on a failed overwrite")
+        assertEquals(preExistingUuid, afterFailure.uuid)
+    }
+
+    /**
+     * PR #221 review comment regression: the original C1 fix only handled a `saveBlocks` failure
+     * during overwrite — a `savePage` failure (which runs one step earlier, but still AFTER
+     * [DatabaseWriteActor.deleteBlocksForPage] has already cleared the pre-existing page's old
+     * blocks) fell through to the raw, generic error with no compensating handling at all. This is
+     * the `savePage`-fails sibling of
+     * [import_should_NotDeletePreExistingPage_When_SaveBlocksFailsDuringOverwrite].
+     */
+    @Test
+    fun import_should_ReturnDistinctOverwriteError_When_SavePageFailsDuringOverwrite() = runBlocking {
+        val (service, pageRepo, _) = buildService(
+            pageWriteRepository = { FailSecondSavePageRepository(it) },
+        )
+
+        // First import succeeds (call #1 to savePage) — establishes the pre-existing page.
+        val first = service.import("- v1\n", PageName("Overwrite SavePage Fail Test"))
+        assertTrue(first.isRight())
+        val preExistingUuid = pageRepo.getPageByName("Overwrite SavePage Fail Test").first().getOrNull()?.uuid
+        assertNotNull(preExistingUuid, "pre-existing page must have been saved")
+
+        // Second import overwrites the same page; its savePage call (#2) is made to fail — after
+        // deleteBlocksForPage has already cleared the old blocks.
+        val second = service.import(
+            "- v2 new content\n",
+            PageName("Overwrite SavePage Fail Test"),
+            QrImportService.CollisionChoice.OVERWRITE,
+        )
+
+        assertTrue(second.isLeft())
+        assertTrue(
+            second.leftOrNull() is DomainError.QrTransferError.OverwriteFailedPreviousContentAffected,
+            "expected a distinct overwrite-failure error, got ${second.leftOrNull()}",
+        )
+        // The pre-existing page ROW must still exist, matching the saveBlocks-failure case.
+        val afterFailure = pageRepo.getPageByName("Overwrite SavePage Fail Test").first().getOrNull()
         assertNotNull(afterFailure, "pre-existing page must NOT be deleted on a failed overwrite")
         assertEquals(preExistingUuid, afterFailure.uuid)
     }

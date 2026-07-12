@@ -43,6 +43,14 @@ import platform.Foundation.NSData
 @OptIn(ExperimentalForeignApi::class)
 actual object QrCodec {
 
+    // CIContext is explicitly designed by Apple to be reused across calls (it owns an expensive
+    // Metal/GPU rendering pipeline internally) — encode() runs continuously while the sender
+    // screen cycles frames (~every 400ms), so constructing a new one per call was a real,
+    // avoidable per-frame cost. Cached lazily instead of at object-init time so a device with no
+    // usable CIContext (unlikely, but not provably impossible) fails on first encode(), not at
+    // class-load time.
+    private val ciContext: CIContext by lazy { CIContext.contextWithOptions(null) }
+
     actual fun encode(bytes: ByteArray): QrMatrix {
         val filter = CIFilter.filterWithName("CIQRCodeGenerator")
             ?: error("CIQRCodeGenerator filter unavailable on this device")
@@ -56,7 +64,6 @@ actual object QrCodec {
         val moduleCount = outputImage.extent.useContents { size.width }.toInt()
         require(moduleCount > 0) { "CIQRCodeGenerator produced an empty output image" }
 
-        val ciContext = CIContext.contextWithOptions(null)
         val cgImage = ciContext.createCGImage(outputImage, fromRect = outputImage.extent)
             ?: error("Failed to rasterize QR CIImage to CGImage")
 
