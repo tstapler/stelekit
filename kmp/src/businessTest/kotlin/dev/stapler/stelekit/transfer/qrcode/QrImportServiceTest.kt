@@ -2,6 +2,7 @@
 
 package dev.stapler.stelekit.transfer.qrcode
 
+import arrow.core.Either
 import arrow.core.left
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphLoader
@@ -14,6 +15,7 @@ import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.first
@@ -53,6 +55,26 @@ class QrImportServiceTest {
     ) : BlockRepository by delegate {
         override suspend fun saveBlocks(blocks: List<Block>) =
             DomainError.DatabaseError.WriteFailed("boom").left()
+    }
+
+    /**
+     * Delegates every [BlockRepository] call except [saveBlocks], which succeeds on its first
+     * invocation and fails on every subsequent one — models a pre-existing page being created
+     * successfully, then a *later* overwrite import's `saveBlocks` failing.
+     */
+    private class FailSecondSaveBlocksRepository(
+        private val delegate: BlockRepository,
+    ) : BlockRepository by delegate {
+        private var callCount = 0
+
+        override suspend fun saveBlocks(blocks: List<Block>): Either<DomainError, Unit> {
+            callCount += 1
+            return if (callCount >= 2) {
+                DomainError.DatabaseError.WriteFailed("boom").left()
+            } else {
+                delegate.saveBlocks(blocks)
+            }
+        }
     }
 
     private suspend fun buildService(
@@ -174,5 +196,83 @@ class QrImportServiceTest {
         assertEquals("Overwrite Me", second.getOrNull()?.value)
         val afterUuid = pageRepo.getPageByName("Overwrite Me").first().getOrNull()?.uuid
         assertEquals(firstUuid, afterUuid, "overwrite must reuse the existing page's UUID, not create a duplicate")
+    }
+
+    /**
+     * Gate 2 BLOCKER B2 regression: before the fix, [GraphLoader.importMarkdownString] hardcoded
+     * `pagePath = ""` for every QR import, so [dev.stapler.stelekit.db.MarkdownPageParser
+     * .generateUuid]'s seed (`"$pagePath:${parentUuid ?: "root"}:$blockIndex"`) was
+     * content/page-independent — any two QR imports with the same block-tree shape (e.g. both a
+     * single root block) produced an IDENTICAL block UUID. Because `blocks.uuid` is `UNIQUE` and
+     * `insertBlock` is `INSERT OR REPLACE`, the second import's write would silently hijack and
+     * reparent the first page's block row onto the second page. This test imports two
+     * structurally-identical, differently-named/-content pages and asserts the first page's block
+     * survives the second import completely unchanged.
+     */
+    @Test
+    fun import_should_PreserveDistinctBlocks_When_TwoPagesShareIdenticalBlockTreeShape() = runBlocking {
+        val blockRepo = InMemoryBlockRepository()
+        val (service, pageRepo, _) = buildService(blockRepository = blockRepo)
+
+        val firstResult = service.import("- hello\n", PageName("Page One"))
+        assertTrue(firstResult.isRight())
+        val pageAUuid = pageRepo.getPageByName("Page One").first().getOrNull()?.uuid
+        assertNotNull(pageAUuid, "page A must have been saved")
+        val pageABlocksBefore = blockRepo.getBlocksForPage(pageAUuid).first().getOrNull()
+        assertEquals(1, pageABlocksBefore?.size)
+        assertEquals("hello", pageABlocksBefore?.first()?.content)
+
+        // Same block-tree shape as page A (single root block, no children) but different content
+        // and a different target page.
+        val secondResult = service.import("- world\n", PageName("Page Two"))
+        assertTrue(secondResult.isRight())
+
+        val pageABlocksAfter = blockRepo.getBlocksForPage(pageAUuid).first().getOrNull()
+        assertEquals(1, pageABlocksAfter?.size, "page A must still have exactly its own block")
+        assertEquals("hello", pageABlocksAfter?.first()?.content, "page A's block content must be unchanged")
+        assertEquals(
+            pageABlocksBefore?.first()?.uuid,
+            pageABlocksAfter?.first()?.uuid,
+            "page A's block UUID must not be hijacked by an unrelated page import",
+        )
+    }
+
+    /**
+     * Gate 2 BLOCKER C1 regression: before the fix, a `saveBlocks` failure during an OVERWRITE
+     * import (after [DatabaseWriteActor.deleteBlocksForPage] had already cleared the pre-existing
+     * page's old blocks) triggered an unconditional `writeActor.deletePage(pageToSave.uuid)` —
+     * since `pageToSave.uuid == existing.uuid` on the overwrite path, this deleted the user's
+     * REAL pre-existing page row entirely, not just the failed new import. This is the inverse of
+     * [import_should_DeleteOrphanedPage_When_SaveBlocksFailsAfterSavePageSucceeds], which correctly
+     * covers the brand-new-page case.
+     */
+    @Test
+    fun import_should_NotDeletePreExistingPage_When_SaveBlocksFailsDuringOverwrite() = runBlocking {
+        val innerBlockRepo = InMemoryBlockRepository()
+        val (service, pageRepo, _) = buildService(blockRepository = FailSecondSaveBlocksRepository(innerBlockRepo))
+
+        // First import succeeds (call #1 to saveBlocks) — establishes the pre-existing page.
+        val first = service.import("- v1\n", PageName("Overwrite Fail Test"))
+        assertTrue(first.isRight())
+        val preExistingUuid = pageRepo.getPageByName("Overwrite Fail Test").first().getOrNull()?.uuid
+        assertNotNull(preExistingUuid, "pre-existing page must have been saved")
+
+        // Second import overwrites the same page; its saveBlocks call (#2) is made to fail.
+        val second = service.import(
+            "- v2 new content\n",
+            PageName("Overwrite Fail Test"),
+            QrImportService.CollisionChoice.OVERWRITE,
+        )
+
+        assertTrue(second.isLeft())
+        assertTrue(
+            second.leftOrNull() is DomainError.QrTransferError.OverwriteFailedPreviousContentAffected,
+            "expected a distinct overwrite-failure error, got ${second.leftOrNull()}",
+        )
+        // The pre-existing page ROW must still exist — even though its blocks were cleared before
+        // the failed write, the page itself must never vanish from the database.
+        val afterFailure = pageRepo.getPageByName("Overwrite Fail Test").first().getOrNull()
+        assertNotNull(afterFailure, "pre-existing page must NOT be deleted on a failed overwrite")
+        assertEquals(preExistingUuid, afterFailure.uuid)
     }
 }

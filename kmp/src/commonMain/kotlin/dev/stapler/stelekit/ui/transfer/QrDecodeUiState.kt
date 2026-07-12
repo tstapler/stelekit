@@ -61,7 +61,7 @@ sealed interface QrDecodeUiState {
      * can legitimately fail with a non-QR-specific error (e.g.
      * [DomainError.ValidationError.ConstraintViolation] for a malformed name, or
      * [DomainError.DatabaseError.WriteFailed] from [dev.stapler.stelekit.db.DatabaseWriteActor]) —
-     * forcing every possible failure through the six fixed [DomainError.QrTransferError] variants
+     * forcing every possible failure through the fixed [DomainError.QrTransferError] variants
      * would require fabricating a misleading message for cases that aren't actually chunk/transfer
      * failures. [DomainError]'s own `toUiMessage()` already covers every variant uniformly.
      */

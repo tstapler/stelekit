@@ -1545,9 +1545,14 @@ class GraphLoader(
 
             val rootBlocks = if (buildResult.firstBlockSkipped) parsedPage.blocks.drop(1) else parsedPage.blocks
             val blocks = mutableListOf<Block>()
+            // Seed block-UUID derivation with this page's own (freshly-generated, V7-random) UUID
+            // rather than a shared "" — MarkdownPageParser.generateUuid derives block UUIDs from
+            // "$pagePath:$parentUuid:$blockIndex" only, so a constant pagePath made block UUIDs
+            // identical across any two QR imports with the same block-tree shape, causing
+            // INSERT OR REPLACE to hijack/cascade-delete an unrelated previously-imported page.
             MarkdownPageParser.processParsedBlocks(
                 parsedBlocks = rootBlocks,
-                pagePath = "",
+                pagePath = page.uuid.value,
                 pageUuid = page.uuid,
                 parentUuid = null,
                 baseLevel = 0,

@@ -132,6 +132,20 @@ sealed interface DomainError {
         data object EnvelopeMalformed : QrTransferError {
             override val message: String = "Transfer payload envelope is malformed"
         }
+
+        /**
+         * [dev.stapler.stelekit.transfer.qrcode.QrImportService.import]'s overwrite path clears the
+         * pre-existing page's blocks before writing the new ones; if the new-block write then
+         * fails, the page row is deliberately left in place (never deleted — that would destroy the
+         * pre-existing page beyond what this failed operation should be allowed to touch) but its
+         * blocks may now be empty or partial. Distinct from [MarkdownParseFailed] so the UI can
+         * tell the user their previous content on this page may have been affected, not just that
+         * the new import failed.
+         */
+        data class OverwriteFailedPreviousContentAffected(val pageUuid: String) : QrTransferError {
+            override val message: String =
+                "Overwrite failed after clearing previous content for page $pageUuid — previous content may be lost"
+        }
     }
 }
 
@@ -188,6 +202,8 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.QrTransferError.PayloadTooLarge -> "This page is too large to send via QR"
     is DomainError.QrTransferError.MarkdownParseFailed -> "Received data isn't valid page content"
     is DomainError.QrTransferError.EnvelopeMalformed -> "This transfer didn't include valid page info — please try sending it again"
+    is DomainError.QrTransferError.OverwriteFailedPreviousContentAffected ->
+        "Overwrite failed — this page's previous content may have been affected. Please check it and try again"
 }
 
 fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {

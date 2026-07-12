@@ -39,9 +39,13 @@ import kotlinx.coroutines.flow.first
  *
  * [DatabaseWriteActor.savePage] and [DatabaseWriteActor.saveBlocks] are separate, non-atomic
  * calls (no single atomic page+blocks write exists). If `saveBlocks` fails after `savePage`
- * succeeds, this service deletes the orphaned page row before returning `Left`, mirroring
- * [dev.stapler.stelekit.db.ImageImportService]'s compensating-action pattern — no page with zero
- * blocks is ever left visible.
+ * succeeds for a brand-new page (no collision), this service deletes the orphaned page row before
+ * returning `Left`, mirroring [dev.stapler.stelekit.db.ImageImportService]'s compensating-action
+ * pattern — no page with zero blocks is ever left visible. On the OVERWRITE path, `pageToSave`'s
+ * UUID is the PRE-EXISTING page's UUID (reused, not newly created), so that same delete would
+ * destroy real user content that existed before this call — the page row is left in place instead
+ * and [dev.stapler.stelekit.error.DomainError.QrTransferError.OverwriteFailedPreviousContentAffected]
+ * is returned so the caller can warn the user their previous content may be affected.
  */
 class QrImportService(
     private val graphLoader: GraphLoader,
@@ -122,8 +126,24 @@ class QrImportService(
 
         writeActor.saveBlocks(blocksToSave).fold(
             ifLeft = { err ->
-                // Compensating rollback (Story 3.2.1 AC): savePage succeeded but saveBlocks
-                // failed — delete the orphaned zero-block page so it never becomes visible.
+                if (overwriting) {
+                    // Do NOT delete pageToSave here: on the overwrite path pageToSave.uuid is the
+                    // PRE-EXISTING page's UUID (reused above), not a newly-created row. Its blocks
+                    // were already cleared by deleteBlocksForPage before this write was attempted,
+                    // so deleting the page too would make a real, previously-imported page vanish
+                    // entirely rather than just lose its latest content — strictly worse than
+                    // leaving a blocks-empty page behind. Surface a distinct error instead so the
+                    // caller/UI can tell the user their previous content may be affected.
+                    // ponytail: a full pre-image restore (snapshot blocksToSave's pre-overwrite
+                    // state before deleteBlocksForPage and re-save it here on failure) would make
+                    // this fully lossless, but is deferred as future hardening — out of scope for
+                    // this fix.
+                    return DomainError.QrTransferError
+                        .OverwriteFailedPreviousContentAffected(pageToSave.uuid.value)
+                        .left()
+                }
+                // New page (not overwriting): pageToSave.uuid is a freshly-created row — nothing
+                // pre-existed, so deleting it is a clean compensating rollback, not data loss.
                 writeActor.deletePage(pageToSave.uuid)
                 return err.left()
             },
