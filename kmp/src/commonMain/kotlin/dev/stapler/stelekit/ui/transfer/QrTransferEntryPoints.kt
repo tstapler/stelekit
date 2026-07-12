@@ -3,6 +3,7 @@ package dev.stapler.stelekit.ui.transfer
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import dev.stapler.stelekit.transfer.qrcode.QrTransferSettings
 
 /**
@@ -16,11 +17,13 @@ import dev.stapler.stelekit.transfer.qrcode.QrTransferSettings
 fun SendViaQrMenuItem(
     settings: QrTransferSettings,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     if (!settings.enabled) return
     DropdownMenuItem(
         text = { Text("📷  Send via QR") },
         onClick = onClick,
+        modifier = modifier,
     )
 }
 
@@ -35,10 +38,12 @@ fun SendViaQrMenuItem(
 fun ImportViaCameraMenuItem(
     settings: QrTransferSettings,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     if (!settings.enabled) return
     DropdownMenuItem(
         text = { Text("📷  Import via camera") },
         onClick = onClick,
+        modifier = modifier,
     )
 }

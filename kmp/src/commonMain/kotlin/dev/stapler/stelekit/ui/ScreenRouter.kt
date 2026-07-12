@@ -267,31 +267,39 @@ internal fun ScreenRouter(
                     qrTransferSettings = qrTransferSettings,
                     onImportViaCamera = { showQrDecodeScreen = true },
                 )
-                if (showQrDecodeScreen && qrTransferSettings != null && graphLoader != null && writeActor != null) {
-                    val qrDecodeViewModel = remember(graphPath) {
-                        QrDecodeViewModel(
-                            cameraFrameSource = SensorModule.cameraFrameSource,
-                            qrImportService = QrImportService(
-                                graphLoader = graphLoader,
-                                pageRepository = repos.pageRepository,
-                                writeActor = writeActor,
-                            ),
-                            settings = qrTransferSettings,
-                        )
-                    }
-                    DisposableEffect(qrDecodeViewModel) {
-                        onDispose { qrDecodeViewModel.close() }
-                    }
-                    Dialog(
-                        onDismissRequest = { showQrDecodeScreen = false },
-                        properties = DialogProperties(usePlatformDefaultWidth = false),
-                    ) {
-                        QrDecodeScreen(
-                            viewModel = qrDecodeViewModel,
-                            settings = qrTransferSettings,
-                            onDismiss = { showQrDecodeScreen = false },
-                            modifier = Modifier.fillMaxSize(),
-                        )
+                // Split into two conditions (each under detekt's complexity threshold) rather than
+                // one 4-term && chain — local vals preserve Kotlin's smart-cast to non-null inside
+                // the inner block, which QrImportService/QrDecodeScreen below depend on.
+                if (showQrDecodeScreen) {
+                    val settings = qrTransferSettings
+                    val loader = graphLoader
+                    val actor = writeActor
+                    if (settings != null && loader != null && actor != null) {
+                        val qrDecodeViewModel = remember(graphPath) {
+                            QrDecodeViewModel(
+                                cameraFrameSource = SensorModule.cameraFrameSource,
+                                qrImportService = QrImportService(
+                                    graphLoader = loader,
+                                    pageRepository = repos.pageRepository,
+                                    writeActor = actor,
+                                ),
+                                settings = settings,
+                            )
+                        }
+                        DisposableEffect(qrDecodeViewModel) {
+                            onDispose { qrDecodeViewModel.close() }
+                        }
+                        Dialog(
+                            onDismissRequest = { showQrDecodeScreen = false },
+                            properties = DialogProperties(usePlatformDefaultWidth = false),
+                        ) {
+                            QrDecodeScreen(
+                                viewModel = qrDecodeViewModel,
+                                settings = settings,
+                                onDismiss = { showQrDecodeScreen = false },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
                     }
                 }
             }

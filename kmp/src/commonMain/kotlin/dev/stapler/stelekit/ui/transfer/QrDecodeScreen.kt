@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -29,8 +30,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -247,7 +250,7 @@ private fun PreflightFailedContent(
 }
 
 @Composable
-private fun ScanningContent(
+private fun ColumnScope.ScanningContent(
     state: QrDecodeUiState.Scanning,
     settings: QrTransferSettings,
     onHapticTick: () -> Unit,
@@ -256,14 +259,19 @@ private fun ScanningContent(
     var explainerDismissed by remember { mutableStateOf(settings.seenDecoderExplainer) }
     var fatigueTipDismissed by remember { mutableStateOf(false) }
     var fatigueTipVisible by remember { mutableStateOf(false) }
-    var lastTickedFragments by remember { mutableStateOf(0) }
+    var lastTickedFragments by remember { mutableIntStateOf(0) }
+
+    // rememberUpdatedState so this effect only restarts when state.uniqueFragments changes (its
+    // key) — never when onHapticTick's lambda identity changes across recompositions, which
+    // would otherwise fire the tick logic again for the same fragment count.
+    val currentOnHapticTick by rememberUpdatedState(onHapticTick)
 
     // Haptic tick is purely additive (Story 3.2.3 binding AC) — the text line below always
     // renders the fragment count regardless of whether this effect ever fires.
     LaunchedEffect(state.uniqueFragments) {
         if (state.uniqueFragments > lastTickedFragments) {
             lastTickedFragments = state.uniqueFragments
-            onHapticTick()
+            currentOnHapticTick()
         }
     }
 

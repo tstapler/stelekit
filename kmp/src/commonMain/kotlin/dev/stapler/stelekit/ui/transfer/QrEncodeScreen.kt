@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -164,7 +165,7 @@ private fun failedMessage(failed: QrEncodeUiState.Failed): String {
 }
 
 @Composable
-private fun DisplayingContent(
+private fun ColumnScope.DisplayingContent(
     state: QrEncodeUiState.Displaying,
     pageName: String,
     blockCount: Int,

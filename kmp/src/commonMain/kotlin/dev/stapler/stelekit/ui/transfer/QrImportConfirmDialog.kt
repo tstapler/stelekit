@@ -59,6 +59,7 @@ fun QrImportConfirmDialog(
             Text(
                 "A page named \"$existingName\" already exists.",
                 style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
