@@ -1,8 +1,10 @@
 package dev.stapler.stelekit.ui.transfer
 
+import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.model.PageName
+import dev.stapler.stelekit.platform.sensor.CameraFrame
 import dev.stapler.stelekit.platform.sensor.CameraFrameSource
 import dev.stapler.stelekit.transfer.TransferId
 import dev.stapler.stelekit.transfer.qrcode.CoordinatorEvent
@@ -16,15 +18,57 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
 import kotlin.time.Instant
 
 /** S11 collision-resolution prompt, surfaced mid-[QrDecodeUiState.Importing] (Story 3.2.4). */
 data class CollisionPrompt(val existingName: PageName, val proposedName: PageName)
+
+/**
+ * Wraps [delegate] so [frameStream] returns ONE shared, hot subscription instead of a fresh cold
+ * collection per caller (Gate 2 BLOCKER B1 fix). [QrTransferCoordinator] collects TWO
+ * collaborators built from the same [CameraFrameSource] concurrently — [QrFrameTransport] (data
+ * path, via [FrameTransportReceiver.frames]) and [QrScanner.bind] (diagnostics path, via
+ * [QrScanner.frameStream]). Without sharing, `AndroidCameraFrameSource.frameStream()`'s cold
+ * `callbackFlow` — whose `bind()` calls `unbindAll(); bindToLifecycle(...)` on every collection —
+ * would run TWICE concurrently and CameraX would silently tear down whichever bound first,
+ * breaking every real Android receive session.
+ *
+ * `replay = 0` + `WhileSubscribed(replayExpirationMillis = 0)`: neither consumer needs a replayed
+ * frame (both attach in the same tick, from [QrTransferCoordinator.start]), and the underlying
+ * camera binding must tear down the instant both consumers unsubscribe (session end/cancel), not
+ * linger holding the camera open.
+ *
+ * CRITICAL: owns its [CoroutineScope] internally (CLAUDE.md scope-ownership) rather than accepting
+ * the outer [QrDecodeViewModel]'s scope — a constructor-parameter default value cannot reference a
+ * sibling property declared later in the class body (Kotlin forward-reference restriction), and a
+ * fresh short-lived scope per session is correct anyway: `WhileSubscribed` already tears the
+ * upstream camera collection down the instant both consumers detach, so this scope's `Job` never
+ * has live children once a session ends and becomes collectible with the rest of the session's
+ * object graph.
+ */
+private class SharedCameraFrameSource(private val delegate: CameraFrameSource) : CameraFrameSource {
+    override val isAvailable: Boolean get() = delegate.isAvailable
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private val shared: SharedFlow<Either<DomainError.SensorError, CameraFrame>> =
+        delegate.frameStream().shareIn(
+            scope = scope,
+            started = SharingStarted.WhileSubscribed(replayExpirationMillis = 0),
+            replay = 0,
+        )
+
+    override fun frameStream(): Flow<Either<DomainError.SensorError, CameraFrame>> = shared
+}
 
 /**
  * Owns scope + UI-state ONLY for the QR receiver (Story 3.2.2, SRP split). Delegates the entire
@@ -46,16 +90,20 @@ class QrDecodeViewModel(
     private val settings: QrTransferSettings,
     /** Builds the coordinator for one receive session — overridden in tests with fake collaborators. */
     private val coordinatorFactory: () -> QrTransferCoordinator = {
+        // BLOCKER B1 fix: wrap ONCE per session so QrFrameTransport (data path) and QrScanner.bind
+        // (diagnostics path) below share one hot camera-frame subscription instead of each calling
+        // cameraFrameSource.frameStream() independently — see SharedCameraFrameSource KDoc.
+        val sharedCameraFrameSource = SharedCameraFrameSource(cameraFrameSource)
         QrTransferCoordinator(
             frameTransportReceiver = QrFrameTransport(
                 transferId = TransferId(0), // unused on the receive path — QrFrameTransport.frames() ignores it.
-                cameraFrameSource = cameraFrameSource,
+                cameraFrameSource = sharedCameraFrameSource,
                 maxFragmentBytes = settings.maxFragmentBytes,
             ),
             qrImportService = qrImportService,
             // Bug 3 fix: bound outside the coordinator and passed in fully-formed — the
             // coordinator itself never holds a raw CameraFrameSource collaborator.
-            qrScanner = QrScanner.bind(cameraFrameSource),
+            qrScanner = QrScanner.bind(sharedCameraFrameSource),
         )
     },
     /** Injected so tests can assert on emitted lines via [dev.stapler.stelekit.logging.LogManager.logs] (Story 3.3.3). */

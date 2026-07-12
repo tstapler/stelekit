@@ -161,9 +161,15 @@ class QrTransferCoordinator(
     // both run on Dispatchers.Default and may land on different threads (Story 3.3.2 stall hint).
     @Volatile private var session: TransferSession? = null
     @Volatile private var currentHint: ScanHint? = null
-    private var collisionChannel: Channel<QrImportService.CollisionChoice?>? = null
-    private var dataJob: Job? = null
-    private var diagnosticsJob: Job? = null
+
+    // CRITICAL C4 fix: written inside proceedToImport (the data-path coroutine, Dispatchers.Default)
+    // and read from resolveCollision()/cancel(), which QrDecodeViewModel calls SYNCHRONOUSLY from
+    // the UI thread (not via scope.launch) — a stale/null read here silently drops the user's
+    // collision choice and hangs the coordinator forever on channel.receive(). Same cross-thread
+    // hazard as session/currentHint above.
+    @Volatile private var collisionChannel: Channel<QrImportService.CollisionChoice?>? = null
+    @Volatile private var dataJob: Job? = null
+    @Volatile private var diagnosticsJob: Job? = null
 
     /**
      * Begins collecting frames on both paths. No-op if already started.

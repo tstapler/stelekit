@@ -20,11 +20,13 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
 /**
@@ -330,6 +332,99 @@ class QrTransferCoordinatorTest {
 
         val saved = pageRepo.getPageByName("Permission Denied Page").first().getOrNull()
         assertNull(saved, "no write must occur when the pre-flight camera stream reports PermissionDenied")
+
+        coordinator.close()
+    }
+
+    /**
+     * CRITICAL C4 + MAJOR M5 coverage: drives a REAL name collision through the coordinator (not
+     * just the UI-level dialog, which `QrImportConfirmDialogTest` already covers) and resolves it
+     * via [QrTransferCoordinator.resolveCollision] called from a dispatcher OTHER than the
+     * coordinator's own internal `Dispatchers.Default` scope — the actual cross-thread rendezvous
+     * [QrTransferCoordinator]'s `collisionChannel`/`dataJob`/`diagnosticsJob` `@Volatile` fields
+     * guard against a stale/null read hanging the coordinator forever (mirrors how
+     * `QrDecodeViewModel.resolveCollision` calls this SYNCHRONOUSLY from the UI thread, not via
+     * `scope.launch`).
+     */
+    @Test
+    fun resolveCollision_should_WriteDisambiguatedNameAndReachSuccess_When_CollisionDetectedAndKeepBothChosenFromDifferentDispatcher() = runBlocking {
+        val (importService, pageRepo) = buildImportService()
+        val seeded = importService.import("- pre-existing content\n", PageName("Collision Page"))
+        assertTrue(seeded.isRight(), "fixture setup: seeding the pre-existing page must succeed")
+
+        val markdown = "- incoming collision page body with enough content for several fountain chunks\n"
+        val envelopeBytes = TransferPayloadEnvelope.wrap(PageName("Collision Page"), markdown)
+        val encoder = FountainCodec.encoder(TransferId(501), envelopeBytes, maxFragmentBytes = 12).getOrNull()!!
+
+        val coordinator = QrTransferCoordinator(
+            frameTransportReceiver = fakeReceiver(encoder),
+            qrImportService = importService,
+        )
+
+        coordinator.start()
+
+        val collision = withTimeout(5_000) {
+            coordinator.events.first { it is CoordinatorEvent.CollisionDetected }
+        } as CoordinatorEvent.CollisionDetected
+        assertEquals("Collision Page", collision.existingName.value)
+        assertEquals("Collision Page", collision.proposedName.value)
+
+        // No write yet — the coordinator must not import while a collision is pending (S11).
+        val beforeResolve = pageRepo.getPageByName("Collision Page (2)").first().getOrNull()
+        assertNull(beforeResolve, "no disambiguated write must exist before resolveCollision() is called")
+
+        // Resolve from a dispatcher distinct from the coordinator's own Dispatchers.Default scope
+        // — exercises the actual cross-thread read this test's KDoc describes.
+        withContext(Dispatchers.IO) {
+            coordinator.resolveCollision(QrImportService.CollisionChoice.KEEP_BOTH)
+        }
+
+        val terminal = collectUntilTerminal(coordinator)
+        val success = assertIs<CoordinatorEvent.Success>(terminal.last())
+        assertEquals("Collision Page (2)", success.pageName.value, "KEEP_BOTH must disambiguate rather than overwrite")
+
+        val disambiguated = pageRepo.getPageByName("Collision Page (2)").first().getOrNull()
+        assertTrue(disambiguated != null, "the disambiguated page must be written after resolveCollision()")
+        val original = pageRepo.getPageByName("Collision Page").first().getOrNull()
+        assertTrue(original != null, "the original page must be untouched by a KEEP_BOTH resolution")
+
+        coordinator.close()
+    }
+
+    /**
+     * Coordinator's own [QrTransferCoordinator.cancel] KDoc: "If a [CoordinatorEvent.CollisionDetected]
+     * is pending, the import is aborted (`null` sent on the collision channel) rather than
+     * defaulting to a write. No write occurs after this call." — this test exercises exactly that
+     * documented contract, which had zero coverage before this fix (MAJOR M5).
+     */
+    @Test
+    fun cancel_should_AbortWithNoWrite_When_CalledWhileCollisionDetectedIsPending() = runBlocking {
+        val (importService, pageRepo) = buildImportService()
+        val seeded = importService.import("- pre-existing content\n", PageName("Collision Cancel Page"))
+        assertTrue(seeded.isRight(), "fixture setup: seeding the pre-existing page must succeed")
+
+        val markdown = "- incoming collision-cancel page body with enough content for several fountain chunks\n"
+        val envelopeBytes = TransferPayloadEnvelope.wrap(PageName("Collision Cancel Page"), markdown)
+        val encoder = FountainCodec.encoder(TransferId(502), envelopeBytes, maxFragmentBytes = 12).getOrNull()!!
+
+        val coordinator = QrTransferCoordinator(
+            frameTransportReceiver = fakeReceiver(encoder),
+            qrImportService = importService,
+        )
+
+        coordinator.start()
+
+        withTimeout(5_000) { coordinator.events.first { it is CoordinatorEvent.CollisionDetected } }
+
+        coordinator.cancel()
+
+        val terminal = withTimeout(5_000) { coordinator.events.first { it is CoordinatorEvent.Cancelled } }
+        assertIs<CoordinatorEvent.Cancelled>(terminal)
+
+        val disambiguated = pageRepo.getPageByName("Collision Cancel Page (2)").first().getOrNull()
+        assertNull(disambiguated, "cancel() during a pending collision must never write a disambiguated page")
+        val original = pageRepo.getPageByName("Collision Cancel Page").first().getOrNull()
+        assertTrue(original != null, "the pre-existing page must remain untouched by an aborted collision")
 
         coordinator.close()
     }

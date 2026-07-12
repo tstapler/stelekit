@@ -167,7 +167,11 @@ private class ProcessCameraProviderBinder(private val context: Context) : Camera
         // Use fully-qualified class to avoid the Glance bindToLifecycle extension clash
         // (matches AndroidCameraProvider.capturePhoto).
         val lifecycleOwner = androidx.lifecycle.ProcessLifecycleOwner.get()
-        provider.unbindAll()
+        // MAJOR M1 fix: no unbindAll() here — mirrors AndroidCameraPreviewBinder's own KDoc/
+        // pattern (see its class KDoc): this must compose with a concurrently-bound Preview use
+        // case from AndroidCameraPreviewBinder, not tear it down. Only this class's own
+        // ImageAnalysis use case is tracked and unbound (via CameraXBinder.unbind), symmetric with
+        // how AndroidCameraPreviewBinder.unbind only unbinds its own Preview.
         provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, imageAnalysis)
         return imageAnalysis
     }
