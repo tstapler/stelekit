@@ -3,6 +3,7 @@ package dev.stapler.stelekit.ui.transfer
 import dev.stapler.stelekit.db.LogseqPageSerializer
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.logging.Logger
+import dev.stapler.stelekit.model.PageName
 import dev.stapler.stelekit.model.PageUuid
 import dev.stapler.stelekit.platform.sensor.CameraFrameSource
 import dev.stapler.stelekit.platform.sensor.NoOpCameraFrameSource
@@ -13,6 +14,7 @@ import dev.stapler.stelekit.transfer.qrcode.FountainEncoder
 import dev.stapler.stelekit.transfer.qrcode.QrFrameTransport
 import dev.stapler.stelekit.transfer.qrcode.QrMatrix
 import dev.stapler.stelekit.transfer.qrcode.QrTransferSettings
+import dev.stapler.stelekit.transfer.qrcode.TransferPayloadEnvelope
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -109,7 +111,12 @@ class QrEncodeViewModel(
                 return@launch
             }
             val blocks = blockRepository.getBlocksForPage(pageUuid).first().getOrNull().orEmpty()
-            val payload = LogseqPageSerializer.serialize(page, blocks).encodeToByteArray()
+            val markdown = LogseqPageSerializer.serialize(page, blocks)
+            // Wrap with the real page name (TransferPayloadEnvelope) before it ever reaches
+            // FountainEncoder — LogseqPageSerializer.serialize never embeds a title (Logseq derives
+            // it from the filename, not file content), so without this the receiver has no way to
+            // know what this page was actually called.
+            val payload = TransferPayloadEnvelope.wrap(PageName(page.name), markdown)
 
             // Pre-flight PayloadTooLarge gate (UX gap G1): fails before any frame is ever
             // displayed — mirrors FountainEncoder's own guard without driving real chunking.

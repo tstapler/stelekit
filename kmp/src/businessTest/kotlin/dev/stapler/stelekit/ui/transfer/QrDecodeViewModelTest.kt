@@ -16,12 +16,15 @@ import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
 import dev.stapler.stelekit.transfer.FrameTransportReceiver
 import dev.stapler.stelekit.transfer.TransferId
+import dev.stapler.stelekit.model.PageName
 import dev.stapler.stelekit.transfer.qrcode.ChunkFrameCodec
 import dev.stapler.stelekit.transfer.qrcode.FountainCodec
 import dev.stapler.stelekit.transfer.qrcode.QrImportService
 import dev.stapler.stelekit.transfer.qrcode.QrTransferCoordinator
 import dev.stapler.stelekit.transfer.qrcode.QrTransferSettings
+import dev.stapler.stelekit.transfer.qrcode.TransferPayloadEnvelope
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.Flow
@@ -171,11 +174,10 @@ class QrDecodeViewModelTest {
             cameraFrameSource = cameraSource,
             qrImportService = buildImportService(),
             settings = QrTransferSettings(MapSettings()),
-            coordinatorFactory = { name ->
+            coordinatorFactory = {
                 QrTransferCoordinator(
                     frameTransportReceiver = oomReceiver,
                     qrImportService = buildImportService(),
-                    targetName = name,
                 )
             },
         )
@@ -202,7 +204,8 @@ class QrDecodeViewModelTest {
         // structured-logger convention — see GraphWriterTest — not a new logging abstraction).
         LogManager.clearLogs()
         val markdown = "- receive-completes page body with enough content for several fountain chunks\n"
-        val encoder = FountainCodec.encoder(TransferId(77), markdown.encodeToByteArray(), maxFragmentBytes = 12).getOrNull()!!
+        val envelopeBytes = TransferPayloadEnvelope.wrap(PageName("Receive Completes Page"), markdown)
+        val encoder = FountainCodec.encoder(TransferId(77), envelopeBytes, maxFragmentBytes = 12).getOrNull()!!
         val cameraSource = AvailableNoFramesCameraSource()
         val importService = buildImportService()
 
@@ -210,11 +213,10 @@ class QrDecodeViewModelTest {
             cameraFrameSource = cameraSource,
             qrImportService = importService,
             settings = QrTransferSettings(MapSettings()),
-            coordinatorFactory = { name ->
+            coordinatorFactory = {
                 QrTransferCoordinator(
                     frameTransportReceiver = fakeReceiver(encoder),
                     qrImportService = importService,
-                    targetName = name,
                 )
             },
             logger = Logger("QrDecodeViewModel"),
@@ -228,7 +230,8 @@ class QrDecodeViewModelTest {
             }
             s
         }
-        assertIs<QrDecodeUiState.Success>(success)
+        val successState = assertIs<QrDecodeUiState.Success>(success)
+        assertEquals("Receive Completes Page", successState.pageName.value, "the real decoded page name must be used, not a synthesized placeholder")
 
         val logs = LogManager.logs.value.filter { it.tag == "QrDecodeViewModel" }
         val startedLog = logs.firstOrNull { it.message.contains("qr_transfer_started") }

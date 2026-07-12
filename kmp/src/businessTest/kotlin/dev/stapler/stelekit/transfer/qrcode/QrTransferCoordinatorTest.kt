@@ -114,21 +114,22 @@ class QrTransferCoordinatorTest {
     @Test
     fun start_should_TransitionScanningReassemblingImportingSuccess_When_StreamDeliversEnoughPartsForPageBody() = runBlocking {
         val markdown = "- page body\n"
-        val encoder = FountainCodec.encoder(TransferId(42), markdown.encodeToByteArray(), maxFragmentBytes = 12).getOrNull()!!
+        val envelopeBytes = TransferPayloadEnvelope.wrap(PageName("Page Body Page"), markdown)
+        val encoder = FountainCodec.encoder(TransferId(42), envelopeBytes, maxFragmentBytes = 12).getOrNull()!!
         val (importService, pageRepo) = buildImportService()
 
         val coordinator = QrTransferCoordinator(
             frameTransportReceiver = fakeReceiver(encoder),
             qrImportService = importService,
-            targetName = PageName("Page Body Page"),
         )
 
         // Nothing written before Success — QrImportService is invoked only after reassemble()
-        // yields Right(VerifiedTransferPayload).
+        // yields Right(VerifiedTransferPayload) AND TransferPayloadEnvelope.unwrap() yields Right.
         coordinator.start()
 
         val events = collectUntilTerminal(coordinator)
         val successEvent = assertIs<CoordinatorEvent.Success>(events.last())
+        assertEquals("Page Body Page", successEvent.pageName.value, "the real decoded page name must be used, not a synthesized placeholder")
         assertTrue(events.any { it is CoordinatorEvent.Reassembling }, "expected a Reassembling event, got $events")
         assertTrue(events.any { it is CoordinatorEvent.Importing }, "expected an Importing event, got $events")
 
@@ -141,13 +142,13 @@ class QrTransferCoordinatorTest {
     @Test
     fun coordinator_should_ReconstructPayloadAndDeriveWrongCodeHint_When_UsingFakeFrameTransportReceiverAndFakeQrScanner() = runBlocking {
         val markdown = "- another page body with enough content to need several fountain chunks\n"
-        val encoder = FountainCodec.encoder(TransferId(7), markdown.encodeToByteArray(), maxFragmentBytes = 12).getOrNull()!!
+        val envelopeBytes = TransferPayloadEnvelope.wrap(PageName("Wrong Code Page"), markdown)
+        val encoder = FountainCodec.encoder(TransferId(7), envelopeBytes, maxFragmentBytes = 12).getOrNull()!!
         val (importService, _) = buildImportService()
 
         val coordinator = QrTransferCoordinator(
             frameTransportReceiver = fakeReceiver(encoder),
             qrImportService = importService,
-            targetName = PageName("Wrong Code Page"),
             // Fake diagnostics scanner: ALWAYS reports a foreign QR, regardless of the real frame
             // content — its output must never feed ChunkBuffer, only the hint.
             qrScanner = fakeQrScanner(ScanResult.NotSteleKitCode),
@@ -182,7 +183,6 @@ class QrTransferCoordinatorTest {
         val coordinator = QrTransferCoordinator(
             frameTransportReceiver = neverEmittingReceiver,
             qrImportService = importService,
-            targetName = PageName("Cancelled Page"),
         )
 
         coordinator.start()
@@ -191,7 +191,7 @@ class QrTransferCoordinatorTest {
         val state = withTimeout(5_000) { coordinator.events.first { it is CoordinatorEvent.Cancelled } }
         assertIs<CoordinatorEvent.Cancelled>(state)
         val saved = pageRepo.getPageByName("Cancelled Page").first().getOrNull()
-        assertNull(saved, "no write must occur after cancel()")
+        assertNull(saved, "no write must occur after cancel() (nothing was ever written under this name)")
 
         coordinator.close()
     }
@@ -208,7 +208,8 @@ class QrTransferCoordinatorTest {
         // Channel and waits for the coordinator's own event confirming each frame was actually
         // processed before sending the next one — deterministic by construction, not by luck.
         val activeMarkdown = "- active session page body with enough content for several fountain chunks\n"
-        val activeEncoder = FountainCodec.encoder(TransferId(7), activeMarkdown.encodeToByteArray(), maxFragmentBytes = 12).getOrNull()!!
+        val activeEnvelopeBytes = TransferPayloadEnvelope.wrap(PageName("Concurrent Sender Page"), activeMarkdown)
+        val activeEncoder = FountainCodec.encoder(TransferId(7), activeEnvelopeBytes, maxFragmentBytes = 12).getOrNull()!!
         val foreignEncoder = FountainCodec.encoder(TransferId(9), "- foreign".encodeToByteArray(), maxFragmentBytes = 12).getOrNull()!!
         val (importService, pageRepo) = buildImportService()
 
@@ -232,7 +233,6 @@ class QrTransferCoordinatorTest {
         val coordinator = QrTransferCoordinator(
             frameTransportReceiver = pumpedReceiver,
             qrImportService = importService,
-            targetName = PageName("Concurrent Sender Page"),
         )
 
         coordinator.start()
@@ -283,7 +283,6 @@ class QrTransferCoordinatorTest {
         val coordinator = QrTransferCoordinator(
             frameTransportReceiver = oversizedReceiver,
             qrImportService = importService,
-            targetName = PageName("Oversized Sender Page"),
             maxPayloadBytes = maxPayloadBytes,
         )
 
@@ -318,7 +317,6 @@ class QrTransferCoordinatorTest {
         val coordinator = QrTransferCoordinator(
             frameTransportReceiver = neverEmittingReceiver,
             qrImportService = importService,
-            targetName = PageName("Permission Denied Page"),
             qrScanner = deniedQrScanner,
         )
 

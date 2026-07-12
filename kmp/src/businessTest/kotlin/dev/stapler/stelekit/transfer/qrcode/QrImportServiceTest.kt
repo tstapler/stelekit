@@ -12,7 +12,6 @@ import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.repository.BlockRepository
 import dev.stapler.stelekit.repository.InMemoryBlockRepository
 import dev.stapler.stelekit.repository.InMemoryPageRepository
-import dev.stapler.stelekit.transfer.TransferId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -21,10 +20,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
 /**
- * Story 3.2.1 acceptance criteria: [QrImportService] accepts only a proof-gated
- * [VerifiedTransferPayload] (never a raw [String]), parses via [GraphLoader.importMarkdownString],
- * and writes via [DatabaseWriteActor] typed methods only — with mandatory compensating rollback
- * when `saveBlocks` fails after `savePage` succeeds.
+ * Story 3.2.1 acceptance criteria: [QrImportService] parses [import]'s `markdown` via
+ * [GraphLoader.importMarkdownString] and writes via [DatabaseWriteActor] typed methods only — with
+ * mandatory compensating rollback when `saveBlocks` fails after `savePage` succeeds. `markdown` is
+ * a plain [String], not a [VerifiedTransferPayload]: the CRC32 proof gate + envelope unwrap
+ * ([TransferPayloadEnvelope]) both already ran, one layer up in [QrTransferCoordinator], before
+ * [QrImportService]'s only production caller ever calls [import] — see [QrImportService]'s own
+ * class KDoc for why this service can't accept a [VerifiedTransferPayload] here without either
+ * weakening its `internal` constructor invariant or re-minting a second one.
  */
 class QrImportServiceTest {
 
@@ -67,24 +70,11 @@ class QrImportServiceTest {
         return Triple(service, pageRepo, actor)
     }
 
-    /** Constructs a real [VerifiedTransferPayload] through the sanctioned proof-gate path (no `internal` access needed). */
-    private fun verifiedPayload(markdown: String, maxFragmentBytes: Int = 64): VerifiedTransferPayload {
-        val bytes = markdown.encodeToByteArray()
-        val encoder = FountainCodec.encoder(TransferId(1), bytes, maxFragmentBytes).getOrNull()!!
-        val buffer = FountainCodec.decoder()
-        for (chunk in encoder.parts()) {
-            buffer.accept(chunk)
-            if (buffer.isComplete()) break
-        }
-        return buffer.reassemble().getOrNull()!!
-    }
-
     @Test
-    fun import_should_ReturnRightPageName_When_NoCollisionAndValidVerifiedTransferPayload() = runBlocking {
+    fun import_should_ReturnRightPageName_When_NoCollisionAndValidMarkdown() = runBlocking {
         val (service, pageRepo, _) = buildService()
-        val payload = verifiedPayload("- root block\n\t- child block\n")
 
-        val result = service.import(payload, PageName("Meeting Notes"))
+        val result = service.import("- root block\n\t- child block\n", PageName("Meeting Notes"))
 
         assertTrue(result.isRight())
         assertEquals("Meeting Notes", result.getOrNull()?.value)
@@ -93,15 +83,13 @@ class QrImportServiceTest {
     }
 
     @Test
-    fun import_should_ReturnMarkdownParseFailed_When_ChecksumValidButOutlinerPipelineCannotParse() = runBlocking {
-        // Checksum-valid (it passed the CRC32 proof gate to even become a VerifiedTransferPayload)
-        // but the block content contains a null byte, which Block's own Validation.validateContent
-        // rejects during GraphLoader.importMarkdownString's block-construction tail. Caught there and
-        // surfaced as a distinct terminal Left — never treated as success.
+    fun import_should_ReturnMarkdownParseFailed_When_OutlinerPipelineCannotParse() = runBlocking {
+        // The block content contains a null byte, which Block's own Validation.validateContent
+        // rejects during GraphLoader.importMarkdownString's block-construction tail. Caught there
+        // and surfaced as a distinct terminal Left — never treated as success.
         val (service, _, _) = buildService()
-        val payload = verifiedPayload("- bad\u0000content\n")
 
-        val result = service.import(payload, PageName("Bad Content Page"))
+        val result = service.import("- bad\u0000content\n", PageName("Bad Content Page"))
 
         assertTrue(result.isLeft())
         val error = result.leftOrNull()
@@ -116,9 +104,8 @@ class QrImportServiceTest {
         // A page name containing a directory-traversal segment fails Page's own
         // Validation.validateName before any write occurs — never used to construct a raw path.
         val (service, _, _) = buildService()
-        val payload = verifiedPayload("- some content\n")
 
-        val result = service.import(payload, PageName("../etc"))
+        val result = service.import("- some content\n", PageName("../etc"))
 
         assertTrue(result.isLeft())
     }
@@ -127,9 +114,8 @@ class QrImportServiceTest {
     fun import_should_DeleteOrphanedPage_When_SaveBlocksFailsAfterSavePageSucceeds() = runBlocking {
         val innerBlockRepo = InMemoryBlockRepository()
         val (service, pageRepo, _) = buildService(blockRepository = FailingSaveBlocksRepository(innerBlockRepo))
-        val payload = verifiedPayload("- root block\n\t- child block\n")
 
-        val result = service.import(payload, PageName("Orphan Test"))
+        val result = service.import("- root block\n\t- child block\n", PageName("Orphan Test"))
 
         assertTrue(result.isLeft())
         // No orphaned zero-block page survives — savePage's write was rolled back.
@@ -143,9 +129,8 @@ class QrImportServiceTest {
         // is validated/normalized and never used to construct a raw filesystem path; the only sink
         // is a DB row via DatabaseWriteActor.
         val (service, pageRepo, _) = buildService()
-        val payload = verifiedPayload("- content\n")
 
-        val result = service.import(payload, PageName("/etc/passwd"))
+        val result = service.import("- content\n", PageName("/etc/passwd"))
 
         // Validation.validateName does not reject a bare leading slash (only ".." segments and
         // backslashes) — the name is stored as a DB row value, never as a raw file path, so this
@@ -159,11 +144,11 @@ class QrImportServiceTest {
     @Test
     fun import_should_DisambiguateName_When_CollisionAndKeepBothChosen() = runBlocking {
         val (service, _, _) = buildService()
-        val first = service.import(verifiedPayload("- v1\n"), PageName("Duplicate"))
+        val first = service.import("- v1\n", PageName("Duplicate"))
         assertTrue(first.isRight())
 
         val second = service.import(
-            verifiedPayload("- v2\n", maxFragmentBytes = 32),
+            "- v2\n",
             PageName("Duplicate"),
             QrImportService.CollisionChoice.KEEP_BOTH,
         )
@@ -175,12 +160,12 @@ class QrImportServiceTest {
     @Test
     fun import_should_ReplaceExistingPage_When_CollisionAndOverwriteChosen() = runBlocking {
         val (service, pageRepo, _) = buildService()
-        val first = service.import(verifiedPayload("- v1\n"), PageName("Overwrite Me"))
+        val first = service.import("- v1\n", PageName("Overwrite Me"))
         assertTrue(first.isRight())
         val firstUuid = pageRepo.getPageByName("Overwrite Me").first().getOrNull()?.uuid
 
         val second = service.import(
-            verifiedPayload("- v2 new content\n", maxFragmentBytes = 32),
+            "- v2 new content\n",
             PageName("Overwrite Me"),
             QrImportService.CollisionChoice.OVERWRITE,
         )

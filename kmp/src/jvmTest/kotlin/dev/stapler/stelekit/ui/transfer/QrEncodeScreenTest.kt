@@ -39,11 +39,15 @@ class QrEncodeScreenTest {
     }
 
     /**
-     * Seeds a page whose serialized markdown is exactly 2048 bytes ("- " + 2045 'x' chars + "\n"),
-     * so with `maxFragmentBytes = 171` the pre-flight estimate is exactly 12 frames — reproducing
-     * validation.md's exact fixture copy "Meeting Notes · 5 blocks · ~2 KB · ~12 frames". `pageName`
-     * ("Meeting Notes") and `blockCount` (5) are supplied directly to the screen as caller params
-     * (decoupled from the actual fixture block count, per QrEncodeScreen's documented contract).
+     * Seeds a page whose serialized markdown is exactly 2032 bytes ("- " + 2029 'x' chars + "\n").
+     * `QrEncodeViewModel.start` wraps that with [dev.stapler.stelekit.transfer.qrcode.TransferPayloadEnvelope]
+     * before it ever reaches `FountainEncoder` — for page name "Meeting Notes" (13 UTF-8 bytes) the
+     * envelope header adds exactly 16 bytes ("13\n" + the name itself), landing the wrapped payload
+     * back at exactly 2048 bytes, so with `maxFragmentBytes = 171` the pre-flight estimate is still
+     * exactly 12 frames — reproducing validation.md's exact fixture copy "Meeting Notes · 5 blocks ·
+     * ~2 KB · ~12 frames". `pageName` ("Meeting Notes") and `blockCount` (5) are supplied directly
+     * to the screen as caller params (decoupled from the actual fixture block count, per
+     * QrEncodeScreen's documented contract).
      */
     private fun buildViewModel(): Pair<QrEncodeViewModel, PageUuid> {
         val now = Clock.System.now()
@@ -57,7 +61,7 @@ class QrEncodeScreenTest {
                 Block(
                     uuid = BlockUuid("00000000-0000-0000-0000-000000000010"),
                     pageUuid = pageUuid,
-                    content = "x".repeat(2045),
+                    content = "x".repeat(2029),
                     level = 0,
                     position = "a0",
                     parentUuid = null,

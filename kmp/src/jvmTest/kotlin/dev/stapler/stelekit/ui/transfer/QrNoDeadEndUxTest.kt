@@ -156,11 +156,10 @@ class QrNoDeadEndUxTest {
             cameraFrameSource = neverAvailableCameraSource(),
             qrImportService = importService,
             settings = QrTransferSettings(MapSettings()),
-            coordinatorFactory = { name ->
+            coordinatorFactory = {
                 QrTransferCoordinator(
                     frameTransportReceiver = throwingReceiver,
                     qrImportService = importService,
-                    targetName = name,
                     qrScanner = noOpQrScanner(),
                 )
             },
@@ -196,11 +195,10 @@ class QrNoDeadEndUxTest {
             cameraFrameSource = neverAvailableCameraSource(),
             qrImportService = importService,
             settings = QrTransferSettings(MapSettings()),
-            coordinatorFactory = { name ->
+            coordinatorFactory = {
                 QrTransferCoordinator(
                     frameTransportReceiver = receiver,
                     qrImportService = importService,
-                    targetName = name,
                     qrScanner = noOpQrScanner(),
                 )
             },
@@ -231,11 +229,10 @@ class QrNoDeadEndUxTest {
             cameraFrameSource = neverAvailableCameraSource(),
             qrImportService = importService,
             settings = QrTransferSettings(MapSettings()),
-            coordinatorFactory = { name ->
+            coordinatorFactory = {
                 QrTransferCoordinator(
                     frameTransportReceiver = receiver,
                     qrImportService = importService,
-                    targetName = name,
                     qrScanner = noOpQrScanner(),
                 )
             },

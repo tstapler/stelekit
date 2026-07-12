@@ -118,7 +118,6 @@ sealed interface CoordinatorEvent {
 class QrTransferCoordinator(
     private val frameTransportReceiver: FrameTransportReceiver,
     private val qrImportService: QrImportService,
-    private val targetName: PageName,
     private val maxPayloadBytes: Int = FountainEncoder.DEFAULT_MAX_PAYLOAD_BYTES,
     /** Mean luminance (0-255) below which a frame with no decodable QR is reported as [ScanHint.LowLight]. */
     private val lowLightThreshold: Int = 40,
@@ -312,12 +311,29 @@ class QrTransferCoordinator(
         )
     }
 
+    /**
+     * Unwraps [TransferPayloadEnvelope] to recover the real `(pageName, markdown)` pair the
+     * sender packed into the proof-gated payload — replacing the old "Received page &lt;epochMs&gt;"
+     * placeholder entirely. [payload] already passed [ChunkBuffer.reassemble]'s CRC32 gate; this
+     * is a downstream transformation of that existing [VerifiedTransferPayload], never a new way
+     * to construct one — [unwrap] returns a plain `String`, not a second [VerifiedTransferPayload].
+     * A malformed/corrupted envelope is a distinct terminal [DomainError.QrTransferError.EnvelopeMalformed]
+     * failure, never a silent fallback to a fake name.
+     */
     private suspend fun proceedToImport(payload: VerifiedTransferPayload) {
-        val existing = qrImportService.findCollision(targetName)
+        val (decodedName, markdown) = TransferPayloadEnvelope.unwrap(payload.markdown.encodeToByteArray()).fold(
+            ifLeft = { err ->
+                emitEvent(CoordinatorEvent.Failed(err))
+                return
+            },
+            ifRight = { it },
+        )
+
+        val existing = qrImportService.findCollision(decodedName)
         val choice = if (existing == null) {
             QrImportService.CollisionChoice.KEEP_BOTH
         } else {
-            emitEvent(CoordinatorEvent.CollisionDetected(PageName(existing.name), targetName))
+            emitEvent(CoordinatorEvent.CollisionDetected(PageName(existing.name), decodedName))
             val channel = Channel<QrImportService.CollisionChoice?>(Channel.RENDEZVOUS)
             collisionChannel = channel
             val resolved = channel.receive()
@@ -330,7 +346,7 @@ class QrTransferCoordinator(
         }
 
         emitEvent(CoordinatorEvent.Importing)
-        qrImportService.import(payload, targetName, choice).fold(
+        qrImportService.import(markdown, decodedName, choice).fold(
             ifLeft = { err -> emitEvent(CoordinatorEvent.Failed(err)) },
             ifRight = { name -> emitEvent(CoordinatorEvent.Success(name)) },
         )

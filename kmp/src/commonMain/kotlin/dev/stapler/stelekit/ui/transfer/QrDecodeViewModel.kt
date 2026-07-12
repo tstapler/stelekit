@@ -44,18 +44,8 @@ class QrDecodeViewModel(
     private val cameraFrameSource: CameraFrameSource,
     private val qrImportService: QrImportService,
     private val settings: QrTransferSettings,
-    /**
-     * Produces the name the imported page is saved under. The wire protocol carries only block
-     * content (no page title — [dev.stapler.stelekit.db.LogseqPageSerializer.serialize] never
-     * embeds one), so a name cannot be recovered from the payload itself; this is a known,
-     * flagged gap (see this task's final report) rather than a silently-invented wire-format
-     * change. Defaults to a timestamp-derived placeholder.
-     */
-    private val targetNameProvider: () -> PageName = {
-        PageName("Received page ${Clock.System.now().toEpochMilliseconds()}")
-    },
     /** Builds the coordinator for one receive session — overridden in tests with fake collaborators. */
-    private val coordinatorFactory: (targetName: PageName) -> QrTransferCoordinator = { name ->
+    private val coordinatorFactory: () -> QrTransferCoordinator = {
         QrTransferCoordinator(
             frameTransportReceiver = QrFrameTransport(
                 transferId = TransferId(0), // unused on the receive path — QrFrameTransport.frames() ignores it.
@@ -63,7 +53,6 @@ class QrDecodeViewModel(
                 maxFragmentBytes = settings.maxFragmentBytes,
             ),
             qrImportService = qrImportService,
-            targetName = name,
             // Bug 3 fix: bound outside the coordinator and passed in fully-formed — the
             // coordinator itself never holds a raw CameraFrameSource collaborator.
             qrScanner = QrScanner.bind(cameraFrameSource),
@@ -128,7 +117,7 @@ class QrDecodeViewModel(
         framesDecoded = 0
         logger.info("qr_transfer_started role=receiver")
 
-        val coordinator = coordinatorFactory(targetNameProvider())
+        val coordinator = coordinatorFactory()
         activeCoordinator = coordinator
         collectJob = scope.launch {
             coordinator.events.collect { event -> _state.value = applyEvent(event) }

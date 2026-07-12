@@ -4,6 +4,7 @@ import arrow.core.Either
 import dev.stapler.stelekit.db.DatabaseWriteActor
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.error.DomainError
+import dev.stapler.stelekit.model.PageName
 import dev.stapler.stelekit.platform.FileSystem
 import dev.stapler.stelekit.platform.Settings
 import dev.stapler.stelekit.platform.sensor.CameraFrame
@@ -17,6 +18,7 @@ import dev.stapler.stelekit.transfer.qrcode.FountainCodec
 import dev.stapler.stelekit.transfer.qrcode.QrImportService
 import dev.stapler.stelekit.transfer.qrcode.QrTransferCoordinator
 import dev.stapler.stelekit.transfer.qrcode.QrTransferSettings
+import dev.stapler.stelekit.transfer.qrcode.TransferPayloadEnvelope
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -88,7 +90,8 @@ class QrDecodeViewModelBackgroundingTest {
     @Test
     fun transferSession_should_PreserveAccumulatedFragments_When_AppBackgroundedAndForegroundedWithinSameVmLifetime() = runBlocking {
         val markdown = "- backgrounding test page body with enough content to need several fountain chunks\n"
-        val encoder = FountainCodec.encoder(TransferId(55), markdown.encodeToByteArray(), maxFragmentBytes = 10).getOrNull()!!
+        val envelopeBytes = TransferPayloadEnvelope.wrap(PageName("Backgrounding Test Page"), markdown)
+        val encoder = FountainCodec.encoder(TransferId(55), envelopeBytes, maxFragmentBytes = 10).getOrNull()!!
         assertTrue(encoder.seqLen >= 5, "fixture markdown must yield at least 5 pure fragments, was ${encoder.seqLen}")
         // Pure fragments 0 until seqLen, in order — receiving all of them (any order) is
         // sufficient for ChunkBuffer.isComplete(), so no extra redundant parts are needed here.
@@ -107,11 +110,10 @@ class QrDecodeViewModelBackgroundingTest {
             cameraFrameSource = cameraSource,
             qrImportService = buildImportService(),
             settings = QrTransferSettings(MapSettings()),
-            coordinatorFactory = { name ->
+            coordinatorFactory = {
                 QrTransferCoordinator(
                     frameTransportReceiver = receiver,
                     qrImportService = buildImportService(),
-                    targetName = name,
                 )
             },
         )
@@ -159,7 +161,8 @@ class QrDecodeViewModelBackgroundingTest {
             }
             s
         }
-        assertIs<QrDecodeUiState.Success>(terminal)
+        val successState = assertIs<QrDecodeUiState.Success>(terminal)
+        assertEquals("Backgrounding Test Page", successState.pageName.value, "the real decoded page name must survive the backgrounding cycle")
 
         vm.close()
     }

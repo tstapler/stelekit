@@ -21,17 +21,20 @@ import kotlinx.coroutines.runBlocking
 
 /**
  * Story 3.3.1 — the v1 success-metric gate (plan.md "v1 Definition of Done", validation.md Happy
- * Path Scenario): `serialize -> FountainEncoder -> (simulated lossy channel) -> FountainDecoder ->
- * GraphLoader.importMarkdownString -> OutlinerPipeline` must reproduce the source page's
- * `Block.contentHash` set exactly. If this test fails, the bug is real — find and fix it in
- * `FountainEncoder`/`ChunkBuffer`/the parse tail; do not weaken this assertion.
+ * Path Scenario): `serialize -> TransferPayloadEnvelope.wrap -> FountainEncoder -> (simulated lossy
+ * channel) -> FountainDecoder -> TransferPayloadEnvelope.unwrap -> GraphLoader.importMarkdownString
+ * -> OutlinerPipeline` must reproduce the source page's `Block.contentHash` set exactly AND the
+ * source page's real name (not a synthesized placeholder). If this test fails, the bug is real —
+ * find and fix it in `FountainEncoder`/`ChunkBuffer`/`TransferPayloadEnvelope`/the parse tail; do
+ * not weaken either assertion.
  *
- * The wire protocol carries only block content, not the page title (see
- * [dev.stapler.stelekit.ui.transfer.QrDecodeViewModel]'s `targetNameProvider` KDoc) — the target
- * page name is therefore supplied directly to [GraphLoader.importMarkdownString] by this test, out
- * of band, exactly as [QrImportService.import] does in production. This gap does NOT affect this
- * gate: the acceptance criterion is `Block.contentHash` set equality, which depends only on block
- * *content*, never the page name.
+ * Page-name-envelope fix: the wire protocol used to carry only block content, not the page title
+ * (Logseq derives a page's name from its filename, not file content, and
+ * [dev.stapler.stelekit.db.LogseqPageSerializer.serialize] never embeds one) — this test now
+ * exercises [TransferPayloadEnvelope.wrap]/[unwrap] exactly as [dev.stapler.stelekit.ui.transfer.QrEncodeViewModel]
+ * / [QrTransferCoordinator] do in production, so the RECEIVED PAGE NAME assertion below is a
+ * strictly stronger fidelity guarantee than before, added alongside (not replacing) the existing
+ * `Block.contentHash` set-equality assertion.
  */
 class QrRoundTripFidelityTest {
 
@@ -132,9 +135,9 @@ class QrRoundTripFidelityTest {
     fun pipeline_should_PreserveAllBlockContentHashes_When_TwentyBlockFixturePageEncodedThroughLossyChannelAndReassembled() = runBlocking {
         val (page, originalBlocks) = buildFixture()
         val markdown = LogseqPageSerializer.serialize(page, originalBlocks)
-        val payloadBytes = markdown.encodeToByteArray()
+        val envelopeBytes = TransferPayloadEnvelope.wrap(PageName(page.name), markdown)
 
-        val encoder = FountainCodec.encoder(TransferId(1001), payloadBytes, maxFragmentBytes = 48).getOrNull()!!
+        val encoder = FountainCodec.encoder(TransferId(1001), envelopeBytes, maxFragmentBytes = 48).getOrNull()!!
         val random = Random(20260711)
         val delivered = deliverThroughLossyChannel(encoder, random, dropFraction = 0.25)
 
@@ -147,9 +150,13 @@ class QrRoundTripFidelityTest {
 
         val verified = buffer.reassemble().getOrNull()
         assertTrue(verified != null, "reassembly must pass the CRC32 proof gate")
-        assertEquals(markdown, verified!!.markdown, "reassembled markdown must match the original byte-for-byte")
 
-        val (_, reparsedBlocks) = graphLoader().importMarkdownString(verified.markdown, PageName(page.name))
+        val (decodedName, decodedMarkdown) = TransferPayloadEnvelope.unwrap(verified!!.markdown.encodeToByteArray()).getOrNull()
+            ?: error("envelope unwrap must succeed for a proof-gated payload")
+        assertEquals(page.name, decodedName.value, "the received page name must match the sender's real page name (the page-name fidelity gate)")
+        assertEquals(markdown, decodedMarkdown, "unwrapped markdown must match the original byte-for-byte")
+
+        val (_, reparsedBlocks) = graphLoader().importMarkdownString(decodedMarkdown, decodedName)
             .getOrNull() ?: error("importMarkdownString must succeed for a proof-gated payload")
 
         val originalHashes = originalBlocks.map { ContentHasher.sha256ForContent(it.content) }.toSet()
@@ -179,11 +186,11 @@ class QrRoundTripFidelityTest {
             updatedAt = now,
         )
         val markdown = LogseqPageSerializer.serialize(page, listOf(block))
-        val payloadBytes = markdown.encodeToByteArray()
+        val envelopeBytes = TransferPayloadEnvelope.wrap(PageName(page.name), markdown)
 
         // minFragmentBytes=1 (below FountainEncoder's default of 10) so a 6-byte maxFragmentBytes
         // is actually honored — this is what forces boundaries into the multi-byte run below.
-        val encoder = FountainEncoder(TransferId(1002), payloadBytes, maxFragmentBytes = 6, minFragmentBytes = 1).getOrNull()!!
+        val encoder = FountainEncoder(TransferId(1002), envelopeBytes, maxFragmentBytes = 6, minFragmentBytes = 1).getOrNull()!!
         val random = Random(90210)
         val delivered = deliverThroughLossyChannel(encoder, random, dropFraction = 0.25)
 
@@ -196,9 +203,13 @@ class QrRoundTripFidelityTest {
 
         val verified = buffer.reassemble().getOrNull()
         assertTrue(verified != null, "reassembly must pass the CRC32 proof gate even with a tiny fragment size")
-        assertEquals(markdown, verified!!.markdown)
 
-        val (_, reparsedBlocks) = graphLoader().importMarkdownString(verified.markdown, PageName(page.name))
+        val (decodedName, decodedMarkdown) = TransferPayloadEnvelope.unwrap(verified!!.markdown.encodeToByteArray()).getOrNull()
+            ?: error("envelope unwrap must succeed for a proof-gated payload, even at a tiny fragment size")
+        assertEquals(page.name, decodedName.value, "the received page name must survive a multi-byte-UTF8-hostile chunk size")
+        assertEquals(markdown, decodedMarkdown)
+
+        val (_, reparsedBlocks) = graphLoader().importMarkdownString(decodedMarkdown, decodedName)
             .getOrNull() ?: error("importMarkdownString must succeed for a proof-gated payload")
 
         assertEquals(1, reparsedBlocks.size)

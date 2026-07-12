@@ -109,9 +109,12 @@ sealed interface DomainError {
     }
 
     /**
-     * Four variants, not the original six (Story 1.1.2): `IncompleteTransfer(received, total)` and
+     * Five variants, not the original six (Story 1.1.2): `IncompleteTransfer(received, total)` and
      * `TransferCancelled` were removed as dead code after an audit found no principled call site —
      * see `ChunkBuffer.reassemble` and `QrTransferCoordinator.cancel` KDoc for why.
+     * `EnvelopeMalformed` was added afterward (see `TransferPayloadEnvelope`) for the one failure
+     * mode that can only occur AFTER `IntegrityCheckFailed`'s CRC32 gate already passed: the
+     * reassembled bytes are provably intact but don't parse as a valid name+markdown envelope.
      */
     sealed interface QrTransferError : DomainError {
         data object ChunkDecodeFailed : QrTransferError {
@@ -125,6 +128,9 @@ sealed interface DomainError {
         }
         data object MarkdownParseFailed : QrTransferError {
             override val message: String = "Failed to parse received markdown"
+        }
+        data object EnvelopeMalformed : QrTransferError {
+            override val message: String = "Transfer payload envelope is malformed"
         }
     }
 }
@@ -181,6 +187,7 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.QrTransferError.IntegrityCheckFailed -> "This transfer looks corrupted — please try scanning again"
     is DomainError.QrTransferError.PayloadTooLarge -> "This page is too large to send via QR"
     is DomainError.QrTransferError.MarkdownParseFailed -> "Received data isn't valid page content"
+    is DomainError.QrTransferError.EnvelopeMalformed -> "This transfer didn't include valid page info — please try sending it again"
 }
 
 fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {

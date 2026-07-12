@@ -168,11 +168,10 @@ class QrTransferAccessibilityUxTest {
             cameraFrameSource = cameraSource,
             qrImportService = importService,
             settings = QrTransferSettings(MapSettings()),
-            coordinatorFactory = { name ->
+            coordinatorFactory = {
                 QrTransferCoordinator(
                     frameTransportReceiver = receiver,
                     qrImportService = importService,
-                    targetName = name,
                     qrScanner = fakeQrScanner,
                 )
             },

@@ -53,6 +53,7 @@ class DomainErrorTest {
             DomainError.QrTransferError.IntegrityCheckFailed,
             DomainError.QrTransferError.PayloadTooLarge(90000, 65536),
             DomainError.QrTransferError.MarkdownParseFailed,
+            DomainError.QrTransferError.EnvelopeMalformed,
         )
         for (err in errors) {
             // exhaustive when — compile error if any branch is missing
@@ -105,6 +106,7 @@ class DomainErrorTest {
                 DomainError.QrTransferError.IntegrityCheckFailed -> err.message
                 is DomainError.QrTransferError.PayloadTooLarge -> err.message
                 DomainError.QrTransferError.MarkdownParseFailed -> err.message
+                DomainError.QrTransferError.EnvelopeMalformed -> err.message
             }
             assertTrue(msg.isNotEmpty(), "Expected non-empty message for $err")
         }
@@ -173,6 +175,7 @@ class DomainErrorTest {
             DomainError.QrTransferError.IntegrityCheckFailed,
             DomainError.QrTransferError.PayloadTooLarge(90000, 65536),
             DomainError.QrTransferError.MarkdownParseFailed,
+            DomainError.QrTransferError.EnvelopeMalformed,
         )
         for (err in errors) {
             assertTrue(err.toUiMessage().isNotEmpty(), "Expected non-empty UI message for $err")
@@ -191,20 +194,22 @@ class DomainErrorTest {
     }
 
     @Test
-    fun toUiMessage_should_ReturnFourDistinctMessages_When_CalledForEveryQrTransferErrorVariant() {
-        // Four variants, not the original six: IncompleteTransfer and TransferCancelled were
+    fun toUiMessage_should_ReturnFiveDistinctMessages_When_CalledForEveryQrTransferErrorVariant() {
+        // Five variants, not the original six: IncompleteTransfer and TransferCancelled were
         // removed as dead code (no principled call site — see ChunkBuffer.reassemble and
-        // QrTransferCoordinator.cancel KDoc).
+        // QrTransferCoordinator.cancel KDoc). EnvelopeMalformed was added afterward for the
+        // page-name-envelope fix (see TransferPayloadEnvelope).
         val variants: List<DomainError.QrTransferError> = listOf(
             DomainError.QrTransferError.ChunkDecodeFailed,
             DomainError.QrTransferError.IntegrityCheckFailed,
             DomainError.QrTransferError.PayloadTooLarge(90000, 65536),
             DomainError.QrTransferError.MarkdownParseFailed,
+            DomainError.QrTransferError.EnvelopeMalformed,
         )
 
         val messages = variants.map { it.toUiMessage() }
 
-        assertEquals(4, variants.size)
-        assertEquals(messages.size, messages.toSet().size, "Expected all four QrTransferError variants to have distinct UI copy: $messages")
+        assertEquals(5, variants.size)
+        assertEquals(messages.size, messages.toSet().size, "Expected all five QrTransferError variants to have distinct UI copy: $messages")
     }
 }

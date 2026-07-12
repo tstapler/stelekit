@@ -15,10 +15,17 @@ import kotlinx.coroutines.flow.first
 
 /**
  * Receive-side service (Story 3.2.1, models [dev.stapler.stelekit.db.ImageImportService]):
- * turns a proof-gated [VerifiedTransferPayload] into a saved page.
+ * turns a decoded page name + markdown into a saved page.
  *
- * Accepts ONLY [VerifiedTransferPayload] — never a raw [String] — so "this markdown passed the
- * CRC32 proof gate" is a compile-time-visible fact at every call site (Parse-Don't-Validate).
+ * Takes a plain [String] for [import]'s `markdown`, not a [VerifiedTransferPayload], as of the
+ * page-name-envelope fix: [QrTransferCoordinator] now unwraps [TransferPayloadEnvelope] on the
+ * reassembled payload BEFORE calling this service, to recover the real `(pageName, markdown)`
+ * pair — and [VerifiedTransferPayload]'s `internal` constructor is intentionally mintable ONLY by
+ * [ChunkBuffer.reassemble]'s success branch, so [TransferPayloadEnvelope.unwrap] cannot re-wrap
+ * its stripped-envelope markdown into a second one without weakening that invariant. The CRC32
+ * proof gate this service used to gate on still ran — just one call earlier, in
+ * `ChunkBuffer.reassemble()` — before [TransferPayloadEnvelope.unwrap] ever produced the `String`
+ * this method receives. [QrTransferCoordinator] is this service's only production caller.
  *
  * Pipeline:
  * 1. Validate/normalize [targetName] ([Validation.validateName] — rejects directory-traversal
@@ -67,7 +74,7 @@ class QrImportService(
      * no collision (or want the default) can omit it entirely.
      */
     suspend fun import(
-        payload: VerifiedTransferPayload,
+        markdown: String,
         targetName: PageName,
         collisionChoice: CollisionChoice = CollisionChoice.KEEP_BOTH,
     ): Either<DomainError, PageName> {
@@ -89,7 +96,7 @@ class QrImportService(
             else -> disambiguate(normalizedName)
         }
 
-        val (parsedPage, parsedBlocks) = graphLoader.importMarkdownString(payload.markdown, finalName).fold(
+        val (parsedPage, parsedBlocks) = graphLoader.importMarkdownString(markdown, finalName).fold(
             ifLeft = { return it.left() },
             ifRight = { it },
         )

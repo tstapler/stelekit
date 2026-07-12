@@ -108,10 +108,11 @@ class QrEncodeScreenUxTest {
 
     @Test
     fun qrCanvas_should_UpdateContentDescriptionWithFrameIndex_When_DisplayingStateAdvances() {
-        // Same fixture as QrEncodeScreenTest.buildViewModel(): 2045-char block + maxFragmentBytes
-        // 171 -> exactly 12 frames, a known-good chunkCount.
+        // Same fixture as QrEncodeScreenTest.buildViewModel(): 2029-char block + maxFragmentBytes
+        // 171 -> wrapped in TransferPayloadEnvelope (16 bytes overhead for "Meeting Notes") ->
+        // exactly 2048 wrapped bytes -> exactly 12 frames, a known-good chunkCount.
         val pageUuid = PageUuid("00000000-0000-0000-0000-000000000001")
-        val (pageRepo, blockRepo) = seedPage(pageUuid, contentLength = 2045)
+        val (pageRepo, blockRepo) = seedPage(pageUuid, contentLength = 2029)
         var now = Clock.System.now()
         val settings = QrTransferSettings(MapSettings()).apply {
             maxFragmentBytes = 171
