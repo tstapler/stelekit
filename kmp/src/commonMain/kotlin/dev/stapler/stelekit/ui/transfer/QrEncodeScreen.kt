@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -69,6 +71,13 @@ fun QrEncodeScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            // Bug fix (validation.md UX criterion 3): without a scroll fallback, cumulative
+            // content height (first-use explainer banner + preflight summary + the large inset QR
+            // card + frame counter + air-gap text + Cancel/Done-sending row) can exceed the
+            // viewport on realistic window/phone sizes, collapsing the button row to zero height
+            // (Compose Column overflow) and making Cancel completely untappable — a dead end.
+            // Mirrors QrDecodeScreen's Column, which already scrolls.
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
