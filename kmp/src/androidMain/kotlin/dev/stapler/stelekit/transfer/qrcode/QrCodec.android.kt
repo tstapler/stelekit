@@ -40,11 +40,14 @@ actual object QrCodec {
     }
 
     actual fun decode(frame: CameraFrame): ByteArray? {
-        val (rotatedBytes, width, height) =
-            rotateLuminanceClockwise(frame.luminanceBytes, frame.width, frame.height, frame.rotationDegrees)
-        val source = PlanarYUVLuminanceSource(rotatedBytes, width, height, 0, 0, width, height, false)
-        val bitmap = BinaryBitmap(HybridBinarizer(source))
         return try {
+            // PlanarYUVLuminanceSource's constructor throws IllegalArgumentException when the
+            // luminance data length doesn't match width*height (camera row-stride padding is not
+            // guaranteed to line up) — must be inside the try to honor decode()'s "never throws" contract.
+            val (rotatedBytes, width, height) =
+                rotateLuminanceClockwise(frame.luminanceBytes, frame.width, frame.height, frame.rotationDegrees)
+            val source = PlanarYUVLuminanceSource(rotatedBytes, width, height, 0, 0, width, height, false)
+            val bitmap = BinaryBitmap(HybridBinarizer(source))
             val result = MultiFormatReader().decode(bitmap, DECODE_HINTS)
             result.text.toByteArray(Charsets.ISO_8859_1)
         } catch (e: NotFoundException) {

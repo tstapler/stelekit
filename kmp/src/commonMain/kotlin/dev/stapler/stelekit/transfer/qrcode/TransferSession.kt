@@ -3,6 +3,7 @@ package dev.stapler.stelekit.transfer.qrcode
 import arrow.core.Either
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.transfer.TransferId
+import kotlin.concurrent.Volatile
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -30,11 +31,21 @@ class TransferSession(
     /** Wall-clock time this session was created (first frame observed). */
     val startedAt: Instant = clock()
 
+    // @Volatile: written from the data-path coroutine (accept(), via QrTransferCoordinator.runDataPath)
+    // and read from the diagnostics coroutine (stalledSeconds/isStalled/stallHint, via
+    // QrTransferCoordinator.runDiagnostics/deriveHint) — both Dispatchers.Default, possibly
+    // different threads, so visibility across coroutines isn't otherwise guaranteed. Mirrors
+    // QrTransferCoordinator's own @Volatile session/currentHint fields.
     /** Wall-clock time of the most recently admitted NEW (previously-unseen) fragment. */
+    @Volatile
     var lastNewFragmentAt: Instant = startedAt
         private set
 
+    // @Volatile: written from the data-path coroutine (accept()) and read from the diagnostics
+    // coroutine (QrTransferCoordinator.updateHint reads activeSession.uniqueFragments) — see
+    // lastNewFragmentAt's comment above for the full rationale.
     /** Count of distinct fragments admitted so far — drives `Scanning.uniqueFragments`. */
+    @Volatile
     var uniqueFragments: Int = 0
         private set
 

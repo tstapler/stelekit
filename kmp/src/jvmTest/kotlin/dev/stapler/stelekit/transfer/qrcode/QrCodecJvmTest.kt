@@ -4,6 +4,7 @@ import dev.stapler.stelekit.platform.sensor.CameraFrame
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -72,6 +73,19 @@ class QrCodecJvmTest {
 
         assertTrue(exception.message!!.contains("700"), "expected the actual size in the message, got: ${exception.message}")
         assertTrue(exception.message!!.contains("666"), "expected the max capacity in the message, got: ${exception.message}")
+    }
+
+    @Test
+    fun decode_should_ReturnNull_When_LuminanceBytesSizeDoesNotMatchWidthTimesHeight() {
+        // Gate 2 review finding M2: PlanarYUVLuminanceSource's constructor throws
+        // IllegalArgumentException when luminanceBytes.size != width*height — a realistic case
+        // given camera row-stride padding, which CameraFrame's invariants don't rule out. decode()
+        // is documented to "never throw"; this must surface as null, not an uncaught exception.
+        val malformed = CameraFrame(luminanceBytes = ByteArray(10), width = 4, height = 4, rotationDegrees = 0)
+
+        val decoded = QrCodec.decode(malformed)
+
+        assertNull(decoded)
     }
 
     private fun QrMatrix.toCameraFrame(rotationDegrees: Int = 0): CameraFrame {
