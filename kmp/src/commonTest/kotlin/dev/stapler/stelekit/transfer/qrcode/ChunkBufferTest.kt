@@ -97,6 +97,38 @@ class ChunkBufferTest {
     }
 
     @Test
+    fun accept_should_ReturnRightFalse_When_FirstChunkFragmentSizeImpliesImplausibleSeqLen() {
+        // Gate 2 finding C2: a hostile/corrupted first chunk claims a large payloadLen (just under
+        // maxPayloadBytes) with a tiny fragment.size, so the naive
+        // expectedSeqLen = ceil(payloadLen / fragment.size) would land in the tens of thousands —
+        // large enough to make chooseFragments's O(n^2) shuffled() cost billions of operations for
+        // ONE chunk. This must be rejected BEFORE any FountainDecoder is constructed or
+        // chooseFragments/shuffled() is ever invoked.
+        val maxPayloadBytes = 65536
+        val buffer = ChunkBuffer(maxPayloadBytes = maxPayloadBytes)
+        val maliciousFirstChunk = FountainChunk(
+            transferId = TransferId(1),
+            chunkIndex = ChunkIndex(999), // beyond any plausible seqLen — forces the "mixed" path
+            payloadLen = maxPayloadBytes - 1,
+            payloadCrc = PayloadChecksum(0),
+            fragment = byteArrayOf(1), // 1-byte fragment -> derived seqLen ~= maxPayloadBytes
+        )
+
+        val result = buffer.accept(maliciousFirstChunk)
+
+        assertEquals(false, result.getOrNull())
+        assertFalse(buffer.isComplete())
+        assertEquals(0.0, buffer.coverage())
+
+        // Recoverable: the buffer never bound to the malicious chunk, so a subsequent legitimate
+        // first chunk (production-shaped fragment size) still succeeds normally.
+        val encoder = encoderFor(payload)
+        val legitimateFirstChunk = encoder.parts().first()
+        val legitimateResult = buffer.accept(legitimateFirstChunk)
+        assertEquals(true, legitimateResult.getOrNull())
+    }
+
+    @Test
     fun accept_should_ReturnRightFalse_When_ClaimedPayloadLenIsZeroOrNegative() {
         // Distinct from the oversize case above: an invalid-but-not-oversize payloadLen is a
         // generic/recoverable rejection (Right(false)), not a terminal PayloadTooLarge Left.

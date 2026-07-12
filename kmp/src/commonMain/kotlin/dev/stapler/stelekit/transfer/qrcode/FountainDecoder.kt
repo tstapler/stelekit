@@ -17,6 +17,19 @@ internal class FountainDecoder(private val seqLen: Int) {
         val index: Int get() = indexes.first()
     }
 
+    private companion object {
+        // Bounds retained mixed-part memory (Gate 2 finding M4). A well-behaved bc-ur sender's
+        // mixed parts collapse via reduceMixedBy well before this multiple of seqLen — reduction
+        // is triggered by every simple part received, so mixedParts naturally shrinks as the
+        // transfer converges. A malicious/stalled sender that never emits a genuine simple
+        // fragment can otherwise grow mixedParts forever, one retained entry per distinct
+        // mixed-index-set it sends, with nothing ever reclaiming it. 8x is generous headroom
+        // above any observed legitimate growth (redundancy multipliers in this codebase top out
+        // around 1.0-2.0x seqLen) while still capping worst-case memory to a small multiple of
+        // the payload's own fragment count.
+        const val MAX_MIXED_PARTS_PER_SEQ_LEN = 8
+    }
+
     private val receivedIndexes = mutableSetOf<Int>()
     private val simpleParts = LinkedHashMap<Set<Int>, Part>()
     private val mixedParts = LinkedHashMap<Set<Int>, Part>()
@@ -27,6 +40,9 @@ internal class FountainDecoder(private val seqLen: Int) {
         private set
 
     val receivedCount: Int get() = receivedIndexes.size
+
+    /** Test-only visibility into the M4 memory bound — see [MAX_MIXED_PARTS_PER_SEQ_LEN]. */
+    internal val mixedPartsCountForTest: Int get() = mixedParts.size
 
     /** Structural completion only — does NOT mean the reassembled bytes are correct. */
     val isComplete: Boolean get() = resultFragments != null
@@ -80,6 +96,11 @@ internal class FountainDecoder(private val seqLen: Int) {
 
     private fun processMixedPart(p: Part) {
         if (mixedParts.containsKey(p.indexes)) return // dedup by fragment identity
+
+        // M4 bound: a genuinely new mixed-index-set beyond the cap is presumed adversarial or a
+        // permanently-stalled transfer — silently dropped rather than retained forever. See the
+        // companion `MAX_MIXED_PARTS_PER_SEQ_LEN` KDoc for why this is safe for honest senders.
+        if (mixedParts.size >= seqLen * MAX_MIXED_PARTS_PER_SEQ_LEN) return
 
         var reduced = p
         for (r in simpleParts.values) reduced = reducePartByPart(reduced, r)

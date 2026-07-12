@@ -36,7 +36,9 @@ class ChunkBuffer(private val maxPayloadBytes: Int) {
     /**
      * Idempotent for duplicates, order-independent. Returns `Right(false)` if the chunk is
      * rejected for a generic/recoverable reason (already complete, `payloadLen<=0`, an empty
-     * fragment, inconsistent parameters vs. the bound transfer, or [chunk] carries a different
+     * fragment, a first chunk whose `payloadLen`/`fragment.size` combination implies an
+     * implausibly large fragment count (see the `maxPlausibleSeqLen` guard below — Gate 2 finding
+     * C2), inconsistent parameters vs. the bound transfer, or [chunk] carries a different
      * [TransferId] than the one this buffer bound to on its first chunk) — the caller should just
      * keep scanning. Returns `Left(PayloadTooLarge)` for the ONE rejection reason that is NOT
      * recoverable by scanning more frames: the claimed `payloadLen` alone already exceeds
@@ -68,11 +70,38 @@ class ChunkBuffer(private val maxPayloadBytes: Int) {
 
         val existingDecoder = decoder
         if (existingDecoder == null) {
+            val derivedSeqLen = ceil(chunk.payloadLen.toDouble() / chunk.fragment.size).toInt().coerceAtLeast(1)
+
+            // Ceiling on the derived seqLen, checked BEFORE any FountainDecoder is created or
+            // chooseFragments()/shuffled() is ever called (Gate 2 finding C2). Nothing previously
+            // enforced FountainEncoder.DEFAULT_MIN_FRAGMENT_BYTES on the RECEIVE side — only the
+            // encoder applies it when SENDING — so a hostile/corrupted first chunk claiming a
+            // large payloadLen with a tiny (or 1-byte) fragment.size could drive
+            // expectedSeqLen = ceil(payloadLen / fragment.size) up to tens of thousands.
+            // chooseFragments's shuffled() is an intentionally-exact O(n^2) port of bc-ur's
+            // list-removeAt Fisher-Yates (kept for reference-vector bit-parity, see
+            // FountainCodecVectorTest) — at n≈65535 that's ~4x10^9 ops from ONE crafted chunk,
+            // enough to peg a CPU core on Dispatchers.Default and starve other app-wide coroutine
+            // work for as long as the malicious stream keeps scanning.
+            //
+            // maxPlausibleSeqLen is derived, not a magic number: it's the largest seqLen ANY
+            // honest encoder could ever produce for this buffer's own maxPayloadBytes ceiling,
+            // given the encoder's DEFAULT_MIN_FRAGMENT_BYTES floor on the send side. A fragment
+            // size below that floor is legitimate in tests with tiny payloads (see
+            // QrRoundTripFidelityTest's minFragmentBytes=1 case) — their resulting seqLen stays
+            // far below this ceiling because their payloadLen is tiny too — so bounding the
+            // *derived seqLen* here (not the raw fragment size) rejects only the implausible
+            // large-payload/tiny-fragment combination that actually drives the O(n^2) blowup.
+            // This is recoverable: the decoder hasn't bound yet, so a subsequent legitimate first
+            // chunk still succeeds.
+            val maxPlausibleSeqLen = ceil(maxPayloadBytes.toDouble() / FountainEncoder.DEFAULT_MIN_FRAGMENT_BYTES).toInt()
+            if (derivedSeqLen > maxPlausibleSeqLen) return false.right()
+
             expectedTransferId = chunk.transferId
             expectedMessageLen = chunk.payloadLen
             expectedChecksum = chunk.payloadCrc.value
             expectedFragmentLen = chunk.fragment.size
-            expectedSeqLen = ceil(chunk.payloadLen.toDouble() / chunk.fragment.size).toInt().coerceAtLeast(1)
+            expectedSeqLen = derivedSeqLen
         } else {
             if (chunk.payloadLen != expectedMessageLen) return false.right()
             if (chunk.payloadCrc.value != expectedChecksum) return false.right()
