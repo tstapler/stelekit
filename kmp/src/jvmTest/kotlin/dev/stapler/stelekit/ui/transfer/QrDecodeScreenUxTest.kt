@@ -31,7 +31,6 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -39,8 +38,7 @@ import kotlin.test.assertEquals
 /**
  * Story 3.2.3 / UX Acceptance Test criteria 8, 13 (decoder half), 14: [QrDecodeScreen]'s scanning
  * surface (S9) — stalled-scan copy + frozen progress bar, live-updating viewfinder
- * `contentDescription`, and (criterion 14, currently a documented gap — see the `@Ignore`d test
- * below) color-independent "locked on" vs "searching" signaling on the reticle.
+ * `contentDescription`, and color-independent "locked on" vs "searching" signaling on the reticle.
  */
 class QrDecodeScreenUxTest {
 
@@ -261,26 +259,12 @@ class QrDecodeScreenUxTest {
      * scanning state ('locked on' vs. 'searching' in S9 reticle) — shape/icon + text must also
      * convey it."
      *
-     * **Documented gap, not weakened to pass**: [QrDecodeScreen.kt]'s `CameraPreviewReticle`
-     * (`ui/transfer/QrDecodeScreen.kt:330-354`) renders exactly two static-color `Box` borders
-     * (`MaterialTheme.colorScheme.outline` / `.primary`) that never change with scan state, and
-     * carries no `Icon`/shape marker at all. There is also no "locked on" vs "searching" concept
-     * anywhere in the domain model to drive such a distinction —
-     * [dev.stapler.stelekit.ui.transfer.QrDecodeUiState.Scanning] only carries
-     * `hint: ScanHint?` (`Stalled`/`WrongCode`/`LowLight`/`null`), and `HintCopy`
-     * (`QrDecodeScreen.kt:307-322`) is the only state-dependent visual — text only, no icon, and it
-     * renders nothing at all (not even a color change) when `hint == null` and not yet stalled.
-     * This assertion intentionally reflects the criterion's real requirement (a distinct text AND
-     * icon/shape pairing per state) rather than a weakened stand-in, and is expected to fail until
-     * the feature exists — see this test suite's final report for the full citation.
+     * [dev.stapler.stelekit.ui.transfer.QrDecodeUiState.Scanning.isLockedOn] derives the state
+     * from already-tracked `uniqueFragments`/`hint` (no new coordinator machinery), and
+     * `CameraPreviewReticle` (`ui/transfer/QrDecodeScreen.kt`) renders a distinct filled
+     * checkmark-box + "Locked on" label vs an outlined magnifying-glass box + "Searching…" label.
      */
     @Test
-    @Ignore(
-        "Gap, not a test bug: no 'locked on'/'searching' reticle state exists — " +
-            "QrDecodeScreen.kt's CameraPreviewReticle (lines 330-354) is a static-color box with no " +
-            "icon/shape at all, and QrDecodeUiState.Scanning carries no field to represent a positive " +
-            "'locked on' signal. See this suite's final report.",
-    )
     fun reticleState_should_PairIconShapeAndTextWithColor_When_LockedOnVersusSearching() {
         val lockedOnVm = buildScanningViewModel(fragmentsToEmit = 2, delayMs = 5)
         composeTestRule.setContent {

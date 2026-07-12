@@ -30,7 +30,18 @@ sealed interface QrDecodeUiState {
         val uniqueFragments: Int,
         val stalledSeconds: Int,
         val hint: ScanHint? = null,
-    ) : QrDecodeUiState
+    ) : QrDecodeUiState {
+        /**
+         * "Locked on" vs "searching" reticle state (validation.md criterion 14) — a pure function
+         * of already-tracked state, not a separately-tracked flag: `true` once at least one
+         * fragment has been admitted for the active transfer AND no diagnostic hint is currently
+         * active. Any active [hint] (`Stalled`/`WrongCode`/`LowLight`) means something about the
+         * current frame is off right now, so the reticle reads as "searching" even if fragments
+         * were admitted earlier — matches [dev.stapler.stelekit.ui.transfer.QrDecodeScreen]'s
+         * `HintCopy`, which already surfaces distinct guidance for every non-null hint.
+         */
+        val isLockedOn: Boolean get() = uniqueFragments > 0 && hint == null
+    }
 
     /** Brief: [dev.stapler.stelekit.transfer.qrcode.ChunkBuffer.reassemble] proof-gate check. */
     data object Reassembling : QrDecodeUiState

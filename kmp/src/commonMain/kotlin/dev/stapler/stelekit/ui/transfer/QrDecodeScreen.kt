@@ -1,5 +1,6 @@
 package dev.stapler.stelekit.ui.transfer
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,8 +15,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -277,7 +282,7 @@ private fun ScanningContent(
         Spacer(modifier = Modifier.height(8.dp))
     }
 
-    CameraPreviewReticle(uniqueFragments = state.uniqueFragments)
+    CameraPreviewReticle(state = state)
 
     Spacer(modifier = Modifier.height(16.dp))
     Text(
@@ -326,30 +331,68 @@ private fun HintCopy(hint: ScanHint?, stalledSeconds: Int) {
  * ([PlatformCameraPreview]) behind the reticle border/corner-mark overlay, so the user can see
  * what the camera sees to aim it at the sender's screen — previously this was a static bordered
  * [Box] with no camera feed at all.
+ *
+ * Validation.md criterion 14 fix: the inner reticle mark and the label below it both switch on
+ * [QrDecodeUiState.Scanning.isLockedOn] — a filled box + checkmark icon + "Locked on" text once at
+ * least one fragment is admitted and no diagnostic hint is active, vs an outlined-only box +
+ * magnifying-glass icon + "Searching…" text otherwise. Shape and icon differ, not just color, so
+ * the state reads correctly under a protanopia/deuteranopia simulation.
  */
 @Composable
-private fun CameraPreviewReticle(uniqueFragments: Int) {
-    // Fractional width (not fillMaxWidth) keeps this from dominating the viewport on short
-    // screens/small test windows and pushing the progress/hint text below the visible area —
-    // same fraction as QrEncodeScreen's InsetQrCard (INSET_CARD_WIDTH_FRACTION).
-    Box(
-        modifier = Modifier
-            .fillMaxWidth(0.55f)
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(8.dp))
-            .border(2.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
-            .semantics {
-                contentDescription = "Point camera at the SteleKit transfer code, $uniqueFragments fragments received"
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        PlatformCameraPreview(modifier = Modifier.matchParentSize())
+private fun CameraPreviewReticle(state: QrDecodeUiState.Scanning) {
+    val isLockedOn = state.isLockedOn
+    val statusLabel = if (isLockedOn) "Locked on" else "Searching…"
+    val indicatorDescription = if (isLockedOn) "Locked on indicator" else "Searching indicator"
+    val indicatorIcon = if (isLockedOn) Icons.Filled.CheckCircle else Icons.Filled.Search
+    val indicatorColor = if (isLockedOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Fractional width (not fillMaxWidth) keeps this from dominating the viewport on short
+        // screens/small test windows and pushing the progress/hint text below the visible area —
+        // same fraction as QrEncodeScreen's InsetQrCard (INSET_CARD_WIDTH_FRACTION).
         Box(
             modifier = Modifier
-                .fillMaxWidth(0.4f)
+                .fillMaxWidth(0.55f)
                 .aspectRatio(1f)
-                .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)),
-        )
+                .clip(RoundedCornerShape(8.dp))
+                .border(2.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
+                .semantics {
+                    contentDescription =
+                        "Point camera at the SteleKit transfer code, ${state.uniqueFragments} fragments received"
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            PlatformCameraPreview(modifier = Modifier.matchParentSize())
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.4f)
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(4.dp))
+                    // Shape distinction, not just color: locked-on is a solid-filled corner box,
+                    // searching is outline-only — genuinely different silhouettes.
+                    .then(
+                        if (isLockedOn) {
+                            Modifier.background(indicatorColor.copy(alpha = 0.25f))
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .border(
+                        width = if (isLockedOn) 3.dp else 2.dp,
+                        color = indicatorColor,
+                        shape = RoundedCornerShape(4.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = indicatorIcon,
+                    contentDescription = indicatorDescription,
+                    tint = indicatorColor,
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(statusLabel, style = MaterialTheme.typography.labelSmall, color = indicatorColor)
     }
 }
 
