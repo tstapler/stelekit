@@ -39,6 +39,8 @@ kt_jvm_test(
         "@maven//:io_projectreactor_tools_blockhound",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:com_google_zxing_core",
+        "@maven//:org_jetbrains_kotlin_kotlin_reflect",
     ],
     jvm_flags = [
         # Required for JVM attach (BlockHound, async-profiler)

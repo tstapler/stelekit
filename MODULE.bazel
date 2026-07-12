@@ -253,6 +253,9 @@ maven.install(
         # ── PDFBox — PDF text extraction for asset OCR pipeline (JVM only) ───
         "org.apache.pdfbox:pdfbox:3.0.4",
 
+        # ── ZXing — QR encode/decode for camera-qr-export (ADR-001/Story 2.1.2, JVM + Android) ──
+        "com.google.zxing:core:3.5.4",
+
         # ── JGit — one version per groupId:artifactId (rules_jvm_external constraint)
         # Desktop uses 7.x; Android also resolves to 7.x (version conflict
         # resolved to higher version). See CLAUDE.md note on version pinning.
@@ -372,6 +375,7 @@ maven.install(
         "androidx.camera:camera-core:1.4.1",
         "androidx.camera:camera-camera2:1.4.1",
         "androidx.camera:camera-lifecycle:1.4.1",
+        "androidx.camera:camera-view:1.4.1",
 
         # ── ONNX Runtime Android ──────────────────────────────────────────────
         "com.microsoft.onnxruntime:onnxruntime-android:1.20.0",

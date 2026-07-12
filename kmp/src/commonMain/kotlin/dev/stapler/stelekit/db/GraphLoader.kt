@@ -1509,6 +1509,68 @@ class GraphLoader(
     )
 
     /**
+     * In-memory parse entry point for markdown that did not come from disk (Story 3.2.1, QR
+     * receive). Reuses the same parse/outliner tail as the file-based load path
+     * ([MarkdownParser.parsePage] + [MarkdownPageParser.buildPageModel] +
+     * [MarkdownPageParser.processParsedBlocks]) — no [FileSystem] read, no existing-page lookup
+     * (collision handling is the caller's concern, per [dev.stapler.stelekit.transfer.qrcode.QrImportService]).
+     *
+     * The built [Page.filePath] is always `null` — this page has no on-disk location, so [pageName]
+     * can never become a raw filesystem path here; any later disk materialization goes through
+     * [GraphWriter]/[dev.stapler.stelekit.util.FileUtils] like any other page. Neither the [Page]
+     * nor its [Block]s are persisted by this call — the caller writes them via
+     * [DatabaseWriteActor].
+     */
+    suspend fun importMarkdownString(
+        markdown: String,
+        pageName: PageName,
+    ): Either<DomainError, Pair<Page, List<Block>>> {
+        return try {
+            val now = Clock.System.now()
+            val parsedPage = markdownParser.parsePage(markdown)
+            val buildResult = MarkdownPageParser.buildPageModel(
+                filePath = "",
+                name = pageName.value,
+                isJournal = false,
+                journalDate = null,
+                existingPage = null,
+                now = now,
+                mode = ParseMode.FULL,
+                parsedPage = parsedPage,
+                fileModTime = null,
+            )
+            // No FileSystem read/write on this path — explicitly clear filePath so this page is
+            // never mistaken for one backed by a real on-disk location.
+            val page = buildResult.page.copy(filePath = null)
+
+            val rootBlocks = if (buildResult.firstBlockSkipped) parsedPage.blocks.drop(1) else parsedPage.blocks
+            val blocks = mutableListOf<Block>()
+            // Seed block-UUID derivation with this page's own (freshly-generated, V7-random) UUID
+            // rather than a shared "" — MarkdownPageParser.generateUuid derives block UUIDs from
+            // "$pagePath:$parentUuid:$blockIndex" only, so a constant pagePath made block UUIDs
+            // identical across any two QR imports with the same block-tree shape, causing
+            // INSERT OR REPLACE to hijack/cascade-delete an unrelated previously-imported page.
+            MarkdownPageParser.processParsedBlocks(
+                parsedBlocks = rootBlocks,
+                pagePath = page.uuid.value,
+                pageUuid = page.uuid,
+                parentUuid = null,
+                baseLevel = 0,
+                now = now,
+                destinationList = blocks,
+                mode = ParseMode.FULL,
+            )
+
+            (page to blocks.toList()).right()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("importMarkdownString failed for page '${pageName.value}': ${e.message}")
+            DomainError.QrTransferError.MarkdownParseFailed.left()
+        }
+    }
+
+    /**
      * Handles the METADATA_ONLY write path: creates stub blocks and dispatches them to
      * the write actor in a single execute (savePage + deleteBlocksForPage + saveBlocks = 1 RT).
      */

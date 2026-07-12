@@ -180,6 +180,9 @@ kotlin {
                 // ONNX Runtime — on-device ML inference for image auto-labeling
                 implementation("com.microsoft.onnxruntime:onnxruntime:1.26.0")
 
+                // ZXing — QR encode/decode for camera-qr-export (ADR-001/Story 2.1.2)
+                implementation("com.google.zxing:core:3.5.4")
+
                 // Graph databases for performance evaluation
                 // implementation("com.kuzudb:kuzu-jdbc:0.7.0")
                 // implementation("org.neo4j.driver:neo4j-java-driver:5.21.0")
@@ -196,6 +199,9 @@ kotlin {
                 implementation("io.ktor:ktor-client-mock:3.1.3")
                 // BlockHound — detects blocking calls on coroutine scheduler threads
                 implementation("io.projectreactor.tools:blockhound:1.0.9.RELEASE")
+                // kotlin-reflect — required at runtime for KFunction.isSuspend/.parameters/.returnType
+                // (FrameTransportSignatureTest's reflection-based signature assertions)
+                implementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
 
             }
         }
@@ -259,6 +265,9 @@ kotlin {
                 // PDFBox Android — PDF text extraction for asset OCR pipeline (Android)
                 implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
+                // ZXing — QR encode/decode for camera-qr-export (ADR-001/Story 2.1.2)
+                implementation("com.google.zxing:core:3.5.4")
+
                 // ML Kit Image Labeling — on-device image auto-labeling
                 implementation("com.google.mlkit:image-labeling:17.0.9")
 
@@ -273,6 +282,10 @@ kotlin {
                 implementation("androidx.camera:camera-core:1.4.1")
                 implementation("androidx.camera:camera-camera2:1.4.1")
                 implementation("androidx.camera:camera-lifecycle:1.4.1")
+                // camera-view's PreviewView — QR-receive live camera preview (Bug 2 fix,
+                // camera-qr-export Story 3.2.3 AC). Not previously needed: AndroidCameraFrameSource
+                // only ever bound ImageAnalysis (no visible surface) for scanning.
+                implementation("androidx.camera:camera-view:1.4.1")
                 // ProcessLifecycleOwner — needed by AndroidCameraProvider; camera-lifecycle pulls
                 // this transitively but we declare it explicitly to guarantee compile-time resolution.
                 implementation("androidx.lifecycle:lifecycle-process:2.9.1")
@@ -323,6 +336,10 @@ kotlin {
                 implementation("io.github.takahirom.roborazzi:roborazzi-compose:1.59.0")
                 implementation("androidx.compose.ui:ui-test-junit4:1.10.6")
                 implementation("androidx.compose.ui:ui-test-manifest:1.10.6")
+                // kotlin-reflect — required at runtime for KFunction.isSuspend/.parameters/.returnType
+                // (FrameTransportSignatureTest's reflection-based signature assertions, run on this
+                // target too since it lives in commonTest)
+                implementation("org.jetbrains.kotlin:kotlin-reflect:2.3.21")
             }
         }
 

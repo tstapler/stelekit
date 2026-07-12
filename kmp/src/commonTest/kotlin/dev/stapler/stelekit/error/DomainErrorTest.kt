@@ -49,6 +49,12 @@ class DomainErrorTest {
             DomainError.ExportError.SerializationFailed("serialization failed"),
             DomainError.ExportError.ClipboardFailed("clipboard failed"),
             DomainError.ExportError.ShareFailed("share failed"),
+            DomainError.QrTransferError.ChunkDecodeFailed,
+            DomainError.QrTransferError.IntegrityCheckFailed,
+            DomainError.QrTransferError.PayloadTooLarge(90000, 65536),
+            DomainError.QrTransferError.MarkdownParseFailed,
+            DomainError.QrTransferError.EnvelopeMalformed,
+            DomainError.QrTransferError.OverwriteFailedPreviousContentAffected("page-uuid-123"),
         )
         for (err in errors) {
             // exhaustive when — compile error if any branch is missing
@@ -97,6 +103,12 @@ class DomainErrorTest {
                 is DomainError.ExportError.ClipboardFailed -> err.message
                 is DomainError.ExportError.SerializationFailed -> err.message
                 is DomainError.ExportError.ShareFailed -> err.message
+                DomainError.QrTransferError.ChunkDecodeFailed -> err.message
+                DomainError.QrTransferError.IntegrityCheckFailed -> err.message
+                is DomainError.QrTransferError.PayloadTooLarge -> err.message
+                DomainError.QrTransferError.MarkdownParseFailed -> err.message
+                DomainError.QrTransferError.EnvelopeMalformed -> err.message
+                is DomainError.QrTransferError.OverwriteFailedPreviousContentAffected -> err.message
             }
             assertTrue(msg.isNotEmpty(), "Expected non-empty message for $err")
         }
@@ -161,9 +173,48 @@ class DomainErrorTest {
             DomainError.ExportError.ClipboardFailed("clipboard failed"),
             DomainError.ExportError.SerializationFailed("serialization failed"),
             DomainError.ExportError.ShareFailed("share failed"),
+            DomainError.QrTransferError.ChunkDecodeFailed,
+            DomainError.QrTransferError.IntegrityCheckFailed,
+            DomainError.QrTransferError.PayloadTooLarge(90000, 65536),
+            DomainError.QrTransferError.MarkdownParseFailed,
+            DomainError.QrTransferError.EnvelopeMalformed,
         )
         for (err in errors) {
             assertTrue(err.toUiMessage().isNotEmpty(), "Expected non-empty UI message for $err")
         }
+    }
+
+    @Test
+    fun toUiMessage_should_ReturnUserFacingSizeMessage_When_PayloadTooLarge() {
+        val err = DomainError.QrTransferError.PayloadTooLarge(sizeBytes = 90000, maxBytes = 65536)
+
+        val uiMessage = err.toUiMessage()
+
+        assertEquals("This page is too large to send via QR", uiMessage)
+        assertTrue(!uiMessage.contains("90000"), "UI message should not dump the raw byte count: $uiMessage")
+        assertTrue(!uiMessage.contains("65536"), "UI message should not dump the raw byte count: $uiMessage")
+    }
+
+    @Test
+    fun toUiMessage_should_ReturnSixDistinctMessages_When_CalledForEveryQrTransferErrorVariant() {
+        // Six variants, not the original six: IncompleteTransfer and TransferCancelled were
+        // removed as dead code (no principled call site — see ChunkBuffer.reassemble and
+        // QrTransferCoordinator.cancel KDoc). EnvelopeMalformed was added afterward for the
+        // page-name-envelope fix (see TransferPayloadEnvelope). OverwriteFailedPreviousContentAffected
+        // was added for the Gate 2 C1 fix (QrImportService's overwrite-rollback no longer deletes
+        // the pre-existing page — see QrImportService.import KDoc).
+        val variants: List<DomainError.QrTransferError> = listOf(
+            DomainError.QrTransferError.ChunkDecodeFailed,
+            DomainError.QrTransferError.IntegrityCheckFailed,
+            DomainError.QrTransferError.PayloadTooLarge(90000, 65536),
+            DomainError.QrTransferError.MarkdownParseFailed,
+            DomainError.QrTransferError.EnvelopeMalformed,
+            DomainError.QrTransferError.OverwriteFailedPreviousContentAffected("page-uuid-123"),
+        )
+
+        val messages = variants.map { it.toUiMessage() }
+
+        assertEquals(6, variants.size)
+        assertEquals(messages.size, messages.toSet().size, "Expected all six QrTransferError variants to have distinct UI copy: $messages")
     }
 }

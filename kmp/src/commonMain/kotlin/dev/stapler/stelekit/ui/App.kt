@@ -997,6 +997,12 @@ private fun GraphContent(
     }
 
     val tagSettings = remember(platformSettings) { TagSettings(platformSettings) }
+    // Story 4.1.1: threads a real QrTransferSettings instance down to PageView's "Send via QR"
+    // menu (Story 3.1.4) — without this, qrTransferSettings stays null at every call site and the
+    // menu item never renders on any platform regardless of the flag's stored value.
+    val qrTransferSettings = remember(platformSettings) {
+        dev.stapler.stelekit.transfer.qrcode.QrTransferSettings(platformSettings)
+    }
     // Epic 8 Story 8.2: resolved through the unified registry instead of the old
     // buildLlmFormatterForTags(voiceSettings) (Anthropic/OpenAI-key-only) helper — this is the
     // fix for the original complaint that Android tag suggestion couldn't use on-device
@@ -1395,6 +1401,8 @@ private fun GraphContent(
                                 appState = appState,
                                 graphWriter = graphWriter,
                                 urlFetcher = urlFetcher,
+                                qrTransferSettings = qrTransferSettings,
+                                graphLoader = graphLoader,
                                 capabilities = dev.stapler.stelekit.ui.components.EditorCapabilities(
                                     onAttachImage = if (attachmentService != null) {
                                         { editingBlockUuid ->
