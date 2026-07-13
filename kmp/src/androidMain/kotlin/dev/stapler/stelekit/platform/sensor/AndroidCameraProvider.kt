@@ -14,9 +14,11 @@ import arrow.core.right
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.ImageSensorData
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -103,7 +105,6 @@ class AndroidCameraProvider(
                 CameraSelector.DEFAULT_BACK_CAMERA,
                 imageCapture,
             )
-            delay(400L)
 
             // 5. Prepare output file: cacheDir/captures/<uuid>.jpg
             val capturesDir = File(context.cacheDir, "captures").also { it.mkdirs() }
@@ -113,27 +114,35 @@ class AndroidCameraProvider(
             val sensorSnapshot = SensorModule.motionSensorProvider.sensorDataFlow.firstOrNull()
             val capturedAt = System.currentTimeMillis()
 
+            delay(400L)
+
             // 7. Take the photo — bridge ImageCapture callback to a suspend function
             val outputOptions = ImageCapture.OutputFileOptions.Builder(outputFile).build()
             val executor = Executors.newSingleThreadExecutor()
+            try {
+                // ponytail: 10s timeout — CameraX takePicture can hang silently on some devices
+                withTimeout(10_000L) {
+                    suspendCancellableCoroutine { cont ->
+                        imageCapture.takePicture(
+                            outputOptions,
+                            executor,
+                            object : ImageCapture.OnImageSavedCallback {
+                                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                                    if (cont.isActive) cont.resume(Unit)
+                                }
 
-            suspendCancellableCoroutine { cont ->
-                imageCapture.takePicture(
-                    outputOptions,
-                    executor,
-                    object : ImageCapture.OnImageSavedCallback {
-                        override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                            if (cont.isActive) cont.resume(Unit)
-                        }
-
-                        override fun onError(exception: ImageCaptureException) {
-                            if (cont.isActive) cont.resumeWithException(exception)
-                        }
-                    },
-                )
-                cont.invokeOnCancellation { executor.shutdown() }
+                                override fun onError(exception: ImageCaptureException) {
+                                    if (cont.isActive) cont.resumeWithException(exception)
+                                }
+                            },
+                        )
+                        cont.invokeOnCancellation { executor.shutdown() }
+                    }
+                }
+            } finally {
+                executor.shutdown()
+                cameraProvider.unbindAll()
             }
-            executor.shutdown()
 
             if (!outputFile.exists()) {
                 return DomainError.SensorError.CaptureFailed(
@@ -179,6 +188,8 @@ class AndroidCameraProvider(
                 cameraModel = fixResult.cameraModel,
                 sensorData = sensorData,
             ).right()
+        } catch (e: TimeoutCancellationException) {
+            DomainError.SensorError.CaptureFailed("Camera capture timed out").left()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

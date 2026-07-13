@@ -27,6 +27,8 @@ import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.migration.registerAllMigrations
 import dev.stapler.stelekit.db.SidecarManager
 import dev.stapler.stelekit.platform.DemoFileSystem
+import dev.stapler.stelekit.service.markdownImageLink
+import dev.stapler.stelekit.service.toMarkdown
 import dev.stapler.stelekit.export.ExportService
 import dev.stapler.stelekit.export.HtmlExporter
 import dev.stapler.stelekit.export.JsonExporter
@@ -678,9 +680,8 @@ private fun GraphContent(
                             graphContentLogger.warn("Image attachment failed: $err")
                         },
                         ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                            val markdown = "![${attachment.displayName}](${attachment.relativePath})"
                             if (editingBlockUuid != null) {
-                                blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                                blockStateManager.insertTextAtCursor(editingBlockUuid, attachment.toMarkdown())
                             }
                         }
                     )
@@ -1372,6 +1373,8 @@ private fun GraphContent(
                             var pendingCapturePageUuid by remember { mutableStateOf<String?>(null) }
                             var pendingCaptureBlockUuid by remember { mutableStateOf<dev.stapler.stelekit.model.BlockUuid?>(null) }
                             var isCaptureImporting by remember { mutableStateOf(false) }
+                            var showCameraViewfinder by remember { mutableStateOf(false) }
+                            var pendingCaptureNavigateAfterImport by remember { mutableStateOf(false) }
                             val activeGraphInfo2 = graphRegistry.graphs.firstOrNull { it.id == activeGraphId }
                             val showGitBanner = activeGraphInfo2?.detectedRepoRoot != null &&
                                 appState.gitConfig == null &&
@@ -1417,10 +1420,7 @@ private fun GraphContent(
                                                         graphContentLogger.warn("Image attachment failed: $err")
                                                     },
                                                     ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                                                        val safeAlt = attachment.displayName.replace("]", "\\]")
-                                                        val safePath = attachment.relativePath.replace(")", "\\)")
-                                                        val markdown = "![${safeAlt}](${safePath})"
-                                                        blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                                                        blockStateManager.insertTextAtCursor(editingBlockUuid, attachment.toMarkdown())
                                                     }
                                                 )
                                             }
@@ -1442,11 +1442,9 @@ private fun GraphContent(
                                                                 graphContentLogger.warn("Drag-and-drop attachment failed: $err")
                                                             },
                                                             ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                                                                val safeAlt = attachment.displayName.replace("]", "\\]")
-                                                                val safePath = attachment.relativePath.replace(")", "\\)")
                                                                 blockStateManager.addBlockWithContent(
                                                                     pageUuid = pageUuid,
-                                                                    content = "![${safeAlt}](${safePath})"
+                                                                    content = attachment.toMarkdown()
                                                                 )
                                                             }
                                                         )
@@ -1467,11 +1465,8 @@ private fun GraphContent(
                                                             graphContentLogger.warn("Clipboard paste failed: $err")
                                                         },
                                                         ifRight = { attachment: dev.stapler.stelekit.service.AttachmentResult ->
-                                                            val safeAlt = attachment.displayName.replace("]", "\\]")
-                                                            val safePath = attachment.relativePath.replace(")", "\\)")
-                                                            val markdown = "![${safeAlt}](${safePath})"
                                                             if (editingBlockUuid != null) {
-                                                                blockStateManager.insertTextAtCursor(editingBlockUuid, markdown)
+                                                                blockStateManager.insertTextAtCursor(editingBlockUuid, attachment.toMarkdown())
                                                             }
                                                         }
                                                     )
@@ -1490,25 +1485,16 @@ private fun GraphContent(
                                                         return@launch
                                                     }
                                                 }
-                                                // Resolve page UUID and editing block UUID before capturing —
-                                                // camera suspends for seconds, so we snapshot state at button-tap time.
+                                                // Snapshot page/block context before entering viewfinder —
+                                                // user may be in the editor and these will be stale once the dialog opens.
                                                 val pageUuid: String? =
                                                     (appState.currentScreen as? Screen.PageView)?.page?.uuid?.value
                                                         ?: appState.currentPage?.uuid?.value
-                                                val resolvedPageUuid = pageUuid
+                                                pendingCapturePageUuid = pageUuid
                                                     ?: repos.journalService.ensureTodayJournal().uuid.value
-                                                val capturedBlockUuid = blockStateManager.editingBlockUuid.value
-                                                when (val captured = SensorModule.cameraProvider.capturePhoto()) {
-                                                    is Either.Left -> {
-                                                        graphContentLogger.warn("Camera capture failed: ${captured.value.message}")
-                                                        viewModel.sendSnackbar(captured.value.toUiMessage())
-                                                    }
-                                                    is Either.Right -> {
-                                                        pendingCapturePageUuid = resolvedPageUuid
-                                                        pendingCaptureBlockUuid = capturedBlockUuid
-                                                        pendingCaptureFile = captured.value
-                                                    }
-                                                }
+                                                pendingCaptureBlockUuid = blockStateManager.editingBlockUuid.value
+                                                pendingCaptureNavigateAfterImport = false
+                                                showCameraViewfinder = true
                                             }
                                         }
                                     } else null,
@@ -1524,15 +1510,10 @@ private fun GraphContent(
                                                 }
                                             }
                                             val page = repos.journalService.ensureTodayJournal()
-                                            executeCaptureAndImport(
-                                                imageImportService = imageImportService,
-                                                getActiveGraphPath = { graphManager.getActiveGraphInfo()?.path },
-                                                pageUuid = page.uuid.value,
-                                                navigateAfterImport = true,
-                                                onSnackbar = { viewModel.sendSnackbar(it) },
-                                                onNavigate = { annUuid, pgUuid -> viewModel.navigateToAnnotationEditor(annUuid, pgUuid) },
-                                                onWarn = { graphContentLogger.warn(it) },
-                                            )
+                                            pendingCapturePageUuid = page.uuid.value
+                                            pendingCaptureBlockUuid = null
+                                            pendingCaptureNavigateAfterImport = true
+                                            showCameraViewfinder = true
                                         }
                                         Unit
                                     }
@@ -1543,6 +1524,16 @@ private fun GraphContent(
                                 perfQueryStats = perfQueryStats,
                                 tagSuggestionViewModel = tagSuggestionViewModel,
                             )
+                            if (showCameraViewfinder) {
+                                CameraViewfinderDialog(
+                                    onCapture = { file ->
+                                        pendingCaptureFile = file
+                                        showCameraViewfinder = false
+                                    },
+                                    onDismiss = { showCameraViewfinder = false },
+                                    onError = { msg -> viewModel.sendSnackbar(msg) },
+                                )
+                            }
                             val captureFile = pendingCaptureFile
                             val capturePageUuid = pendingCapturePageUuid
                             if (captureFile != null && capturePageUuid != null) {
@@ -1553,6 +1544,7 @@ private fun GraphContent(
                                         val file = captureFile
                                         val pageUuid = capturePageUuid
                                         val captureBlockUuid = pendingCaptureBlockUuid
+                                        val navigateAfterImport = pendingCaptureNavigateAfterImport
                                         isCaptureImporting = true
                                         scope.launch {
                                             val graphPath = graphManager.getActiveGraphInfo()?.path
@@ -1575,11 +1567,16 @@ private fun GraphContent(
                                                 viewModel.sendSnackbar(err.toUiMessage())
                                             }
                                             result?.onRight { annotation ->
-                                                val filename = annotation.filePath.substringAfterLast("/")
-                                                val safePath = "../assets/images/$filename".replace(")", "\\)")
-                                                val markdown = "![]($safePath)"
-                                                if (captureBlockUuid != null) {
-                                                    blockStateManager.insertTextAtCursor(captureBlockUuid, markdown)
+                                                if (navigateAfterImport) {
+                                                    viewModel.navigateToAnnotationEditor(annotation.uuid, pageUuid)
+                                                } else {
+                                                    val relPath = annotation.filePath.removePrefix("$graphPath/")
+                                                    if (captureBlockUuid != null) {
+                                                        blockStateManager.insertTextAtCursor(
+                                                            captureBlockUuid,
+                                                            markdownImageLink("", "../$relPath"),
+                                                        )
+                                                    }
                                                 }
                                             }
                                             isCaptureImporting = false
