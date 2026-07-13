@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.69.0](https://github.com/tstapler/stelekit/compare/v0.68.0...v0.69.0) (2026-07-13)
+
+
+### Features
+
+* **android:** AndroidCameraFrameSource via CameraX ImageAnalysis ([80a7c99](https://github.com/tstapler/stelekit/commit/80a7c996df750966625c3142d770b54911357e6f))
+* **android:** replace headless capture with CameraX viewfinder dialog ([0daeeae](https://github.com/tstapler/stelekit/commit/0daeeae0e199a484b06a4d52ceffa02353d569db))
+* **desktop:** wire Send via QR entry point + JVM round-trip coverage ([9b537e8](https://github.com/tstapler/stelekit/commit/9b537e8cdc244af1c33708917061ef98811afe48))
+* **ios:** CoreImage QrCodec encode actual + send entry point wiring ([c87ad73](https://github.com/tstapler/stelekit/commit/c87ad73b91f263d8d41ac51c2fa240ac5a88f007))
+* **qr-decode:** render a real CameraX preview behind the scan reticle ([375db50](https://github.com/tstapler/stelekit/commit/375db5011aa82dcf9f42f91577246837b96929a1))
+* **sensor:** CameraFrameSource interface and no-op default ([8c73967](https://github.com/tstapler/stelekit/commit/8c7396777f49bf250da691e599b3af9c55e347ac))
+* **transfer:** air-gapped QR page transfer between devices ([3899224](https://github.com/tstapler/stelekit/commit/389922467862b0e8008884a788e8a58d87cda263))
+* **transfer:** carry real page name through the QR wire payload, closing the synthesized-placeholder-name gap ([5e5ca25](https://github.com/tstapler/stelekit/commit/5e5ca258d77b02444b50d45e55771798dc8269da))
+* **transfer:** distinguish locked-on vs searching reticle state (validation.md criterion 14) ([130149c](https://github.com/tstapler/stelekit/commit/130149c19ac2d4b2c08654a0e1db75c088f76b06))
+* **transfer:** fountain codec and chunk buffer with proof-gated reassembly ([a4f53dc](https://github.com/tstapler/stelekit/commit/a4f53dc86a658d918d8ac9eed9c67c4a797e6c2d))
+* **transfer:** FrameTransport seam, QrCodec ZXing actuals, QrFrameTransport adapter ([498bf44](https://github.com/tstapler/stelekit/commit/498bf44613929abe810eb6fe05c8a8e805c566fb))
+* **transfer:** protocol core foundation — serializer, error types, newtypes, air-gap guard ([b13f27b](https://github.com/tstapler/stelekit/commit/b13f27b7e8336492e5d838c4f9b94ba37167276f))
+* **transfer:** QR decoder coordinator, ViewModel, screen, and import service ([4a01b82](https://github.com/tstapler/stelekit/commit/4a01b822884f0e7ed419d9b19fa1ed4a5d600580))
+* **transfer:** QR encoder ViewModel, screen, and send entry point ([7ab5030](https://github.com/tstapler/stelekit/commit/7ab5030a39bfeb742ef99200c2dd6c2d4ed75959))
+* **transfer:** round-trip fidelity gate, stall timer, structured logging, concurrent-sender handling ([464f748](https://github.com/tstapler/stelekit/commit/464f7485c345c547598d8643528f4b8d6c497262))
+
+
+### Bug Fixes
+
+* **build:** add kotlin-reflect to androidUnitTest dependencies ([e08475d](https://github.com/tstapler/stelekit/commit/e08475d48719d9272b372f32326cbc72df51e34d))
+* **build:** wire camera-view Bazel dep, add missing wasmJs QrCodec actual ([680f468](https://github.com/tstapler/stelekit/commit/680f468cea66012323f21dfd35c7ace425c3c124))
+* **qr-decode:** fix subscription race in shared camera-flow (CI flake root cause) ([3143f3e](https://github.com/tstapler/stelekit/commit/3143f3ea64e928f7546ea44e78d4fc514f853d2e))
+* **qr-decode:** reach PermissionDenied preflight and show distinct copy per reason ([754831e](https://github.com/tstapler/stelekit/commit/754831e6ea3ac157ee1c9f83243d7d02f4dbc109))
+* **qr-decode:** share one camera-flow subscription, bind additively, volatile coordinator fields ([e052539](https://github.com/tstapler/stelekit/commit/e0525391f6b9bbe22aca2aa1d3a0595a5db45284))
+* **qr-decode:** unique per-import pagePath and non-destructive overwrite rollback ([aa4a0dd](https://github.com/tstapler/stelekit/commit/aa4a0dd1eba4271818c4340b1c637d2ab7e4a7d5))
+* **qr-decode:** wire PayloadTooLarge decode-side, remove dead IncompleteTransfer/TransferCancelled ([92da8a4](https://github.com/tstapler/stelekit/commit/92da8a441940bc7919796ce439075d211671856d))
+* **qr-transfer:** reject oversized payloads before ZXing render in QrCodec.jvm ([f8c812d](https://github.com/tstapler/stelekit/commit/f8c812d2d8fa110db44b9f22414f8d6d83ea51e6))
+* **transfer:** address PR [#221](https://github.com/tstapler/stelekit/issues/221) Copilot review comments ([c8360e6](https://github.com/tstapler/stelekit/commit/c8360e62a68bcb84f9855fc57b1b4539ed40adbb))
+* **transfer:** bound fountain decoder work/memory against adversarial chunk sizes ([5fc5172](https://github.com/tstapler/stelekit/commit/5fc517289db2a811d60858c3661274a5d0c8f20e))
+* **transfer:** rate-limit reduce-motion tap-to-advance to WCAG 2.3.1 2fps ceiling ([c8f96ae](https://github.com/tstapler/stelekit/commit/c8f96ae474083c33fd8341213b74559bacb67507))
+* **transfer:** resolve detekt Compose-rules findings blocking CI ([cd43348](https://github.com/tstapler/stelekit/commit/cd43348d3c6eb79fe1c1c512076ade199e09ea9e))
+* **transfer:** volatile QrEncodeViewModel pacing state for cross-thread visibility ([c463261](https://github.com/tstapler/stelekit/commit/c46326117471f978e640e5b75599d6df09e2dc53))
+* **transfer:** widen ZXing try/catch, volatile TransferSession fields ([46f5e52](https://github.com/tstapler/stelekit/commit/46f5e52503034517d10c36d0aaa970d06860613f))
+* **transfer:** wire Import via camera entry point (decode-side equivalent of 9b537e8cdc) ([e90f253](https://github.com/tstapler/stelekit/commit/e90f253b4832f16164834ad72f3a99f61d771d12))
+
 ## [0.68.0](https://github.com/tstapler/stelekit/compare/v0.67.0...v0.68.0) (2026-07-11)
 
 
