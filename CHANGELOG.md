@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.69.1](https://github.com/tstapler/stelekit/compare/v0.69.0...v0.69.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* **detekt:** remember(context) for PreviewView constructor arg ([331b3ca](https://github.com/tstapler/stelekit/commit/331b3cab04856d48ad85e64180ea7d4eda4e8031))
+
 ## [0.69.0](https://github.com/tstapler/stelekit/compare/v0.68.0...v0.69.0) (2026-07-13)
 
 
