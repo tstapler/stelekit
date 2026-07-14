@@ -1,8 +1,9 @@
 package dev.stapler.stelekit.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,11 +62,15 @@ internal fun parseTableContent(raw: String): TableData {
  *
  * TODO(CMP-4279): horizontalScroll inside LazyColumn may conflict on iOS
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun TableBlock(
     content: String,
     onStartEditing: () -> Unit,
     modifier: Modifier = Modifier,
+    isInSelectionMode: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    onLongPressSelect: (() -> Unit)? = null,
 ) {
     val tableData = remember(content) { parseTableContent(content) }
 
@@ -75,6 +80,10 @@ internal fun TableBlock(
             text = content,
             textColor = MaterialTheme.colorScheme.onBackground,
             linkColor = MaterialTheme.colorScheme.primary,
+            onClick = onStartEditing,
+            isInSelectionMode = isInSelectionMode,
+            onToggleSelect = onToggleSelect,
+            onLongPressSelect = onLongPressSelect,
             modifier = modifier,
         )
         return
@@ -90,7 +99,10 @@ internal fun TableBlock(
             .border(1.dp, borderColor, RoundedCornerShape(4.dp))
             .clip(RoundedCornerShape(4.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .clickable { onStartEditing() }
+            .combinedClickable(
+                onLongClick = onLongPressSelect,
+                onClick = { if (isInSelectionMode) onToggleSelect() else onStartEditing() },
+            )
     ) {
         Column(modifier = Modifier.wrapContentWidth(unbounded = true)) {
             // Header row

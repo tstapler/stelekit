@@ -1,7 +1,6 @@
 package dev.stapler.stelekit.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -10,7 +9,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -258,6 +256,21 @@ internal fun BlockItem(
     val haptic = LocalHapticFeedback.current
     val useLongPressForDrag = useLongPressForDrag()
 
+    // Single source of truth for "genuine long-press on this row enters selection mode".
+    // Passed down into whichever block-type composable renders the content so tap and
+    // long-press are resolved by ONE gesture recognizer per row, instead of racing an
+    // outer row-level detector against an inner content-level one (the root cause of
+    // fast taps sometimes landing in selection mode instead of edit mode).
+    // On platforms where long-press initiates drag (Android), this suppresses row-level
+    // long-press-to-select so it doesn't conflict with the gutter's
+    // detectDragGesturesAfterLongPress, which fires at the same time.
+    val onLongPressSelect: (() -> Unit)? = if (useLongPressForDrag) null else ({
+        if (!isInSelectionMode) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onEnterSelectionMode()
+        }
+    })
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -265,20 +278,6 @@ internal fun BlockItem(
                 if (isSelected) Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
                 else Modifier
             )
-            .pointerInput(isInSelectionMode, useLongPressForDrag) {
-                detectTapGestures(
-                    // On platforms where long-press initiates drag (Android), suppress the
-                    // block-level long-press-to-select so it doesn't conflict with the gutter's
-                    // detectDragGesturesAfterLongPress, which fires at the same time.
-                    onLongPress = if (useLongPressForDrag) null else ({
-                        if (!isInSelectionMode) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onEnterSelectionMode()
-                        }
-                    }),
-                    onTap = { if (isInSelectionMode) onToggleSelect() }
-                )
-            }
     ) {
         // Indentation guides
         repeat(block.level) { level ->
@@ -391,6 +390,9 @@ internal fun BlockItem(
                         block = block,
                         onOpenAnnotationEditor = onOpenAnnotationEditor,
                         onStartEditing = onStartEditing,
+                        isInSelectionMode = isInSelectionMode,
+                        onToggleSelect = onToggleSelect,
+                        onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
                     is BlockType.Heading -> HeadingBlock(
@@ -399,16 +401,25 @@ internal fun BlockItem(
                         linkColor = linkColor,
                         onStartEditing = onStartEditing,
                         onLinkClick = onLinkClick,
+                        isInSelectionMode = isInSelectionMode,
+                        onToggleSelect = onToggleSelect,
+                        onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
                     is BlockType.ThematicBreak -> ThematicBreakBlock(
                         onStartEditing = onStartEditing,
+                        isInSelectionMode = isInSelectionMode,
+                        onToggleSelect = onToggleSelect,
+                        onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
                     is BlockType.CodeFence -> CodeFenceBlock(
                         content = block.content,
                         language = codeFenceLanguage(block.content),
                         onStartEditing = onStartEditing,
+                        isInSelectionMode = isInSelectionMode,
+                        onToggleSelect = onToggleSelect,
+                        onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
                     is BlockType.Blockquote -> BlockquoteBlock(
@@ -416,6 +427,9 @@ internal fun BlockItem(
                         linkColor = linkColor,
                         onStartEditing = onStartEditing,
                         onLinkClick = onLinkClick,
+                        isInSelectionMode = isInSelectionMode,
+                        onToggleSelect = onToggleSelect,
+                        onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
                     is BlockType.OrderedListItem -> OrderedListItemBlock(
@@ -424,11 +438,17 @@ internal fun BlockItem(
                         linkColor = linkColor,
                         onStartEditing = onStartEditing,
                         onLinkClick = onLinkClick,
+                        isInSelectionMode = isInSelectionMode,
+                        onToggleSelect = onToggleSelect,
+                        onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
                     is BlockType.Table -> TableBlock(
                         content = block.content,
                         onStartEditing = onStartEditing,
+                        isInSelectionMode = isInSelectionMode,
+                        onToggleSelect = onToggleSelect,
+                        onLongPressSelect = onLongPressSelect,
                         modifier = Modifier.weight(1f),
                     )
                     else -> {
@@ -439,6 +459,9 @@ internal fun BlockItem(
                                 url = url,
                                 altText = altText,
                                 onStartEditing = onStartEditing,
+                                isInSelectionMode = isInSelectionMode,
+                                onToggleSelect = onToggleSelect,
+                                onLongPressSelect = onLongPressSelect,
                                 modifier = Modifier.weight(1f),
                             )
                         } else {
@@ -452,6 +475,9 @@ internal fun BlockItem(
                                 modifier = Modifier.weight(1f),
                                 isShiftDown = isShiftDown,
                                 onShiftClick = onShiftClick,
+                                isInSelectionMode = isInSelectionMode,
+                                onToggleSelect = onToggleSelect,
+                                onLongPressSelect = onLongPressSelect,
                                 suggestionMatcher = suggestionMatcher,
                                 onSuggestionClick = { canonicalName, contentStart, contentEnd ->
                                     suggestionState = SuggestionState(canonicalName, contentStart, contentEnd, block.content)

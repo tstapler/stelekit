@@ -3,8 +3,10 @@
 
 package dev.stapler.stelekit.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -40,12 +42,16 @@ import coil3.compose.AsyncImage
  * Tapping the image opens a fullscreen lightbox. The lightbox provides a close
  * button and an edit button that triggers [onStartEditing].
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun ImageBlock(
     url: String,
     altText: String,
     onStartEditing: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isInSelectionMode: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    onLongPressSelect: (() -> Unit)? = null,
 ) {
     val imageLoader = rememberSteleKitImageLoader()
     var showLightbox by remember { mutableStateOf(false) }
@@ -57,7 +63,10 @@ internal fun ImageBlock(
         contentScale = ContentScale.Fit,
         modifier = modifier
             .fillMaxWidth()
-            .clickable { showLightbox = true }
+            .combinedClickable(
+                onLongClick = onLongPressSelect,
+                onClick = { if (isInSelectionMode) onToggleSelect() else showLightbox = true },
+            )
     )
 
     if (showLightbox) {

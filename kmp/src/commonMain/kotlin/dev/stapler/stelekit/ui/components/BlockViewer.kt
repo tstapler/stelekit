@@ -41,6 +41,9 @@ internal fun BlockViewer(
     modifier: Modifier = Modifier,
     isShiftDown: Boolean = false,
     onShiftClick: () -> Unit = {},
+    isInSelectionMode: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    onLongPressSelect: (() -> Unit)? = null,
     suggestionMatcher: AhoCorasickMatcher? = null,
     onSuggestionClick: (canonicalName: String, contentStart: Int, contentEnd: Int) -> Unit = { _, _, _ -> },
     onSuggestionRightClick: (canonicalName: String, contentStart: Int, contentEnd: Int) -> Unit = { _, _, _ -> },
@@ -70,6 +73,9 @@ internal fun BlockViewer(
         },
         onClick = if (isShiftDown) onShiftClick else onStartEditing,
         modifier = modifier.fillMaxWidth(),
+        isInSelectionMode = isInSelectionMode,
+        onToggleSelect = onToggleSelect,
+        onLongPressSelect = onLongPressSelect,
         suggestionMatcher = suggestionMatcher,
         onSuggestionClick = onSuggestionClick,
         onSuggestionRightClick = onSuggestionRightClick,
@@ -94,6 +100,10 @@ fun WikiLinkText(
     onLinkClick: (String) -> Unit = {},
     onUrlClick: (String) -> Unit = {},
     onClick: () -> Unit = {},
+    isInSelectionMode: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    /** Invoked on a genuine long-press (no movement) that isn't over a suggestion span — enters row selection mode. Null suppresses this (e.g. platforms where long-press starts a drag instead). */
+    onLongPressSelect: (() -> Unit)? = null,
     suggestionMatcher: AhoCorasickMatcher? = null,
     onSuggestionClick: (canonicalName: String, contentStart: Int, contentEnd: Int) -> Unit = { _, _, _ -> },
     onSuggestionRightClick: (canonicalName: String, contentStart: Int, contentEnd: Int) -> Unit = { _, _, _ -> },
@@ -154,7 +164,7 @@ fun WikiLinkText(
             .pointerInput(annotatedString) {
                 detectTapGestures(
                     onLongPress = { tapOffset ->
-                        val layout = textLayoutResult ?: return@detectTapGestures
+                        val layout = textLayoutResult ?: run { onLongPressSelect?.invoke(); return@detectTapGestures }
                         val offset = layout.getOffsetForPosition(tapOffset)
                         val suggestion = annotatedString
                             .getStringAnnotations(PAGE_SUGGESTION_TAG, offset, offset)
@@ -166,9 +176,15 @@ fun WikiLinkText(
                                 return@detectTapGestures
                             }
                         }
+                        // Not over a suggestion span — this is a genuine row-level long-press.
+                        onLongPressSelect?.invoke()
                     },
                     onTap = { tapOffset ->
-                        val layout = textLayoutResult ?: return@detectTapGestures
+                        if (isInSelectionMode) {
+                            onToggleSelect()
+                            return@detectTapGestures
+                        }
+                        val layout = textLayoutResult ?: run { onClick(); return@detectTapGestures }
                         val offset = layout.getOffsetForPosition(tapOffset)
                         val annotations = annotatedString.getStringAnnotations(start = offset, end = offset)
 
