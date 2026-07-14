@@ -50,19 +50,14 @@ const val CROSS_SECTION_UNAVAILABLE_TAG = "CROSS_SECTION_UNAVAILABLE"
 
 /**
  * Mutable rendering context passed through the recursive AST walk.
- *
- * [searchFrom] tracks how far we have already searched in the [original] string when
- * looking up top-level TextNode positions for page-suggestion annotation offsets.
  */
 private class RenderContext(
-    val original: String,
     val resolvedRefs: Map<String, String>,
     val linkColor: Color,
     val blockRefBg: Color,
     val codeBackground: Color,
     val suggestionSpans: List<AhoCorasickMatcher.MatchSpan>,
     val suggestionColor: Color,
-    var searchFrom: Int = 0,
     /** Page names present in the local DB — used for FR-14 cross-section link rendering. */
     val localPageNames: Set<String> = emptySet(),
     /** When true, wikilinks absent from [localPageNames] render as unavailable. */
@@ -71,17 +66,21 @@ private class RenderContext(
 
 // ── AST → AnnotatedString ──────────────────────────────────────────────────────
 
-private fun AnnotatedString.Builder.renderNodes(
-    nodes: List<InlineNode>,
+/**
+ * Renders the top-level (depth-0) node list using each node's exact source [IntRange]
+ * (from [dev.stapler.stelekit.parsing.InlineParser.parseWithRanges]) rather than
+ * re-deriving offsets via `indexOf`. Using exact ranges avoids mis-locating a TextNode
+ * when its content also appears verbatim inside a preceding sibling's source span
+ * (e.g. `"[[abc]]abc"` — the trailing "abc" must not resolve to the "abc" inside the
+ * brackets), which corrupts PAGE_SUGGESTION_TAG offsets used for click-to-insert.
+ *
+ * Consecutive adjacent TextNodes are merged into runs so that multi-word page names
+ * (e.g. "Meeting Notes") are found across word/space token boundaries.
+ */
+private fun AnnotatedString.Builder.renderTopLevel(
+    slots: List<Pair<InlineNode, IntRange>>,
     ctx: RenderContext,
-    depth: Int = 0,
 ) {
-    if (depth != 0) {
-        for (node in nodes) renderNode(node, ctx, depth)
-        return
-    }
-    // At depth 0: merge consecutive adjacent TextNodes into runs so that multi-word
-    // page names (e.g. "Meeting Notes") are found across word/space token boundaries.
     var runOrigStart = -1
     val runContent = StringBuilder()
 
@@ -92,17 +91,9 @@ private fun AnnotatedString.Builder.renderNodes(
         runContent.clear()
     }
 
-    for (node in nodes) {
+    for ((node, range) in slots) {
         if (node is TextNode && node.content.isNotEmpty()) {
-            val origStart = if (ctx.searchFrom + node.content.length <= ctx.original.length &&
-                ctx.original.startsWith(node.content, ctx.searchFrom)
-            ) {
-                ctx.searchFrom
-            } else {
-                ctx.original.indexOf(node.content, ctx.searchFrom).takeIf { it >= 0 }
-                    ?: ctx.searchFrom
-            }
-            ctx.searchFrom = origStart + node.content.length
+            val origStart = range.first
             if (runOrigStart >= 0 && runOrigStart + runContent.length == origStart) {
                 runContent.append(node.content)
             } else {
@@ -112,10 +103,18 @@ private fun AnnotatedString.Builder.renderNodes(
             }
         } else {
             flushRun()
-            renderNode(node, ctx, depth)
+            renderNode(node, ctx, depth = 0)
         }
     }
     flushRun()
+}
+
+private fun AnnotatedString.Builder.renderNodes(
+    nodes: List<InlineNode>,
+    ctx: RenderContext,
+    depth: Int,
+) {
+    for (node in nodes) renderNode(node, ctx, depth)
 }
 
 private fun AnnotatedString.Builder.renderNode(
@@ -125,29 +124,10 @@ private fun AnnotatedString.Builder.renderNode(
 ) {
     when (node) {
         is TextNode -> {
-            if (node.content.isEmpty()) return
-            if (depth == 0) {
-                // Determine where this TextNode's content sits in the original string
-                // so page-suggestion annotations get the right source offsets.
-                //
-                // Prefer the forward cursor (ctx.searchFrom) when the text actually starts
-                // there — this handles repeated tokens correctly (e.g. "New Year New Year").
-                // Fall back to indexOf when the cursor is behind a non-TextNode node
-                // (WikiLinkNode, BlockRefNode, etc.) that didn't advance ctx.searchFrom,
-                // so the text is further ahead than the cursor expects.
-                val origStart = if (ctx.searchFrom + node.content.length <= ctx.original.length &&
-                    ctx.original.startsWith(node.content, ctx.searchFrom)
-                ) {
-                    ctx.searchFrom
-                } else {
-                    ctx.original.indexOf(node.content, ctx.searchFrom).takeIf { it >= 0 }
-                        ?: ctx.searchFrom
-                }
-                ctx.searchFrom = origStart + node.content.length
-                renderPlainText(node.content, origStart, ctx)
-            } else {
-                append(node.content)
-            }
+            // Top-level (depth 0) TextNodes are rendered by renderTopLevel via
+            // renderPlainText, using exact source ranges; this branch only sees
+            // nested TextNode children (depth > 0), which render as plain appended text.
+            if (node.content.isNotEmpty()) append(node.content)
         }
 
         is BoldNode ->
@@ -433,9 +413,8 @@ fun parseMarkdownWithStyling(
     /** When true, wikilinks absent from [localPageNames] render as unavailable badges. */
     hasSectionFilter: Boolean = false,
 ): AnnotatedString {
-    val nodes = InlineParser(text).parse()
+    val slots = InlineParser(text).parseWithRanges()
     val ctx = RenderContext(
-        original = text,
         resolvedRefs = resolvedRefs,
         linkColor = linkColor,
         blockRefBg = blockRefBackgroundColor,
@@ -447,7 +426,7 @@ fun parseMarkdownWithStyling(
     )
     return buildAnnotatedString {
         if (textColor != Color.Unspecified) pushStyle(SpanStyle(color = textColor))
-        renderNodes(nodes, ctx, depth = 0)
+        renderTopLevel(slots, ctx)
         if (textColor != Color.Unspecified) pop()
     }
 }
@@ -463,9 +442,8 @@ fun extractSuggestions(
     matcher: AhoCorasickMatcher?,
 ): List<AhoCorasickMatcher.MatchSpan> {
     if (matcher == null) return emptyList()
-    val nodes = InlineParser(content).parse()
+    val slots = InlineParser(content).parseWithRanges()
     val result = mutableListOf<AhoCorasickMatcher.MatchSpan>()
-    var searchFrom = 0
 
     // Merge consecutive TextNodes (including spaces) into runs before searching,
     // so that multi-word page names like "Meeting Notes" are found across token
@@ -505,10 +483,9 @@ fun extractSuggestions(
         runContent.clear()
     }
 
-    for (node in nodes) {
+    for ((node, range) in slots) {
         if (node is TextNode && node.content.isNotEmpty()) {
-            val nodeOrigStart = content.indexOf(node.content, searchFrom).takeIf { it >= 0 } ?: continue
-            searchFrom = nodeOrigStart + node.content.length
+            val nodeOrigStart = range.first
             // Extend current run if adjacent, otherwise flush and start a new one
             if (runOrigStart >= 0 && runOrigStart + runContent.length == nodeOrigStart) {
                 runContent.append(node.content)

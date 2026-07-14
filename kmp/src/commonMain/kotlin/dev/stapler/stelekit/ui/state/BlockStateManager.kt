@@ -36,6 +36,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import arrow.core.right
 import dev.stapler.stelekit.clipboard.BlockClipboard
 import dev.stapler.stelekit.clipboard.BlockTreeAlgorithms
@@ -794,6 +796,18 @@ class BlockStateManager(
         _blocks.value.values.flatten().find { it.uuid == blockUuid }
             ?: blockRepository.getBlockByUuid(blockUuid).first().getOrNull()
 
+    // Per-block mutex guarding the read-modify-write sequence in the text/link insertion
+    // helpers below. Without this, two calls for the same block fired in quick succession
+    // (e.g. accepting two suggested tags before the first one's _blocks update lands) both
+    // read the same pre-insertion content and race to overwrite _blocks — the second write
+    // wins and silently drops the first insertion. Mirrors GraphLoader.getFileLock's
+    // guard-mutex + plain-map keyed-lock pattern.
+    private val contentMutationMutexGuard = Mutex()
+    private val contentMutationMutexes = mutableMapOf<String, Mutex>()
+
+    private suspend fun contentMutationMutex(blockUuid: BlockUuid): Mutex =
+        contentMutationMutexGuard.withLock { contentMutationMutexes.getOrPut(blockUuid.value) { Mutex() } }
+
     /**
      * Inserts [text] at the cursor position for the given block.
      * Used for image attachment markdown insertion (`![alt](path)`).
@@ -803,25 +817,35 @@ class BlockStateManager(
      */
     override fun insertTextAtCursor(blockUuid: BlockUuid, text: String, overrideCursorIndex: Int?) {
         scope.launch {
-            val block = findBlockOrNull(blockUuid) ?: return@launch
-            val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
-            val safePos = cursor.coerceIn(0, block.content.length)
-            val newContent = block.content.substring(0, safePos) + text + block.content.substring(safePos)
-            val newVersion = block.version + 1
-            updateBlockContent(blockUuid, newContent, newVersion)
-            requestEditBlock(blockUuid, safePos + text.length)
+            contentMutationMutex(blockUuid).withLock {
+                val block = findBlockOrNull(blockUuid) ?: return@withLock
+                val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
+                val safePos = cursor.coerceIn(0, block.content.length)
+                val newContent = block.content.substring(0, safePos) + text + block.content.substring(safePos)
+                val newVersion = block.version + 1
+                updateBlockContent(blockUuid, newContent, newVersion).join()
+                requestEditBlock(blockUuid, safePos + text.length)
+            }
         }
     }
 
     /**
      * Append [text] to the end of the block's current content.
-     * Safe to call from a non-editing context (no active cursor required).
-     * Internally delegates to insertTextAtCursor with overrideCursorIndex = block.content.length.
+     * Safe to call from a non-editing context (no active cursor required), and safe to call
+     * repeatedly in quick succession for the same block — each append is serialized behind
+     * [contentMutationMutex] and always appends to the *current* end, not a snapshot taken
+     * before an earlier pending append landed.
      */
     fun appendToBlock(blockUuid: BlockUuid, text: String) {
         scope.launch {
-            val block = findBlockOrNull(blockUuid) ?: return@launch
-            insertTextAtCursor(blockUuid, text, overrideCursorIndex = block.content.length)
+            contentMutationMutex(blockUuid).withLock {
+                val block = findBlockOrNull(blockUuid) ?: return@withLock
+                val safePos = block.content.length
+                val newContent = block.content + text
+                val newVersion = block.version + 1
+                updateBlockContent(blockUuid, newContent, newVersion).join()
+                requestEditBlock(blockUuid, safePos + text.length)
+            }
         }
     }
 
@@ -834,14 +858,16 @@ class BlockStateManager(
      */
     override fun insertLinkAtCursor(blockUuid: BlockUuid, pageName: String, overrideCursorIndex: Int?) {
         scope.launch {
-            val block = findBlockOrNull(blockUuid) ?: return@launch
-            val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
-            val linkText = "[[$pageName]]"
-            val safePos = cursor.coerceIn(0, block.content.length)
-            val newContent = block.content.substring(0, safePos) + linkText + block.content.substring(safePos)
-            val newVersion = block.version + 1
-            updateBlockContent(blockUuid, newContent, newVersion)
-            requestEditBlock(blockUuid, safePos + linkText.length)
+            contentMutationMutex(blockUuid).withLock {
+                val block = findBlockOrNull(blockUuid) ?: return@withLock
+                val cursor = overrideCursorIndex ?: _editingCursorIndex.value ?: block.content.length
+                val linkText = "[[$pageName]]"
+                val safePos = cursor.coerceIn(0, block.content.length)
+                val newContent = block.content.substring(0, safePos) + linkText + block.content.substring(safePos)
+                val newVersion = block.version + 1
+                updateBlockContent(blockUuid, newContent, newVersion).join()
+                requestEditBlock(blockUuid, safePos + linkText.length)
+            }
         }
     }
 
@@ -860,14 +886,16 @@ class BlockStateManager(
             return
         }
         scope.launch {
-            val block = findBlockOrNull(blockUuid) ?: return@launch
-            val safeStart = selectionStart.coerceIn(0, block.content.length)
-            val safeEnd = selectionEnd.coerceIn(safeStart, block.content.length)
-            val linkText = "[[$pageName]]"
-            val newContent = block.content.substring(0, safeStart) + linkText + block.content.substring(safeEnd)
-            val newVersion = block.version + 1
-            updateBlockContent(blockUuid, newContent, newVersion)
-            requestEditBlock(blockUuid, safeStart + linkText.length)
+            contentMutationMutex(blockUuid).withLock {
+                val block = findBlockOrNull(blockUuid) ?: return@withLock
+                val safeStart = selectionStart.coerceIn(0, block.content.length)
+                val safeEnd = selectionEnd.coerceIn(safeStart, block.content.length)
+                val linkText = "[[$pageName]]"
+                val newContent = block.content.substring(0, safeStart) + linkText + block.content.substring(safeEnd)
+                val newVersion = block.version + 1
+                updateBlockContent(blockUuid, newContent, newVersion).join()
+                requestEditBlock(blockUuid, safeStart + linkText.length)
+            }
         }
     }
 

@@ -7,39 +7,58 @@ class InlineParser(private val source: CharSequence) {
     private val lexer = Lexer(source)
     private var currentToken = lexer.nextToken()
 
-    fun parse(): List<InlineNode> {
-        val nodes = mutableListOf<InlineNode>()
+    fun parse(): List<InlineNode> = parseSlots().map { it.node }
+
+    /**
+     * Same as [parse] but also returns each top-level node's source offset range in
+     * [source]. Only top-level (depth-0) nodes are tracked — nested children (inside
+     * Bold/Italic/etc.) don't need offsets since suggestion/link annotations are only
+     * ever applied to top-level plain text.
+     */
+    fun parseWithRanges(): List<Pair<InlineNode, IntRange>> =
+        parseSlots().map { it.node to (it.start until it.end) }
+
+    private data class Slot(val node: InlineNode, val start: Int, val end: Int)
+
+    private fun parseSlots(): List<Slot> {
+        val slots = mutableListOf<Slot>()
         while (currentToken.type != TokenType.EOF) {
+            val start = currentToken.start
             val node = parseExpression(0)
+            val end = currentToken.start
             // Hard line break: trailing two spaces + newline
             if (node is TextNode && node.content == "\n") {
-                val prev = nodes.lastOrNull()
+                val prev = slots.lastOrNull()?.node
                 if (prev is TextNode && prev.content.endsWith("  ")) {
                     // Single node with trailing two spaces
-                    nodes[nodes.lastIndex] = TextNode(prev.content.dropLast(2))
-                    nodes.add(HardBreakNode)
+                    val prevSlot = slots[slots.lastIndex]
+                    slots[slots.lastIndex] =
+                        prevSlot.copy(node = TextNode(prev.content.dropLast(2)), end = prevSlot.end - 2)
+                    slots.add(Slot(HardBreakNode, prevSlot.end - 2, end))
                     continue
-                } else if (nodes.size >= 2 && prev is TextNode && prev.content.isBlank()) {
+                } else if (slots.size >= 2 && prev is TextNode && prev.content.isBlank()) {
                     // Previous node is whitespace — check if second-to-last also has trailing space
-                    val secondPrev = nodes[nodes.size - 2]
+                    val secondPrevSlot = slots[slots.size - 2]
+                    val secondPrev = secondPrevSlot.node
                     if (secondPrev is TextNode && secondPrev.content.endsWith(" ")) {
                         // Remove trailing space from secondPrev and remove the space-only prev node
-                        nodes[nodes.size - 2] = TextNode(secondPrev.content.dropLast(1))
-                        nodes.removeAt(nodes.lastIndex)
-                        nodes.add(HardBreakNode)
+                        slots[slots.size - 2] =
+                            secondPrevSlot.copy(node = TextNode(secondPrev.content.dropLast(1)), end = secondPrevSlot.end - 1)
+                        slots.removeAt(slots.lastIndex)
+                        slots.add(Slot(HardBreakNode, secondPrevSlot.end - 1, end))
                         continue
                     } else if (secondPrev is TextNode && secondPrev.content.isBlank()) {
                         // Both prev nodes are blank spaces — that counts as trailing two spaces
-                        nodes.removeAt(nodes.lastIndex)
-                        nodes.removeAt(nodes.lastIndex)
-                        nodes.add(HardBreakNode)
+                        slots.removeAt(slots.lastIndex)
+                        val removedSecond = slots.removeAt(slots.lastIndex)
+                        slots.add(Slot(HardBreakNode, removedSecond.start, end))
                         continue
                     }
                 }
             }
-            nodes.add(node)
+            slots.add(Slot(node, start, end))
         }
-        return nodes
+        return slots
     }
 
     private fun parseExpression(precedence: Int): InlineNode {
