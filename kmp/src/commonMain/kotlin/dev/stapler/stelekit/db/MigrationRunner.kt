@@ -230,18 +230,18 @@ object MigrationRunner {
         ),
         Migration(
             name = "pages_backlink_count",
+            // The O(P×B) UPDATE that used to follow the ADD COLUMN has been removed (see
+            // pages_backlink_count_fix below) — on large libraries it took 10–60+ minutes and
+            // caused permanent "Initializing…" hangs, including on fresh databases that had
+            // never recorded this migration as applied. allowContentUpdate: statements changed
+            // after this migration shipped.
+            allowContentUpdate = true,
             statements = listOf(
                 // NOTE: ADD COLUMN IF NOT EXISTS is not valid SQLite syntax. This statement
                 // always throws a syntax error, which the applyAll catch block swallows, and
                 // the hash is incorrectly recorded as applied without the column being added.
                 // The pages_backlink_count_fix migration below repairs affected databases.
                 "ALTER TABLE pages ADD COLUMN IF NOT EXISTS backlink_count INTEGER NOT NULL DEFAULT 0",
-                """
-                UPDATE pages SET backlink_count = (
-                    SELECT COUNT(*) FROM blocks
-                    WHERE blocks.content LIKE '%[[' || pages.name || ']]%'
-                )
-                """
             )
         ),
         Migration(
