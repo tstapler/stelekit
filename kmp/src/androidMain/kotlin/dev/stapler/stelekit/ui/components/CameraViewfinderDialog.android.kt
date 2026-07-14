@@ -54,7 +54,7 @@ actual fun CameraViewfinderDialog(
     val scope = rememberCoroutineScope()
     var isCapturing by remember { mutableStateOf(false) }
 
-    val previewView = remember { PreviewView(context) }
+    val previewView = remember(context) { PreviewView(context) }
     val imageCapture = remember {
         ImageCapture.Builder()
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
