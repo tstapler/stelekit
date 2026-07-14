@@ -90,13 +90,15 @@ object ImportService {
     /**
      * Wraps each plain-text occurrence of a term in [terms] with `[[term]]` syntax.
      *
-     * Occurrences already inside `[[…]]` are skipped. Matching is case-insensitive; the
-     * display form from [terms] is used as the link target. All term matches are
-     * collected against the original (unmodified) [text] first, then rendered in a
-     * single left-to-right pass — this keeps the result order-independent and prevents
-     * a shorter term (e.g. "Network") from matching inside a longer term's already-
-     * wrapped span (e.g. "[[Neural Network Architecture]]"), which would otherwise
-     * produce corrupt nested brackets.
+     * Occurrences already inside a pre-existing `[[…]]` span (present in [text] before this
+     * call) are skipped via [overlapsExistingLink]. Matching is case-insensitive; the display
+     * form from [terms] is used as the link target. All term matches are collected against the
+     * original (unmodified) [text] first, sorted by start offset (ties favor the longest term),
+     * then swept left-to-right accepting only matches whose start is at or past the previous
+     * accepted match's end. This greedy leftmost-then-longest sweep is what keeps the result
+     * order-independent and prevents a shorter term (e.g. "Network") from matching inside a
+     * longer term's own candidate span from this same call (e.g. "Neural Network Architecture"),
+     * which would otherwise produce corrupt nested brackets.
      */
     fun insertWikiLinks(text: String, terms: List<String>): String {
         if (terms.isEmpty()) return text

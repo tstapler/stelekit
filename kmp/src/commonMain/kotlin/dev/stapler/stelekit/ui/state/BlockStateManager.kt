@@ -802,6 +802,14 @@ class BlockStateManager(
     // read the same pre-insertion content and race to overwrite _blocks — the second write
     // wins and silently drops the first insertion. Mirrors GraphLoader.getFileLock's
     // guard-mutex + plain-map keyed-lock pattern.
+    //
+    // KNOWN LIMITATION: this mutex only serializes insertTextAtCursor / appendToBlock /
+    // insertLinkAtCursor / replaceSelectionWithLink against each other. It does NOT serialize
+    // them against updateBlockContent's direct callers — notably the per-keystroke
+    // onContentChange path in PageView.kt / JournalsView.kt — so a user typing while one of
+    // these helpers is landing can still race with it. Closing that gap requires wrapping the
+    // keystroke path in the same mutex and has its own latency/UX tradeoffs; it is tracked as
+    // follow-up work, not addressed here.
     private val contentMutationMutexGuard = Mutex()
     private val contentMutationMutexes = mutableMapOf<String, Mutex>()
 
@@ -823,7 +831,7 @@ class BlockStateManager(
                 val safePos = cursor.coerceIn(0, block.content.length)
                 val newContent = block.content.substring(0, safePos) + text + block.content.substring(safePos)
                 val newVersion = block.version + 1
-                updateBlockContent(blockUuid, newContent, newVersion).join()
+                applyBlockContentUpdate(blockUuid, newContent, newVersion)
                 requestEditBlock(blockUuid, safePos + text.length)
             }
         }
@@ -843,7 +851,7 @@ class BlockStateManager(
                 val safePos = block.content.length
                 val newContent = block.content + text
                 val newVersion = block.version + 1
-                updateBlockContent(blockUuid, newContent, newVersion).join()
+                applyBlockContentUpdate(blockUuid, newContent, newVersion)
                 requestEditBlock(blockUuid, safePos + text.length)
             }
         }
@@ -865,7 +873,7 @@ class BlockStateManager(
                 val safePos = cursor.coerceIn(0, block.content.length)
                 val newContent = block.content.substring(0, safePos) + linkText + block.content.substring(safePos)
                 val newVersion = block.version + 1
-                updateBlockContent(blockUuid, newContent, newVersion).join()
+                applyBlockContentUpdate(blockUuid, newContent, newVersion)
                 requestEditBlock(blockUuid, safePos + linkText.length)
             }
         }
@@ -893,7 +901,7 @@ class BlockStateManager(
                 val linkText = "[[$pageName]]"
                 val newContent = block.content.substring(0, safeStart) + linkText + block.content.substring(safeEnd)
                 val newVersion = block.version + 1
-                updateBlockContent(blockUuid, newContent, newVersion).join()
+                applyBlockContentUpdate(blockUuid, newContent, newVersion)
                 requestEditBlock(blockUuid, safeStart + linkText.length)
             }
         }
@@ -947,10 +955,26 @@ class BlockStateManager(
      * marks the block as dirty, and persists to DB asynchronously.
      */
     override fun updateBlockContent(blockUuid: BlockUuid, newContent: String, newVersion: Long): Job = scope.launch {
-        val block = findBlockOrNull(blockUuid) ?: return@launch
+        applyBlockContentUpdate(blockUuid, newContent, newVersion)
+    }
+
+    /**
+     * Core body of [updateBlockContent]: read-check-apply-record, extracted so the
+     * mutex-guarded insertion helpers ([insertTextAtCursor], [appendToBlock],
+     * [insertLinkAtCursor], [replaceSelectionWithLink]) can call it directly as a plain suspend
+     * function from inside their own `withLock` block, instead of launching a sibling [Job] via
+     * [updateBlockContent] and `.join()`-ing it. A sibling job runs outside the mutex-holding
+     * coroutine: cancellation of the outer coroutine while suspended in `.join()` releases the
+     * mutex via `withLock`'s finally but leaves the inner write running unguarded, and
+     * `Job.join()` (unlike `Deferred.await()`) never rethrows the child's failure. Calling this
+     * directly keeps the write in the same coroutine that holds the mutex, so cancellation and
+     * exceptions propagate normally.
+     */
+    private suspend fun applyBlockContentUpdate(blockUuid: BlockUuid, newContent: String, newVersion: Long) {
+        val block = findBlockOrNull(blockUuid) ?: return
         val oldContent = block.content
         val oldVersion = block.version
-        if (oldContent == newContent) return@launch
+        if (oldContent == newContent) return
 
         applyContentChange(blockUuid, newContent, newVersion)
 

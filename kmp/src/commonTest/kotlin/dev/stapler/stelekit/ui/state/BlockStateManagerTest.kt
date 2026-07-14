@@ -2018,8 +2018,7 @@ class BlockStateManagerTest {
         advanceUntilIdle()
 
         val content = manager.blocks.value[pageUuid]?.find { it.uuid.value == "b1" }?.content
-        assertTrue(content?.contains("[[PageA]]") == true, "First link must not be lost: $content")
-        assertTrue(content?.contains("[[PageB]]") == true, "Second link must not be lost: $content")
+        assertEquals("[[PageB]][[PageA]]", content, "Both links must land, each inserted at cursor 0 in call order")
 
         actor.close()
     }
