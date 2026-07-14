@@ -11,6 +11,7 @@ import dev.stapler.stelekit.git.GitRepository
 import dev.stapler.stelekit.logging.Logger
 import dev.stapler.stelekit.migration.ChangeApplier
 import dev.stapler.stelekit.migration.ChangelogRepository
+import dev.stapler.stelekit.migration.ConcurrentMigrationRunException
 import dev.stapler.stelekit.migration.DslEvaluator
 import dev.stapler.stelekit.migration.InterruptedMigrationException
 import dev.stapler.stelekit.migration.MigrationRegistry
@@ -502,6 +503,11 @@ class GraphManager(
                             logger.error("MigrationRunner: interrupted migration detected for graph $id", e)
                         } catch (e: MigrationTamperedError) {
                             logger.error("MigrationRunner: tampered migration detected for graph $id", e)
+                        } catch (e: ConcurrentMigrationRunException) {
+                            // Another switchGraph() call is already migrating this graph — expected
+                            // under racing startup/UI triggers, not a failure. The winning call
+                            // completes the migration; this one just backs off.
+                            logger.warn("MigrationRunner: concurrent run detected for graph $id — backing off", e)
                         }
                         logger.info("init[${elapsed()}ms]: content migrations done")
                     }

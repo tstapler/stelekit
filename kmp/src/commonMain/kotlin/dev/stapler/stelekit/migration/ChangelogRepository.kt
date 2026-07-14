@@ -10,6 +10,7 @@ import dev.stapler.stelekit.coroutines.PlatformDispatcher
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import kotlin.time.Clock
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 
 /**
@@ -30,19 +31,38 @@ class ChangelogRepository(private val db: SteleDatabase) {
     }
 
     suspend fun markRunning(id: String, graphId: String, order: Int, checksum: String, description: String) {
-        restricted.insertMigrationRecord(
-            id = id,
-            graph_id = graphId,
-            description = description,
-            checksum = checksum,
-            applied_at = Clock.System.now().toEpochMilliseconds(),
-            execution_ms = 0L,
-            status = MigrationStatus.RUNNING.name,
-            applied_by = "",
-            execution_order = order.toLong(),
-            changes_applied = 0L,
-            error_message = null,
-        )
+        try {
+            restricted.insertMigrationRecord(
+                id = id,
+                graph_id = graphId,
+                description = description,
+                checksum = checksum,
+                applied_at = Clock.System.now().toEpochMilliseconds(),
+                execution_ms = 0L,
+                status = MigrationStatus.RUNNING.name,
+                applied_by = "",
+                execution_order = order.toLong(),
+                changes_applied = 0L,
+                error_message = null,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            // migration_changelog's primary key is (id, graph_id). A conflict here means another
+            // switchGraph() call is already applying this exact migration for this exact graph
+            // concurrently (e.g. GraphManager's startup restore racing a UI-triggered switch) —
+            // not a real failure. Surface a clear, expected exception instead of a raw driver
+            // exception with a platform-specific type (SQLiteException on JVM,
+            // SQLiteConstraintException on Android), matched by message text for portability.
+            val msg = e.message?.lowercase() ?: ""
+            if (msg.contains("unique constraint") || msg.contains("primary key constraint")) {
+                throw ConcurrentMigrationRunException(
+                    "Migration '$id' for graph '$graphId' is already running or applied " +
+                    "(concurrent switchGraph call) — skipping this run."
+                )
+            }
+            throw e
+        }
     }
 
     suspend fun markApplied(id: String, graphId: String, executionMs: Long, changesApplied: Int) {
