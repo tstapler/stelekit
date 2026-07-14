@@ -1982,6 +1982,81 @@ class BlockStateManagerTest {
 
         actor.close()
     }
+
+    /**
+     * TC-N4e: two insertLinkAtCursor calls fired back-to-back for the same block (e.g.
+     * accepting two suggested page links before the first one's write settles) must not
+     * lose either insertion.
+     *
+     * Without the fix, insertLinkAtCursor's read-modify-write is not serialized per block:
+     * the second call's findBlockOrNull reads the same pre-insertion content the first call
+     * read (its _blocks update hasn't landed yet, since it's behind the delayed content
+     * write), so its computed newContent silently overwrites the first link on save.
+     */
+    @Test
+    fun insertLinkAtCursor_backToBackCalls_bothLinksSurvive() = runTest {
+        val innerRepo = InMemoryBlockRepository()
+        val delayedRepo = DelayedContentBlockRepository(innerRepo, contentDelayMs = 500L)
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, delayedRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val actor = DatabaseWriteActor(delayedRepo, pageRepo, scope = scope)
+
+        pageRepo.savePage(createPage())
+        innerRepo.saveBlock(createBlock("b1", content = "", position = "a0"))
+        val manager = BlockStateManager(
+            blockRepository = delayedRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            writeActor = actor,
+        )
+        manager.observePage(PageUuid(pageUuid))
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.insertLinkAtCursor(BlockUuid("b1"), "PageA", overrideCursorIndex = 0)
+        manager.insertLinkAtCursor(BlockUuid("b1"), "PageB", overrideCursorIndex = 0)
+        advanceUntilIdle()
+
+        val content = manager.blocks.value[pageUuid]?.find { it.uuid.value == "b1" }?.content
+        assertEquals("[[PageB]][[PageA]]", content, "Both links must land, each inserted at cursor 0 in call order")
+
+        actor.close()
+    }
+
+    /**
+     * Same race as above but via appendToBlock (the "accept suggested tag" path used by
+     * SuggestionBottomSheet in PageView/JournalsView) — each accepted tag must land, and
+     * each must append to the *current* end, not a stale end-of-content snapshot.
+     */
+    @Test
+    fun appendToBlock_backToBackCalls_bothAppendsSurviveInOrder() = runTest {
+        val innerRepo = InMemoryBlockRepository()
+        val delayedRepo = DelayedContentBlockRepository(innerRepo, contentDelayMs = 500L)
+        val pageRepo = InMemoryPageRepository()
+        val graphLoader = GraphLoader(FakeFileSystem(), pageRepo, delayedRepo)
+        val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val actor = DatabaseWriteActor(delayedRepo, pageRepo, scope = scope)
+
+        pageRepo.savePage(createPage())
+        innerRepo.saveBlock(createBlock("b1", content = "notes", position = "a0"))
+        val manager = BlockStateManager(
+            blockRepository = delayedRepo,
+            graphLoader = graphLoader,
+            scope = scope,
+            writeActor = actor,
+        )
+        manager.observePage(PageUuid(pageUuid))
+        manager.blocks.first { it.containsKey(pageUuid) }
+
+        manager.appendToBlock(BlockUuid("b1"), " [[TagA]]")
+        manager.appendToBlock(BlockUuid("b1"), " [[TagB]]")
+        advanceUntilIdle()
+
+        val content = manager.blocks.value[pageUuid]?.find { it.uuid.value == "b1" }?.content
+        assertEquals("notes [[TagA]] [[TagB]]", content, "Both appends must land, in call order")
+
+        actor.close()
+    }
 }
 
 // ---- dirtyPageUuids: watcher guard for journals refresh (FR-2) ----
