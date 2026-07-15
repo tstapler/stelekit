@@ -28,6 +28,14 @@ build --repo_env=ANDROID_HOME
 # resolution.  Pass --config=android when building Android targets.
 build:android --android_sdk=@androidsdk//:sdk
 
+# Persistent/multiplexed workers for Desugar, DexBuilder, and resource-processing
+# actions: reuses warm JVM worker processes instead of spawning a fresh JVM per
+# action. Does not touch the native DexMerger step (the real tail-end
+# bottleneck of `bazel build //kmp:android_app` in CI — that's compiled into
+# Bazel itself, not exposed as a tunable), but cuts JVM-startup overhead across
+# the much larger number of small Desugar/DexBuilder actions earlier in the build.
+build:android --persistent_multiplex_android_tools
+
 # ── Correctness / hermetic sandbox ────────────────────────────────────────────
 build --sandbox_default_allow_network=false
 build --incompatible_strict_action_env
