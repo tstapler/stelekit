@@ -358,6 +358,8 @@ class KeyboardShortcutTest {
         onTextChanged: (TextFieldValue) -> Unit,
         autocompleteState: AutocompleteState? = null,
         searchResults: List<SearchResultItem> = emptyList(),
+        onNewBlock: (String) -> Unit = {},
+        onSplitBlock: (String, Int) -> Unit = { _, _ -> },
     ) {
         BlockEditor(
             textFieldValue = textState,
@@ -376,8 +378,8 @@ class KeyboardShortcutTest {
             onLocalVersionIncrement = { 1L },
             onContentChange = { _, _ -> },
             onStopEditing = {},
-            onNewBlock = {},
-            onSplitBlock = { _, _ -> },
+            onNewBlock = onNewBlock,
+            onSplitBlock = onSplitBlock,
             onMergeBlock = {},
             onBackspace = {},
             onIndent = {},
@@ -623,5 +625,104 @@ class KeyboardShortcutTest {
         composeTestRule.waitForIdle()
 
         assertEquals("note", textState.text, "Ctrl+Shift+P must not be consumed by any BlockEditor FormatAction binding")
+    }
+
+    // ------------------------------------------------------------------------------------
+    // Shift+Enter multi-line block support
+    // ------------------------------------------------------------------------------------
+
+    @Test
+    fun `Shift+Enter inserts a literal newline without splitting the block`() {
+        var textState by mutableStateOf(TextFieldValue("hello world", selection = TextRange(5)))
+        var splitCalled = false
+        var newBlockCalled = false
+
+        composeTestRule.setContent {
+            BlockEditorHarness(
+                textState = textState,
+                onTextChanged = { textState = it },
+                onSplitBlock = { _, _ -> splitCalled = true },
+                onNewBlock = { newBlockCalled = true },
+            )
+        }
+
+        composeTestRule.onNodeWithTag("editor").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.runOnUiThread {
+            textState = TextFieldValue("hello world", selection = TextRange(5))
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("editor").performKeyInput {
+            withKeyDown(Key.ShiftLeft) {
+                keyDown(Key.Enter)
+                keyUp(Key.Enter)
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        assertEquals("hello\n world", textState.text, "Shift+Enter should splice a literal newline at the cursor")
+        assertFalse(splitCalled, "Shift+Enter must not split the current block")
+        assertFalse(newBlockCalled, "Shift+Enter must not create a new block")
+    }
+
+    @Test
+    fun `Plain Enter still splits the block (no regression from Shift+Enter change)`() {
+        var textState by mutableStateOf(TextFieldValue("hello world", selection = TextRange(5)))
+        var splitUuid: String? = null
+        var splitOffset: Int? = null
+
+        composeTestRule.setContent {
+            BlockEditorHarness(
+                textState = textState,
+                onTextChanged = { textState = it },
+                onSplitBlock = { uuid, offset -> splitUuid = uuid; splitOffset = offset },
+            )
+        }
+
+        composeTestRule.onNodeWithTag("editor").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.runOnUiThread {
+            textState = TextFieldValue("hello world", selection = TextRange(5))
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("editor").performKeyInput {
+            keyDown(Key.Enter)
+            keyUp(Key.Enter)
+        }
+        composeTestRule.waitForIdle()
+
+        assertEquals("block-test", splitUuid, "Plain Enter should still split the block exactly as before")
+        assertEquals(5, splitOffset)
+        assertEquals("hello world", textState.text, "Plain Enter must not itself mutate the text content")
+    }
+
+    @Test
+    fun `Shift+Enter does not corrupt active IME composition`() {
+        var textState by mutableStateOf(
+            TextFieldValue(text = "hello world", selection = TextRange(5), composition = TextRange(0, 5))
+        )
+
+        composeTestRule.setContent {
+            BlockEditorHarness(textState = textState, onTextChanged = { textState = it })
+        }
+
+        composeTestRule.onNodeWithTag("editor").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.runOnUiThread {
+            textState = TextFieldValue(text = "hello world", selection = TextRange(5), composition = TextRange(0, 5))
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithTag("editor").performKeyInput {
+            withKeyDown(Key.ShiftLeft) {
+                keyDown(Key.Enter)
+                keyUp(Key.Enter)
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        assertEquals("hello world", textState.text, "Shift+Enter must not splice a newline while IME composition is active")
     }
 }
