@@ -1,10 +1,13 @@
 package dev.stapler.stelekit.ui.screens
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTouchInput
 import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
@@ -19,6 +22,8 @@ import dev.stapler.stelekit.ui.state.BlockStateManager
 import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.junit.Rule
 import org.junit.Test
 
@@ -195,5 +200,86 @@ class JournalsViewUITest {
             ).fetchSemanticsNodes().isNotEmpty()
         }
         composeTestRule.onNodeWithContentDescription("Delete selected").assertIsDisplayed()
+    }
+
+    // Regression test for stelekit#238: dragging a block's gutter handle on the Journals view
+    // visually behaved (ghost, drop-zone divider) but never actually reordered anything.
+    // JournalsView's private JournalEntry composable never forwarded onMoveSelectedBlocks /
+    // onAutoSelectForDrag to PageContent, so both silently defaulted to no-ops — the drag
+    // gesture ran to completion but had nothing to call. Must fail against the pre-fix code
+    // (revert the onMoveSelectedBlocks/onAutoSelectForDrag wiring in JournalsView.kt and
+    // JournalEntry's PageContent call to confirm — verified).
+    //
+    // Note: stelekit#238 also involved a second bug in BlockGutter (entering selection mode
+    // mid-drag swapped the drag handle for a Checkbox, tearing down the live pointerInput
+    // gesture) — fixed alongside this one, but NOT covered by this test. That failure is a
+    // recomposition-timing race that only manifests with real inter-frame delays; it does not
+    // reproduce through this harness's synchronous/atomic touch-input dispatch (confirmed by
+    // reverting the BlockGutter fix and re-running — still green). Verified manually instead:
+    // on a real Android emulator, reproduced the exact failure with the wiring fix alone
+    // applied, then confirmed the reorder completes and persists to the backing markdown file
+    // once the BlockGutter fix is added too.
+    @Test
+    fun `dragging a block on the journals view actually reorders it`() {
+        val pageRepo = PopulatedFakePageRepository()
+        val now = Clock.System.now()
+        val firstBlock = Block(
+            uuid = BlockUuid("drag-block-first"),
+            pageUuid = PageUuid("journal-1"),
+            content = "First Block",
+            position = "a0",
+            createdAt = now,
+            updatedAt = now,
+        )
+        val secondBlock = Block(
+            uuid = BlockUuid("drag-block-second"),
+            pageUuid = PageUuid("journal-1"),
+            content = "Second Block",
+            position = "a1",
+            createdAt = now,
+            updatedAt = now,
+        )
+        val blockRepo = FakeBlockRepository(mapOf("journal-1" to listOf(firstBlock, secondBlock)))
+        val fileSystem = FakeFileSystem()
+        val journalService = JournalService(pageRepo, blockRepo)
+        val graphLoader = GraphLoader(fileSystem, pageRepo, blockRepo)
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        val blockStateManager = BlockStateManager(blockRepo, graphLoader, scope)
+        val viewModel = JournalsViewModel(journalService, blockStateManager, scope)
+
+        composeTestRule.setContent {
+            MaterialTheme {
+                JournalsView(
+                    viewModel = viewModel,
+                    isDebugMode = false,
+                    onLinkClick = {},
+                )
+            }
+        }
+
+        composeTestRule.waitUntil(timeoutMillis = 3000) {
+            composeTestRule.onAllNodesWithContentDescription("Drag to move")
+                .fetchSemanticsNodes().size >= 2
+        }
+
+        // JVM/desktop (useLongPressForDrag() == false) drags immediately on down+move, no
+        // long-press wait needed. Drag the first block's handle down past the second block —
+        // computeDropTarget picks the nearest non-dragged block by center distance, so a large
+        // overshoot still resolves unambiguously to "second block, BELOW zone".
+        composeTestRule.onAllNodesWithContentDescription("Drag to move")[0].performTouchInput {
+            down(center)
+            moveBy(Offset(0f, 500f))
+            up()
+        }
+
+        composeTestRule.waitForIdle()
+
+        val finalOrder = runBlocking { blockRepo.getBlocksForPage(PageUuid("journal-1")).first() }
+            .getOrNull()
+            ?.map { it.uuid.value }
+        org.junit.Assert.assertEquals(
+            listOf("drag-block-second", "drag-block-first"),
+            finalOrder,
+        )
     }
 }

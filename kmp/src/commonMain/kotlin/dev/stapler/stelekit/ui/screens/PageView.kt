@@ -503,6 +503,7 @@ fun PageView(
                         )
                     },
                     onAutoSelectForDrag = { uuid -> blockStateManager.enterSelectionMode(BlockUuid(uuid)) },
+                    onDragStateChange = { isDragging -> isBlockDragging = isDragging },
                     onBlockSelectionChange = { uuid, range ->
                         blockStateManager.updateEditingSelection(if (uuid == editingBlockUuid?.value) range else null)
                     },

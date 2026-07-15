@@ -47,8 +47,14 @@ internal fun BlockGutter(
     var isHovered by remember { mutableStateOf(false) }
     val useLongPress = useLongPressForDrag()
 
-    // Drag Handle or Checkbox (in selection mode)
-    if (isInSelectionMode) {
+    // Drag Handle or Checkbox (in selection mode).
+    // stelekit#238: entering selection mode is a *side effect* of starting a drag
+    // (onAutoSelectForDrag, fired from onDragStart when the dragged block wasn't already
+    // selected) — isInSelectionMode can flip true while this Box's pointerInput gesture is
+    // still active. Swapping to the Checkbox mid-drag would dispose that pointerInput scope,
+    // silently cancelling the drag before onDragEnd ever fires. Keep rendering the drag handle
+    // for the duration of an active drag regardless of isInSelectionMode.
+    if (isInSelectionMode && !isDragging) {
         Checkbox(
             checked = isSelected,
             onCheckedChange = { onToggleSelect() },

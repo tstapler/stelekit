@@ -259,6 +259,13 @@ fun JournalsView(
                         )
                     },
                     onOpenAnnotationEditor = onOpenAnnotationEditor,
+                    onMoveSelectedBlocks = { newParentUuid, insertAfterUuid ->
+                        viewModel.moveSelectedBlocks(
+                            newParentUuid?.let { BlockUuid(it) },
+                            insertAfterUuid?.let { BlockUuid(it) }
+                        )
+                    },
+                    onAutoSelectForDrag = { blockUuid -> viewModel.enterSelectionMode(BlockUuid(blockUuid)) },
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -444,6 +451,11 @@ private fun JournalEntry(
     onNavigateAllSuggestions: ((List<SuggestionItem>) -> Unit)? = null,
     onBlockSelectionChange: ((blockUuid: String, range: IntRange?) -> Unit)? = null,
     onOpenAnnotationEditor: (imageAnnotationUuid: String) -> Unit = {},
+    /** stelekit#238 — without these two, drag-to-reorder's ghost/drop-zone visuals work but the
+     * actual move and drag-initiated selection are no-ops: PageContent/BlockList default them to
+     * `{ _, _ -> }` / `{}` when a caller doesn't pass its own handler. */
+    onMoveSelectedBlocks: (newParentUuid: String?, insertAfterUuid: String?) -> Unit = { _, _ -> },
+    onAutoSelectForDrag: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
@@ -559,6 +571,9 @@ private fun JournalEntry(
             onSearchPages = onSearchPages,
             onNavigateAllSuggestions = onNavigateAllSuggestions,
             onBlockSelectionChange = onBlockSelectionChange,
+            onMoveSelectedBlocks = onMoveSelectedBlocks,
+            onAutoSelectForDrag = onAutoSelectForDrag,
+            onDragStateChange = onDragStateChange,
             onOpenAnnotationEditor = onOpenAnnotationEditor,
         )
     }
