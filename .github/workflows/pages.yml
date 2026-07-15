@@ -145,6 +145,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh run download --name app-dist --dir site/public/app/
+      # Fail loudly instead of silently deploying without a demo. The previous
+      # design treated "no demo found" as a handled, non-erroring state — that's
+      # exactly what let the cache-eviction bug above ship a "coming soon"
+      # placeholder to production with fully green CI. Whatever future cause
+      # might make BOTH downloads fail, it must block the deploy, not degrade
+      # past it: the prior successful GitHub Pages deployment stays live when
+      # this job fails, which is a strictly better outcome for users than
+      # shipping a broken one.
+      - name: Fail if no app-dist artifact is available from any source
+        if: steps.download-demo.outcome == 'failure' && steps.download-demo-fallback.outcome == 'failure'
+        run: |
+          echo "::error::No app-dist artifact found (current run and latest-available fallback both failed). Refusing to deploy — this previously shipped a silent 'coming soon' regression to production. If this is genuinely the first-ever deploy with no prior artifact to fall back to, that's the one legitimate case for this failure; otherwise investigate why build-demo / artifact retention is broken."
+          exit 1
 
       # ── F-Droid content ───────────────────────────────────────────────────
       # Primary: current run — present when fdroid.yml ran before us in the same
@@ -184,6 +197,9 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: site/package-lock.json
+      - name: Test service worker cache-validation logic
+        run: node --test looks-like-app-shell.test.js
+        working-directory: kmp/src/wasmJsMain/resources
       - name: Install site dependencies
         run: npm ci
         working-directory: site
