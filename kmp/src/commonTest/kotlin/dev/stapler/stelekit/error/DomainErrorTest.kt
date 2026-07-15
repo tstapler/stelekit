@@ -41,6 +41,10 @@ class DomainErrorTest {
             DomainError.GitError.NotSupported("iOS"),
             DomainError.GitError.Offline,
             DomainError.GitError.EditingInProgress,
+            DomainError.GitError.CredentialExpired("expired"),
+            DomainError.GitError.RateLimited(42),
+            DomainError.GitError.FileTooLarge("assets/large.md.stek", 90_000_000, 75_000_000),
+            DomainError.GitError.NetworkFailure("Failed to fetch"),
             DomainError.BleError.ConnectionFailed("ble connect"),
             DomainError.BleError.Gatt133(3, "gatt error"),
             DomainError.SensorError.PermissionDenied("camera"),
@@ -92,6 +96,9 @@ class DomainErrorTest {
                 DomainError.GitError.Offline -> err.message
                 DomainError.GitError.EditingInProgress -> err.message
                 is DomainError.GitError.CredentialExpired -> err.message
+                is DomainError.GitError.RateLimited -> err.message
+                is DomainError.GitError.FileTooLarge -> err.message
+                is DomainError.GitError.NetworkFailure -> err.message
                 is DomainError.AttachmentError.CopyFailed -> err.message
                 is DomainError.AttachmentError.PickerFailed -> err.message
                 is DomainError.AttachmentError.AssetsDirectoryFailed -> err.message
@@ -161,6 +168,10 @@ class DomainErrorTest {
             DomainError.GitError.NotSupported("iOS"),
             DomainError.GitError.Offline,
             DomainError.GitError.EditingInProgress,
+            DomainError.GitError.CredentialExpired("expired"),
+            DomainError.GitError.RateLimited(42),
+            DomainError.GitError.FileTooLarge("assets/large.md.stek", 90_000_000, 75_000_000),
+            DomainError.GitError.NetworkFailure("Failed to fetch"),
             DomainError.NetworkError.RequestFailed("req failed"),
             DomainError.AttachmentError.CopyFailed("copy"),
             DomainError.AttachmentError.PickerFailed("picker"),
@@ -216,5 +227,34 @@ class DomainErrorTest {
 
         assertEquals(6, variants.size)
         assertEquals(messages.size, messages.toSet().size, "Expected all six QrTransferError variants to have distinct UI copy: $messages")
+    }
+
+    @Test
+    fun rate_limited_message_never_suggests_manual_retry() {
+        val err = DomainError.GitError.RateLimited(retryAfterSeconds = 42)
+
+        val syncMessage = err.toSyncErrorMessage()
+
+        assertTrue(
+            syncMessage.contains("rate limit", ignoreCase = true),
+            "Expected sync message to mention rate limiting: $syncMessage",
+        )
+        assertTrue(
+            !syncMessage.contains("tap to retry", ignoreCase = true),
+            "RateLimited is auto-resolving and must never suggest a manual retry: $syncMessage",
+        )
+    }
+
+    @Test
+    fun file_too_large_message_contains_path_and_both_byte_counts() {
+        val err = DomainError.GitError.FileTooLarge(
+            path = "assets/large-export.md.stek",
+            sizeBytes = 90_000_000,
+            maxBytes = 75_000_000,
+        )
+
+        assertTrue(err.message.contains("assets/large-export.md.stek"), "Expected message to contain the path: ${err.message}")
+        assertTrue(err.message.contains("90000000") || err.message.contains("90_000_000"), "Expected message to contain the actual size: ${err.message}")
+        assertTrue(err.message.contains("75000000") || err.message.contains("75_000_000"), "Expected message to contain the max size: ${err.message}")
     }
 }

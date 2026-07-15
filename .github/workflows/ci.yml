@@ -297,3 +297,19 @@ jobs:
 
       - name: Compile wasmJs target
         run: ./gradlew :kmp:compileKotlinWasmJs --no-daemon --build-cache -PenableJs=true
+
+      - name: Compile wasmJs test sources
+        # Compiles (does not run) wasmJsTest — including WasmGitWriteServiceMockedIntegrationTest.kt
+        # and WasmGitRepositoryTest.kt, which carry the regression proof for two previously-fixed
+        # BLOCKER bugs in the web git write-back feature. Actually running the tests
+        # (wasmJsBrowserTest) needs a headless-Chrome/Karma setup not yet wired into CI — a separate,
+        # bigger infra task; compiling is the low-risk, high-value slice of that work.
+        #
+        # continue-on-error: true until 2 pre-existing, unrelated compile errors are fixed —
+        # commonTest's FrameTransportSignatureTest.kt (kotlin-reflect KParameter/isSuspend
+        # unavailable on Kotlin/Wasm) and QrRoundTripFidelityTest.kt (kotlinx.coroutines'
+        # runBlocking unavailable on Kotlin/Wasm) predate this PR and were never caught because this
+        # step didn't exist. Track: give those two tests a JVM-only/expect-actual home, then remove
+        # this flag so wasmJsTest compile failures actually block CI.
+        continue-on-error: true
+        run: ./gradlew :kmp:compileTestKotlinWasmJs --no-daemon --build-cache -PenableJs=true

@@ -12,6 +12,7 @@ import dev.stapler.stelekit.db.GraphWriter
 import dev.stapler.stelekit.error.DomainError
 import dev.stapler.stelekit.model.FilePath
 import dev.stapler.stelekit.git.merge.JournalMergeService
+import dev.stapler.stelekit.git.model.ConflictFile
 import dev.stapler.stelekit.git.model.GitAuthType
 import dev.stapler.stelekit.git.model.SyncState
 import dev.stapler.stelekit.git.model.wikiRoot
@@ -71,6 +72,39 @@ class GitSyncService(
     @kotlin.concurrent.Volatile private var periodicSyncJob: Job? = null
 
     /**
+     * Story 3.4.2: the pending auto-retry scheduled by [scheduleRateLimitRetry] after a
+     * [DomainError.GitError.RateLimited] result — reuses the same "own scope, never
+     * rememberCoroutineScope()" pattern already established by [periodicSyncJob]/[startPeriodicSync],
+     * so [shutdown] cancels it for free via [scope]'s own cancellation.
+     */
+    @kotlin.concurrent.Volatile private var rateLimitRetryJob: Job? = null
+
+    /**
+     * Task 3.4.2a: schedules a one-shot re-invocation of [retryOperation] after
+     * [retryAfterSeconds] (or [DEFAULT_RATE_LIMIT_RETRY_SECONDS] when the header was absent —
+     * matching `WasmSectionSyncService.githubFetch`'s `(1 shl retryCount).coerceAtMost(60)`
+     * fallback precedent). Cancels any previously-scheduled retry first, so a second rate-limit
+     * hit (or a manual sync trigger via [sync]/[fetchOnly]'s own cancel-at-top) never results in
+     * two overlapping scheduled retries for this instance.
+     */
+    private fun scheduleRateLimitRetry(
+        graphId: String,
+        retryAfterSeconds: Int?,
+        retryOperation: suspend (String) -> Unit,
+    ) {
+        rateLimitRetryJob?.cancel()
+        rateLimitRetryJob = scope.launch {
+            delay((retryAfterSeconds ?: DEFAULT_RATE_LIMIT_RETRY_SECONDS) * 1000L)
+            // Clear before invoking retryOperation — sync()/fetchOnly() cancel rateLimitRetryJob
+            // at their own top as a "manual trigger supersedes a pending retry" guard. If left
+            // pointing at this currently-running job, that cancel-at-top would self-cancel this
+            // very coroutine, silently aborting the retry at its first suspension point.
+            rateLimitRetryJob = null
+            retryOperation(graphId)
+        }
+    }
+
+    /**
      * Full sync sequence:
      * 1. Network check
      * 2. Load config
@@ -84,6 +118,9 @@ class GitSyncService(
      */
     suspend fun sync(graphId: String): Either<DomainError.GitError, SyncState.Success> =
         withContext(PlatformDispatcher.IO) {
+            // Task 3.4.2c: a manual sync trigger always supersedes any pending scheduled retry.
+            rateLimitRetryJob?.cancel()
+
             // 1. Network check
             if (!networkMonitor.isOnline) {
                 val err = DomainError.GitError.Offline
@@ -139,7 +176,14 @@ class GitSyncService(
                 }
                 val message = buildCommitMessage(config)
                 gitRepository.commit(config, message).onLeft { err ->
-                    _syncState.value = SyncState.Error(err)
+                    if (err is DomainError.GitError.RateLimited) {
+                        _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
+                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g) }
+                    } else if (err is DomainError.GitError.CredentialExpired) {
+                        _syncState.value = SyncState.CredentialExpired(graphId)
+                    } else {
+                        _syncState.value = SyncState.Error(err)
+                    }
                     return@withContext err.left()
                 }
                 localCommitsMade = 1
@@ -152,6 +196,11 @@ class GitSyncService(
                     val err = r.value
                     if (err is DomainError.GitError.AuthFailed && config.authType == GitAuthType.GITHUB_OAUTH) {
                         _syncState.value = SyncState.CredentialExpired(graphId)
+                    } else if (err is DomainError.GitError.CredentialExpired) {
+                        _syncState.value = SyncState.CredentialExpired(graphId)
+                    } else if (err is DomainError.GitError.RateLimited) {
+                        _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
+                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g) }
                     } else {
                         _syncState.value = SyncState.Error(err)
                     }
@@ -166,7 +215,15 @@ class GitSyncService(
                 _syncState.value = SyncState.Merging
                 val mergeResult = when (val r = gitRepository.merge(config)) {
                     is Either.Left -> {
-                        _syncState.value = SyncState.Error(r.value)
+                        val err = r.value
+                        if (err is DomainError.GitError.RateLimited) {
+                            _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
+                            scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g) }
+                        } else if (err is DomainError.GitError.CredentialExpired) {
+                            _syncState.value = SyncState.CredentialExpired(graphId)
+                        } else {
+                            _syncState.value = SyncState.Error(err)
+                        }
                         return@withContext r.value.left()
                     }
                     is Either.Right -> r.value
@@ -220,7 +277,24 @@ class GitSyncService(
             // 9. Push
             _syncState.value = SyncState.Pushing
             gitRepository.push(config).onLeft { err ->
-                _syncState.value = SyncState.Error(err)
+                if (err is DomainError.GitError.RateLimited) {
+                    _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
+                    scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> sync(g) }
+                } else if (err is DomainError.GitError.CredentialExpired) {
+                    _syncState.value = SyncState.CredentialExpired(graphId)
+                } else if (err is DomainError.GitError.MergeConflict) {
+                    // Task 3.2.3b: a push-time conflict (GitHub's ref-PATCH 409/422, or GitLab's
+                    // commits-POST 400) is a *conflict*, not a generic push failure — route it to
+                    // the same ConflictPending path merge()-time conflicts already use, so the
+                    // user gets the resolution UI instead of a dead-end error toast. Benefits
+                    // GitHub's push-time race identically (it was previously also mis-routed into
+                    // the generic Error branch below).
+                    _syncState.value = SyncState.ConflictPending(
+                        err.conflictPaths.map { ConflictFile(it, it, emptyList()) }
+                    )
+                } else {
+                    _syncState.value = SyncState.Error(err)
+                }
                 return@withContext err.left()
             }
 
@@ -240,6 +314,9 @@ class GitSyncService(
      */
     suspend fun fetchOnly(graphId: String): Either<DomainError.GitError, FetchResult> =
         withContext(PlatformDispatcher.IO) {
+            // Task 3.4.2c: a manual fetchOnly trigger always supersedes any pending scheduled retry.
+            rateLimitRetryJob?.cancel()
+
             if (!networkMonitor.isOnline) {
                 val err = DomainError.GitError.Offline
                 _syncState.value = SyncState.Error(err)
@@ -267,6 +344,11 @@ class GitSyncService(
                     val err = result.value
                     if (err is DomainError.GitError.AuthFailed && config.authType == GitAuthType.GITHUB_OAUTH) {
                         _syncState.value = SyncState.CredentialExpired(graphId)
+                    } else if (err is DomainError.GitError.CredentialExpired) {
+                        _syncState.value = SyncState.CredentialExpired(graphId)
+                    } else if (err is DomainError.GitError.RateLimited) {
+                        _syncState.value = SyncState.RateLimited(err.retryAfterSeconds)
+                        scheduleRateLimitRetry(graphId, err.retryAfterSeconds) { g -> fetchOnly(g) }
                     } else {
                         _syncState.value = SyncState.Error(err)
                     }
@@ -491,11 +573,23 @@ class GitSyncService(
         periodicSyncJob = null
     }
 
-    /** Shuts down this service, cancelling all coroutines. */
+    /**
+     * Shuts down this service, cancelling all coroutines — including any pending
+     * [rateLimitRetryJob], since it is a child of [scope] and was never a
+     * `rememberCoroutineScope()` (Task 3.4.2d).
+     */
     fun shutdown() {
         scope.cancel()
     }
 
+    companion object {
+        /**
+         * Task 3.4.2a: fallback delay (seconds) for [scheduleRateLimitRetry] when a
+         * [DomainError.GitError.RateLimited] carries no `retryAfterSeconds` — matches the existing
+         * `WasmSectionSyncService.githubFetch` exponential-backoff precedent's cap of 60s.
+         */
+        const val DEFAULT_RATE_LIMIT_RETRY_SECONDS = 60
+    }
 }
 
 /**

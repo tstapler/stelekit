@@ -221,6 +221,9 @@ kotlin {
             val wasmJsTest by getting {
                 dependencies {
                     implementation(kotlin("test-wasm-js"))
+                    // Ktor MockEngine for unit-testing WasmGitWriteService without real network
+                    // calls (pure-Kotlin-multiplatform artifact — already used in jvmTest).
+                    implementation("io.ktor:ktor-client-mock:3.1.3")
                 }
             }
         }
