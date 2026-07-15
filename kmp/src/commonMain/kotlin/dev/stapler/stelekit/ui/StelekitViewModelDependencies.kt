@@ -76,6 +76,13 @@ data class StelekitViewModelDependencies(
     val activeGitSyncService: StateFlow<GitSyncService?> = MutableStateFlow(null),
     val activeGraphIdProvider: () -> String? = { null },
     val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = null,
+    /**
+     * Count of locally-dirty files not yet synced to the remote (web only — see
+     * [dev.stapler.stelekit.platform.PlatformFileSystem.dirtyFileCountFlow]). When null
+     * (JVM/Android), [StelekitViewModel.syncState] behaves exactly as it did before this field
+     * existed — no [dev.stapler.stelekit.git.model.SyncState.LocalChangesPending] is ever emitted.
+     */
+    val localChangesCountFlow: StateFlow<Int>? = null,
 
     // ── Sections ─────────────────────────────────────────────────────────────
     val onSectionsLoaded: (suspend (dev.stapler.stelekit.sections.SectionManifest, Map<String, dev.stapler.stelekit.sections.SectionState>) -> Unit)? = null,

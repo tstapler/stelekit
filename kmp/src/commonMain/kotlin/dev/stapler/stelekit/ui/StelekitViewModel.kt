@@ -63,6 +63,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlin.time.Clock
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -128,6 +129,7 @@ class StelekitViewModel(
     private val bugReportBuilder: dev.stapler.stelekit.performance.BugReportBuilder? = deps.bugReportBuilder
     private val debugFlagRepository: dev.stapler.stelekit.performance.DebugFlagRepository? = deps.debugFlagRepository
     private val activeGitSyncService: StateFlow<GitSyncService?> = deps.activeGitSyncService
+    private val localChangesCountFlow: StateFlow<Int>? = deps.localChangesCountFlow
     private val activeGraphIdProvider: () -> String? = deps.activeGraphIdProvider
     private val onDismissGitDetection: (suspend (graphId: String) -> Unit)? = deps.onDismissGitDetection
     private val onSectionsLoaded = deps.onSectionsLoaded
@@ -236,11 +238,23 @@ class StelekitViewModel(
     // --- Git Sync ---
 
     /**
-     * Emits the current [SyncState] from the active [GitSyncService].
-     * Falls back to [SyncState.Idle] when no git sync service is configured.
+     * Emits the current [SyncState] from the active [GitSyncService], upgraded to
+     * [SyncState.LocalChangesPending] when [localChangesCountFlow] reports a nonzero dirty count
+     * while the raw state is otherwise [SyncState.Idle] (Epic 4.3, Story 4.3.2). Falls back to
+     * [SyncState.Idle] when no git sync service is configured.
+     *
+     * The upgrade only ever overrides [SyncState.Idle] — it never interrupts an in-progress state
+     * (`Fetching`/`Merging`/`Pushing`/`Committing`/etc.). When [localChangesCountFlow] is null
+     * (JVM/Android — the web-only [dev.stapler.stelekit.platform.PlatformFileSystem] is the sole
+     * producer), this combine is a byte-for-byte no-op: `combine` with a constant `flowOf(0)`
+     * degrades to the original `activeGitSyncService.flatMapLatest { ... }` output because `count >
+     * 0` is always false, so [SyncState.LocalChangesPending] can never be emitted.
      */
     val syncState: StateFlow<SyncState> = activeGitSyncService
         .flatMapLatest { service -> service?.syncState ?: flowOf(SyncState.Idle) }
+        .combine(localChangesCountFlow ?: flowOf(0)) { rawState, count ->
+            if (rawState is SyncState.Idle && count > 0) SyncState.LocalChangesPending(count) else rawState
+        }
         .stateIn(scope, SharingStarted.Eagerly, SyncState.Idle)
 
     private fun observeSyncState() {

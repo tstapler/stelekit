@@ -116,3 +116,65 @@ internal suspend fun opfsDeleteFile(path: String) {
         println("[SteleKit] OPFS delete failed for $path: ${e.message}")
     }
 }
+
+/**
+ * Reads a single file at an absolute OPFS path (e.g. `.stele-dirty-set.json`'s marker file),
+ * as opposed to [readOpfsFile] which takes an already-resolved file handle. Returns null if the
+ * path doesn't exist or any step of directory/file resolution fails — callers rely on this for
+ * crash-safe "absent or malformed marker" handling, so this must never throw.
+ */
+internal suspend fun opfsReadFileAtPath(path: String): String? = try {
+    val root = getOpfsRoot()
+    val parts = path.removePrefix("/").split("/")
+    var dir: JsAny = root
+    for (part in parts.dropLast(1)) {
+        dir = getDirectoryHandle(dir, part, false)
+    }
+    val fileHandle = getFileHandle(dir, parts.last(), false)
+    readOpfsFile(fileHandle)
+} catch (e: Throwable) {
+    null
+}
+
+private fun newJsByteArray(): JsAny = js("[]")
+private fun pushJsByte(arr: JsAny, value: Int): Unit = js("arr.push(value)")
+private fun jsByteArrayToBuffer(arr: JsAny): JsAny = js("new Uint8Array(arr).buffer")
+
+/**
+ * Converts a Kotlin [ByteArray] into the `ArrayBuffer`-shaped [JsAny] that [opfsWriteFileBytes]
+ * expects. Marshals byte-by-byte via a JS array push loop — the same interop idiom already used
+ * for SQLite bind params (`JsBindCollector`/`SqliteWorkerInterop`'s `jsArrayPush*` family) —
+ * since Kotlin/Wasm has no direct typed-array boundary crossing for `ByteArray`. Acceptable for
+ * markdown-page-sized paranoid-mode writes; not intended for large binary blobs.
+ */
+internal fun ByteArray.toJsArrayBuffer(): JsAny {
+    val arr = newJsByteArray()
+    for (b in this) pushJsByte(arr, b.toInt() and 0xFF)
+    return jsByteArrayToBuffer(arr)
+}
+
+/**
+ * Resolves to `null` the instant `document.visibilityState` becomes `"hidden"` (tab
+ * backgrounded/closed) — used as a belt-and-suspenders best-effort marker flush per the Page
+ * Lifecycle API's guidance that `visibilitychange` fires more reliably than `beforeunload`/
+ * `pagehide` for this purpose. In environments with no `document` (e.g. some test runners) the
+ * returned promise simply never resolves — a safe no-op, not a crash.
+ */
+internal fun jsVisibilityHiddenPromise(): kotlin.js.Promise<JsAny?> = js(
+    """
+    (function() {
+        return new Promise(function(resolve) {
+            if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') {
+                return;
+            }
+            function handler() {
+                if (document.visibilityState === 'hidden') {
+                    document.removeEventListener('visibilitychange', handler);
+                    resolve(null);
+                }
+            }
+            document.addEventListener('visibilitychange', handler);
+        });
+    })()
+    """
+)

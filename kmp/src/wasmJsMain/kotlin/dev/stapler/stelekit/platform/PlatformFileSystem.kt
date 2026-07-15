@@ -1,23 +1,180 @@
 package dev.stapler.stelekit.platform
 
+import dev.stapler.stelekit.git.model.DirtyEntry
+import dev.stapler.stelekit.git.model.DirtyOp
+import dev.stapler.stelekit.git.model.DirtySetMarker
+import dev.stapler.stelekit.git.model.PendingCommit
+import dev.stapler.stelekit.git.model.gitApiJson
 import dev.stapler.stelekit.sync.WasmSectionSyncService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.await
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlin.time.Clock
 
 actual class PlatformFileSystem actual constructor() : FileSystem {
     private val homeDir = "/stelekit"
     private val cache = mutableMapOf<String, String>()
+    private val bytesCache = mutableMapOf<String, ByteArray>()
     private val blobUrlCache = mutableMapOf<String, String>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    // ── Epic 2.1/2.2: dirty-file tracking + .stele-dirty-set.json checkpoint ──────────────────
+    private val dirtySet = mutableMapOf<String, DirtyEntry>()
+    private val _dirtyFileCountFlow = MutableStateFlow(0)
+    val dirtyFileCountFlow: StateFlow<Int> = _dirtyFileCountFlow.asStateFlow()
+    private var graphId: String = "default"
+    private var baseSha: String = ""
+    private var pendingCommit: PendingCommit = PendingCommit.None
+
+    // Immediate, coalesce-while-busy marker-write scheduler (NOT a fixed-delay debounce — see
+    // Task 2.1.2b's redesign note in project_plans/web-git-writeback/implementation/plan.md).
+    // At most one .stele-dirty-set.json write is ever in flight at a time; a burst of
+    // recordDirty()/scheduleMarkerWrite() calls while one is in flight coalesces into exactly
+    // one trailing write of the latest state, launched the instant the in-flight write completes.
+    private var markerWriteInFlight = false
+    private var markerWriteDirty = false
+
+    init {
+        // Belt-and-suspenders flush: fire the same scheduler when the tab is hidden/closed, even
+        // though the redesign above already bounds the crash-loss window to a single in-flight
+        // OPFS write's duration in the common case.
+        scope.launch {
+            while (true) {
+                try {
+                    jsVisibilityHiddenPromise().await<JsAny?>()
+                } catch (e: Throwable) {
+                    break
+                }
+                scheduleMarkerWrite()
+            }
+        }
+    }
+
     suspend fun preload(graphPath: String) {
+        graphId = graphPath.removePrefix("$homeDir/").substringBefore("/").ifEmpty { graphId }
         try {
             loadOpfsDirectory(graphPath)
         } catch (e: Throwable) {
             println("[SteleKit] OPFS preload failed, starting with empty graph: ${e.message}")
         }
+        restoreDirtySetMarker()
+    }
+
+    private fun markerPath(): String = "$homeDir/$graphId/.stele-dirty-set.json"
+
+    /** Crash-safe: absent or malformed marker leaves the dirty set empty, never throws. */
+    private suspend fun restoreDirtySetMarker() {
+        try {
+            val raw = opfsReadFileAtPath(markerPath()) ?: return
+            val marker = gitApiJson.decodeFromString<DirtySetMarker>(raw)
+            dirtySet.clear()
+            dirtySet.putAll(marker.dirtyFiles)
+            _dirtyFileCountFlow.value = dirtySet.size
+            baseSha = marker.baseSha
+            pendingCommit = marker.pendingCommit
+        } catch (e: Throwable) {
+            println("[SteleKit] dirty-set marker restore failed, starting empty: ${e.message}")
+        }
+    }
+
+    /** Repo-relative path derivation matches [readFileSuspend]'s existing convention. */
+    private fun recordDirty(path: String, op: DirtyOp) {
+        if (path.startsWith(DOWNLOAD_PREFIX)) return
+        val repoRelative = path.removePrefix("/stelekit/").substringAfter("/")
+        if (repoRelative.isEmpty()) return
+        dirtySet[repoRelative] = DirtyEntry(op, Clock.System.now().toEpochMilliseconds())
+        _dirtyFileCountFlow.value = dirtySet.size
+        scheduleMarkerWrite()
+    }
+
+    fun getDirtySnapshot(): Map<String, DirtyEntry> = dirtySet.toMap()
+
+    /**
+     * Epic 4.1: read-only accessor for the last-known-synced base sha (restored from the
+     * `.stele-dirty-set.json` marker on [preload], advanced only by a successful [clearDirtySet]).
+     * `WasmGitRepository` is the sole consumer — this keeps [baseSha] a single source of truth
+     * instead of `WasmGitRepository` privately re-tracking a duplicate copy across calls.
+     */
+    fun getBaseSha(): String = baseSha
+
+    /**
+     * Epic 4.1: read-only accessor for the currently-staged [PendingCommit] (set by
+     * [setPendingCommit]/[clearDirtySet]/[resetPendingCommit]). `WasmGitRepository` reads this at
+     * `push()` time to hand `WasmGitWriteService.push()` the exact staged commit `commit()` (or an
+     * auto-merge rebuild) produced, without duplicating this state privately.
+     */
+    fun getPendingCommit(): PendingCommit = pendingCommit
+
+    /** Used by `commit()` (Phase 3) to persist the staged GitHub commit before `push()` runs. */
+    fun setPendingCommit(commitSha: String, treeSha: String) {
+        pendingCommit = PendingCommit.Staged(commitSha, treeSha)
+        scheduleMarkerWrite()
+    }
+
+    /**
+     * Task 3.3.2c: [WasmGitWriteService.abortMerge]'s equivalent of `GitRepository.abortMerge` —
+     * resets any staged [PendingCommit] (from a completed `commit()` or an auto-merge tree
+     * rebuild) back to [PendingCommit.None] without touching the dirty set, so an abandoned merge
+     * attempt's staged commit/tree SHAs are never later pushed. Mirrors [clearDirtySet]'s
+     * unconditional reset-to-`None`, but deliberately does NOT clear [dirtySet] or [baseSha] —
+     * only a successful push does that.
+     */
+    fun resetPendingCommit() {
+        pendingCommit = PendingCommit.None
+        scheduleMarkerWrite()
+    }
+
+    /**
+     * Clears the dirty set after a successful push, resets [pendingCommit] to [PendingCommit.None]
+     * unconditionally (there is never a reason to pass a replacement staged value — see Task
+     * 2.1.2d), and writes the marker immediately: the crash-safety-critical "clear last" write.
+     */
+    fun clearDirtySet(newBaseSha: String) {
+        dirtySet.clear()
+        _dirtyFileCountFlow.value = 0
+        baseSha = newBaseSha
+        pendingCommit = PendingCommit.None
+        scheduleMarkerWrite()
+    }
+
+    private fun scheduleMarkerWrite() {
+        if (markerWriteInFlight) {
+            markerWriteDirty = true
+            return
+        }
+        markerWriteInFlight = true
+        scope.launch {
+            writeMarkerNow()
+            while (markerWriteDirty) {
+                markerWriteDirty = false
+                writeMarkerNow()
+            }
+            markerWriteInFlight = false
+        }
+    }
+
+    private suspend fun writeMarkerNow() {
+        val marker = DirtySetMarker(
+            graphId = graphId,
+            baseSha = baseSha,
+            pendingCommit = pendingCommit,
+            checkpointedAtMillis = Clock.System.now().toEpochMilliseconds(),
+            dirtyFiles = dirtySet.toMap(),
+        )
+        val encoded = try {
+            gitApiJson.encodeToString(marker)
+        } catch (e: Throwable) {
+            println("[SteleKit] dirty-set marker encode failed: ${e.message}")
+            return
+        }
+        opfsWriteFile(markerPath(), encoded)
     }
 
     private suspend fun loadOpfsDirectory(graphPath: String) {
@@ -64,6 +221,19 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
 
     actual override fun readFile(path: String): String? = cache[path]
 
+    /**
+     * BLOCKER fix (web-git-writeback architecture review): uniform byte-level content accessor
+     * for git write-back's content-read call sites. [readFile] only ever consults the plain-text
+     * [cache] map, so a paranoid-mode (encrypted) dirty path — stored exclusively in [bytesCache]
+     * by [writeFileBytes] — was never visible to it, poisoning the entire commit batch with a
+     * spurious "No cached content for dirty path" failure. [bytesCache] is checked first (a
+     * paranoid-mode file is never also present in [cache]); a plain-text [cache] hit is UTF-8
+     * encoded on the way out. Deliberately does NOT round-trip through `readFile(): String?` —
+     * encrypted bytes are not valid UTF-8 in general, and a lossy String conversion would corrupt
+     * them.
+     */
+    fun getContentBytes(path: String): ByteArray? = bytesCache[path] ?: cache[path]?.encodeToByteArray()
+
     override suspend fun readFileSuspend(path: String): String? {
         cache[path]?.let { return it }
         val owner = githubOwner.ifEmpty { return null }
@@ -100,7 +270,37 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
             return true
         }
         cache[path] = content
+        recordDirty(path, DirtyOp.WRITE)
         scope.launch { opfsWriteFile(path, content) }
+        return true
+    }
+
+    /**
+     * Task 3.3.1b: merge-time write for [WasmGitWriteService]'s GitHub non-overlapping auto-merge
+     * (Story 3.3.1) — writes remote content fetched during a merge rebuild into the in-memory
+     * cache and schedules the matching OPFS write, exactly like [writeFile], but deliberately does
+     * NOT call [recordDirty]: auto-merged remote content is not a local edit, so re-marking it
+     * dirty here would corrupt the "only push what changed locally" invariant (it would cause the
+     * next commit to needlessly re-push content that already matches the remote).
+     */
+    fun applyRemoteContent(path: String, content: String): Boolean {
+        if (path.startsWith(DOWNLOAD_PREFIX)) return false
+        cache[path] = content
+        scope.launch { opfsWriteFile(path, content) }
+        return true
+    }
+
+    /**
+     * Real byte-level OPFS I/O for paranoid-mode encrypted writes — previously missing entirely
+     * (this class inherited [FileSystem.writeFileBytes]'s throwing default, so paranoid-mode
+     * writes crashed on web). Reuses [opfsWriteFileBytes] (already used by
+     * `WasmMediaAttachmentService` for attachment uploads) — no OPFS-write logic duplicated here.
+     */
+    override fun writeFileBytes(path: String, data: ByteArray): Boolean {
+        if (path.startsWith(DOWNLOAD_PREFIX)) return false
+        bytesCache[path] = data
+        recordDirty(path, DirtyOp.WRITE)
+        scope.launch { opfsWriteFileBytes(path, data.toJsArrayBuffer()) }
         return true
     }
 
@@ -114,6 +314,8 @@ actual class PlatformFileSystem actual constructor() : FileSystem {
     actual override fun createDirectory(path: String): Boolean = true
     actual override fun deleteFile(path: String): Boolean {
         cache.remove(path)
+        bytesCache.remove(path)
+        recordDirty(path, DirtyOp.DELETE)
         scope.launch { opfsDeleteFile(path) }
         return true
     }

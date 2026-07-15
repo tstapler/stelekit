@@ -94,6 +94,14 @@ sealed interface DomainError {
             override val message: String = "Cannot sync while editing is in progress"
         }
         data class CredentialExpired(override val message: String) : GitError
+        data class RateLimited(val retryAfterSeconds: Int?) : GitError {
+            override val message: String = "Rate limited by GitHub/GitLab"
+        }
+        data class FileTooLarge(val path: String, val sizeBytes: Long, val maxBytes: Long) : GitError {
+            override val message: String =
+                "File too large to sync: $path ($sizeBytes bytes exceeds max of $maxBytes bytes)"
+        }
+        data class NetworkFailure(override val message: String) : GitError
     }
 
     sealed interface AttachmentError : DomainError {
@@ -191,6 +199,9 @@ fun DomainError.toUiMessage(): String = when (this) {
     is DomainError.GitError.Offline -> message
     is DomainError.GitError.EditingInProgress -> message
     is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
+    is DomainError.GitError.RateLimited -> "Rate limited — retrying automatically"
+    is DomainError.GitError.FileTooLarge -> "File too large to sync: ${path}"
+    is DomainError.GitError.NetworkFailure -> "Network error — sync will retry"
     is DomainError.AttachmentError.CopyFailed -> "Attachment failed"
     is DomainError.AttachmentError.PickerFailed -> "Could not open file picker"
     is DomainError.AttachmentError.AssetsDirectoryFailed -> "Cannot create assets directory"
@@ -220,4 +231,7 @@ fun DomainError.GitError.toSyncErrorMessage(): String = when (this) {
     is DomainError.GitError.NotSupported -> "Git not supported on this platform"
     is DomainError.GitError.EditingInProgress -> "Editing in progress — sync will resume when idle"
     is DomainError.GitError.CredentialExpired -> "GitHub authentication expired — tap to re-connect"
+    is DomainError.GitError.RateLimited -> "Rate limited by GitHub/GitLab — retrying automatically"
+    is DomainError.GitError.FileTooLarge -> "File too large to sync: $path"
+    is DomainError.GitError.NetworkFailure -> "Network error — sync will retry"
 }

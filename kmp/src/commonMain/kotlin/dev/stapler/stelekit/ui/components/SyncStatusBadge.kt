@@ -12,10 +12,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Sync
@@ -49,6 +51,8 @@ import kotlinx.coroutines.delay
  * - [SyncState.ConflictPending]: amber warning icon with "Conflict" label
  * - [SyncState.Error]: red error icon with "Error" label (routes to onAuthError if AuthFailed)
  * - [SyncState.Success]: brief green checkmark, fades after 3 seconds
+ * - [SyncState.LocalChangesPending(n)]: neutral cloud-upload icon with "n unsynced" label — tappable, same as every other actionable state
+ * - [SyncState.RateLimited]: neutral sync icon with "Retrying…" label — never clickable, never phrased as "tap to retry"
  *
  * @param syncState Current sync state from [GitSyncService].
  * @param onSyncClick Called when the manual sync icon button is tapped.
@@ -262,6 +266,52 @@ private fun SyncStateBadge(
                     contentDescription = "Sync complete",
                     tint = Color(0xFF047857), // emerald-500
                     modifier = modifier.size(16.dp),
+                )
+            }
+        }
+
+        is SyncState.LocalChangesPending -> {
+            Row(
+                modifier = modifier
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .clickable { onSyncClick() },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CloudUpload,
+                    contentDescription = "${syncState.fileCount} unsynced changes",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(modifier = Modifier.width(2.dp))
+                Text(
+                    text = "${syncState.fileCount} unsynced",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        is SyncState.RateLimited -> {
+            // Auto-resolving state — never clickable, never phrased as "tap to retry".
+            // Sized to the same minimum region as LocalChangesPending so the badge slot
+            // doesn't visually jump size between states, even though this row is inert.
+            Row(
+                modifier = modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Sync,
+                    contentDescription = "Rate limited — retrying automatically",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(modifier = Modifier.width(2.dp))
+                Text(
+                    text = "Retrying…",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    maxLines = 1,
                 )
             }
         }

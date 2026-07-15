@@ -196,6 +196,14 @@ fun StelekitApp(
      */
     googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
     requestCameraPermission: (suspend () -> Boolean)? = null,
+    /**
+     * Count of locally-dirty files not yet synced to the remote (web only). When non-null,
+     * [StelekitViewModel.syncState] upgrades an otherwise-[dev.stapler.stelekit.git.model.SyncState.Idle]
+     * state to [dev.stapler.stelekit.git.model.SyncState.LocalChangesPending] while this count is
+     * nonzero. Pass [dev.stapler.stelekit.platform.PlatformFileSystem.dirtyFileCountFlow] on web.
+     * When null (default — JVM/Android), git sync state is unaffected.
+     */
+    localChangesCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
 ) {
     val platformSettings = remember { PlatformSettings() }
     val scope = rememberCoroutineScope()
@@ -361,6 +369,7 @@ fun StelekitApp(
             attachmentService = attachmentService,
             googleAuthManager = googleAuthManager,
             requestCameraPermission = requestCameraPermission,
+            localChangesCountFlow = localChangesCountFlow,
         )
     }
 }
@@ -395,6 +404,7 @@ private fun GraphContent(
     attachmentService: dev.stapler.stelekit.service.MediaAttachmentService? = null,
     googleAuthManager: dev.stapler.stelekit.platform.google.GoogleAuthManager? = null,
     requestCameraPermission: (suspend () -> Boolean)? = null,
+    localChangesCountFlow: kotlinx.coroutines.flow.StateFlow<Int>? = null,
 ) {
     CompositionLocalProvider(
         LocalSpanRecorder provides spanRecorder,
@@ -640,6 +650,7 @@ private fun GraphContent(
                 histogramWriter = repos.histogramWriter,
                 ringBuffer = repos.ringBuffer,
                 activeGitSyncService = graphManager.activeGitSyncService,
+                localChangesCountFlow = localChangesCountFlow,
                 activeGraphIdProvider = { graphManager.getActiveGraphId()?.value },
                 onDismissGitDetection = { graphId -> graphManager.setGitDetectionDismissed(GraphId(graphId), true) },
                 onSectionsLoaded = onSectionsLoaded,
