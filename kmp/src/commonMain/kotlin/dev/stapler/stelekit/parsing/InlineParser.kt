@@ -309,6 +309,14 @@ class InlineParser(private val source: CharSequence) {
         }
 
         // Plain [ — try to parse [label](url)
+        // Cheap non-recursive lookahead first: bail out before paying for a full recursive
+        // label parse when there's no `](...)` ahead at all. Without this guard, text with
+        // many unmatched `[` (e.g. typing "[[MOP (" mid-link) is exponential — every `[`
+        // encountered while scanning for the label's `]` triggers a fresh recursive
+        // parseLink call that itself rescans the remaining text.
+        if (!hasMatchingLabelClose()) {
+            return TextNode("[")
+        }
         val labelSaved = lexer.saveState()
         val labelToken = currentToken
         val labelSb = StringBuilder()
@@ -338,6 +346,35 @@ class InlineParser(private val source: CharSequence) {
         lexer.restoreState(labelSaved)
         currentToken = labelToken
         return TextNode("[")
+    }
+
+    /**
+     * Scans forward from [currentToken] for `] ( ... )`, using raw token-type checks only
+     * (no recursive parsing), then restores lexer/token state. Bounded O(remaining tokens)
+     * per call with no fan-out, unlike the real label parse it guards.
+     */
+    private fun hasMatchingLabelClose(): Boolean {
+        val saved = lexer.saveState()
+        val savedToken = currentToken
+
+        while (currentToken.type != TokenType.R_BRACKET && currentToken.type != TokenType.EOF && currentToken.type != TokenType.NEWLINE) {
+            advance()
+        }
+        var found = false
+        if (currentToken.type == TokenType.R_BRACKET) {
+            advance()
+            if (currentToken.type == TokenType.L_PAREN) {
+                advance()
+                while (currentToken.type != TokenType.R_PAREN && currentToken.type != TokenType.EOF && currentToken.type != TokenType.NEWLINE) {
+                    advance()
+                }
+                found = currentToken.type == TokenType.R_PAREN
+            }
+        }
+
+        lexer.restoreState(saved)
+        currentToken = savedToken
+        return found
     }
 
     private fun parseBlockRef(_token: Token): InlineNode {
