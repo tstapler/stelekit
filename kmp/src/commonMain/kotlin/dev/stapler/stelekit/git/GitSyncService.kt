@@ -95,6 +95,11 @@ class GitSyncService(
         rateLimitRetryJob?.cancel()
         rateLimitRetryJob = scope.launch {
             delay((retryAfterSeconds ?: DEFAULT_RATE_LIMIT_RETRY_SECONDS) * 1000L)
+            // Clear before invoking retryOperation — sync()/fetchOnly() cancel rateLimitRetryJob
+            // at their own top as a "manual trigger supersedes a pending retry" guard. If left
+            // pointing at this currently-running job, that cancel-at-top would self-cancel this
+            // very coroutine, silently aborting the retry at its first suspension point.
+            rateLimitRetryJob = null
             retryOperation(graphId)
         }
     }

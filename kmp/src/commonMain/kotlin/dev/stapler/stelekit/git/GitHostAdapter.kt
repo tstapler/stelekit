@@ -84,10 +84,16 @@ object GitHostAdapter {
  * `WasmGitWriteService`: derives host type and owner/repo from [remoteUrl], branch from
  * [config], and carries the raw [token] forward — call sites derive the auth header pair on
  * demand via `GitHostAdapter.authHeader(hostConfig.type, hostConfig.token)`.
+ *
+ * Returns `null` when [remoteUrl] cannot be parsed into an `owner/repo` pair, instead of
+ * silently degrading to empty owner/repo strings (which would previously build a malformed
+ * `".../repos//"` API URL for a detected-but-unparseable remote). Every call site already
+ * threads a nullable `GitHostConfig?` through to an explicit "couldn't resolve" branch (e.g.
+ * `AuthFailed`), so this composes cleanly with the existing `configResolver` chains.
  */
-fun GitHostAdapter.resolve(config: GitConfig, remoteUrl: String, token: String): GitHostConfig {
+fun GitHostAdapter.resolve(config: GitConfig, remoteUrl: String, token: String): GitHostConfig? {
     val type = detect(remoteUrl)
-    val (owner, repo) = extractOwnerRepo(remoteUrl) ?: ("" to "")
+    val (owner, repo) = extractOwnerRepo(remoteUrl) ?: return null
     val resolvedApiBase = if (type == GitHostType.UNSUPPORTED) "" else apiBase(type, owner, repo)
     return GitHostConfig(
         type = type,

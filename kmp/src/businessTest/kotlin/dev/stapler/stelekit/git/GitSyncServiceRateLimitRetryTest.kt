@@ -136,6 +136,13 @@ class GitSyncServiceRateLimitRetryTest {
                     return if (fetchCallCount == 1) {
                         DomainError.GitError.RateLimited(retryAfterSeconds = 1).left()
                     } else {
+                        // A real suspension point here (unlike a synchronous return) is what
+                        // actually exercises scheduleRateLimitRetry's self-cancellation footgun:
+                        // the scheduled job invokes fetchOnly(), whose own cancel-at-top guard
+                        // would previously cancel its OWN still-running job if rateLimitRetryJob
+                        // hadn't been cleared first — the cancellation only manifests at the next
+                        // real suspension point, which a non-suspending stub body would never hit.
+                        delay(1)
                         FetchResult(hasRemoteChanges = false, remoteCommitCount = 0).right()
                     }
                 }

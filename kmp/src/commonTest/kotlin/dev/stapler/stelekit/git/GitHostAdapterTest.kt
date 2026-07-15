@@ -3,9 +3,13 @@
 
 package dev.stapler.stelekit.git
 
+import dev.stapler.stelekit.git.model.GitAuthType
+import dev.stapler.stelekit.git.model.GitConfig
+import dev.stapler.stelekit.git.model.GitHostConfig
 import dev.stapler.stelekit.git.model.GitHostType
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 /**
  * Unit tests for [GitHostAdapter] — pure host-detection + auth-header + API-base logic.
@@ -77,5 +81,39 @@ class GitHostAdapterTest {
             "https://gitlab.com/api/v4/projects/tstapler%2Dnotes%2Fwiki",
             GitHostAdapter.apiBase(GitHostType.GITLAB, "tstapler%2Dnotes", "wiki"),
         )
+    }
+
+    private fun sampleConfig(remoteBranch: String = "main") = GitConfig(
+        graphId = "g1",
+        repoRoot = "/repo",
+        wikiSubdir = "",
+        remoteBranch = remoteBranch,
+        authType = GitAuthType.HTTPS_TOKEN,
+    )
+
+    @Test
+    fun `resolve returns a populated GitHostConfig for a parseable GitHub remote`() {
+        val config = sampleConfig(remoteBranch = "develop")
+        val resolved = GitHostAdapter.resolve(config, "https://github.com/tstapler/steno-wiki.git", "ghp_abc123")
+        assertEquals(
+            GitHostConfig(
+                type = GitHostType.GITHUB,
+                owner = "tstapler",
+                repo = "steno-wiki",
+                branch = "develop",
+                token = "ghp_abc123",
+                apiBase = "https://api.github.com/repos/tstapler/steno-wiki",
+            ),
+            resolved,
+        )
+    }
+
+    @Test
+    fun `resolve returns null instead of an empty-owner-repo config for an unparseable remote URL`() {
+        // Finding 3: previously silently degraded to owner="" repo="" and built a malformed
+        // ".../repos//" API URL. Now the caller must explicitly handle "couldn't resolve".
+        val config = sampleConfig()
+        val resolved = GitHostAdapter.resolve(config, "not-a-valid-remote-url", "token")
+        assertNull(resolved)
     }
 }
