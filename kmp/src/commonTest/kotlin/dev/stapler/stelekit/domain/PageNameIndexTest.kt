@@ -238,6 +238,18 @@ class PageNameIndexTest {
     }
 
     // -------------------------------------------------------------------------
+    // 7b. extractParentheticalContent_parsesCorrectly
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun extractParentheticalContent_parsesCorrectly() {
+        assertEquals("carlton", PageNameIndex.extractParentheticalContent("sam (carlton)"))
+        assertEquals("mop", PageNameIndex.extractParentheticalContent("master operating procedure (mop)"))
+        assertNull(PageNameIndex.extractParentheticalContent("no parens here"))
+        assertNull(PageNameIndex.extractParentheticalContent("kotlin"))
+    }
+
+    // -------------------------------------------------------------------------
     // 8. parentheticalAlias_suggestsPageWhenBaseTyped
     // Index includes "Sam (Carlton)"; typing "Sam" should suggest that page
     // -------------------------------------------------------------------------
@@ -259,6 +271,33 @@ class PageNameIndexTest {
             val matches = matcher.findAll("I talked to Sam today")
             assertEquals(1, matches.size, "Bare 'Sam' should match page 'Sam (Carlton)'")
             assertEquals("Sam (Carlton)", matches[0].canonicalName)
+        } finally {
+            indexScope.cancel()
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // 8b. parentheticalAlias_suggestsPageWhenAcronymTyped
+    // Index includes "Master Operating Procedure (MOP)"; typing "MOP" should suggest it
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun parentheticalAlias_suggestsPageWhenAcronymTyped() = runTest(UnconfinedTestDispatcher()) {
+        val pageRepo = InMemoryPageRepository()
+        pageRepo.savePage(makePage("p1", "Master Operating Procedure (MOP)"))
+
+        val indexScope = CoroutineScope(UnconfinedTestDispatcher())
+        try {
+            val index = PageNameIndex(
+                pageRepository = pageRepo,
+                scope = indexScope,
+                rebuildDebounceMs = 0L,
+            )
+
+            val matcher = index.awaitMatcher()
+            val matches = matcher.findAll("Following the MOP for this task")
+            assertEquals(1, matches.size, "Bare 'MOP' should match page 'Master Operating Procedure (MOP)'")
+            assertEquals("Master Operating Procedure (MOP)", matches[0].canonicalName)
         } finally {
             indexScope.cancel()
         }
