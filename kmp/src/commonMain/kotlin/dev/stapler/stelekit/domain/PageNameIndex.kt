@@ -138,14 +138,8 @@ class PageNameIndex(
         // Pass 2 — parenthetical aliases: "X (Y)" → alias "x" → canonical "X (Y)",
         // and "X (Y)" → alias "y" → canonical "X (Y)" (e.g. the acronym in parens)
         for ((lower, canonical) in eligiblePages) {
-            val baseAlias = extractParentheticalBase(lower)
-            if (baseAlias != null && baseAlias.length >= minNameLength && baseAlias !in stopwords && seenPatterns.add(baseAlias)) {
-                result += AhoCorasickMatcher.TrieEntry(baseAlias, canonical)
-            }
-            val contentAlias = extractParentheticalContent(lower)
-            if (contentAlias != null && contentAlias.length >= minNameLength && contentAlias !in stopwords && seenPatterns.add(contentAlias)) {
-                result += AhoCorasickMatcher.TrieEntry(contentAlias, canonical)
-            }
+            addAliasIfEligible(extractParentheticalBase(lower), canonical, seenPatterns, result)
+            addAliasIfEligible(extractParentheticalContent(lower), canonical, seenPatterns, result)
         }
 
         // Pass 3 — stem variants: single-word pages only (multi-word names produce nonsensical
@@ -161,6 +155,19 @@ class PageNameIndex(
         }
 
         return result
+    }
+
+    /** Registers [alias] as a [TrieEntry] pointing to [canonical] if it passes eligibility checks. */
+    private fun addAliasIfEligible(
+        alias: String?,
+        canonical: String,
+        seenPatterns: MutableSet<String>,
+        result: MutableList<AhoCorasickMatcher.TrieEntry>,
+    ) {
+        if (alias == null) return
+        if (alias.length >= minNameLength && alias !in stopwords && seenPatterns.add(alias)) {
+            result += AhoCorasickMatcher.TrieEntry(alias, canonical)
+        }
     }
 
     companion object {
