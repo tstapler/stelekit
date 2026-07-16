@@ -258,4 +258,20 @@ class MarkdownExporterTest {
         val output = exporter.export(page(), listOf(block("[[Category/SubPage]]")), emptyMap())
         assertContains(output, "[[Category/SubPage]]")
     }
+
+    // U-MD-23: nested block (level > 0) with embedded newline indents continuation
+    // lines one level deeper than the bullet, matching LogseqPageSerializer's convention.
+    @Test
+    fun `U-MD-23 nested block with newline indents continuation line under bullet`() {
+        val parent = block("parent", level = 0, position = "a0", uuid = "parent")
+        val child = block(
+            content = "line one\nline two",
+            level = 1,
+            position = "a0",
+            uuid = "child",
+            parentUuid = "parent",
+        )
+        val output = exporter.export(page(), listOf(parent, child), emptyMap())
+        assertContains(output, "- line one\n  line two\n")
+    }
 }

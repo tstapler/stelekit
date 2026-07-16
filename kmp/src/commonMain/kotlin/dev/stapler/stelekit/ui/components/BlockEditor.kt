@@ -436,7 +436,21 @@ private fun handleKeyEvent(
         return when (event.key) {
             Key.Enter -> {
                 if (event.isShiftPressed) {
-                    false
+                    if (textFieldValue.composition != null) {
+                        // Active IME composition (CJK/Korean) — let the platform handle Enter.
+                        false
+                    } else {
+                        val selection = textFieldValue.selection
+                        val text = textFieldValue.text
+                        val start = selection.min
+                        val end = selection.max
+                        val newText = text.substring(0, start) + "\n" + text.substring(end)
+                        val newValue = TextFieldValue(newText, TextRange(start + 1))
+                        onTextFieldValueChange(newValue)
+                        val newVersion = onLocalVersionIncrement()
+                        onContentChange(newText, newVersion)
+                        true
+                    }
                 } else {
                     val selection = textFieldValue.selection
                     if (selection.collapsed && selection.start < textFieldValue.text.length) {

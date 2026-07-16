@@ -2,6 +2,7 @@ package dev.stapler.stelekit.db
 
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.Page
+import dev.stapler.stelekit.util.indentContinuationLines
 
 /**
  * Canonical on-disk Logseq markdown builder, extracted from [GraphWriter.buildMarkdown] so it
@@ -32,7 +33,7 @@ object LogseqPageSerializer {
                 val indent = "\t".repeat(block.level)
                 append(indent)
                 append("- ")
-                appendLine(block.content)
+                appendLine(block.content.indentContinuationLines(indent + "\t"))
 
                 if (block.properties.isNotEmpty()) {
                     val propIndent = indent + "\t"

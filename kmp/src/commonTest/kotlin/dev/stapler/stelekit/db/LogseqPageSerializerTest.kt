@@ -172,4 +172,80 @@ class LogseqPageSerializerTest {
 
         assertEquals(originalHashes, reparsedHashes)
     }
+
+    @Test
+    fun serialize_should_IndentContinuationLines_When_BlockContentHasEmbeddedNewline() {
+        val pageUuid = PageUuid("00000000-0000-0000-0000-000000000001")
+        val page = Page(
+            uuid = pageUuid,
+            name = "Multiline",
+            createdAt = now,
+            updatedAt = now,
+            properties = emptyMap(),
+        )
+
+        val rootUuid = BlockUuid("00000000-0000-0000-0000-000000000010")
+        val root = Block(
+            uuid = rootUuid,
+            pageUuid = pageUuid,
+            content = "line one\nline two\nline three",
+            level = 0,
+            position = "a0",
+            parentUuid = null,
+            createdAt = now,
+            updatedAt = now,
+        )
+
+        val markdown = LogseqPageSerializer.serialize(page, listOf(root))
+
+        assertEquals("- line one\n\tline two\n\tline three\n", markdown)
+    }
+
+    @Test
+    fun serialize_should_RoundTripMultilineContent_When_ContentHashesCompared() {
+        val pageUuid = PageUuid("00000000-0000-0000-0000-000000000001")
+        val page = Page(
+            uuid = pageUuid,
+            name = "MultilineRoundTrip",
+            createdAt = now,
+            updatedAt = now,
+            properties = emptyMap(),
+        )
+
+        val rootUuid = BlockUuid("00000000-0000-0000-0000-000000000010")
+        val root = Block(
+            uuid = rootUuid,
+            pageUuid = pageUuid,
+            content = "first line\nsecond line",
+            level = 0,
+            position = "a0",
+            parentUuid = null,
+            createdAt = now,
+            updatedAt = now,
+        )
+        val originalBlocks = listOf(root)
+
+        val markdown = LogseqPageSerializer.serialize(page, originalBlocks)
+
+        val parsedPage = MarkdownParser().parsePage(markdown, ParseMode.FULL)
+        val reparsedBlocks = mutableListOf<Block>()
+        MarkdownPageParser.processParsedBlocks(
+            parsedBlocks = parsedPage.blocks,
+            pagePath = "MultilineRoundTrip.md",
+            pageUuid = pageUuid,
+            parentUuid = null,
+            baseLevel = 0,
+            now = now,
+            destinationList = reparsedBlocks,
+            mode = ParseMode.FULL,
+        )
+
+        // Not split into separate/orphaned blocks — round trip yields exactly one block back.
+        assertEquals(1, reparsedBlocks.size)
+
+        val originalHashes = originalBlocks.map { ContentHasher.sha256ForContent(it.content) }.toSet()
+        val reparsedHashes = reparsedBlocks.map { it.contentHash }.toSet()
+
+        assertEquals(originalHashes, reparsedHashes)
+    }
 }
