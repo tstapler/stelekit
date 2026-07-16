@@ -20,11 +20,15 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -96,21 +100,48 @@ class QrTransferCoordinatorTest {
     }
 
     /**
-     * Collects every [CoordinatorEvent] emitted until a terminal (Success/Failed) event, or
-     * timeout. [QrTransferCoordinator.events] is a buffered (non-conflating) `SharedFlow`, so this
-     * reliably observes every transient milestone (e.g. `Reassembling`) even for a payload small
-     * enough to reassemble in a single tick.
+     * Records every [CoordinatorEvent] from a coordinator's `events` via exactly ONE subscription,
+     * forwarding into an unbounded [Channel].
+     *
+     * [QrTransferCoordinator.events] is a `replay = 1` `SharedFlow`. Calling `.first { ... }`
+     * directly on it — repeatedly, once per awaited milestone, as this file used to — creates a
+     * fresh subscription each time. Between one collector's cancellation (once its predicate
+     * matches) and the next one's subscription, the coordinator can keep emitting further events
+     * (e.g. more `FragmentAdmitted` for a still-active session); with `replay = 1` only the single
+     * most recent event survives, so an event a later call is waiting for can be overwritten and
+     * permanently lost before the new subscriber attaches. That race is invisible on a fast local
+     * run but reliably manifests as an intermittent `TimeoutCancellationException` under CI
+     * scheduling pressure (see stelekit CI history for this file).
+     *
+     * A [Channel] has real queueing semantics — every emitted event is buffered regardless of
+     * whether a consumer is currently reading — so subscribing exactly once, before
+     * [QrTransferCoordinator.start] is even called, and draining sequentially via
+     * [awaitEvent]/[awaitTerminal] afterward can never miss an event no matter how the two ends
+     * are scheduled.
      */
-    private suspend fun collectUntilTerminal(
-        coordinator: QrTransferCoordinator,
-        timeoutMs: Long = 5_000,
-    ): List<CoordinatorEvent> = withTimeout(timeoutMs) {
-        val seen = mutableListOf<CoordinatorEvent>()
-        coordinator.events.first { event ->
-            seen.add(event)
-            event is CoordinatorEvent.Success || event is CoordinatorEvent.Failed
+    private class EventRecorder(coordinator: QrTransferCoordinator, scope: CoroutineScope) {
+        private val channel = Channel<CoordinatorEvent>(Channel.UNLIMITED)
+        private val job: Job = scope.launch { coordinator.events.collect { channel.send(it) } }
+
+        suspend fun awaitEvent(timeoutMs: Long = 5_000, predicate: (CoordinatorEvent) -> Boolean): CoordinatorEvent =
+            withTimeout(timeoutMs) { channel.receiveAsFlow().first(predicate) }
+
+        /** Drains events until a terminal (Success/Failed) event, returning everything seen. */
+        suspend fun awaitTerminal(timeoutMs: Long = 5_000): List<CoordinatorEvent> = withTimeout(timeoutMs) {
+            val seen = mutableListOf<CoordinatorEvent>()
+            channel.receiveAsFlow().first { event ->
+                seen.add(event)
+                event is CoordinatorEvent.Success || event is CoordinatorEvent.Failed
+            }
+            seen
         }
-        seen
+
+        /** Must be called once the test is done with the coordinator — the background collector
+         * job never completes on its own (a `SharedFlow` never signals completion), so leaving
+         * this uncancelled would hang the enclosing `runBlocking` forever on the success path. */
+        fun close() {
+            job.cancel()
+        }
     }
 
     @Test
@@ -124,12 +155,13 @@ class QrTransferCoordinatorTest {
             frameTransportReceiver = fakeReceiver(encoder),
             qrImportService = importService,
         )
+        val recorder = EventRecorder(coordinator, this)
 
         // Nothing written before Success — QrImportService is invoked only after reassemble()
         // yields Right(VerifiedTransferPayload) AND TransferPayloadEnvelope.unwrap() yields Right.
         coordinator.start()
 
-        val events = collectUntilTerminal(coordinator)
+        val events = recorder.awaitTerminal()
         val successEvent = assertIs<CoordinatorEvent.Success>(events.last())
         assertEquals("Page Body Page", successEvent.pageName.value, "the real decoded page name must be used, not a synthesized placeholder")
         assertTrue(events.any { it is CoordinatorEvent.Reassembling }, "expected a Reassembling event, got $events")
@@ -139,6 +171,7 @@ class QrTransferCoordinatorTest {
         assertTrue(saved != null, "page must be written only after reassembly succeeded")
 
         coordinator.close()
+        recorder.close()
     }
 
     @Test
@@ -155,9 +188,10 @@ class QrTransferCoordinatorTest {
             // content — its output must never feed ChunkBuffer, only the hint.
             qrScanner = fakeQrScanner(ScanResult.NotSteleKitCode),
         )
+        val recorder = EventRecorder(coordinator, this)
 
         coordinator.start()
-        val events = collectUntilTerminal(coordinator)
+        val events = recorder.awaitTerminal()
 
         // Reassembly must still succeed despite the WrongCode diagnostics hint — the fake scan
         // function's output never reached ChunkBuffer (it only ever influences `hint`).
@@ -171,6 +205,7 @@ class QrTransferCoordinatorTest {
         )
 
         coordinator.close()
+        recorder.close()
     }
 
     @Test
@@ -186,16 +221,18 @@ class QrTransferCoordinatorTest {
             frameTransportReceiver = neverEmittingReceiver,
             qrImportService = importService,
         )
+        val recorder = EventRecorder(coordinator, this)
 
         coordinator.start()
         coordinator.cancel()
 
-        val state = withTimeout(5_000) { coordinator.events.first { it is CoordinatorEvent.Cancelled } }
+        val state = recorder.awaitEvent { it is CoordinatorEvent.Cancelled }
         assertIs<CoordinatorEvent.Cancelled>(state)
         val saved = pageRepo.getPageByName("Cancelled Page").first().getOrNull()
         assertNull(saved, "no write must occur after cancel() (nothing was ever written under this name)")
 
         coordinator.close()
+        recorder.close()
     }
 
     @Test
@@ -209,6 +246,10 @@ class QrTransferCoordinatorTest {
         // frame. This test avoids that race entirely: it drives frames through a manually-pumped
         // Channel and waits for the coordinator's own event confirming each frame was actually
         // processed before sending the next one — deterministic by construction, not by luck.
+        // Waiting on those confirming events goes through EventRecorder (see its KDoc) rather than
+        // repeated `coordinator.events.first { ... }` calls, so a burst of unrelated events
+        // between two awaited milestones can never race the replay=1 buffer and drop the one this
+        // test is actually waiting for.
         val activeMarkdown = "- active session page body with enough content for several fountain chunks\n"
         val activeEnvelopeBytes = TransferPayloadEnvelope.wrap(PageName("Concurrent Sender Page"), activeMarkdown)
         val activeEncoder = FountainCodec.encoder(TransferId(7), activeEnvelopeBytes, maxFragmentBytes = 12).getOrNull()!!
@@ -236,31 +277,31 @@ class QrTransferCoordinatorTest {
             frameTransportReceiver = pumpedReceiver,
             qrImportService = importService,
         )
+        val recorder = EventRecorder(coordinator, this)
 
         coordinator.start()
 
         // Send + confirm the first active-session fragment is admitted (binds the session to
         // TransferId(7)) before introducing the foreign one.
         prefixChannel.send(ChunkFrameCodec.encode(activeEncoder.parts().first()))
-        withTimeout(5_000) { coordinator.events.first { it is CoordinatorEvent.FragmentAdmitted } }
+        recorder.awaitEvent { it is CoordinatorEvent.FragmentAdmitted }
 
         // Inject a frame for a different TransferId — must be dropped with a visible signal, and
         // must NOT disturb the active session.
         prefixChannel.send(ChunkFrameCodec.encode(foreignEncoder.parts().first()))
-        val concurrentEvent = withTimeout(5_000) {
-            coordinator.events.first { it is CoordinatorEvent.ConcurrentTransferDetected }
-        }
+        val concurrentEvent = recorder.awaitEvent { it is CoordinatorEvent.ConcurrentTransferDetected }
         assertIs<CoordinatorEvent.ConcurrentTransferDetected>(concurrentEvent)
 
         // The active TransferId(7) session must still be able to complete normally afterward —
         // the generator above keeps emitting its own redundant fountain stream automatically.
-        val terminal = collectUntilTerminal(coordinator)
+        val terminal = recorder.awaitTerminal()
         assertIs<CoordinatorEvent.Success>(terminal.last(), "the active TransferId(7) session must still complete undisrupted")
 
         val saved = pageRepo.getPageByName("Concurrent Sender Page").first().getOrNull()
         assertTrue(saved != null, "the active session's own page must still be written")
 
         coordinator.close()
+        recorder.close()
     }
 
     @Test
@@ -287,10 +328,11 @@ class QrTransferCoordinatorTest {
             qrImportService = importService,
             maxPayloadBytes = maxPayloadBytes,
         )
+        val recorder = EventRecorder(coordinator, this)
 
         coordinator.start()
 
-        val event = withTimeout(5_000) { coordinator.events.first { it is CoordinatorEvent.Failed } }
+        val event = recorder.awaitEvent { it is CoordinatorEvent.Failed }
         val failed = assertIs<CoordinatorEvent.Failed>(event)
         val payloadTooLarge = assertIs<DomainError.QrTransferError.PayloadTooLarge>(failed.error)
         assertEquals(5_000_000, payloadTooLarge.sizeBytes)
@@ -300,6 +342,7 @@ class QrTransferCoordinatorTest {
         assertNull(saved, "no write must occur after a PayloadTooLarge rejection")
 
         coordinator.close()
+        recorder.close()
     }
 
     @Test
@@ -321,12 +364,11 @@ class QrTransferCoordinatorTest {
             qrImportService = importService,
             qrScanner = deniedQrScanner,
         )
+        val recorder = EventRecorder(coordinator, this)
 
         coordinator.start()
 
-        val event = withTimeout(5_000) {
-            coordinator.events.first { it is CoordinatorEvent.PreflightFailed }
-        }
+        val event = recorder.awaitEvent { it is CoordinatorEvent.PreflightFailed }
         val preflightFailed = assertIs<CoordinatorEvent.PreflightFailed>(event)
         assertIs<DomainError.SensorError.PermissionDenied>(preflightFailed.reason)
 
@@ -334,6 +376,7 @@ class QrTransferCoordinatorTest {
         assertNull(saved, "no write must occur when the pre-flight camera stream reports PermissionDenied")
 
         coordinator.close()
+        recorder.close()
     }
 
     /**
@@ -360,12 +403,11 @@ class QrTransferCoordinatorTest {
             frameTransportReceiver = fakeReceiver(encoder),
             qrImportService = importService,
         )
+        val recorder = EventRecorder(coordinator, this)
 
         coordinator.start()
 
-        val collision = withTimeout(5_000) {
-            coordinator.events.first { it is CoordinatorEvent.CollisionDetected }
-        } as CoordinatorEvent.CollisionDetected
+        val collision = recorder.awaitEvent { it is CoordinatorEvent.CollisionDetected } as CoordinatorEvent.CollisionDetected
         assertEquals("Collision Page", collision.existingName.value)
         assertEquals("Collision Page", collision.proposedName.value)
 
@@ -379,7 +421,7 @@ class QrTransferCoordinatorTest {
             coordinator.resolveCollision(QrImportService.CollisionChoice.KEEP_BOTH)
         }
 
-        val terminal = collectUntilTerminal(coordinator)
+        val terminal = recorder.awaitTerminal()
         val success = assertIs<CoordinatorEvent.Success>(terminal.last())
         assertEquals("Collision Page (2)", success.pageName.value, "KEEP_BOTH must disambiguate rather than overwrite")
 
@@ -389,6 +431,7 @@ class QrTransferCoordinatorTest {
         assertTrue(original != null, "the original page must be untouched by a KEEP_BOTH resolution")
 
         coordinator.close()
+        recorder.close()
     }
 
     /**
@@ -411,14 +454,15 @@ class QrTransferCoordinatorTest {
             frameTransportReceiver = fakeReceiver(encoder),
             qrImportService = importService,
         )
+        val recorder = EventRecorder(coordinator, this)
 
         coordinator.start()
 
-        withTimeout(5_000) { coordinator.events.first { it is CoordinatorEvent.CollisionDetected } }
+        recorder.awaitEvent { it is CoordinatorEvent.CollisionDetected }
 
         coordinator.cancel()
 
-        val terminal = withTimeout(5_000) { coordinator.events.first { it is CoordinatorEvent.Cancelled } }
+        val terminal = recorder.awaitEvent { it is CoordinatorEvent.Cancelled }
         assertIs<CoordinatorEvent.Cancelled>(terminal)
 
         val disambiguated = pageRepo.getPageByName("Collision Cancel Page (2)").first().getOrNull()
@@ -427,5 +471,6 @@ class QrTransferCoordinatorTest {
         assertTrue(original != null, "the pre-existing page must remain untouched by an aborted collision")
 
         coordinator.close()
+        recorder.close()
     }
 }
