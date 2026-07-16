@@ -1,9 +1,19 @@
 package dev.stapler.stelekit.ui
 
+import dev.stapler.stelekit.db.GraphLoader
 import dev.stapler.stelekit.model.Block
 import dev.stapler.stelekit.model.BlockUuid
 import dev.stapler.stelekit.model.PageUuid
+import dev.stapler.stelekit.ui.fixtures.FakeBlockRepository
+import dev.stapler.stelekit.ui.fixtures.FakeFileSystem
+import dev.stapler.stelekit.ui.fixtures.PopulatedFakePageRepository
+import dev.stapler.stelekit.ui.state.BlockStateManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Clock
@@ -139,5 +149,52 @@ class DragDropReorderTest {
         val descendantsOfBC = allDescendants(setOf("B", "C"), blocks)
         assertTrue("D" in descendantsOfBC, "D is a descendant when dragging C")
         assertFalse("A" in descendantsOfBC, "A is NOT a descendant when dragging B and C")
+    }
+
+    // ---------------------------------------------------------------------------
+    // Test 4 (docs/ux/block-reorder-permutations.md §8 punch-list item 6):
+    // multi-selecting an ancestor AND one of its own descendants and dragging
+    // together must move only the ancestor — the descendant "tags along"
+    // implicitly (still a child of the moved ancestor) rather than being
+    // moved a second time as an explicit sibling of the new parent.
+    // Exercises the real BlockStateManager (selection + subtreeDedup +
+    // moveSelectedBlocks), not a duplicated helper.
+    // ---------------------------------------------------------------------------
+
+    @Test
+    fun movingAncestorAndDescendantTogether_onlyMovesAncestor() = runBlocking {
+        val blockA = Block(
+            uuid = BlockUuid("A"), pageUuid = PageUuid("p"), content = "A",
+            parentUuid = null, level = 0, position = "a0", createdAt = now, updatedAt = now
+        )
+        val blockB = Block(
+            uuid = BlockUuid("B"), pageUuid = PageUuid("p"), content = "B",
+            parentUuid = BlockUuid("A"), level = 1, position = "a0", createdAt = now, updatedAt = now
+        )
+        val target = Block(
+            uuid = BlockUuid("TARGET"), pageUuid = PageUuid("p"), content = "Target",
+            parentUuid = null, level = 0, position = "a1", createdAt = now, updatedAt = now
+        )
+        val blockRepo = FakeBlockRepository(mapOf("p" to listOf(blockA, blockB, target)))
+        val pageRepo = PopulatedFakePageRepository()
+        val fileSystem = FakeFileSystem()
+        val graphLoader = GraphLoader(fileSystem, pageRepo, blockRepo)
+        val scope = CoroutineScope(Dispatchers.Unconfined)
+        val blockStateManager = BlockStateManager(blockRepo, graphLoader, scope)
+
+        blockStateManager.observePage(PageUuid("p"))
+        blockStateManager.enterSelectionMode(BlockUuid("A"))
+        blockStateManager.toggleBlockSelection(BlockUuid("B"))
+
+        blockStateManager.moveSelectedBlocks(BlockUuid("TARGET"), null).join()
+
+        val finalBlocks = blockRepo.getBlocksForPage(PageUuid("p")).first().getOrNull()
+            ?: error("expected blocks")
+        val movedA = finalBlocks.find { it.uuid.value == "A" } ?: error("A missing")
+        val movedB = finalBlocks.find { it.uuid.value == "B" } ?: error("B missing")
+
+        assertEquals(BlockUuid("TARGET"), movedA.parentUuid, "A should move under TARGET")
+        assertEquals(BlockUuid("A"), movedB.parentUuid, "B should remain a child of A, not be moved separately")
+        assertEquals(3, finalBlocks.size, "no blocks should be lost or duplicated by the move")
     }
 }
