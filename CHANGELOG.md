@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.70.0](https://github.com/tstapler/stelekit/compare/v0.69.1...v0.70.0) (2026-07-16)
+
+
+### Features
+
+* **drag-reorder:** implement UX punch list for block reordering ([#237](https://github.com/tstapler/stelekit/issues/237)) ([2d624d4](https://github.com/tstapler/stelekit/commit/2d624d4a87fb149b046065af6234371cd076b332))
+* **git:** implement WASM git write-back for web sync (closes BUG-005 Phase 2) ([#239](https://github.com/tstapler/stelekit/issues/239)) ([bb063ef](https://github.com/tstapler/stelekit/commit/bb063efedafc335a28b248597fe2943524132cc4))
+* **links:** index parenthetical content as a page-name alias too ([c2658b2](https://github.com/tstapler/stelekit/commit/c2658b21bb646ca5c1a8ef6cb4ec4ff91994f46c))
+* **web:** PWA install + offline durability for the browser app ([f8608b8](https://github.com/tstapler/stelekit/commit/f8608b82979c09578e13f37b17eb19711ad24de4))
+
+
+### Bug Fixes
+
+* **android:** drag-to-reorder blocks never actually moved (stelekit[#238](https://github.com/tstapler/stelekit/issues/238)) ([98b36a9](https://github.com/tstapler/stelekit/commit/98b36a9b8856cb52ec43d57e5ad35c9717d87452))
+* **ci:** satisfy detekt ComplexCondition in PageNameIndex alias registration ([6426ecb](https://github.com/tstapler/stelekit/commit/6426ecb03cab55be57a19a5c610233e5bd533cad))
+* **db:** remove O(pages×blocks) UPDATE from pages_backlink_count migration ([cdcff5e](https://github.com/tstapler/stelekit/commit/cdcff5ef02c2e52c757fc8d6e46b50686ec4405a))
+* **migration:** handle concurrent switchGraph races on migration_changelog ([d63b882](https://github.com/tstapler/stelekit/commit/d63b88289a474bc5a04e8a3137b9eaa7ada328cf))
+* **pages:** replace evictable cache fallback with artifact download for web demo ([7c704fc](https://github.com/tstapler/stelekit/commit/7c704fcddb32a29f9a89836dbee5c464790db8d4))
+* **parser:** fix exponential blowup in InlineParser on unmatched brackets ([11b9e62](https://github.com/tstapler/stelekit/commit/11b9e6270442ccd4dffe2d3c718d69fc60c612f7))
+* **test:** eliminate lost-event race in QrTransferCoordinatorTest ([eaaf0b3](https://github.com/tstapler/stelekit/commit/eaaf0b32be8e7171be6d5f127ee378d1d56cdef6))
+* **web:** prevent the coming-soon regression from recurring, protect existing clients from bad deploys ([47b97c1](https://github.com/tstapler/stelekit/commit/47b97c11821f1aa39ce252acc6fc9338442ce809))
+* wiki-link insertion ordering bugs ([#234](https://github.com/tstapler/stelekit/issues/234)) ([001942a](https://github.com/tstapler/stelekit/commit/001942a5222025c9e763bbcb3f68b371ef100479))
+
+
+### Performance Improvements
+
+* **ci:** enable persistent/multiplexed workers for Android dex/desugar ([9c24454](https://github.com/tstapler/stelekit/commit/9c244541ad74cb2549b3e8795eb2a0818e725502))
+
+
+### Reverts
+
+* **ci:** drop persistent_multiplex_android_tools, breaks Bazel Android build ([94f44db](https://github.com/tstapler/stelekit/commit/94f44db6ecaaf05842f39f669b24c34406b54f16))
+
 ## [0.69.1](https://github.com/tstapler/stelekit/compare/v0.69.0...v0.69.1) (2026-07-14)
 
 
